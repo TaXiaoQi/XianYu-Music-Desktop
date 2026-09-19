@@ -1,18 +1,5 @@
-/**
- * 歌单同步组合式函数
- *
- * 提供本地歌单与云端歌单之间的双向同步能力：
- * - `uploadPlaylists()`：将本地歌单上传到云端
- * - `downloadPlaylists()`：从云端拉取歌单到本地
- * - `syncPlaylists()`：双向同步（先上传后下载）
- *
- * 同步策略：
- * - 上传：按应用备份同款格式打包本地歌单，自动标记 local / online / mixed。
- * - 下载：按歌单原 id 匹配本地歌单，匹配不到则新建本地歌单。
- * - 歌曲保留完整 Song 元数据，并使用 syncType 自动区分本地与在线来源。
- */
 
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, watch } from 'vue';
 import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { useAuthStore } from '../features/auth/store';
@@ -82,7 +69,6 @@ import type { AutoSyncConfig, Playlist, Song } from '../types';
 
 export type SyncDirection = 'upload' | 'download' | 'sync';
 
-/** 日志前缀，方便在控制台筛选歌单同步相关日志 */
 const LOG = '[usePlaylistSync]';
 
 function logSync(_msg: string, ..._args: unknown[]) {
@@ -92,13 +78,6 @@ function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
 
-/**
- * 首次登录同步完成标记。
- *
- * 云端同步策略：初次登录时执行一次全量同步（本地有数据且与云端冲突时才弹冲突菜单），
- * 之后两端一致；后续自动同步以客户端为主，只上传新增数据，不再每次不一致弹窗。
- * 此标记持久化到本地，保证每个设备只在首次登录做过一次全量一致性同步。
- */
 const LOGIN_SYNC_COMPLETED_KEY = 'player_login_sync_completed';
 
 function loadLoginSyncCompleted(): boolean {
@@ -110,9 +89,6 @@ function persistLoginSyncCompleted() {
 }
 
 // ==================== 收藏按键合并：上次已同步路径跟踪 ====================
-// 上传时计算 deletePaths = 上次已同步 − 当前本地收藏，通知服务端删除对应云端收藏，
-// 从而在"收藏按键合并"（跨设备各新增互不抹掉）下仍能可靠地传播本机删除。
-// 同步状态与「仅删本地/仅保留本地」墓碑见 favoritesSyncState.ts。
 
 // ==================== 本地曲库匹配 ====================
 
@@ -128,7 +104,6 @@ function isLocalFilePath(path: string): boolean {
     && !path.startsWith('https://');
 }
 
-/** 云端时长可能是秒或毫秒（移动端上传为毫秒），统一归一化为秒（>1000 视为毫秒） */
 function normalizeDurationSec(duration: number): number {
   if (!duration || duration <= 0) return 0;
   return duration > 1000 ? Math.round(duration / 1000) : Math.round(duration);
@@ -152,12 +127,6 @@ function buildLibraryMatchIndex(songList: Song[]): LibraryMatchIndex {
   return { byPath, byMeta };
 }
 
-/**
- * 将同步下载的本地歌曲路径解析到本地曲库：路径已存在则原样返回，
- * 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地路径。
- * 跨设备同步时移动端路径（/storage/...、content://）在桌面端不存在，
- * 通过元数据匹配回桌面本地曲库的真实路径。
- */
 function resolveLocalPath(index: LibraryMatchIndex, song: Song): string {
   const cloudPath = song.path || '';
   if (!isLocalFilePath(cloudPath)) return cloudPath;
@@ -180,10 +149,6 @@ function resolveLocalPath(index: LibraryMatchIndex, song: Song): string {
   return best?.path ?? cloudPath;
 }
 
-/**
- * 各类同步状态（上次同步时间 + 结果）持久化到本地，避免每次打开账号设置时
- * 因组件重建而重置为「未同步」。
- */
 const SYNC_STATUS_STORAGE_KEY = 'player_sync_status';
 
 interface PersistedSyncSlot<T> {
@@ -212,6 +177,57 @@ function loadPersistedSyncState(): PersistedSyncState {
   };
 }
 
+const persistedSyncState = loadPersistedSyncState();
+
+const syncing = ref(false);
+const syncProgress = ref('');
+
+const lastSyncTime = ref<number | null>(persistedSyncState.playlists.time);
+const lastSyncResult = ref<SyncResult | null>(persistedSyncState.playlists.result);
+
+const pluginSyncing = ref(false);
+const pluginSyncProgress = ref('');
+const lastPluginSyncTime = ref<number | null>(persistedSyncState.plugins.time);
+const lastPluginSyncResult = ref<PluginSyncResult | null>(persistedSyncState.plugins.result);
+
+const settingsSyncing = ref(false);
+const settingsSyncProgress = ref('');
+const lastSettingsSyncTime = ref<number | null>(persistedSyncState.settings.time);
+const lastSettingsSyncResult = ref<SettingsSyncResult | null>(persistedSyncState.settings.result);
+
+const favoritesSyncing = ref(false);
+const favoritesSyncProgress = ref('');
+const lastFavoritesSyncTime = ref<number | null>(persistedSyncState.favorites.time);
+const lastFavoritesSyncResult = ref<SyncResult | null>(persistedSyncState.favorites.result);
+
+const autoSyncStatus = ref('');
+const autoSyncDelayed = ref(false);
+let autoSyncInitialized = false;
+let autoSyncStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+const loginSyncCompleted = ref(loadLoginSyncCompleted());
+let loginSyncInProgress = false;
+let syncOperationInProgress = false;
+
+function persistSyncStatus(category: keyof PersistedSyncState) {
+  const snapshot = loadPersistedSyncState();
+  if (category === 'playlists') {
+    snapshot.playlists = { time: lastSyncTime.value, result: lastSyncResult.value };
+  } else if (category === 'plugins') {
+    snapshot.plugins = { time: lastPluginSyncTime.value, result: lastPluginSyncResult.value };
+  } else if (category === 'settings') {
+    snapshot.settings = { time: lastSettingsSyncTime.value, result: lastSettingsSyncResult.value };
+  } else {
+    snapshot.favorites = { time: lastFavoritesSyncTime.value, result: lastFavoritesSyncResult.value };
+  }
+  localStore.setJson(SYNC_STATUS_STORAGE_KEY, snapshot);
+}
+
+watch([lastSyncTime, lastSyncResult], () => persistSyncStatus('playlists'), { deep: true });
+watch([lastPluginSyncTime, lastPluginSyncResult], () => persistSyncStatus('plugins'), { deep: true });
+watch([lastSettingsSyncTime, lastSettingsSyncResult], () => persistSyncStatus('settings'), { deep: true });
+watch([lastFavoritesSyncTime, lastFavoritesSyncResult], () => persistSyncStatus('favorites'), { deep: true });
+
 export function usePlaylistSync() {
   const collectionsStore = useCollectionsStore();
   const libraryStore = useLibraryStore();
@@ -220,100 +236,33 @@ export function usePlaylistSync() {
   const statisticsStore = useStatisticsStore();
   const { showToast } = useToast();
 
-  const syncing = ref(false);
-  const syncProgress = ref('');
-
-  const persistedSyncState = loadPersistedSyncState();
-
-  const lastSyncTime = ref<number | null>(persistedSyncState.playlists.time);
-  const lastSyncResult = ref<SyncResult | null>(persistedSyncState.playlists.result);
-
-  // 插件同步独立状态（与歌单同步分开）
-  const pluginSyncing = ref(false);
-  const pluginSyncProgress = ref('');
-  const lastPluginSyncTime = ref<number | null>(persistedSyncState.plugins.time);
-  const lastPluginSyncResult = ref<PluginSyncResult | null>(persistedSyncState.plugins.result);
-
-  // 设置同步独立状态
-  const settingsSyncing = ref(false);
-  const settingsSyncProgress = ref('');
-  const lastSettingsSyncTime = ref<number | null>(persistedSyncState.settings.time);
-  const lastSettingsSyncResult = ref<SettingsSyncResult | null>(persistedSyncState.settings.result);
-
-  // 收藏同步独立状态
-  const favoritesSyncing = ref(false);
-  const favoritesSyncProgress = ref('');
-  const lastFavoritesSyncTime = ref<number | null>(persistedSyncState.favorites.time);
-  const lastFavoritesSyncResult = ref<SyncResult | null>(persistedSyncState.favorites.result);
-
-  // 自动同步状态
-  const autoSyncStatus = ref('');
-  const autoSyncDelayed = ref(false);
-  let autoSyncInitialized = false;
-  let autoSyncStatusTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // 首次登录同步标记（持久化到本地，仅首次登录全量一致性同步一次）
-  const loginSyncCompleted = ref(loadLoginSyncCompleted());
-  let loginSyncInProgress = false;
-
-  /** 将某类同步状态刷入本地存储，保证再次打开账号设置时仍能显示「上次同步」 */
-  function persistSyncStatus(category: keyof PersistedSyncState) {
-    const snapshot = loadPersistedSyncState();
-    if (category === 'playlists') {
-      snapshot.playlists = { time: lastSyncTime.value, result: lastSyncResult.value };
-    } else if (category === 'plugins') {
-      snapshot.plugins = { time: lastPluginSyncTime.value, result: lastPluginSyncResult.value };
-    } else if (category === 'settings') {
-      snapshot.settings = { time: lastSettingsSyncTime.value, result: lastSettingsSyncResult.value };
-    } else {
-      snapshot.favorites = { time: lastFavoritesSyncTime.value, result: lastFavoritesSyncResult.value };
-    }
-    localStore.setJson(SYNC_STATUS_STORAGE_KEY, snapshot);
-  }
-
-  // 四类同步状态任一发生变化即持久化
-  watch([lastSyncTime, lastSyncResult], () => persistSyncStatus('playlists'), { deep: true });
-  watch([lastPluginSyncTime, lastPluginSyncResult], () => persistSyncStatus('plugins'), { deep: true });
-  watch([lastSettingsSyncTime, lastSettingsSyncResult], () => persistSyncStatus('settings'), { deep: true });
-  watch([lastFavoritesSyncTime, lastFavoritesSyncResult], () => persistSyncStatus('favorites'), { deep: true });
-
-  /** 检查是否可以同步（已登录 + 开启了歌单上传） */
   function canSync(): boolean {
     return authStore.isLoggedIn && !!authStore.user?.ciyuanxi_id;
   }
 
-  /** 检查歌单上传是否在设置中启用 */
   function isUploadEnabled(): boolean {
     return settingsStore.settings.upload.playlists;
   }
 
-  /** 检查插件上传是否在设置中启用 */
   function isPluginUploadEnabled(): boolean {
     return settingsStore.settings.upload.plugins;
   }
 
-  /** 检查设置上传是否在设置中启用 */
   function isSettingsUploadEnabled(): boolean {
     return settingsStore.settings.upload.settings;
   }
 
-  /** 检查收藏上传是否在设置中启用 */
   function isFavoritesUploadEnabled(): boolean {
     return settingsStore.settings.upload.favorites;
   }
 
-  /**
-   * 收集歌单中的所有歌曲（合并本地库歌曲与在线歌曲元信息）
-   */
   function collectPlaylistSongs(playlist: Playlist): Song[] {
     const songs: Song[] = [];
 
-    // 1. 在线歌曲（songs 数组）
     if (playlist.songs && playlist.songs.length > 0) {
       songs.push(...playlist.songs);
     }
 
-    // 2. 本地库歌曲（通过 songPaths 从 libraryStore 查找）
     const songMap = new Map<string, Song>();
     libraryStore.songList.forEach(song => songMap.set(song.path, song));
     for (const path of playlist.songPaths) {
@@ -327,13 +276,6 @@ export function usePlaylistSync() {
     return songs;
   }
 
-  /**
-   * 解析歌单云端封面 URL：
-   * - 已有云端封面（http/https）直接用；
-   * - 本地自定义封面（coverPath 本地文件或 data:）读取上传到服务端，返回可跨设备访问的 HTTPS URL；
-   * - 否则回退用歌单内在线歌曲的远程封面。
-   * 失败静默返回空串（歌单仍可同步，仅无封面）。
-   */
   async function resolvePlaylistCloudCover(
     playlist: Playlist,
     songs: Song[],
@@ -372,10 +314,6 @@ export function usePlaylistSync() {
     return firstRemoteSongCover(songs);
   }
 
-  /**
-   * 上传所有本地歌单到云端（文件存储模式）
-   * 一次性将所有歌单+歌曲打包分块上传到服务器文件存储，不经过数据库
-   */
   async function uploadPlaylists(): Promise<SyncResult> {
     const result: SyncResult = {
       uploadedPlaylists: 0,
@@ -405,22 +343,18 @@ export function usePlaylistSync() {
     syncProgress.value = '正在上传歌单到云端...';
 
     try {
-      // 收集所有歌单数据（本地自定义封面需先上传为云端 URL，供跨设备访问）
       const playlistData: FileSyncPlaylistData[] = [];
       for (const pl of playlists) {
         const songs = collectPlaylistSongs(pl);
         const cloudCoverUrl = await resolvePlaylistCloudCover(pl, songs);
-        // 新解析出的云端封面回写本地歌单，避免下次同步重复上传封面
         if (cloudCoverUrl && cloudCoverUrl !== pl.cloudCoverUrl) {
           collectionsStore.setPlaylistCloudCoverUrl(pl.id, cloudCoverUrl);
         }
         let payloadSongs = songs.map(songToSyncPayload);
-        // 歌单内单曲删除墓碑处理（仅已同步歌单）：回填云端保留 / 剔除仅保留本地 / 上报删除
         let deletedSongPaths: string[] | undefined;
         if (pl.cloudId) {
           const cloudId = pl.cloudId;
           const localPaths = new Set(songs.map(s => s.path));
-          // 「仅删本地」墓碑回填：本地已移除但云端保留的歌曲，用缓存载荷补回上传列表
           const keepMap = getCloudKeepSongs(cloudId);
           for (const [path, payloadJson] of Object.entries(keepMap)) {
             if (!payloadSongs.some(s => s.path === path)) {
@@ -431,16 +365,12 @@ export function usePlaylistSync() {
               }
             }
           }
-          // 重新添加回本机的 path 清除「仅删本地」墓碑（恢复正常同步）
           pruneCloudKeepSongs(cloudId, localPaths);
-          // 「仅保留本地」墓碑：本机保留、云端已删的歌曲剔除出上传列表（防复活）；
-          // 已从本机移除的 path 自然失效（清除墓碑）
           const localOnly = getLocalOnlySongs(cloudId);
           if (localOnly.size > 0) {
             payloadSongs = payloadSongs.filter(s => !localOnly.has(s.path));
             pruneLocalOnlySongs(cloudId, localPaths);
           }
-          // 「待上报删除」墓碑（删除全部）：重新添加回本机的 path 清除，其余随本次上传上报
           const pending = getPendingDeletedSongs(cloudId);
           if (pending.size > 0) {
             prunePendingDeletedSongs(cloudId, Array.from(pending).filter(p => localPaths.has(p)));
@@ -464,14 +394,11 @@ export function usePlaylistSync() {
       const totalSongs = playlistData.reduce((sum, pl) => sum + pl.songs.length, 0);
       logSync(`uploadPlaylists: 收集完成, 歌单=${playlistData.length}, 总歌曲=${totalSongs}`);
 
-      // 文件存储上传：分块发送，服务器合并为 JSON 文件
       const uploadResult = await fileSyncUpload(ciyuanxiId, playlistData);
       result.uploadedPlaylists = uploadResult.playlist_count;
       result.uploadedSongs = uploadResult.song_total;
       logSync(`uploadPlaylists 完成: uploadedPlaylists=${result.uploadedPlaylists}, uploadedSongs=${result.uploadedSongs}`);
 
-      // 服务端回传 id_map：把本地 id 绑定到云端字符串 cloudId，保证同歌单再上传可定位、
-      // 跨设备稳定识别为"已同步"（覆盖本地历史数字 cloudId / 缺失 cloudId）
       if (uploadResult.id_map?.length) {
         let written = 0;
         for (const { id, cloudId } of uploadResult.id_map) {
@@ -490,10 +417,6 @@ export function usePlaylistSync() {
     return result;
   }
 
-  /**
-   * 从云端下载所有歌单到本地（文件存储模式）
-   * 一次请求获取完整歌单数据，不经过数据库
-   */
   async function downloadPlaylists(): Promise<SyncResult> {
     const result: SyncResult = {
       uploadedPlaylists: 0,
@@ -521,7 +444,6 @@ export function usePlaylistSync() {
 
       logSync(`downloadPlaylists: 云端共 ${downloadData.playlists.length} 个歌单, ${downloadData.stats?.song_total ?? 0} 首歌曲`);
 
-      // 匹配本地曲库：跨设备失效路径替换为本地真实路径
       const matchIndex = buildLibraryMatchIndex(libraryStore.songList);
 
       for (let i = 0; i < downloadData.playlists.length; i++) {
@@ -529,7 +451,6 @@ export function usePlaylistSync() {
         logSync(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
         syncProgress.value = `正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`;
 
-        // 服务端已记录删除的歌曲 path（其他端「删除全部/仅保留本地」传播）+ 本机歌曲墓碑
         const deletedPaths = new Set(cloudPl.deletedSongPaths ?? []);
         const songCloudId = cloudPl.cloudId || '';
         const songKeepMap = songCloudId ? getCloudKeepSongs(songCloudId) : {};
@@ -537,8 +458,6 @@ export function usePlaylistSync() {
 
         const cloudSongs = cloudPl.songs ?? [];
 
-        // 删除集合展开：云端原始 path 经本地曲库重映射后的 path 一并纳入
-        // （跨端 plugin:// → lx:// / 本地路径重映射场景），保证删除能命中本机歌曲
         const expandedDeleted = new Set(deletedPaths);
         if (deletedPaths.size > 0) {
           for (const raw of cloudSongs) {
@@ -550,7 +469,6 @@ export function usePlaylistSync() {
           }
         }
 
-        // 过滤云端歌曲：服务端已删除(D) / 本机待上报删除 / 仅删本地墓碑（云端保留但本机已移除）
         const visibleCloudSongs = cloudSongs.filter(raw => {
           const p = (raw as any).path as string | undefined;
           if (!p) return true;
@@ -563,7 +481,6 @@ export function usePlaylistSync() {
           return resolved === restored.path ? restored : { ...restored, path: resolved };
         });
 
-        // 建立云端原始 path → 转换后 path 的映射（用于更新 songPaths 中的旧路径）
         const pathRemapFromCloud = new Map<string, string>();
         visibleCloudSongs.forEach((raw, i) => {
           const originalPath = (raw as any).path as string | undefined;
@@ -573,16 +490,13 @@ export function usePlaylistSync() {
           }
         });
 
-        // 尝试匹配本地歌单（通过原 id）
         const existing = collectionsStore.playlists.find(p => p.id === cloudPl.id);
 
         if (existing) {
-          // 已有本地歌单：先将 songPaths 里已被转换的旧路径（plugin:// → lx://）更新为新路径
           if (pathRemapFromCloud.size > 0) {
             existing.songPaths = existing.songPaths.map(p => pathRemapFromCloud.get(p) ?? p);
           }
 
-          // 其他端传播的歌曲级删除：从本地歌单移除 D 中 path
           if (expandedDeleted.size > 0) {
             existing.songPaths = existing.songPaths.filter(p => !expandedDeleted.has(p));
             if (existing.songs?.length) {
@@ -591,7 +505,6 @@ export function usePlaylistSync() {
             }
           }
 
-          // 合并歌曲列表
           const localSongPaths = new Set(existing.songPaths);
           const newPaths: string[] = [];
 
@@ -616,16 +529,13 @@ export function usePlaylistSync() {
             libraryStore.setExtraSong(song);
           }
           if (cloudPl.cloudCoverUrl) existing.cloudCoverUrl = cloudPl.cloudCoverUrl;
-          // 从云端下载合并的歌单标记为云端来源（cloudId 可能因历史数据缺失，用于"是否云端"检测）
           existing.isCloud = true;
-          // 合并进已有本地歌单时也写入 cloudId，确保"是否已同步"判定与后续删除范围可用
           if (cloudPl.cloudId) existing.cloudId = cloudPl.cloudId;
 
           result.downloadedPlaylists++;
           result.downloadedSongs += localSongs.length;
           logSync(`downloadPlaylists: 合并到已有歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
         } else {
-          // 创建新本地歌单
           const allPaths = localSongs.map(s => s.path);
 
           const newPlaylist: Playlist = {
@@ -661,9 +571,6 @@ export function usePlaylistSync() {
     return result;
   }
 
-  /**
-   * 双向同步歌单：先上传本地歌单，再下载云端歌单
-   */
   async function syncPlaylists(): Promise<SyncResult> {
     logSync('========== syncPlaylists 开始 ==========');
     if (!canSync()) {
@@ -683,7 +590,6 @@ export function usePlaylistSync() {
     lastSyncResult.value = null;
 
     try {
-      // 第一步：上传
       let uploadResult: SyncResult = {
         uploadedPlaylists: 0,
         downloadedPlaylists: 0,
@@ -701,13 +607,11 @@ export function usePlaylistSync() {
         logSync('syncPlaylists: 步骤 1/2 - 上传未开启，跳过');
       }
 
-      // 第二步：下载
       logSync('syncPlaylists: 步骤 2/2 - 开始下载');
       syncProgress.value = '正在从云端拉取歌单...';
       const downloadResult = await downloadPlaylists();
       logSync('syncPlaylists: 步骤 2/2 - 下载完成', downloadResult);
 
-      // 合并结果
       const combined: SyncResult = {
         uploadedPlaylists: uploadResult.uploadedPlaylists,
         downloadedPlaylists: downloadResult.downloadedPlaylists,
@@ -753,9 +657,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 双向同步插件：先上传本地插件，再下载云端插件
-   */
   async function syncPlugins(): Promise<PluginSyncResult> {
     logSync('========== syncPlugins 开始 ==========');
     if (!canSync()) {
@@ -769,7 +670,6 @@ export function usePlaylistSync() {
     lastPluginSyncResult.value = null;
 
     try {
-      // 第一步：上传
       let uploadResult: PluginSyncResult = {
         uploadedPlugins: 0,
         downloadedPlugins: 0,
@@ -785,13 +685,11 @@ export function usePlaylistSync() {
         logSync('syncPlugins: 步骤 1/2 - 插件上传未开启，跳过');
       }
 
-      // 第二步：下载
       logSync('syncPlugins: 步骤 2/2 - 开始下载插件');
       pluginSyncProgress.value = '正在从云端恢复插件...';
       const downloadResult = await downloadPluginsFromCloud();
       logSync('syncPlugins: 步骤 2/2 - 下载插件完成', downloadResult);
 
-      // 合并结果
       const combined: PluginSyncResult = {
         uploadedPlugins: uploadResult.uploadedPlugins,
         downloadedPlugins: downloadResult.downloadedPlugins,
@@ -830,9 +728,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 仅上传本地歌单
-   */
   async function uploadOnly(): Promise<void> {
     logSync('========== uploadOnly 开始 ==========');
     if (!canSync()) {
@@ -874,9 +769,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 仅下载云端歌单
-   */
   async function downloadOnly(): Promise<void> {
     logSync('========== downloadOnly 开始 ==========');
     if (!canSync()) {
@@ -912,9 +804,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 删除云端歌单（同时清除本地 cloudId 绑定）
-   */
   async function deleteCloudPlaylistLocal(playlistId: string): Promise<boolean> {
     const ciyuanxiId = getCiyuanxiId();
     if (!ciyuanxiId) {
@@ -930,7 +819,6 @@ export function usePlaylistSync() {
 
     try {
       await deleteCloudPlaylist(ciyuanxiId, [playlist.cloudId]);
-      // 整个歌单已从云端删除：清空该歌单的全部歌曲墓碑（songKeep/localOnly/pendingDeleted）
       clearPlaylistSongTombstones(playlist.cloudId);
       collectionsStore.setPlaylistCloudId(playlistId, '');
       showToast('已从云端删除歌单', 'success');
@@ -942,9 +830,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 仅上传设置到云端
-   */
   async function uploadSettingsOnly(): Promise<void> {
     logSync('========== uploadSettingsOnly 开始 ==========');
     if (!canSync()) {
@@ -985,9 +870,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 仅从云端下载设置
-   */
   async function downloadSettingsOnly(): Promise<void> {
     logSync('========== downloadSettingsOnly 开始 ==========');
     if (!canSync()) {
@@ -1008,17 +890,13 @@ export function usePlaylistSync() {
       if (result.errors.length > 0) {
         showToast(`设置下载完成（${result.errors.length} 个错误）`, 'error');
       } else if (cloudSettings) {
-        // 合并云端设置到本地：以本地默认值为 base，用云端 patch 覆盖
-        // 保留本地设备相关字段（downloadPath 等）
         const currentSettings = settingsStore.settings;
         const merged = mergeAppSettings(createDefaultAppSettings(), cloudSettings as any);
-        // 恢复本地设备相关字段
         merged.download.downloadPath = currentSettings.download.downloadPath;
-        merged.upload = currentSettings.upload; // upload 设置不同步，保持本地
-        merged.organizeRoot = currentSettings.organizeRoot; // organizeRoot 是设备相关路径
+        merged.upload = currentSettings.upload;
+        merged.organizeRoot = currentSettings.organizeRoot;
         settingsStore.replaceSettings(merged);
 
-        // 持久化到 localStorage
         playerStorage.writeSettings(merged);
 
         showToast('设置已从云端恢复', 'success');
@@ -1035,9 +913,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 收集当前用户所有收藏歌曲（本地库 + 在线收藏元信息）
-   */
   function collectFavoriteSongs(): Song[] {
     const lookup = libraryStore.songLookup;
     return collectionsStore.favoritePaths
@@ -1045,9 +920,6 @@ export function usePlaylistSync() {
       .filter((song): song is Song => !!song);
   }
 
-  /**
-   * 仅上传收藏歌曲到云端
-   */
   async function uploadFavoritesOnly(): Promise<void> {
     logSync('========== uploadFavoritesOnly 开始 ==========');
     if (!canSync()) {
@@ -1073,27 +945,19 @@ export function usePlaylistSync() {
         return;
       }
       if (songs.length === 0) {
-        // 空列表保护：本地收藏为空时跳过上传，避免覆盖云端收藏
-        // （换包名/重装后本地为空，若直接上传会把云端收藏清空）。
         logSync('uploadFavoritesOnly: 本地收藏为空，跳过上传');
         showToast('本地收藏为空，跳过上传', 'info');
         return;
       }
-      // 「仅保留本地」墓碑：已从云端删除、保留本机的收藏不再上传，防止复活
       const localOnly = getLocalOnlyPaths();
       const payload = songs.filter(s => !localOnly.has(s.path));
       const currentPaths = new Set(songs.map(s => s.path));
-      // 墓碑清理：不再收藏的 path 清除「仅保留本地」墓碑（取消收藏自然失效）
       removeLocalOnlyPaths(Array.from(localOnly).filter(p => !currentPaths.has(p)));
-      // 「仅删本地」墓碑：重新收藏的 path 清除（恢复正常同步行为）
       const cloudKeep = getCloudKeepPaths();
       removeCloudKeepPaths(Array.from(cloudKeep).filter(p => currentPaths.has(p)));
       const result = await uploadFavoritesToCloud(ciyuanxiId, payload, {
-        // 本机删除 = 上次已同步 − 当前收藏，交由服务端合并模式删除对应云端收藏；
-        // 「仅删本地」墓碑的 path 云端保留，从删除跟踪中排除。
         deletePaths: loadSyncedFavoritePaths().filter(p => !currentPaths.has(p) && !cloudKeep.has(p)),
       });
-      // 上传成功后，把当前收藏路径记为"上次已同步"，作为下次删除跟踪基准
       persistSyncedFavoritePaths(songs.map(s => s.path));
       lastFavoritesSyncTime.value = Date.now();
       lastFavoritesSyncResult.value = {
@@ -1115,9 +979,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 仅从云端下载收藏歌曲到本地
-   */
   async function downloadFavoritesOnly(): Promise<void> {
     logSync('========== downloadFavoritesOnly 开始 ==========');
     if (!canSync()) {
@@ -1138,17 +999,12 @@ export function usePlaylistSync() {
       const offlineList = await downloadFavoritesFromCloud(ciyuanxiId);
       const count = offlineList.length;
 
-      // 匹配本地曲库：跨设备失效路径替换为本地真实路径
       const matchIndex = buildLibraryMatchIndex(libraryStore.songList);
       const matchedList = offlineList.map(song => {
         const resolved = resolveLocalPath(matchIndex, song);
         return resolved === song.path ? song : { ...song, path: resolved };
       });
 
-      // 写入本地收藏（按键合并）：保留本机已有收藏，仅追加云端新增。
-      // 本地库歌曲更新路径，在线或缺失歌曲写入元信息；不做整包替换，
-      // 避免抹掉本机新收藏（本机删除由本机下次上传的 deletePaths 传播）。
-      // 「仅删本地」墓碑：已从本机删除但云端保留的收藏，跳过回灌防止删除回流。
       const cloudKeep = getCloudKeepPaths();
       const lookup = libraryStore.songLookup;
       const existingPaths = new Set(collectionsStore.favoritePaths);
@@ -1188,10 +1044,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 双向同步收藏：先下载云端收藏（恢复新设备数据），再上传本地收藏。
-   * 上传含空列表保护，避免换包名/重装后本地为空时覆盖云端收藏。
-   */
   async function syncFavorites(): Promise<void> {
     logSync('========== syncFavorites 开始 ==========');
     if (!canSync()) {
@@ -1204,9 +1056,7 @@ export function usePlaylistSync() {
     favoritesSyncProgress.value = '正在从云端下载收藏...';
 
     try {
-      // 第一步：下载（先恢复云端收藏，避免新设备空列表覆盖云端）
       await downloadFavoritesOnly();
-      // 第二步：上传（含空列表保护）
       favoritesSyncProgress.value = '正在上传收藏到云端...';
       await uploadFavoritesOnly();
     } finally {
@@ -1215,9 +1065,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 双向同步设置：先比较本地与云端，一致则跳过，不一致则弹窗让用户选择
-   */
   async function syncSettings(): Promise<SettingsSyncResult> {
     logSync('========== syncSettings 开始 ==========');
     if (!canSync()) {
@@ -1231,13 +1078,11 @@ export function usePlaylistSync() {
     lastSettingsSyncResult.value = null;
 
     try {
-      // 第一步：下载云端设置用于比较
       logSync('syncSettings: 步骤 1/2 - 下载云端设置进行比较');
       settingsSyncProgress.value = '正在从云端获取设置...';
       const { settings: cloudSettings, uploadedAt, result: downloadResult } = await downloadSettingsFromCloud();
       logSync('syncSettings: 步骤 1/2 - 云端设置下载完成', downloadResult);
 
-      // 云端无数据：直接上传本地设置（首次同步）
       if (!cloudSettings) {
         if (isSettingsUploadEnabled()) {
           logSync('syncSettings: 云端无数据，上传本地设置');
@@ -1260,7 +1105,6 @@ export function usePlaylistSync() {
         return downloadResult;
       }
 
-      // 第二步：比较本地与云端设置
       const localSettings = settingsStore.settings;
       const isEqual = areSettingsEqual(localSettings, cloudSettings);
 
@@ -1273,7 +1117,6 @@ export function usePlaylistSync() {
         return { uploaded: false, downloaded: false, errors: [] };
       }
 
-      // 设置不一致：弹窗让用户选择
       logSync('syncSettings: 本地与云端设置不一致，等待用户选择');
       settingsSyncProgress.value = '检测到设置不一致，等待用户选择...';
       const choice = await showSettingsConflict(uploadedAt ?? undefined);
@@ -1287,7 +1130,6 @@ export function usePlaylistSync() {
         return { uploaded: false, downloaded: false, errors: [] };
       }
 
-      // 用户按类别选择了保留本地或云端
       const choices = choice as SyncCategoryChoices;
       const errors: string[] = [];
       let uploaded = false;
@@ -1385,9 +1227,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 仅上传插件到云端
-   */
   async function uploadPluginsOnly(): Promise<void> {
     logSync('========== uploadPluginsOnly 开始 ==========');
     if (!canSync()) {
@@ -1428,9 +1267,6 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 仅从云端下载插件
-   */
   async function downloadPluginsOnly(): Promise<void> {
     logSync('========== downloadPluginsOnly 开始 ==========');
     if (!canSync()) {
@@ -1465,73 +1301,72 @@ export function usePlaylistSync() {
     }
   }
 
-  /**
-   * 根据上传设置执行自动同步（以客户端为主，仅上传，不下载、不弹冲突窗）。
-   *
-   * 首次登录时已通过 `syncOnLoginSuccess` 做了一次全量一致性同步，此后两端一致；
-   * 后续自动同步只把客户端数据上传到服务器，覆盖式同步保证服务器保存的就是
-   * 客户端当前状态（含新增内容），不再每次上下不一致就弹冲突菜单。
-   */
   async function performAutoSync(): Promise<void> {
-    logSync('performAutoSync: 开始自动同步（客户端为主，只上传）');
-    const upload = settingsStore.settings.upload;
-    let hasError = false;
-
-    const parallelTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
-    if (upload.playlists) {
-      parallelTasks.push({ label: '上传歌单', run: uploadPlaylists });
+    if (syncOperationInProgress) {
+      logSync('performAutoSync: 其他同步流程进行中，跳过本次自动同步');
+      return;
     }
-    if (upload.plugins) {
-      parallelTasks.push({ label: '上传插件', run: uploadPluginsOnly });
-    }
-    if (upload.favorites) {
-      parallelTasks.push({ label: '上传收藏', run: uploadFavoritesOnly });
-    }
-    if (upload.settings) {
-      parallelTasks.push({ label: '上传设置', run: uploadSettingsOnly });
-    }
-
-    if (parallelTasks.length > 0) {
-      const results = await Promise.allSettled(parallelTasks.map(task => task.run()));
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          logSyncError(`performAutoSync: ${parallelTasks[index].label}失败`, result.reason);
-          hasError = true;
-        }
-      });
-    }
-
-    logSync('performAutoSync: 上传完成，开始听歌时长快照同步');
-    // 同步累计听歌时长（跨端快照方案），失败仅标记错误，不影响其它同步项
+    syncOperationInProgress = true;
     try {
-      await syncListenStats();
-      await statisticsStore.refreshBehaviorOnly('All');
-    } catch (e) {
-      logSyncError('performAutoSync: 听歌时长快照同步失败', e);
-      hasError = true;
-      await statisticsStore.refreshBehaviorOnly('All').catch(() => undefined);
-    }
+      logSync('performAutoSync: 开始自动同步（客户端为主，只上传）');
+      const upload = settingsStore.settings.upload;
+      let hasError = false;
 
-    logSync('performAutoSync: 自动同步完成');
-    if (hasError) {
-      throw new Error('部分同步项失败');
+      const parallelTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
+      if (upload.playlists) {
+        parallelTasks.push({ label: '上传歌单', run: uploadPlaylists });
+      }
+      if (upload.plugins) {
+        parallelTasks.push({ label: '上传插件', run: uploadPluginsOnly });
+      }
+      if (upload.favorites) {
+        parallelTasks.push({ label: '上传收藏', run: uploadFavoritesOnly });
+      }
+      if (upload.settings) {
+        parallelTasks.push({ label: '上传设置', run: uploadSettingsOnly });
+      }
+
+      if (parallelTasks.length > 0) {
+        const results = await Promise.allSettled(parallelTasks.map(task => task.run()));
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            logSyncError(`performAutoSync: ${parallelTasks[index].label}失败`, result.reason);
+            hasError = true;
+          }
+        });
+      }
+
+      logSync('performAutoSync: 上传完成，开始听歌时长快照同步');
+      try {
+        await syncListenStats();
+        await statisticsStore.refreshBehaviorOnly('All');
+      } catch (e) {
+        logSyncError('performAutoSync: 听歌时长快照同步失败', e);
+        hasError = true;
+        await statisticsStore.refreshBehaviorOnly('All').catch(() => undefined);
+      }
+
+      logSync('performAutoSync: 自动同步完成');
+      if (hasError) {
+        throw new Error('部分同步项失败');
+      }
+    } finally {
+      syncOperationInProgress = false;
     }
   }
 
-  /**
-   * 首次登录全量一致性同步（每个设备仅执行一次，标记持久化）。
-   *
-   * - 歌单/插件/收藏做双向同步，让两端数据合并一致；
-   * - 设置放在最后执行：云端有数据且与本地不一致时才弹出冲突菜单，
-   *   用户按类别（设置/歌单/插件）选择保留本地或云端，选择后两端一致。
-   */
   async function syncOnLoginSuccess(): Promise<void> {
     if (loginSyncCompleted.value) {
       logSync('syncOnLoginSuccess: 首次登录同步已完成，跳过');
       return;
     }
     if (loginSyncInProgress) return;
+    if (syncOperationInProgress) {
+      logSync('syncOnLoginSuccess: 其他同步流程进行中，跳过本次登录同步');
+      return;
+    }
     loginSyncInProgress = true;
+    syncOperationInProgress = true;
     logSync('========== 首次登录全量同步开始 ==========');
     const upload = settingsStore.settings.upload;
     try {
@@ -1548,8 +1383,6 @@ export function usePlaylistSync() {
       if (tasks.length > 0) {
         await Promise.allSettled(tasks.map(task => task.run()));
       }
-      // 听歌时长快照同步：在设置冲突菜单之前执行，
-      // 新设备在此回填累计听歌时长（Rule 1/2/3），失败不打断首次登录同步
       try {
         await syncListenStats();
         await statisticsStore.refreshBehaviorOnly('All');
@@ -1557,7 +1390,6 @@ export function usePlaylistSync() {
         logSyncError('syncOnLoginSuccess: 听歌时长快照同步失败', e);
         await statisticsStore.refreshBehaviorOnly('All').catch(() => undefined);
       }
-      // 设置在最后：云端有数据且与本地不一致时才弹冲突菜单
       if (upload.settings) {
         try {
           await syncSettings();
@@ -1571,20 +1403,18 @@ export function usePlaylistSync() {
       loginSyncCompleted.value = true;
       persistLoginSyncCompleted();
       loginSyncInProgress = false;
+      syncOperationInProgress = false;
       logSync('========== 首次登录全量同步结束 ==========');
     }
   }
 
-  /** 更新自动同步配置 */
   function patchAutoSyncConfig(patch: Partial<AutoSyncConfig>) {
     settingsStore.patchSettings({
       autoSync: patch,
     });
-    // 配置变更后重启调度器
     getAutoSyncScheduler().restart();
   }
 
-  /** 初始化自动同步调度器 */
   function initAutoSync() {
     if (autoSyncInitialized) return;
     autoSyncInitialized = true;
@@ -1617,13 +1447,11 @@ export function usePlaylistSync() {
       },
     });
 
-    // 如果已登录且已启用，启动调度器
     if (canSync() && settingsStore.settings.autoSync.enabled) {
       scheduler.start();
     }
   }
 
-  /** 手动触发自动同步检查 */
   function checkAutoSync() {
     const scheduler = getAutoSyncScheduler();
     if (settingsStore.settings.autoSync.enabled && canSync()) {
@@ -1632,13 +1460,6 @@ export function usePlaylistSync() {
       scheduler.stop();
     }
   }
-
-  onUnmounted(() => {
-    if (autoSyncStatusTimer) {
-      clearTimeout(autoSyncStatusTimer);
-      autoSyncStatusTimer = null;
-    }
-  });
 
   return {
     syncing,

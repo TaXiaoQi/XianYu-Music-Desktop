@@ -26,7 +26,6 @@ describe('randomizePinnedDeviceIdentity', () => {
     expect(guid).not.toBe('1F70E520B2EAA7D25E11760783C53CA9');
     expect(wid).toMatch(/^\d{18,20}$/);
     expect(wid).not.toBe('7223299733393904640');
-    // 其余脚本内容保持不变
     expect(result).toContain('const sign = zzcSign(JSON.stringify(body));');
     expect(result).toContain('referer: "https://y.qq.com"');
   });

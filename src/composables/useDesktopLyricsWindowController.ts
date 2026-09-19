@@ -67,9 +67,6 @@ export function useDesktopLyricsWindowController(options: {
   let centerPositionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // --- 窗口隐藏时暂停资源 ---
-  // 桌面歌词窗口是独立 WebView，关闭时调用 appWindow.hide() 而非销毁。
-  // 隐藏后 rAF 和所有定时器仍会持续运行，浪费 CPU 和 IPC 调用。
-  // 通过 document.visibilitychange 检测窗口隐藏/显示，暂停/恢复所有循环。
   let isWindowHidden = false;
 
   function handleVisibilityChange() {
@@ -78,12 +75,10 @@ export function useDesktopLyricsWindowController(options: {
     isWindowHidden = hidden;
 
     if (hidden) {
-      // 窗口隐藏：暂停所有循环
       stopPlaybackClock();
       stopAutoHideLoop();
       stopLockPolling();
     } else {
-      // 窗口恢复：重新启动循环
       startPlaybackClock();
       startAutoHideLoop();
       if (settings.value.isLocked && !isAutoHidden.value) {
@@ -147,8 +142,6 @@ export function useDesktopLyricsWindowController(options: {
     }
   }
   const isSystemHidden = ref(false);
-  // 面板表面（背景 + 控件）的自动隐藏：鼠标在窗口内时可见，移出后隐藏，
-  // 仅剩歌词文字。拖动/调整大小期间与「常驻背景」开启时常显。
   const isPointerInside = ref(false);
   const isResizeInteractionActive = ref(false);
   const isCursorOverLockButton = ref(false);
@@ -245,9 +238,9 @@ export function useDesktopLyricsWindowController(options: {
   async function checkLockCursorProximity() {
     if (!settings.value.isLocked) return;
     try {
-      const position = await cursorPosition(); // Global physical coordinates
-      const winPos = await appWindow.outerPosition(); // Window physical coordinates
-      const size = await appWindow.outerSize(); // Window physical size
+      const position = await cursorPosition();
+      const winPos = await appWindow.outerPosition();
+      const size = await appWindow.outerSize();
       const scaleFactor = await appWindow.scaleFactor();
 
       const W = size.width;
@@ -330,7 +323,6 @@ export function useDesktopLyricsWindowController(options: {
     }, RESIZE_VISIBILITY_HOLD_MS);
   }
 
-  /** 鼠标移出后延迟把面板表面收起（自动隐藏），短暂滑出不闪烁。 */
   function hideSurfaceAfterLeave(delay = 180) {
     clearToolbarHideTimer();
 
@@ -379,7 +371,6 @@ export function useDesktopLyricsWindowController(options: {
       return;
     }
 
-    // 自动隐藏：移出后稍作延迟收起面板（背景 + 控件），只留歌词文字。
     hideSurfaceAfterLeave();
   }
 
@@ -406,7 +397,6 @@ export function useDesktopLyricsWindowController(options: {
     startAutoHideLoop();
     void loadSystemLyricsFonts();
 
-    // 监听窗口可见性变化，隐藏时暂停资源
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     try {
@@ -515,7 +505,6 @@ export function useDesktopLyricsWindowController(options: {
       });
     });
 
-    // 从 Rust 会话获取初始核心播放状态（主窗口 emitTo 到达前的即时数据）
     try {
       const session = await sessionApi.getPlaybackSession();
       if (session && session.currentSongPath) {
@@ -524,7 +513,6 @@ export function useDesktopLyricsWindowController(options: {
       }
     } catch { /* ignore - emitTo will provide full state */ }
 
-    // 监听 Rust 会话变更（主窗口不可用时的后备同步路径）
     unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
       'playback:session-changed',
       (event) => {

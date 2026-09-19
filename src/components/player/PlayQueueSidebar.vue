@@ -24,7 +24,6 @@ const { theme } = useThemeSettings();
 
 const showClearModal = ref(false);
 
-// 合并显示：下一首播放（tempQueue）在前，播放队列（playQueue）在后
 const displayQueue = computed(() => [...tempQueue.value, ...playQueue.value]);
 
 const handleClearClick = () => {
@@ -42,10 +41,8 @@ const handleRemove = (song: any, e: Event) => {
 };
 
 // --- 虚拟滚动 ---
-// 播放队列可能包含大量歌曲，全量渲染会导致 DOM 节点过多、内存占用高。
-// 使用虚拟滚动只渲染可视区域内的条目（+ overscan 缓冲），大幅降低 DOM 节点数量。
 const scrollContainerRef = ref<HTMLElement | null>(null);
-const ROW_HEIGHT = 64; // p-2.5(20px) + 两行文本(~36px) + 行间距(4px) + 余量(4px) ≈ 64px
+const ROW_HEIGHT = 64;
 
 const virtualizer = useVirtualizer({
   get count() { return displayQueue.value.length; },
@@ -57,7 +54,6 @@ const virtualizer = useVirtualizer({
 const virtualItems = computed(() => virtualizer.value.getVirtualItems());
 const totalSize = computed(() => virtualizer.value.getTotalSize());
 
-// 将 virtualItem 与对应的 song 对象绑定，简化模板访问
 const virtualSongs = computed(() =>
   virtualItems.value.map(vItem => ({
     ...vItem,
@@ -65,7 +61,6 @@ const virtualSongs = computed(() =>
   }))
 );
 
-// 自动滚动到当前播放歌曲
 const scrollToCurrentSong = async (behavior: ScrollBehavior = 'auto') => {
   if (!currentSong.value) return;
 

@@ -19,7 +19,6 @@ const APP_SHOW_MAIN_EVENT: &str = "app:show-main";
 const APP_DEEP_LINK_EVENT: &str = "app:deep-link";
 const APP_TRAY_MENU_EVENT: &str = "app:tray-menu";
 const APP_TRAY_MENU_OPEN_EVENT: &str = "app:tray-menu-open";
-/// 分享落地页深链 scheme 前缀
 const DEEP_LINK_SCHEME: &str = "xianyu://";
 const MAIN_WINDOW_LABEL: &str = "main";
 const MINI_PLAYER_WINDOW_LABEL: &str = "mini-player";
@@ -59,7 +58,6 @@ pub(crate) struct NativeTrayMenuState {
 #[derive(Default)]
 pub(crate) struct PendingOpenPaths(pub(crate) Mutex<Vec<String>>);
 
-/// 待前端消费的 xianyu:// 深链（分享落地页拉起后带入）。
 #[derive(Default)]
 pub(crate) struct PendingDeepLinks(pub(crate) Mutex<Vec<String>>);
 
@@ -99,8 +97,6 @@ fn collect_existing_open_paths(
             continue;
         }
 
-        // 深链与其它带 scheme 的协议参数不是本地文件，走专门的深链通道；
-        // 严禁落入本地文件导入/打开流程（会导致「没有找到可导入的音乐文件」误报）。
         if trimmed.starts_with(DEEP_LINK_SCHEME) || trimmed.contains("://") {
             continue;
         }
@@ -139,7 +135,6 @@ fn queue_open_paths<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<Str
     }
 }
 
-/// 从启动参数中筛出 xianyu:// 深链（去重）。
 fn collect_deep_links(args: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut links = Vec::new();
     let mut seen = HashSet::new();
@@ -152,7 +147,6 @@ fn collect_deep_links(args: impl IntoIterator<Item = String>) -> Vec<String> {
     links
 }
 
-/// 入队深链并通知前端消费；有新增才发事件（避免空唤醒）。
 fn queue_deep_links<R: tauri::Runtime>(app: &tauri::AppHandle<R>, links: Vec<String>) {
     if links.is_empty() {
         return;
@@ -476,12 +470,6 @@ pub(crate) fn handle_single_instance<R: tauri::Runtime>(
     reveal_main_window(app);
 }
 
-/// macOS：Finder 双击/「打开方式」把文件交给应用走 Apple Events（odoc），
-/// Tauri 以 `RunEvent::Opened` 事件抛出（该变体仅 macos/ios/android 编译存在），
-/// 与 Windows/Linux 的 argv 管线不同。这里把文件 URL 物化为本地路径并入既有
-/// PendingOpenPaths 队列并通知前端（前端消费时按扩展名分流：.js/.json 进插件
-/// 导入，音频进音乐库），补齐 macOS 连音频双击都无法接收的缺口。
-// 非移动/macOS 目标上该变体不存在、本函数无调用方：保留编译检查但免 dead_code。
 #[cfg_attr(
     not(any(target_os = "macos", target_os = "ios", target_os = "android")),
     allow(dead_code)
@@ -512,10 +500,6 @@ pub(crate) fn setup_app(
     app.manage(PendingDeepLinks::default());
     app.manage(TrayMenuRuntimeState::default());
 
-    // 初次安装（无窗口状态存档）时，把主窗口默认大小对齐为配置的最小尺寸
-    // （minWidth/minHeight 按当前显示器缩放换算成物理像素，与框架对拖动下限的
-    // 换算同源），保证默认窗口恰好等于可拖动缩小的下限。
-    // 已有存档的用户由 window-state 插件恢复上次大小，不在此干预。
     let min_size_cfg = app
         .config()
         .app
@@ -540,9 +524,6 @@ pub(crate) fn setup_app(
 
     let db_state = DbState::new(app.handle())?;
 
-    // 播放会话状态：启动时立即从 SQLite 预加载到内存，
-    // 确保副窗口（mini/taskbar/desktop-lyrics）在主窗口恢复前
-    // 调用 getPlaybackSession 也能拿到正确数据
     let playback_session = PlaybackSessionState::new();
     if let Err(e) = playback_session.load_from_db(&db_state) {
         eprintln!("[Session] 启动预加载播放会话失败: {}", e);
@@ -561,8 +542,9 @@ pub(crate) fn setup_app(
         FULL_COVER_IMAGE_CONCURRENCY_LIMIT,
     )));
 
-    // QuickJS 插件引擎：插件脚本在后端隔离执行，前端只做 UI 展示
-    app.manage(crate::plugin_host::commands::init_engine_state(app.handle()));
+    app.manage(crate::plugin_host::commands::init_engine_state(
+        app.handle(),
+    ));
 
     run_cache_cleanup(app.handle());
 

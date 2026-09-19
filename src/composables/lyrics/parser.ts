@@ -19,7 +19,6 @@ const ENHANCED_TIMESTAMP_PATTERN = /<(\d+:\d{2}(?:\.\d+)?)>/g;
 const ENHANCED_TIMESTAMP_TEXT_PATTERN = /<\d+:\d{2}(?:\.\d+)?>/;
 const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d+:\d{2}(?:\.\d+)?)](.*)$/;
 const ENHANCED_EMPTY_BACKWARD_TOLERANCE_MS = 5;
-/** 兼容「最后时间戳后带文本」的逐字行时，为最后一个词推断的时长（毫秒） */
 const ENHANCED_TRAILING_WORD_DURATION_MS = 400;
 
 type ParserSource = ParsedLineSourceFormat;
@@ -64,7 +63,6 @@ async function getAmlModule() {
 
 export function sanitizeLineText(text: string): string {
   const cleaned = text.replace(/\u200b/g, '').trim();
-  // 仅剥离整行首尾独立悬挂的双斜杠 //，如 "// 汪苏泷:" -> "汪苏泷:"，"王皓@WONDERWALL //" -> "王皓@WONDERWALL"
   return cleaned
     .replace(/^\s*\/[\/\\\s]+\s*/, '')
     .replace(/\s*\/[\/\\\s]+$/, '')
@@ -140,9 +138,6 @@ export function parseEnhancedLrcLine(line: string): AmlLyricLine | null {
 
     if (!nextMarker) {
       if (text.length > 0) {
-        // 兼容 JOOX 等插件格式：最后一个时间戳后仍带文本（如 <00:42.590>单）。
-        // 这种格式没有显式的行结束标记，把尾随文本作为最后一个词，
-        // endTime 用当前时间 + 一个合理间隔推断，避免整行被丢弃导致歌词后半段黑屏。
         words.push({
           startTime: currentStart,
           endTime: currentStart + ENHANCED_TRAILING_WORD_DURATION_MS,
@@ -259,9 +254,6 @@ export function mergeEnhancedLinesIntoBaseLines(
     });
 }
 
-/** 真正的逐字歌词格式：应始终优先于普通 LRC。
- * 否则当歌词里夹杂非逐字行（如间奏标注、纯文本行）时，parseLrc 收集的行数
- * 更多、得分更高，会把逐字候选顶掉，导致逐字歌词被显示成逐行。 */
 const WORD_LEVEL_SOURCES: ReadonlySet<ParserSource> = new Set([
   'enhanced_lrc',
   'ttml',
@@ -356,7 +348,6 @@ function prepareParsedLine(
 
   if (!detected.text && !translatedText && !romanText && words.length === 0) return null;
 
-  // 过滤纯双斜杠无唱词占位行（如纯 "//"、"///"），避免生成空白孤立斜杠歌词行
   const isPureDivider = /^\s*\/[\/\\\s]+\s*$/.test(detected.text);
   if (isPureDivider && !translatedText && !romanText) return null;
 
@@ -490,35 +481,8 @@ export async function prepareParsedLyrics(raw: string): Promise<ParsedLine[]> {
 
 // ==================== lx-music-desktop lxlyric 转换 ====================
 
-// 酷我/LX 逐字转换已统一收敛到 lxLyricsBuilder.ts 的单一实现（含文件级 isKuwoSource
-// 识别，阈值 <-500），避免 parser.ts 与 lxLyricsBuilder.ts 双实现漂移造成阈值不一致。
 export { convertLxLyricToEnhancedLrc };
 
-/**
- * 构建用于存储到 lyrics_raw 的歌词文本
- *
- * 逐字格式按优先级仅选用最高优先级的一种（不混用，避免后端不同格式解析器
- * 互相干扰导致解析失败或产生重复行）：
- * 1. yrc（网易云逐字格式）
- * 2. qrc（QQ 音乐逐字格式，可能为 hex 加密串）
- * 3. lxlyric（lx-music-desktop 逐字格式）— 转换为 Enhanced LRC
- * 4. eslrc（Baka 增强型逐字歌词）
- *
- * 仅当没有任何逐字格式时，才使用普通 LRC（lyric）作为主歌词。
- *
- * 翻译歌词（tlyric）和罗马音歌词（rlyric）作为附加行追加在末尾。
- * 后端会按时间戳将附加行聚类为 translation/romanization 轨道，
- * 与主歌词配对显示。
- *
- * @param lyric 普通歌词
- * @param tlyric 翻译歌词（可选）
- * @param rlyric 罗马音歌词（可选）
- * @param lxlyric 逐字歌词（可选，lx-music-desktop 格式）
- * @param yrc 逐字歌词（可选，网易云 YRC 格式）
- * @param qrc 逐字歌词（可选，QQ 音乐 QRC 格式，可为 hex 加密串）
- * @param eslrc 逐字歌词（可选，Baka ESLRC 格式）
- * @returns 用于存储到 lyrics_raw 的歌词文本
- */
 export function buildLyricsRaw(
   lyric: string,
   tlyric?: string | null,
@@ -530,8 +494,6 @@ export function buildLyricsRaw(
 ): string {
   const parts: string[] = [];
 
-  // 逐字格式按优先级仅选用最高优先级的一种
-  // 不混用多种逐字格式，避免后端 YRC/QRC/ESLRC 解析器在混合内容上互相干扰
   let wordLevelContent: string | null = null;
   if (yrc && yrc.trim()) {
     wordLevelContent = yrc.trim();
@@ -556,7 +518,6 @@ export function buildLyricsRaw(
     return '';
   }
 
-  // 翻译和罗马音作为附加行追加（后端按时间戳聚类为 translation/romanization 轨道）
   if (tlyric && tlyric.trim()) {
     parts.push(tlyric.trim());
   }

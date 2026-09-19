@@ -195,7 +195,6 @@ describe('lxSearch tx 分层链路（Desktop 主 → Mobile 备 → Web 兜底�
     expect(first.req.method).toBe('DoSearchForQQMusicDesktop');
     expect(first.comm.guid).toMatch(/^[0-9A-F]{32}$/);
     expect(first.comm.wid).toMatch(/^\d{19}$/);
-    // 每次请求都换新设备身份，不共享累积风控
     expect(first.comm.guid).not.toBe(second.comm.guid);
     expect(first.comm.wid).not.toBe(second.comm.wid);
   });

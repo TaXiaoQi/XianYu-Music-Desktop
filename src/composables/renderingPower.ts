@@ -70,10 +70,6 @@ export function useMainWindowRenderingPower() {
   };
 
   onMounted(async () => {
-    // Register sync listeners FIRST, before any async operations.
-    // During startup, useExternalPathBridge calls appWindow.show() + setFocus()
-    // which may fire before async listeners (onFocusChanged) are set up.
-    // The synchronous window.addEventListener('focus') catches this case.
     document.addEventListener('visibilitychange', syncDocumentVisibility);
     window.addEventListener('focus', syncWindowState);
     window.addEventListener('blur', syncWindowState);
@@ -89,13 +85,8 @@ export function useMainWindowRenderingPower() {
       void syncWindowState();
     }));
 
-    // Re-sync after all listeners are set up. The window may have been
-    // shown/focused during the async setup above, and the initial
-    // syncWindowState() may have captured a stale (not-yet-visible) state.
     void syncWindowState();
 
-    // Safety net: re-sync after a short delay to catch any remaining
-    // startup timing issues (e.g., window shown just after listeners setup)
     const delayedSync = setTimeout(() => {
       void syncWindowState();
     }, 1000);

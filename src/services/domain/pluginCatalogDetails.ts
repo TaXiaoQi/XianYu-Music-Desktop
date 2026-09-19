@@ -1,11 +1,3 @@
-/**
- * 插件引擎 · 目录详情/取数（榜单、歌单、歌手、专辑、音质）。
- *
- * 条目 → 曲目/扩展信息的组合逻辑：榜单、歌单详情、收藏夹导入、歌手作品、
- * QQ 时长批量补齐、专辑曲目、歌手简介与音质列表。Baka 插件路径统一委托
- * BakaPluginManager（此处与 MusicFree 分离），QQ 插件走宿主兜底链。
- * 依赖共享工具叶子 pluginCatalogShared 与 BakaPluginManager / qqHostSearchFallback。
- */
 import type {
   PluginSource,
   PluginSearchResult,
@@ -43,12 +35,6 @@ import type {
 
 // ==================== 插件榜单 ====================
 
-/**
- * 获取插件排行榜（榜单）列表。
- * 调用插件的 getTopLists 接口，返回按分类展平的榜单条目。
- * 条目 rawData 带 _isTopList 标记，供 pluginGetPlaylistDetail 走 getTopListDetail 获取曲目。
- * Baka 插件的榜单机制（获取 + 展平）完全委托给 BakaPluginManager，与 MF 分离。
- */
 export async function pluginGetTopLists(source: PluginSource): Promise<PluginPlaylistSearchResult[]> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
@@ -66,7 +52,6 @@ export async function pluginGetTopLists(source: PluginSource): Promise<PluginPla
   }
 }
 
-/** 检查插件是否支持榜单接口（getTopLists） */
 export async function pluginSupportsTopLists(source: PluginSource): Promise<boolean> {
   const inst = await ensurePluginInstance(source);
   return !!inst && typeof inst.instance.getTopLists === 'function';
@@ -81,7 +66,6 @@ async function pluginGetPlaylistDetailInner(
 ): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
-    // B站专辑与歌单统一走专用取数路径
     if (isBilibiliSource(source)) {
       return BakaPluginManager.getBilibiliDetail(source, sheetItem, page);
     }
@@ -91,7 +75,6 @@ async function pluginGetPlaylistDetailInner(
   if (!inst) return { list: [] };
 
   try {
-    // 如果是 importMusicSheet 导入的歌单，直接返回已导入的曲目
     if (Array.isArray(sheetItem?._importedTracks) && sheetItem._importedTracks.length > 0) {
       if (page === 1) {
         const list = sheetItem._importedTracks;
@@ -101,7 +84,6 @@ async function pluginGetPlaylistDetailInner(
       return { list: [], isEnd: true };
     }
 
-    // 如果是专辑条目（歌单搜索中将专辑索引为歌单），用 getAlbumInfo 获取曲目
     if (sheetItem?._isAlbum) {
       if (typeof inst.instance.getAlbumInfo === 'function') {
         const getAlbumInfo = inst.instance.getAlbumInfo;
@@ -123,7 +105,6 @@ async function pluginGetPlaylistDetailInner(
       return { list: [], isEnd: true };
     }
 
-    // 如果是排行榜条目，用 getTopListDetail 获取曲目
     if (sheetItem?._isTopList && typeof inst.instance.getTopListDetail === 'function') {
       try {
         const result = await inst.instance.getTopListDetail(sheetItem, page);
@@ -138,7 +119,6 @@ async function pluginGetPlaylistDetailInner(
       return { list: [], isEnd: true };
     }
 
-    // 优先用 getMusicSheetInfo 获取歌单曲目
     if (typeof inst.instance.getMusicSheetInfo === 'function') {
       const getSheetInfo = inst.instance.getMusicSheetInfo;
       try {
@@ -157,7 +137,6 @@ async function pluginGetPlaylistDetailInner(
       }
     }
 
-    // 回退：getMusicSheetInfo 不可用或返回空，用歌单名搜索
     if (page === 1 && typeof inst.instance.search === 'function') {
       const sheetTitle = stripHtmlTags(sheetItem?.title || sheetItem?.name || '');
       if (sheetTitle) {
@@ -176,11 +155,6 @@ async function pluginGetPlaylistDetailInner(
   }
 }
 
-/**
- * QQ 插件详情列表统一补时长。QQ formatMusicItem 丢弃 interval、getMusicInfo
- * 对已带 artwork+qualities 的条目早退不回填，歌单/歌手/专辑详情会整页无时长；
- * 宿主按 songid 批量查 UniformRuleCtrl 补齐（一次请求，非 QQ 插件零开销）。
- */
 async function withQqDurations(
   source: PluginSource,
   results: PluginSearchResult[],
@@ -199,10 +173,6 @@ export async function pluginGetPlaylistDetail(
   return withQqDurations(source, list);
 }
 
-/**
- * 歌单详情（含分页结束标志）。供导入等需要全量拉取歌单的场景使用：
- * 以插件返回的 isEnd 判断是否还有下一页，避免按返回数量猜页大小导致提前截断丢歌。
- */
 export async function pluginGetPlaylistDetailWithEnd(
   source: PluginSource,
   sheetItem: any,
@@ -242,7 +212,6 @@ async function pluginGetArtistWorksInner(
 ): Promise<PluginSearchResult[]> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
-    // B站：空间作品接口被风控时返回空，走专用路径（单次尝试 + 搜索兜底），避免 6 次无效重试导致歌手页长时间转圈
     if (isBilibiliSource(source)) {
       return BakaPluginManager.getBilibiliArtistWorks(source, artistItem, page, 'music');
     }
@@ -252,7 +221,6 @@ async function pluginGetArtistWorksInner(
   if (!inst) return [];
 
   try {
-    // 优先用 getArtistWorks 获取歌手作品
     if (typeof inst.instance.getArtistWorks === 'function') {
       const getWorks = inst.instance.getArtistWorks;
       try {
@@ -271,7 +239,6 @@ async function pluginGetArtistWorksInner(
       }
     }
 
-    // 回退：getArtistWorks 不可用或返回空，用歌手名搜索
     if (page === 1 && typeof inst.instance.search === 'function') {
       const artistName = stripHtmlTags(artistItem?.name || artistItem?.title || artistItem?.artist || '');
       if (artistName) {
@@ -351,10 +318,6 @@ export async function pluginGetArtistAlbums(
   }
 }
 
-/**
- * 获取歌手简介：调用插件的 getArtistInfo（如未实现则返回空字符串，不影响现有功能）。
- * 歌手的 search('artist') 列表通常不带简介，简介在歌手详情接口里。
- */
 export async function pluginGetArtistInfo(
   source: PluginSource,
   artistItem: any,
@@ -391,7 +354,6 @@ async function pluginGetAlbumSongsInner(
 ): Promise<PluginSearchResult[]> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
-    // B站专辑与歌单统一走专用取数路径
     if (isBilibiliSource(source)) {
       const { list } = await BakaPluginManager.getBilibiliDetail(source, albumItem, page);
       return list;
@@ -401,16 +363,12 @@ async function pluginGetAlbumSongsInner(
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
-  // QQ 插件 getAlbumInfo 读 albumItem.albumMID（大写），而歌曲推导/兜底结果里
-  // 常只有 albummid（小写）。缺失时统一补齐，否则请求 albumMid=undefined 得 104400，
-  // 表现为专辑页 6 次重试约 12s 后空白。
   const albumMid = albumItem?.albumMID || albumItem?.albummid || albumItem?.albumMid;
   if (albumMid && !albumItem?.albumMID) {
     albumItem = { ...albumItem, albumMID: albumMid };
   }
 
   try {
-    // 优先用 getAlbumInfo 获取专辑曲目
     if (typeof inst.instance.getAlbumInfo === 'function') {
       const getAlbumInfo = inst.instance.getAlbumInfo;
       try {
@@ -429,8 +387,6 @@ async function pluginGetAlbumSongsInner(
       }
     }
 
-    // QQ 插件兜底：getAlbumInfo 的无签名端点也可能被风控返回空。宿主用签名
-    // AlbumSongList 接口按 albumMid 代取曲目，映射回插件歌曲结构，播放不受影响。
     if (isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
       const albumMidForHost = albumItem?.albumMID || albumItem?.albummid || albumItem?.albumMid;
       if (albumMidForHost) {
@@ -440,7 +396,6 @@ async function pluginGetAlbumSongsInner(
       }
     }
 
-    // 回退：getAlbumInfo 不可用或返回空，用专辑名搜索并按专辑名过滤
     if (page === 1 && typeof inst.instance.search === 'function') {
       const albumName = stripHtmlTags(albumItem?.title || albumItem?.name || albumItem?.album || '');
       if (albumName) {
@@ -485,23 +440,12 @@ export async function pluginGetAlbumSongs(
 
 // ==================== 音质 ====================
 
-/**
- * 获取插件声明的支持音质列表。
- *
- * 委托给 BakaPluginManager，Baka 插件使用 12 档新键值（如 '320k'、'flac'、'master'）。
- * 原版 MusicFree 插件无此字段，仅支持 standard/high/lossless 三档，
- * 返回对应的 3 档代表音质（128k / 320k / flac），由 qualityKeyToMfQuality 完成实际映射。
- *
- * 返回的键值已映射为本项目的 QualityKey（'96k' → 'mgg'）。
- */
 export async function pluginGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
   const inst = await ensurePluginInstance(source);
   if (await BakaPluginManager.isBakaPlugin(source)) {
     return BakaPluginManager.getSupportedQualities(source);
   }
 
-  // [MF 原生音质键适配] 新式 MF 插件（时迁酱等）在 supportedQualities 中
-  // 声明原生档位键（含 flac24bit/hires），直接作为 UI 展示与回退上界。
   const declared = inst?.instance.supportedQualities;
   if (Array.isArray(declared)) {
     const keys = declared
@@ -510,7 +454,5 @@ export async function pluginGetSupportedQualities(source: PluginSource): Promise
     if (keys.length > 0) return keys;
   }
 
-  // 原版 MusicFree 插件没有 Baka 的 12 档 supportedQualities，
-  // 只暴露 standard/high/lossless 三档，这里返回对应的代表音质用于 UI 与回退逻辑。
   return ['128k', '320k', 'flac'];
 }

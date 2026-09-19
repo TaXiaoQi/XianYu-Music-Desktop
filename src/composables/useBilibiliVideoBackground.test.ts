@@ -161,7 +161,6 @@ describe('Bilibili player-detail video background', () => {
     await vi.waitFor(() => expect(analyzeMvAudioSyncMock).toHaveBeenCalledTimes(1));
     expect(background.syncOffsetSec.value).toBe(0);
 
-    // 切换画质重新加载同曲视频：命中会话缓存，不再触发分析
     pluginGetVideoSourceMock.mockResolvedValue({ url: 'https://mv.example.com/1080p.mp4' });
     downloadVideoToCacheMock.mockResolvedValue('C:\\cache\\video-background\\xy_music_video_1080p.mp4');
     await expect(background.setQuality('1080P')).resolves.toBe(true);
@@ -318,7 +317,6 @@ describe('Bilibili player-detail video background', () => {
       undefined,
       20000,
     );
-    // 默认档 720P：无 720P 码流时取不超标的最高档（480P）
     expect(downloadVideoToCacheMock).toHaveBeenCalledWith(
       'http://fsmvpc.kugou.com/le-480p.mp4',
       expect.objectContaining({ Referer: 'https://www.kugou.com/' }),

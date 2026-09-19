@@ -16,7 +16,6 @@ const BACKGROUND_PRELOAD_CONCURRENCY = 1;
 const BACKGROUND_FULL_PRELOAD_CONCURRENCY = 1;
 const FAILURE_RETRY_MS = 10_000;
 
-// Small in-memory LRU for thumbnail URLs. The actual image files live on disk.
 const thumbnailCache = reactive(new Map<string, string>());
 const fullCoverCache = reactive(new Map<string, string>());
 const thumbnailPathCache = new Map<string, string>();
@@ -273,11 +272,6 @@ const trimTransientCoverState = () => {
 
 const handleVisibilityChange = () => {
   if (document.visibilityState === 'hidden') {
-    // 窗口最小化/隐藏时修剪封面缓存：
-    // - 缩略图保留 12 条（LRU，当前播放及最近浏览的歌曲），
-    //   恢复窗口后无需重新磁盘加载，避免闪烁
-    // - 全尺寸封面全部清空（单张体积大，按需重新加载即可）
-    // - 取消所有预加载队列，避免最小化期间无意义的磁盘 I/O
     trimTransientCoverState();
   }
 };
@@ -649,8 +643,6 @@ export function useCoverCache() {
       return cachedValue;
     }
 
-    // 在线歌曲的封面本身就是网络 URL，不能再经 convertFileSrc（那是给本地文件路径用的），
-    // 否则会被转成无效地址导致封面加载失败。
     const isNetworkUrl = /^https?:\/\//i.test(rawPath);
     const finalUrl = isNetworkUrl ? rawPath : convertFileSrc(rawPath);
     setCachedCover(path, 'thumbnail', finalUrl, rawPath);

@@ -113,7 +113,6 @@ const getCollectionCover = (entry: FavoriteCollectionEntry): string => {
       </ul>
     </Transition>
 
-    <!-- 收藏的歌单分组（若有已收藏的歌单/专辑时显示） -->
     <div v-if="favoriteCollections && favoriteCollections.length > 0" class="mt-5">
       <div class="px-4 pr-3 py-2 flex items-center justify-between group">
         <div class="flex items-center gap-1 cursor-pointer text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors" @click.stop="isFavOpen = !isFavOpen">

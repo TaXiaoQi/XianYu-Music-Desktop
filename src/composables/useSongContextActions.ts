@@ -6,11 +6,6 @@ import { checkDownloadExists, getDownloadRecord } from '../services/domain/downl
 import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../services/domain/pluginEngine';
 import { openOnlineDetail } from '../features/onlineDetail/store';
 
-/**
- * 判断是否为在线歌曲（覆盖 lx://、plugin://、remote:// 协议及 source_type 字段）。
- * 比 isDownloadableOnlineSong 更宽泛，用于右键菜单的在线/本地菜单切换。
- * remote:// (WebDAV) 歌曲虽不支持"下载至本地"，但仍属于在线歌曲，应使用在线菜单。
- */
 const isOnlineSong = (song: Song | null | undefined): boolean => {
   if (!song) return false;
   const path = song.path ?? '';
@@ -36,9 +31,7 @@ export function useSongContextActions({
   const contextMenuX = ref(0);
   const contextMenuY = ref(0);
   const contextMenuTargetSong = ref<Song | null>(null);
-  /** 已下载在线歌曲的本地文件路径（供右键菜单执行文件操作） */
   const contextMenuResolvedPath = ref<string | undefined>(undefined);
-  /** 在线歌曲未下载时使用在线搜索右键菜单 */
   const contextMenuIsOnlineSearch = ref(false);
   const showSongPhysicalDeleteConfirm = ref(false);
   const songToPhysicalDelete = ref<Song | null>(null);
@@ -50,16 +43,13 @@ export function useSongContextActions({
     contextMenuX.value = event.clientX;
     contextMenuY.value = event.clientY;
 
-    // 在线歌曲：已下载且文件存在 → 本地菜单（索引至本地文件），未下载 → 在线菜单
     if (isOnlineSong(song)) {
       const record = getDownloadRecord(song.path);
       if (record) {
-        // 有缓存记录，先按本地菜单显示，异步验证文件是否真实存在
         contextMenuResolvedPath.value = record.filePath;
         contextMenuIsOnlineSearch.value = false;
         showContextMenu.value = true;
 
-        // 文件已被删除（用户手动删除等）→ 切换为在线菜单
         void checkDownloadExists(song.path).then((validRecord) => {
           if (!validRecord && contextMenuTargetSong.value?.path === song.path) {
             contextMenuResolvedPath.value = undefined;
@@ -69,14 +59,12 @@ export function useSongContextActions({
         return;
       }
 
-      // 无缓存记录 → 直接在线菜单
       contextMenuResolvedPath.value = undefined;
       contextMenuIsOnlineSearch.value = true;
       showContextMenu.value = true;
       return;
     }
 
-    // 本地歌曲 → 本地菜单
     contextMenuResolvedPath.value = undefined;
     contextMenuIsOnlineSearch.value = false;
     showContextMenu.value = true;
@@ -100,7 +88,6 @@ export function useSongContextActions({
     songToPhysicalDelete.value = null;
   };
 
-  /** 在线歌曲"查看歌手"：解析插件源后搜索并跳转在线详情页 */
   const handleOnlineViewArtist = async (song: Song) => {
     const artistName = song.effective_artist_names?.[0] || song.artist_names?.[0] || song.artist || '';
     if (!artistName || artistName === '未知歌手') {
@@ -108,7 +95,6 @@ export function useSongContextActions({
       return;
     }
 
-    // plugin:// 歌曲：从 rawData.pluginId 解析插件源
     const pluginId = song.rawData?.pluginId;
     if (!pluginId) {
       showToast('当前音源暂不支持查看歌手', 'info');
@@ -144,7 +130,6 @@ export function useSongContextActions({
     }
   };
 
-  /** 在线歌曲"查看专辑"：解析插件源后搜索并跳转在线详情页 */
   const handleOnlineViewAlbum = async (song: Song) => {
     const albumName = song.album || '';
     if (!albumName || albumName === '未知专辑') {

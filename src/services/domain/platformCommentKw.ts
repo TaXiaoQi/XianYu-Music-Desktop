@@ -1,4 +1,3 @@
-/** 酷我平台评论（ncomment.kuwo.cn，无需签名）。 */
 import { httpJson, PAGE_SIZE } from './platformCommentShared';
 import type { PlatformComment, PlatformCommentResult } from './platformCommentShared';
 

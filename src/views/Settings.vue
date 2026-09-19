@@ -3,11 +3,6 @@ import { computed, defineAsyncComponent, h, onBeforeUnmount, onErrorCaptured, on
 import { Search, X } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
 
-// 懒加载设置子组件：用户通常只访问 1-2 个设置页，按需加载可显著减少首屏 JS 体积和解析时间。
-// 注意：defineAsyncComponent 自带 loading 失败无重试的问题（开发时 Vite HMR 使模块失效最常见），
-// 失败后右侧会永久空白且再点同一项不会重试，故此处统一包一层自动重试；
-// 并在挂载后利用空闲时间后台预热全部分片，预热完成后切换 tab 全部为已解析组件，
-// 消除「未加载完成的异步组件 + out-in 过渡」竞态导致的切换空白。
 const settingsLoaders = {
   about: () => import("../components/settings/SettingsAbout.vue").then(m => m.default),
   account: () => import("../components/settings/SettingsAccount.vue").then(m => m.default),
@@ -25,7 +20,6 @@ const settingsLoaders = {
   feedback: () => import("../components/settings/SettingsFeedback.vue").then(m => m.default),
 };
 
-/** 异步设置分片加载期间的同步骨架占位（必须是同步对象，避免加载占位自身进入异步循环） */
 const SettingsPageLoading = {
   name: 'SettingsPageLoading',
   render: () =>
@@ -38,7 +32,6 @@ const SettingsPageLoading = {
 
 const lazySettings = (loader: () => Promise<Component>) => defineAsyncComponent({
   loader,
-  // 加载占位：异步分片解析完成前立即显示轻量骨架，避免 out-in 过渡期间内容区空白。
   loadingComponent: SettingsPageLoading,
   delay: 0,
   onError: (_error, retry, fail, attempts) => {
@@ -93,11 +86,10 @@ const initialTab = (() => {
 
 const activeTab = ref<SettingsViewTabId>(initialTab);
 
-/** 局部错误边界：某个设置分片渲染/挂载抛错时在此隔离展示，避免内容区整体空白并传染到其它 tab。 */
 const tabRenderError = ref<Error | null>(null);
 onErrorCaptured((error) => {
   tabRenderError.value = error instanceof Error ? error : new Error(String(error));
-  return false; // 阻断向上冒泡，防止 main.ts 的 errorHandler 把单页错误升级成全局致命错误页
+  return false;
 });
 const mainRef = ref<HTMLElement | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
@@ -166,10 +158,6 @@ const resetSidebarWidth = () => {
   } catch {}
 };
 
-// 支持外部通过 ?tab=xxx 跳转到指定标签。
-// pushedTab 记录「已知的最新目标」，用于过滤自身 replace 的回声：
-// 快速连续切换时，上一条在途的 router.replace 迟迟确认，其 query 变化若直接写回
-// activeTab 会把 tab 弹回旧值（表现为点击后有概率不加载详情页）。
 let pushedTab: SettingsViewTabId = initialTab;
 watch(() => route.query.tab, (q) => {
   const next = (q as string | undefined) ?? '';
@@ -179,9 +167,7 @@ watch(() => route.query.tab, (q) => {
   }
 });
 
-// 切换 tab 时同步 URL query，便于分享/刷新保持
 watch(activeTab, (t) => {
-  // 切换目标后清空上个页面可能残留的渲染错误，让新页面能正常渲染
   tabRenderError.value = null;
   if (pushedTab !== t) {
     pushedTab = t;
@@ -195,7 +181,6 @@ watch(isDeveloperMode, (enabled) => {
   }
 });
 
-// <transition mode="out-in"> 完成新内容淡入后的回调：重置滚动 + 通知搜索跳转等待
 let resolveTabEnter: (() => void) | null = null;
 
 const onSettingsAfterEnter = () => {
@@ -261,7 +246,6 @@ const getHighlightContainer = (target: HTMLElement): HTMLElement => {
 const revealSearchResult = async (item: SettingsSearchItem) => {
   const needSwitch = activeTab.value !== item.tab;
   if (needSwitch) {
-    // 先创建 promise，再切换 tab，等 transition 淡出+淡入完成后继续
     const enterPromise = waitForTabEnter();
     activeTab.value = item.tab;
     await enterPromise;
@@ -314,9 +298,6 @@ const handleSearchKeydown = (event: KeyboardEvent) => {
   }
 };
 
-// 挂载后利用空闲时间后台预热全部设置分片（不影响应用首屏，分片仍按需拆分）：
-// 预热完成后切换 tab 全部命中已加载模块，异步组件即时解析，
-// 彻底避开「未加载完成的异步组件 + out-in 过渡」竞态导致的空白。
 let cancelWarmup: (() => void) | null = null;
 
 onMounted(() => {
@@ -444,7 +425,6 @@ const tabs = computed(() => {
         </button>
       </nav>
 
-      <!-- 侧边栏宽度可拖拽手柄 -->
       <div
         class="group absolute -right-1 top-0 bottom-0 z-20 w-2 cursor-col-resize touch-none flex items-center justify-center"
         :title="t('settings.resizeHint')"
@@ -460,7 +440,6 @@ const tabs = computed(() => {
 
     <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto py-6">
       <div ref="contentRef" class="w-full px-4 pb-16 sm:px-6 md:px-8 xl:px-12">
-        <!-- 局部错误兜底：单个设置分片出错时展示可读错误并允许重试，而非整区空白 -->
         <div
           v-if="tabRenderError"
           class="flex min-h-[40vh] flex-col items-center justify-center gap-3 px-6 text-center"
@@ -516,7 +495,6 @@ const tabs = computed(() => {
   height: 0;
 }
 
-/* 设置页切换动画：与主页 page-fade 一致，out-in 模式（先淡出旧内容，再淡入新内容） */
 .settings-fade-enter-active,
 .settings-fade-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;

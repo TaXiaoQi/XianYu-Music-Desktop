@@ -209,7 +209,6 @@ export function useHomeFolderManagement({
 
     try {
       const summary = await refreshFolder(currentFolderFilter.value);
-      // refreshFolder (libraryCoreActions) already calls fetchFolderTree when changes are detected
       if (summary && typeof summary === 'object' && 'removedCount' in summary) {
         const removedCount = Number(summary.removedCount) || 0;
         showToast(

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { Eye, EyeOff } from 'lucide-vue-next';
 
 import { useAuthStore } from '../features/auth/store';
@@ -50,10 +49,8 @@ const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: 
 const fieldErrors = ref<Record<string, string>>({});
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** 各密码输入框的明文可见状态（自定义"查看密码"按钮，替代不可靠的浏览器原生眼睛图标） */
 const pwdVisible = reactive<Record<string, boolean>>({});
 
-/** 各密码输入框的聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现） */
 const pwdFocused = reactive<Record<string, boolean>>({});
 
 function validateField(field: string): boolean {
@@ -152,10 +149,8 @@ const stats = ref<ProfileStats | null>(null);
 const nicknameDraft = ref('');
 const avatarDraft = ref('');
 const avatarUploading = ref(false);
-// 头像审核状态：none 无待处理 / pending 审核中 / rejected 审核未通过
 const avatarStatus = ref<'none' | 'pending' | 'rejected'>('none');
 const nicknameStatus = ref<'none' | 'pending' | 'rejected'>('none');
-// 头像弹窗定位
 const avatarMenuPos = ref<{ top: number; left: number } | null>(null);
 const avatarBtnRef = ref<HTMLElement | null>(null);
 
@@ -192,30 +187,24 @@ function openAvatarMenu() {
   const rect = el.getBoundingClientRect();
   const cardWidth = Math.min(window.innerWidth * 0.86, 320);
   const gap = 12;
-  // 默认放在头像右下方
   let left = rect.right + gap;
   let top = rect.top;
-  // 右侧放不下则放左侧
   if (left + cardWidth > window.innerWidth - 8) {
     left = rect.left - cardWidth - gap;
   }
-  // 左侧也放不下则贴左边
   if (left < 8) {
     left = 8;
   }
-  // 下方溢出则向上对齐底部
   if (top + 200 > window.innerHeight - 8) {
     top = Math.max(8, window.innerHeight - 220);
   }
   avatarMenuPos.value = { top, left };
   avatarMenuOpen.value = true;
 }
-// 昵称弹窗修改
 const showNicknameModal = ref(false);
 const nicknameInputRef = ref<HTMLInputElement | null>(null);
 
 async function openNicknameEditModal() {
-  // 改名审核中时禁止再次编辑
   if (nicknameStatus.value === 'pending') {
     await showProfileLimitDialog('nickname', {
       blocked: true,
@@ -257,7 +246,6 @@ function cancelNicknameEdit() {
 }
 
 function onNicknameBlur() {
-  // 弹窗内输入框失焦：未修改内容则关闭弹窗
   if (!showNicknameModal.value) return;
   const next = nicknameDraft.value.trim();
   const current = authStore.user?.nickname || authStore.user?.username || '';
@@ -267,7 +255,6 @@ function onNicknameBlur() {
 }
 const profileSaving = ref(false);
 
-// 头像弹窗
 const avatarMenuOpen = ref(false);
 const avatarPreviewOpen = ref(false);
 const avatarInputRef = ref<HTMLInputElement | null>(null);
@@ -293,7 +280,6 @@ const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [
 ];
 
 const displayStats = computed((): ProfileStats => ({
-  // 收藏、歌单、播放历史均为本地管理的数据，直接使用本地统计
   favorite_count: collectionsStore.favoritePaths.length,
   playlist_count: collectionsStore.playlists.length,
   starred_count: stats.value?.starred_count ?? 0,
@@ -570,7 +556,6 @@ async function handleSendCode() {
     showMessage('邮箱格式不正确');
     return;
   }
-  // 邮箱验证码登录走 type='login'（服务端会校验该邮箱已注册）；忘记密码走 reset_password；注册走 register
   const type: VerifyCodeType = isForgot ? 'reset_password' : (isEmailLogin ? 'login' : 'register');
   const captchaPayload = await requestHumanCaptcha(
     '发送验证码前验证',
@@ -580,8 +565,6 @@ async function handleSendCode() {
   codeLoading.value = true;
   message.value = '';
   try {
-    // 注册模式传入弦予号，服务端在发码前预检查邮箱和弦予号唯一性；
-    // 邮箱验证码登录 / 忘记密码传要发送验证码的邮箱即可。
     const ciyuanxiId = isForgot || isEmailLogin ? undefined : form.value.account.trim() || undefined;
     const result = await sendEmailCode(email, type, captchaPayload, ciyuanxiId);
     showMessage(result.message || '验证码已发送到邮箱', 'success');
@@ -608,12 +591,10 @@ async function handleSaveProfile() {
     const result = await updateProfile(nickname);
     if (result?.user) {
       authStore.setUser(result.user);
-      // 改名走审核：不更新 nicknameDraft（保持旧名字直到审核通过）
       avatarDraft.value = result.user.avatar || '';
     }
     if (result?.nicknamePending) {
       nicknameStatus.value = 'pending';
-      // 恢复显示旧名字（审核通过后才会真正更新）
       nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
       showToast('改名申请已提交，等待管理员审核', 'success');
     } else {
@@ -647,7 +628,6 @@ async function handleAvatarFileChange(event: Event) {
   avatarUploading.value = true;
   try {
     await uploadAvatar(file);
-    // 头像已上传但需审核，不更新本地头像（保持旧头像）
     avatarStatus.value = 'pending';
     showToast('头像已上传，等待管理员审核', 'success');
   } catch (error) {
@@ -658,18 +638,15 @@ async function handleAvatarFileChange(event: Event) {
   }
 }
 
-// 刷新头像审核状态：若审核已通过则重新拉取用户信息更新头像
 const refreshingAvatarStatus = ref(false);
 async function refreshAvatarStatus() {
   if (refreshingAvatarStatus.value) return;
   refreshingAvatarStatus.value = true;
   try {
-    // 同时查询头像和改名审核状态
     const [avatarSt, nicknameSt] = await Promise.all([getAvatarStatus(), getNicknameStatus().catch(() => 'none' as const)]);
     avatarStatus.value = avatarSt;
     nicknameStatus.value = nicknameSt;
 
-    // 如果任一审核已通过（status=none），重新拉取用户信息以获取最新数据
     if (avatarSt === 'none' || nicknameSt === 'none') {
       const profile = await getProfile();
       if (profile) {
@@ -702,7 +679,6 @@ async function openAvatarPicker() {
   if (!await confirmProfileLimit('avatar')) {
     return;
   }
-  // 下一帧触发点击，避免弹窗关闭动画与文件对话框冲突
   requestAnimationFrame(() => {
     avatarInputRef.value?.click();
   });
@@ -717,22 +693,19 @@ async function saveAvatarToLocal() {
   avatarMenuOpen.value = false;
   avatarUploading.value = true;
   try {
-    // 通过 Rust 后端拉取头像二进制，避免为渲染进程放开任意 connect-src。
     const image = await downloadApi.fetchImageBytes(url);
-    // 从 MIME 推断扩展名
     const ext = image.mime.includes('png') ? 'png'
       : image.mime.includes('webp') ? 'webp'
       : image.mime.includes('gif') ? 'gif'
       : image.mime.includes('jpeg') || image.mime.includes('jpg') ? 'jpg'
       : 'png';
     const defaultName = `avatar_${authStore.user?.username || 'user'}.${ext}`;
-    // 让用户选择保存位置
-    const destPath = await saveDialog({
-      defaultPath: defaultName,
-      filters: [{ name: '图片', extensions: [ext] }],
-    });
-    if (!destPath) return; // 用户取消
-    await downloadApi.saveDownloadBytes(image.data, destPath);
+    const savedPath = await downloadApi.saveBytesViaDialog(
+      defaultName,
+      { name: '图片', extensions: [ext] },
+      image.data,
+    );
+    if (savedPath === null) return;
     showToast('头像已保存到本地', 'success');
   } catch (error) {
     const tip = error instanceof Error ? error.message : '保存失败';
@@ -742,7 +715,6 @@ async function saveAvatarToLocal() {
   }
 }
 
-// 退出登录二次确认
 const showLogoutConfirm = ref(false);
 
 function handleLogout() {
@@ -765,7 +737,6 @@ async function confirmLogout() {
   }
 }
 
-// 修改弦予号（参考微信号设计：登录唯一标识，每月可修改一次）
 const showCiyuanxiModal = ref(false);
 const ciyuanxiForm = ref({ oldId: '', newId: '', password: '' });
 const ciyuanxiLoading = ref(false);
@@ -815,7 +786,6 @@ async function submitCiyuanxi() {
   }
 }
 
-// 绑定邮箱（仅无邮箱账号显示入口）
 const showBindEmailModal = ref(false);
 const bindEmailForm = ref({ email: '', code: '' });
 const bindEmailLoading = ref(false);
@@ -912,7 +882,6 @@ function navigateShortcut(to: string) {
 function switchMode(next: AuthMode) {
   mode.value = next;
   message.value = '';
-  // 切换模式时清空密码相关字段，防止登录与注册页之间密码同步
   form.value.password = '';
   form.value.confirmPassword = '';
   if (next === 'forgot') {
@@ -929,7 +898,6 @@ function enterForgot() {
 
 // ------- 扫码登录（桌面端二维码 / 手机 App 扫码确认） -------
 const loginMethod = ref<'password' | 'email' | 'qr'>('password');
-// 二维码状态：loading 生成中 / pending 待扫码 / scanned 已扫码待确认 / expired 已过期 / error 生成失败
 const qrStatus = ref<'loading' | 'pending' | 'scanned' | 'expired' | 'error' | 'logged'>('loading');
 const qrCode = ref('');
 const qrImage = ref('');
@@ -944,7 +912,6 @@ function stopQrPolling() {
   }
 }
 
-/** 生成二维码并启动轮询。入参 ignoreAgree=true 时在协议弹窗确认后回调继续。 */
 async function startQrLogin() {
   stopQrPolling();
   qrStatus.value = 'loading';
@@ -956,7 +923,6 @@ async function startQrLogin() {
     if (!code) throw new Error('二维码内容为空');
     qrCode.value = code;
     qrExpireAt.value = Date.now() + expireSeconds * 1000;
-    // 二维码内容：识别用 scheme + code，手机 App 据此解析并确认
     qrImage.value = await QRCode.toDataURL(`xianyumusic://tvlogin/${code}`, {
       width: 320,
       margin: 2,
@@ -974,7 +940,6 @@ function startQrPolling() {
   stopQrPolling();
   qrPollTimer = setInterval(async () => {
     if (qrStatus.value === 'logged') return;
-    // 过期则停止轮询并展示刷新
     if (Date.now() > qrExpireAt.value) {
       qrStatus.value = 'expired';
       stopQrPolling();
@@ -998,7 +963,6 @@ function startQrPolling() {
   }, 2000);
 }
 
-/** 扫码登录轮询到 logged_in：与账号密码登录成功走同一套收尾逻辑。 */
 async function handleQrLoggedIn(result: QrPollResult) {
   stopQrPolling();
   qrStatus.value = 'logged';
@@ -1029,7 +993,6 @@ async function handleQrLoggedIn(result: QrPollResult) {
   }
 }
 
-// 切到「扫码登录」时生成二维码，离开时停止轮询
 watch(loginMethod, (m) => {
   if (m === 'qr' && mode.value === 'login') {
     void startQrLogin();
@@ -1047,8 +1010,6 @@ watch(mode, () => {
 });
 
 onMounted(async () => {
-  // 进入账号页面时强制关闭播放器详情页：PlayerDetail 是 fixed + h-[100vh] 全屏覆盖层，
-  // 当 showPlayerDetail=true 时会拦截整个视口的鼠标事件（包括滚轮），导致页面无法滚动
   uiStore.showPlayerDetail = false;
   void loadUserAgreement();
   if (!authStore.initialized) {
@@ -1070,14 +1031,12 @@ onMounted(async () => {
   } catch {
     stats.value = null;
   }
-  // 查询头像和改名审核状态
   avatarStatus.value = await getAvatarStatus();
   try {
     nicknameStatus.value = await getNicknameStatus();
   } catch {
     nicknameStatus.value = 'none';
   }
-  // 启动定时轮询审核状态
   startPolling();
 });
 
@@ -1090,17 +1049,14 @@ onUnmounted(() => {
   }
 });
 
-// 定时轮询审核状态：当头像/昵称审核通过后自动更新
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-const POLL_INTERVAL = 30000; // 30秒
+const POLL_INTERVAL = 30000;
 
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(async () => {
-    // 用户未登录或不在审核中则跳过
     if (!authStore.isLoggedIn) return;
     if (avatarStatus.value !== 'pending' && nicknameStatus.value !== 'pending') {
-      // 没有待审核项，降低轮询频率（每120秒一次）
       if (pollTimer) {
         clearInterval(pollTimer);
         pollTimer = setInterval(silentPoll, 120000);
@@ -1129,7 +1085,6 @@ async function silentPoll() {
     avatarStatus.value = avatarSt;
     nicknameStatus.value = nicknameSt;
 
-    // 检测状态变化：从 pending 变为 approved
     if (prevAvatar === 'pending' && avatarSt === 'none') {
       const profile = await getProfile();
       if (profile) {
@@ -1146,7 +1101,6 @@ async function silentPoll() {
       }
       showToast('用户名已更新', 'success');
     }
-    // 如果两边都变为 none，只拉一次 profile
     if (prevAvatar === 'pending' && prevNickname === 'pending' && avatarSt === 'none' && nicknameSt === 'none') {
       const profile = await getProfile();
       if (profile) {
@@ -1166,16 +1120,13 @@ async function silentPoll() {
   <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200">
     <div class="px-[clamp(1rem,1.5vw,1.75rem)] pt-[clamp(1rem,1.5vw,1.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
 
-      <!-- 未登录：登录/注册 -->
       <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up">
-        <!-- 顶部标题区 -->
         <header class="pb-[clamp(0.25rem,0.5vw,0.5rem)]">
           <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ headerLabel }}</p>
           <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">{{ title }}</h2>
           <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-2 max-w-xl">{{ subtitle }}</p>
         </header>
 
-        <!-- 模式切换 -->
         <nav class="mt-[clamp(1rem,1.5vw,1.75rem)]">
           <div
             v-if="mode !== 'forgot'"
@@ -1222,9 +1173,7 @@ async function silentPoll() {
           </div>
         </nav>
 
-        <!-- 表单区（带切换动画） -->
         <Transition name="auth-mode" mode="out-in">
-          <!-- 找回密码表单 -->
           <form
             v-if="mode === 'forgot'"
             key="forgot"
@@ -1333,14 +1282,12 @@ async function silentPoll() {
             </div>
           </form>
 
-          <!-- 登录 / 注册表单 -->
           <form
             v-else
             :key="mode"
             class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
             @submit.prevent="onSubmit"
           >
-            <!-- 登录方式切换：账号密码 / 扫码登录（仅登录模式） -->
             <div v-if="mode === 'login'" class="flex w-fit gap-1 p-1 rounded-full bg-black/5 dark:bg-white/10">
               <button
                 type="button"
@@ -1374,7 +1321,6 @@ async function silentPoll() {
               </button>
             </div>
 
-            <!-- 扫码登录面板（登录模式 + 扫码） -->
             <div
               v-if="mode === 'login' && loginMethod === 'qr'"
               key="qr"
@@ -1392,7 +1338,6 @@ async function silentPoll() {
                 <div v-else class="text-black/40 dark:text-white/40 text-sm px-6 text-center">
                   {{ qrStatus === 'loading' ? '二维码加载中…' : '二维码加载失败' }}
                 </div>
-                <!-- 已扫码覆盖态 -->
                 <div
                   v-if="qrStatus === 'scanned'"
                   class="absolute inset-0 bg-white/85 backdrop-blur flex flex-col items-center justify-center gap-2 text-center"
@@ -1400,7 +1345,6 @@ async function silentPoll() {
                   <span class="text-black text-lg font-semibold">已扫描</span>
                   <span class="text-black/50 text-sm">等待移动端确认登录</span>
                 </div>
-                <!-- 已过期覆盖态 -->
                 <div
                   v-if="qrStatus === 'expired'"
                   class="absolute inset-0 bg-white/85 backdrop-blur flex flex-col items-center justify-center gap-3 text-center"
@@ -1445,9 +1389,7 @@ async function silentPoll() {
               </div>
             </div>
 
-            <!-- 账号密码登录 / 注册表单 -->
             <template v-else>
-            <!-- 邮箱验证码登录（登录模式 + 邮箱验证码） -->
             <template v-if="mode === 'login' && loginMethod === 'email'">
               <label class="grid gap-3">
                 <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span>
@@ -1671,7 +1613,6 @@ async function silentPoll() {
           </form>
         </Transition>
 
-        <!-- 消息条 -->
         <div
           v-if="message"
           class="mt-4"
@@ -1687,14 +1628,10 @@ async function silentPoll() {
         </div>
       </div>
 
-      <!-- 已登录：个人中心 -->
       <div v-else class="space-y-[clamp(1rem,1.8vw,1.5rem)]">
-        <!-- 顶部标题区（含头像） -->
         <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(1.25rem,1.8vw,2rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
           <div class="flex items-center gap-[clamp(0.75rem,1.2vw,1.25rem)] min-w-0">
-            <!-- 头像 + 审核状态（垂直排列） -->
             <div class="flex flex-col items-center gap-1 shrink-0">
-              <!-- 头像（可点击） -->
               <div class="relative shrink-0">
                 <button
                   ref="avatarBtnRef"
@@ -1707,7 +1644,6 @@ async function silentPoll() {
                   <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
                   <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
                 </button>
-                <!-- 隐藏的文件输入 -->
                 <input
                   ref="avatarInputRef"
                   type="file"
@@ -1717,7 +1653,6 @@ async function silentPoll() {
                   @change="handleAvatarFileChange"
                 />
               </div>
-              <!-- 头像审核状态提示（头像下方） -->
               <div
                 v-if="avatarStatus === 'pending'"
                 class="flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300 w-fit"
@@ -1742,9 +1677,7 @@ async function silentPoll() {
                 未通过
               </div>
             </div>
-            <!-- 昵称 + 副信息 -->
             <div class="min-w-0">
-              <!-- 昵称：点击弹窗修改 -->
               <div class="flex items-center gap-2 min-w-0">
                 <h2
                   class="text-black dark:text-white text-[clamp(1.1rem,2.2vw,1.7rem)] font-black tracking-tight leading-none truncate cursor-pointer hover:text-[#EC4141] transition"
@@ -1754,7 +1687,6 @@ async function silentPoll() {
                   {{ authStore.user?.nickname || authStore.user?.username }}
                 </h2>
               </div>
-              <!-- 改名审核状态提示 -->
               <div
                 v-if="nicknameStatus === 'pending'"
                 class="mt-1.5 flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300 w-fit"
@@ -1779,7 +1711,6 @@ async function silentPoll() {
                 改名审核未通过
               </div>
               <div class="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
-                <!-- 弦予号：点击本体修改 -->
                 <p
                   v-if="authStore.user?.ciyuanxi_id"
                   class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate cursor-pointer hover:text-[#EC4141] transition"
@@ -1800,7 +1731,6 @@ async function silentPoll() {
                 >
                   未设置
                 </p>
-                <!-- 无邮箱时显示绑定邮箱入口 -->
                 <button
                   v-if="!authStore.user?.email"
                   type="button"
@@ -1811,7 +1741,6 @@ async function silentPoll() {
                   绑定邮箱
                 </button>
               </div>
-              <!-- 数据统计 -->
               <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap mt-3">
                 <div v-for="item in meterItems" :key="item.key" class="flex items-baseline gap-1.5">
                   <span class="text-black dark:text-white text-[clamp(1rem,1.4vw,1.2rem)] font-bold tracking-tight leading-none">{{ displayStats[item.key] }}</span>
@@ -1832,7 +1761,6 @@ async function silentPoll() {
           </div>
         </header>
 
-        <!-- 头像操作弹窗（定位在头像附近） -->
         <Teleport to="body">
           <Transition name="avatar-modal">
             <div
@@ -1885,7 +1813,6 @@ async function silentPoll() {
             </div>
           </Transition>
 
-          <!-- 头像放大查看 -->
           <Transition name="avatar-preview">
             <div
               v-if="avatarPreviewOpen"
@@ -1922,7 +1849,6 @@ async function silentPoll() {
           </Transition>
         </Teleport>
 
-        <!-- 快捷入口 -->
         <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 340ms;">
           <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p>
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1951,7 +1877,6 @@ async function silentPoll() {
 
     </div>
 
-    <!-- 退出登录确认弹窗 -->
     <Teleport to="body">
       <Transition name="avatar-modal">
         <div
@@ -1988,7 +1913,6 @@ async function silentPoll() {
       </Transition>
     </Teleport>
 
-    <!-- 修改弦予号弹窗 -->
     <Teleport to="body">
       <Transition name="avatar-modal">
         <div
@@ -2057,7 +1981,6 @@ async function silentPoll() {
       </Transition>
     </Teleport>
 
-    <!-- 绑定邮箱弹窗 -->
     <Teleport to="body">
       <Transition name="avatar-modal">
         <div
@@ -2123,7 +2046,6 @@ async function silentPoll() {
       </Transition>
     </Teleport>
 
-    <!-- 修改昵称弹窗 -->
     <Teleport to="body">
       <Transition name="avatar-modal">
         <div
@@ -2174,7 +2096,6 @@ async function silentPoll() {
       </Transition>
     </Teleport>
 
-    <!-- 用户协议弹窗 -->
     <Teleport to="body">
       <Transition name="avatar-modal">
         <div
@@ -2225,7 +2146,6 @@ async function silentPoll() {
 </template>
 
 <style scoped>
-/* 退出登录确认弹窗 */
 .logout-confirm-card {
   width: min(86vw, 360px);
   background: #ffffff;
@@ -2411,7 +2331,6 @@ async function silentPoll() {
   text-align: right;
 }
 
-/* 弹窗过渡动画（复用 avatar-modal） */
 .avatar-modal-enter-active .logout-confirm-card,
 .avatar-modal-leave-active .logout-confirm-card {
   transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -2423,7 +2342,6 @@ async function silentPoll() {
   transform: scale(0.92) translateY(8px);
 }
 
-/* 深色模式 */
 :global(.dark) .logout-confirm-card {
   background: #262626;
   color: rgba(255, 255, 255, 0.92);
@@ -2495,7 +2413,6 @@ async function silentPoll() {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 登录/注册模式切换动画 */
 .auth-mode-enter-active,
 .auth-mode-leave-active {
   transition: opacity 0.25s ease, transform 0.25s ease, filter 0.25s ease;
@@ -2526,7 +2443,6 @@ async function silentPoll() {
   }
 }
 
-/* 头像管理弹窗 */
 .avatar-menu-card {
   width: min(86vw, 320px);
   background: #ffffff;
@@ -2639,7 +2555,6 @@ async function silentPoll() {
   line-height: 1.3;
 }
 
-/* 弹窗过渡动画 */
 .avatar-modal-enter-active,
 .avatar-modal-leave-active {
   transition: opacity 0.2s ease;
@@ -2665,7 +2580,6 @@ async function silentPoll() {
   transform: scale(0.92) translateY(8px);
 }
 
-/* 放大查看过渡 */
 .avatar-preview-enter-active,
 .avatar-preview-leave-active {
   transition: opacity 0.25s ease;

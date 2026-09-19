@@ -193,7 +193,6 @@ describe('BakaPluginManager.getMediaSource 网易云官方外链预检', () => {
     const result = await BakaPluginManager.getMediaSource(plugin({ name: '网易云音乐' }), makeWyItem(), '320k', 'lower');
 
     expect(result).toBeNull();
-    // 同一 outer/url 只探测一次（各档位结果记忆）
     expect(pluginHttpRequestMock).toHaveBeenCalledTimes(1);
   });
 

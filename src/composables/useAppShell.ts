@@ -48,7 +48,6 @@ export function useAppShell() {
     whenInitialThemeSynced,
     rebuildStartupMaterialBeforeShow,
   } = useAppThemeSync();
-  // 桌面端性能降级状态：硬件低性能 或 主窗口低功耗（不可见/最小化/迷你模式）。
   const { isLowPerformance } = usePerformanceMode();
   const { isMainWindowLowPower } = useMainWindowRenderingPower();
   const lowPerformance = computed(

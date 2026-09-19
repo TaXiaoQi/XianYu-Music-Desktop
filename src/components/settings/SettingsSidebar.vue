@@ -16,7 +16,6 @@ import SettingHint from './SettingHint.vue';
 const { settings } = useSettings();
 const { showToast } = useToast();
 
-/** 按当前顺序排列的可配置项（含元数据） */
 const orderedItems = computed(() => {
   const order = normalizeSidebarOrder(settings.value.sidebar?.order);
   return order
@@ -37,7 +36,6 @@ const toggleVisible = (key: SidebarItemKey) => {
   settings.value.sidebar[visibilityKey] = !settings.value.sidebar[visibilityKey];
 };
 
-/** 写回新顺序 */
 const applyOrder = (nextOrder: SidebarItemKey[]) => {
   settings.value.sidebar.order = normalizeSidebarOrder(nextOrder);
 };
@@ -59,8 +57,6 @@ const restoreDefaultOrder = () => {
 };
 
 // --- 拖拽排序（基于 pointer 事件）---
-// 不用 HTML5 drag & drop：Tauri 的 WebView2 默认接管拖放（dragDropEnabled），
-// 会导致页面内原生 DnD 失效，因此这里用 pointer 事件自行实现。
 const draggingIndex = ref<number | null>(null);
 const listRef = ref<HTMLElement | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -79,11 +75,9 @@ const updateDraggedItemPosition = (clientY: number) => {
   if (target === null || target === currentIndex) return;
 
   moveItem(currentIndex, target);
-  // 实时重排后，被拖拽项已移动到新位置
   draggingIndex.value = target;
 };
 
-/** 指针靠近滚动区域边缘时，持续滚动并同步更新拖拽位置 */
 const runAutoScroll = () => {
   autoScrollFrame = null;
   if (draggingIndex.value === null) return;
@@ -131,7 +125,6 @@ const stopDragging = () => {
 };
 
 const startDragging = (index: number, event: PointerEvent) => {
-  // 只响应主键/触摸
   if (event.button !== 0) return;
   event.preventDefault();
 
@@ -158,7 +151,6 @@ onUnmounted(stopDragging);
       </h2>
 
       <div ref="listRef" class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <!-- 首页：固定置顶，不可隐藏、不可排序 -->
         <div class="p-4 flex items-center justify-between opacity-70 cursor-not-allowed">
           <div class="flex min-w-0 items-center gap-3">
             <span class="w-4 shrink-0"></span>
@@ -175,7 +167,6 @@ onUnmounted(stopDragging);
           </div>
         </div>
 
-        <!-- 可排序项：TransitionGroup 使用 FLIP 动画平滑移动重排项 -->
         <TransitionGroup name="sidebar-sort" tag="div" class="flex flex-col">
           <div
             v-for="(item, index) in orderedItems"

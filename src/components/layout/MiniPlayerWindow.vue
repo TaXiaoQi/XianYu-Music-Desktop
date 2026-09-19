@@ -73,7 +73,6 @@ const progressPercent = computed(() => {
   return clamp((currentTime.value / duration.value) * 100, 0, 100);
 });
 
-// 0=顺序播放, 1=单曲循环, 2=随机
 const playModeIcon = computed(() => {
   if (playMode.value === 1) return 'repeat-one';
   if (playMode.value === 2) return 'shuffle';
@@ -182,7 +181,6 @@ const showVolumePopover = async () => {
   const target = await ensureVolumePopoverWindow();
   if (!target) return;
 
-  // 计算位置：在音量按钮上方居中
   const buttonRect = volumeButtonRef.value?.getBoundingClientRect();
   const scaleFactor = await appWindow.scaleFactor();
   const winPos = await appWindow.outerPosition();
@@ -230,7 +228,6 @@ const toggleMiniPlaylist = () => {
   }
 };
 
-// 进度条拖拽
 const updateProgress = (clientX: number) => {
   if (!progressBarRef.value || !duration.value) return;
   const rect = progressBarRef.value.getBoundingClientRect();
@@ -381,8 +378,6 @@ onMounted(async () => {
     sendAction({ type: 'close' });
   });
 
-  // 从 Rust 会话获取初始核心播放状态（主窗口 emitTo 到达前的即时数据）
-  // 解决副窗口启动时主窗口未及时推送状态的空白期
   try {
     const session = await sessionApi.getPlaybackSession();
     if (session && session.currentSongPath) {
@@ -392,18 +387,15 @@ onMounted(async () => {
       if (!isDraggingProgress.value) {
         currentTime.value = session.currentPositionSecs;
       }
-      // 尝试从 queueSongMeta 恢复歌曲对象
       const songMeta = session.queueSongMeta?.[session.currentSongPath];
       if (songMeta) {
         currentSong.value = songMeta;
         duration.value = songMeta.duration ?? 0;
       }
-      // 缓存 queueSongMeta 供后续 session-changed 事件使用（事件载荷不含此字段）
       cachedQueueMeta = session.queueSongMeta ?? {};
     }
   } catch { /* ignore - emitTo will provide full state */ }
 
-  // 监听 Rust 会话变更（主窗口隐藏/休眠时的后备同步路径）
   unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
     'playback:session-changed',
     (event) => {
@@ -414,7 +406,6 @@ onMounted(async () => {
       if (!isDraggingProgress.value) {
         currentTime.value = data.currentPositionSecs;
       }
-      // 若 emitTo 尚未提供歌曲对象，尝试从缓存的元数据恢复
       if (!currentSong.value && data.currentSongPath) {
         const songMeta = cachedQueueMeta[data.currentSongPath];
         if (songMeta) {
@@ -425,7 +416,6 @@ onMounted(async () => {
     },
   );
 
-  // 监听 queueSongMeta 变更（仅在元数据变化时发射）
   unlistenQueueMetaChanged = await listen<PlaybackQueueMetaChangedPayload>(
     'playback:queue-meta-changed',
     (event) => {
@@ -461,7 +451,6 @@ onUnmounted(() => {
     @mouseenter="onMouseEnter"
     @mouseleave="onMouseLeave"
   >
-    <!-- 全局背景：暗色遮罩 + 模糊封面 -->
     <div class="absolute inset-0 -z-10" style="background-color: #262626;"></div>
     <div
       v-if="localCoverUrl"
@@ -469,9 +458,7 @@ onUnmounted(() => {
       :style="{ backgroundImage: `url(${localCoverUrl})`, filter: 'blur(15px)' }"
     ></div>
 
-    <!-- 主区域：封面 + 歌名/三大键/进度条（92px） -->
     <div class="h-[92px] w-full flex items-end gap-3 px-5 -mt-1" data-tauri-drag-region>
-      <!-- 封面（底部对齐） -->
       <div
         class="w-[64px] h-[64px] shrink-0 relative overflow-hidden rounded-[8px]"
         data-tauri-drag-region
@@ -486,9 +473,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 右侧：歌名+三大键并排 / 进度条（紧贴歌手名下方） -->
       <div class="flex-1 min-w-0 flex flex-col justify-end pb-1" data-tauri-drag-region>
-        <!-- 歌名 + 歌手-专辑 + 三大键（并排） -->
         <div class="min-w-0 flex items-center gap-2" data-tauri-drag-region>
           <div class="flex-1 min-w-0 flex flex-col gap-0.5" data-tauri-drag-region>
             <div class="text-[14px] font-medium text-white truncate leading-tight">
@@ -502,7 +487,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 播放三大键：复用底部栏 UI（详情页模式样式），按 mini 窗口等比缩小 -->
           <div class="shrink-0 flex items-center gap-3 pointer-events-auto -mt-1 mr-1">
             <button @click.stop="sendAction({ type: 'prev-song' })" class="text-white/80 hover:text-white transition-colors hover:scale-110 transform duration-200" title="上一首">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>
@@ -519,7 +503,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 进度条（紧贴歌手名下方） -->
         <div class="mt-1 flex items-center gap-2" data-tauri-drag-region>
           <span class="text-[10px] text-white/70 tabular-nums select-none w-8 text-right">{{ formatDuration(currentTime) }}</span>
           <div
@@ -535,9 +518,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 第三行：底部控件均匀排列，样式与主页底部栏统一 -->
     <div class="h-[44px] w-full flex items-center justify-center gap-5 px-6 pointer-events-auto">
-      <!-- 收藏 -->
       <button
         @click.stop="sendAction({ type: 'toggle-favorite' })"
         class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full transition-colors active:scale-95"
@@ -548,7 +529,6 @@ onUnmounted(() => {
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
       </button>
 
-      <!-- 播放循环 -->
       <button
         @click.stop="sendAction({ type: 'cycle-play-mode' })"
         class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
@@ -560,7 +540,6 @@ onUnmounted(() => {
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>
       </button>
 
-      <!-- 桌面歌词：用"词"文字按钮，与主页底部栏一致 -->
       <button
         @click.stop="sendAction({ type: 'toggle-desktop-lyrics' })"
         class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-[14px] font-bold"
@@ -570,7 +549,6 @@ onUnmounted(() => {
         词
       </button>
 
-      <!-- 音量 -->
       <button
         ref="volumeButtonRef"
         @click.stop="toggleVolumePopover"
@@ -584,7 +562,6 @@ onUnmounted(() => {
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>
       </button>
 
-      <!-- 播放列表 -->
       <button
         @click.stop="toggleMiniPlaylist"
         class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
@@ -594,7 +571,6 @@ onUnmounted(() => {
         <svg xmlns="http://www.w3.org/2000/svg" class="h-[22px] w-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
       </button>
 
-      <!-- 展开主窗口 -->
       <button
         @click.stop="sendAction({ type: 'restore-main' })"
         class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-white/80 hover:text-white hover:bg-white/10"
@@ -603,7 +579,6 @@ onUnmounted(() => {
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
       </button>
 
-      <!-- 关闭 -->
       <button
         @click.stop="sendAction({ type: 'close' })"
         class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-white/80 hover:text-white hover:bg-[#EC4141]"
@@ -613,7 +588,6 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- 播放列表展开区域（独立背景，不共享 mini 窗口材质） -->
     <transition name="mini-queue">
       <div
         v-if="showMiniPlaylist"

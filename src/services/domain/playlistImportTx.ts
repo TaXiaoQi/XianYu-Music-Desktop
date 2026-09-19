@@ -11,10 +11,6 @@ import {
   type WyTrackMetaPatch,
 } from './playlistImportBase';
 
-/**
- * QQ音乐（小秋）歌单详情与曲目元数据导入。
- * 仅依赖 playlistImportBase，作为叶子模块被 playlistImport 门面消费。
- */
 
 async function getListDetailTx(rawId: string): Promise<PlaylistImportResult> {
   let id = getTxListId(rawId);
@@ -76,7 +72,6 @@ function parseTxSong(item: any): PluginSearchResult | null {
   const file = item.file || {};
   const strMediaMid = file.media_mid || '';
 
-  // 封面
   let img = '';
   if (!albumName || albumName === '空') {
     const firstSinger = singer[0];
@@ -111,7 +106,6 @@ function parseTxSong(item: any): PluginSearchResult | null {
   });
 }
 
-/** 解析 QQ音乐分享 URL，从 HTML/JSON 中提取歌单 id */
 async function resolveTxShareUrl(url: string): Promise<string | null> {
   try {
     const resp = await httpFetch(url, 'GET', {
@@ -119,19 +113,14 @@ async function resolveTxShareUrl(url: string): Promise<string | null> {
     });
     const body = typeof resp.body === 'string' ? resp.body : JSON.stringify(resp.body);
 
-    // 1. id= 查询参数
     let m = body.match(/id=(\d+)/);
     if (m) return m[1];
-    // 2. /playlist/\d+ 路径
     m = body.match(/\/playlist\/(\d+)/);
     if (m) return m[1];
-    // 3. /playsquare/\d+ 路径
     m = body.match(/\/playsquare\/(\d+)/);
     if (m) return m[1];
-    // 4. "disstid":"?\d+" JSON 字段
     m = body.match(/"disstid"\s*:\s*"?(\d+)"?/);
     if (m) return m[1];
-    // 5. "dissid":"?\d+" JSON 字段
     m = body.match(/"dissid"\s*:\s*"?(\d+)"?/);
     if (m) return m[1];
 
@@ -142,13 +131,6 @@ async function resolveTxShareUrl(url: string): Promise<string | null> {
   }
 }
 
-/**
- * 按 QQ 音乐 songmid 批量补全封面与时长。
- *
- * v8/fcg-bin/fcg_play_single_song.fcg 是无需登录的经典开放接口（搜索/详情接口
- * musicu.fcg DoSearchForQQMusicDesktop 已要求登录），支持逗号分隔批量 songmid，
- * 返回 interval（秒）与 album.mid（可拼官方 y.gtimg.cn 封面）。
- */
 export async function fetchQqTrackMetaByIds(
   mids: string[],
 ): Promise<Map<string, WyTrackMetaPatch>> {

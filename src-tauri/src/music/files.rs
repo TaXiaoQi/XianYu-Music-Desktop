@@ -1,5 +1,3 @@
-// music/files.rs - 文件操作命令
-
 use super::lyrics::{build_structured_lyrics_payload, StructuredLyricsPayload};
 use super::scanner::{apply_scan_changes, parse_song_from_file};
 use super::tags::{
@@ -53,10 +51,8 @@ fn read_sidecar_lrc_with_path(path_obj: &Path) -> Option<(String, PathBuf)> {
     let stem = path_obj.file_stem()?.to_string_lossy().to_string();
     let parent = path_obj.parent()?;
 
-    // 支持的侧边歌词文件后缀，按照优先级排序
     let extensions = ["lrc", "ttml", "qrc", "yrc", "lys", "txt"];
 
-    // 1. 优先尝试精确匹配
     for ext in &extensions {
         let exact_path = parent.join(format!("{}.{}", stem, ext));
         if let Ok(bytes) = fs::read(&exact_path) {
@@ -64,7 +60,6 @@ fn read_sidecar_lrc_with_path(path_obj: &Path) -> Option<(String, PathBuf)> {
         }
     }
 
-    // 2. 如果没有精确匹配到，进行目录遍历（不区分后缀大小写）
     let entries = fs::read_dir(parent).ok()?;
     for entry in entries.flatten() {
         let candidate = entry.path();
@@ -400,30 +395,19 @@ async fn read_song_lyrics_raw_for_path(path: &str, db_state: &DbState) -> String
     }
 }
 
-#[tauri::command]
-pub async fn get_song_lyrics(path: String, db_state: State<'_, DbState>) -> Result<String, String> {
-    // 路径门禁：本地路径拒绝目录穿越；远程 URI 保持原样
-    if !is_remote_uri(&path) {
-        crate::security::path_validator::validate_path(&path, None)?;
-    }
-    Ok(read_song_lyrics_raw_for_path(&path, &db_state).await)
-}
-
 pub(crate) fn is_cjk_char(c: char) -> bool {
     matches!(c as u32,
-        0x3400..=0x4DBF   // CJK Ext A
-        | 0x4E00..=0x9FFF // CJK Unified Ideographs
-        | 0x3040..=0x30FF // Hiragana + Katakana
-        | 0xAC00..=0xD7AF // Hangul syllables
-        | 0x3000..=0x303F // CJK punctuation
-        | 0xFF00..=0xFF60 // Fullwidth forms（不含半角片假名）
-        | 0xFFE0..=0xFFEF // Fullwidth signs
-        | 0xF900..=0xFAFF // CJK Compatibility Ideographs
+        0x3400..=0x4DBF
+        | 0x4E00..=0x9FFF
+        | 0x3040..=0x30FF
+        | 0xAC00..=0xD7AF
+        | 0x3000..=0x303F
+        | 0xFF00..=0xFF60
+        | 0xFFE0..=0xFFEF
+        | 0xF900..=0xFAFF
     )
 }
 
-/// 常见 CJK 字符集合：简体/繁体/日文常用字各取频率前 800 的并集。
-/// 用于区分「正确解码」（多为常用字）与「乱码解码」（多为生僻字）。
 const COMMON_CJK_CHARS: &str = "一七万丈三上下不与专且世业东両两严並个中丸为主举久么义之乎乐乗九也习书乱乳了予争事二于云互五井亚些交产京亮亲人什仅今介仍从仕他付代令以们仲件价任份休众会伝传伤伯伸似但位低住佐体何余佛作你使來例供依価便係保信修俺個們倒候値值假做停側備傳傷働像僕價優儿元兄充先光克免兒入內全兩八公六兰共关兴兵其具典内円再写军冲决况冷准几処凰出击刀分切列刘则刚创初判別利别到制刺刻則前剑剣剧割力办功加务动助効势動務勝势包化北区医區十千半华单南単卡印危即却卷卻历原去参參又及友双反収发取受变口古句另叩只叫可台史右号司吃各合吉同名后吐向吗君否吧听吸吹告员呢周味呼命和品哈响員哥哪哲唇唐商啊問啦喜喝單嗎嘴器四回因団困囲図围固国图國園圖土圧在地场坐型城基堂報場境増壁壊士声売处备変复夏夕外多夜够夢大天太夫失头奇奈奥女奴她好如妈妙妳妹妻姉始姐姑姫姿威娘婚嫌嬉子字存学孩學它守安完宗官宙定宝实実客室宮害家容宿寄密富寝察實寫对寻导対封射将將專對導小少尔尚就尻尽局层居届屋展属山岁島崎川工左巨差己已巴巻市布师希帝带師席帮帯帰帶常干平年并幸幼幾广広床应底店府度座庭建开异式引弟张弱張強强弾归当录形影役彼往待很律後徒従得從御復微德心必志忘忙応快念忽怀态怎怒怕怖思急性怪总恋恐恥息恵恶您悪悲情惊惑想意愛感愿態慌慢慣憶應戏成我或战戦戸戻房所扉手才打払批找承技把投抗折抜护报抱押拉招拿持指振捨据掉掌排掛探接推描提握揺摇撃撫支收改攻放政故敌救教敢散数整敵敷數文斗料断斯新方於旁旅族无既日旧早时明易昔星映春昨是显時晚普景晴暗暴曲更書曾替最會月有朋服望朝期木未末本术机杀杂权李村束条来杨東极构林果某染柔查标树校样根格案條梦棒森楚業極楼楽概構様樂標模樣権横樹機檔權次欢欲歌歡止正此步武歩歳死残段殺殿母毎每比毛氏民气気氣水永求汉江決沉沒沙没沢河治況法波泣注洛活派流济浮海消涙液深混清済渐渡温游満源準滅满滿演激灣火灵点為烈热無然焼照熱爱父爷片版物特犯状独玉王玩现班現球理甘甚生產産用田由申电男町画界留番畫異當疑病痛発發白百的皆皇皮目直相看真眠眼着睛睡瞧瞬瞳知短石研破确確示礼社神福离私种科秘秦称移程種稱穴究空穿突窓立站竟章端竹笑笔第等筋答简算管篇簡类精系紀約純紙級素索紧細終組経結絡給統絵絶經続網緒線締練總織繰红约级纪线组细终经结给绝统续维编罗罪置美群義羽習翻老考者而耳联聖聞聯聲職聽肉肌肩肯育背胜胡胸能脑脚脱脳脸腕腦腰腹自至致與興舌舍舞般船良色艺节花苏若苦英茶草荒莫菜華萬落葉著薄薬藏藤處號虽血行術街衛衣表被装裏裕裡襲西要見視覚親観覺觀见观规视觉角解触言計訊討記設許訳訴証試詰話該認誘語說説読誰課調談請論講謝識警議護讀變讓计认讨让议记讲许论设证评识诉词译试诗话该语说请读谁调谈谓谢谷象負責貴買費資質賽质费资赤走起超越足跑跟路踏身車軍転軽較輝輩輸轉车转轻较辦边辺込达过迎运近返还这进远连迫述迷追退送逃逆选途這通速造連進遅遇遊運過道達違遠選還那邪郎部都配酒释里重野量金鉄銀錄錢錯钱铁错長长门閉開間関闘關门问间闻队防阳阵阶阿际陆陈降限院除陰陳険陽隊階随隐際隠隣难集雑離難雨雪電需震霊露青静非面革音響頃領頬頭頷頼題顔願類须顾领题風风飛飞食飲館饭首香馬駄駆騎験驗驚马验體高髪鬼魔鲁鳳鳴麗麻麼黃黄黑黒黙點鼻齐龍龙";
 
 static COMMON_CJK_SET: OnceLock<HashSet<char>> = OnceLock::new();
@@ -454,10 +438,6 @@ fn is_jamo(c: char) -> bool {
     matches!(c as u32, 0x1100..=0x11FF)
 }
 
-/// 对解码结果打分，用于在多字节编码间择优。
-///
-/// 常用汉字/假名/谚文加分，生僻字/半角片假名/谚文字母/替换字符/控制字符扣分。
-/// 额外惩罚两类乱码特征：谚文与汉字混排（GBK 字节被误按 EUC-KR 解码）、假名与谚文混排。
 fn score_decoded_text(text: &str) -> i32 {
     let mut score = 0i32;
     let mut kana_count = 0;
@@ -508,7 +488,6 @@ pub(crate) fn decode_lyrics_file_bytes(bytes: &[u8]) -> String {
         return text.trim_start_matches('\u{feff}').to_string();
     }
 
-    // 非 UTF-8 时在常见 CJK 编码间按解码质量择优，避免一律按 GBK 解码导致 Big5/Shift-JIS/EUC-KR 乱码。
     const CJK_CANDIDATES: [(&'static encoding_rs::Encoding, &str); 4] = [
         (GBK, "GBK"),
         (BIG5, "Big5"),
@@ -520,7 +499,10 @@ pub(crate) fn decode_lyrics_file_bytes(bytes: &[u8]) -> String {
     for (encoding, _name) in CJK_CANDIDATES {
         let (decoded, _, _) = encoding.decode(bytes);
         let score = score_decoded_text(&decoded);
-        if best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+        if best
+            .as_ref()
+            .is_none_or(|(best_score, _)| score > *best_score)
+        {
             best = Some((score, decoded.trim_start_matches('\u{feff}').to_string()));
         }
     }
@@ -529,11 +511,9 @@ pub(crate) fn decode_lyrics_file_bytes(bytes: &[u8]) -> String {
         .unwrap_or_else(|| String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// 读取用户主动选择的 LRC 文件。只允许歌词扩展名，并限制大小以避免误选大文件。
 #[tauri::command]
 pub fn read_lyrics_file(path: String) -> Result<String, String> {
     const MAX_LYRICS_FILE_SIZE: u64 = 2 * 1024 * 1024;
-    // 防路径穿越/符号链接逃逸：规范化后读取
     let path_obj = path_validator::validate_path(&path, None)?;
     let is_lrc = path_obj
         .extension()
@@ -555,7 +535,6 @@ pub fn read_lyrics_file(path: String) -> Result<String, String> {
     Ok(decode_lyrics_file_bytes(&bytes))
 }
 
-/// 直接解析歌词文本（用于网络音乐的预获取歌词）
 #[tauri::command]
 pub async fn parse_lyrics_text(text: String) -> Result<StructuredLyricsPayload, String> {
     Ok(build_structured_lyrics_payload(text))
@@ -627,8 +606,7 @@ pub async fn save_song_lyrics(
             })
         }
         LyricsStorageSource::Sidecar | LyricsStorageSource::Empty => {
-            let saved_path =
-                write_sidecar_lyrics(&path_obj, source_path, lyrics.clone())?;
+            let saved_path = write_sidecar_lyrics(&path_obj, source_path, lyrics.clone())?;
             Ok(SongLyricsForEdit {
                 lyrics,
                 source: LyricsStorageSource::Sidecar,
@@ -720,11 +698,7 @@ pub fn save_song_background(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("png");
-    let dest_name = format!(
-        "{}.{}",
-        Uuid::new_v4().to_string().replace('-', ""),
-        ext
-    );
+    let dest_name = format!("{}.{}", Uuid::new_v4().to_string().replace('-', ""), ext);
     let dest_path = bg_dir.join(&dest_name);
     fs::copy(&src_path, &dest_path).map_err(|e| format!("复制背景图片失败: {}", e))?;
 
@@ -1111,8 +1085,7 @@ pub fn move_file_to_folder(
 ) -> Result<(), String> {
     let source = crate::security::path_validator::validate_path(&source_path, None)?;
     let filename = source.file_name().ok_or("Invalid source filename")?;
-    let target_folder =
-        crate::security::path_validator::validate_path(&target_folder, None)?;
+    let target_folder = crate::security::path_validator::validate_path(&target_folder, None)?;
     let target = target_folder.join(filename);
 
     if target.exists() {
@@ -1155,7 +1128,8 @@ pub async fn save_artist_avatar(
         return Err("Image file does not exist".to_string());
     }
 
-    let mut file = fs::File::open(&path).map_err(|e| format!("Failed to open image file: {}", e))?;
+    let mut file =
+        fs::File::open(&path).map_err(|e| format!("Failed to open image file: {}", e))?;
     let mut header = [0u8; 12];
     let bytes_read = file
         .read(&mut header)
@@ -1175,7 +1149,6 @@ pub async fn save_artist_avatar(
         return Err("Unsupported image format. Only JPEG, PNG, and WEBP are allowed.".to_string());
     };
 
-    // Reset file read pointer to compute SHA-256
     file.seek(std::io::SeekFrom::Start(0))
         .map_err(|e| format!("Failed to seek image file: {}", e))?;
 
@@ -1193,18 +1166,15 @@ pub async fn save_artist_avatar(
     let hash_result = hasher.finalize();
     let sha256_hex = format!("{:x}", hash_result);
 
-    // Get covers cache directory
     let covers_dir = super::covers::get_cover_cache_dir(&app);
     let target_filename = format!("artist-avatar-{}-{}.{}", artist_id, sha256_hex, ext);
     let target_path = covers_dir.join(target_filename);
 
-    // Copy file to target path
     fs::copy(&path, &target_path)
         .map_err(|e| format!("Failed to copy image to covers directory: {}", e))?;
 
     let target_path_str = normalize_path(&target_path.to_string_lossy());
 
-    // Update database & query song paths in a short-lived transaction block
     let (songs_info, task_id) = if write_to_tags {
         let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
 
@@ -1256,7 +1226,6 @@ pub async fn save_artist_avatar(
         (Vec::new(), None)
     };
 
-    // Spawn background blocking task if task_id exists
     if let Some(ref task_id_str) = task_id {
         let app_clone = app.clone();
         let avatar_path_clone = target_path_str.clone();
@@ -1274,7 +1243,6 @@ pub async fn save_artist_avatar(
             let mut skipped_readonly = 0;
             let mut skipped_missing = 0;
 
-            // Emit initial progress event
             let _ = app_clone.emit(
                 "artist-avatar:write-tags-progress",
                 super::types::WriteTagsProgressPayload {
@@ -1308,7 +1276,6 @@ pub async fn save_artist_avatar(
                         for (idx, item) in songs_info.iter().enumerate() {
                             let path_obj = Path::new(&item.path);
 
-                            // 1. Remote/CUE/Multi-artist checks
                             let is_remote = {
                                 let is_remote_source = match &item.source_type {
                                     Some(s) => !s.is_empty() && s != "local",
@@ -1336,11 +1303,9 @@ pub async fn save_artist_avatar(
                                 skipped_multi_artist += 1;
                                 skipped_count += 1;
                             } else if !path_obj.is_file() {
-                                // 2. Existence check
                                 skipped_missing += 1;
                                 skipped_count += 1;
                             } else {
-                                // 3. Readonly check
                                 let is_readonly = match fs::metadata(path_obj) {
                                     Ok(meta) => meta.permissions().readonly(),
                                     Err(_) => false,
@@ -1350,7 +1315,6 @@ pub async fn save_artist_avatar(
                                     skipped_readonly += 1;
                                     skipped_count += 1;
                                 } else {
-                                    // 4. lofty tag update
                                     match read_tagged_file_from_path(path_obj) {
                                         Ok(mut tagged_file) => {
                                             let tag_type = tagged_file.primary_tag_type();
@@ -1388,7 +1352,6 @@ pub async fn save_artist_avatar(
                                 }
                             }
 
-                            // Emit periodic progress
                             let _ = app_clone.emit(
                                 "artist-avatar:write-tags-progress",
                                 super::types::WriteTagsProgressPayload {
@@ -1436,7 +1399,6 @@ pub async fn save_artist_avatar(
                 }
             }
 
-            // Emit final done event
             let _ = app_clone.emit(
                 "artist-avatar:write-tags-progress",
                 super::types::WriteTagsProgressPayload {

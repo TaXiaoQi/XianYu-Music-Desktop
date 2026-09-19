@@ -1,15 +1,3 @@
-/**
- * 插件云端同步服务
- *
- * 封装后端 `api/index.php` 的插件同步接口，提供本地插件与云端之间的
- * 双向同步能力。所有请求复用 authService 的签名机制（MD5 + 可选 AES 加密）。
- *
- * 后端接口一览（action=xxx）：
- * - plugin_sync_upload_one：逐个上传插件（含脚本内容）到服务器文件存储
- * - plugin_sync_download：下载云端插件数据
- * - plugin_sync_delete：按 id 从云端删除插件（删除范围三选一）
- * - plugin_sync_status：查询同步状态
- */
 
 import type { PluginSource } from '../../types';
 import { signedRequest } from '../auth/authService';
@@ -33,7 +21,6 @@ import {
   getUploadSkipIds,
 } from './pluginSyncState';
 
-/** 日志前缀 */
 const LOG = '[PluginSync]';
 
 function logSync(_msg: string, ..._args: unknown[]) {
@@ -43,10 +30,6 @@ function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
 
-/**
- * 将字符串编码为「反转 Base64」：先 UTF-8 Base64，再反转字符串。
- * 这样 WAF 无法通过常规 Base64 解码检测到原始 JS 代码内容。
- */
 function encodeBase64(str: string): string {
   try {
     const bytes = new TextEncoder().encode(str);
@@ -60,7 +43,6 @@ function encodeBase64(str: string): string {
   }
 }
 
-/** 将「反转 Base64」解码为字符串：先反转，再 UTF-8 Base64 解码 */
 function decodeBase64(b64: string): string {
   try {
     const reversed = b64.split('').reverse().join('');
@@ -76,11 +58,7 @@ function decodeBase64(b64: string): string {
 }
 
 // ==================== 用户变量 AES 加密 ====================
-// 插件用户变量（API key / Cookie / Token）为敏感信息，上传前用 AES-256-CBC
-// 加密，密钥由弦予号经 SHA-256 派生，任意端登录同一账号即可解密。
-// 服务端仅作为密文存储载体，不参与加解密。
 
-/** AES 加密后的用户变量块（iv 与 data 均为标准 Base64） */
 export interface EncryptedUserVars {
   iv: string;
   data: string;
@@ -103,7 +81,6 @@ function bytesFromB64(b64: string): Uint8Array {
   return bytes;
 }
 
-/** 由弦予号派生 AES-256 密钥（SHA-256 → 32 字节原始密钥） */
 async function userVarKeyFor(ciyuanxiId: string): Promise<CryptoKey> {
   const digest = await globalThis.crypto.subtle.digest(
     'SHA-256',
@@ -118,7 +95,6 @@ async function userVarKeyFor(ciyuanxiId: string): Promise<CryptoKey> {
   );
 }
 
-/** AES-CBC 加密插件用户变量 */
 async function encryptUserVars(
   ciyuanxiId: string,
   values: Record<string, string>,
@@ -135,7 +111,6 @@ async function encryptUserVars(
   return { iv: b64FromBytes(iv), data: b64FromBytes(ct) };
 }
 
-/** AES-CBC 解密插件用户变量（失败返回 undefined，由调用方决定跳过） */
 async function decryptUserVars(
   ciyuanxiId: string,
   enc: EncryptedUserVars,
@@ -156,17 +131,12 @@ async function decryptUserVars(
 
 // ==================== 类型定义 ====================
 
-/** 上传用的插件数据（包含脚本内容） */
 export interface PluginSyncItem extends PluginSource {
-  /** 插件脚本内容（上传时为 Base64 编码，下载时需解码） */
   script: string;
-  /** 标记脚本是否已 Base64 编码 */
   scriptEncoded?: boolean;
-  /** AES 加密后的用户变量值（API key / Cookie / Token），服务端密文存储 */
   userVariablesEncrypted?: EncryptedUserVars;
 }
 
-/** 云端下载的完整数据 */
 export interface PluginSyncDownloadData {
   version: number;
   uploaded_at: string;
@@ -176,11 +146,9 @@ export interface PluginSyncDownloadData {
     subscription_count?: number;
   };
   plugins: PluginSyncItem[];
-  /** 云端订阅链接列表 */
   subscriptions?: CloudSubscriptionItem[];
 }
 
-/** 云端订阅条目（字段与本地 PluginSubscription 兼容） */
 export interface CloudSubscriptionItem {
   id?: string;
   name?: string;
@@ -189,22 +157,15 @@ export interface CloudSubscriptionItem {
   [key: string]: unknown;
 }
 
-/** 同步结果 */
 export interface PluginSyncResult {
   uploadedPlugins: number;
   downloadedPlugins: number;
-  /** 本次合并进本地的云端订阅数 */
   syncedSubscriptions: number;
   errors: string[];
 }
 
 // ==================== 上传 ====================
 
-/**
- * 上传所有本地插件到云端
- * 逐个上传以避免 WAF 拦截大请求体，每个插件的脚本经反转 Base64 编码。
- * 订阅链接列表随每个请求一并上传（服务端整包替换）。
- */
 export async function uploadPlugins(): Promise<PluginSyncResult> {
   const result: PluginSyncResult = {
     uploadedPlugins: 0,
@@ -220,13 +181,10 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
     return result;
   }
 
-  // 确保所有插件已加载（脚本在内存缓存中）
   await loadPlugins();
 
   const plugins = getStoredPlugins();
-  // 过滤掉内置插件
   const userPlugins = plugins.filter(p => !p.isBuiltin);
-  // 「仅保留本地」墓碑过滤：已从云端删除、保留本机的插件不再上传，防止复活
   const uploadSkip = getUploadSkipIds();
   const toUpload = userPlugins.filter(p => !uploadSkip.has(p.id));
   for (const skipped of userPlugins) {
@@ -234,14 +192,12 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
       logSync(`uploadPlugins: 跳过 "${skipped.name}" - 处于仅保留本地墓碑中`);
     }
   }
-  // 订阅链接列表随插件一起上传
   const subscriptions = getSubscriptions();
 
   logSync(`uploadPlugins: 本地用户插件 ${userPlugins.length} 个, 订阅 ${subscriptions.length} 个`);
 
   if (toUpload.length === 0) {
     if (subscriptions.length > 0) {
-      // 本地无插件但有订阅：用空 plugin 做载体单独上传订阅
       try {
         await signedRequest<{ plugin_count: number }>('plugin_sync_upload_one', {
           user_id: ciyuanxiId,
@@ -261,12 +217,10 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
     } else {
       logSync('uploadPlugins: 无用户插件需要上传');
     }
-    // 云端副本为空（is_first 重建）：已同步标记清空
     setSyncedPluginIds([]);
     return result;
   }
 
-  // 逐个上传插件，避免大请求体触发 WAF
   const uploadedIds: string[] = [];
   for (let i = 0; i < toUpload.length; i++) {
     const plugin = toUpload[i];
@@ -282,12 +236,10 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
 
       const syncItem: PluginSyncItem = {
         ...plugin,
-        // 反转 Base64 编码脚本内容，避免 WAF 解码检测到原始 JS 代码
         script: encodeBase64(script),
         scriptEncoded: true,
       };
 
-      // 附加 AES 加密的用户变量值（失败仅跳过变量同步，不影响插件本身上传）
       const userVars = getPluginUserVariableValues(plugin.id);
       if (Object.keys(userVars).length > 0) {
         try {
@@ -319,7 +271,6 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
     }
   }
 
-  // 上传成功的插件即云端权威副本：整集替换「已同步」标记
   setSyncedPluginIds(uploadedIds);
   logSync(`uploadPlugins ← 完成: 成功 ${result.uploadedPlugins}/${toUpload.length} 个, ${result.errors.length} 个错误`);
   return result;
@@ -327,11 +278,6 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
 
 // ==================== 下载 ====================
 
-/**
- * 从云端下载并恢复所有插件
- * 对每个云端插件，解析脚本并安装到本地；
- * 云端订阅链接按 URL 合并进本地订阅列表（本地已有的保留）。
- */
 export async function downloadPlugins(): Promise<PluginSyncResult> {
   const result: PluginSyncResult = {
     uploadedPlugins: 0,
@@ -354,7 +300,6 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
       user_id: ciyuanxiId,
     });
 
-    // 云端订阅链接合并进本地（即使云端无插件也要合并）
     const cloudSubs = downloadData?.subscriptions;
     if (Array.isArray(cloudSubs) && cloudSubs.length > 0) {
       const added = mergeSubscriptionsFromCloud(cloudSubs);
@@ -369,10 +314,8 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
 
     logSync(`downloadPlugins: 云端共 ${downloadData.plugins.length} 个插件`);
 
-    // 确保本地插件已加载
     await loadPlugins();
 
-    // 「仅删本地」墓碑：用户已从本机删除但云端保留的插件，跳过恢复防止回流
     const downloadSkip = getDownloadSkipIds();
     const restoredIds: string[] = [];
     for (let i = 0; i < downloadData.plugins.length; i++) {
@@ -384,11 +327,9 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
       logSync(`downloadPlugins: [${i + 1}/${downloadData.plugins.length}] 恢复插件 "${item.name}" (${item.format})`);
 
       try {
-        // 解码 Base64 脚本内容
         const script = item.scriptEncoded ? decodeBase64(item.script) : item.script;
         const ok = await restorePluginFromSync(item, script);
         if (ok) {
-          // 还原 AES 加密的用户变量值（用云端 plugin id 作为键，与上传端一致）
           if (item.userVariablesEncrypted) {
             const values = await decryptUserVars(ciyuanxiId, item.userVariablesEncrypted);
             if (values && Object.keys(values).length > 0) {
@@ -409,7 +350,6 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
       }
     }
 
-    // 恢复成功说明云端确有副本：并集追加「已同步」标记
     addSyncedPluginIds(restoredIds);
     logSync(`downloadPlugins ← 完成: 恢复 ${result.downloadedPlugins} 个插件, ${result.errors.length} 个错误`);
   } catch (e) {
@@ -423,11 +363,6 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
 
 // ==================== 云端删除 ====================
 
-/**
- * 从云端删除指定 id 的插件（「删除全部 / 仅保留本地」的云端落盘操作）。
- * 成功后同步移除本地「已同步」标记与「仅删本地」墓碑（云端已无副本）。
- * 失败返回 false，由调用方决定后续处理。
- */
 export async function deleteCloudPlugins(pluginIds: string[]): Promise<boolean> {
   if (pluginIds.length === 0) return true;
   const ciyuanxiId = getCiyuanxiId();

@@ -10,7 +10,6 @@ import { aboutConfig, startAboutConfigPolling, stopAboutConfigPolling } from '..
 import AcknowledgementsModal from '../common/AcknowledgementsModal.vue';
 
 const appVersion = APP_VERSION;
-/** 致谢名单弹窗开关 */
 const ackModalOpen = ref(false);
 function openAcknowledgements() {
   ackModalOpen.value = true;
@@ -42,7 +41,6 @@ const buttonText = computed(() => isEnglish.value ? {
   acknowledgements: '致谢名单',
 });
 
-/** 兼容缺少协议头的链接（如 "xianyumusic.cn"），自动补全为 https://，确保能正常在外部浏览器打开 */
 function normalizeExternalUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return '';
@@ -50,14 +48,12 @@ function normalizeExternalUrl(url: string): string {
   return `https://${trimmed}`;
 }
 
-/** 在系统默认外部浏览器中打开链接，避免 Tauri webview 内 target=_blank 导航导致 Vue 崩溃 */
 async function openExternal(url: string) {
   const normalized = normalizeExternalUrl(url);
   if (!normalized) return;
   try {
     await openUrl(normalized);
   } catch (error) {
-    // 记录真实错误，便于排查 command 未注册 / 权限不足等问题
     console.error('[openExternal] openUrl 失败，尝试 fallback', normalized, error);
     window.open(normalized, '_blank', 'noopener,noreferrer');
   }
@@ -85,11 +81,9 @@ function handleDeveloperModeClick() {
   }
 }
 
-// 检查更新走 Rust 服务端统一 API，由全局 useUpdateCheck 单例管理弹窗
 const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
 
 onMounted(() => {
-  // 启动关于页配置轮询，服务器下发新网址后客户端即时更新
   startAboutConfigPolling();
 });
 

@@ -1,11 +1,6 @@
 <script lang="ts">
 import type { InjectionKey } from 'vue';
 
-/**
- * Injection key for overriding the tooltip z-index.
- * Used by parent containers (e.g. onboarding modal) that create high-z-index
- * stacking contexts, so the teleported tooltip isn't hidden behind them.
- */
 export const SETTING_HINT_Z_INDEX: InjectionKey<number | undefined> = Symbol('setting-hint-z-index');
 </script>
 
@@ -48,7 +43,6 @@ function updatePosition() {
   const gap = 8;
   const rect = trigger.getBoundingClientRect();
   const tooltipHeight = tooltipRef.value?.offsetHeight ?? 0;
-  // Read actual rendered width (content-based via width: fit-content + max-width in CSS)
   const tooltipWidth = tooltipRef.value?.offsetWidth ?? 0;
   const centeredLeft = rect.left + rect.width / 2 - tooltipWidth / 2;
   const left = Math.min(

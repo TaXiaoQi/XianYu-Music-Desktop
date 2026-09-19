@@ -5,11 +5,6 @@ import { Cast, Loader2, MonitorPlay, RefreshCw, Speaker, Tv, X } from 'lucide-vu
 import { useDlnaCastStore } from '../../features/playback/castStore';
 import { useToast } from '../../composables/toast';
 
-/**
- * DLNA 投屏设备弹窗。
- * - 未连接：扫描局域网 DLNA 渲染器，点击设备连接（连接后由播放链路自动投歌）。
- * - 已连接：显示当前设备与连接状态，支持断开（向电视发送 Stop）。
- */
 const props = defineProps<{
   visible: boolean;
 }>();
@@ -39,7 +34,6 @@ const scan = async (timeoutMs = 2500) => {
   try {
     const list = await castStore.scanDevices(timeoutMs);
     if (list.length === 0) {
-      // AP 隔离/访客网络下发现必败：短超时二次探测兜底
       const retry = await castStore.scanDevices(3000).catch(() => []);
       if (retry.length === 0) {
         showToast('未发现 DLNA 设备，请确认设备与本机在同一局域网', 'info');
@@ -95,17 +89,14 @@ watch(
       v-if="visible"
       class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
     >
-      <!-- 遮罩 -->
       <div
         class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
         @click="close"
       ></div>
 
-      <!-- 弹窗卡片 -->
       <div
         class="relative bg-white/85 dark:bg-zinc-900/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all duration-300 border border-white/20 ring-1 ring-black/5 dark:border-white/10"
       >
-        <!-- 头部 -->
         <div class="flex items-center justify-between px-5 pt-4 pb-2">
           <div class="flex items-center gap-2">
             <Cast class="h-4 w-4 text-[#EC4141]" />
@@ -119,7 +110,6 @@ watch(
           </button>
         </div>
 
-        <!-- 已连接态 -->
         <div v-if="connected && castStore.device" class="px-5 pb-2">
           <div class="rounded-xl border border-[#EC4141]/20 bg-[#EC4141]/5 p-4">
             <div class="flex items-center gap-3">
@@ -149,7 +139,6 @@ watch(
           </p>
         </div>
 
-        <!-- 未连接态：设备列表 -->
         <div v-else class="px-5 pb-4">
           <div class="flex items-center justify-between py-2">
             <span class="text-xs text-gray-500 dark:text-white/45">局域网设备</span>

@@ -1,24 +1,9 @@
-/*
- * Derived from AMLL (Apple Music-like Lyrics) integration work and adapted
- * for XianYu Player on 2026-04-04.
- * SPDX-License-Identifier: AGPL-3.0-only
- * Upstream project: https://github.com/amll-dev/applemusic-like-lyrics
- */
 import { DomLyricPlayer } from '@applemusic-like-lyrics/core';
 
-/** 兼容核心的 CJK 判定：纯统一表意文字（含扩展区） */
 function isCjkWord(word: string): boolean {
   return /^[\p{Unified_Ideograph}\u0800-\u9FFC]+$/u.test(word);
 }
 
-/**
- * 覆盖歌词行基类 `shouldEmphasize` 静态方法。
- * 上游对 CJK 词要求时长 >= 1000ms 才允许逐字辉光/显色；
- * 但 JOOX/Baka 的 KRC 把每个汉字拆成单字词、时长常在 0.2~0.8s，
- * 全部触不到 1s 门槛，导致这些行整行不做逐字。这里对 CJK 放宽时长。
- * 注意：核心内部是直接引用基类 `q.shouldEmphasize` 而非实例，
- * 因此必须改到真正拥有该静态方法的基类上，沿 constructor 原型链上溯。
- */
 function patchShouldEmphasize(lineObj: unknown): void {
   const ctor = (lineObj as { constructor?: unknown }).constructor;
   let cls: any = typeof ctor === 'function' ? ctor : undefined;
@@ -31,10 +16,8 @@ function patchShouldEmphasize(lineObj: unknown): void {
       const text = (word.word ?? '').trim();
       const duration = word.endTime - word.startTime;
       if (isCjkWord(text)) {
-        // 中文逐字：放宽时长门槛，让偏短的单字词也能逐字变色辉光
         return duration >= 200 && text.length > 0;
       }
-      // 非中文保持上游规则，避免英文每词都辉光
       return duration >= 1000 && text.length <= 7 && text.length > 1;
     };
   }
@@ -43,12 +26,7 @@ function patchShouldEmphasize(lineObj: unknown): void {
 export class PatchedLyricPlayer extends DomLyricPlayer {
   private lineGap = 1;
   private restoreScrollFrameId = 0;
-  // [修复防御]: 低性能模式下设为 true，跳过 filter:blur 写入。
-  // 集显上每帧对 N 行歌词写 blur filter 会触发 GPU 软件回退，是歌词滚动卡顿的主因。
-  // 由 AmlLyricPlayer.vue 在实例化时根据 usePerformanceMode 设置。
   public disableBlurFilter = false;
-  // [性能优化]: 缓存每行上一次的 blur 值，仅在变化时才写入 filter DOM。
-  // blur 在弹簧收敛后稳定不变，每帧对 N 行歌词重复写相同 blur 值会触发无意义的 GPU 合成。
   private blurCache = new WeakMap<object, number>();
 
   private hasFiniteTime(value: number | undefined): value is number {
@@ -91,21 +69,13 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
       const scale = transformState.scale.getCurrentPosition() / 100;
       const blur = (lineObj as unknown as { blur?: number }).blur ?? 0;
 
-      // Packaged WebView2 builds sometimes skip AMLL's internal transform writeback.
       lineElement.style.transform = `translateY(${posY.toFixed(3)}px) scale(${scale.toFixed(4)})`;
-      // [修复] 核心对 active 行「未扫光部分」的 mask 透明度只给 0.2+t*0.2（满放大时 0.4），
-      // 浅色模糊背景下 40% 白字几乎不可见，被感知为「放大时左侧被挡住/裁切」。
-      // 这里沿用核心 0.97→1.0 的 scale 斜坡，把未点亮透明度拉到 1.0（完全可见）：
-      // 放大态整句清晰可读；扫光层次由已点亮高亮本身体现，不再有任何 dim 残留。
-      // 非 active 行（scale=0.97）保持核心默认 0.2。
       const sweepT = this.clamp(0, (scale - 0.97) / 0.03, 1);
       lineElement.style.setProperty('--dark-mask-alpha', (0.2 + sweepT * 0.8).toFixed(3));
-      // [修复防御]: 低性能模式跳过 blur filter 写入，仅保留 transform；will-change 也只保留 transform
       if (!this.disableBlurFilter) {
         const clampedBlur = Math.min(32, blur);
         const lineKey = lineObj as unknown as object;
         const lastBlur = this.blurCache.get(lineKey);
-        // [性能优化]: blur 在弹簧收敛后稳定不变；仅在值变化时写入 filter，避免每帧 N 行 GPU 合成开销
         if (lastBlur === undefined || Math.abs(lastBlur - clampedBlur) > 0.1) {
           lineElement.style.filter = `blur(${clampedBlur.toFixed(3)}px)`;
           lineElement.style.willChange = 'transform, filter';
@@ -209,13 +179,10 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
       const lineElement = this.getLineElement(lineObj);
       if (!lineElement) continue;
 
-      // WebView2 packaged builds can report 0 height for AMLL's absolute + fit-content lines.
       lineElement.style.height = 'auto';
       lineElement.style.minHeight = `${Math.max(32, this.baseFontSize * 1.8)}px`;
       lineElement.style.top = '0';
       lineElement.style.left = '0';
-      // 歌词行会从 0.97 放大到 1；paint containment 会按放大前的行边界裁切
-      // 字形自身的左侧外伸像素（粗体中文尤其明显），因此只保留布局与样式隔离。
       lineElement.style.contain = 'layout style';
       lineElement.style.overflow = 'visible';
       lineElement.style.contentVisibility = 'visible';
@@ -346,11 +313,6 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
     });
   }
 
-  // [修复] 核心 lineObj.enable() 会无条件 play() 该行的逐字动画
-  // （elementAnimations / maskAnimations），不检查当前是否暂停。
-  // 暂停态点击歌词跳转时，这会让逐字扫光自行走动，看起来像"歌词以为在播放"；
-  // 之后点播放键触发 resume()+calcLayout() 重新同步，位置又被拉回正确处。
-  // 这里在 enable 之后按当前播放态补一次 pause，让暂停时扫光停在目标位置。
   private enableLineRespectingPlayState(index: number) {
     const lineObj = this.currentLyricLineObjects[index] as unknown as {
       enable?: (time: number) => void | Promise<void>;
@@ -363,8 +325,6 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
 
     if (this.isPlaying || typeof lineObj.pause !== 'function') return;
 
-    // enable() 内部 await waitMaskImageUpdated() 后才 play()，因此必须等它落定
-    // 再 pause，否则 pause 先执行、随后的 play 仍会让动画继续跑。
     void Promise.resolve(enableResult).then(() => {
       if (this.isPlaying) return;
       void lineObj.pause?.();

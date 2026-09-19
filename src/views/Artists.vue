@@ -478,7 +478,6 @@ const handlePointerDown = (event: PointerEvent, index: number, artist: ArtistLis
 };
 
 const handleGlobalPointerMove = (event: PointerEvent) => {
-  // 拖拽激活后持续更新鼠标位置，让 DragGhost 跟随光标
   if (dragSession.active) {
     dragSession.mouseX = event.clientX;
     dragSession.mouseY = event.clientY;

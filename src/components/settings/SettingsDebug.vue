@@ -43,7 +43,6 @@ const { openSongInfo } = useSongInfoDialog();
 const { openDownloadDialog } = useDownloadDialog();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 
-/** 构造一个假的在线歌曲，用于触发需要 song 参数的弹窗调试 */
 function makeFakeOnlineSong(): Song {
   return {
     name: '测试歌曲',
@@ -64,7 +63,6 @@ function makeFakeOnlineSong(): Song {
 }
 const fakeSong = makeFakeOnlineSong();
 
-/** 组件式弹窗（普通弹窗组件）：本地可见性状态 */
 const showModernModal = ref(false);
 const showModernInputModal = ref(false);
 const showCaptchaModal = ref(false);
@@ -77,7 +75,6 @@ const showPlaylistEditModal = ref(false);
 const showAppBackupResultModal = ref(false);
 const showBackupImportResultModal = ref(false);
 
-/** 应用备份导入结果（假数据，供调试展示） */
 const fakeAppBackupResult: AppBackupImportResult = {
   summary: {
     playlistCount: 2,
@@ -99,7 +96,6 @@ const fakeAppBackupResult: AppBackupImportResult = {
   errors: [],
 };
 
-/** 插件备份导入结果（假数据，供调试展示） */
 const fakePluginBackupResult: PreparedPluginBackupImport = {
   format: 'lxmusic',
   sourcePlaylistCount: 2,
@@ -254,7 +250,6 @@ function testSessionExpiredDialog() {
 }
 
 function testAppealDialog() {
-  // 调试模式：仅测试申诉页面与流程，不发送服务器
   void showBanDialog(
     'account',
     '涉嫌违规使用，已被管理员封禁。如有疑问请联系管理员。',
@@ -264,7 +259,6 @@ function testAppealDialog() {
 }
 
 function testCiyuanxiDialog() {
-  // 调试模式：仅测试修改弦予号弹窗与流程，不发送服务器
   void showCiyuanxiDialog(
     authStore.user?.ciyuanxi_id || authStore.user?.username || 'CN00000001',
     { debug: true },
@@ -758,7 +752,6 @@ function testPlaylistEditDialog() {
       >{{ qualityProbe }}</pre>
     </section>
 
-    <!-- 弹窗组件挂载（仅用于调试触发） -->
     <ModernModal
       :visible="showModernModal"
       title="通用确认弹窗"

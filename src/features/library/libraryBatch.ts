@@ -51,7 +51,6 @@ export const createLibraryBatch = ({
       return;
     }
 
-    // 局部增量 Patch 写入，避免 O(N^2) 的全量重建
     libraryStore.patchLibrarySongs({
       songs: Array.from(pendingLibraryScanSongs.values()),
       deleted_paths: Array.from(pendingLibraryScanDeletedPaths.values()),

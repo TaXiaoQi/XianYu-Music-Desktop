@@ -1,5 +1,5 @@
-pub mod buffered_source;
 pub(crate) mod audio_head_cache;
+pub mod buffered_source;
 pub(crate) mod cenc;
 mod commands;
 mod device;
@@ -7,8 +7,8 @@ pub mod dsd_dop;
 pub mod equalizer;
 pub mod loudness;
 mod output;
-pub(crate) mod qmc2;
 pub mod plugin_host;
+pub(crate) mod qmc2;
 mod runtime;
 mod session;
 pub mod sound_effect;
@@ -19,12 +19,11 @@ pub(crate) mod types;
 pub use commands::{
     clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_playback_duration,
     get_playback_progress, get_playback_ready, get_playback_start_failed,
-    get_playback_start_failed_info, get_playback_start_failed_reason, get_stream_cache_info,
-    get_track_loudness_info, is_stream_cached, pause_audio, play_audio, prefetch_audio_head,
-    resume_audio, seek_audio, set_equalizer_settings, set_playback_speed,
-    set_sound_effect_settings, set_stream_cache_max_size, set_stream_cache_dir,
-    get_stream_cache_dir, set_volume, stop_audio, update_loudness_settings,
-    update_playback_metadata,
+    get_playback_start_failed_info, get_playback_start_failed_reason, get_stream_cache_dir,
+    get_stream_cache_info, get_track_loudness_info, is_stream_cached, pause_audio, play_audio,
+    prefetch_audio_head, resume_audio, seek_audio, set_equalizer_settings,
+    set_sound_effect_settings, set_stream_cache_dir, set_stream_cache_max_size, set_volume,
+    stop_audio, update_loudness_settings, update_playback_metadata,
 };
 pub use device::{
     get_audio_device_formats, get_current_output_device, get_output_devices, set_audio_output_mode,

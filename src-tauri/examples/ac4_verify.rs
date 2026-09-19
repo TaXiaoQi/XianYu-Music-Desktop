@@ -1,9 +1,3 @@
-//! AC-4 集成验证：解析 fMP4 中的 AC-4 sample，用 oxideav-ac4 解码为 PCM，
-//! 输出 WAV 与质量统计；并与 ffmpeg 参照解码结果做逐声道相关性/SNR 对比。
-//!
-//! 用法：
-//!   ac4_verify decode <out.wav> <full|core> <input1.mp4> [input2.mp4 ...]
-//!   ac4_verify compare <decoded.wav> <reference.wav>
 
 use std::env;
 use std::fs;
@@ -58,7 +52,6 @@ fn fourcc(kind: u32) -> String {
     kind.to_be_bytes().iter().map(|&c| c as char).collect()
 }
 
-/// 解析一个 mp4 文件（init 或 media segment），返回其中的 AC-4 sample 列表。
 fn extract_mp4_samples(path: &Path) -> Result<Vec<Vec<u8>>, String> {
     let data = fs::read(path).map_err(|e| format!("读取 {}: {e}", path.display()))?;
     let mut r = BoxReader { data: &data, pos: 0 };
@@ -90,7 +83,6 @@ fn extract_mp4_samples(path: &Path) -> Result<Vec<Vec<u8>>, String> {
     Ok(samples)
 }
 
-/// 从 moof 中收集 trun 声明的 sample size 列表。
 fn parse_moof(moof: &[u8]) -> Vec<usize> {
     let mut sizes = Vec::new();
     let mut r = BoxReader { data: moof, pos: 0 };
@@ -110,7 +102,6 @@ fn parse_moof(moof: &[u8]) -> Vec<usize> {
         match name.as_str() {
             "tfhd" => {
                 if body.len() >= 4 {
-                    // fullbox: 1 字节 version + 3 字节 flags
                     let flags =
                         ((body[1] as u32) << 16) | ((body[2] as u32) << 8) | body[3] as u32;
                     let mut p = 4usize;
@@ -137,19 +128,18 @@ fn parse_moof(moof: &[u8]) -> Vec<usize> {
             continue;
         }
         let rd = |o: usize| -> u32 { u32::from_be_bytes([trun[o], trun[o + 1], trun[o + 2], trun[o + 3]]) };
-        // fullbox: 低 24 位是 flags（首字节为 version）
         let flags = rd(0) & 0x00ff_ffff;
         let count = rd(4) as usize;
         let mut p = 8usize;
         if flags & 0x01 != 0 {
-            p += 4; // data_offset
+            p += 4;
         }
         if flags & 0x04 != 0 {
-            p += 4; // first_sample_flags
+            p += 4;
         }
         for _ in 0..count {
             if flags & 0x100 != 0 {
-                p += 4; // per-sample duration
+                p += 4;
             }
             if flags & 0x200 != 0 {
                 if p + 4 > trun.len() {
@@ -161,10 +151,10 @@ fn parse_moof(moof: &[u8]) -> Vec<usize> {
                 sizes.push(default_size);
             }
             if flags & 0x400 != 0 {
-                p += 4; // per-sample flags
+                p += 4;
             }
             if flags & 0x800 != 0 {
-                p += 4; // cts offset
+                p += 4;
             }
         }
     }
@@ -181,7 +171,7 @@ fn write_wav(path: &Path, sample_rate: u32, channels: u16, pcm: &[i16]) -> std::
     out.extend_from_slice(b"WAVE");
     out.extend_from_slice(b"fmt ");
     out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes());
     out.extend_from_slice(&channels.to_le_bytes());
     out.extend_from_slice(&sample_rate.to_le_bytes());
     let block = sample_rate * channels as u32 * 2;
@@ -294,7 +284,7 @@ fn cmd_decode(args: &[String]) -> Result<(), String> {
 
     for input in inputs {
         let Ok(samples) = extract_mp4_samples(Path::new(input)) else {
-            continue; // init segment（无 moof）跳过
+            continue;
         };
         for s in samples {
             n_samples_in += 1;
@@ -322,7 +312,6 @@ fn cmd_decode(args: &[String]) -> Result<(), String> {
                             sample_rate = info.sample_rate;
                         }
                     } else if ch != channels {
-                        // IMS 的 Full 模式可能按对象输出；记录后继续
                         println!("  注意: 帧声道数变化 {channels} -> {ch}");
                     }
                     let buf = &af.data[0];
@@ -396,7 +385,6 @@ fn correlate(a: &[f64], b: &[f64], lag: isize) -> f64 {
 }
 
 fn best_lag(a: &[f64], b: &[f64]) -> isize {
-    // 粗搜 ±2400 样本（步进 8），再细搜 ±8
     let mut best = 0isize;
     let mut best_c = -2.0f64;
     let coarse: Vec<isize> = (-300..=300).map(|x| x * 8).collect();
@@ -444,8 +432,6 @@ fn cmd_compare(args: &[String]) -> Result<(), String> {
     println!("A: {ra} Hz × {ca} ch，{} 帧", pa.len() / ca as usize);
     println!("B: {rb} Hz × {cb} ch，{} 帧", pb.len() / cb as usize);
 
-    // 包络对比：对每声道按 10ms 窗取 RMS，形成低速率包络序列，
-    // 允许不同采样率之间的内容级对比。
     let env_a = envelopes(&pa, ca as usize, ra);
     let env_b = envelopes(&pb, cb as usize, rb);
     let n = env_a
@@ -454,7 +440,6 @@ fn cmd_compare(args: &[String]) -> Result<(), String> {
         .map(|(a, b)| a.len().min(b.len()))
         .unwrap_or(0);
 
-    // 声道配对（lag=0，包络域）
     let mut used = vec![false; env_b.len()];
     let mut pairs = Vec::new();
     for (ia, ea) in env_a.iter().enumerate() {
@@ -495,7 +480,6 @@ fn cmd_compare(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// 每声道 10ms RMS 包络。
 fn envelopes(pcm: &[i16], ch: usize, rate: u32) -> Vec<Vec<f64>> {
     let win = (rate as usize / 100).max(1);
     let frames = pcm.len() / ch;
@@ -532,7 +516,6 @@ fn main() {
     }
 }
 
-// 引用 sync 模块避免未使用警告（sync word 探测用于诊断裸流）
 #[allow(dead_code)]
 fn has_sync_word(data: &[u8]) -> bool {
     sync::find_sync_frame(data).is_some()

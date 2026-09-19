@@ -52,7 +52,6 @@ export function useAddToPlaylistDialog() {
       addToPlaylistTargetSongs.value.length > 0 ? addToPlaylistTargetSongs.value : undefined,
     );
     const onAdded = afterAddToPlaylist;
-    // 关闭弹窗会清空目标列表，先取快照再关闭。
     const likeSongs =
       addedCount > 0
         ? addToPlaylistTargetSongs.value.map(s => ({
@@ -63,7 +62,6 @@ export function useAddToPlaylistDialog() {
 
     closeAddToPlaylistDialog();
 
-    // 正反馈：添加到歌单 = 「喜欢这类歌」，上报日推画像（失败静默）。
     if (likeSongs.length > 0) {
       void reportDailyLikeSignals(likeSongs, 'playlist');
     }

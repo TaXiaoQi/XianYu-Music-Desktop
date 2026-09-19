@@ -1,9 +1,6 @@
-//! 设备发现：抓取并解析设备描述 XML（双端同步一份代码，勿在本端私自改动）。
-
 use super::soap::extract_tag;
 use super::types::DlnaDevice;
 
-/// 抓取设备描述 XML 并解析出 friendlyName / AVT / RCS 控制端点。
 pub async fn describe_device(
     client: &reqwest::Client,
     location: &str,
@@ -19,14 +16,19 @@ pub async fn describe_device(
         .map_err(|e| format!("读取设备描述失败: {e}"))?;
 
     let base_url = base_of(location);
-    let udn = extract_tag(&text, "UDN").unwrap_or_default().trim().to_string();
+    let udn = extract_tag(&text, "UDN")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let friendly_name = extract_tag(&text, "friendlyName")
         .unwrap_or_else(|| "未知设备".into())
         .trim()
         .to_string();
-    let model_name = extract_tag(&text, "modelName").unwrap_or_default().trim().to_string();
+    let model_name = extract_tag(&text, "modelName")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
 
-    // 扫描 service 块，定位 AVTransport / RenderingControl 的 controlURL。
     let (mut avt, mut rcs) = (None, None);
     for svc in split_service_blocks(&text) {
         let stype = extract_tag(&svc, "serviceType").unwrap_or_default();
@@ -42,7 +44,9 @@ pub async fn describe_device(
     }
 
     if avt.is_none() {
-        return Err(format!("{friendly_name} 不支持 AVTransport（非 DLNA 渲染器）"));
+        return Err(format!(
+            "{friendly_name} 不支持 AVTransport（非 DLNA 渲染器）"
+        ));
     }
 
     Ok(DlnaDevice {
@@ -60,7 +64,6 @@ pub async fn describe_device(
     })
 }
 
-/// LOCATION URL 的 origin（scheme://host:port）。
 fn base_of(location: &str) -> String {
     location
         .find("://")
@@ -72,7 +75,6 @@ fn base_of(location: &str) -> String {
         .unwrap_or_else(|| location.to_string())
 }
 
-/// 相对 controlURL → 绝对 URL（兼容 /开头 与 相对路径）。
 pub fn resolve_url(base: &str, path: &str) -> String {
     let path = path.trim();
     if path.starts_with("http://") || path.starts_with("https://") {
@@ -84,7 +86,6 @@ pub fn resolve_url(base: &str, path: &str) -> String {
     format!("{base}/{path}")
 }
 
-/// 按 <service>...</service> 切块。
 fn split_service_blocks(xml: &str) -> Vec<String> {
     let mut out = Vec::new();
     let lower = xml.to_ascii_lowercase();
@@ -140,7 +141,6 @@ mod tests {
 
     #[tokio::test]
     async fn parse_is_pure_after_fetch() {
-        // 不走网络，只测解析内联逻辑的可重入性：base_of / resolve_url。
         assert_eq!(
             base_of("http://192.168.1.5:49152/desc.xml"),
             "http://192.168.1.5:49152"

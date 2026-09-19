@@ -15,10 +15,8 @@ const newId = ref('');
 const password = ref('');
 const loading = ref(false);
 
-// 密码可见性状态
 const pwdVisible = reactive<Record<string, boolean>>({});
 
-// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
 const pwdFocused = reactive<Record<string, boolean>>({});
 
 watch(
@@ -61,7 +59,6 @@ async function submit() {
   loading.value = true;
   try {
     if (ciyuanxiDialogState.value.debug) {
-      // 调试模式：仅模拟修改流程，不发送服务器
       await new Promise((r) => setTimeout(r, 600));
       showToast('（调试）弦予号修改成功', 'success');
     } else {

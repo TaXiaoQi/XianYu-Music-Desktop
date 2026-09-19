@@ -49,8 +49,6 @@ describe('extractCoverUrl netease picId fallback', () => {
   });
 });
 
-// Baka 系插件（长青SVIP音源、咪咕、QQ音乐等）使用 coverImg / imgUrl / imgurl / picurl
-// 作为封面字段名，extractCoverUrl 需兼容这些字段以正确显示歌单/排行榜封面
 describe('extractCoverUrl Baka plugin cover fields', () => {
   it('extracts coverImg (Baka top list / playlist cover)', () => {
     expect(extractCoverUrl({ coverImg: 'https://d.musicapp.migu.cn/cover.png' }))
@@ -83,8 +81,6 @@ describe('extractCoverUrl Baka plugin cover fields', () => {
   });
 });
 
-// 网易云系插件（mf/baka/lx 通用）常把歌曲数据藏在一层嵌套里（song/data/music…），
-// 封面和时长需穿透该层才能取到，否则搜索列表出现"有结果但无封面、无时长"
 describe('extractCoverUrl nested netease shapes', () => {
   it('extracts al.picUrl nested under song', () => {
     expect(extractCoverUrl({ song: { al: { picUrl: 'https://p3.music.126.net/song.jpg' } } }))

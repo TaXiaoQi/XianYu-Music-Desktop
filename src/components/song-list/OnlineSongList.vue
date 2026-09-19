@@ -26,15 +26,12 @@ const formatDuration = (seconds: number): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-/** 封面显示 URL 缓存（原始 URL → 代理后的 data: URL） */
 const coverDisplayMap = ref(new Map<string, string>());
 
-/** 返回可直接用于 <img> 的封面 URL：需要代理的域名走后端代理，代理完成后自动刷新回 data: URL */
 const getCover = (item: Song): string => {
   const url = item.cover_thumb_path || '';
   if (!url || url.startsWith('data:')) return url;
   const cached = coverDisplayMap.value.get(url);
-  // 注意：代理中的封面缓存值为 ''（占位），不能按 falsy 判断，否则每次渲染都会重新写入 map 触发无限递归更新
   if (cached !== undefined) return cached;
   const display = getDisplayCoverUrl(url, (dataUrl) => {
     coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, dataUrl);
@@ -49,7 +46,6 @@ const handleImgError = (e: Event) => {
   const img = e.target as HTMLImageElement;
   const src = img.src;
   if (!src || src.startsWith('data:')) return;
-  // 原始 URL 加载失败 → 走后端代理回退（tryProxyImage 自带缓存/去重/失败标记）
   (async () => {
     const dataUrl = await tryProxyImage(src);
     if (dataUrl) {
@@ -58,7 +54,6 @@ const handleImgError = (e: Event) => {
   })();
 };
 
-/** 点击/双击播放：触发飞入封面动画并立即 emit 播放 */
 const handlePlayClick = (song: Song) => {
   if (currentSong.value?.path === song.path && isPlaying.value) {
     return;
@@ -69,9 +64,6 @@ const handlePlayClick = (song: Song) => {
 };
 
 // --- 渐进式渲染 ---
-// 在线搜索/专辑歌曲列表可能包含上百首歌曲，全量渲染会产生大量 DOM 节点。
-// 使用初始渲染上限 + IntersectionObserver 哨兵检测，滚动到底部时自动加载更多。
-// 首批数量按屏幕高度估算，只挂载一屏左右的 DOM，避免在线歌单过大时切换页面卡顿。
 const ROW_HEIGHT = 61;
 const RENDER_BUFFER_ROWS = 4;
 const MIN_RENDER_BATCH_SIZE = 20;
@@ -85,7 +77,6 @@ const renderLimit = ref(getInitialRenderLimit());
 const visibleSongs = computed(() => props.songs.slice(0, renderLimit.value));
 const hasMore = computed(() => renderLimit.value < props.songs.length);
 
-// 哨兵元素 ref
 const sentinelRef = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
@@ -98,7 +89,6 @@ const onSentinelIntersect: IntersectionObserverCallback = (entries) => {
   }
 };
 
-// 监听哨兵元素，使用 IntersectionObserver 检测滚动到底部
 watch(sentinelRef, (el, _oldEl, onCleanup) => {
   if (observer) {
     observer.disconnect();
@@ -119,13 +109,10 @@ watch(sentinelRef, (el, _oldEl, onCleanup) => {
   });
 });
 
-// songs 变化时重置渲染上限（切换专辑/歌手/tab 时）
-// immediate: true 确保组件创建时立即设置正确的 renderLimit，避免首次渲染空白
 watch(() => props.songs, () => {
   renderLimit.value = Math.min(props.songs.length, getInitialRenderLimit());
 }, { immediate: true });
 
-// 额外安全网：当 songs 数组长度变化但引用未变时（原地修改），也重置渲染上限
 watch(() => props.songs.length, () => {
   renderLimit.value = Math.min(props.songs.length, getInitialRenderLimit());
 });
@@ -181,7 +168,6 @@ onBeforeUnmount(() => {
         </tr>
       </tbody>
     </table>
-    <!-- 渐进式渲染哨兵：滚动到此处时自动加载下一批 -->
     <div ref="sentinelRef" class="h-1 w-full" aria-hidden="true"></div>
   </div>
 </template>

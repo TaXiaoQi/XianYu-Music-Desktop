@@ -98,7 +98,7 @@ const handleClose = () => {
   setTimeout(() => {
     emit('close');
     isClosing.value = false;
-  }, 200); // 时长匹配退出动画
+  }, 200);
 };
 
 watch(
@@ -225,26 +225,10 @@ const ensureMusicTagPath = async (): Promise<string | null> => {
   }
 
   if (!path) {
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      title: '选择 MusicTag 可执行文件',
-      filters: [
-        {
-          name: '可执行文件',
-          extensions: ['exe'],
-        },
-      ],
-    });
+    const selected = await appApi.registerExternalProgram();
 
-    if (!selected || typeof selected !== 'string') {
+    if (!selected) {
       showToast('已取消选择 MusicTag', 'info');
-      return null;
-    }
-
-    const exists = await downloadApi.fileExists(selected);
-    if (!exists) {
-      showToast('MusicTag 路径无效', 'error');
       return null;
     }
 
@@ -487,7 +471,6 @@ const handleSaveSongInfo = async () => {
   }
 };
 
-// 格式化工具
 const formatSize = (bytes?: number) => {
   if (bytes === undefined || bytes <= 0) return '无';
   return formatFileSize(bytes);
@@ -525,7 +508,6 @@ const formatTime = (timestampSeconds?: number) => {
       class="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6"
       :class="{'pointer-events-none': isClosing}"
     >
-      <!-- 背景盖板 -->
       <div
         class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
         :class="isClosing ? 'opacity-0' : 'opacity-100'"
@@ -577,13 +559,10 @@ const formatTime = (timestampSeconds?: number) => {
             </button>
           </div>
 
-          <!-- 模态框主体 -->
           <div
             class="song-info-main relative w-full bg-white/85 dark:bg-gray-900/90 backdrop-blur-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-white/40 dark:border-white/10"
           >
-            <!-- 内容区 -->
             <div v-if="displaySong" class="song-info-content p-6 overflow-y-auto custom-scrollbar">
-              <!-- 上半部分：封面 + 基本信息 -->
               <div class="song-info-hero flex flex-col sm:flex-row gap-6 mb-4">
                 <button
                   type="button"
@@ -645,10 +624,8 @@ const formatTime = (timestampSeconds?: number) => {
 
               <div v-if="songInfoEditError" class="song-info-edit-error">{{ songInfoEditError }}</div>
 
-              <!-- 下半部分：详细属性网格 -->
               <div class="flex flex-col gap-4">
                 <div class="song-info-detail-grid bg-gray-50/50 dark:bg-white/5 rounded-xl p-4 border border-gray-100 dark:border-gray-800 grid grid-cols-3 gap-y-6 gap-x-4">
-                  <!-- 第一行 -->
                   <div>
                     <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">音轨号</div>
                     <input
@@ -680,7 +657,6 @@ const formatTime = (timestampSeconds?: number) => {
                     <div v-else class="text-sm text-gray-800 dark:text-gray-200">{{ displaySong.year || '无' }}</div>
                   </div>
 
-                  <!-- 第二行 -->
                   <div>
                     <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">音乐时长</div>
                     <div class="text-sm text-gray-800 dark:text-gray-200">{{ formatDuration(displaySong.duration) }}</div>
@@ -694,7 +670,6 @@ const formatTime = (timestampSeconds?: number) => {
                     <div class="text-sm text-gray-800 dark:text-gray-200 uppercase">{{ displaySong.format || displaySong.container || '无' }}</div>
                   </div>
 
-                  <!-- 第三行 -->
                   <div>
                     <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">位深</div>
                     <div class="text-sm text-gray-800 dark:text-gray-200">{{ displaySong.bit_depth ? displaySong.bit_depth + ' bit' : '无' }}</div>
@@ -728,7 +703,6 @@ const formatTime = (timestampSeconds?: number) => {
             </div>
           </div>
 
-          <!-- 外置操作区 -->
           <div class="song-info-footer modal-external-actions">
             <button
               v-if="!isSongInfoEditing"
@@ -1143,7 +1117,6 @@ const formatTime = (timestampSeconds?: number) => {
   padding: 0;
   color: inherit;
   cursor: default;
-  /* 开启独立渲染复合层，解决绝对定位子元素引入导致的 Webkit/Chromium 溢出圆角裁剪失效 Bug */
   transform: translateZ(0);
   border-radius: 12px;
   overflow: hidden;
@@ -1177,7 +1150,6 @@ const formatTime = (timestampSeconds?: number) => {
   line-height: 1;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  /* 显式赋予底部左/右两侧圆角，与外层容器完美的 12px 物理圆角无缝重叠 */
   border-radius: 0 0 12px 12px;
 }
 
@@ -1698,7 +1670,6 @@ const formatTime = (timestampSeconds?: number) => {
   color: #ec4141;
 }
 
-/* 精细防文本误选中与防图片拖拽新增样式 */
 .no-text-select {
   -webkit-user-select: none;
   user-select: none;
@@ -1735,7 +1706,6 @@ const formatTime = (timestampSeconds?: number) => {
 .song-info-cover img {
   -webkit-user-drag: none;
   user-drag: none;
-  /* 显式强制赋予 12px 物理圆角，建立第二道物理裁剪防线，杜绝任何直角溢出 */
   border-radius: 12px;
 }
 

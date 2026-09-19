@@ -45,6 +45,12 @@ pub(crate) async fn test_remote_source(
     source: RemoteSourceInput,
 ) -> Result<RemoteConnectionResult, String> {
     let credentials = input_to_credentials(source)?;
+    if let Err(error) = crate::security::ssrf::validate_outbound_url(&credentials.base_url).await {
+        return Ok(RemoteConnectionResult {
+            ok: false,
+            message: error,
+        });
+    }
     match webdav::test_connection(&credentials).await {
         Ok(()) => Ok(RemoteConnectionResult {
             ok: true,
@@ -62,6 +68,8 @@ pub(crate) async fn add_remote_source(
     source: RemoteSourceInput,
     db_state: State<'_, DbState>,
 ) -> Result<RemoteSource, String> {
+    crate::security::ssrf::validate_outbound_url(source.base_url.trim().trim_end_matches('/'))
+        .await?;
     let conn = db_state.conn.lock().map_err(|error| error.to_string())?;
     save_source(&conn, source)
 }
@@ -71,6 +79,8 @@ pub(crate) async fn update_remote_source(
     source: RemoteSourceInput,
     db_state: State<'_, DbState>,
 ) -> Result<RemoteSource, String> {
+    crate::security::ssrf::validate_outbound_url(source.base_url.trim().trim_end_matches('/'))
+        .await?;
     let conn = db_state.conn.lock().map_err(|error| error.to_string())?;
     save_source(&conn, source)
 }
@@ -94,6 +104,7 @@ pub(crate) async fn sync_remote_source(
         let conn = db_state.conn.lock().map_err(|error| error.to_string())?;
         get_source(&conn, &source_id)?
     };
+    crate::security::ssrf::validate_outbound_url(&source.base_url).await?;
 
     scanner::sync_source(app, db_state.conn.clone(), source).await
 }
@@ -132,5 +143,6 @@ pub(crate) async fn list_remote_directory(
         let conn = db_state.conn.lock().map_err(|error| error.to_string())?;
         get_source(&conn, &source_id)?
     };
+    crate::security::ssrf::validate_outbound_url(&source.base_url).await?;
     webdav::list_directory(webdav::shared_client(), &source, &path).await
 }

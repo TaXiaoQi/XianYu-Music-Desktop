@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { open } from '@tauri-apps/plugin-dialog';
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
 import { useI18n } from '../../features/i18n';
 import { useSettings } from '../../features/settings/useSettings';
+import { downloadApi } from '../../services/tauri/downloadApi';
 import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior, MvQualityKey } from '../../types';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import { computed, ref } from 'vue';
@@ -73,19 +73,16 @@ const patchDownloadQuality = (value: DownloadQuality) => {
   patchSettings({ download: { ...settings.value.download, quality: value } });
 };
 
-/** 弹窗中选择下载音质 */
 const handleDownloadQualitySelect = (value: DownloadQuality) => {
   showDownloadQualityModal.value = false;
   patchDownloadQuality(value);
 };
 
-/** 弹窗中选择 MV 默认下载画质 */
 const handleMvQualitySelect = (value: MvQualityKey) => {
   showMvQualityModal.value = false;
   patchSettings({ download: { ...settings.value.download, mvDefaultQuality: value } });
 };
 
-/** 弹窗中选择下载行为 */
 const handleDownloadBehaviorSelect = (value: DownloadBehavior) => {
   showDownloadBehaviorModal.value = false;
   patchSettings({ download: { ...settings.value.download, behavior: value } });
@@ -101,34 +98,33 @@ const handleBatchDownloadLimitChange = (event: Event) => {
   });
 };
 
-/** 弹窗中选择音质缺失行为 */
 const handleQualityFallbackSelect = (value: DownloadQualityFallbackBehavior) => {
   showQualityFallbackModal.value = false;
   patchSettings({ download: { ...settings.value.download, qualityFallbackBehavior: value } });
 };
 
-/** 弹窗中选择文件名样式 */
 const handleFileNameStyleSelect = (value: DownloadFileNameStyle) => {
   showFileNameStyleModal.value = false;
   patchSettings({ download: { ...settings.value.download, fileNameStyle: value } });
 };
 
-/** 弹窗中选择歌词格式 */
 const handleLyricsFormatSelect = (value: 'lrc' | 'txt') => {
   showLyricsFormatModal.value = false;
   patchSettings({ download: { ...settings.value.download, lyricsFormat: value } });
 };
 
-/** 弹窗中选择歌词样式 */
 const handleLyricsStyleSelect = (value: DownloadLyricsStyle) => {
   showLyricsStyleModal.value = false;
   patchSettings({ download: { ...settings.value.download, lyricsStyle: value } });
 };
 
 const chooseDir = async () => {
-  const selected = await open({ directory: true, multiple: false, title: isEnglish.value ? 'Choose Download Folder' : '选择下载目录' });
-  if (selected && typeof selected === 'string') {
+  try {
+    const selected = await downloadApi.registerDownloadDirectory();
+    if (!selected) return;
     patchSettings({ download: { ...settings.value.download, downloadPath: selected } });
+  } catch (error) {
+    console.error(error);
   }
 };
 
@@ -137,7 +133,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
 
 <template>
   <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <!-- 下载行为 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -201,7 +196,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </div>
     </section>
 
-    <!-- 下载行为选择弹窗 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -242,7 +236,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <!-- 下载音质 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -295,7 +288,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </div>
     </section>
 
-    <!-- 下载音质选择弹窗：复用添加歌单弹窗容器模式，3 列平铺网格 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -337,7 +329,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <!-- MV 默认画质选择弹窗：复用添加歌单弹窗容器模式，3 列平铺网格 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -379,7 +370,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <!-- 音质缺失行为选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -420,7 +410,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <!-- 文件名样式选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -461,7 +450,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <!-- 歌词格式选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -502,7 +490,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <!-- 歌词样式选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -543,14 +530,12 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <!-- 下载文件 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         下载文件
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <!-- 文件名样式 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">文件名样式</div>
@@ -565,7 +550,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </button>
         </div>
 
-        <!-- 保留源文件名 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">保留源文件名</div>
@@ -578,7 +562,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           ></button>
         </div>
 
-        <!-- 下载独立歌词 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">下载独立歌词</div>
@@ -592,7 +575,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           ></button>
         </div>
 
-        <!-- 歌词格式 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词格式</div>
@@ -607,7 +589,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </button>
         </div>
 
-        <!-- 歌词样式 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词样式</div>
@@ -623,7 +604,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </button>
         </div>
 
-        <!-- 写入歌曲元数据 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">写入歌曲元数据</div>
@@ -637,7 +617,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           ></button>
         </div>
 
-        <!-- 嵌入歌词 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">嵌入歌词</div>
@@ -651,7 +630,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           ></button>
         </div>
 
-        <!-- 嵌入封面 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">嵌入封面</div>
@@ -667,7 +645,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </div>
     </section>
 
-    <!-- 文件覆盖 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>

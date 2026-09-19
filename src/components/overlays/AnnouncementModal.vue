@@ -17,7 +17,6 @@ const handleClose = () => {
   emit('close');
 };
 
-// 图片查看器
 const viewerImages = ref<string[]>([]);
 const viewerIndex = ref(0);
 const viewerVisible = ref(false);
@@ -85,7 +84,6 @@ watch(
               'announcement-icon--update': announcement.type === 'update',
             }"
           >
-            <!-- info icon -->
             <svg
               v-if="announcement.type === 'info'"
               xmlns="http://www.w3.org/2000/svg"
@@ -99,7 +97,6 @@ watch(
                 clip-rule="evenodd"
               />
             </svg>
-            <!-- warning icon -->
             <svg
               v-else-if="announcement.type === 'warning'"
               xmlns="http://www.w3.org/2000/svg"
@@ -113,7 +110,6 @@ watch(
                 clip-rule="evenodd"
               />
             </svg>
-            <!-- update icon -->
             <svg
               v-else
               xmlns="http://www.w3.org/2000/svg"
@@ -259,7 +255,6 @@ watch(
 }
 </style>
 
-<!-- 深色模式使用非 scoped style 块，原因同 SettingsConflictDialog -->
 <style>
 /* ==================== 主弹窗 ==================== */
 .announcement-card {
@@ -450,7 +445,6 @@ watch(
   opacity: 0;
 }
 
-/* 深色模式附加图片 */
 html.dark .announcement-img {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.08);

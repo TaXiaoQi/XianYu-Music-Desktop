@@ -1,24 +1,3 @@
-//! 音效处理模块（sound_effect）。
-//!
-//! 按 Rust rodio 引擎特性复现 YinDongMusic 全部音效。参数同步采用 `Arc<Mutex<Settings>>`
-//! + `dirty: AtomicBool` 模式（与 `equalizer.rs` 一致）：UI 线程 `lock()` 写 + 置 dirty，
-//! 音频线程每 64 帧读 dirty（原子，无锁），仅 dirty=true 时 `try_lock()` 非阻塞克隆快照。
-//! `try_lock` 失败时下个 64 帧重试，绝不阻塞音频线程。Freeverb 的 `apply_params` 是 O(12)
-//! （仅改 comb 系数字段），锁内仅克隆 ~200B 结构 + 改 12 个系数，耗时 ~1μs，无爆音风险。
-//!
-//! 处理链顺序（每帧 L/R 同时处理）：
-//! 变调变速 → 声道处理 → 波形整形 → 动态 → 调制 → 混响 → 空间 → V4A/audioBoost
-//!
-//! 各子模块：
-//! - `dsp`：共享 DSP 原语（Biquad/DelayLine/LFO/平滑值/包络跟随器）
-//! - `channel`：声道处理（消人声/单声道/交换/拓宽/分离度/Crossfeed/BassBoost/DynamicEQ）
-//! - `shaper`：波形整形（失真/激励器/次低音/比特粉碎/LoFi）
-//! - `dynamics`：动态类（噪声门/扩展器/压缩/多段/去齿音/限制器/AGC）
-//! - `modulation`：调制类（抖音/颤音/音调漂移/镶边/相位/延迟）
-//! - `reverb`：混响（Freeverb 算法，8 梳状 + 4 全通，每样本 O(1)，无 FFT/IR）
-//! - `spatial`：空间音效（3D/8D/36D 环绕 + 虚拟多声道）
-//! - `pitch`：变调变速（OLA 时间拉伸 + 线性重采样 / 改 sample_rate）
-
 pub mod channel;
 pub mod convolution;
 pub mod dsp;
@@ -39,7 +18,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // =========================================================================
-// 枚举
 // =========================================================================
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -88,7 +66,6 @@ pub enum VirtualSurroundMode {
 }
 
 // =========================================================================
-// 参数结构体
 // =========================================================================
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -332,7 +309,6 @@ pub struct DynamicEqParams {
     pub enabled: bool,
 }
 
-/// 音调漂移参数（前端 contracts 中为 ModulationParams{rate,depth}，此处 speed 接收 rate 别名）
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PitchDriftParams {
@@ -345,13 +321,7 @@ pub struct PitchDriftParams {
 }
 
 // =========================================================================
-// SoundEffectSettings（与前端 contracts.ts 一一对应，camelCase）
 // =========================================================================
-//
-// 注意：pitch_shift / playback_rate 以 100 为基准（100 = 原调原速），
-// 不能用 f32 的默认值 0.0（会被 pitch 处理器解读为 0% → 极端变调变速 → 破音/静音）。
-// 因此 SoundEffectSettings 不使用 #[derive(Default)]，而是手动实现 Default，
-// 并为这两个字段提供 serde 级别的默认函数，确保前端漏传字段时也安全。
 
 fn default_pitch_rate() -> f32 {
     100.0
@@ -360,33 +330,28 @@ fn default_pitch_rate() -> f32 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SoundEffectSettings {
-    // 变调/变速（100 = 原调原速）
     #[serde(default = "default_pitch_rate")]
     pub pitch_shift: f32,
     #[serde(default = "default_pitch_rate")]
     pub playback_rate: f32,
     #[serde(default)]
     pub preserves_pitch: bool,
-    // 混响
     pub reverb_kind: ReverbKind,
     pub reverb_preset: String,
     pub reverb_dry: f32,
     pub reverb_wet: f32,
-    // 空间
     pub spatial_mode: SpatialMode,
     pub spatial_speed: f32,
     pub spatial_radius: f32,
     pub spatial_intensity: f32,
     pub virtual_surround_mode: VirtualSurroundMode,
     pub virtual_surround_spread: f32,
-    // 调制
     pub vibrato: ModulationParams,
     pub pitch_drift: PitchDriftParams,
     pub tremolo: ModulationParams,
     pub flanger: FlangerParams,
     pub phaser: PhaserParams,
     pub delay: DelayParams,
-    // 动态
     pub compressor: CompressorParams,
     pub multiband: MultibandParams,
     pub limiter: LimiterParams,
@@ -394,13 +359,11 @@ pub struct SoundEffectSettings {
     pub expander: ExpanderParams,
     pub agc: AgcParams,
     pub de_esser: DeEsserParams,
-    // 波形整形
     pub distortion: DistortionParams,
     pub exciter: ExciterParams,
     pub sub_bass: SubBassParams,
     pub lo_fi: LoFiParams,
     pub bitcrush: BitcrushParams,
-    // 声道处理
     pub vocal_removal: bool,
     pub stereo_widen: StereoWidenParams,
     pub mono_merge: bool,
@@ -409,14 +372,11 @@ pub struct SoundEffectSettings {
     pub crossfeed: CrossfeedParams,
     pub bass_boost: BassBoostParams,
     pub dynamic_eq: DynamicEqParams,
-    // 组合
     pub v4a_enabled: bool,
     pub bypass: bool,
     pub audio_boost: f32,
 }
 
-/// 手动实现 Default：pitch_shift / playback_rate 必须为 100.0（原调原速），
-/// 其余字段沿用类型默认（全部 disabled / 0 / None，等价于纯直通）。
 impl Default for SoundEffectSettings {
     fn default() -> Self {
         Self {
@@ -483,11 +443,6 @@ impl SoundEffectSettings {
         (pitch - 100.0).abs() < 0.1 && (rate - 100.0).abs() < 0.1
     }
 
-    /// 是否存在真正会改变音频内容的音效。
-    ///
-    /// 注意：`audio_boost` 不参与这里的判断。旧版本前端曾把不可见的 audioBoost
-    /// 默认设为 60，导致“没开音效”也被额外放大并削波。只有当其它音效/变调/变速
-    /// 已经激活时，process() 末尾的 audioBoost 才会作为附加增益参与处理。
     #[inline]
     fn has_audible_processing(&self) -> bool {
         !self.pitch_rate_is_neutral()
@@ -529,17 +484,7 @@ impl SoundEffectSettings {
 }
 
 // =========================================================================
-// SoundEffectHandle（跨线程共享：UI 线程写，音频线程读）
 // =========================================================================
-//
-// 与 equalizer.rs 的 EqualizerHandle 完全一致的模式：
-// - `settings: Arc<Mutex<SoundEffectSettings>>`：UI 线程 lock() 写，音频线程 try_lock() 读
-// - `dirty: AtomicBool`：UI 线程 set_settings 后置 true，音频线程先读 dirty（原子，无锁），
-//   仅 true 时才 try_lock 克隆快照。try_lock 失败（UI 线程持锁）时下个 64 帧重试，绝不阻塞。
-//
-// 选型理由：Freeverb 的 apply_params 是 O(12)（仅改 comb feedback/damp 系数），不像旧版 FFT
-// 卷积需要重建 86 个分区（2-5ms）。锁内仅克隆 ~200B 结构，耗时 <1μs，无爆音/卡顿风险。
-// 无需 arc-swap 外部依赖（crates.io 网络不可达时无法下载）。
 
 pub struct SoundEffectHandle {
     pub settings: Arc<Mutex<SoundEffectSettings>>,
@@ -554,48 +499,36 @@ impl SoundEffectHandle {
         }
     }
 
-    /// UI 线程写入新设置并标记 dirty。
-    /// lock() 阻塞但仅在 UI 线程调用，持锁时间 = 一次结构体赋值（<1μs）。
     pub fn set_settings(&self, new_settings: SoundEffectSettings) {
         if let Ok(mut s) = self.settings.lock() {
             *s = new_settings;
         }
-        // Release：确保上面的写入在 dirty=true 对音频线程可见之前完成
         self.dirty.store(true, Ordering::Release);
     }
 }
 
 // =========================================================================
-// SoundEffectSource（rodio Source 装饰器，集成全部机架）
 // =========================================================================
 
 pub struct SoundEffectSource<I> {
     inner: I,
     handle: Arc<SoundEffectHandle>,
-    // 音频线程私有的设置快照
     settings: SoundEffectSettings,
-    // 变调变速处理器
     pitch: pitch::PitchRateProcessor,
-    // 各效果机架
     channel_rack: channel::ChannelRack,
     shaper_rack: shaper::ShaperRack,
     dynamics_rack: dynamics::DynamicsRack,
     modulation_rack: modulation::ModulationRack,
     reverb_rack: reverb::ReverbRack,
     spatial_rack: spatial::SpatialRack,
-    // V4A：低/高 shelf
     v4a_low: dsp::Biquad,
     v4a_high: dsp::Biquad,
-    // 帧缓冲
     in_frame: Vec<f32>,
     out_frame: Vec<f32>,
     out_idx: usize,
-    // 元数据
     channels: u16,
     sample_rate: u32,
-    // 非阻塞同步帧计数
     frame_counter: usize,
-    // 是否已 prepare（首次 next 时初始化）
     prepared: bool,
 }
 
@@ -606,13 +539,11 @@ where
     pub fn new(inner: I, handle: Arc<SoundEffectHandle>) -> Self {
         let channels = inner.channels();
         let sample_rate = inner.sample_rate();
-        // 加载初始设置快照（构造发生在非音频线程，lock() 安全）
         let settings = handle
             .settings
             .lock()
             .map(|s| s.clone())
             .unwrap_or_default();
-        // 清除 dirty（本次 new 已应用当前设置，避免首次 sync 重复 apply）
         handle.dirty.store(false, Ordering::Release);
         let mut src = Self {
             inner,
@@ -654,22 +585,14 @@ where
         self.v4a_high.resize_channels(ch);
         self.in_frame.resize(ch.max(1), 0.0);
         self.out_frame.resize(ch.max(1), 0.0);
-        // 标记缓存已耗尽，迫使下一次 next() 直接从 inner 填充新帧，
-        // 避免返回 resize 初始化的零值（会导致开头数样本静音）。
         self.out_idx = self.out_frame.len();
         self.prepared = true;
     }
 
     fn apply_params(&mut self, s: &SoundEffectSettings) {
-        // V4A 组合音效：启用时合并子效果参数（匹配 YinDongMusic setV4A 实现）
-        // YinDongMusic: bassBoost(true,6,true) + dynamicEq(true) + stereoWiden(true,1.4) + compressor(true,-20,4,3,100)
-        // 用 max 语义：用户已手动调高某参数时不覆盖，未启用则强制 V4A 参数
         let effective = if s.v4a_enabled {
-            // 对齐 YinDongMusic setV4A：
-            // vocalRemoval(false) + bassBoost(true,6,true) + dynamicEq(true)
-            // + stereoWiden(true,1.4) + compressor(true,-20,4,3ms,100ms)
             let mut e = s.clone();
-            e.vocal_removal = false; // V4A 不消人声
+            e.vocal_removal = false;
             e.bass_boost.enabled = true;
             e.bass_boost.gain = e.bass_boost.gain.max(6.0);
             e.bass_boost.dynamic = true;
@@ -685,8 +608,6 @@ where
         } else {
             s.clone()
         };
-        // 关键：把 effective 存入 self.settings，使 process() 中读到的 s 是 V4A 合并后的参数
-        // （process 各机架从 s 读取 enabled/dynamic 等运行时标志，不仅依赖 update_params 设的系数）
         self.settings = effective.clone();
         self.pitch.update_params(&effective);
         self.channel_rack.update_params(&effective);
@@ -695,8 +616,6 @@ where
         self.modulation_rack.update_params(&effective);
         self.reverb_rack.update_params(&effective);
         self.spatial_rack.update_params(&effective);
-        // V4A 不再单独做 shelving（由 channel_rack 的 bass/dynEq + dynamics_rack 的 compressor 实现）
-        // v4a_low/v4a_high 保留为 passthrough 避免影响音质
         self.v4a_low.set_passthrough_inline();
         self.v4a_high.set_passthrough_inline();
     }
@@ -715,29 +634,21 @@ where
         self.out_idx = 0;
     }
 
-    /// 非阻塞检查参数变更并同步（每 64 帧调用一次）。
-    /// 先读 dirty 原子（无锁快速路径）：false 直接返回；true 时 try_lock 非阻塞克隆快照。
-    /// try_lock 失败（UI 线程持锁）时保留 dirty=true，下个 64 帧重试，绝不阻塞音频线程。
     fn sync_settings(&mut self) {
         self.frame_counter += 1;
         if self.frame_counter < 64 {
             return;
         }
         self.frame_counter = 0;
-        // 原子读 dirty，无锁快速路径
         if !self.handle.dirty.load(Ordering::Acquire) {
-            return; // UI 线程未更新
+            return;
         }
-        // try_lock 在 match 子作用域内完成克隆，确保 MutexGuard 借用（&self.handle.settings）
-        // 在 match 结束时释放，之后才能调 apply_params(&mut self)。若用 if let，try_lock()
-        // 返回的 Result 临时值会存活到块尾，导致 apply_params 的 &mut self 借用冲突。
         let snapshot = match self.handle.settings.try_lock() {
             Ok(s) => {
-                // 成功读取后才清 dirty（避免丢失未读更新）
                 self.handle.dirty.store(false, Ordering::Release);
                 s.clone()
             }
-            Err(_) => return, // try_lock 失败，保留 dirty=true，下个 64 帧重试
+            Err(_) => return,
         };
         self.settings = snapshot.clone();
         self.apply_params(&snapshot);
@@ -752,14 +663,12 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        // 若 out_frame 还有未消费样本，直接返回
         if self.out_idx < self.out_frame.len() {
             let s = self.out_frame[self.out_idx];
             self.out_idx += 1;
             return Some(s);
         }
 
-        // 检测 inner 元数据变化（换轨时采样率/声道数可能变）
         let cur_rate = self.inner.sample_rate();
         let cur_ch = self.inner.channels();
         if cur_rate != self.sample_rate || cur_ch != self.channels || !self.prepared {
@@ -770,13 +679,10 @@ where
             self.apply_params(&s);
         }
 
-        // 同步参数
         self.sync_settings();
 
         let hard_bypass = self.settings.should_hard_bypass();
         if hard_bypass {
-            // 真正的硬旁路：没有任何音效启用时，不进入 PitchRateProcessor、各 DSP 机架
-            // 或 audioBoost，避免默认/残留参数改变本地播放波形。
             let ch = self.channels as usize;
             for i in 0..ch.min(self.out_frame.len()) {
                 self.out_frame[i] = self.inner.next()?;
@@ -791,21 +697,15 @@ where
             return None;
         }
 
-        // 从 pitch 处理器填充一帧（变调变速后）。只有存在真实音效/变调/变速时才进入，
-        // 中性状态下由上面的硬旁路直接读取 inner，保证零处理直通。
         if !self.pitch.fill(&mut self.inner, &mut self.in_frame) {
             return None;
         }
 
-        // 处理效果链
         let ch = self.channels;
         let s = &self.settings;
-        // 复制 in_frame → out_frame
         self.out_frame.copy_from_slice(&self.in_frame);
         self.out_idx = 0;
 
-        // V4A 子效果已在 apply_params 中合并到 effective settings，由各机架处理
-        // （bass_boost/dynamic_eq/stereo_widen → channel_rack，compressor → dynamics_rack）
         self.channel_rack.process(&mut self.out_frame, ch, s);
         self.shaper_rack.process(&mut self.out_frame, ch, s);
         self.dynamics_rack.process(&mut self.out_frame, ch, s);
@@ -813,7 +713,6 @@ where
         self.reverb_rack.process(&mut self.out_frame, ch, s);
         self.spatial_rack.process(&mut self.out_frame, ch, s);
 
-        // audioBoost：0-100 → 0~6dB 增益
         let boost_db = (s.audio_boost / 100.0).clamp(0.0, 1.0) * 6.0;
         if boost_db > 0.01 {
             let g = dsp::db_to_gain(boost_db);
@@ -846,7 +745,6 @@ where
         if self.settings.should_hard_bypass() {
             return self.sample_rate;
         }
-        // 变速变调（preservesPitch=false）时由 pitch 处理器调整
         self.pitch.effective_sample_rate(self.sample_rate)
     }
 
@@ -869,11 +767,9 @@ where
 }
 
 // =========================================================================
-// dsp 扩展：Biquad 直通设置（供 V4A 使用）
 // =========================================================================
 
 impl dsp::Biquad {
-    /// 设置为纯直通（增益 0）
     pub fn set_passthrough_inline(&mut self) {
         self.b0 = 1.0;
         self.b1 = 0.0;
@@ -885,7 +781,6 @@ impl dsp::Biquad {
 }
 
 // =========================================================================
-// 单元测试
 // =========================================================================
 
 #[cfg(test)]
@@ -936,7 +831,6 @@ mod tests {
         assert_eq!(s.distortion.distortion_type, DistortionType::Soft);
         assert!(s.preserves_pitch);
         assert_eq!(s.pitch_shift, 100.0);
-        // pitchDrift 的 rate 别名应映射到 speed
         assert_eq!(s.pitch_drift.speed, 1.0);
         assert!(s.pitch_drift.enabled);
     }
@@ -947,14 +841,12 @@ mod tests {
         assert_eq!(s.reverb_kind, ReverbKind::None);
         assert_eq!(s.spatial_mode, SpatialMode::None);
         assert!(!s.preserves_pitch);
-        // 默认必须为 100（原调原速），0 会导致 pitch 处理器进入极端变调变速 → 破音/静音
         assert_eq!(s.pitch_shift, 100.0);
         assert_eq!(s.playback_rate, 100.0);
     }
 
     #[test]
     fn test_handle_mutex_sync() {
-        // Mutex + dirty 同步：set_settings 后 lock() 应读到新值，dirty=true
         let h = SoundEffectHandle::new(SoundEffectSettings::default());
         assert!(!h.dirty.load(Ordering::Acquire));
         assert_eq!(h.settings.lock().unwrap().audio_boost, 0.0);
@@ -968,15 +860,11 @@ mod tests {
         assert_eq!(h.settings.lock().unwrap().audio_boost, 50.0);
     }
 
-    /// 端到端直通测试：默认设置下 SoundEffectSource 必须无损透传输入样本。
-    /// 这是「播放无声音」问题的回归防线——默认 pitch_shift=100/playback_rate=100，
-    /// 所有效果 disabled，整个处理链应等价于直通。
     #[test]
     fn test_default_passthrough_e2e() {
         use rodio::Source;
         use std::time::Duration;
 
-        /// 简单测试源：立体声，输出已知的交替非零样本
         struct TestSource {
             pos: usize,
             channels: u16,
@@ -1016,7 +904,6 @@ mod tests {
         let handle = Arc::new(SoundEffectHandle::new(SoundEffectSettings::default()));
         let mut src = SoundEffectSource::new(inner, handle);
 
-        // 读取若干帧，验证输出非零且与输入一致（直通）
         let mut nonzero = 0;
         let mut total = 0;
         for _ in 0..200 {
@@ -1025,7 +912,6 @@ mod tests {
                 if s.abs() > 1e-6 {
                     nonzero += 1;
                 }
-                // 直通时输出应为 0.5 或 -0.3
                 assert!(
                     (s - 0.5).abs() < 1e-3 || (s - (-0.3)).abs() < 1e-3,
                     "passthrough 期望输出 ±输入值，实际得到 {s}"

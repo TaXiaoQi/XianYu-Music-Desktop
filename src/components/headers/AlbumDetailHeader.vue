@@ -16,13 +16,9 @@ const props = defineProps<{
   selectedCount?: number;
   totalSongCount?: number;
   songs?: Array<{ path: string }>;
-  /** 只读模式：禁用管理按钮、排序按钮和排序菜单 */
   readOnly?: boolean;
-  /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
-  /** 待收藏的歌单/专辑条目（传入即显示"收藏整张"按钮） */
   favoriteEntry?: FavoriteCollectionEntry | null;
-  /** 歌曲列表滚动容器（用于滚动缩小封面效果） */
   scrollContainerRef?: HTMLElement | null;
 }>();
 
@@ -62,7 +58,6 @@ const sortMenuIsRightAligned = ref(false);
 const coverUrl = ref('');
 const isLoading = ref(false);
 
-// 显示用封面：B站等防盗链封面经后端代理成 data:URL（代理完成回填刷新），本地封面原样
 const displayedCover = ref('');
 watch(coverUrl, (url) => {
   if (!url) {
@@ -107,7 +102,6 @@ onUnmounted(() => window.removeEventListener('click', handleGlobalClick));
 watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([cacheKey, newSongs, coverOverride]) => {
   const requestId = ++coverRequestId;
 
-  // readOnly 模式优先使用在线封面 URL
   if (props.readOnly && coverOverride) {
     coverUrl.value = coverOverride;
     isLoading.value = false;
@@ -187,16 +181,11 @@ const getGradientForAlbum = (name: string) => {
 const scrollContainer = computed(() => props.scrollContainerRef ?? null);
 const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 144);
 
-/** 封面尺寸：144px → 44px */
 const coverSize = computed(() => `${144 - 100 * scrollProgress.value}px`);
-/** 右侧信息列高度：144px → 64px */
 const columnHeight = computed(() => `${144 - 80 * scrollProgress.value}px`);
-/** 标题字号：32px → 16px（同步压缩行高避免占位过高） */
 const titleSize = computed(() => `${32 - 16 * scrollProgress.value}px`);
 const titleLineHeight = computed(() => `${40 - 20 * scrollProgress.value}px`);
-/** 标题下边距：16px → 4px */
 const titleMarginBottom = computed(() => `${16 - 12 * scrollProgress.value}px`);
-/** 专辑艺人在收缩早期淡出并收起 */
 const artistOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 2));
 const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scrollProgress.value * 2))}px`);
 </script>

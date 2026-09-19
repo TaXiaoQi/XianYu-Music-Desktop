@@ -1,4 +1,3 @@
-/** 汽水音乐平台评论（api.qishui.com luna/pc，静态参数无需登录态）。 */
 import { httpJson, PAGE_SIZE } from './platformCommentShared';
 import type { PlatformComment, PlatformCommentResult } from './platformCommentShared';
 

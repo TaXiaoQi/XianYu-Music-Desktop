@@ -1,10 +1,3 @@
-// lx_search.rs - LX 音源搜索（Rust 实现）
-//
-// 将前端 lxMusicSdk.ts 中的搜索逻辑迁移到 Rust，支持 kw / kg / tx / wy / mg 五个音源。
-// 搜索结果带 5 分钟缓存，供 find_alternative_lx_source 换源命令使用。
-//
-// 与前端搜索保持一致的字段解析和音质映射，确保换源匹配结果与前端搜索结果兼容。
-
 use crate::music::url_resolver::LxTypeEntry;
 use base64::Engine;
 use regex::Regex;
@@ -15,7 +8,6 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
-/// 搜索结果项（与前端 LxSearchResultItem 对应）
 #[derive(Serialize, Clone, Debug)]
 pub struct LxSearchItem {
     pub name: String,
@@ -31,9 +23,7 @@ pub struct LxSearchItem {
     pub song_id: Option<serde_json::Value>,
     pub album_mid: Option<String>,
     pub copyright_id: Option<String>,
-    /// 音质列表 (type, size, hash)
     pub types: Vec<LxTypeTuple>,
-    /// 音质 → { size, hash } 映射
     pub lx_types: Option<HashMap<String, LxTypeEntry>>,
 }
 
@@ -57,18 +47,13 @@ fn search_cache() -> &'static Arc<RwLock<HashMap<String, SearchCacheEntry>>> {
     SEARCH_CACHE.get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
 }
 
-const SEARCH_CACHE_TTL_SECS: u64 = 300; // 5 分钟
-/// 缓存硬上限：过期清理后仍超容量时，按 LRU（最久未访问）淘汰
+const SEARCH_CACHE_TTL_SECS: u64 = 300;
 const SEARCH_CACHE_MAX_ENTRIES: usize = 200;
 
 fn make_search_cache_key(source: &str, keyword: &str, limit: u32) -> String {
     format!("{}/{}/{}", source, keyword, limit)
 }
 
-/// 查询搜索缓存
-///
-/// 命中且未过期时返回拷贝并刷新 `last_access`（LRU）；过期则惰性删除该条目，
-/// 避免过期项长期占内存。使用写锁以更新访问时间，缓存操作极轻量可接受。
 async fn get_cached_search(source: &str, keyword: &str, limit: u32) -> Option<Vec<LxSearchItem>> {
     let key = make_search_cache_key(source, keyword, limit);
     let mut cache = search_cache().write().await;
@@ -95,29 +80,23 @@ async fn set_cached_search(source: &str, keyword: &str, limit: u32, items: Vec<L
         },
     );
 
-    // 先清过期项；若仍超容量，按 last_access 最早淘汰（LRU）
     evict_search_cache(&mut cache, now);
 }
 
-/// 淘汰过期与超容量条目：先 `retain` 未过期项，再按 `last_access` 升序移除最旧条目直至不超上限
 fn evict_search_cache(cache: &mut HashMap<String, SearchCacheEntry>, now: Instant) {
     cache.retain(|_, e| e.expires_at > now);
     let excess = cache.len().saturating_sub(SEARCH_CACHE_MAX_ENTRIES);
     if excess == 0 {
         return;
     }
-    let mut keys: Vec<(String, Instant)> =
-        cache.iter().map(|(k, e)| (k.clone(), e.last_access)).collect();
+    let mut keys: Vec<(String, Instant)> = cache
+        .iter()
+        .map(|(k, e)| (k.clone(), e.last_access))
+        .collect();
     keys.sort_unstable_by_key(|(_, t)| *t);
     for (k, _) in keys.into_iter().take(excess) {
         cache.remove(&k);
     }
-}
-
-/// 清除搜索缓存
-pub async fn clear_lx_search_cache() {
-    let mut cache = search_cache().write().await;
-    cache.clear();
 }
 
 fn format_play_time(seconds: f64) -> String {
@@ -146,10 +125,8 @@ fn size_formate(bytes: f64) -> String {
     format!("{:.1}GB", bytes / (1024.0 * 1024.0 * 1024.0))
 }
 
-/// HTML 数字实体正则（`&#38;` / `&#x26;`），惰性编译一次复用
 static HTML_NUMERIC_RE: OnceLock<Regex> = OnceLock::new();
 
-/// 解码 HTML 数字实体（十进制/十六进制）为真实字符；无效码点原样保留
 fn decode_numeric_entities(s: &str) -> String {
     let re = HTML_NUMERIC_RE.get_or_init(|| Regex::new(r"&#(x?[0-9a-fA-F]+);").unwrap());
     re.replace_all(s, |caps: &regex::Captures| {
@@ -172,7 +149,6 @@ fn decode_numeric_entities(s: &str) -> String {
     .into_owned()
 }
 
-/// HTML 实体解码（覆盖常见命名实体 + 数字实体，前缀等价于前端 `he` 库的常用场景）
 fn decode_name(s: &str) -> String {
     let named = s
         .replace("&amp;", "&")
@@ -185,7 +161,6 @@ fn decode_name(s: &str) -> String {
     decode_numeric_entities(&named)
 }
 
-/// 从歌手数组中提取歌手名（与前端 formatSingerName 一致）
 fn format_singer_name(singers: &serde_json::Value, name_key: &str) -> String {
     if let Some(arr) = singers.as_array() {
         let names: Vec<String> = arr
@@ -205,7 +180,6 @@ fn format_singer_name(singers: &serde_json::Value, name_key: &str) -> String {
     String::new()
 }
 
-/// 构造酷我封面 URL（把开头尺寸段替换为目标尺寸）
 static KUWO_SIZE_RE: OnceLock<Regex> = OnceLock::new();
 
 fn build_kuwo_cover_url(web_albumpic_short: &str, size: u32) -> Option<String> {
@@ -213,13 +187,11 @@ fn build_kuwo_cover_url(web_albumpic_short: &str, size: u32) -> Option<String> {
     if short.is_empty() {
         return None;
     }
-    // 把开头的尺寸段换成目标尺寸（120/xxx → 500/xxx）
     let re = KUWO_SIZE_RE.get_or_init(|| Regex::new(r"^\d+/").unwrap());
     let sized = re.replace(short, format!("{}/", size));
     Some(format!("https://img3.kuwo.cn/star/albumcover/{}", sized))
 }
 
-/// 构造酷狗封面 URL（替换 {size} 占位符并升级为 HTTPS）
 fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
     let u = url.trim();
     if u.is_empty() {
@@ -230,16 +202,12 @@ fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
     Some(u)
 }
 
-/// 全局 HTTP 客户端单例：复用连接池 / TLS 会话，避免每次请求重建 Client。
-///
-/// 保持默认 TLS 证书校验，避免搜索和解析链路被中间人篡改。
 static HTTP_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 
 fn http_client() -> &'static Result<reqwest::Client, String> {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
-            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
             .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .map_err(|e| e.to_string())
@@ -306,13 +274,11 @@ fn pick_hash_by_idx(hash: &str, indexes: &[usize]) -> String {
         .collect()
 }
 
-/// TX 签名（与前端 zzcSign 一致）
 fn zzc_sign(text: &str) -> String {
     let hash = sha1_hex(text);
     let part1 = pick_hash_by_idx(&hash, &TX_PART_1_INDEXES);
     let part2 = pick_hash_by_idx(&hash, &TX_PART_2_INDEXES);
 
-    // part3: XOR scramble values with hash bytes
     let mut part3_bytes = Vec::with_capacity(20);
     for (i, &scramble) in TX_SCRAMBLE_VALUES.iter().enumerate() {
         let hex_pair = &hash[i * 2..i * 2 + 2];
@@ -320,7 +286,6 @@ fn zzc_sign(text: &str) -> String {
         part3_bytes.push(scramble ^ hash_byte);
     }
 
-    // Base64 encode and remove [\/+=]
     let b64 = base64::engine::general_purpose::STANDARD.encode(&part3_bytes);
     let b64_clean: String = b64
         .chars()
@@ -343,7 +308,6 @@ fn mg_create_signature(time: &str, text: &str) -> (String, String) {
 
 const KW_MINFO_REGEX: &str = r"level:(\w+),bitrate:(\d+),format:(\w+),size:([\w.]+)";
 
-/// KW minfo 正则惰性编译一次，避免每次解析都重建
 static KW_MINFO_RE: OnceLock<Regex> = OnceLock::new();
 
 fn kw_handle_result(raw_data: &serde_json::Value) -> Option<Vec<LxSearchItem>> {
@@ -356,7 +320,7 @@ fn kw_handle_result(raw_data: &serde_json::Value) -> Option<Vec<LxSearchItem>> {
         let song_id = musicrid.replace("MUSIC_", "");
         let n_minfo = match info.get("N_MINFO").and_then(|v| v.as_str()) {
             Some(v) => v,
-            None => return None, // 与前端一致：N_MINFO 为空时返回 null 触发重试
+            None => return None,
         };
 
         let mut types = Vec::new();
@@ -427,7 +391,6 @@ fn kw_handle_result(raw_data: &serde_json::Value) -> Option<Vec<LxSearchItem>> {
                 }
             }
         }
-        // 构建顺序为高→低（flac24bit→128k），反转为低→高（128k 在前），与前端展示一致
         types.reverse();
 
         let duration_str = info
@@ -489,11 +452,9 @@ async fn search_kw(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     );
     let result = http_get_json(&url, &[]).await?;
 
-    // 检查是否需要重试（TOTAL !== '0' && SHOW === '0'）
     let total = result.get("TOTAL").and_then(|v| v.as_str()).unwrap_or("0");
     let show = result.get("SHOW").and_then(|v| v.as_str()).unwrap_or("1");
     if total != "0" && show == "0" {
-        // 重试一次
         let retry = http_get_json(&url, &[]).await?;
         return kw_handle_result(retry.get("abslist").unwrap_or(&serde_json::Value::Null))
             .ok_or_else(|| "KW search: no valid results".to_string());
@@ -676,7 +637,6 @@ fn kg_handle_result(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
             ids.insert(key);
             list.push(kg_filter_data(item));
 
-            // 处理 Grp 子项
             if let Some(grp) = item.get("Grp").and_then(|v| v.as_array()) {
                 for child in grp {
                     let child_audioid = child
@@ -781,13 +741,7 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
             .or_else(|| raw_item.get("songInfo"))
             .or_else(|| raw_item.get("musicInfo"))
             .unwrap_or(raw_item);
-        // 放宽过滤：仅要求 mid 或 id 存在即可（与前端 txHandleResult、parseTxSong 对齐）。
-        // 原 media_mid 非空过滤过严：QQ 音乐响应中 file/media_mid 可能为空或缺失，
-        // 导致搜索结果被全部静默过滤 → 列表为空。
-        let songmid = tx_string_field(
-            item,
-            &["mid", "songmid", "songMid", "strMediaMid", "id"],
-        );
+        let songmid = tx_string_field(item, &["mid", "songmid", "songMid", "strMediaMid", "id"]);
         let has_mid = !songmid.is_empty();
         let has_id = item.get("id").is_some();
         if !has_mid && !has_id {
@@ -943,9 +897,7 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
             .get("mid")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                tx_string_field(item, &["albumMid", "albummid", "albumid"])
-            });
+            .unwrap_or_else(|| tx_string_field(item, &["albumMid", "albummid", "albumid"]));
         let album_name = album
             .get("name")
             .and_then(|v| v.as_str())
@@ -961,7 +913,6 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
         };
 
         let img = if album_id.is_empty() || album_id == "空" {
-            // 回退到歌手头像
             item.pointer("/singer/0/mid")
                 .and_then(|v| v.as_str())
                 .map(|mid| {
@@ -1047,22 +998,21 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     )
     .await?;
 
-    // 检查响应
     if body.get("code").and_then(|v| v.as_i64()) != Some(0)
         || body.pointer("/req/code").and_then(|v| v.as_i64()) != Some(0)
     {
         return Err("TX search: invalid response code".to_string());
     }
 
-    // Desktop 接口通常返回 body.song.list；部分环境会返回 body.songlist 或 item_song。
-    let data = body.pointer("/req/data").unwrap_or(&serde_json::Value::Null);
+    let data = body
+        .pointer("/req/data")
+        .unwrap_or(&serde_json::Value::Null);
     let mut result = tx_pick_search_raw_list(data)
         .map(tx_handle_result)
         .unwrap_or_default();
     if !result.is_empty() {
         return Ok(result);
     }
-
 
     let mobile_request_data = serde_json::json!({
         "comm": {
@@ -1087,10 +1037,7 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     let mobile_request_str =
         serde_json::to_string(&mobile_request_data).map_err(|e| e.to_string())?;
     let mobile_sign = zzc_sign(&mobile_request_str);
-    let mobile_url = format!(
-        "https://u.y.qq.com/cgi-bin/musics.fcg?sign={}",
-        mobile_sign
-    );
+    let mobile_url = format!("https://u.y.qq.com/cgi-bin/musics.fcg?sign={}", mobile_sign);
     let mobile_body = http_post_json(
         &mobile_url,
         &mobile_request_str,
@@ -1116,14 +1063,12 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     Ok(result)
 }
 
-/// 生成一个类似 Date.now().toString().slice(2) 的随机 ID
 fn chrono_like_random() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     let mut val = now.as_millis() as u64;
-    // 模拟 JS Math.random().toString().slice(2) 附加
     val = val.wrapping_mul(1000) + (val % 900);
     val
 }
@@ -1160,13 +1105,9 @@ async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         let mut types = Vec::new();
         let mut lx_types = HashMap::new();
 
-        // 与前端 searchWy 一致：网易云旧版搜索接口多数场景不返回 hq/sq 标志，
-        // 三档基础音质（128k/320k/flac）全部无条件声明，由播放探测/回退链路过滤。
-        // 高音质档位（flac24bit/master）同样采用声明 + 探测回落策略：
-        // 黑胶曲库普遍提供 Hi-Res 与超清母带。
         let push_quality = |types: &mut Vec<LxTypeTuple>,
-                                lx_types: &mut HashMap<String, LxTypeEntry>,
-                                quality: &str| {
+                            lx_types: &mut HashMap<String, LxTypeEntry>,
+                            quality: &str| {
             types.push(LxTypeTuple {
                 quality_type: quality.into(),
                 size: None,
@@ -1249,7 +1190,6 @@ fn mg_filter_data(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
     let mut list = Vec::new();
     let mut ids = std::collections::HashSet::new();
 
-    // raw_data 可能是 [[{...}, {...}], [{...}]] 的嵌套结构
     let flat: Vec<&serde_json::Value> = if let Some(outer) = raw_data.as_array() {
         let mut items = Vec::new();
         for inner in outer {
@@ -1451,16 +1391,11 @@ async fn search_mg(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     Ok(mg_filter_data(result_list))
 }
 
-/// 搜索 LX 音源
-///
-/// 优先查询缓存，缓存未命中时执行实际搜索。
-/// 搜索成功后自动写入缓存。
 pub async fn lx_search(
     source: &str,
     keyword: &str,
     limit: u32,
 ) -> Result<Vec<LxSearchItem>, String> {
-    // 归一化 limit：0 表示使用各音源默认值，缓存键统一用实际查询条数，避免同一结果存多份
     let default_limit = match source {
         "tx" => 50,
         "mg" => 20,
@@ -1468,12 +1403,10 @@ pub async fn lx_search(
     };
     let actual_limit = if limit == 0 { default_limit } else { limit };
 
-    // 查询缓存
     if let Some(cached) = get_cached_search(source, keyword, actual_limit).await {
         return Ok(cached);
     }
 
-    // 执行搜索
     let items = match source {
         "kw" => search_kw(keyword, actual_limit).await,
         "kg" => search_kg(keyword, actual_limit).await,
@@ -1483,18 +1416,9 @@ pub async fn lx_search(
         _ => Err(format!("Unknown LX source: {}", source)),
     }?;
 
-    // 写入缓存
     set_cached_search(source, keyword, actual_limit, items.clone()).await;
 
     Ok(items)
-}
-
-/// 清除所有 LX 缓存（URL + 搜索）
-#[tauri::command]
-pub async fn clear_lx_all_cache() -> Result<(), String> {
-    clear_lx_search_cache().await;
-    let _ = crate::music::url_resolver::clear_lx_url_cache().await;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1721,7 +1645,6 @@ mod tests {
 
     #[test]
     fn test_sha1_hex_known_value() {
-        // SHA1("hello") = aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d
         assert_eq!(
             sha1_hex("hello"),
             "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"
@@ -1730,14 +1653,13 @@ mod tests {
 
     #[test]
     fn test_sha1_hex_empty_string() {
-        // SHA1("") = da39a3ee5e6b4b0d3255bfef95601890afd80709
         assert_eq!(sha1_hex(""), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
     }
 
     #[test]
     fn test_sha1_hex_unicode() {
         let hash = sha1_hex("周杰伦");
-        assert_eq!(hash.len(), 40); // SHA1 hex = 40 chars
+        assert_eq!(hash.len(), 40);
     }
 
     // ===== pick_hash_by_idx =====
@@ -1751,7 +1673,6 @@ mod tests {
     #[test]
     fn test_pick_hash_by_idx_out_of_range() {
         let hash = "abc";
-        // index 10 is out of range, should default to '0'
         assert_eq!(pick_hash_by_idx(hash, &[0, 10]), "a0");
     }
 
@@ -1790,10 +1711,8 @@ mod tests {
         let json = serde_json::to_string(&item).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        // 验证 types 中的 rename
         assert_eq!(v["types"][0]["type"], "320k");
         assert_eq!(v["types"][0]["size"], "10.5MB");
-        // 验证基本字段
         assert_eq!(v["name"], "晴天");
         assert_eq!(v["singer"], "周杰伦");
         assert_eq!(v["source"], "kw");
@@ -1830,15 +1749,12 @@ mod tests {
         assert_eq!(it.album_mid.as_deref(), Some("alb01"));
         assert_eq!(it.interval, "04:00");
 
-        // 音质 128k/320k/flac 均有 → 低→高顺序
         let types: Vec<&str> = it.types.iter().map(|t| t.quality_type.as_str()).collect();
         assert_eq!(types, vec!["128k", "320k", "flac"]);
     }
 
     #[test]
     fn test_tx_handle_result_skips_item_without_songmid() {
-        // 放宽后的契约：只要 mid 或 id 存在即保留（file.media_mid 可能为空），
-        // 两者都缺失才跳过。
         let raw = serde_json::json!([
             { "title": "无标识", "file": {} },
             { "title": "有料", "mid": "003", "file": { "media_mid": "M001" } },
@@ -1888,7 +1804,6 @@ mod tests {
         assert_eq!(it.singer, "歌手一");
         assert_eq!(it.interval, "03:00");
 
-        // PQ(128k) 先、SQ(flac) 后 → 低→高
         let types: Vec<&str> = it.types.iter().map(|t| t.quality_type.as_str()).collect();
         assert_eq!(types, vec!["128k", "flac"]);
     }
@@ -1902,7 +1817,6 @@ mod tests {
             "album": "专辑B",
             "singerList": [{"name": "歌手二"}],
             "audioFormats": [
-                // asize 缺失时回退 isize
                 {"formatType": "HQ", "asize": 0.0, "isize": 5.0e6},
                 {"formatType": "ZQ24", "asize": 0.0, "isize": 30.0e6}
             ]

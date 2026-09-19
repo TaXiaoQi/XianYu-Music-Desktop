@@ -7,8 +7,6 @@ pub fn refresh_current_window_topmost(window: tauri::Window, enabled: bool) {
 
     #[cfg(not(target_os = "windows"))]
     {
-        // Linux：直接用窗口管理器的 always-on-top；无 WinEvent 守护，
-        // 焦点切换后由前端在需要时重新调用本命令维持。
         let _ = window.set_always_on_top(enabled);
     }
 }
@@ -34,7 +32,6 @@ pub fn stop_topmost_guard() {
     }
 }
 
-/// 关闭窗口置顶守护线程（WM_QUIT），用于应用退出时释放线程。
 pub fn shutdown_topmost_guard() {
     #[cfg(target_os = "windows")]
     {
@@ -94,7 +91,6 @@ mod platform {
         post_guard_thread_message(WM_TOPMOST_GUARD_STOP);
     }
 
-    /// 向守护线程发送 WM_QUIT 使其退出消息循环，仅在线程已初始化时生效
     pub(super) fn shutdown_guard_thread() {
         if let Some(h) = HOOK_THREAD.get() {
             unsafe {
@@ -144,9 +140,10 @@ mod platform {
                 run_guard_thread(ready_tx);
             });
 
-            let thread_id = ready_rx
-                .recv()
-                .expect("topmost guard thread failed to initialize");
+            let thread_id = ready_rx.recv().unwrap_or_else(|_| {
+                eprintln!("[window_z_order] 置顶守护线程初始化失败，功能降级");
+                0
+            });
 
             HookThreadHandle { thread_id }
         })
@@ -156,7 +153,6 @@ mod platform {
         let thread_id = GetCurrentThreadId();
         let mut msg: MSG = std::mem::zeroed();
 
-        // Force creation of the message queue before other threads start posting messages.
         PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_NOREMOVE);
         let _ = ready_tx.send(thread_id);
 

@@ -4,18 +4,13 @@ export interface ToastMessage {
   id: number;
   text: string;
   type?: 'success' | 'error' | 'info';
-  /** 进度（0-100）；非 null 时显示进度条且不自动消失 */
   progress?: number | null;
 }
 
 export interface ToastHandle {
-  /** 更新文字与进度（0-100） */
   update: (text: string, progress: number) => void;
-  /** 以指定状态结束提示，3 秒后自动关闭 */
   complete: (text: string, type?: 'success' | 'error' | 'info') => void;
-  /** 以失败状态结束提示 */
   fail: (text: string) => void;
-  /** 立即关闭（complete/fail 之后调用无效） */
   close: () => void;
 }
 
@@ -31,7 +26,6 @@ export function useToast() {
     }, 3000);
   };
 
-  /** 显示持续型进度提示（不自动消失），批量任务循环中调用 handle.update 推进进度 */
   const showProgressToast = (text: string): ToastHandle => {
     const id = nextId++;
     toasts.value.push({ id, text, type: 'info', progress: 0 });

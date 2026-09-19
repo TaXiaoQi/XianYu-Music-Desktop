@@ -1,9 +1,7 @@
 @import "tailwindcss";
 
-/* 🟢 Force class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* 🎨 Win11 风格深色模式：覆盖 Tailwind 900 色阶，将偏黑的纯黑替换为带灰的深色 */
 .dark {
   --color-gray-900: #262626;
   --color-neutral-900: #262626;
@@ -11,32 +9,19 @@
 }
 
 /* ---- 隐藏 Chromium/WebView2 原生密码眼睛图标 ---- */
-/* 原生 reveal 按钮聚焦且有内容才显示、失焦消失，且再次聚焦不重现，行为不可靠；
-   登录/注册等密码框改用自定义"查看密码"按钮，这里隐藏原生图标避免出现两个眼睛。 */
 input::-ms-reveal,
 input::-ms-clear {
   display: none;
 }
 
 :root {
-  /* 原生控件配色方案：跟随 .dark 类切换，让 <select> 弹层、滚动条等
-     WebView 原生渲染的部分与当前主题一致（否则深色模式下弹层是白底，
-     配合控件的浅色文字几乎不可读） */
   color-scheme: light;
   --theme-color: #EC4141;
-  /* 收藏按钮色：固定默认红，不随主题色。
-     ⚠ 值不能写 #EC4141 / rgb(236,65,65)——postcss 构建期会把这些替换成
-     var(--theme-color)。用视觉等价的 #EC4142 规避替换，从而保持固定红。 */
   --favorite-color: #EC4142;
-  /* 滚动条拇指色：RGB 分量 + 最大透明度（淡入上限），还原淡灰观感。
-     alpha 取自滚动容器自身的 --scrollbar-thumb-alpha（未设置时回退到 0 即隐藏），
-     由 scrollbarController.ts 按容器驱动淡入淡出，从而"滚动哪个区域就只显现哪个
-     区域的滚动条"。 */
   --scrollbar-thumb-rgb: 0, 0, 0;
   --scrollbar-thumb-max-alpha: 0.38;
   font-family: "Inter", system-ui, sans-serif;
   overflow: hidden;
-  /* 防止整个窗口出现滚动条，我们只让中间区域滚动 */
 }
 
 .dark {
@@ -46,18 +31,14 @@ input::-ms-clear {
 }
 
 /* ---- 原生 <select> 下拉选项 ---- */
-/* WebView2/Chromium 原生弹层的 <option> 不继承祖先的背景/前景色
-   （即使 color-scheme:dark 在部分 WebView2 版本下也不生效），
-   导致深色模式下弹层白底浅字看不清。显式给 option 设底色和文字色，
-   保证选中/未选中在两种主题下都可读。 */
 select option {
   background-color: #ffffff;
   color: #1f2937;
   padding: 6px 10px;
 }
 .dark select option {
-  background-color: #1f2937; /* gray-800 */
-  color: #e5e7eb; /* gray-200 */
+  background-color: #1f2937;
+  color: #e5e7eb;
 }
 select option:checked {
   background-color: #EC4141;
@@ -125,24 +106,6 @@ body {
   line-height: 1.6;
 }
 
-/* 🎨 统一滚动条：占位但默认不可见，鼠标悬停在滚动条条带上或滚动期间才浮现，
- * 并带淡入淡出动画。
- *
- * 说明：
- * - 占位：始终保留 16px 轨道宽度，避免滚动条出现/消失导致内容横向跳动；
- * - 拇指离边：thumb 四边各 5px 透明缩进，使可见拇指距容器边界 5px（不易误触），
- *   可见宽度为 16 - 5×2 = 6px；
- * - 默认不可见：thumb 背景 alpha 为 0（--scrollbar-thumb-alpha），仅保留透明轨道占位；
- * - 显示时机与淡入淡出：由 scrollbarController.ts 统一驱动——
- *   只响应"鼠标悬停在滚动条条带上"或"正在滚动"，不随鼠标进入容器而显示；
- *   controller 用 rAF 逐帧刷新 --scrollbar-thumb-alpha 完成淡入淡出。
- * - 用 !important 统一压过各页面此前各自实现的滚动条显隐规则，
- *   保证整个软件行为一致。
- *
- * ⚠️ Chromium 陷阱：不能给元素设置标准属性 scrollbar-color / scrollbar-width
- * （非 auto 值），否则该元素的 ::-webkit-scrollbar 伪元素样式会被整体禁用，
- * 悬停/滚动显隐规则全部失效，表现为滚动条永久不可见。
- */
 html *::-webkit-scrollbar,
 body::-webkit-scrollbar {
   width: 16px !important;
@@ -156,8 +119,6 @@ body::-webkit-scrollbar-track {
 
 html *::-webkit-scrollbar-thumb,
 body::-webkit-scrollbar-thumb {
-  /* 左缩进 5px、右缩进 6px（右端更远离边界以防误触）、上下 5px；
-     可见宽度 = 16 - 左5 - 右6 = 5px */
   border-width: 5px 6px 5px 5px !important;
   border-style: solid !important;
   border-color: transparent !important;
@@ -166,12 +127,10 @@ body::-webkit-scrollbar-thumb {
   background-color: rgba(var(--scrollbar-thumb-rgb), var(--scrollbar-thumb-alpha, 0)) !important;
 }
 
-/* 🟢 全局清除按钮聚焦时的默认实线外边框，防止偶发轮廓线破坏视觉体验 */
 button:focus {
   outline: none !important;
 }
 
-/* 🟢 输入框光标颜色随主题反色，确保深色模式下可见 */
 input,
 textarea {
   caret-color: #1f2937;
@@ -182,7 +141,6 @@ html.dark textarea {
   caret-color: #e5e7eb;
 }
 
-/* 🟢 隐藏 number 输入框的原生上下调整按钮，深色模式下会显示白底不一致 */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -193,14 +151,6 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* 🟢 深浅色切换渐变过渡
- *
- * 仅在切换瞬间由 themeTransition.ts 挂上 .theme-transitioning，动画结束即摘除，
- * 不做常驻的全局 transition，避免拖慢 hover 等高频交互的响应。
- *
- * 只过渡颜色类属性：transform/opacity 等交给各组件自己的动效，
- * 混在一起会让弹窗、页面切换动画被这里的时长覆盖。
- */
 html.theme-transitioning,
 html.theme-transitioning body,
 html.theme-transitioning *:not(svg):not(svg *) {
@@ -209,13 +159,10 @@ html.theme-transitioning *:not(svg):not(svg *) {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 切换期间禁用元素自带的 transition-delay，否则局部延迟会让整体过渡显得散乱 */
 html.theme-transitioning * {
   transition-delay: 0ms !important;
 }
 
-/* 尊重系统"减少动态效果"设置：themeTransition.ts 里已跳过挂类，
- * 这里再兜一层，防止其它路径意外挂上该类时仍产生动画 */
 @media (prefers-reduced-motion: reduce) {
 
   html.theme-transitioning,
@@ -225,7 +172,6 @@ html.theme-transitioning * {
   }
 }
 
-/* 🟢 统一弹窗开/关过渡动效（遮罩淡入淡出 + 内容缩放位移） */
 .modal-pop-enter-active,
 .modal-pop-leave-active {
   transition: opacity 200ms ease;
@@ -247,9 +193,6 @@ html.theme-transitioning * {
   transform: scale(0.92) translateY(12px);
 }
 
-/* 🟢 统一弹窗毛玻璃材质（半透明 + 背景模糊 + 圆角 + 阴影），
-   与调试页「设置同步冲突」等弹窗保持一致；所有弹窗卡片统一添加
-   modal-content 类即可复用。 */
 .modal-content {
   background: rgba(255, 255, 255, 0.84);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
@@ -266,7 +209,6 @@ html.theme-transitioning * {
   color: rgba(255, 255, 255, 0.92);
 }
 
-/* 💧 ==================== 极清通透液态玻璃 Switch 胶囊开关 (.glass-switch) ==================== 💧 */
 
 @keyframes switch-shine-sweep {
   0% {
@@ -277,15 +219,14 @@ html.theme-transitioning * {
   }
 }
 
-/* 一键调用的液态玻璃开关容器 */
 .glass-switch {
   position: relative !important;
   display: inline-flex !important;
-  height: 1.5rem !important; /* 24px */
-  width: 2.75rem !important; /* 44px */
+  height: 1.5rem !important;
+  width: 2.75rem !important;
   flex-shrink: 0 !important;
   align-items: center !important;
-  padding: 0 0.25rem !important; /* 左右 4px 内边距 */
+  padding: 0 0.25rem !important;
   border-radius: 9999px !important;
   isolation: isolate !important;
   overflow: hidden !important;
@@ -301,7 +242,6 @@ html.theme-transitioning * {
     transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
 
-/* 开启状态：高透晶莹微红液态玻璃 */
 .glass-switch.is-checked {
   background: linear-gradient(135deg, rgba(236, 65, 65, 0.32) 0%, rgba(220, 40, 40, 0.22) 100%) !important;
   border: 1.5px solid rgba(255, 255, 255, 0.42) !important;
@@ -311,7 +251,6 @@ html.theme-transitioning * {
     inset 0 -1.5px 3px rgba(120, 10, 10, 0.2) !important;
 }
 
-/* 关闭状态：高透水润水晶玻璃 */
 .glass-switch:not(.is-checked) {
   background: rgba(255, 255, 255, 0.08) !important;
   border: 1.5px solid rgba(255, 255, 255, 0.18) !important;
@@ -330,12 +269,11 @@ html.theme-transitioning * {
     inset 0 -1.5px 3px rgba(0, 0, 0, 0.35) !important;
 }
 
-/* 伪元素 ::before：半透明通透玻璃滑块 */
 .glass-switch::before {
   content: '' !important;
   display: block !important;
-  height: 1rem !important; /* 16px */
-  width: 1rem !important; /* 16px */
+  height: 1rem !important;
+  width: 1rem !important;
   border-radius: 9999px !important;
   -webkit-backdrop-filter: blur(8px) !important;
   backdrop-filter: blur(8px) !important;
@@ -346,9 +284,8 @@ html.theme-transitioning * {
   z-index: 3 !important;
 }
 
-/* 开启状态滑块：透亮白润玻璃球 */
 .glass-switch.is-checked::before {
-  transform: translateX(1.25rem) !important; /* 20px 居中 */
+  transform: translateX(1.25rem) !important;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.72)) !important;
   box-shadow: 
     0 2px 8px rgba(0, 0, 0, 0.25),
@@ -356,7 +293,6 @@ html.theme-transitioning * {
     inset 0 1.5px 2px #ffffff !important;
 }
 
-/* 关闭状态滑块：清透半透明水滴球 */
 .glass-switch:not(.is-checked)::before {
   transform: translateX(0) !important;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.32)) !important;
@@ -365,7 +301,6 @@ html.theme-transitioning * {
     inset 0 1.5px 2.5px rgba(255, 255, 255, 0.7) !important;
 }
 
-/* 伪元素 ::after 悬停斜向水波斜流光层 */
 .glass-switch::after {
   content: '' !important;
   position: absolute !important;
@@ -396,7 +331,6 @@ html.theme-transitioning * {
   transform: scale(0.95) !important;
 }
 
-/* 禁用液态玻璃模式时的经典扁平退回样式 */
 html.no-glass-switch .glass-switch {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;

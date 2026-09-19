@@ -1,12 +1,5 @@
 import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 
-/**
- * 横向容器鼠标点击拖动 & 鼠标滚轮物理惯性形变倾斜滚动。
- *
- * - pointerdown / pointermove 鼠标拖拽：直接跟手拖动 + 动态倾斜动效
- * - wheel 鼠标滚轮：rAF 动态平滑物理平移 + 弹性形变与倾斜 (skewX + scaleX) + 边缘橡皮筋回弹
- * - 拖拽/滚轮结束：平滑恢复正立姿态 (smooth spring snap-back)
- */
 const DRAG_THRESHOLD = 5;
 
 export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
@@ -20,7 +13,6 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
   let lastDragX = 0;
   let dragVelocity = 0;
 
-  // 滚轮/拖拽 rAF 物理动画变量
   let targetScrollLeft = 0;
   let currentScrollLeft = 0;
   let animFrameId: number | null = null;
@@ -29,7 +21,6 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
   const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
 
   const updateTransformAnimation = (el: HTMLElement, velocity: number) => {
-    // 根据滚动速度计算倾斜角与微拉伸（正向向左倾，反向向右倾，最大 ±3.5deg）
     const skewAngle = clamp(-velocity * 0.12, -3.5, 3.5);
     const scaleX = 1 + Math.min(0.025, Math.abs(velocity) * 0.0006);
 
@@ -59,7 +50,6 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
     const animate = () => {
       const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
 
-      // 橡皮筋边缘过度反弹
       if (targetScrollLeft < 0) {
         targetScrollLeft += (0 - targetScrollLeft) * 0.2;
       } else if (targetScrollLeft > maxScroll) {
@@ -67,7 +57,7 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
       }
 
       const diff = targetScrollLeft - currentScrollLeft;
-      currentScrollLeft += diff * 0.22; // 高帧率柔和平滑缓动因子
+      currentScrollLeft += diff * 0.22;
 
       const velocity = currentScrollLeft - lastScrollLeft;
       lastScrollLeft = currentScrollLeft;
@@ -75,7 +65,6 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
       el.scrollLeft = currentScrollLeft;
       updateTransformAnimation(el, velocity);
 
-      // 当位移与速度均低于阈值，停止动画并恢复静态状态
       if (Math.abs(diff) < 0.25 && Math.abs(velocity) < 0.25) {
         currentScrollLeft = clamp(currentScrollLeft, 0, maxScroll);
         el.scrollLeft = currentScrollLeft;
@@ -96,7 +85,6 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
     if (typeof requestAnimationFrame === 'function') {
       animFrameId = requestAnimationFrame(animate);
     } else {
-      // 单元测试/无 rAF 环境降级直接赋值
       const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
       el.scrollLeft = clamp(targetScrollLeft, 0, maxScroll);
     }
@@ -135,7 +123,6 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
     const el = containerRef.value;
     if (el) {
       el.style.scrollBehavior = '';
-      // 拖拽释放后带一点惯性与倾斜恢复
       targetScrollLeft = el.scrollLeft + dragVelocity * 6;
       currentScrollLeft = el.scrollLeft;
       lastScrollLeft = el.scrollLeft;
@@ -191,7 +178,6 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
         delta *= el.clientWidth;
       }
 
-      // 如果之前已经在进行惯性动画，以当前实际物理位置为基准叠加 target
       if (animFrameId === null) {
         currentScrollLeft = el.scrollLeft;
         targetScrollLeft = el.scrollLeft;

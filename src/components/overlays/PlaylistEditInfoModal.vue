@@ -31,11 +31,9 @@ const nameInputRef = ref<HTMLInputElement | null>(null);
 const coverPath = ref<string | null>(null);
 const coverPreviewUrl = ref<string>('');
 
-// 封面来源菜单
 type CoverPanel = 'main' | 'source-menu' | 'song-picker';
 const coverPanel = ref<CoverPanel>('main');
 
-// 歌单内歌曲列表（响应式：歌单或库变化时自动更新）
 const playlistSongs = computed<Song[]>(() => {
   const playlist = collectionsStore.playlists.find(p => p.id === props.playlistId);
   if (!playlist) return [];
@@ -43,7 +41,6 @@ const playlistSongs = computed<Song[]>(() => {
   return playlist.songPaths.map(path => {
     const song = lookup.get(path);
     if (song) return song;
-    // fallback：歌曲不在库中时创建最小 Song 对象，确保仍然显示在列表里
     const fileName = path.split(/[\\/]/).pop() || path;
     return {
       name: fileName,
@@ -76,7 +73,6 @@ const filteredPlaylistSongs = computed(() => {
   );
 });
 
-// 歌曲列表变化时预加载封面缩略图
 watch(playlistSongs, async (songs) => {
   for (const song of songs) {
     if (songCoverUrls.value[song.path]) continue;
@@ -138,27 +134,22 @@ const handleSelectCoverFromLocal = async () => {
 const handleSelectCoverFromPlaylist = () => {
   coverPanel.value = 'song-picker';
   songSearchQuery.value = '';
-  // playlistSongs 是 computed，自动响应歌单和库的变化，无需手动赋值
 };
 
 const handlePickSongCover = async (song: Song, index: number) => {
   pickingSongIndex.value = index;
   try {
-    // 获取歌曲封面文件的本地路径
     const rawPath = await loadCoverPath(song.path);
     if (rawPath) {
-      // rawPath 可能是本地文件路径，也可能是网络URL（plugin 歌曲通过 primeCoverPath 缓存）
       const isNetworkUrl = /^https?:\/\//i.test(rawPath) || rawPath.startsWith('asset:') || rawPath.startsWith('data:');
       coverPath.value = rawPath;
       coverPreviewUrl.value = isNetworkUrl ? rawPath : convertFileSrc(rawPath);
     } else {
-      // 回退：如果无法获取文件路径，使用歌曲 cover_thumb_path
       const thumbPath = song.cover_thumb_path;
       if (thumbPath && !thumbPath.startsWith('http') && !thumbPath.startsWith('asset:') && !thumbPath.startsWith('data:')) {
         coverPath.value = thumbPath;
         coverPreviewUrl.value = convertFileSrc(thumbPath);
       } else if (thumbPath) {
-        // 网络封面也可作为自定义封面保存（侧边栏/详情页已支持 isDirectUrl 判断）
         coverPath.value = thumbPath;
         coverPreviewUrl.value = thumbPath;
       }
@@ -240,14 +231,12 @@ onUnmounted(() => {
       class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
       :class="{ 'pointer-events-none': isClosing }"
     >
-      <!-- Backdrop -->
       <div
         class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
         :class="isClosing ? 'opacity-0' : 'opacity-100'"
         @click="handleClose"
       ></div>
 
-      <!-- Modal Card -->
       <div
         class="relative bg-white/80 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden transform transition-all duration-300"
         style="transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);"
@@ -256,16 +245,12 @@ onUnmounted(() => {
           'border border-white/20 ring-1 ring-black/5'
         ]"
       >
-        <!-- Header -->
         <div class="px-6 pt-6 pb-2 text-center">
           <h3 class="text-lg font-bold text-gray-900 dark:text-white leading-6">修改信息</h3>
         </div>
 
-        <!-- Body -->
         <div class="px-6 pb-6 space-y-5">
-          <!-- 封面区域 -->
           <div class="flex flex-col items-center gap-3">
-            <!-- 主面板：封面预览 + 操作按钮 -->
             <template v-if="coverPanel === 'main'">
               <div
                 class="relative w-28 h-28 rounded-xl overflow-hidden flex items-center justify-center bg-gray-100 dark:bg-black/20 border border-gray-200 dark:border-gray-700 shadow-sm shrink-0"
@@ -308,7 +293,6 @@ onUnmounted(() => {
               </p>
             </template>
 
-            <!-- 来源菜单 -->
             <template v-else-if="coverPanel === 'source-menu'">
               <div class="w-full space-y-2 animate-in fade-in zoom-in-95 duration-200">
                 <button
@@ -349,7 +333,6 @@ onUnmounted(() => {
               </div>
             </template>
 
-            <!-- 歌曲选择列表 -->
             <template v-else-if="coverPanel === 'song-picker'">
               <div class="w-full space-y-2 animate-in fade-in zoom-in-95 duration-200">
                 <div class="flex items-center justify-between">
@@ -362,7 +345,6 @@ onUnmounted(() => {
                     返回
                   </button>
                 </div>
-                <!-- 搜索框 -->
                 <div class="relative">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -430,7 +412,6 @@ onUnmounted(() => {
             </template>
           </div>
 
-          <!-- 名称 -->
           <div class="space-y-1.5">
             <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单名称</label>
             <input
@@ -443,7 +424,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Footer -->
         <div class="px-4 py-3 bg-gray-50/50 dark:bg-white/5 flex gap-3 flex-col sm:flex-row-reverse">
           <button
             @click="handleConfirm"

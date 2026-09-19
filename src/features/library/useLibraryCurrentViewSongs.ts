@@ -84,15 +84,9 @@ export function useLibraryCurrentViewSongs({
   const allViewSongPaths = ref<string[]>([]);
   const favoriteViewSongPaths = ref<string[]>([]);
 
-  /** 判断是否为在线歌曲路径（不在本地音乐库/数据库中） */
   const isOnlineSongPath = (path: string) =>
     path.startsWith('lx://') || path.startsWith('remote://') || path.startsWith('plugin://');
 
-  /**
-   * 后端收藏视图按数据库反查，会丢掉在线歌曲。
-   * 这里把仍能从 songLookup 反查到的在线收藏歌曲补回结果末尾，
-   * 并在有搜索词时按标题/歌手做前端过滤。
-   */
   const appendMissingOnlineFavorites = (
     backendPaths: string[],
     allFavoritePaths: string[],
@@ -123,11 +117,6 @@ export function useLibraryCurrentViewSongs({
     return missingOnline.length > 0 ? [...backendPaths, ...missingOnline] : backendPaths;
   };
 
-  /**
-   * 后端最近播放视图按数据库反查，会丢掉在线歌曲。
-   * 这里把仍能从 songLookup 反查到的在线最近播放歌曲按 recentSongs 时间顺序补回结果，
-   * 并在有搜索词时按标题/歌手做前端过滤。
-   */
   const appendMissingOnlineRecents = (
     backendPaths: string[],
     recentItems: HistoryItem[],
@@ -199,7 +188,6 @@ export function useLibraryCurrentViewSongs({
       const isQueryKeyChanged = currentQueryKey.value !== nextQueryKey;
       currentQueryKey.value = nextQueryKey;
 
-      // 如果过滤/查询条件变了，立即清空上一次结果，防旧数据筛选错乱
       if (isQueryKeyChanged) {
         allViewSongPaths.value = [];
         allViewUseCanonicalFallback.value = false;
@@ -208,7 +196,6 @@ export function useLibraryCurrentViewSongs({
 
       allViewLoading.value = true;
 
-      // 扫描导入版本风暴控制：若正处于扫描中且已有旧成功数据，为防 batch 频繁失效风暴，延迟加载并使用旧列表做过渡渲染
       const isScanning = !!libraryStore.libraryScanProgress && !libraryStore.libraryScanProgress.done;
       if (isScanning && lastSuccessfulAllViewSongPaths.value.length > 0) {
         allViewLoading.value = false;
@@ -231,7 +218,7 @@ export function useLibraryCurrentViewSongs({
 
         allViewSongPaths.value = paths;
         allViewUseCanonicalFallback.value = false;
-        lastSuccessfulAllViewSongPaths.value = paths; // 缓存成功列表
+        lastSuccessfulAllViewSongPaths.value = paths;
       } catch (error) {
         if (requestId !== allViewRequestId) {
           return;
@@ -277,7 +264,6 @@ export function useLibraryCurrentViewSongs({
     async ([viewMode, paths, query, currentFavTab, sortMode]) => {
       const requestId = ++favoriteViewRequestId;
 
-      // 收藏页"歌单/专辑"tab 展示整张收藏网格，歌曲列表仅在"单曲"tab 加载
       if (viewMode !== 'favorites' || currentFavTab !== 'songs' || sortMode === 'custom') {
         favoriteViewSongPaths.value = [];
         return;
@@ -299,8 +285,6 @@ export function useLibraryCurrentViewSongs({
           return;
         }
 
-        // 后端按数据库反查收藏歌曲，在线歌曲（lx://、remote://、plugin://）不在库中会被丢弃。
-        // 这里把仍可从前端反查到的在线收藏歌曲补回列表末尾，避免它们在排序/搜索模式下消失。
         favoriteViewSongPaths.value = appendMissingOnlineFavorites(nextPaths, paths, query);
       } catch {
         if (requestId !== favoriteViewRequestId) {
@@ -345,8 +329,6 @@ export function useLibraryCurrentViewSongs({
           return;
         }
 
-        // 后端按数据库反查最近播放，在线歌曲（lx://、remote://、plugin://）不在库中会被丢弃。
-        // 这里把仍可从前端反查到的在线最近播放歌曲补回列表末尾，避免它们在排序/搜索模式下消失。
         recentViewSongPaths.value = appendMissingOnlineRecents(nextPaths, items, query);
       } catch {
         if (requestId !== recentViewRequestId) {
@@ -599,7 +581,6 @@ export function useLibraryCurrentViewSongs({
     return sortedPaths;
   };
 
-  // 改为 computed 缓存，避免每次 currentViewSongPaths 重算时重复执行 O(n) 查找和过滤
   const resolvedPlaylistSongPaths = computed(() => {
     if (currentViewMode.value !== 'playlist') return [];
 
@@ -608,10 +589,8 @@ export function useLibraryCurrentViewSongs({
       return [];
     }
 
-    // 优先使用 playlist.songs 缓存中的歌曲路径（在线歌曲可能尚未注入 songPool）
     if (playlist.songs && playlist.songs.length > 0) {
       const songPathSet = new Set(playlist.songs.map(s => s.path).filter(Boolean));
-      // 合并 songPaths 和 songs 中的路径，确保所有歌曲都能被展示
       return playlist.songPaths.filter(path =>
         songLookup.value.has(path) || songPathSet.has(path)
       );
@@ -725,10 +704,8 @@ export function useLibraryCurrentViewSongs({
 
         if (isCurrentlyEmpty) {
           if (lastSuccessfulAllViewSongPaths.value.length > 0) {
-            // 1. 优先展示上一次渲染成功的结果，实现毫秒级快速切回过渡
             pathsToRender = lastSuccessfulAllViewSongPaths.value;
           } else if (allViewLoading.value || allViewUseCanonicalFallback.value) {
-            // 2. 首次导入空档期且正在加载中：以常驻内存 canonicalSongPaths 辅以本地简排做临时兜底，根除空白
             pathsToRender = sortSongPathsByLocalMode(canonicalSongPaths.value, localSortMode.value);
           }
         }
@@ -763,7 +740,6 @@ export function useLibraryCurrentViewSongs({
 
     if (currentViewMode.value === 'folder') {
       if (folderSortMode.value !== 'custom') {
-        // 异步加载期间 folderViewSongPaths 可能为空，用 currentFolderSongPaths 做同步兜底
         const paths = folderViewSongPaths.value.length > 0
           ? folderViewSongPaths.value
           : currentFolderSongPaths.value;
@@ -786,7 +762,6 @@ export function useLibraryCurrentViewSongs({
     }
 
     if (currentViewMode.value === 'artist') {
-      // 异步加载期间 detailViewSongPaths 可能为空，用 canonicalSongPaths 同步过滤做兜底
       const paths = detailViewSongPaths.value.length > 0
         ? detailViewSongPaths.value
         : canonicalSongPaths.value.filter(path => {
@@ -799,7 +774,6 @@ export function useLibraryCurrentViewSongs({
     }
 
     if (currentViewMode.value === 'album') {
-      // 异步加载期间 detailViewSongPaths 可能为空，用 canonicalSongPaths 同步过滤做兜底
       const paths = detailViewSongPaths.value.length > 0
         ? detailViewSongPaths.value
         : canonicalSongPaths.value.filter(path => {
@@ -811,8 +785,6 @@ export function useLibraryCurrentViewSongs({
 
     if (currentViewMode.value === 'recent') {
       if (localSortMode.value !== 'custom') {
-        // 异步加载期间 recentViewSongPaths 可能为空，用 resolveRecentSongPaths 做同步兜底，
-        // 避免切换到最近播放页时出现白屏
         const paths = recentViewSongPaths.value;
         if (paths.length > 0) {
           return paths;
@@ -825,8 +797,6 @@ export function useLibraryCurrentViewSongs({
 
     if (currentViewMode.value === 'favorites') {
       if (localSortMode.value !== 'custom') {
-        // 异步加载期间 favoriteViewSongPaths 可能为空，用 resolveFavoriteFallbackPaths 做同步兜底，
-        // 避免切换到收藏页时出现白屏
         const paths = favoriteViewSongPaths.value;
         if (paths.length > 0) {
           return paths;
@@ -854,8 +824,6 @@ export function useLibraryCurrentViewSongs({
     const paths = currentViewSongPaths.value;
     const songsFromLookup = materializeSongPaths(paths);
 
-    // 歌单视图：如果 songLookup 找不到所有歌曲（在线歌曲重启后尚未注入 songPool），
-    // 从 playlist.songs 缓存中补充缺失的歌曲
     if (currentViewMode.value === 'playlist' && songsFromLookup.length < paths.length) {
       const playlist = playlists.value.find(item => item.id === filterCondition.value);
       if (playlist?.songs && playlist.songs.length > 0) {
@@ -878,8 +846,6 @@ export function useLibraryCurrentViewSongs({
       return song;
     }
 
-    // 歌单页惰性渲染：在线歌曲可能只存在于 playlist.songs 缓存中。
-    // 这里按需解析单个 path，避免进入歌单详情时为了补全在线歌曲一次性构建完整 Song[]。
     if (currentViewMode.value !== 'playlist') {
       return null;
     }
@@ -890,12 +856,8 @@ export function useLibraryCurrentViewSongs({
 
   const currentViewSongCount = computed(() => currentViewSongPaths.value.length);
 
-  // ── 在线歌曲时长补全工具 ──
-  // isOnlineSongPath 已在上方定义，直接复用
 
-  /** 从 song.rawData 或 lxSongCache 中提取时长（秒），无法提取时返回 0 */
   const extractDurationFromSong = (song: Song): number => {
-    // 1. lx:// 歌曲：从 lxSongCache 中查 interval
     if (song.path?.startsWith('lx://')) {
       const sourceKey = song.path.slice('lx://'.length).split('/')[0];
       const songmid = song.path.slice('lx://'.length).split('/')[1] ?? '';
@@ -905,7 +867,6 @@ export function useLibraryCurrentViewSongs({
           return parseIntervalToSeconds(cached.interval);
         }
       }
-      // 也从 rawData 中尝试 —— 覆盖多种字段名（含大写/KG 特有 Duration）
       const raw = song.rawData;
       if (raw) {
         const rawInterval = raw.interval ?? raw.Interval ?? raw.dt ?? raw.Dt ?? raw.timelength ?? raw.Timelength;
@@ -913,7 +874,6 @@ export function useLibraryCurrentViewSongs({
           const s = parseIntervalToSeconds(String(rawInterval));
           if (s > 0) return s;
         }
-        // KG/腾讯/网易等平台 rawData 里可能直接给 Duration 毫秒数
         const ms = raw.duration ?? raw.Duration ?? raw.durationMs ?? raw.duration_ms;
         if (typeof ms === 'number' && ms > 0) {
           return ms > 1000 ? Math.floor(ms / 1000) : ms;
@@ -921,11 +881,9 @@ export function useLibraryCurrentViewSongs({
       }
     }
 
-    // 2. plugin:// 歌曲：从 rawData 中提取
     if (song.path?.startsWith('plugin://')) {
       const raw = song.rawData;
       if (raw) {
-        // 尝试多种字段名（含大写）
         const dt = raw.duration ?? raw.Duration ?? raw.dt ?? raw.interval ?? raw.intervalSeconds ?? raw.timelength;
         if (typeof dt === 'number' && dt > 0) {
           return dt > 1000 ? Math.floor(dt / 1000) : dt;
@@ -937,7 +895,6 @@ export function useLibraryCurrentViewSongs({
       }
     }
 
-    // 3. remote:// 歌曲：从 rawData 中提取
     if (song.path?.startsWith('remote://')) {
       const raw = song.rawData;
       if (raw) {
@@ -951,7 +908,6 @@ export function useLibraryCurrentViewSongs({
     return 0;
   };
 
-  /** 延迟获取 collectionsStore（避免循环依赖） */
   let _collectionsStore: any = null;
   const getCollectionsStore = async () => {
     if (_collectionsStore) return _collectionsStore;
@@ -964,20 +920,12 @@ export function useLibraryCurrentViewSongs({
     }
   };
 
-  // ── 歌单视图：自动检测并补全在线歌曲时长为 0 的条目 ──
-  // 打开歌单时扫描所有歌曲，对 duration===0 的在线歌曲（lx://、plugin://、remote://）做分层兜底：
-  //   0) 同步从 lxSongCache / rawData 直接提取 interval/duration；
-  //   1) TX 源 → txBatchTrackInterval 按 songid 批量 50 首一次，不走搜索接口不受风控（朋友写的！）；
-  //   2) 其他源（KG/WY/MG/KW）→ 队列式 lxSearch 重查 interval，并发 3 个。
   let lastProbedPlaylistId = '';
-  /** 正在 probe 中的 lx:// path（防重复） */
   const probingLxPaths = new Set<string>();
-  /** 队列节流：一次最多并发 CONCURRENCY 个请求 */
   const PROBE_CONCURRENCY = 3;
   let activeProbes = 0;
   const probeQueue: Song[] = [];
 
-  /** 统一更新三处：libraryStore / playlist.songs / favoriteSongMeta */
   const patchSongDurationAll = async (path: string, duration: number) => {
     libraryStore.patchSongMeta(path, { duration });
     const playlist = playlists.value.find(p => p.id === filterCondition.value);
@@ -995,7 +943,6 @@ export function useLibraryCurrentViewSongs({
     });
   };
 
-  /** 消费 probe 队列，并发槽空出时自动补上 */
   const drainProbeQueue = () => {
     while (activeProbes < PROBE_CONCURRENCY && probeQueue.length > 0) {
       const song = probeQueue.shift()!;
@@ -1007,7 +954,6 @@ export function useLibraryCurrentViewSongs({
     }
   };
 
-  /** 异步：通过 lxSearch 获取一首歌的 interval 并更新；原源失败时自动换源 fallback */
   const probeLxSongDuration = async (song: Song) => {
     if (!song.path?.startsWith('lx://')) return;
     if (probingLxPaths.has(song.path)) return;
@@ -1017,19 +963,17 @@ export function useLibraryCurrentViewSongs({
       const originalSource = song.path.slice('lx://'.length).split('/')[0] as LxSourceId;
       if (!originalSource || !['kg', 'tx', 'wy', 'mg', 'kw'].includes(originalSource)) return;
 
-      // 换源 fallback 顺序：原源稳定则只查原源；原源不稳定（WY/MG）时按 KG → KW → TX 依次尝试
       const STABLE_SOURCES = ['kg', 'tx', 'kw'] as const;
       const sourceCandidates: LxSourceId[] =
         STABLE_SOURCES.includes(originalSource as any)
           ? [originalSource]
-          : [...STABLE_SOURCES]; // WY/MG 跳过自己的源，直接换源
+          : [...STABLE_SOURCES];
 
       const keyword = song.name || song.title || '';
       let matched: { interval: string; source: string; songmid?: string | number } | null = null;
 
       for (const trySource of sourceCandidates) {
         let list: Array<{ songmid: string | number; name: string; singer?: string; interval: string }> = [];
-        // 限流(406/429)重试 2 次；404/403/405 等不可恢复错误直接放弃该源
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             const r = await lxSearch(trySource, keyword, 1, 10);
@@ -1038,7 +982,7 @@ export function useLibraryCurrentViewSongs({
           } catch (e: any) {
             const msg = String(e?.message ?? e ?? '');
             if (/404|403|405|not found|forbidden|method not allowed/i.test(msg)) {
-              list = []; // 这个源彻底不行，换下一个源
+              list = [];
               break;
             }
             if (/406|429|限流|频率|frequent|denied/i.test(msg) && attempt < 2) {
@@ -1051,7 +995,6 @@ export function useLibraryCurrentViewSongs({
         }
         if (!list.length) continue;
 
-        // 优先按 songmid 精确匹配（只对原源），其次按歌名+歌手模糊匹配（换源场景只能模糊）
         if (trySource === originalSource) {
           const songmid = song.path.slice('lx://'.length).split('/')[1];
           const item = list.find(i => String(i.songmid) === String(songmid)) ?? null;
@@ -1063,7 +1006,7 @@ export function useLibraryCurrentViewSongs({
           ) ?? null;
           if (item) matched = { ...item, source: trySource };
         }
-        if (matched) break; // 找到就停
+        if (matched) break;
       }
 
       if (!matched) return;
@@ -1071,7 +1014,6 @@ export function useLibraryCurrentViewSongs({
       const duration = parseIntervalToSeconds(matched.interval);
       if (duration <= 0) return;
 
-      // 同步更新 songPool，同时把换源搜到的 interval 缓存进去便于后续复用
       cacheLxSong({ interval: matched.interval, songmid: matched.songmid || '', source: matched.source } as any);
 
       libraryStore.patchSongMeta(song.path, { duration });
@@ -1101,7 +1043,6 @@ export function useLibraryCurrentViewSongs({
       const playlist = playlists.value.find(item => item.id === playlistId);
       if (!playlist) return;
 
-      // 收集所有 duration=0 的在线歌曲
       const songsToFix: Song[] = [];
       for (const path of playlist.songPaths) {
         const song = songLookup.value.get(path) ?? playlist.songs?.find(s => s.path === path);
@@ -1111,9 +1052,7 @@ export function useLibraryCurrentViewSongs({
       }
       if (songsToFix.length === 0) return;
 
-      // 0) 同步：从 lxSongCache / rawData 直接提取
       const patches: Array<[string, number]> = [];
-      // 分类：TX 源走批量接口；其他 lx:// 源统一进队列（probeLxSongDuration 内部自动换源 fallback）
       const txSongs: Song[] = [];
       const queueableLxSongs: Song[] = [];
 
@@ -1124,16 +1063,14 @@ export function useLibraryCurrentViewSongs({
         } else if (song.path?.startsWith('lx://')) {
           const src = song.path.slice('lx://'.length).split('/')[0];
           if (src === 'tx') txSongs.push(song);
-          else queueableLxSongs.push(song); // 所有非 TX 的 lx:// 都进队列，probeLxSongDuration 内部换源
+          else queueableLxSongs.push(song);
         }
       }
 
-      // 同步批量更新（来自缓存/rawData）
       for (const [path, duration] of patches) {
         void patchSongDurationAll(path, duration);
       }
 
-      // 1) TX 源：用朋友写的 txBatchTrackInterval！按 songid 批量 50 首一次，不走搜索接口不受风控
       if (txSongs.length > 0) {
         const songIds = txSongs
           .map(s => s.rawData?.id ?? s.path.slice('lx://tx/'.length).split('/')[1])
@@ -1150,7 +1087,6 @@ export function useLibraryCurrentViewSongs({
         });
       }
 
-      // 2) KG/KW：进入 lxSearch 队列（并发 3，限流退避）
       probeQueue.length = 0;
       probeQueue.push(...queueableLxSongs);
       drainProbeQueue();

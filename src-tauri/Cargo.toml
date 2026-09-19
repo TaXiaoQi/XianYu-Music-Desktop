@@ -53,6 +53,7 @@ rusqlite = { version = "0.38.0", features = ["bundled"] }
 unicode-normalization = "0.1"
 fast2s = "0.3"
 sha2 = "0.10.9"
+hmac = "0.12"
 hex = "0.4.3"
 tokio = { version = "1.48.0", features = ["full"] }
 # 媒体控制跨平台库（Windows=SMTC / Linux=MPRIS / macOS=MPNowPlaying）。

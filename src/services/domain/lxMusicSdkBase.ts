@@ -6,11 +6,6 @@ import { pluginApi } from '../tauri/pluginApi';
 import { hostZzcSign } from '../tauri/hostCryptoApi';
 import type { LxUrlSongInfoContract } from '../tauri/contracts';
 
-/**
- * LX 协议 SDK 共享底座：类型、HTTP 封装与通用工具。
- * 被 lxSearchPlatform（平台搜索层）与 lxMusicSdk（编排门面）共同引用，
- * 本模块无任何内部依赖，作为依赖叶子避免模块环。
- */
 
 // ==================== Types ====================
 export interface LxSearchResultItem {
@@ -22,21 +17,18 @@ export interface LxSearchResultItem {
   source: 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
   interval: string;
   img: string | null;
-  /** 各歌手的头像 URL（key 为歌手名，value 为头像 URL），搜索接口直接返回时填充 */
   singerAvatars?: Record<string, string>;
-  /** 各歌手的艺人 ID（key 为歌手名，value 为 ID），供歌手头像/详情接口补获 */
   singerIds?: Record<string, string>;
   types: { type: string; size: string | null; hash?: string }[];
   _types: Record<string, { size: string | null; hash?: string }>;
-  // source-specific fields
-  hash?: string; // kg
-  strMediaMid?: string; // tx
-  songId?: string | number; // tx
-  albumMid?: string; // tx
-  copyrightId?: string; // mg
-  lrcUrl?: string; // mg
-  mrcUrl?: string; // mg
-  trcUrl?: string; // mg
+  hash?: string;
+  strMediaMid?: string;
+  songId?: string | number;
+  albumMid?: string;
+  copyrightId?: string;
+  lrcUrl?: string;
+  mrcUrl?: string;
+  trcUrl?: string;
 }
 
 export interface LxSearchResult {
@@ -61,9 +53,6 @@ function normalizeLxTypes(
   return result;
 }
 
-/**
- * 将 LxSearchResultItem 转换为 Rust URL 解析器所需的合约类型
- */
 export function toUrlSongInfo(item: LxSearchResultItem): LxUrlSongInfoContract {
   return {
     songmid: String(item.songmid ?? ''),
@@ -140,11 +129,6 @@ export async function httpPostJson(url: string, body: string, headers?: Record<s
   }
 }
 
-/**
- * 酷我旧搜索接口（search.kuwo.cn/r.s）返回 Python 风格单引号 JSON
- * （{'ARTISTPIC':'',...}），标准 JSON.parse 必然失败。
- * 状态机转换：字符串定界符 ' → "，字符串内的 " 转义，保留原有反斜杠转义。
- */
 function parseLooseJson(text: string): any {
   let out = '';
   let inStr = false;
@@ -182,7 +166,6 @@ export function zzcSign(text: string): Promise<string> {
   return hostZzcSign(text);
 }
 
-/** 顺序取多个候选键里的首个非空值 */
 export function firstValue(item: any, keys: string[]): any {
   for (const key of keys) {
     const value = item?.[key];

@@ -1,6 +1,3 @@
-/**
- * 每日推荐 · 类型与错误（叶子）。
- */
 
 import type { PluginSearchResult } from '../../types';
 
@@ -35,7 +32,6 @@ export interface DailyRecommendAlgorithm {
 
 export interface DailyRecommendItem {
   song: PluginSearchResult;
-  /** 推荐理由（来自命中的策略） */
   reason: string;
   strategyId: string;
   pluginName: string;
@@ -47,7 +43,6 @@ export interface DailyRecommendResult {
   batch: number;
 }
 
-/** 获取每日推荐失败（未登录 / 网络异常等） */
 export class DailyRecommendError extends Error {
   readonly kind: 'not_logged_in' | 'network';
   constructor(kind: 'not_logged_in' | 'network', message: string) {

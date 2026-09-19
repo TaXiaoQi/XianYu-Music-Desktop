@@ -1,17 +1,7 @@
-/**
- * 音质体积 · 元数据回退与共享探测
- *
- * 对齐移动端 qualitySizes 的体积来源策略（实测直链 → 插件/落雪元数据体积）：
- * - 直链 Range 实测优先（真值）；
- * - 实测失败（防盗链/签名过期/无 Range）时回退音源上报的体积元数据——
- *   Baka 插件搜索项的 `qualities[q].size`（"23.5MB" 文本）与落雪 `_types[q].size`，
- *   免网络请求，保证 FLAC+ 档位也有体积。
- */
 import type { QualityKey, Song } from '../../types';
 import { normalizeQualityKey } from '../../types';
 import { downloadApi } from '../tauri/downloadApi';
 
-/** 解析体积文本（"23.5MB"/"1.2GB"/"320K"/数字字节）为字节数；无法解析返回 null。 */
 export function parseQualitySizeText(size: unknown): number | null {
   if (typeof size === 'number') return size > 0 ? Math.floor(size) : null;
   if (typeof size !== 'string') return null;
@@ -34,10 +24,6 @@ export function parseQualitySizeText(size: unknown): number | null {
   return Math.round(v * mult);
 }
 
-/**
- * 从歌曲元数据读取指定档位的体积（对齐移动端 _metadataQualitySizes）：
- * 依次扫描 rawData.qualities / 顶层 qualities / _types / rawData._types 逐档 size。
- */
 export function readQualitySizeFromMeta(song: Song, quality: QualityKey): number | null {
   const scan = (raw: unknown): number | null => {
     if (!raw || typeof raw !== 'object') return null;
@@ -66,11 +52,6 @@ export function readQualitySizeFromMeta(song: Song, quality: QualityKey): number
   return null;
 }
 
-/**
- * 对一组档位探测文件体积：直链 Range 实测优先，失败回退元数据体积
- * （对齐移动端 qualitySizes 的「先实测后元数据」优先级）。
- * 已探过的档位由调用方自行去重。
- */
 export async function probeSizesForKeys(
   song: Song,
   keys: QualityKey[],

@@ -1,13 +1,4 @@
 <script setup lang="ts">
-/**
- * 排序方式按钮 + 下拉菜单
- *
- * 从 LocalMusicHeader 抽出，供本地音乐 / 我的收藏 / 最近播放共用。
- * 三者共享同一个 localSortMode 状态（后端排序管线已打通），
- * 因此这里直接读写 usePlayerViewState 的 localSortMode。
- *
- * 「添加时间」「修改时间」支持点两次切换升降序，其余模式单向。
- */
 import { ref, onMounted, onUnmounted } from 'vue';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import SortModeIcon from './SortModeIcon.vue';
@@ -15,7 +6,6 @@ import SortModeIcon from './SortModeIcon.vue';
 type SortModeKey = 'title' | 'artist' | 'added_at' | 'file_modified_at' | 'custom';
 
 const props = withDefaults(defineProps<{
-  /** 可选的排序模式列表，默认包含全部五项 */
   modes?: readonly SortModeKey[];
 }>(), {
   modes: undefined,
@@ -50,7 +40,6 @@ const handleSortClick = (e: MouseEvent) => {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const windowWidth = window.innerWidth;
 
-  // 按钮偏右时菜单右对齐，避免超出窗口
   if (rect.left > windowWidth / 2) {
     sortMenuIsRightAligned.value = true;
     sortMenuX.value = windowWidth - rect.right;
@@ -73,7 +62,6 @@ const handleGlobalClick = (e: MouseEvent) => {
 onMounted(() => window.addEventListener('click', handleGlobalClick));
 onUnmounted(() => window.removeEventListener('click', handleGlobalClick));
 
-/** 时间类模式支持升降序切换，其余单向设置 */
 const handleSelectMode = (mode: SortModeKey) => {
   if (mode === 'added_at') {
     setLocalSortMode(localSortMode.value === 'added_at' ? 'added_at_asc' : 'added_at');
@@ -119,7 +107,6 @@ const isAscending = () => localSortMode.value === 'added_at_asc'
       >
         <span>{{ SORT_LABELS[mode] }}</span>
         <div v-if="isActive(mode)" class="flex items-center gap-1.5">
-          <!-- 时间类模式显示升降序箭头 -->
           <svg
             v-if="mode === 'added_at' || mode === 'file_modified_at'"
             xmlns="http://www.w3.org/2000/svg"

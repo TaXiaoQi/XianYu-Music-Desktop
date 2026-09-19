@@ -29,15 +29,12 @@ import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
 import { getSongSourceLabel } from '../../utils/remoteSong';
 
-/** 在线歌曲：路径以 lx:// 或 plugin:// 开头 */
 const isOnlineSong = (song: Song) => {
   const path = song?.path ?? '';
   return path.startsWith('lx://') || path.startsWith('plugin://');
 };
 
-/** 已下载的在线歌曲 path 集合（响应式，供模板同步判断） */
 const downloadedOnlinePaths = ref<Set<string>>(new Set());
-/** 已下载在线歌曲 path → 本地音乐文件格式（大写扩展名），供"下载完成替换为本地"容器展示真实音质 */
 const downloadedLocalFormats = ref<Map<string, string>>(new Map());
 let downloadedPathsRequestId = 0;
 const refreshDownloadedPaths = async (songs: Song[]) => {
@@ -60,14 +57,12 @@ const refreshDownloadedPaths = async (songs: Song[]) => {
   downloadedLocalFormats.value = formats;
 };
 
-/** 从本地文件名解析音乐格式（大写扩展名），无则返回空 */
 const localMusicFormatOf = (name: string) => {
   const idx = name.lastIndexOf('.');
   if (idx < 0 || idx === name.length - 1) return '';
   return name.slice(idx + 1).toUpperCase();
 };
 
-/** 音质列展示的格式：本地容器中已下载的在线歌显示其真实本地音质，否则显示歌曲扩展名 */
 const displayedFormat = (song: Song) => {
   if (props.downloadCompletedAsLocal && downloadedOnlinePaths.value.has(song.path)) {
     return downloadedLocalFormats.value.get(song.path) || getSongExtension(song);
@@ -76,11 +71,9 @@ const displayedFormat = (song: Song) => {
 };
 
 const downloadStore = useDownloadStore();
-/** 判断歌曲是否正在下载（与底栏下载 UI 共用同一 store） */
 const isSongDownloading = (song: Song) =>
   downloadStore.isDownloading && downloadStore.downloadingSongPath === song.path;
 
-/** 点击下载：走统一的下载至本地逻辑（与底栏/右键菜单一致） */
 const handleDownloadClick = (song: Song) => {
   if (!isDownloadableOnlineSong(song)) return;
   void downloadToLocal(song);
@@ -99,25 +92,10 @@ const props = defineProps<{
   isBatchMode: boolean;
   selectedPaths: Set<string>;
   memoryScopeKey: string;
-  /** 整页滚动模式：滚动由外层容器驱动，内部容器不产生滚动条（在线详情页与 header 一起滚动） */
   pageScrollMode?: boolean;
-  /** 整页滚动模式下的外层滚动容器 */
   scrollContainerRef?: HTMLElement | null;
-  /**
-   * 禁用滚动记忆（离开即销毁的容器，如在线详情专辑/歌单）：不保存也不恢复滚动位置，
-   * 返回时全新加载从顶部开始，避免继承上次访问该容器时的旧滚动位置。
-   */
   disableScrollMemory?: boolean;
-  /**
-   * 已下载在线歌曲的展示策略：
-   * true（我的收藏/最近播放/歌单等本地容器）时，下载完成的歌视为本地——音质列不占位且来源列显示"本地"；
-   * false（搜索/在线详情容器）时，下载完成显示与底栏一致的绿色对勾且来源列保留音源名。
-   */
   downloadCompletedAsLocal?: boolean;
-  /**
-   * 编号偏移量：用于分页场景，让第 N 页的第 1 首从 N*pageSize+1 开始编号。
-   * 默认 0。
-   */
   indexOffset?: number;
 }>(); 
 
@@ -158,18 +136,15 @@ const ROW_HEIGHT = 72;
 const OVERSCAN = 20;
 const SEGMENT_BUFFER_ROWS = 4;
 const MIN_SEGMENT_BATCH_SIZE = 20;
-/** 滚动到距底部剩余多少行时触发加载下一段 */
 const SCROLL_TRIGGER_ROWS = 10;
 const VIEWPORT_SNAPSHOT_LIMIT = 72;
 const rootRef = ref<HTMLElement | null>(null);
 const containerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const containerHeight = ref(600);
-/** 整页滚动模式下使用外层滚动容器，否则使用内部容器 */
 const activeScrollContainer = computed(() =>
   props.pageScrollMode ? (props.scrollContainerRef ?? null) : containerRef.value,
 );
-// 列表首行在外层滚动容器内的顶部偏移（整页滚动时为 header 高度），用于在线详情页的判定换算
 const listOffsetTop = ref(0);
 const updateListOffsetTop = () => {
   const root = containerRef.value;
@@ -272,10 +247,6 @@ const segmentedSongs = computed(() => {
   return props.songs.slice(0, sliceEnd);
 });
 
-// 歌曲列表变化时重置首屏段，避免切换大歌单时一次性挂载全部行。
-// 仅当实际路径列表发生变化时才重置（切换歌单、增删歌曲），
-// 收藏切换等仅更新元信息的操作会产生新数组引用但路径不变，此时应保持滚动位置。
-// 使用 O(1) 快速签名（长度 + 首尾路径）替代 O(n) 字符串拼接，避免大歌单卡顿。
 let prevSongsLen = -1;
 let prevFirstPath = '';
 let prevLastPath = '';
@@ -290,7 +261,6 @@ watch(() => props.songPaths ?? props.songs, (items) => {
     return;
   }
 
-  // 追加场景（列表变长且首项未变，如搜索分页加载更多）：保留滚动位置，仅扩展已加载段
   const isAppend = len > prevSongsLen && firstPath === prevFirstPath && prevSongsLen >= 0;
 
   prevSongsLen = len;
@@ -315,8 +285,6 @@ const getDisplayedCoverUrl = (path: string | undefined) => {
     return '';
   }
 
-  // B站（hdslb 等）等防盗链封面需走后端代理成 data:URL，
-  // 代理成功后回填 displayedCoverUrls 触发重新渲染（其余域名/本地封面原样返回）
   return getDisplayCoverUrl(raw, (dataUrl) => {
     displayedCoverUrls.set(path, dataUrl);
   });
@@ -338,7 +306,6 @@ const extractExtension = (value: string | undefined) => {
   return matched?.[1] ?? '';
 };
 
-// 扩展名列：优先用扫描写入的 format 字段，缺失时回退到文件名/路径后缀
 const getSongExtension = (song: Song) => {
   const raw = song.format?.trim() || extractExtension(song.name) || extractExtension(song.path);
   return raw ? raw.replace(/^\./, '').toUpperCase() : '';
@@ -505,8 +472,6 @@ const {
   restoreScrollPosition,
 } = useListScrollMemory(tableViewportKey, activeScrollContainer, { disabled: props.disableScrollMemory });
 
-// 整页滚动模式：歌曲列表更新后若存在保存的滚动位置，触发恢复
-// 解决返回导航时歌曲异步加载晚于 useListScrollMemory 初始恢复尝试的问题
 watch(
   () => (props.pageScrollMode ? sourceSongCount.value : -1),
   (count) => {
@@ -582,7 +547,6 @@ const onScroll = (event: Event) => {
   updateListOffsetTop();
   if (target.scrollTop + target.clientHeight >= target.scrollHeight - ROW_HEIGHT * SCROLL_TRIGGER_ROWS) {
     loadNextSongSegment();
-    // 已渲染完当前提供的全部歌曲仍接近底部时，通知父组件加载更多（如在线搜索分页）
     if (loadedSongCount.value >= sourceSongCount.value) {
       emit('load-more');
     }
@@ -629,7 +593,6 @@ const {
   listOffsetTop,
 });
 
-// 整页滚动模式：滚动发生在外层容器，动态监听其 scroll 事件驱动虚拟滚动
 watch(
   () => props.scrollContainerRef,
   (el, oldEl) => {
@@ -675,8 +638,6 @@ watch(
   { immediate: true },
 );
 
-// 点击/双击播放：触发飞入封面动画并立即开始加载播放（并行执行）
-// 飞封面动画用于掩盖起播延迟，与 playSong 同时启动可让动画结束时歌曲已就绪
 const handlePlayClick = (song: Song) => {
   if (currentSong.value?.path === song.path && isPlaying.value) {
     return;
@@ -694,7 +655,6 @@ const handlePointerDown = (event: PointerEvent, song: Song, index: number) => {
 };
 
 const showDragIcon = computed(() => {
-  // 在线搜索/详情是只读容器，不受本地 currentViewMode 残留影响，统一显示播放图标
   if (route.path === '/search' || route.path === '/online-detail') return false;
   return ['folder', 'playlist', 'all', 'artist', 'album', 'genre', 'year'].includes(currentViewMode.value);
 });
@@ -813,8 +773,6 @@ onDeactivated(() => {
 
 onBeforeUnmount(() => {
   const scrollEl = activeScrollContainer.value;
-  // 整页滚动模式下父容器可能在卸载前已把滚动清零（如在线详情类型切换），
-  // 此时保存 0 会覆盖此前真实滚动位置；滚动监听已实时保存过真实位置，跳过即可
   if (!(props.pageScrollMode && scrollEl && scrollEl.scrollTop === 0)) {
     saveScrollPosition();
   }
@@ -832,7 +790,6 @@ onUnmounted(() => {
 
 defineExpose({ containerRef });
 
-// 预计算拖拽源在列表中的索引，避免 getRowStyle 每行都执行 O(n) findIndex
 const dragSourcePath = computed(() => {
   if (!dragSession.active || !dragSession.songs.length) return '';
   return dragSession.songs[0]?.path ?? '';
@@ -977,7 +934,6 @@ const getRowStyle = (songIndex: number, songPath: string) => {
               >（{{ getSongComment(song) }}）</span>
             </div>
             <div class="flex items-center gap-1.5 text-xs text-gray-900 dark:text-gray-100 leading-snug">
-              <!-- 歌手名 -->
               <span v-if="currentViewMode === 'album'" class="truncate flex items-center gap-1 flex-wrap" :title="song.artist">
                 <template v-for="(artistName, artistIndex) in getClickableArtistNames(song)" :key="`${song.path}-${artistName}`">
                   <button type="button" class="truncate hover:text-[#EC4141] transition-colors" @click.stop="handleArtistClick(artistName)">
@@ -994,7 +950,6 @@ const getRowStyle = (songIndex: number, songPath: string) => {
             {{ song.album }}
           </div>
 
-          <!-- 音质/格式列：在线歌曲显示下载状态（下载中圆环 / 未下载按钮）；本地容器中已下载的歌展示本地真实音质；在线容器中已下载显示绿色对勾 -->
           <div class="w-16 shrink-0 flex items-center justify-center gap-1 text-center text-xs font-mono text-gray-500 dark:text-white/50">
             <span class="min-w-0 truncate" :title="displayedFormat(song)">{{ displayedFormat(song) }}</span>
             <template v-if="isOnlineSong(song)">
@@ -1039,7 +994,6 @@ const getRowStyle = (songIndex: number, songPath: string) => {
             <span class="w-10 text-right">{{ formatDuration(song.duration) }}</span>
           </div>
 
-          <!-- 来源标签：在线容器始终显示音源名（下载完成也保留）；本地容器中已下载或在读本地歌曲显示"本地" -->
           <div class="w-16 shrink-0 flex items-center justify-center">
             <span
               v-if="isOnlineSong(song) && !(downloadCompletedAsLocal && downloadedOnlinePaths.has(song.path))"
@@ -1169,9 +1123,6 @@ const getRowStyle = (songIndex: number, songPath: string) => {
       </div>
     </div>
 
-    <!-- target 未就绪时 disabled 就地渲染，避免 Teleport null target 触发 Vue patch 崩溃；
-         整页滚动（在线详情）时挂回滚动容器，sticky 吸在容器可视区底部——容器可视区正好位于
-         底部播放栏上方，按钮既不随内容滚出视口，也不会盖住底栏（与本地容器绝对定位同理） -->
     <Teleport
       :disabled="!pageScrollMode || !scrollContainerRef"
       :to="scrollContainerRef"

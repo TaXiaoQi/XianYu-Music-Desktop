@@ -73,7 +73,6 @@ const formatDuration = (seconds: number) => {
 
 const resetModal = () => {
   searchRequestId += 1;
-  // 默认进入"从插件获取"标签页，方便直接搜索
   activeMethod.value = 'plugin';
   searchQuery.value = props.song ? createDefaultLyricsSearchQuery(props.song) : '';
   pluginGroups.value = [];
@@ -90,7 +89,6 @@ watch(
   ([visible]) => {
     if (visible) {
       resetModal();
-      // 打开弹窗时若已有默认搜索内容，自动触发搜索显示结果
       if (searchQuery.value.trim()) {
         void handleSearch();
       }
@@ -111,7 +109,6 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown);
-  // 组件通过 v-if 挂载时 visible 已为 true，watch 不会触发首次回调，需在此初始化
   if (props.visible) {
     resetModal();
     if (searchQuery.value.trim()) {

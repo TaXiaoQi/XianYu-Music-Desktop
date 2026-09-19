@@ -84,7 +84,6 @@ const { materialTransitionMaskVisible, materialSwitching } = useWindowMaterial()
 
 useDesktopLyricsWindowBridge();
 
-// Announcement logic
 const {
   announcementVisible,
   currentAnnouncement,
@@ -93,7 +92,6 @@ const {
   handleAnnouncementAction,
 } = useAnnouncement();
 
-// Feedback completion notification logic（反馈处理完成后，通过公告弹窗通知用户）
 const {
   feedbackVisible,
   currentFeedbackNotification,
@@ -101,7 +99,6 @@ const {
   closeFeedbackNotification,
 } = useFeedbackNotification();
 
-// Nickname change notification logic（后台管理员修改昵称后，通过公告弹窗通知用户并同步本地昵称）
 const {
   nicknameVisible,
   currentNicknameNotification,
@@ -109,7 +106,6 @@ const {
   closeNicknameChangeNotification,
 } = useNicknameChangeNotification();
 
-// Listen reset notification logic（后台管理员清理听歌时长后，通过公告弹窗告知用户及原因）
 const {
   listenResetVisible,
   currentListenResetNotification,
@@ -117,7 +113,6 @@ const {
   closeListenResetNotification,
 } = useListenResetNotification();
 
-// Update check logic（启动时自动检查，由全局单例管理弹窗）
 const {
   updateVisible,
   latestUpdate,
@@ -134,9 +129,6 @@ const { showOnboarding, completeOnboarding } = useOnboarding();
 const settingsStore = useSettingsStore();
 
 // --- 内测资格门槛（最高优先级，开屏即检查）---
-// 本地版本号含 beta 预发布段即为内测构建；设备不在内测名单 → 弹全局不可退出弹窗。
-// 先查资格，不在名单时再看有无待审核的内测申请：有 → 审核中弹窗（仅退出软件）；
-// 无 → 申请弹窗（退出/申请两个出口）。网络失败 fail-open，避免误伤正常用户。
 let betaGateShown = false;
 const runBetaGate = async () => {
   if (import.meta.env.DEV || betaGateShown) return;
@@ -168,7 +160,6 @@ const handleOnboardingComplete = () => {
 
 onMounted(() => {
   if (!showOnboarding.value) {
-    // 内测门槛拥有开屏最高优先级；其余启动弹窗在其之后依次检查。
     void runBetaGate().then(() => {
       checkAnnouncement();
       checkFeedbackNotification();
@@ -179,7 +170,6 @@ onMounted(() => {
       }
     });
   }
-  // 定时轮询反馈完成通知与昵称变更通知（后台操作后，客户端约在一分钟内收到）
   const feedbackTimer = setInterval(() => {
     checkFeedbackNotification(announcementVisible.value);
     checkNicknameChangeNotification(announcementVisible.value || feedbackVisible.value);
@@ -313,18 +303,6 @@ onMounted(() => {
         <TitleBar />
         <main class="flex-1 overflow-hidden relative min-h-0">
           <router-view v-slot="{ Component, route }">
-            <!-- 顺序转场（先淡出后淡进）。始终使用同一个 <transition> 容器，
-                 绝不切换 'template 分支 / transition 分支' 两种结构，否则
-                 skipNextPageTransition 翻转时会把整个页面子树重挂载，在页面
-                 异步列表（音乐库扫描/歌单加载）更新进行中把子 vnode 的 el 置空，
-                 触发 patchKeyedChildren 卸载时读取 null 的 parentNode 崩溃。
-                 skip 期间必须把 mode 置空（不 hold 旧树、不走 out-in 的进出 Frag
-                 管理），否则启动重绘的两次连续路由替换会经 out-in 产生 patch 竞态
-                 （此前 :name='' + :css=false 仍会走 out-in，双导航下
-                 parentNode / subTree / insertBefore 崩溃屡发）。
-                 css 保持开启并用纯 CSS 入场动画（page-enter-in）给首进入口补一个
-                 淡入：该动画只改合成属性、不参与 Vue 的 DOM 重排，天然不会把
-                 异步列表行 el 置 null，在手感上也避免首帧硬切/整页突然出现。 -->
             <transition
               name="page-fade"
               :css="true"
@@ -440,7 +418,6 @@ onMounted(() => {
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
-/* 淡出期间离场页面不拦截点击与滚动 */
 .page-fade-leave-active {
   pointer-events: none;
 }
@@ -455,8 +432,6 @@ onMounted(() => {
   transform: translateY(-6px);
 }
 
-/* 首进入口：纯 CSS 入场动画。只定义 enter-active（入场淡入），不定义任何
-   leave 规则 —— 旧树由 Vue 在下一帧直接移除，不进入 out-in 状态机。 */
 .page-enter-enter-active {
   animation: page-enter-in 0.22s ease;
 }
@@ -517,7 +492,6 @@ onMounted(() => {
   opacity: 0;
 }
 
-/* 材质卸载过渡遮罩：瞬间出现，平滑淡出 */
 .material-transition-mask-enter-active {
   transition: none;
 }
@@ -530,11 +504,6 @@ onMounted(() => {
   opacity: 0;
 }
 
-/*
- * 材质切换期间禁用所有子元素的 CSS 过渡（排除遮罩自身）。
- * 防止 GlobalBackground / Sidebar / 主容器 / Footer 的 transition-colors duration-500
- * 在切换期间产生半透明背景，导致文字透出重叠。
- */
 .material-switching,
 .material-switching *:not(.material-transition-mask) {
   transition: none !important;

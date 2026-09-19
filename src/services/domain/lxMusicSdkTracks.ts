@@ -1,10 +1,3 @@
-/**
- * LX 协议 SDK · 专辑/歌单曲目获取。
- *
- * 按源调用专辑歌曲列表与歌单曲目接口，把各平台原始响应统一映射为
- * LxSearchResultItem（简化项：不返回音质信息，播放时由 lxUrlResolver 统一解析）。
- * TX 源走签名(Mobile)接口，被风控/降级时回退到经典 Web 兜底。
- */
 import {
   firstValue,
   formatPlayTime,
@@ -22,10 +15,6 @@ import { decodeName, formatSingerName } from '../../utils/musicFormat';
 import { dispatchFallbackModule } from '../fallbackModules/registry';
 import type { LxSourceId } from './lxMusicSdkTypes';
 
-/**
- * 从简化数据构造 LxSearchResultItem（用于专辑/歌单接口返回数据，
- * 这些接口通常不返回音质类型信息，types 留空，播放时由 lxUrlResolver 统一解析）
- */
 function buildSimpleLxItem(
   source: LxSourceId,
   songmid: string,
@@ -52,28 +41,14 @@ function buildSimpleLxItem(
   };
 }
 
-/**
- * 检测 albumId 是否为有效的专辑 ID（而非回退的专辑名称）。
- * deriveLxAlbumResults 在 albumId/albumMid 均为空时回退到专辑名，
- * 此时直接调 API 会失败，需由调用方走搜索回退。
- */
 function isValidAlbumId(source: LxSourceId, albumId: string): boolean {
   if (!albumId) return false;
-  // 专辑名通常含中文/空格/标点，且非纯数字/字母
-  // TX 的 mid 格式为字母+数字组合（如 "001abc..."），其余源为纯数字
   if (source === 'tx') {
-    // TX albumMid: 字母数字组合，通常以 "00" 开头
     return /^[A-Za-z0-9]{6,}$/.test(albumId);
   }
-  // kw/kg/wy/mg: 纯数字 ID
   return /^\d+$/.test(albumId);
 }
 
-/**
- * 获取落雪音源专辑歌曲列表
- * @param albumRawData 来自 deriveLxAlbumResults 的 rawData: { source, id, name, artist }
- * @returns 歌曲列表；若 albumId 无效或 API 失败则返回空数组（由调用方走搜索回退）
- */
 export async function lxGetAlbumSongs(
   source: LxSourceId,
   albumRawData: any,
@@ -93,7 +68,6 @@ async function lxGetAlbumSongsBuiltin(
   const albumId = String(albumRawData?.id ?? '');
   const albumName = String(albumRawData?.name ?? '');
 
-  // albumId 无效（可能是专辑名回退），直接返回空触发搜索回退
   if (!isValidAlbumId(source, albumId)) {
     console.warn(`[LxMusicSdk] lxGetAlbumSongs: invalid albumId "${albumId}" for source ${source}, falling back to search`);
     return [];
@@ -124,8 +98,6 @@ async function lxGetAlbumSongsBuiltin(
         return infoList.map((item: any) => kgFilterData(item));
       }
       case 'tx': {
-        // 模块必须用 music.musichallAlbum.AlbumSongList（PlaySingerSongs 是歌手歌曲接口，
-        // 组合 GetAlbumSongList 会返回 500003）。已实测该签名请求稳定可用。
         const requestData = {
           comm: { ct: '24', cv: '0' },
           req: {
@@ -142,7 +114,6 @@ async function lxGetAlbumSongsBuiltin(
         );
         const songList: any[] = resp?.req?.data?.songList || [];
         if (songList.length === 0) console.warn(`[LxMusicSdk] TX album ${albumId}: empty songList`);
-        // songList 每项可能包在 songInfo 里
         return txHandleResult(songList.map((s: any) => s.songInfo || s));
       }
       case 'wy': {
@@ -186,10 +157,6 @@ async function lxGetAlbumSongsBuiltin(
   return [];
 }
 
-/**
- * 经典 Web 歌单详情兜底：不依赖新签名(musics.fcg)风控体系。
- * Mobile 歌单详情被风控/降级返回空时使用，避免小秋/QQ 歌单页空白。
- */
 async function txSheetTracksWebFallback(
   playlistId: string,
   page: number,
@@ -209,10 +176,6 @@ async function txSheetTracksWebFallback(
   return txHandleResult(songlist);
 }
 
-/**
- * 获取落雪音源歌单曲目列表
- * @param playlistRawData 来自 normalizeLxPlaylistResults 的 rawData（原始 API 响应项）
- */
 export async function lxGetPlaylistTracks(
   source: LxSourceId,
   playlistRawData: any,
@@ -231,8 +194,6 @@ export async function lxGetPlaylistTracks(
   try {
     switch (source) {
       case 'kw': {
-        // www.kuwo.cn/api/www/playlist/playListInfo 已被风控（The request is illegal!）
-        // 改用 nplserver.kuwo.cn/pl.svc 无风控接口，一次 rn=1000 拉全部曲目
         const kwResp = await httpFetch(
           `http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${playlistId}&pn=0&rn=1000` +
           `&encode=utf8&keyset=pl2012&vipver=MUSIC_9.1.1.2_BCS2&newver=1`,
@@ -253,7 +214,6 @@ export async function lxGetPlaylistTracks(
             formatPlayTime(parseInt(m.duration) || 0), m.albumpic || m.pic || null,
           );
         });
-        // nplserver 一次返回全部，isEnd 始终为 true
         return { list, isEnd: true };
       }
       case 'kg': {
@@ -278,8 +238,6 @@ export async function lxGetPlaylistTracks(
             },
           },
         };
-        // 该接口与 searchTx 同属新签名(Mobile)风控体系：被风控(reqCode 2001)或降级时返回空 songlist，
-        // 无结果时走经典 Web 接口兜底（不依赖这套风控），否则用户在歌单页一直空白。
         const fallback = async (reason: string) => {
           console.warn(`[LxMusicSdk] TX playlist ${playlistId}: ${reason}，尝试 Web 兜底`);
           const list = await txSheetTracksWebFallback(playlistId, page, limit);

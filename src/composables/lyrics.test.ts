@@ -160,7 +160,6 @@ describe('enhanced lrc parser', async () => {
 
     expect(parsed).toHaveLength(2);
     expect(parsed[0].startTime).toBe(36111);
-    // 最后时间戳后带文本的行（JOOX 等格式）现在也能解析，不再被整体丢弃
     expect(parsed[1].startTime).toBe(40000);
     expect(parsed[1].words.map((word) => word.word)).toEqual(['Broken', 'Line']);
   });
@@ -293,7 +292,6 @@ describe('mergePreparedLines', async () => {
 
     expect(sanitizeLineText('// 汪苏泷:')).toBe('汪苏泷:');
     expect(sanitizeLineText('音乐设计：王皓@WONDERWALL //')).toBe('音乐设计：王皓@WONDERWALL');
-    // 保留合法的单斜杠如 6/8
     expect(sanitizeLineText('6/8の')).toBe('6/8の');
 
     const rawWithSlashes = `

@@ -1,9 +1,3 @@
-//! DLNA Tauri 命令层：发送端（DMC）控制 + 接收端（DMR）启停与指令分发。
-//!
-//! - DMC：搜索设备 / 投递 / 播控 / 音量 / 状态查询，均转发到 [crate::dlna::DlnaCore]。
-//! - DMR：启用渲染器后，播放器指令经 `dlna:dmr-command` 事件推给前端编排层执行，
-//!   播放状态快照由 [PlayerDmrHost] 从共享原子直接读取（无锁，供 SOAP 应答）。
-
 use super::types::{
     CastMediaInfo, CastTransportState, DlnaDevice, DmrHost, DmrPlaybackReport, MediaPayload,
     TransportState,
@@ -17,7 +11,6 @@ use tauri::{AppHandle, Emitter, State};
 #[allow(unused_imports)]
 use super::types as dlna_types;
 
-/// DMR 渲染器运行状态。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DlnaRendererStatus {
@@ -26,7 +19,6 @@ pub struct DlnaRendererStatus {
     pub port: u16,
 }
 
-/// DMR 宿主：从播放器共享原子读取状态快照（HTTP SOAP 应答线程调用）。
 struct PlayerDmrHost {
     progress: Arc<SharedProgress>,
     user_volume: Arc<AtomicU32>,
@@ -66,7 +58,6 @@ impl DmrHost for PlayerDmrHost {
     }
 }
 
-/// 默认渲染器名称（前端未指定时兜底）。
 fn fallback_friendly_name() -> String {
     let host = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
@@ -130,7 +121,6 @@ pub async fn dlna_cast_get_state(device: DlnaDevice) -> Result<CastTransportStat
     DlnaCore::shared().cast_get_state(&device).await
 }
 
-/// TTL 续投：热替换 token 上游（电视不断流）。
 #[tauri::command]
 pub fn dlna_update_media_token(token: String, payload: MediaPayload) -> bool {
     DlnaCore::shared().update_media_token(&token, payload)
@@ -138,8 +128,6 @@ pub fn dlna_update_media_token(token: String, payload: MediaPayload) -> bool {
 
 // ---------------- 接收端（DMR） ----------------
 
-/// 启用渲染器：SSDP 广播 + SOAP 端点。启用后 DMR 指令经 `dlna:dmr-command` 事件
-/// 推给前端；状态快照直接读播放器共享原子。
 #[tauri::command]
 pub async fn dlna_enable_renderer(
     friendly_name: String,
@@ -167,13 +155,12 @@ pub async fn dlna_enable_renderer(
         )
         .await?;
 
-    // 取走指令接收端并启动 emit 循环（仅一次；重复启用时 None 则跳过）。
     if let Some(mut rx) = core.take_dmr_command_rx().await {
         std::thread::spawn(move || {
             while let Some(cmd) = rx.blocking_recv() {
                 let payload = serde_json::to_value(&cmd).unwrap_or_default();
                 if app.emit("dlna:dmr-command", payload).is_err() {
-                    break;
+                    eprintln!("[dlna] DMR 命令事件发送失败，继续消费队列");
                 }
             }
         });

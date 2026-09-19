@@ -25,7 +25,6 @@ function emitAction(action: DesktopLyricsAction) {
 </script>
 
 <template>
-  <!-- 锁定态：只在光标接近顶部中央时浮现解锁按钮 -->
   <div
     v-if="props.isLocked"
     class="locked-unlock-row"
@@ -44,7 +43,6 @@ function emitAction(action: DesktopLyricsAction) {
     </button>
   </div>
 
-  <!-- 未锁定：完整面板控件（顶行 logo + 锁/关，底行 设置 + 播放控制 + 收藏） -->
   <template v-else>
     <div class="chrome-top-row" @mousedown.stop>
       <span class="chrome-logo" aria-hidden="true">
@@ -116,7 +114,6 @@ function emitAction(action: DesktopLyricsAction) {
 </template>
 
 <style scoped>
-/* 顶行：logo 居左，锁/关居右（覆盖在面板背景之上） */
 .chrome-top-row {
   position: absolute;
   top: 0;
@@ -155,7 +152,6 @@ function emitAction(action: DesktopLyricsAction) {
   gap: 6px;
 }
 
-/* 底行：设置居左，播放控制居中，收藏居右 */
 .chrome-bottom-row {
   position: absolute;
   bottom: 0;
@@ -203,7 +199,6 @@ function emitAction(action: DesktopLyricsAction) {
   background: color-mix(in srgb, var(--favorite-color, #f56c6c) 16%, transparent);
 }
 
-/* 中间播放控制：细描边圆（对齐 QQ 音乐桌面歌词），中间主键更大 */
 .chrome-transport {
   display: inline-flex;
   align-items: center;
@@ -237,7 +232,6 @@ function emitAction(action: DesktopLyricsAction) {
   transform: scale(1.05);
 }
 
-/* 锁定态解锁按钮行 */
 .locked-unlock-row {
   position: absolute;
   top: 8px;

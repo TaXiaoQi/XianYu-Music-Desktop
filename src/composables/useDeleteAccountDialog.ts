@@ -10,9 +10,6 @@ const deleteAccountDialogState = ref<DeleteAccountDialogState>({
   resolver: null,
 });
 
-/**
- * 打开注销账号弹窗（统一弹窗样式），返回用户点「确认注销」后 true
- */
 export function showDeleteAccountDialog(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     deleteAccountDialogState.value = {

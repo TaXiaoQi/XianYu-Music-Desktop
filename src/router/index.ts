@@ -7,7 +7,6 @@ import {
 } from '../composables/onboardingState';
 import { installOnboardingRouteGate } from './onboardingRouteGate';
 
-// 使用路由懒加载优化首屏加载速度
 const Home = () => import('../views/Home.vue');
 const Favorites = () => import('../views/Favorites.vue');
 const Recent = () => import('../views/Recent.vue');

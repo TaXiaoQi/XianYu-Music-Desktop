@@ -1,4 +1,3 @@
-/** 网易云平台评论（免加密老接口，与 weapi 热评接口同构：page1 合并热评+最新）。 */
 import { httpJson, PAGE_SIZE } from './platformCommentShared';
 import type { PlatformComment, PlatformCommentResult } from './platformCommentShared';
 

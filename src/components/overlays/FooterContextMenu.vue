@@ -56,7 +56,6 @@ const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
 const menuRef = ref<HTMLElement | null>(null);
 const menuSize = ref({ width: 0, height: 0 });
 
-/** 是否为在线歌曲（plugin:// 或 lx://） */
 const isOnlineSong = computed(() => {
   const path = props.song?.path ?? '';
   return path.startsWith('plugin://') || path.startsWith('lx://');
@@ -76,7 +75,6 @@ const menuEntries = computed<FooterMenuEntry[]>(() => {
     { type: 'action', key: 'viewAlbum', label: '查看专辑', icon: Disc3 },
   ];
 
-  // 本地歌曲才显示"查看歌曲信息"和"修改歌曲封面"
   if (!isOnlineSong.value) {
     entries.push(
       { type: 'action', key: 'viewSongInfo', label: '查看歌曲信息', icon: Info },
@@ -84,10 +82,8 @@ const menuEntries = computed<FooterMenuEntry[]>(() => {
     );
   }
 
-  // 更改歌词 (LRC)
   entries.push({ type: 'action', key: 'changeLyrics', label: '更改歌词 (LRC)', icon: FileText });
 
-  // 播放视频为背景
   if (isBilibiliSong.value) {
     entries.push({
       type: 'action',
@@ -97,7 +93,6 @@ const menuEntries = computed<FooterMenuEntry[]>(() => {
     });
   }
 
-  // 打开文件所在目录 (仅本地)
   if (!isOnlineSong.value) {
     entries.push(
       { type: 'divider', key: 'divider-file' },
@@ -157,14 +152,12 @@ const handleGlobalClick = (e: MouseEvent) => {
 onMounted(() => window.addEventListener('mousedown', handleGlobalClick));
 onUnmounted(() => window.removeEventListener('mousedown', handleGlobalClick));
 
-/** 在线歌曲：通过 plugin_id 查找 PluginSource */
 const resolvePluginSource = (song: Song) => {
   const pluginId = song.plugin_id || song.rawData?.pluginId;
   if (!pluginId) return null;
   return getStoredPlugins().find((p) => p.id === pluginId) ?? null;
 };
 
-/** 在线歌曲查看歌手：搜索歌手后跳转到在线详情页 */
 const handleOnlineViewArtist = async (song: Song) => {
   const artistName = song.effective_artist_names?.[0]
     || song.artist_names?.[0]
@@ -208,7 +201,6 @@ const handleOnlineViewArtist = async (song: Song) => {
   }
 };
 
-/** 在线歌曲查看专辑：搜索专辑后跳转到在线详情页 */
 const handleOnlineViewAlbum = async (song: Song) => {
   const albumName = song.album || '';
   if (!albumName || albumName === '未知专辑') {

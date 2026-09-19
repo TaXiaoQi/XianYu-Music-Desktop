@@ -28,7 +28,6 @@ export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
   ],
 };
 
-/** 模块级响应式关于页配置，供关于页等组件共享，服务器下发后即时更新 */
 export const aboutConfig = ref<AboutConfig>({ ...DEFAULT_ABOUT_CONFIG });
 
 function asUrl(value: unknown, fallback: string): string {
@@ -82,15 +81,10 @@ export async function fetchAboutConfig(): Promise<AboutConfig> {
 const POLL_INTERVAL_MS = 30_000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-/** 立即刷新一次关于页配置到响应式对象 */
 export async function refreshAboutConfig(): Promise<void> {
   aboutConfig.value = await fetchAboutConfig();
 }
 
-/**
- * 启动关于页配置轮询（幂等）。
- * 服务器下发新配置后，客户端会在轮询周期内即时更新，避免停留在旧网址。
- */
 export function startAboutConfigPolling(): void {
   if (pollTimer) return;
   void refreshAboutConfig();
@@ -99,7 +93,6 @@ export function startAboutConfigPolling(): void {
   }, POLL_INTERVAL_MS);
 }
 
-/** 停止关于页配置轮询 */
 export function stopAboutConfigPolling(): void {
   if (pollTimer) {
     clearInterval(pollTimer);

@@ -24,19 +24,6 @@ import {
   type PreparedPluginBackupImport,
 } from './pluginBackupTypes';
 
-/**
- * 插件备份导出导入 —— 门面（Facade）。
- *
- * 汇聚 re-export 拆分后的子模块并保留主编排，保持既有消费者
- * （pluginBackupImport.test.ts / pluginBackupImport.realdata.test.ts 等）
- * 的入口路径不变。已拆分的子模块：
- *   - pluginBackupTypes    类型与版本常量（叶子）
- *   - pluginBackupFormat   格式/版本检测（BakaMusic / MusicFree / 洛雪）
- *   - pluginBackupSong     歌曲字段提取、平台描述/插件匹配、Song 规范化
- *
- * 能力：解析 BakaMusic / MusicFree / 洛雪(lxmc) 三种备份的文件/JSON，
- * 自动识别格式与版本、匹配在线插件或本地路径，构造可导入的歌单与失败明细。
- */
 
 export {
   STRINGIFIED_TRACK_ID_BACKUP_VERSION,
@@ -52,9 +39,6 @@ export type {
 } from './pluginBackupTypes';
 export { formatInterval } from './pluginBackupSong';
 
-/**
- * 主编排：解析备份 JSON，识别格式与插件，逐歌单构造可导入歌曲与失败明细。
- */
 export function preparePluginBackupImport(
   jsonContent: string,
   installedPlugins: PluginSource[],
@@ -100,7 +84,6 @@ export function preparePluginBackupImport(
         continue;
       }
 
-      // 优先检测本地文件路径：有本地路径的歌曲直接作为本地歌曲导入
       const localPath = resolveLocalPath(rawSong);
       if (localPath) {
         songs.push(createLocalSong(rawSong, localPath));
@@ -121,7 +104,6 @@ export function preparePluginBackupImport(
         continue;
       }
 
-      // 无本地路径：尝试匹配在线插件
       if (!id || !platform.normalized) {
         failures.push({
           playlist: playlistName,
@@ -150,7 +132,6 @@ export function preparePluginBackupImport(
         continue;
       }
 
-      // lx 协议的 songmid 本身就是字符串语义，无需 ID 类型还原
       const song = plugin.format === 'lx' && platform.lxSource
         ? createLxSong(rawSong, plugin, { ...platform, lxSource: platform.lxSource })
         : createMusicFreeSong(
@@ -202,12 +183,6 @@ export function preparePluginBackupImport(
   };
 }
 
-/**
- * 生成备份版本的用户可读描述，供导入结果 toast 使用。
- *
- * v2 会额外说明已还原数字 ID —— 这直接关系到用户能否感知
- * 「为什么导入后逐字歌词恢复了」。
- */
 export function describeBackupVersion(prepared: PreparedPluginBackupImport): string {
   const formatName = prepared.format === 'bakamusic' ? 'BakaMusic'
     : prepared.format === 'musicfree' ? 'MusicFree'
@@ -236,13 +211,6 @@ export async function preparePluginBackupFile(
   return preparePluginBackupImport(content, installedPlugins);
 }
 
-/**
- * 读取备份文件并准备导入。
- * - .json 直接读取明文
- * - .zip 解压后提取其中的 JSON 备份
- * - .lxmc 洛雪音乐备份（gzip 压缩的 JSON）
- * 与 preparePluginBackupFile 相同，但额外支持压缩包格式。
- */
 export async function preparePluginBackupFileContent(
   filePath: string,
   installedPlugins: PluginSource[],

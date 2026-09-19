@@ -44,8 +44,6 @@ function isInsideSkippedSubtree(node: Node): boolean {
 function translateSource(source: string, language: AppLanguage): string {
   if (language === 'zh-TW') return toTraditional(source);
   if (language === 'en-US') return toEnglish(source);
-  // 简体：对 originalText 兜底反向简体化——繁体期间 t() 输出/已翻译文本会污染 originalText
-  // 为繁体，若直接原样返回会让界面无法从繁体切回简体。
   return toSimplified(source);
 }
 
@@ -60,7 +58,6 @@ function translateTextNode(node: Text, language: AppLanguage, force = false): vo
     if (hasHan(current)) {
       originalText.set(node, current);
     } else {
-      // Vue reused this node for an already-localized value. It is now the source of truth.
       originalText.delete(node);
       appliedText.delete(node);
       return;
@@ -164,10 +161,6 @@ function translateSubtree(root: Node, language: AppLanguage, force = false): voi
   }
 }
 
-/**
- * Localizes legacy interface text that has not yet been migrated to typed `t()` keys.
- * User-editable fields and explicitly marked data are excluded so track metadata is untouched.
- */
 export function useGlobalInterfaceLanguage(): void {
   const { language } = useI18n();
   let observer: MutationObserver | null = null;

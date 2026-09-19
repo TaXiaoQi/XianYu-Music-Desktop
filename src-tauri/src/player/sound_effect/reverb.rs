@@ -1,18 +1,3 @@
-//! 混响机架 —— 双引擎架构：Freeverb（算法混响）+ FFT 卷积混响（IR 混响）。
-//!
-//! 架构（2026-08-17 升级版）：
-//! - **算法混响**（ReverbKind::Algorithmic）：纯 Freeverb（8 梳状 + 4 全通），逐样本处理
-//! - **卷积混响**（ReverbKind::Convolution）：FFT overlap-add 分块卷积，加载真实 IR WAV 文件
-//! - **无混响**（ReverbKind::None）：bypass
-//!
-//! 卷积混响特性：
-//! - 块大小 B=2048，FFT 大小 N=4096，延迟 ~93ms（对混响可接受）
-//! - 13 个卷积预设对应 13 个真实 IR 文件（编译时嵌入）
-//! - 支持 1/2/4 声道 WAV 降混、采样率重采样、峰值归一化
-//! - IR 频域分块预计算，热路径零分配
-//!
-//! 性能：Freeverb 路径零分配；卷积路径每 B 个样本一次 FFT 卷积，热路径零分配。
-
 #![allow(dead_code)]
 
 use super::convolution::ConvolutionReverb;
@@ -20,21 +5,18 @@ use super::dsp::{soft_clip, SmoothedValue};
 use super::{ReverbKind, SoundEffectSettings};
 
 // =========================================================================
-// Freeverb 常量（标准 Dreampoint/STK 调谐）
 // =========================================================================
 
 const FIXED_GAIN: f32 = 0.04;
 const WET_BOOST: f32 = 1.0;
-const ER_GAIN: f32 = 0.0; // 禁用早期反射——消除回声感
+const ER_GAIN: f32 = 0.0;
 const SCALE_ROOM: f32 = 0.28;
 const OFFSET_ROOM: f32 = 0.7;
 const ROOM_EXTEND_SLOPE: f32 = 0.015;
-const FEEDBACK_MAX: f32 = 0.92; // 降低反馈上限，防止过长尾音
-const SCALE_DAMP: f32 = 0.55; // 提高阻尼系数，更暖
+const FEEDBACK_MAX: f32 = 0.92;
+const SCALE_DAMP: f32 = 0.55;
 const ALLPASS_FEEDBACK: f32 = 0.5;
 const LIMITER_CEILING: f32 = 0.95;
-// 房间尺度上限（= 山谷预设）。用于为 Freeverb 延迟线预分配容量，使预设切换
-// 时按房间尺度缩放延迟线长度（真正的"空间大小"听感来源）而不触发热路径分配。
 const MAX_ROOM_SCALE: f32 = 2.3;
 
 const COMB_L: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
@@ -46,13 +28,12 @@ const ER_DELAYS_MS: [f32; 6] = [11.0, 19.0, 29.0, 37.0, 47.0, 61.0];
 const ER_GAINS: [f32; 6] = [0.65, 0.52, 0.45, 0.38, 0.32, 0.25];
 
 // =========================================================================
-// 梳状滤波器（低通反馈，Freeverb 核心）
 // =========================================================================
 
 struct Comb {
-    buffer: Vec<f32>, // 容量（按 MAX_ROOM_SCALE 预先分配），热路径经 self.len 回绕
+    buffer: Vec<f32>,
     idx: usize,
-    len: usize, // 当前生效长度（≥1，随预设房间尺度变化）
+    len: usize,
     feedback: f32,
     filter_store: f32,
     damp1: f32,
@@ -72,7 +53,6 @@ impl Comb {
         }
     }
 
-    /// 切换到新的生效长度（≤容量）。长度变化时清空缓冲，避免旧内容经周期回绕混叠。
     fn set_len(&mut self, new_len: usize) {
         let new_len = new_len.max(1).min(self.buffer.len());
         if new_len != self.len {
@@ -104,13 +84,12 @@ impl Comb {
 }
 
 // =========================================================================
-// 全通滤波器（Schroeder）
 // =========================================================================
 
 struct Allpass {
-    buffer: Vec<f32>, // 容量（按 MAX_ROOM_SCALE 预先分配），热路径经 self.len 回绕
+    buffer: Vec<f32>,
     idx: usize,
-    len: usize, // 当前生效长度（≥1，随预设房间尺度变化）
+    len: usize,
     feedback: f32,
 }
 
@@ -153,7 +132,6 @@ impl Allpass {
 }
 
 // =========================================================================
-// 早期反射（6 抽头多抽头延迟）
 // =========================================================================
 
 struct EarlyReflections {
@@ -201,16 +179,13 @@ impl EarlyReflections {
 }
 
 // =========================================================================
-// 延迟线构建：按采样率缩放基础长度，并按 MAX_ROOM_SCALE 预留容量（一次性分配）
 // =========================================================================
 
 fn build_combs(bases: [usize; 8], sample_rate: f32) -> [Comb; 8] {
     let cap = |b: usize| -> usize {
         (((b as f32 * sample_rate / 44100.0) * MAX_ROOM_SCALE).round() as usize).max(1)
     };
-    let base = |b: usize| -> usize {
-        ((b as f32 * sample_rate / 44100.0).round() as usize).max(1)
-    };
+    let base = |b: usize| -> usize { ((b as f32 * sample_rate / 44100.0).round() as usize).max(1) };
     let mut arr: [Comb; 8] = std::array::from_fn(|i| Comb::with_capacity(cap(bases[i])));
     for (i, c) in arr.iter_mut().enumerate() {
         c.set_len(base(bases[i]));
@@ -222,9 +197,7 @@ fn build_allpasses(bases: [usize; 4], sample_rate: f32) -> [Allpass; 4] {
     let cap = |b: usize| -> usize {
         (((b as f32 * sample_rate / 44100.0) * MAX_ROOM_SCALE).round() as usize).max(1)
     };
-    let base = |b: usize| -> usize {
-        ((b as f32 * sample_rate / 44100.0).round() as usize).max(1)
-    };
+    let base = |b: usize| -> usize { ((b as f32 * sample_rate / 44100.0).round() as usize).max(1) };
     let mut arr: [Allpass; 4] = std::array::from_fn(|i| Allpass::with_capacity(cap(bases[i])));
     for (i, a) in arr.iter_mut().enumerate() {
         a.set_len(base(bases[i]));
@@ -233,7 +206,6 @@ fn build_allpasses(bases: [usize; 4], sample_rate: f32) -> [Allpass; 4] {
 }
 
 // =========================================================================
-// ReverbRack（双引擎混响机架）
 // =========================================================================
 
 pub struct ReverbRack {
@@ -287,7 +259,6 @@ impl ReverbRack {
         }
     }
 
-    /// 按采样率/声道初始化延迟线（一次性分配，热路径零分配）。
     pub fn prepare(&mut self, sample_rate: f32, channels: usize) {
         self.sample_rate = sample_rate;
         self.channels = channels;
@@ -299,7 +270,6 @@ impl ReverbRack {
         self.allpass_r = build_allpasses(ALLPASS_R, sample_rate);
         self.early_l = EarlyReflections::new(sample_rate);
         self.early_r = EarlyReflections::new(sample_rate);
-        // 重置变更检测
         self.cur_kind = ReverbKind::None;
         self.cur_preset.clear();
         self.room_scale = 1.0;
@@ -325,12 +295,10 @@ impl ReverbRack {
         self.limiter_gain = 1.0;
     }
 
-    /// 同步参数（每 64 帧由音频线程调用）。
     pub fn update_params(&mut self, s: &SoundEffectSettings) {
         let active = s.reverb_kind != ReverbKind::None && !s.reverb_preset.is_empty();
         self.enabled.set_target(if active { 1.0 } else { 0.0 });
 
-        // 卷积混响：加载对应 IR 文件
         if s.reverb_kind == ReverbKind::Convolution && !s.reverb_preset.is_empty() {
             self.convolution.load_preset(&s.reverb_preset);
         }
@@ -353,8 +321,6 @@ impl ReverbRack {
             self.input_gain = gain;
             self.room_scale = scale;
 
-            // 按房间尺度缩放延迟线长度：这是"空间大小/回声间隔"听感的真正来源，
-            // 让不同算法预设拥有不同的房间几何。set_len 在长度未变时是空操作。
             let want_len = |base: usize| -> usize {
                 (((base as f32 * self.sample_rate / 44100.0) * scale).round() as usize).max(1)
             };
@@ -371,7 +337,6 @@ impl ReverbRack {
                 a.set_len(want_len(ALLPASS_R[i]));
             }
 
-            // Freeverb comb 系数更新
             let fb = feedback_from_room(room);
             let damp1 = damp * SCALE_DAMP;
             let damp2 = 1.0 - damp1;
@@ -388,11 +353,6 @@ impl ReverbRack {
         }
     }
 
-    /// 处理一帧（frame[0]=L, frame[1]=R），原地修改。
-    ///
-    /// 双引擎架构：
-    /// - ReverbKind::Convolution → FFT 卷积混响（真实 IR）
-    /// - ReverbKind::Algorithmic → Freeverb（8 梳状 + 4 全通）
     pub fn process(&mut self, frame: &mut [f32], channels: u16, s: &SoundEffectSettings) {
         if channels != 2 || frame.len() < 2 {
             return;
@@ -405,7 +365,6 @@ impl ReverbRack {
         let in_l = frame[0];
         let in_r = frame[1];
 
-        // 选择混响引擎：卷积混响优先，算法混响回退
         let (wet_l, wet_r) =
             if s.reverb_kind == ReverbKind::Convolution && self.convolution.is_loaded() {
                 self.convolution.process(in_l, in_r)
@@ -413,9 +372,6 @@ impl ReverbRack {
                 self.process_freeverb(in_l, in_r)
             };
 
-        // 干/湿混合（与旧版语义一致 + 立体声宽度交叉混合）。
-        // dry ∈[0,1]、wet ∈[0,1] 夹取：任何来源（含历史坏预设、用户滑杆触顶）都不得
-        // 把干声/湿声放大超过原始信号，否则会削波破音、混响尾音噪声被放大成沙沙声。
         let dry_gain = 1.0 + (s.reverb_dry.clamp(0.0, 1.0) - 1.0) * w;
         let wet = s.reverb_wet.clamp(0.0, 1.0) * w;
         let wet1 = wet * (self.width * 0.5 + 0.5);
@@ -425,7 +381,6 @@ impl ReverbRack {
         let mixed_l = in_l * dry_gain + wet_out_l;
         let mixed_r = in_r * dry_gain + wet_out_r;
 
-        // 砖墙限制器
         let peak = mixed_l.abs().max(mixed_r.abs()).max(1e-9);
         let target_gain = if peak > LIMITER_CEILING {
             LIMITER_CEILING / peak
@@ -447,7 +402,6 @@ impl ReverbRack {
 
     #[inline]
     fn process_freeverb(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
-        // 早期反射
         let er_l = self.early_l.process(in_l) * ER_GAIN;
         let er_r = self.early_r.process(in_r) * ER_GAIN;
 
@@ -455,7 +409,6 @@ impl ReverbRack {
         let input_l = in_l * ig;
         let input_r = in_r * ig;
 
-        // 左声道：8 梳状并联 → 4 全通串联
         let mut out_l = 0.0_f32;
         for c in &mut self.combs_l {
             out_l += c.process(input_l);
@@ -464,7 +417,6 @@ impl ReverbRack {
             out_l = a.process(out_l);
         }
 
-        // 右声道
         let mut out_r = 0.0_f32;
         for c in &mut self.combs_r {
             out_r += c.process(input_r);
@@ -478,7 +430,6 @@ impl ReverbRack {
 }
 
 // =========================================================================
-// room_size → 反馈增益
 // =========================================================================
 
 #[inline]
@@ -491,12 +442,8 @@ fn feedback_from_room(room: f32) -> f32 {
 }
 
 // =========================================================================
-// 预设 → Freeverb 参数映射
 // =========================================================================
 
-/// 预设 → 混响参数映射，返回 (room_size, damping, width, input_gain, room_scale)。
-/// room_size 决定尾音长度（feedback），damping 决定明暗，width 决定立体声宽度，
-/// room_scale 决定梳状/全通延迟线的缩放（即"空间/回声间隔"）。
 fn preset_params(preset: &str) -> (f32, f32, f32, f32, f32) {
     match preset {
         // --- 13 个卷积混响预设（IR 路径使用；延迟线与 Freeverb 无关，统一 scale=1.0）---
@@ -514,20 +461,16 @@ fn preset_params(preset: &str) -> (f32, f32, f32, f32, f32) {
         "magneticStereo" => (0.50, 0.55, 0.65, 1.0, 1.0),
         "feedbackSuppressor" => (0.35, 0.70, 0.50, 1.0, 1.0),
         // --- 5 个算法混响预设（Freeverb 表达能力内，room_size/damping/width/room_scale 均差异化）---
-        // room_scale 缩放延迟线长度，制造不同"房间几何"，是听感差异的主要来源：
-        //   小房间 0.70（紧致）、暖房 1.00（标准 Freeverb）、大厅 1.40（开阔）、
-        //   隧道 1.70（窄长）、山谷 2.10（超长开阔）
-        "algoRoom" => (0.20, 0.62, 0.30, 1.0, 0.70), // 小房间：短促紧实
-        "algoChamber" => (0.44, 0.88, 0.45, 1.0, 1.00), // 暖房：中、温暖偏暗
-        "algoHall" => (0.60, 0.45, 0.75, 1.0, 1.40), // 大厅：中长、明亮、开阔
-        "algoTunnel" => (0.70, 0.55, 0.25, 1.0, 1.70), // 隧道：较长、窄
-        "algoValley" => (0.78, 0.35, 0.80, 1.0, 2.10), // 山谷：最长、明亮、很宽
+        "algoRoom" => (0.20, 0.62, 0.30, 1.0, 0.70),
+        "algoChamber" => (0.44, 0.88, 0.45, 1.0, 1.00),
+        "algoHall" => (0.60, 0.45, 0.75, 1.0, 1.40),
+        "algoTunnel" => (0.70, 0.55, 0.25, 1.0, 1.70),
+        "algoValley" => (0.78, 0.35, 0.80, 1.0, 2.10),
         _ => (0.40, 0.55, 0.60, 1.0, 1.0),
     }
 }
 
 // =========================================================================
-// 单元测试
 // =========================================================================
 
 #[cfg(test)]
@@ -641,7 +584,6 @@ mod tests {
     fn test_sample_rate_scaling() {
         let mut rack44 = ReverbRack::new();
         rack44.prepare(44100.0, 2);
-        // 容量按 MAX_ROOM_SCALE 预留，生效长度等于基础延迟线长度
         let cap44 = rack44.combs_l[0].buffer.len();
         let len44 = rack44.combs_l[0].len;
 
@@ -694,7 +636,6 @@ mod tests {
 
     #[test]
     fn test_feedback_extension_long_tail() {
-        // 线性范围内：room 越大 feedback 越高
         let fb_small = feedback_from_room(0.2);
         let fb_mid = feedback_from_room(0.5);
         let fb_large = feedback_from_room(0.8);
@@ -710,7 +651,6 @@ mod tests {
             fb_large,
             fb_mid
         );
-        // 极端值被钳位到 FEEDBACK_MAX
         let fb_clamped = feedback_from_room(2.0);
         assert!(
             fb_clamped <= FEEDBACK_MAX,
@@ -849,7 +789,6 @@ mod tests {
 
     #[test]
     fn test_algorithm_switch_no_panic() {
-        // 在所有预设间切换不应 panic
         let mut rack = ReverbRack::new();
         rack.prepare(44100.0, 2);
         for p in [
@@ -864,7 +803,6 @@ mod tests {
         ] {
             let s = settings_for(p);
             rack.update_params(&s);
-            // 切换后处理若干帧不应崩溃
             for _ in 0..100 {
                 let mut frame = [0.5_f32, 0.4];
                 rack.process(&mut frame, 2, &s);
@@ -874,23 +812,28 @@ mod tests {
 
     #[test]
     fn test_algo_presets_are_distinct() {
-        // 算法预设彼此听感应显著不同（不退化回趋同），以防日后参数再次收窄。
-        // 关键：room_scale（房间几何）必须拉开差距，否则延迟线相同会导致听感趋同。
-        let labels = ["algoRoom", "algoHall", "algoChamber", "algoTunnel", "algoValley"];
+        let labels = [
+            "algoRoom",
+            "algoHall",
+            "algoChamber",
+            "algoTunnel",
+            "algoValley",
+        ];
         let mut feedbacks: Vec<f32> = Vec::new();
         let mut prev: Option<(f32, f32, f32, f32)> = None;
         for l in &labels {
             let p = preset_params(l);
             let fb = feedback_from_room(p.0);
             if let Some(pv) = prev {
-                let diff =
-                    (p.0 - pv.0).abs() + (p.1 - pv.1).abs() + (p.2 - pv.2).abs() + (p.4 - pv.3).abs();
+                let diff = (p.0 - pv.0).abs()
+                    + (p.1 - pv.1).abs()
+                    + (p.2 - pv.2).abs()
+                    + (p.4 - pv.3).abs();
                 assert!(diff > 0.05, "预设 {l} 与前一预设参数过于接近");
             }
             prev = Some((p.0, p.1, p.2, p.4));
             feedbacks.push(fb);
         }
-        // 房间尺度必须单调拉开，且至少出现 1.0 以下的"小空间"与 1.5 以上的"大空间"
         let scales: Vec<f32> = labels.iter().map(|l| preset_params(l).4).collect();
         let (min_s, max_s) = (
             scales.iter().cloned().fold(f32::MAX, f32::min),
@@ -904,14 +847,16 @@ mod tests {
         );
         let min_fb = feedbacks.iter().cloned().fold(f32::MAX, f32::min);
         let max_fb = feedbacks.iter().cloned().fold(f32::MIN, f32::max);
-        assert!(max_fb - min_fb > 0.1, "算法预设 feedback 差值过小，听感趋同");
+        assert!(
+            max_fb - min_fb > 0.1,
+            "算法预设 feedback 差值过小，听感趋同"
+        );
     }
 
     // --- 卷积混响集成测试 ---
 
     #[test]
     fn test_convolution_reverb_integration() {
-        // 卷积混响应产生非零、有限的输出
         let mut rack = ReverbRack::new();
         rack.prepare(44100.0, 2);
         let mut s = SoundEffectSettings::default();
@@ -936,7 +881,6 @@ mod tests {
 
     #[test]
     fn test_convolution_vs_algorithm_different() {
-        // 卷积混响和算法混响对相同输入应产生不同输出
         let mut rack_conv = ReverbRack::new();
         rack_conv.prepare(44100.0, 2);
         let mut s_conv = SoundEffectSettings::default();

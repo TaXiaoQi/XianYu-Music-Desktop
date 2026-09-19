@@ -23,7 +23,6 @@ type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport'
 const props = defineProps<{
   visible: boolean;
   playlists: Playlist[];
-  /** 模式：'create' 仅新建歌单 / 'import' 仅导入歌单 / 'all' 全部（默认） */
   mode?: 'create' | 'import' | 'all';
 }>();
 
@@ -50,11 +49,9 @@ const activeTab = ref<TabType>(getDefaultTab());
 const isClosing = ref(false);
 const isOpening = ref(true);
 
-// 新建歌单
 const createName = ref('');
 const createInputRef = ref<HTMLInputElement | null>(null);
 
-// 云端导入
 const importInput = ref('');
 const importInputRef = ref<HTMLInputElement | null>(null);
 const importSources = ref<PlaylistSource[]>(getImportSourcesFromPlugins());
@@ -65,13 +62,11 @@ const importRenameRef = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const importError = ref('');
 
-// 从本地文件夹导入歌单
 const localPlaylistName = ref('');
 const localPlaylistNameRef = ref<HTMLInputElement | null>(null);
 const localFolderPath = ref('');
 const localImportError = ref('');
 
-// 备份文件导入
 const backupFilePath = ref('');
 const backupFileName = ref('');
 const backupDetectedFormat = ref('');
@@ -79,14 +74,12 @@ const backupPreviewPlaylists = ref<ImportedPlaylist[]>([]);
 const backupImportError = ref('');
 const backupPluginResult = ref<PreparedPluginBackupImport | null>(null);
 
-/** 当前备份是否为 JSON/ZIP/LXMC（在线+本地混合模式） */
 const backupIsJson = computed(() => {
   if (!backupFilePath.value) return false;
   const ext = backupFilePath.value.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
   return ext === 'json' || ext === 'zip' || ext === 'lxmc';
 });
 
-// 拖放状态
 const isDragOver = ref(false);
 let unlistenDragDrop: (() => void) | null = null;
 let unlistenDragOver: (() => void) | null = null;
@@ -99,7 +92,6 @@ const allTabs: { type: TabType; label: string }[] = [
   { type: 'networkImport', label: '云端导入' },
 ];
 
-/** 根据模式过滤显示的标签页 */
 const tabs = computed(() => {
   const mode = props.mode ?? 'all';
   if (mode === 'create') return allTabs.filter(t => t.type === 'create');
@@ -109,12 +101,10 @@ const tabs = computed(() => {
 
 // ==================== 拖放事件监听 ====================
 
-/** 当前标签页是否接受拖放 */
 const tabAcceptsDrag = computed(
   () => activeTab.value === 'localFolderImport' || activeTab.value === 'backupImport',
 );
 
-/** 设置拖放拦截并注册 Tauri 事件 */
 async function setupDragListeners() {
   modalDragInterceptActive.value = true;
 
@@ -134,7 +124,6 @@ async function setupDragListeners() {
   });
 }
 
-/** 移除拖放拦截和事件监听 */
 function teardownDragListeners() {
   modalDragInterceptActive.value = false;
   isDragOver.value = false;
@@ -146,10 +135,8 @@ function teardownDragListeners() {
   unlistenDragLeave = null;
 }
 
-/** 处理拖放的路径，根据当前标签页分发 */
 async function handleDropPaths(paths: string[]) {
   if (activeTab.value === 'backupImport') {
-    // 找到第一个支持的文件
     const supportedFile = paths.find((p) => {
       const ext = p.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
       return SUPPORTED_IMPORT_EXTENSIONS.includes(ext);
@@ -160,7 +147,6 @@ async function handleDropPaths(paths: string[]) {
       backupImportError.value = `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
     }
   } else if (activeTab.value === 'localFolderImport') {
-    // 找到第一个文件夹
     for (const p of paths) {
       try {
         const isDir = await fileApi.isDirectory(p);
@@ -181,13 +167,11 @@ async function handleDropPaths(paths: string[]) {
 
 // ==================== 弹窗生命周期 ====================
 
-// 弹窗打开时重置状态
 watch(
   () => [props.visible, props.mode] as const,
   async (val) => {
     const [visible] = val;
     if (visible) {
-      // 根据模式设置默认标签页
       activeTab.value = getDefaultTab();
       createName.value = '';
       importInput.value = '';
@@ -216,12 +200,10 @@ watch(
   { immediate: true },
 );
 
-// 组件卸载时清理
 onUnmounted(() => {
   teardownDragListeners();
 });
 
-// 插件变更时刷新音源列表，保留仍存在的选中项
 watch(pluginsVersion, () => {
   const prevSelected = selectedSource.value;
   importSources.value = getImportSourcesFromPlugins();
@@ -231,7 +213,6 @@ watch(pluginsVersion, () => {
   }
 });
 
-// 切换 tab 时聚焦对应输入框
 watch(activeTab, async () => {
   await nextTick();
   focusCurrentTab();
@@ -253,30 +234,26 @@ const handleSelectSource = (key: string) => {
   importError.value = '';
 };
 
-/** 当前选中音源的类型（LX 直连 / MusicFree 插件） */
 const currentSourceType = computed(() => {
   const src = importSources.value.find(s => s.key === selectedSource.value);
   return src?.type ?? 'lx';
 });
 
-/** 当前选中音源的显示名称 */
 const selectedSourceName = computed(() => {
   const src = importSources.value.find(s => s.key === selectedSource.value);
   return src?.name ?? '自动识别';
 });
 
-/** 切换下拉列表开关 */
 const toggleSourceDropdown = () => {
   sourceDropdownOpen.value = !sourceDropdownOpen.value;
 };
 
-/** 点击外部关闭下拉 */
 const closeSourceDropdown = () => {
   sourceDropdownOpen.value = false;
 };
 
 const handleClose = () => {
-  if (importing.value) return; // 导入中不允许关闭
+  if (importing.value) return;
   isClosing.value = true;
   setTimeout(() => {
     emit('update:visible', false);
@@ -327,7 +304,6 @@ const handleChooseBackupFile = async () => {
   }
 };
 
-/** 加载并解析备份文件 */
 async function loadBackupFile(filePath: string) {
   backupFilePath.value = filePath;
   backupFileName.value = filePath.split(/[\\/]/).pop() || filePath;
@@ -341,7 +317,6 @@ async function loadBackupFile(filePath: string) {
     const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
 
     if (ext === 'json' || ext === 'zip' || ext === 'lxmc') {
-      // JSON / ZIP / LXMC 备份：自动识别本地文件和在线插件匹配（含洛雪音乐）
       const prepared = await preparePluginBackupFileContent(filePath, getStoredPlugins());
       backupPluginResult.value = prepared;
       const missingInfo = prepared.missingPlugins.length > 0
@@ -350,7 +325,6 @@ async function loadBackupFile(filePath: string) {
       backupDetectedFormat.value = `${describeBackupVersion(prepared)} · ${prepared.importedSongCount}/${prepared.totalSongCount} 首可导入${missingInfo}`;
       showToast(describeBackupVersion(prepared), 'info');
     } else {
-      // M3U / TXT：纯本地文件解析
       const playlists = await importBackupFile(filePath);
       backupPreviewPlaylists.value = playlists;
       const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
@@ -383,24 +357,20 @@ const handleConfirm = async () => {
     importing.value = true;
 
     try {
-      // 根据来源类型选择导入方式
       const currentSource = importSources.value.find(s => s.key === selectedSource.value);
       let result: PlaylistImportResult;
 
       if (currentSource?.type === 'favorites' && currentSource.pluginSource) {
-        // 收藏夹导入（如哔哩哔哩）：直接调用 importMusicSheet 获取全部曲目
         result = await importPlaylistFromFavorites(
           currentSource.pluginSource,
           importInput.value.trim(),
         );
       } else if (currentSource?.type === 'musicfree' && currentSource.pluginSource) {
-        // MusicFree 插件导入：通过插件搜索歌单并获取详情
         result = await importPlaylistFromMusicFreePlugin(
           currentSource.pluginSource,
           importInput.value.trim(),
         );
       } else {
-        // LX 音源导入：直接 HTTP 请求
         result = await importPlaylist(selectedSource.value, importInput.value.trim());
       }
 
@@ -457,7 +427,6 @@ const handleConfirm = async () => {
     if (importing.value) return;
 
     if (backupIsJson.value) {
-      // JSON 备份：使用插件匹配结果（含本地+在线）
       if (!backupPluginResult.value || backupPluginResult.value.importedSongCount === 0) {
         showToast('没有歌曲可以导入，请查看缺失插件说明', 'info');
         return;
@@ -471,7 +440,6 @@ const handleConfirm = async () => {
         isClosing.value = false;
       }, 200);
     } else {
-      // M3U / TXT：本地文件导入
       if (backupPreviewPlaylists.value.length === 0) return;
       const totalSongs = backupPreviewPlaylists.value.reduce(
         (sum, p) => sum + p.songs.length, 0,
@@ -549,14 +517,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
       class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
       :class="{ 'pointer-events-none': isClosing }"
     >
-      <!-- Backdrop -->
       <div
         class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
         :class="isClosing ? 'opacity-0' : (isOpening ? 'opacity-0' : 'opacity-100')"
         @click="handleClose"
       ></div>
 
-      <!-- Modal Card -->
       <div
         class="relative bg-white/80 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all duration-300"
         style="transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1)"
@@ -565,7 +531,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           'border border-white/20 ring-1 ring-black/5'
         ]"
       >
-        <!-- Tab 头部（仅多标签时显示） -->
         <div v-if="tabs.length > 1" class="relative px-6 pt-5 pb-0 border-b border-gray-200 dark:border-gray-700">
           <div class="flex items-center gap-4">
             <button
@@ -587,14 +552,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           </div>
         </div>
 
-        <!-- 内容区域（带过渡动画）— 导入标签页固定高度避免跳动，新建歌单自适应内容 -->
         <div
           class="relative px-6 py-5 flex flex-col transition-[height] duration-300 ease-out"
           :class="activeTab === 'create' ? 'h-auto' : 'h-[340px]'"
         >
           <div class="flex-1 flex flex-col overflow-y-auto px-1 -mx-1">
           <Transition name="tab-fade" mode="out-in">
-            <!-- 新建歌单 -->
             <div v-if="activeTab === 'create'" key="create" class="flex-1 flex flex-col justify-center space-y-2">
               <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单名称</label>
               <input
@@ -609,9 +572,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               </p>
             </div>
 
-            <!-- 云端导入歌单 -->
             <div v-else-if="activeTab === 'networkImport'" key="network-import" class="flex-1 flex flex-col space-y-3">
-              <!-- 音源选择（下拉） -->
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">选择音源</label>
                 <div class="relative">
@@ -631,7 +592,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                     </svg>
                   </button>
 
-                  <!-- 下拉列表 -->
                   <Transition name="dropdown-fade">
                     <div
                       v-if="sourceDropdownOpen"
@@ -659,7 +619,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                     </div>
                   </Transition>
 
-                  <!-- 点击外部关闭 -->
                   <div
                     v-if="sourceDropdownOpen"
                     class="fixed inset-0 z-10"
@@ -668,7 +627,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </div>
               </div>
 
-              <!-- 歌单链接 -->
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   {{ currentSourceType === 'musicfree'
@@ -691,7 +649,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 />
               </div>
 
-              <!-- 重命名 -->
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   歌单重命名 <span class="text-gray-400 dark:text-gray-500 font-normal">（可选）</span>
@@ -706,14 +663,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 />
               </div>
 
-              <!-- 提示文本 -->
               <div class="text-xs text-gray-400 dark:text-white/40 leading-relaxed">
                 {{ currentSourceType === 'favorites'
                   ? '打开哔哩哔哩，找到想导入的收藏夹，复制链接粘贴到上方即可一键导入。'
                   : '打开对应平台 App，找到想导入的歌单，点击分享并复制链接，粘贴到上方输入框即可一键导入。仅支持公开歌单。' }}
               </div>
 
-              <!-- 错误提示 -->
               <div
                 v-if="importError"
                 class="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs"
@@ -722,7 +677,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               </div>
             </div>
 
-            <!-- 从本地文件夹导入歌单 -->
             <div
               v-else-if="activeTab === 'localFolderImport'"
               key="local-folder-import"
@@ -746,7 +700,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   音乐文件夹 <span class="text-[#EC4141]">*</span>
                 </label>
-                <!-- 可拖入、可点击的选区 -->
                 <button
                   type="button"
                   :disabled="importing"
@@ -782,7 +735,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               </div>
             </div>
 
-            <!-- 备份文件导入歌单 -->
             <div
               v-else-if="activeTab === 'backupImport'"
               key="backup-import"
@@ -792,7 +744,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   备份/播放列表文件 <span class="text-[#EC4141]">*</span>
                 </label>
-                <!-- 可拖入、可点击的选区（复用本地导入样式） -->
                 <button
                   type="button"
                   :disabled="importing"
@@ -816,7 +767,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </button>
               </div>
 
-              <!-- M3U/TXT 本地预览信息 -->
               <div
                 v-if="!backupIsJson && backupPreviewPlaylists.length > 0"
                 class="space-y-2"
@@ -837,7 +787,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </div>
               </div>
 
-              <!-- JSON 备份预览信息（本地+在线混合） -->
               <div
                 v-if="backupIsJson && backupPluginResult"
                 class="space-y-2"
@@ -846,7 +795,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                   <FileJson class="h-4 w-4" />
                   {{ backupDetectedFormat }}
                 </div>
-                <!-- 已关联插件 / 本地文件 -->
                 <div v-if="backupPluginResult.associations.length" class="space-y-1">
                   <div
                     v-for="assoc in backupPluginResult.associations"
@@ -863,7 +811,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                     </div>
                   </div>
                 </div>
-                <!-- 缺失插件 -->
                 <div v-if="backupPluginResult.missingPlugins.length" class="space-y-1">
                   <div
                     v-for="missing in backupPluginResult.missingPlugins"
@@ -891,7 +838,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           </div>
         </div>
 
-        <!-- Footer -->
         <div class="px-4 py-3 bg-gray-50/50 dark:bg-white/5 flex gap-3 flex-col sm:flex-row-reverse">
           <button
             @click="handleConfirm"
@@ -915,7 +861,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 </template>
 
 <style scoped>
-/* Tab 内容切换动画 */
 .tab-fade-enter-active,
 .tab-fade-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -929,7 +874,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
   transform: translateX(-8px);
 }
 
-/* 下拉列表动画 */
 .dropdown-fade-enter-active,
 .dropdown-fade-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;
@@ -1028,10 +972,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
 </style>
 
-<!-- 深色模式使用非 scoped style 块 -->
-<!-- 原因：Vue scoped 的 :global(.dark) .xxx 复合选择器在构建时会被错误编译，
-     .xxx 部分被丢弃，导致深色样式直接应用到 html.dark 元素而非目标元素。
-     改用非 scoped 块 + html.dark .xxx 选择器可正确适配深色模式。 -->
 <style>
 /* ==================== 深色模式 - 拖放区域 ==================== */
 html.dark .drop-zone {

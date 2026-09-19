@@ -9,17 +9,14 @@ function cancel() {
 }
 
 function play() {
-  // 播放中状态由深链处理器在播放结束后调用 finishShareLinkDialog 关闭
   resolveShareLinkDialog('play');
 }
 
 function playNext() {
-  // 添加到下一首播放，弹窗直接关闭
   resolveShareLinkDialog('playNext');
 }
 
 function importSource() {
-  // 前往导入音源，弹窗直接关闭，由深链处理器跳转音源导入页
   resolveShareLinkDialog('import');
 }
 </script>
@@ -57,7 +54,6 @@ function importSource() {
           </div>
 
           <div class="share-link-actions">
-            <!-- 本地命中：取消 / 下一首播放 / 播放 -->
             <template v-if="shareLinkDialogState.mode === 'local'">
               <button
                 type="button"
@@ -84,7 +80,6 @@ function importSource() {
                 {{ shareLinkDialogState.resolver === null ? '播放中…' : '播放' }}
               </button>
             </template>
-            <!-- 本地无音源但有在线结果：取消 / 本地无音源，前往在线播放 -->
             <template v-else-if="shareLinkDialogState.mode === 'online'">
               <button
                 type="button"
@@ -103,7 +98,6 @@ function importSource() {
                 {{ shareLinkDialogState.resolver === null ? '播放中…' : (shareLinkDialogState.onlineActionLabel || '本地无音源，前往在线播放') }}
               </button>
             </template>
-            <!-- 本地与在线都无：取消 / 前往导入音源 -->
             <template v-else-if="shareLinkDialogState.mode === 'import'">
               <button
                 type="button"

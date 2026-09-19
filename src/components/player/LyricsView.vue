@@ -35,17 +35,8 @@ import { usePlayer } from '../../features/playback';
 import { useSettingsStore } from '../../features/settings/store';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
-// [修复防御]: AmlLyricPlayer 静态导入会拉入 PatchedLyricPlayer → @applemusic-like-lyrics/core → @pixi/*
-// 整条重型依赖链到主入口 chunk，导致启动时强制加载 PIXI/AMLL（200-400KB+ JS）。
-// 改为 defineAsyncComponent 后，该依赖链仅在 PlayerDetail 打开且渲染歌词时按需加载，
-// 切断 dist/index.html 对 vendor-amll/vendor-pixi 的 modulepreload，显著缩短启动 TTI。
-//
-// [修复防御]: 配置 errorComponent + timeout + onError 重试，避免 Vite HMR 热更新或
-// 依赖预构建未完成时 "Failed to fetch dynamically imported module" 导致白屏。
 const AmlLyricPlayer = defineAsyncComponent({
   loader: () => import('./AmlLyricPlayer.vue'),
-  // 用 h() 渲染函数而非字符串 template：避免依赖 Vue 运行时编译器
-  // （runtime-only 构建不含编译器，字符串 template 会触发警告）。
   loadingComponent: () => h('div', { class: 'amll-loading-placeholder' }),
   errorComponent: () =>
     h('div', { class: 'amll-load-error' }, '歌词组件加载失败，请刷新'),
@@ -83,17 +74,14 @@ const PLAYER_ALIGNMENT_OPTIONS: Array<{ value: LyricsPlayerAlignment; label: str
 const fontPanelRef = ref<HTMLElement | null>(null);
 const fontPresetTriggerRef = ref<HTMLElement | null>(null);
 const fontPresetMenuRef = ref<HTMLElement | null>(null);
-// [修复防御]: 异步组件的 InstanceType 推断会丢失，改用显式接口描述 defineExpose 暴露的方法
 interface AmlLyricPlayerInstance {
   syncSeekLayout: (timeMs: number, lineIndex?: number) => void;
 }
 const amlPlayerRef = ref<AmlLyricPlayerInstance | null>(null);
 const isFontPresetMenuOpen = ref(false);
 const fontPresetMenuStyle = ref<Record<string, string>>({});
-/** 字体菜单当前作用目标：unified=统一字体，cjk=中文字体，latin=外文字体 */
 const fontPresetMenuTarget = ref<'unified' | 'cjk' | 'latin'>('unified');
 
-/** 歌词样式面板动态定位样式：窄窗口下自动调整，防止溢出视口 */
 const fontPanelDynamicStyle = ref<Record<string, string>>({});
 
 const fontPanelStyle = computed(() => ({
@@ -102,7 +90,6 @@ const fontPanelStyle = computed(() => ({
   ...fontPanelDynamicStyle.value,
 }));
 
-/** 检测歌词样式面板是否溢出视口，溢出时动态调整位置/宽度 */
 function updateFontPanelPosition() {
   if (!fontPanelRef.value) return;
 
@@ -126,8 +113,6 @@ const amllCurrentTime = computed(() => {
   return Math.max(0, Math.floor((currentTime.value - audioDelay.value) * 1000));
 });
 
-// 详情页关闭时 LyricsView 可能还会短暂保留用于热缓存；此时立即卸载 AMLL 实例，
-// 释放其 DOM、内部监听与 rAF 相关状态，避免不可见歌词页继续占用显存/内存。
 const shouldMountAmlPlayer = computed(() => amllLines.value.length > 0 && !props.disabled);
 
 const emptyStateText = computed(() => {
@@ -136,9 +121,6 @@ const emptyStateText = computed(() => {
   return 'No synchronized lyrics';
 });
 
-// 无时间轴的纯文本歌词（如 m4a 内嵌的 iTunes ©lyr 纯文本）在 state.ts 已按歌曲时长
-// 合成伪时间轴交由 AMLL 逐行匀速滚动。这里仅在无法合成（拿不到时长）时兜底：
-// 整段居中静态展示原文，而非静默显示 "No synchronized lyrics"。
 const plainLyricLines = computed(() =>
   rawLyrics.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0),
 );
@@ -197,10 +179,8 @@ const wordFadeWidth = computed(() => lyricsSettings.enableWordEffect ? 0.5 : 0);
 const lyricsPlayerStyle = computed(() => {
   let fontFamily: string;
   if (lyricsSettings.playerFontSplitEnabled) {
-    // 分开设置：外文字体在前（拉丁字符优先用外文字体），中文字体在后作为 CJK fallback
     const latinFamily = getLyricsFontFamily(lyricsSettings.playerFontPresetLatin ?? DEFAULT_PLAYER_FONT_PRESET);
     const cjkFamily = getLyricsFontFamily(lyricsSettings.playerFontPresetCJK ?? DEFAULT_PLAYER_FONT_PRESET);
-    // 合并两个 font-family 字符串，去掉各自末尾的通用字体，最后统一加 system-ui, sans-serif
     const latinPrimary = latinFamily.replace(/,\s*(system-ui|sans-serif|ui-sans-serif).*$/i, '').trim();
     const cjkPrimary = cjkFamily.replace(/,\s*(system-ui|sans-serif|ui-sans-serif).*$/i, '').trim();
     fontFamily = [latinPrimary, cjkPrimary, 'system-ui', 'sans-serif'].filter(Boolean).join(', ');
@@ -325,7 +305,6 @@ function resetCustomBackgroundImage() {
   lyricsSettings.customBackgroundImage = DEFAULT_CUSTOM_BACKGROUND_IMAGE;
 }
 
-/** 选择本地图片作为自定义背景 */
 const handleChooseBackgroundImage = async () => {
   const { open } = await import('@tauri-apps/plugin-dialog');
   const selected = await open({
@@ -338,7 +317,6 @@ const handleChooseBackgroundImage = async () => {
   }
 };
 
-/** 将当前自定义背景图写入歌曲元数据（每首歌独立保存） */
 const isSavingSongBackground = ref(false);
 const handleSaveBackgroundToSong = async () => {
   const songPath = currentSongPath.value;
@@ -362,7 +340,6 @@ const handleSaveBackgroundToSong = async () => {
   }
 };
 
-/** 清除当前歌曲的独立背景图 */
 const handleClearSongBackground = async () => {
   const songPath = currentSongPath.value;
   if (!songPath) {
@@ -450,7 +427,6 @@ function openFontMenu(target: 'unified' | 'cjk' | 'latin', triggerEl: HTMLElemen
   });
 }
 
-/** 当前字体菜单中"激活"的字体 preset（用于菜单中高亮显示当前选中项） */
 const activeFontMenuPreset = computed(() => {
   if (fontPresetMenuTarget.value === 'cjk') return lyricsSettings.playerFontPresetCJK ?? DEFAULT_PLAYER_FONT_PRESET;
   if (fontPresetMenuTarget.value === 'latin') return lyricsSettings.playerFontPresetLatin ?? DEFAULT_PLAYER_FONT_PRESET;
@@ -466,7 +442,7 @@ function updateFontPresetMenuPosition() {
 
   const panelRect = panel.getBoundingClientRect();
   const menuWidth = 280;
-  const gap = 0; // 8px gap for a "tightly attached" floating effect. You can change to 0 if you want it glued perfectly.
+  const gap = 0;
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
 
@@ -486,7 +462,6 @@ function updateFontPresetMenuPosition() {
   };
 }
 
-// openFontMenu 统一处理字体菜单的打开逻辑（已替代原 toggleFontPresetMenu）
 
 function handleClickOutside(event: MouseEvent) {
   const target = event.target as Node | null;
@@ -528,12 +503,9 @@ async function handleLineClick(event: LyricLineMouseEvent) {
   amlPlayerRef.value?.syncSeekLayout(lineStartTimeMs, event.lineIndex);
 
   const targetSeconds = getPlaybackSeekSecondsForAmlLine(lineStartTimeMs, audioDelay.value);
-  // seekTo 会沿用当前播放态（seekAudio 传入 isPlaying），暂停时点击歌词只定位不出声。
-  // 这里记录点击前的播放态，定位完成后若仍处于暂停则从该行起播。
   const wasPaused = !isPlaying.value;
   await seekTo(targetSeconds);
 
-  // 期间用户可能已自行点了播放键，再次确认避免把刚起播的音频又切回暂停。
   if (wasPaused && !isPlaying.value) {
     await togglePlay();
   }
@@ -560,7 +532,6 @@ watch(() => props.disabled, (disabled) => {
   }
 });
 
-// 面板可见性变化时重新检测位置
 watch(showLyricsPlayerSettingsPanel, async (visible) => {
   if (visible) {
     await nextTick();
@@ -570,8 +541,6 @@ watch(showLyricsPlayerSettingsPanel, async (visible) => {
   }
 });
 
-// Hiding the cover changes the lyrics container's position and width. Recompute
-// the relative offset so the settings panel stays at its viewport anchor.
 watch(() => props.coverHidden, async () => {
   if (!showLyricsPlayerSettingsPanel.value) return;
   await nextTick();
@@ -594,7 +563,6 @@ watch(() => props.coverHidden, async () => {
           @click.stop
           @mousedown.stop
         >
-          <!-- Tab 栏：背景样式 / 歌词样式 -->
           <div class="relative flex shrink-0 border-b border-white/10 px-2 pt-2">
             <button
               type="button"
@@ -622,10 +590,8 @@ watch(() => props.coverHidden, async () => {
             </button>
           </div>
 
-          <!-- Tab 内容区（带切换动画） -->
           <div class="relative min-h-0 flex-1">
             <Transition name="tab-switch" mode="out-in">
-          <!-- 背景样式 Tab -->
           <div v-if="activeSettingsTab === 'background'" key="background" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar">
             <div class="mb-3">
               <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Blur</div>
@@ -710,7 +676,6 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <!-- 歌词样式 Tab -->
           <div v-else key="lyrics" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar">
           <div class="mb-3">
             <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Lyrics</div>
@@ -955,7 +920,6 @@ watch(() => props.coverHidden, async () => {
 
           <div class="mt-6 mb-3">
             <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Font</div>
-            <!-- 分开设置开关 -->
             <div class="mt-2 flex items-center justify-between gap-3">
               <span class="text-[12px] text-white/55">分别设置中/外文字体</span>
               <button
@@ -972,7 +936,6 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <!-- 统一字体（开关关闭时） -->
           <template v-if="!lyricsSettings.playerFontSplitEnabled">
             <div class="mb-2 flex items-center justify-between gap-3">
               <span class="text-[13px] font-medium text-white/85">歌词字体</span>
@@ -1000,9 +963,7 @@ watch(() => props.coverHidden, async () => {
             </div>
           </template>
 
-          <!-- 分开设置（开关开启时） -->
           <template v-else>
-            <!-- 中文字体 -->
             <div class="mb-1.5 flex items-center justify-between gap-3">
               <span class="text-[13px] font-medium text-white/85">中文字体</span>
               <button
@@ -1026,7 +987,6 @@ watch(() => props.coverHidden, async () => {
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-white/45 transition-transform duration-200" :class="isFontPresetMenuOpen && fontPresetMenuTarget === 'cjk' ? 'rotate-180 text-white/70' : ''"><path d="m6 9 6 6 6-6"/></svg>
               </button>
             </div>
-            <!-- 外文字体 -->
             <div class="mb-1.5 flex items-center justify-between gap-3">
               <span class="text-[13px] font-medium text-white/85">外文字体</span>
               <button
@@ -1149,9 +1109,6 @@ watch(() => props.coverHidden, async () => {
   position: relative;
   overflow: visible;
   isolation: isolate;
-  /* mask 区域严格等于本元素盒子，盒子之外的像素 alpha 为 0，会把放大后
-     超出的字形笔画整条竖着切掉。把盒子左右各外扩 --lyrics-mask-bleed，
-     再用等量负外边距抵消，歌词内容宽度与位置保持不变。 */
   --lyrics-mask-bleed: 1.5em;
   box-sizing: border-box;
   width: calc(100% + var(--lyrics-mask-bleed) * 2) !important;
@@ -1198,15 +1155,11 @@ watch(() => props.coverHidden, async () => {
   --amll-lp-color: rgba(255, 255, 255, 0.95);
   --amll-lp-bg-color: transparent;
   --amll-lp-font-size: calc(max(max(5vh, 2.5vw), 12px) * var(--lyrics-font-scale, 1));
-  /* AMLL 容器默认会裁切行内容；正在播放的行放大后，粗体字形左侧的外伸像素
-     会因此被切掉。保留原有行宽，只开放绘制边界，避免改变歌词排版和换行。 */
   overflow: visible !important;
   contain: none !important;
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
 }
 
-/* transform-origin 用 !important 覆盖 PatchedLyricPlayer 每帧写入的内联样式，
-   保证左/中/右对齐时歌词从对应锚点放大，不向容器外侧扩张。 */
 .amll-host :deep(.amll-lyric-player [class*="_lyricLine_"]) {
   text-align: var(--lyrics-text-align, left);
   transform-origin: var(--lyrics-line-transform-origin, 0%) center !important;
@@ -1214,7 +1167,6 @@ watch(() => props.coverHidden, async () => {
   flex-direction: column;
 }
 
-/* AMLL 还会在主歌词层设置 contain: content paint，同样会裁掉字形外伸像素。 */
 .amll-host :deep(.amll-lyric-player [class*="_lyricMainLine_"]) {
   contain: none !important;
   overflow: visible !important;
@@ -1233,11 +1185,6 @@ watch(() => props.coverHidden, async () => {
   order: 1;
 }
 
-/* AMLL 对唱行默认右偏渲染：_hasDuetLine 下 duet 行 padding-left:15%、
-   其余行 padding-right:15%。本应用歌词为统一水平对齐且不展示演唱者标签，
-   该缩进只会把开头 credit/误判行顶向右侧（"开头歌词往右偏"），整体禁用。
-   但要还原成核心默认的 1em 而不是 0：这段内边距同时是字形外伸像素的安全区，
-   清零会让首字（如"商"）的左侧笔画正好压在行的边界上被切掉。 */
 .amll-host :deep(.amll-lyric-player[class*="_hasDuetLine_"] [class*="_lyricLine_"]) {
   padding-left: 1em;
   padding-right: 1em;
@@ -1288,7 +1235,6 @@ watch(() => props.coverHidden, async () => {
   transform: translateY(-6px) scale(0.98);
 }
 
-/* Tab 切换动画：淡入淡出 + 轻微横向滑动 */
 .tab-switch-enter-active,
 .tab-switch-leave-active {
   transition: opacity 200ms ease, transform 200ms ease;

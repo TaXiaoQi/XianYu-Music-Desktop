@@ -398,7 +398,6 @@ pub(crate) fn apply_scan_changes(
         return Ok(());
     }
 
-    // 智能判定首次导入高载环境（数据为空且本批次新增歌曲量 >= 500）
     let existing_song_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM songs", [], |row| row.get(0))
         .unwrap_or(0);
@@ -406,7 +405,6 @@ pub(crate) fn apply_scan_changes(
 
     let chunk_size = scan_change_chunk_size(existing_song_count, to_add.len());
 
-    // 声明跨 Chunk 复用的 artist_cache，规避高频重复 SELECT 磁盘查找
     let mut artist_cache = std::collections::HashMap::new();
 
     let total_operations = to_add.len() + to_update.len() + to_delete.len();

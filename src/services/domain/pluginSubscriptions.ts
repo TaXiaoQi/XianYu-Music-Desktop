@@ -94,7 +94,6 @@ export const createPluginSubscriptionService = ({
     saveSubscriptions(getSubscriptions().filter(s => s.id !== id));
   };
 
-  /** 将云端同步下来的订阅按 URL 合并进本地列表（本地已有的保留原记录），返回新增条数。 */
   const mergeSubscriptionsFromCloud = (
     cloud: Array<{ url?: unknown; name?: unknown; id?: unknown; addedAt?: unknown }>,
   ): number => {
@@ -166,7 +165,6 @@ export const createPluginSubscriptionService = ({
     url: string,
     options: {
       skipVersionCheck?: boolean;
-      /** 插件级进度：done 为已完成数（0 起），total 为有效插件总数 */
       onPluginProgress?: (done: number, total: number, name?: string) => void;
     } = {},
   ): Promise<SubscriptionInstallResult> => {
@@ -189,8 +187,6 @@ export const createPluginSubscriptionService = ({
           const validList = pluginList.filter((item: any) => item?.url);
           const total = validList.length;
 
-          // 逐个串行下载脚本很慢（订阅常含几十个插件）。改为有限并发下载，
-          // 既显著提速，又避免一次性并发过多压垮沙箱/源站。
           const CONCURRENCY = 5;
           let done = 0;
           const outcomes: Array<{ ok: boolean; name?: string; error?: string }> = new Array(total);

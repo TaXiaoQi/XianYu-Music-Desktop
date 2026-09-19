@@ -47,9 +47,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   const addSearchHistory = (query: string) => {
     const trimmed = query.trim();
     if (!trimmed) return;
-    // 去重：移除已存在的相同记录
     const filtered = searchHistory.value.filter(item => item !== trimmed);
-    // 放到最前面
     searchHistory.value = [trimmed, ...filtered].slice(0, MAX_HISTORY_ITEMS);
   };
 
@@ -61,7 +59,6 @@ export const useNavigationStore = defineStore('navigation', () => {
     searchHistory.value = [];
   };
 
-  // 持久化到 localStorage
   watch(searchHistory, (val) => {
     try {
       localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(val));

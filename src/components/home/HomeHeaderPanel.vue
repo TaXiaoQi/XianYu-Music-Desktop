@@ -34,13 +34,11 @@ interface Props {
   playlistDetail: PlaylistDetail | null;
   localSongList: Song[];
   localSongPaths?: string[];
-  /** 歌曲列表滚动容器（用于歌单详情头部滚动缩小封面效果） */
   scrollContainerRef?: HTMLElement | null;
 }
 
 const props = defineProps<Props>();
 
-/** 本地歌单详情的"收藏整张"条目（仅歌单详情视图提供） */
 const localPlaylistFavoriteEntry = computed<FavoriteCollectionEntry | null>(() => {
   if (props.localViewMode !== 'playlist') return null;
   const playlist = playlists.value.find(p => p.id === filterCondition.value);

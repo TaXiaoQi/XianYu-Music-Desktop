@@ -1,40 +1,29 @@
-/**
- * 清洗插件返回的媒体 URL。
- *
- * 一些插件会返回被反引号/引号包裹、尾部带逗号或分号的 URL，例如：
- * `https://example.com/api?level=hires,`
- *
- * 实现策略：用 indexOf 定位 http(s):// 起点，用 while+charCodeAt 逐字符
- * 剥离尾部非 URL 字符。不依赖正则字符类，避免编码/转义歧义。
- */
 
-/** charCode 是否为需要剥离的尾部脏字符 */
 const isTrailingDirtyChar = (code: number): boolean =>
-  code === 0x2c        // , (半角逗号)
-  || code === 0x3b     // ; (分号)
-  || code === 0x60     // ` (反引号)
-  || code === 0x27     // ' (单引号)
-  || code === 0x22     // " (双引号)
-  || code === 0x3e     // > (尖括号)
-  || code === 0x3c     // <
-  || code === 0x2018   // ‘ (左单引号)
-  || code === 0x2019   // ’ (右单引号)
-  || code === 0x201c   // “ (左双引号)
-  || code === 0x201d   // ” (右双引号)
-  || code === 0x201b   // ‛ (反向单引号)
-  || code === 0x201f   // ‟ (反向双引号)
-  || code === 0x2033   // ″ (双撇号)
-  || code === 0x02b9   // ʹ (修饰字母素)
-  || code === 0x02ca   // ʊ (修饰字母重力)
-  || code === 0xff0c   // ，(全角逗号)
-  || code === 0xff1b   // ；(全角分号)
-  || code === 0xff02   // ＂(全角引号)
-  || code === 0xff07   // ＇(全角单引号)
-  || code === 0xff1e   // ＞(全角大于号)
-  || code === 0xff1c   // ＜(全角小于号)
-  || code <= 0x20;     // 所有空白控制字符
+  code === 0x2c
+  || code === 0x3b
+  || code === 0x60
+  || code === 0x27
+  || code === 0x22
+  || code === 0x3e
+  || code === 0x3c
+  || code === 0x2018
+  || code === 0x2019
+  || code === 0x201c
+  || code === 0x201d
+  || code === 0x201b
+  || code === 0x201f
+  || code === 0x2033
+  || code === 0x02b9
+  || code === 0x02ca
+  || code === 0xff0c
+  || code === 0xff1b
+  || code === 0xff02
+  || code === 0xff07
+  || code === 0xff1e
+  || code === 0xff1c
+  || code <= 0x20;
 
-/** 从尾部逐字符剥离脏字符 */
 const stripTrailingDirty = (s: string): string => {
   let end = s.length;
   while (end > 0 && isTrailingDirtyChar(s.charCodeAt(end - 1))) {
@@ -46,7 +35,6 @@ const stripTrailingDirty = (s: string): string => {
 export const sanitizeMediaUrl = (raw: unknown): string => {
   if (typeof raw !== 'string' || !raw) return '';
 
-  // 用 indexOf 定位 http:// 或 https:// 的起始位置（不依赖正则）
   const httpsIdx = raw.indexOf('https://');
   const httpIdx = raw.indexOf('http://');
   let start: number;
@@ -58,12 +46,10 @@ export const sanitizeMediaUrl = (raw: unknown): string => {
     return '';
   }
 
-  // 从起点截取到末尾，再从尾部剥离脏字符
   let url = stripTrailingDirty(raw.substring(start));
 
   if (!url) return '';
 
-  // 清理查询参数值末尾的标点
   try {
     const parsed = new URL(url);
     let changed = false;
@@ -95,12 +81,6 @@ const setHeaderIfMissing = (
   }
 };
 
-/**
- * 为插件直链补齐通用请求头。
- *
- * 插件有时只返回 URL，不返回防盗链 headers。酷狗等第三方代理接口在浏览器/客户端
- * UA 与 Referer 缺失时可能返回错误页或空响应，最终表现为“加载但不播放”。
- */
 export const normalizeMediaRequestHeaders = (
   url: unknown,
   rawHeaders?: Record<string, string> | null,
@@ -148,8 +128,6 @@ export const normalizeMediaRequestHeaders = (
       || host.includes('toutiao.com')
       || path.includes('/qishui/');
 
-    // B站 CDN：bilivideo.com / bilivideo.cn / hdslb.com（封面图）
-    // 防盗链要求 Referer + Origin，缺失时 CDN 只返回 3-4 秒预览片段
     const isBilibiliLike = host.includes('bilivideo.com')
       || host.includes('bilivideo.cn')
       || host.includes('hdslb.com')

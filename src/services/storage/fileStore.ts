@@ -1,9 +1,5 @@
 import { stateApi } from '../tauri/stateApi';
 
-/**
- * 基于 Tauri 文件系统的 JSON 存储，用于持久化超过 localStorage 配额（~5MB）的大数据。
- * 数据写入 app_data_dir/state/{key}.json。
- */
 export const fileStore = {
   async getJson<T>(key: string): Promise<T | null> {
     try {

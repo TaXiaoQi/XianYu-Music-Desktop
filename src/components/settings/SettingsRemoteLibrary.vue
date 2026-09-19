@@ -35,10 +35,8 @@ const form = reactive({
   rootPath: '/',
 });
 
-// 密码可见性状态
 const pwdVisible = reactive<Record<string, boolean>>({});
 
-// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
 const pwdFocused = reactive<Record<string, boolean>>({});
 
 const resetForm = () => {
@@ -627,10 +625,6 @@ onScopeDispose(() => {
 }
 </style>
 
-<!-- 深色模式使用非 scoped style 块 -->
-<!-- 原因：Vue scoped 的 :global(.dark) .xxx 复合选择器在构建时会被错误编译，
-     .xxx 部分被丢弃，导致深色样式直接应用到 html.dark 元素而非目标元素。
-     改用非 scoped 块 + html.dark .xxx 选择器可正确适配深色模式。 -->
 <style>
 html.dark .remote-source-list,
 html.dark .remote-cache-row,

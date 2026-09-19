@@ -34,14 +34,12 @@ const { showToast } = useToast();
 const { isEnglish, t } = useI18n();
 
 const rackMasterEnabled = computed(() => pluginHostStore.rackConfig.masterEnabled);
-// WASAPI 独占 / 原生 DSD 直通 / Bit-perfect 组成的"直出绕过"路径，任一开启即禁用机架开关
 const outputExclusivePathActive = computed(
   () => isWasapiExclusiveEnabled.value
     || isDsdNativePassthroughEnabled.value
     || isBitPerfectEnabled.value,
 );
 const toggleRackMaster = () => {
-  // 与直出路径互斥：任一开启时禁用机架，避免互相冲突的竞态
   if (outputExclusivePathActive.value) return;
   pluginHostStore.setMasterEnabled(!pluginHostStore.rackConfig.masterEnabled);
 };
@@ -115,11 +113,9 @@ function updateVolumeBalancePopoverPosition() {
   const gap = 8;
   const viewportPadding = 12;
 
-  // 水平：右对齐触发器
   let left = rect.right - popoverWidth;
   left = Math.min(Math.max(left, viewportPadding), window.innerWidth - popoverWidth - viewportPadding);
 
-  // 垂直：优先下方，空间不够则翻到上方
   const fitsBelow = rect.bottom + gap + popoverHeight <= window.innerHeight - viewportPadding;
   const top = fitsBelow
     ? rect.bottom + gap
@@ -205,7 +201,6 @@ const SHARE_FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: st
   { label: '替换播放', description: '按来源信息走插件索引换源重播同一首歌', value: 'replace' },
 ]);
 
-/** 分享链接有效时长（分钟），钳制到 5 ~ 1440，缺省 2 小时 */
 const shareValidityMinutes = computed(() =>
   Math.max(5, Math.min(1440, settings.value.shareLinkValidityMinutes ?? 120)),
 );
@@ -230,7 +225,6 @@ const qualityLabel = (key: OnlineDefaultQuality) => (
   isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label
 );
 
-/** 检查当前是否正在播放在线歌曲 */
 const isPlayingOnlineSong = () => {
   const song = playbackStore.currentSong;
   if (!song) return false;
@@ -238,13 +232,10 @@ const isPlayingOnlineSong = () => {
   return path.startsWith('lx://') || path.startsWith('plugin://') || path.startsWith('http');
 };
 
-/** 切换在线音质：验证当前播放歌曲是否支持新音质，同时写入 settings store 和 localStorage */
 const patchOnlineQuality = (value: OnlineDefaultQuality) => {
   patchSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: value } });
   localStorage.setItem('online_quality', value);
-  // 设置页的默认音质应成为下一次起播的首选；清掉底栏临时音质覆盖，避免旧会话选择继续优先生效。
   playbackStore.setSessionQualityOverride(null);
-  // [音质验证] 如果当前正在播放在线歌曲，提示新设置在下一首生效
   if (isPlayingOnlineSong()) {
     const available = playbackStore.currentAvailableQualities;
     if (available && !available.includes(value)) {
@@ -257,37 +248,31 @@ const patchOnlineQuality = (value: OnlineDefaultQuality) => {
   }
 };
 
-/** 弹窗中选择音质 */
 const handleQualitySelect = (value: OnlineDefaultQuality) => {
   showQualityModal.value = false;
   patchOnlineQuality(value);
 };
 
-/** 弹窗中选择 MV 默认画质 */
 const handleMvQualitySelect = (value: MvQualityKey) => {
   showMvQualityModal.value = false;
   patchSettings({ audio: { ...settings.value.audio, mvDefaultQuality: value } });
 };
 
-/** 弹窗中选择起播失败行为 */
 const handleFailureBehaviorSelect = (value: OnlineFailureBehavior) => {
   showFailureBehaviorModal.value = false;
   patchSettings({ audio: { ...settings.value.audio, onlineFailureBehavior: value } });
 };
 
-/** 弹窗中选择分享链接播放失败行为 */
 const handleShareFailureBehaviorSelect = (value: ShareFailureBehavior) => {
   showShareFailureBehaviorModal.value = false;
   patchSettings({ sharePlaybackFailureBehavior: value });
 };
 
-/** 弹窗中选择音质回退行为 */
 const handleFallbackBehaviorSelect = (value: OnlineQualityFallbackBehavior) => {
   showFallbackBehaviorModal.value = false;
   patchQualityFallback(value);
 };
 
-/** 切换音质回退行为：验证当前播放歌曲的音质支持情况 */
 const patchQualityFallback = (value: OnlineQualityFallbackBehavior) => {
   patchSettings({ audio: { ...settings.value.audio, onlineQualityFallbackBehavior: value } });
   if (isPlayingOnlineSong()) {
@@ -319,7 +304,6 @@ const lyricsSyncOffsetMs = computed({
   }
 });
 
-/** 输入浮点防御：四舍五入并回写显示值 */
 const handleLyricsSyncOffsetChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const numericValue = parseFloat(target.value);
@@ -338,7 +322,6 @@ const isWasapiExclusiveEnabled = computed(
   () => settings.value.audio.outputMode === 'wasapiExclusive',
 );
 
-// WASAPI 开关切换期间抑制过渡事件用旧值反写 outputMode，避免面板反复启停闪烁
 let suppressModeReplay = false;
 
 const defaultOutputDeviceName = computed(() => isEnglish.value ? 'System Default' : '系统默认');
@@ -363,10 +346,6 @@ const applyAudioOutputStatus = (
   audioOutputStatus.value = status;
   selectedOutputDeviceId.value = status.selected_device_id ?? '';
 
-  // 同步 requested_output_mode 到设置（用户请求的输出模式）。
-  // 不再在降级时关闭 DSD/Bit-perfect — 保留用户意图，等设备恢复后自动切回。
-  // 底栏 UI 通过 playbackStore.activeOutputMode 判断是否真正在独占模式。
-  // suppressModeReplay：WASAPI 开关切换期间抑制事件旧值反写，避免面板反复启停闪烁。
   if (
     !opts?.skipModeSync
     && !suppressModeReplay
@@ -417,13 +396,11 @@ const handleOutputDeviceSelect = async (deviceId: string) => {
 };
 
 const toggleWasapiExclusive = async () => {
-  // 音效插件机架开启时禁用独占，避免与机架互斥冲突
   if (rackMasterEnabled.value) return;
   const next = isWasapiExclusiveEnabled.value ? 'shared' : 'wasapiExclusive';
   const isNowShared = next === 'shared';
   settings.value.audio.outputMode = next;
   suppressModeReplay = true;
-  // 关闭独占模式时，自动关闭依赖独占的 DSD 直通与 Bit-perfect
   if (isNowShared) {
     if (isDsdNativePassthroughEnabled.value) {
       settings.value.audio.dsdNativePassthrough = false;
@@ -434,9 +411,6 @@ const toggleWasapiExclusive = async () => {
   }
   try {
     await playbackApi.setAudioOutputMode(next);
-    // 用最终状态刷新设备信息，但跳过 outputMode 反写：
-    // 切换过渡期 getCurrentOutputDevice 返回的 requested_output_mode 可能是滞后的旧值，
-    // 反写会让面板在收起后又被弹开；最终真实模式由 device-changed 事件校正。
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice(), { skipModeSync: true });
   } catch (error) {
     console.error('Failed to update audio output mode:', error);
@@ -458,11 +432,9 @@ const dsdNativePassthroughTip = isEnglish.value
   : '开启后，播放 DSF (DSD) 文件时以 DoP 1.0 协议将 1-bit DSD 原生码流封装进 24-bit PCM，直接交给支持 DoP 的 DSD-DAC 逐位解码输出。仅对 .dsf 文件 + WASAPI 独占模式生效（DSD64→353kHz / DSD128→705kHz），开启时会自动切到 WASAPI 独占模式。当前设备不支持 DoP 采样率时仍会自动回退到 PCM。';
 
 const toggleDsdNativePassthrough = async () => {
-  // 音效插件机架开启时禁用 DSD 直通，避免与机架互斥冲突
   if (rackMasterEnabled.value) return;
   const next = !isDsdNativePassthroughEnabled.value;
   if (next) {
-    // 先确保 WASAPI 独占已开启并等待切换完成，再应用 DSD 直通，避免独占未就绪导致无声/卡死
     const exclusiveOk = await ensureWasapiExclusive();
     if (!exclusiveOk) {
       showToast(
@@ -512,7 +484,6 @@ const loadAudioDeviceFormats = async () => {
   audioDeviceFormats.value = await playbackApi.getAudioDeviceFormats().catch(() => []);
 };
 
-/** 确保 WASAPI 独占已开启：未开启则先切换并等待完成，返回当前是否处于独占模式 */
 const ensureWasapiExclusive = async (): Promise<boolean> => {
   if (isWasapiExclusiveEnabled.value) return true;
   try {
@@ -526,11 +497,9 @@ const ensureWasapiExclusive = async (): Promise<boolean> => {
 };
 
 const toggleBitPerfect = async () => {
-  // 音效插件机架开启时禁用 Bit-perfect，避免与机架互斥冲突
   if (rackMasterEnabled.value) return;
   const next = !isBitPerfectEnabled.value;
   if (next) {
-    // 先确保 WASAPI 独占已开启并等待切换完成，再应用 bit-perfect，避免独占未就绪导致无声/卡死
     const exclusiveOk = await ensureWasapiExclusive();
     if (!exclusiveOk) {
       showToast(
@@ -542,7 +511,6 @@ const toggleBitPerfect = async () => {
       return;
     }
     settings.value.audio.outputBitPerfect = true;
-    // 逐位直出要求 DSP 全旁通：自动关闭所有音效（含均衡器），不修改用户音量
     soundEffectStore.bypassAll = true;
     showToast(
       isEnglish.value
@@ -587,7 +555,6 @@ onScopeDispose(() => {
         音频处理
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <!-- 渐入渐出（淡入淡出）开关 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">渐入渐出</div>
@@ -601,7 +568,6 @@ onScopeDispose(() => {
           ></button>
         </div>
 
-        <!-- 渐入渐出时长设置子区域 -->
         <Transition name="settings-pop-panel">
           <div v-if="settings.audio.fadeInOutEnabled" class="flex flex-col">
           <div class="desktop-setting-row pl-8">
@@ -630,7 +596,6 @@ onScopeDispose(() => {
         </div>
         </Transition>
 
-        <!-- 音量平衡主开关行 -->
         <div
           class="desktop-setting-row"
         >
@@ -658,12 +623,10 @@ onScopeDispose(() => {
           </div>
         </div>
 
-        <!-- 高级音量平衡配置子区域 -->
         <div
           v-if="settings.audio.volumeBalance.enabled"
           class="flex flex-col bg-white/20 transition-all duration-300 animate-in fade-in dark:bg-black/10"
         >
-          <!-- 整体增益偏移设置 -->
           <div class="desktop-setting-row pl-8">
             <div class="flex-1 space-y-1">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
@@ -688,7 +651,6 @@ onScopeDispose(() => {
             </div>
           </div>
 
-          <!-- 防削波保护开关 -->
           <div class="desktop-setting-row pl-8">
             <div class="flex-1 space-y-1">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -711,7 +673,6 @@ onScopeDispose(() => {
       </div>
     </section>
 
-    <!-- 在线播放设置 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -719,7 +680,6 @@ onScopeDispose(() => {
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
 
-        <!-- 默认播放音质 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认播放音质</div>
@@ -735,7 +695,6 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <!-- MV 默认画质 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MV 默认画质</div>
@@ -754,7 +713,6 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <!-- 默认音质播放失败行为 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认音质播放失败行为</div>
@@ -769,7 +727,6 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <!-- 起播失败行为（自动换源已并入该选项，对齐移动端） -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">起播失败行为</div>
@@ -787,7 +744,6 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <!-- 分享链接有效时长（滑动条） -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接有效时长</div>
@@ -811,7 +767,6 @@ onScopeDispose(() => {
           </div>
         </div>
 
-        <!-- 分享链接播放失败行为 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接播放失败行为</div>
@@ -832,9 +787,7 @@ onScopeDispose(() => {
       </div>
     </section>
 
-    <!-- 均衡器配置区已移除 -->
 
-    <!-- 音量平衡说明下拉弹窗 -->
     <Teleport to="body">
       <Transition name="settings-dropdown">
         <div
@@ -851,7 +804,6 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <!-- 音质选择弹窗：复用添加歌单弹窗容器模式，3 列平铺网格 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -893,7 +845,6 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <!-- MV 默认画质选择弹窗：复用添加歌单弹窗容器模式，3 列平铺网格 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -935,7 +886,6 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <!-- 默认音质播放失败行为选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -976,7 +926,6 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <!-- 起播失败行为选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -1017,7 +966,6 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <!-- 分享链接播放失败行为选择弹窗 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -1058,7 +1006,6 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <!-- 播放设置 -->
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
@@ -1214,7 +1161,6 @@ onScopeDispose(() => {
             ></button>
           </div>
         </div>
-        <!-- 依赖独占的 原生 DSD 直通 与 Bit-perfect：WASAPI 独占开启时整体渐入 -->
         <transition name="settings-pop-panel">
           <div v-if="isWasapiExclusiveEnabled" class="pb-4">
             <div class="desktop-setting-row pl-8">
@@ -1314,7 +1260,6 @@ onScopeDispose(() => {
       </div>
     </section>
 
-    <!-- 播放设备选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -1354,7 +1299,6 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <!-- 音频插件：并入播放设置，置于最下方 -->
     <SettingsPluginHost />
   </div>
 </template>
@@ -1472,8 +1416,6 @@ onScopeDispose(() => {
   max-height: 360px;
 }
 
-/* WASAPI 卡片内 Bit 详情的内层过渡：仅淡入淡出，不含位移/高度动画，
-   避免与外层 settings-pop-panel 的 transform 嵌套叠加导致关闭时"先下弹再上收" */
 .settings-fade-enter-active,
 .settings-fade-leave-active {
   transition: opacity 160ms ease;
@@ -1553,7 +1495,6 @@ onScopeDispose(() => {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
 
-/* 与项目 settings-dropdown 过渡保持一致 */
 .settings-dropdown-enter-active,
 .settings-dropdown-leave-active {
   transition: opacity 150ms ease, transform 150ms ease;

@@ -31,7 +31,6 @@ describe('useDragScrollX composable', () => {
     });
 
     expect(preventDefaultSpy).toHaveBeenCalled();
-    // 单元测试环境中无 requestAnimationFrame 时进行直接跳变
     expect(mockEl.scrollLeft).toBeGreaterThan(100);
   });
 

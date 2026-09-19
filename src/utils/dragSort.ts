@@ -1,7 +1,6 @@
 const DEFAULT_AUTO_SCROLL_EDGE_SIZE = 80;
 const DEFAULT_AUTO_SCROLL_MAX_SPEED = 8;
 
-/** 查找元素所在的纵向滚动容器。 */
 export const findVerticalScrollContainer = (element: HTMLElement): HTMLElement | null => {
   let current = element.parentElement;
   while (current) {
@@ -14,10 +13,6 @@ export const findVerticalScrollContainer = (element: HTMLElement): HTMLElement |
   return null;
 };
 
-/**
- * 根据指针位置和当前拖拽索引推导目标索引。
- * 只在越过相邻项中线后换位，避免列表重排后指针反向命中原位置而抖动。
- */
 export const resolveDragTargetIndex = (
   listEl: HTMLElement | null,
   rowSelector: string,
@@ -48,7 +43,6 @@ export const resolveDragTargetIndex = (
   return target;
 };
 
-/** 计算指针靠近滚动容器上下边缘时的自动滚动速度。 */
 export const getEdgeAutoScrollSpeed = (
   container: HTMLElement,
   pointerY: number,

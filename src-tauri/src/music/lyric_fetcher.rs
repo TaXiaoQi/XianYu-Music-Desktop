@@ -1,13 +1,3 @@
-// lyric_fetcher.rs - 多音源歌词抓取与解密
-//
-// 将前端 lxLyricFetcher.ts 中的请求构造+解密逻辑迁移到 Rust。
-// 支持的音源：
-// - kg (酷狗): KRC 加密歌词，包含逐字时间
-// - kw (酷我): XOR 加密请求 → zlib 解压 → 逐字歌词解析
-// - tx (QQ音乐): QRC 3DES 解密 → 逐字歌词解析
-// - wy (网易云): eapi AES-ECB 加密 → yrc/krc 逐字歌词
-// - mg (咪咕): resourceinfo.do 解 lrcUrl/trcUrl → LRC + 翻译歌词
-
 use base64::Engine;
 use encoding_rs::{BIG5, EUC_KR, GBK, SHIFT_JIS, UTF_16BE, UTF_16LE};
 use serde::{Deserialize, Serialize};
@@ -42,8 +32,6 @@ static WY_FIX_ROMA_TRAIL_RE: OnceLock<Regex> = OnceLock::new();
 
 // ==================== Types ====================
 
-/// 歌词源返回的歌曲信息，作为纯反序列化 DTO。
-/// 部分字段只在特定歌词源（酷狗/腾讯/网易）分支被消费，其余随 payload 保留。
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
@@ -83,10 +71,11 @@ pub(crate) fn decode_html_entities(s: &str) -> String {
         if bytes[i] == b'&' {
             if let Some(end) = s[i..].find(';') {
                 let entity = &s[i + 1..i + end];
-                let decoded = if let Some(hex) = entity.strip_prefix("#x").or_else(|| entity.strip_prefix("#X")) {
-                    u32::from_str_radix(hex, 16)
-                        .ok()
-                        .and_then(char::from_u32)
+                let decoded = if let Some(hex) = entity
+                    .strip_prefix("#x")
+                    .or_else(|| entity.strip_prefix("#X"))
+                {
+                    u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
                 } else if let Some(dec) = entity.strip_prefix('#') {
                     dec.parse::<u32>().ok().and_then(char::from_u32)
                 } else {
@@ -139,60 +128,66 @@ fn pad_base64(input: &str) -> String {
 }
 
 // ==================== QRC 解密（腾讯非标准 3DES + zlib inflate）====================
-//
-// 腾讯 QRC 逐字歌词使用"非标准 DES 变体"（S2[23]=15、S4[53]=10，与标准 DES 不同，
-// 标准值分别为 14、1），因此标准 3DES（RustCrypto des 等）无法解密。
-// 以下为 lx-music qrc_decode 原生插件 1:1 移植的纯 Rust 实现。
 
 const QRC_SBOX: [[u8; 64]; 8] = [
     [
-        14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7, 0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8,
-        4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0, 15, 12, 8, 2, 4, 9, 1, 7, 5, 11, 3, 14, 10, 0, 6, 13,
+        14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7, 0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12,
+        11, 9, 5, 3, 8, 4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0, 15, 12, 8, 2, 4, 9,
+        1, 7, 5, 11, 3, 14, 10, 0, 6, 13,
     ],
     [
-        15, 1, 8, 14, 6, 11, 3, 4, 9, 7, 2, 13, 12, 0, 5, 10, 3, 13, 4, 7, 15, 2, 8, 15, 12, 0, 1, 10, 6, 9, 11, 5,
-        0, 14, 7, 11, 10, 4, 13, 1, 5, 8, 12, 6, 9, 3, 2, 15, 13, 8, 10, 1, 3, 15, 4, 2, 11, 6, 7, 12, 0, 5, 14, 9,
+        15, 1, 8, 14, 6, 11, 3, 4, 9, 7, 2, 13, 12, 0, 5, 10, 3, 13, 4, 7, 15, 2, 8, 15, 12, 0, 1,
+        10, 6, 9, 11, 5, 0, 14, 7, 11, 10, 4, 13, 1, 5, 8, 12, 6, 9, 3, 2, 15, 13, 8, 10, 1, 3, 15,
+        4, 2, 11, 6, 7, 12, 0, 5, 14, 9,
     ],
     [
-        10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8, 13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 14, 12, 11, 15, 1,
-        13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7, 1, 10, 13, 0, 6, 9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12,
+        10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8, 13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5,
+        14, 12, 11, 15, 1, 13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7, 1, 10, 13, 0, 6,
+        9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12,
     ],
     [
-        7, 13, 14, 3, 0, 6, 9, 10, 1, 2, 8, 5, 11, 12, 4, 15, 13, 8, 11, 5, 6, 15, 0, 3, 4, 7, 2, 12, 1, 10, 14, 9,
-        10, 6, 9, 0, 12, 11, 7, 13, 15, 1, 3, 14, 5, 2, 8, 4, 3, 15, 0, 6, 10, 10, 13, 8, 9, 4, 5, 11, 12, 7, 2, 14,
+        7, 13, 14, 3, 0, 6, 9, 10, 1, 2, 8, 5, 11, 12, 4, 15, 13, 8, 11, 5, 6, 15, 0, 3, 4, 7, 2,
+        12, 1, 10, 14, 9, 10, 6, 9, 0, 12, 11, 7, 13, 15, 1, 3, 14, 5, 2, 8, 4, 3, 15, 0, 6, 10,
+        10, 13, 8, 9, 4, 5, 11, 12, 7, 2, 14,
     ],
     [
-        2, 12, 4, 1, 7, 10, 11, 6, 8, 5, 3, 15, 13, 0, 14, 9, 14, 11, 2, 12, 4, 7, 13, 1, 5, 0, 15, 10, 3, 9, 8, 6,
-        4, 2, 1, 11, 10, 13, 7, 8, 15, 9, 12, 5, 6, 3, 0, 14, 11, 8, 12, 7, 1, 14, 2, 13, 6, 15, 0, 9, 10, 4, 5, 3,
+        2, 12, 4, 1, 7, 10, 11, 6, 8, 5, 3, 15, 13, 0, 14, 9, 14, 11, 2, 12, 4, 7, 13, 1, 5, 0, 15,
+        10, 3, 9, 8, 6, 4, 2, 1, 11, 10, 13, 7, 8, 15, 9, 12, 5, 6, 3, 0, 14, 11, 8, 12, 7, 1, 14,
+        2, 13, 6, 15, 0, 9, 10, 4, 5, 3,
     ],
     [
-        12, 1, 10, 15, 9, 2, 6, 8, 0, 13, 3, 4, 14, 7, 5, 11, 10, 15, 4, 2, 7, 12, 9, 5, 6, 1, 13, 14, 0, 11, 3, 8,
-        9, 14, 15, 5, 2, 8, 12, 3, 7, 0, 4, 10, 1, 13, 11, 6, 4, 3, 2, 12, 9, 5, 15, 10, 11, 14, 1, 7, 6, 0, 8, 13,
+        12, 1, 10, 15, 9, 2, 6, 8, 0, 13, 3, 4, 14, 7, 5, 11, 10, 15, 4, 2, 7, 12, 9, 5, 6, 1, 13,
+        14, 0, 11, 3, 8, 9, 14, 15, 5, 2, 8, 12, 3, 7, 0, 4, 10, 1, 13, 11, 6, 4, 3, 2, 12, 9, 5,
+        15, 10, 11, 14, 1, 7, 6, 0, 8, 13,
     ],
     [
-        4, 11, 2, 14, 15, 0, 8, 13, 3, 12, 9, 7, 5, 10, 6, 1, 13, 0, 11, 7, 4, 9, 1, 10, 14, 3, 5, 12, 2, 15, 8, 6,
-        1, 4, 11, 13, 12, 3, 7, 14, 10, 15, 6, 8, 0, 5, 9, 2, 6, 11, 13, 8, 1, 4, 10, 7, 9, 5, 0, 15, 14, 2, 3, 12,
+        4, 11, 2, 14, 15, 0, 8, 13, 3, 12, 9, 7, 5, 10, 6, 1, 13, 0, 11, 7, 4, 9, 1, 10, 14, 3, 5,
+        12, 2, 15, 8, 6, 1, 4, 11, 13, 12, 3, 7, 14, 10, 15, 6, 8, 0, 5, 9, 2, 6, 11, 13, 8, 1, 4,
+        10, 7, 9, 5, 0, 15, 14, 2, 3, 12,
     ],
     [
-        13, 2, 8, 4, 6, 15, 11, 1, 10, 9, 3, 14, 5, 0, 12, 7, 1, 15, 13, 8, 10, 3, 7, 4, 12, 5, 6, 11, 0, 14, 9, 2,
-        7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8, 2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11,
+        13, 2, 8, 4, 6, 15, 11, 1, 10, 9, 3, 14, 5, 0, 12, 7, 1, 15, 13, 8, 10, 3, 7, 4, 12, 5, 6,
+        11, 0, 14, 9, 2, 7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8, 2, 1, 14, 7, 4, 10,
+        8, 13, 15, 12, 9, 0, 3, 5, 6, 11,
     ],
 ];
 
 const QRC_KEY_RND_SHIFT: [u32; 16] = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1];
 const QRC_KEY_PERM_C: [u32; 28] = [
-    56, 48, 40, 32, 24, 16, 8, 0, 57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59, 51, 43, 35,
+    56, 48, 40, 32, 24, 16, 8, 0, 57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59,
+    51, 43, 35,
 ];
 const QRC_KEY_PERM_D: [u32; 28] = [
-    62, 54, 46, 38, 30, 22, 14, 6, 61, 53, 45, 37, 29, 21, 13, 5, 60, 52, 44, 36, 28, 20, 12, 4, 27, 19, 11, 3,
+    62, 54, 46, 38, 30, 22, 14, 6, 61, 53, 45, 37, 29, 21, 13, 5, 60, 52, 44, 36, 28, 20, 12, 4,
+    27, 19, 11, 3,
 ];
 const QRC_KEY_COMPRESSION: [u32; 48] = [
-    13, 16, 10, 23, 0, 4, 2, 27, 14, 5, 20, 9, 22, 18, 11, 3, 25, 7, 15, 6, 26, 19, 12, 1, 40, 51, 30, 36, 46,
-    54, 29, 39, 50, 44, 32, 47, 43, 48, 38, 55, 33, 52, 45, 41, 49, 35, 28, 31,
+    13, 16, 10, 23, 0, 4, 2, 27, 14, 5, 20, 9, 22, 18, 11, 3, 25, 7, 15, 6, 26, 19, 12, 1, 40, 51,
+    30, 36, 46, 54, 29, 39, 50, 44, 32, 47, 43, 48, 38, 55, 33, 52, 45, 41, 49, 35, 28, 31,
 ];
 const QRC_KEY: [u8; 24] = [
-    0x21, 0x40, 0x23, 0x29, 0x28, 0x2a, 0x24, 0x25, 0x31, 0x32, 0x33, 0x5a, 0x58, 0x43, 0x21, 0x40, 0x21, 0x40, 0x23,
-    0x29, 0x28, 0x4e, 0x48, 0x4c,
+    0x21, 0x40, 0x23, 0x29, 0x28, 0x2a, 0x24, 0x25, 0x31, 0x32, 0x33, 0x5a, 0x58, 0x43, 0x21, 0x40,
+    0x21, 0x40, 0x23, 0x29, 0x28, 0x4e, 0x48, 0x4c,
 ];
 
 type QrcSchedule = [[u8; 6]; 16];
@@ -386,8 +381,10 @@ fn qrc_des_f(state: u32, key: &[u8]) -> u32 {
         lrgstate[i] ^= key[i];
     }
     let s = (QRC_SBOX[0][qrc_sbox_bit(lrgstate[0] >> 2)] as u32) << 28
-        | (QRC_SBOX[1][qrc_sbox_bit(((lrgstate[0] & 0x03) << 4) | (lrgstate[1] >> 4))] as u32) << 24
-        | (QRC_SBOX[2][qrc_sbox_bit(((lrgstate[1] & 0x0F) << 2) | (lrgstate[2] >> 6))] as u32) << 20
+        | (QRC_SBOX[1][qrc_sbox_bit(((lrgstate[0] & 0x03) << 4) | (lrgstate[1] >> 4))] as u32)
+            << 24
+        | (QRC_SBOX[2][qrc_sbox_bit(((lrgstate[1] & 0x0F) << 2) | (lrgstate[2] >> 6))] as u32)
+            << 20
         | (QRC_SBOX[3][qrc_sbox_bit(lrgstate[2] & 0x3F)] as u32) << 16
         | (QRC_SBOX[4][qrc_sbox_bit(lrgstate[3] >> 2)] as u32) << 12
         | (QRC_SBOX[5][qrc_sbox_bit(((lrgstate[3] & 0x03) << 4) | (lrgstate[4] >> 4))] as u32) << 8
@@ -515,8 +512,6 @@ fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
 
 // ==================== Deflate/Zlib Decompression ====================
 
-// 与 JS inflateSync(…, { finishFlush: 2 /* Z_SYNC_FLUSH */ }) 等价：
-// 容忍尾部不完整的 zlib 流，读到流结束后即返回，不因尾部残留而报错。
 fn decompress_zlib_sync_flush(bytes: &[u8]) -> Result<Vec<u8>, String> {
     use flate2::{Decompress, FlushDecompress, Status};
     let mut d = Decompress::new(true);
@@ -532,7 +527,11 @@ fn decompress_zlib_sync_flush(bytes: &[u8]) -> Result<Vec<u8>, String> {
         let before = d.total_out();
         let available_in = bytes.len().saturating_sub(in_pos);
         let status = d
-            .decompress(&bytes[in_pos..in_pos + available_in], &mut buf, FlushDecompress::Sync)
+            .decompress(
+                &bytes[in_pos..in_pos + available_in],
+                &mut buf,
+                FlushDecompress::Sync,
+            )
             .map_err(|e| e.to_string())?;
         let produced = (d.total_out() - before) as usize;
         out.extend_from_slice(&buf[..produced.min(buf.len())]);
@@ -573,11 +572,9 @@ fn decompress_zlib_to_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn decompress_zlib_to_bytes_skip_header(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    // Try normal zlib first
     if let Ok(result) = decompress_zlib_to_bytes(bytes) {
         return Ok(result);
     }
-    // Try skipping 2-byte zlib header
     if bytes.len() > 2 {
         if let Ok(result) = decompress_zlib_to_bytes(&bytes[2..]) {
             return Ok(result);
@@ -624,7 +621,10 @@ fn decode_kg_krc(base64_data: &str) -> Result<String, String> {
     for (name, attempt) in [
         ("raw deflate", decompress_deflate_to_bytes(&data)),
         ("zlib", decompress_zlib_to_bytes(&data)),
-        ("zlib/skip-header", decompress_zlib_to_bytes_skip_header(&data)),
+        (
+            "zlib/skip-header",
+            decompress_zlib_to_bytes_skip_header(&data),
+        ),
         ("gzip", decompress_gzip_to_bytes(&data)),
     ] {
         match attempt {
@@ -671,7 +671,6 @@ fn decode_kw_lyric(body_base64: &str) -> Result<String, String> {
         return Ok(String::new());
     }
 
-    // Split header and binary data: find \r\n\r\n or \n\n
     let mut binary_start = None;
     for i in 0..buf.len().saturating_sub(3) {
         if buf[i] == 0x0d && buf[i + 1] == 0x0a && buf[i + 2] == 0x0d && buf[i + 3] == 0x0a {
@@ -693,18 +692,15 @@ fn decode_kw_lyric(body_base64: &str) -> Result<String, String> {
     }
     let binary_data = &buf[start..];
 
-    // zlib decompress
     let lrc_data = decompress_zlib_to_bytes_skip_header(binary_data)?;
     if lrc_data.is_empty() {
         return Ok(String::new());
     }
 
-    // Check if plain LRC (starts with '[')
     if lrc_data[0] == 0x5b {
         return Ok(encoding_rs::GB18030.decode(&lrc_data).0.into_owned());
     }
 
-    // Otherwise it's base64-encoded XOR encrypted data
     let lrc_str = String::from_utf8_lossy(&lrc_data);
     let lrc_trimmed = lrc_str.trim();
     if !is_valid_base64(lrc_trimmed) {
@@ -733,8 +729,6 @@ const WY_EAPI_KEY: &[u8] = b"e82ckenh8dichen8";
 fn wy_eapi_encrypt(url: &str, data: &str) -> Result<String, String> {
     use aes::cipher::{BlockEncrypt, KeyInit};
     use aes::{Aes128Enc, Block};
-    // eapi 加密摘要中的路径需用 /api/ 前缀（Web 端逻辑路径），与 POST 目标
-    // /eapi/ 不同，否则 message 摘要不一致，服务端解不开请求参数。
     let sign_url = url
         .strip_prefix("/eapi/")
         .map(|r| format!("/api/{}", r))
@@ -747,9 +741,6 @@ fn wy_eapi_encrypt(url: &str, data: &str) -> Result<String, String> {
         sign_url, data, digest_hex
     );
 
-    // 网易云 eapi 标准加密：AES-ECB(key=e82ckenh8dichen8, PKCS7) 单重加密，
-    // 输出 hex 大写作为单个 params。此前误用 AES-CBC+双重+encSecKey，
-    // 服务端解不开请求参数，导致总是返回空体(body_len=0)。
     let cipher = Aes128Enc::new_from_slice(WY_EAPI_KEY).map_err(|e| e.to_string())?;
     let block_size = 16usize;
     let padding = block_size - (data_str.len() % block_size);
@@ -774,7 +765,6 @@ struct HttpResponse {
     body_bytes: Vec<u8>,
 }
 
-/// 从 Content-Type 头中提取 charset 参数，如 `text/plain; charset=gbk` → `gbk`。
 fn extract_charset(content_type: Option<&str>) -> Option<String> {
     let header = content_type?;
     let (_, params) = header.split_once(';')?;
@@ -793,7 +783,6 @@ fn extract_charset(content_type: Option<&str>) -> Option<String> {
     None
 }
 
-/// 按 HTTP charset 解码响应体；无 charset 或未知 charset 时回退到内容探测。
 fn decode_http_body(body_bytes: &[u8], content_type: Option<&str>) -> String {
     if let Some(charset) = extract_charset(content_type) {
         let decoded = match charset.as_str() {
@@ -837,15 +826,12 @@ async fn http_fetch_text(
     headers: &[(&str, &str)],
     body: Option<&str>,
 ) -> Result<HttpResponse, String> {
-    // SSRF 防护：歌词取数仅允许公网 http/https 目标，拒绝内网/回环/元数据等
     crate::security::ssrf::validate_outbound_url(url)
         .await
         .map_err(|e| e.to_string())?;
 
     let client = reqwest::Client::builder()
-        // 每个跳转目标都需通过 SSRF 校验
         .redirect(crate::security::ssrf::ssrf_redirect_policy())
-        // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .build()
         .map_err(|e| e.to_string())?;
@@ -896,7 +882,6 @@ fn kg_parse_lyric(str_in: &str) -> LyricResult {
     let s = if let Some(stripped) =
         str_in.strip_prefix(|c: char| c.is_ascii() && !c.is_alphanumeric())
     {
-        // Remove [id:$...] header
         let re = KG_ID_HEADER_RE.get_or_init(|| Regex::new(r"^.*\[id:\$\w+\]\n").unwrap());
         re.replace(stripped, "").to_string()
     } else {
@@ -906,7 +891,6 @@ fn kg_parse_lyric(str_in: &str) -> LyricResult {
 
     let mut result = LyricResult::default();
 
-    // Extract translation
     let trans_re = KG_LANGUAGE_RE.get_or_init(|| Regex::new(r"\[language:([\w=\\/+]+)\]").unwrap());
     let mut work_str = s.clone();
     if let Some(caps) = trans_re.captures(&s) {
@@ -961,7 +945,6 @@ fn kg_parse_lyric(str_in: &str) -> LyricResult {
         }
     }
 
-    // Parse lxlyric from [time,duration] format
     let time_re = KG_LX_TIME_RE.get_or_init(|| Regex::new(r"\[(\d+),(\d+)\]").unwrap());
     let word_tag_re = KG_WORD_TAG_RE.get_or_init(|| Regex::new(r"<(\d+,\d+),\d+>").unwrap());
 
@@ -1005,11 +988,9 @@ fn kg_parse_lyric(str_in: &str) -> LyricResult {
         result.tlyric = decode_html_entities(&tlyric_arr.join("\n"));
     }
 
-    // Simplify word tags: <offset,duration,extra> → <offset,duration>
     lxlyric = word_tag_re.replace_all(&lxlyric, "<$1>").to_string();
     lxlyric = decode_html_entities(&lxlyric);
 
-    // Generate plain lyric by removing word tags
     let word_re = KG_WORD_PLAIN_RE.get_or_init(|| Regex::new(r"<\d+,\d+>").unwrap());
     result.lyric = word_re.replace_all(&lxlyric, "").to_string();
     result.lxlyric = lxlyric;
@@ -1212,12 +1193,13 @@ fn ms_format(time_ms: u64) -> String {
 
 fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
     let time_re = KW_LRC_TIME_RE.get_or_init(|| Regex::new(r"^\[([\d:.]*)]").unwrap());
-    let tag_re =
-        KW_TAG_RE.get_or_init(|| Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap());
+    let tag_re = KW_TAG_RE.get_or_init(|| {
+        Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap()
+    });
     let lyricx_tag_re = KW_LYRICX_TAG_RE.get_or_init(|| Regex::new(r"^<-?\d+,-?\d+>").unwrap());
 
     let mut tags: Vec<String> = Vec::new();
-    let mut lrc_arr: Vec<(String, String)> = Vec::new(); // (time, text)
+    let mut lrc_arr: Vec<(String, String)> = Vec::new();
 
     for line in lrc.split(|c| c == '\r' || c == '\n') {
         let line = line.trim();
@@ -1228,7 +1210,6 @@ fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
             let time = caps[1].to_string();
             let text = time_re.replace(line, "").trim().to_string();
             let mut fixed_time = time.clone();
-            // Pad to 3 decimal digits
             if fixed_time.matches('.').count() == 1 {
                 let parts: Vec<&str> = fixed_time.split('.').collect();
                 if parts.len() == 2 && parts[1].len() == 2 {
@@ -1241,7 +1222,6 @@ fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
         }
     }
 
-    // Sort and split into lrc and lrcT
     let mut lrc_set = std::collections::HashSet::new();
     let mut lrc: Vec<(String, String)> = Vec::new();
     let mut lrc_t: Vec<(String, String)> = Vec::new();
@@ -1331,21 +1311,18 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         Err(_) => return Ok(None),
     };
 
-    let word_time_re = KW_WORD_TIME_ALL_RE.get_or_init(|| Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap());
+    let word_time_re =
+        KW_WORD_TIME_ALL_RE.get_or_init(|| Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap());
     if !lrc_info.tlyric.is_empty() {
         lrc_info.tlyric = word_time_re.replace_all(&lrc_info.tlyric, "").to_string();
     }
 
-    // 与酷狗(kg)处理方式一致：后端直接输出原始歌词（含 [kuwo:] 标签和 <a,b> 加密标签），
-    // 前端 convertLxLyricToEnhancedLrc 检测到 [kuwo:] 标签后会对全文统一使用酷我公式解析。
-    // 不再在 Rust 侧用 kw_parse_lxlyric 转换，避免转换 bug 导致逐字行丢失。
     if word_time_re.is_match(&lrc_info.lyric) {
         lrc_info.lxlyric = lrc_info.lyric.clone();
     }
 
     lrc_info.lyric = word_time_re.replace_all(&lrc_info.lyric, "").to_string();
 
-    // Validate lyric has time tags
     let time_check = KW_TIME_CHECK_RE.get_or_init(|| Regex::new(r"\[\d{1,2}:.*\d{1,4}]").unwrap());
     if !time_check.is_match(&lrc_info.lyric) {
         return Ok(None);
@@ -1357,7 +1334,8 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
 // ==================== TX (QQ Music) Lyric Fetching ====================
 
 fn tx_remove_tag(s: &str) -> String {
-    let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
+    let re1 =
+        TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
     let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
     re2.replace_all(&re1.replace_all(s, ""), "").to_string()
 }
@@ -1370,9 +1348,11 @@ fn tx_parse_lyric(lrc: &str) -> (String, String) {
 
     let line_time_re = TX_LINE_TIME_RE.get_or_init(|| Regex::new(r"^\[(\d+),\d+]").unwrap());
     let line_time2_re = TX_LINE_TIME2_RE.get_or_init(|| Regex::new(r"^\[([\d:.]+)]").unwrap());
-    let word_time_all_re = TX_WORD_TIME_GROUP_RE.get_or_init(|| Regex::new(r"(\(\d+,\d+\))").unwrap());
+    let word_time_all_re =
+        TX_WORD_TIME_GROUP_RE.get_or_init(|| Regex::new(r"(\(\d+,\d+\))").unwrap());
     let word_time_re = TX_WORD_TIME_RE.get_or_init(|| Regex::new(r"\(\d+,\d+\)").unwrap());
-    let word_extract_re = TX_WORD_EXTRACT_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+)\)").unwrap());
+    let word_extract_re =
+        TX_WORD_EXTRACT_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+)\)").unwrap());
 
     let mut lxlrc_lines: Vec<String> = Vec::new();
     let mut lrc_lines: Vec<String> = Vec::new();
@@ -1573,13 +1553,21 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     let song_id_num = song_info
         .song_id
         .as_ref()
-        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok())))
+        .and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+        })
         .unwrap_or(0);
     let songmid = &song_info.songmid;
     let interval_sec = song_info
         .interval_ms
         .map(|ms| (ms / 1000) as i64)
-        .or_else(|| song_info.interval.as_ref().and_then(|s| s.parse::<i64>().ok()))
+        .or_else(|| {
+            song_info
+                .interval
+                .as_ref()
+                .and_then(|s| s.parse::<i64>().ok())
+        })
         .unwrap_or(0);
     let album_mid = song_info.album_mid.clone().unwrap_or_default();
 
@@ -1588,9 +1576,6 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     let mut tlyric = String::new();
     let mut rlyric = String::new();
 
-    // 主接口：musicu.fcg + GetPlayLyricInfo，qrc=1&crypt=1 请求逐字 QRC。
-    // lyric_download.fcg 会被 QQ 风控包装成 <command-lable-xwl78-qq-music> 且 content 为空，
-    // 改用音乐统一接口（LDDC 同款），逐字数据在 data.lyric 字段（qrc_t 指示逐字）。
     let body_json = serde_json::json!({
         "comm": { "g_tk": 5381, "uin": 0, "format": "json", "ct": 24, "cv": 0, "platform": "yqq.json", "needNewCode": 1 },
         "req_0": {
@@ -1673,15 +1658,14 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
             }
         }
     } else {
-        eprintln!(
-            "[lyric_fetcher] tx musicu 失败 status={}",
-            resp.status
-        );
+        eprintln!("[lyric_fetcher] tx musicu 失败 status={}", resp.status);
     }
 
-    // Fallback to old API
     if lyric.is_empty() && lxlyric.is_empty() {
-        eprintln!("[lyric_fetcher] tx qrc路径失败，回退旧API songmid={} status={}", songmid, resp.status);
+        eprintln!(
+            "[lyric_fetcher] tx qrc路径失败，回退旧API songmid={} status={}",
+            songmid, resp.status
+        );
         let old_url = format!(
             "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={}&g_tk=5381&loginUin=0&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&platform=yqq",
             songmid
@@ -1735,7 +1719,8 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
 
 fn parse_yrc(yrc_text: &str) -> String {
     let line_time_re = WY_YRC_LINE_TIME_RE.get_or_init(|| Regex::new(r"^\[(\d+),(\d+)]").unwrap());
-    let word_tag_re = WY_YRC_WORD_TAG_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+),\d+\)").unwrap());
+    let word_tag_re =
+        WY_YRC_WORD_TAG_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+),\d+\)").unwrap());
     let mut result: Vec<String> = Vec::new();
 
     for raw_line in yrc_text.split('\n') {
@@ -1747,7 +1732,6 @@ fn parse_yrc(yrc_text: &str) -> String {
             let start_ms: u64 = caps[1].parse().unwrap_or(0);
             let content = &line[caps[0].len()..];
 
-            // Find all (wordStart,wordDur,0) tags
             let tags: Vec<(u64, u64, usize, usize)> = word_tag_re
                 .captures_iter(content)
                 .map(|c| {
@@ -1826,7 +1810,7 @@ fn read_uint32_le(data: &[u8], pos: usize) -> u32 {
 
 struct KrcLine {
     time: u32,
-    words: Vec<(u32, u32, String)>, // (start, dur, text)
+    words: Vec<(u32, u32, String)>,
 }
 
 fn wyy_parse_krc(raw: &[u8]) -> Vec<KrcLine> {
@@ -1921,10 +1905,6 @@ fn krc_lines_to_lxlyric(lines: &[KrcLine]) -> String {
 }
 
 fn try_extract_yrc(body: &serde_json::Value) -> String {
-    // 不再强制检查 code==200：eapi 响应可能不包含 code 字段，
-    // 只要有 yrc/klyric 字段就尝试提取。
-
-    // Check yrc field
     if let Some(yrc) = body
         .get("yrc")
         .and_then(|v| v.get("lyric"))
@@ -1936,7 +1916,6 @@ fn try_extract_yrc(body: &serde_json::Value) -> String {
         }
     }
 
-    // Check klyric field for YRC format
     if let Some(klyric) = body.get("klyric") {
         if let Some(lyric) = klyric.get("lyric").and_then(|v| v.as_str()) {
             if lyric.len() > 50 {
@@ -1966,8 +1945,6 @@ fn try_extract_yrc(body: &serde_json::Value) -> String {
 }
 
 fn try_extract_krc(body: &serde_json::Value) -> String {
-    // 不再强制检查 code==200：同 try_extract_yrc。
-
     if let Some(klyric) = body.get("klyric") {
         if let Some(lyric) = klyric.as_str() {
             if lyric.len() > 100 && lyric != "null" && is_valid_base64(lyric) {
@@ -2009,9 +1986,11 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
 
     if new_lrc != lrc || new_tlrc != tlrc {
         let new_romalrc = if !romalrc.is_empty() {
-            let re2 = WY_FIX_ROMA_TIME_RE.get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}):(\d{2,3})]").unwrap());
+            let re2 = WY_FIX_ROMA_TIME_RE
+                .get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}):(\d{2,3})]").unwrap());
             let intermediate = re2.replace_all(romalrc, "[$1.$2]").to_string();
-            let re3 = WY_FIX_ROMA_TRAIL_RE.get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}\.\d{2})0]").unwrap());
+            let re3 = WY_FIX_ROMA_TRAIL_RE
+                .get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}\.\d{2})0]").unwrap());
             re3.replace_all(&intermediate, "[$1]").to_string()
         } else {
             romalrc.to_string()
@@ -2022,8 +2001,6 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
     }
 }
 
-/// 网易云 eapi 响应解密：响应体与请求体一样是 AES-CBC 加密的 hex 密文，
-/// 需 hex 解码 → AES-CBC 解密 → PKCS7 unpad 后才能得到 JSON 明文。
 fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
     use aes::cipher::{BlockDecrypt, KeyInit};
     use aes::{Aes128Dec, Block};
@@ -2047,7 +2024,6 @@ fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
         cipher.decrypt_block(&mut block);
         dec.extend_from_slice(&block);
     }
-    // 去 PKCS7 填充
     let last = *dec.last()?;
     let pad = last as usize;
     if pad == 0 || pad > 16 {
@@ -2060,7 +2036,6 @@ fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
     }
 }
 
-/// WY eapi POST request helper: encrypts params and sends POST to the given eapi endpoint
 async fn wy_eapi_post(
     eapi_path: &str,
     data: serde_json::Value,
@@ -2069,11 +2044,8 @@ async fn wy_eapi_post(
     let data_str = serde_json::to_string(&data).unwrap_or_default();
     let params = wy_eapi_encrypt(eapi_path, &data_str)?;
     let api_url = format!("https://interface3.music.163.com{}", eapi_path);
-    // params 为 hex 大写（仅 [0-9A-F]），不含 + / = 等特殊字符，可原样放入表单
     let body = format!("params={}", params);
 
-    // 对齐网页端真实请求：不带假 cookie，Referer/Origin 指向 y.music.163.com，
-    // 避免被风控识别为脚本而返回空体。
     let mut headers: Vec<(&str, &str)> = vec![
         ("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36"),
         ("Referer", "https://y.music.163.com/"),
@@ -2087,8 +2059,6 @@ async fn wy_eapi_post(
     if resp.status != 200 {
         return Ok(None);
     }
-    // eapi 响应体为 AES-ECB hex 密文，优先解密后解析；若解密失败（响应已是明文/非 hex），
-    // 回退到直接 JSON 解析，保证兼容性。
     if let Some(v) = wy_eapi_decrypt_response(&resp.body) {
         return Ok(Some(v));
     }
@@ -2098,13 +2068,11 @@ async fn wy_eapi_post(
     }
 }
 
-/// Fallback karaoke lyrics extraction: tries two parameter sets to get YRC/KRC
 async fn wyy_get_karaoke(song_id: &str) -> String {
     let song_id_value = song_id
         .parse::<i64>()
         .map(serde_json::Value::from)
         .unwrap_or_else(|_| serde_json::Value::from(song_id.to_string()));
-    // First try: same params as main request (kv=0, yv=0)
     let data1 = serde_json::json!({
         "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
@@ -2119,12 +2087,10 @@ async fn wyy_get_karaoke(song_id: &str) -> String {
         }
     }
 
-    // Second try: Go code params (kv=1, requests klyric binary KRC)
     let id_num: i64 = song_id.parse().unwrap_or(0);
     let data2 = serde_json::json!({
         "cp": -1, "id": id_num, "kv": 1, "lv": -1, "rv": 0, "tv": -1, "yt": false, "yv": 0,
     });
-    // Override User-Agent for this request
     let data_str = serde_json::to_string(&data2).unwrap_or_default();
     let params = match wy_eapi_encrypt("/eapi/song/lyric/v1", &data_str) {
         Ok(p) => p,
@@ -2249,14 +2215,9 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
         .map(serde_json::Value::from)
         .unwrap_or_else(|_| serde_json::Value::from(song_id.to_string()));
 
-    // Use /eapi/song/lyric/v1 with POST. eapi 路径必须带 /eapi/ 前缀，
-    // 参数对齐网页端/Baka 插件的标准写法（tv/lv/rv/kv/yv/ytv/yrv=0），
-    // 服务端会返回逐字 yrc 与普通 lrc。此前误用 -1 是加密错误时的错误归因。
     let data = serde_json::json!({
         "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
-    // eapi 任一失败（网络错误/非200/空响应）都回退 legacy 明文接口，
-    // 避免 eapi key 失效或接口限流时整条歌词链路失败。
     let body = match wy_eapi_post("/eapi/song/lyric/v1", data, &[]).await {
         Ok(Some(b)) => b,
         Ok(None) => {
@@ -2275,7 +2236,6 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
         }
     };
 
-    // Try YRC first, then KRC
     let lxlyric = try_extract_yrc(&body);
     let krc_lxlyric = if lxlyric.is_empty() {
         try_extract_krc(&body)
@@ -2288,12 +2248,10 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
         krc_lxlyric
     };
 
-    // If no word-by-word lyrics, try fallback karaoke extraction
     if final_lxlyric.is_empty() {
         final_lxlyric = wyy_get_karaoke(song_id).await;
     }
 
-    // Get plain lyrics
     let lrc = body
         .get("lrc")
         .and_then(|v| v.get("lyric"))
@@ -2316,8 +2274,6 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
         return fetch_wy_legacy_lyric(song_id).await;
     }
 
-    // eapi 返回了普通歌词但没有逐字歌词时，尝试 legacy API 获取 YRC/KRC。
-    // 某些歌曲的逐字歌词只在非加密 API 中可用。
     if final_lxlyric.is_empty() && !fixed_lrc.is_empty() {
         if let Ok(Some(legacy)) = fetch_wy_legacy_lyric(song_id).await {
             if !legacy.lxlyric.is_empty() {
@@ -2344,8 +2300,7 @@ async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     for song_id in ids {
         match fetch_wy_lyric_by_id(&song_id).await {
             Ok(Some(result)) => return Ok(Some(result)),
-            Ok(None) => {
-            }
+            Ok(None) => {}
             Err(error) => {
                 last_error = Some(error);
             }
@@ -2367,9 +2322,9 @@ const MG_CLIENT_HEADERS: [(&str, &str); 3] = [
     ("channel", "0146921"),
 ];
 
-/// 从 resourceinfo.do 响应中取出歌词 URL。咪咕个别版本把字段包在
-/// `content` 节点下，此处做兼容提取。
-fn mg_extract_lyric_urls(json: &serde_json::Value) -> (Option<String>, Option<String>, Option<String>) {
+fn mg_extract_lyric_urls(
+    json: &serde_json::Value,
+) -> (Option<String>, Option<String>, Option<String>) {
     let node = json.get("content").unwrap_or(json);
     let pick = |key: &str| -> Option<String> {
         node.get(key)
@@ -2380,9 +2335,6 @@ fn mg_extract_lyric_urls(json: &serde_json::Value) -> (Option<String>, Option<St
     (pick("lrcUrl"), pick("mrcUrl"), pick("trcUrl"))
 }
 
-/// 咪咕歌词获取：两步。
-/// 1. 由 copyrightId 调 resourceinfo.do 解出 lrcUrl / trcUrl；
-/// 2. 抓取 LRC 正文与翻译歌词。lrcUrl 缺失时回退到咪咕 Web 公开 get_lyric 接口。
 async fn fetch_mg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
     let copyright_id = match song_info.copyright_id.as_deref() {
         Some(id) if !id.is_empty() => id.to_string(),
@@ -2392,7 +2344,6 @@ async fn fetch_mg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     let mut result = LyricResult::default();
     let mut lyric_fetched = false;
 
-    // 第一步：解析歌词 URL
     let resource_url =
         "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2";
     let payload = format!(
@@ -2407,7 +2358,6 @@ async fn fetch_mg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&resp.body) {
             let (lrc_url, _mrc_url, trc_url) = mg_extract_lyric_urls(&json);
 
-            // 第二步：抓取 LRC 正文
             if let Some(url) = lrc_url {
                 if let Ok(r) = http_fetch_text(&url, "GET", &MG_CLIENT_HEADERS, None).await {
                     let text = r.body.trim().to_string();
@@ -2418,7 +2368,6 @@ async fn fetch_mg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                 }
             }
 
-            // 翻译歌词（可选，失败不影响主歌词）
             if let Some(url) = trc_url {
                 if let Ok(r) = http_fetch_text(&url, "GET", &MG_CLIENT_HEADERS, None).await {
                     let text = r.body.trim().to_string();
@@ -2430,7 +2379,6 @@ async fn fetch_mg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         }
     }
 
-    // 回退：咪咕 Web 公开 get_lyric（直接返回普通 LRC 文本）
     if !lyric_fetched {
         for endpoint in [
             format!(

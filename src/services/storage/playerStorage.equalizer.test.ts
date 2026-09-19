@@ -1,12 +1,3 @@
-/**
- * Comprehensive tests for playerStorage equalizer preset I/O.
- *
- * Covers:
- *   - readEqualizerPresets / writeEqualizerPresets round-trip
- *   - invalid data filtering
- *   - non-browser environment safety
- *   - storage key usage
- */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,7 +49,6 @@ describe('playerStorage: equalizer preset I/O', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Round-trip
   // -----------------------------------------------------------------------
 
   it('writes and reads back an empty preset array', () => {
@@ -100,7 +90,6 @@ describe('playerStorage: equalizer preset I/O', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Storage key
   // -----------------------------------------------------------------------
 
   it('uses the correct storage key', () => {
@@ -120,7 +109,6 @@ describe('playerStorage: equalizer preset I/O', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Invalid data filtering
   // -----------------------------------------------------------------------
 
   it('returns empty array when storage has no equalizer presets', () => {
@@ -170,7 +158,6 @@ describe('playerStorage: equalizer preset I/O', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Data integrity
   // -----------------------------------------------------------------------
 
   it('preserves all preset fields through serialization', () => {
@@ -226,7 +213,6 @@ describe('playerStorage: equalizer preset I/O', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Non-browser environment
 // ---------------------------------------------------------------------------
 
 describe('playerStorage: equalizer preset I/O without localStorage', () => {
@@ -235,7 +221,6 @@ describe('playerStorage: equalizer preset I/O without localStorage', () => {
   });
 
   it('readEqualizerPresets returns empty array when localStorage is undefined', () => {
-    // Do not stub localStorage — it should be absent
     vi.stubGlobal('localStorage', undefined);
     expect(playerStorage.readEqualizerPresets()).toEqual([]);
   });
@@ -249,7 +234,6 @@ describe('playerStorage: equalizer preset I/O without localStorage', () => {
 });
 
 // ---------------------------------------------------------------------------
-// P2 Fix Verification: Comprehensive data validation
 // ---------------------------------------------------------------------------
 
 describe('P2 Fix: filters malformed equalizer presets', () => {

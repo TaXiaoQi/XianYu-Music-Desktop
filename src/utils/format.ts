@@ -1,8 +1,4 @@
-/**
- * 格式化通用工具
- */
 
-/** 将秒数格式化为 mm:ss 格式 */
 export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
   const m = Math.floor(seconds / 60);
@@ -10,7 +6,6 @@ export function formatDuration(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/** 将字节数格式化为友好的文件大小字符串 */
 export function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -23,7 +18,6 @@ export function formatFileSize(bytes: number): string {
   return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
-/** 将秒数格式化为中文带单位的听歌时长（最多显示到分钟，不显示秒） */
 export function formatListenDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0分钟';
   const hours = Math.floor(seconds / 3600);
@@ -32,7 +26,6 @@ export function formatListenDuration(seconds: number): string {
   return `${minutes}分钟`;
 }
 
-/** 格式化相对时间（中文） */
 export function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
   if (diff < 60000) return '刚刚';

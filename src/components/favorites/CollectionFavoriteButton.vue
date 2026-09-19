@@ -6,7 +6,6 @@ import { useCollectionsStore } from '../../features/collections/store';
 import { useToast } from '../../composables/toast';
 
 const props = defineProps<{
-  /** 待收藏的歌单/专辑条目；为 null 时隐藏按钮 */
   entry: FavoriteCollectionEntry | null;
 }>();
 

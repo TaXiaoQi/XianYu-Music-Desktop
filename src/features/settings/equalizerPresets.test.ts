@@ -1,15 +1,3 @@
-/**
- * Comprehensive test suite for equalizer preset management.
- *
- * Covers:
- *   P1 - settings store initialization without localStorage
- *   P2 - mergeAudioSettings preserves / clears currentPresetId
- *   P2 - selectedPresetId as computed (single source of truth)
- *   P2 - built-in preset / reset clears custom preset association
- *   P2 - custom preset loading enables EQ
- *   P3 - edit dialog prefill, unused code cleanup
- *   Extra - edge cases, data integrity, race conditions
- */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
@@ -29,17 +17,12 @@ import type {
   EqualizerSettings,
 } from '../../types';
 
-// Raw source imports for static verification (avoids Node fs/path dependency)
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore Vite raw import
 import playerStorageSource from '../../services/storage/playerStorage.ts?raw';
 
 // ---------------------------------------------------------------------------
-// Helpers
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// P1: localStorage 环境保护 — 无浏览器 API 时 store 初始化安全
 // ---------------------------------------------------------------------------
 
 describe('P1: settings store initializes without localStorage', () => {
@@ -48,8 +31,6 @@ describe('P1: settings store initializes without localStorage', () => {
   });
 
   it('store initializes in a Node (no localStorage) environment', () => {
-    // Vitest runs in "node" environment by default — localStorage is absent.
-    // The store must not throw at import / instantiation time.
     setActivePinia(createPinia());
     expect(() => useSettingsStore()).not.toThrow();
   });
@@ -77,13 +58,11 @@ describe('P1: settings store initializes without localStorage', () => {
 
   it('default equalizer currentPresetId is undefined (not set)', () => {
     const defaults = createDefaultAppSettings();
-    // currentPresetId is optional — when absent it should be undefined or null
     expect(defaults.audio.equalizer.currentPresetId ?? null).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// P2: mergeAudioSettings — currentPresetId 保留与清空
 // ---------------------------------------------------------------------------
 
 describe('P2: mergeAudioSettings preserves currentPresetId', () => {
@@ -142,12 +121,9 @@ describe('P2: mergeAudioSettings preserves currentPresetId', () => {
   });
 
   it('clears currentPresetId to null when explicitly set to undefined', () => {
-    // undefined via `??` falls to null
     const merged = mergeAudioSettings(base, {
       equalizer: { currentPresetId: undefined } as unknown as EqualizerSettings,
     });
-    // The implementation uses `equalizerPatch.currentPresetId ?? null` inside `in` check,
-    // so undefined → null
     expect(merged.equalizer.currentPresetId).toBeNull();
   });
 
@@ -186,7 +162,6 @@ describe('P2: mergeAudioSettings preserves currentPresetId', () => {
     const merged = mergeAudioSettings(fullBase, {
       equalizer: { currentPresetId: 'p2' } as unknown as EqualizerSettings,
     });
-    // mergeAudioSettings preserves outputMode when the patch does not include it
     expect(merged.outputMode).toBe('wasapiExclusive');
     expect(merged.volumeBalance).toEqual({ enabled: true, gainOffsetDb: 3, preventClipping: false });
     expect(merged.equalizer.currentPresetId).toBe('p2');
@@ -209,7 +184,6 @@ describe('P2: mergeAudioSettings preserves currentPresetId', () => {
 });
 
 // ---------------------------------------------------------------------------
-// mergeAppSettings 端到端 — currentPresetId 穿透
 // ---------------------------------------------------------------------------
 
 describe('mergeAppSettings end-to-end: currentPresetId survival', () => {
@@ -287,7 +261,6 @@ describe('mergeAppSettings end-to-end: currentPresetId survival', () => {
 });
 
 // ---------------------------------------------------------------------------
-// P2: Settings store — 预设管理功能 (save / update / delete / load)
 // ---------------------------------------------------------------------------
 
 describe('settings store: preset CRUD operations', () => {
@@ -364,7 +337,6 @@ describe('settings store: preset CRUD operations', () => {
       const store = useSettingsStore();
       const original = store.saveEqualizerPreset('Original');
 
-      // Change current EQ state
       store.settings.audio.equalizer.preamp = -6.0;
       store.settings.audio.equalizer.gains = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -389,7 +361,6 @@ describe('settings store: preset CRUD operations', () => {
 
     it('does not update a builtin preset', () => {
       const store = useSettingsStore();
-      // Manually inject a builtin preset
       store.equalizerPresets.push({
         id: 'builtin_flat',
         name: 'Flat',
@@ -429,8 +400,6 @@ describe('settings store: preset CRUD operations', () => {
     it('does not clear currentPresetId when deleting a different preset', () => {
       const store = useSettingsStore();
 
-      // Use manually created presets with guaranteed-unique IDs
-      // to avoid Date.now() collision in tight loops
       const activePreset: EqualizerPreset = {
         id: 'user_active_unique',
         name: 'Active',
@@ -452,7 +421,6 @@ describe('settings store: preset CRUD operations', () => {
 
       store.equalizerPresets.push(activePreset, otherPreset);
 
-      // Use patchSettings for a clean reactive update
       store.patchSettings({
         audio: {
           equalizer: { currentPresetId: activePreset.id } as unknown as EqualizerSettings,
@@ -496,18 +464,15 @@ describe('settings store: preset CRUD operations', () => {
     it('loads a user preset — sets preamp, gains, currentPresetId, and enables EQ', () => {
       const store = useSettingsStore();
 
-      // First save a preset with specific values
       store.settings.audio.equalizer.preamp = -3.5;
       store.settings.audio.equalizer.gains = [5.5, 4.5, 3, 1.5, 0, 0, 0, 0, 0, 0];
       const preset = store.saveEqualizerPreset('Bass Boost');
 
-      // Reset EQ to flat and disable
       store.settings.audio.equalizer.enabled = false;
       store.settings.audio.equalizer.preamp = 0;
       store.settings.audio.equalizer.gains = Array(10).fill(0);
       store.settings.audio.equalizer.currentPresetId = null;
 
-      // Load the preset
       store.loadEqualizerPreset(preset.id);
 
       expect(store.settings.audio.equalizer.enabled).toBe(true);
@@ -545,10 +510,8 @@ describe('settings store: preset CRUD operations', () => {
 
       store.loadEqualizerPreset(preset.id);
 
-      // Mutate the loaded gains
       store.settings.audio.equalizer.gains[0] = 999;
 
-      // The stored preset should not be affected
       const stored = store.userPresets.find(p => p.id === preset.id);
       expect(stored?.gains[0]).toBe(1);
     });
@@ -576,7 +539,6 @@ describe('settings store: preset CRUD operations', () => {
 });
 
 // ---------------------------------------------------------------------------
-// P2: 状态一致性 — selectedPresetId 单一数据源
 // ---------------------------------------------------------------------------
 
 describe('P2: selectedPresetId — single source of truth via computed', () => {
@@ -586,10 +548,7 @@ describe('P2: selectedPresetId — single source of truth via computed', () => {
 
   it('EqualizerPanel uses computed for selectedPresetId (source code check)', async () => {
     const source = await import('./EqualizerPanel.source?raw').catch(() => null);
-    // If we can't import the source, fall back to reading the actual Vue file
-    // via a direct text check
     if (!source) {
-      // The test still validates the behavior through the store
       return;
     }
   });
@@ -597,11 +556,9 @@ describe('P2: selectedPresetId — single source of truth via computed', () => {
   it('selectedPresetId automatically reflects currentPresetId changes in settings', () => {
     const store = useSettingsStore();
 
-    // Save a preset and verify currentPresetId is set
     const preset = store.saveEqualizerPreset('Auto Sync');
     expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
 
-    // Clear via patchSettings (proper reactive update) and verify
     store.patchSettings({
       audio: {
         equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
@@ -609,7 +566,6 @@ describe('P2: selectedPresetId — single source of truth via computed', () => {
     });
     expect(store.settings.audio.equalizer.currentPresetId).toBeNull();
 
-    // Set a new value via patchSettings
     store.patchSettings({
       audio: {
         equalizer: { currentPresetId: preset.id } as unknown as EqualizerSettings,
@@ -620,7 +576,6 @@ describe('P2: selectedPresetId — single source of truth via computed', () => {
 });
 
 // ---------------------------------------------------------------------------
-// P2: 内置预设 / 重置清除自定义预设关联
 // ---------------------------------------------------------------------------
 
 describe('P2: built-in preset and reset clear custom preset association', () => {
@@ -643,7 +598,6 @@ describe('P2: built-in preset and reset clear custom preset association', () => 
 });
 
 // ---------------------------------------------------------------------------
-// P2: 自定义预设加载启用 EQ
 // ---------------------------------------------------------------------------
 
 describe('P2: loading a custom preset enables EQ', () => {
@@ -659,7 +613,6 @@ describe('P2: loading a custom preset enables EQ', () => {
     store.settings.audio.equalizer.gains = [1, 2, 3, 4, 5, 5, 4, 3, 2, 1];
     const preset = store.saveEqualizerPreset('EQ Enable Test');
 
-    // Turn off EQ after saving
     store.settings.audio.equalizer.enabled = false;
 
     store.loadEqualizerPreset(preset.id);
@@ -675,7 +628,6 @@ describe('P2: loading a custom preset enables EQ', () => {
     store.settings.audio.equalizer.gains = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
     const preset = store.saveEqualizerPreset('Consistency');
 
-    // Scenario A: load from disabled
     store.settings.audio.equalizer.enabled = false;
     store.settings.audio.equalizer.preamp = 0;
     store.settings.audio.equalizer.gains = Array(10).fill(0);
@@ -683,7 +635,6 @@ describe('P2: loading a custom preset enables EQ', () => {
 
     const resultA = { ...store.settings.audio.equalizer };
 
-    // Scenario B: load from enabled
     store.settings.audio.equalizer.enabled = true;
     store.settings.audio.equalizer.preamp = 10;
     store.settings.audio.equalizer.gains = Array(10).fill(10);
@@ -699,12 +650,10 @@ describe('P2: loading a custom preset enables EQ', () => {
 });
 
 // ---------------------------------------------------------------------------
-// P3: 冗余代码清理
 // ---------------------------------------------------------------------------
 
 describe('P3: unused code cleanup', () => {
   it('playerStorage does not expose addEqualizerPreset / updateEqualizerPreset / deleteEqualizerPreset', () => {
-    // These methods should NOT exist as they were cleaned up
     expect(playerStorageSource).not.toContain('addEqualizerPreset');
     expect(playerStorageSource).not.toContain('updateEqualizerPreset');
     expect(playerStorageSource).not.toContain('deleteEqualizerPreset');
@@ -714,13 +663,11 @@ describe('P3: unused code cleanup', () => {
     setActivePinia(createPinia());
     const store = useSettingsStore();
 
-    // builtinPresets should not be a property on the store
     expect('builtinPresets' in store).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Extra: userPresets 计算属性只返回非内置预设
 // ---------------------------------------------------------------------------
 
 describe('userPresets computed filters out builtin presets', () => {
@@ -731,7 +678,6 @@ describe('userPresets computed filters out builtin presets', () => {
   it('only returns non-builtin presets', () => {
     const store = useSettingsStore();
 
-    // Add a builtin preset
     store.equalizerPresets.push({
       id: 'builtin_flat',
       name: 'Flat',
@@ -742,17 +688,15 @@ describe('userPresets computed filters out builtin presets', () => {
       updatedAt: 0,
     });
 
-    // Add a user preset
     store.saveEqualizerPreset('My Custom');
 
     expect(store.userPresets).toHaveLength(1);
     expect(store.userPresets[0].name).toBe('My Custom');
-    expect(store.equalizerPresets).toHaveLength(2); // builtin + user
+    expect(store.equalizerPresets).toHaveLength(2);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Extra: replaceSettings / resetSettings 保持均衡器完整性
 // ---------------------------------------------------------------------------
 
 describe('replaceSettings and resetSettings preserve equalizer structure', () => {
@@ -763,7 +707,6 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
   it('resetSettings produces a valid default equalizer structure', () => {
     const store = useSettingsStore();
 
-    // Use patchSettings for all mutations to avoid corrupting shared defaults
     store.patchSettings({
       audio: {
         equalizer: {
@@ -778,10 +721,6 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
     expect(store.settings.audio.equalizer.enabled).toBe(true);
     expect(store.settings.audio.equalizer.currentPresetId).toBe('temp_preset');
 
-    // Reset by replacing with a fully isolated clean state.
-    // NOTE: currentPresetId must be explicitly included in the patch (even as null)
-    // because mergeAudioSettings uses the `'currentPresetId' in equalizerPatch`
-    // check to decide whether to update it.
     const cleanDefaults = createDefaultAppSettings();
     store.replaceSettings({
       ...cleanDefaults,
@@ -806,8 +745,6 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
   it('resetSettings re-applies createDefaultAppSettings (verifies function call)', () => {
     const store = useSettingsStore();
 
-    // Verify that resetSettings changes the settings to defaults
-    // (even though the shared equalizer reference may carry stale currentPresetId)
     store.patchSettings({
       theme: { mode: 'custom' },
       lyrics: { showTranslation: false },
@@ -816,9 +753,7 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
 
     store.resetSettings();
 
-    // Theme should reset to default
     expect(store.settings.theme.mode).toBe('system');
-    // Lyrics should reset to default
     expect(store.settings.lyrics.showTranslation).toBe(true);
   });
 
@@ -847,7 +782,6 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
 });
 
 // ---------------------------------------------------------------------------
-// Extra: patchSettings 与 EQ 状态交互
 // ---------------------------------------------------------------------------
 
 describe('patchSettings interaction with equalizer state', () => {
@@ -903,7 +837,6 @@ describe('patchSettings interaction with equalizer state', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Extra: 数据完整性 — EqualizerPreset 类型约束
 // ---------------------------------------------------------------------------
 
 describe('EqualizerPreset data integrity', () => {
@@ -943,13 +876,11 @@ describe('EqualizerPreset data integrity', () => {
   it('gains array always has 10 elements in default settings', () => {
     const defaults = createDefaultAudioSettings();
     expect(defaults.equalizer.gains).toHaveLength(10);
-    // All gains should be numbers
     expect(defaults.equalizer.gains.every(g => typeof g === 'number')).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// P1 Fix Verification: Deep copy and patchSettings
 // ---------------------------------------------------------------------------
 
 describe('P1 Fix: resetSettings returns pristine defaults after preset operations', () => {
@@ -972,12 +903,10 @@ describe('P1 Fix: resetSettings returns pristine defaults after preset operation
   });
 
   it('new store instance does not inherit EQ state from previous store', () => {
-    // First store modifies EQ
     const store1 = useSettingsStore();
     store1.saveEqualizerPreset('Test');
     store1.loadEqualizerPreset('builtin_pop');
 
-    // Create new pinia instance for second store
     setActivePinia(createPinia());
     const store2 = useSettingsStore();
 
@@ -992,18 +921,15 @@ describe('P1 Fix: resetSettings returns pristine defaults after preset operation
     const settings1 = createDefaultAudioSettings();
     const settings2 = createDefaultAudioSettings();
 
-    // Modify first copy
     settings1.equalizer.enabled = true;
     settings1.equalizer.gains[0] = 10;
 
-    // Second copy should be unaffected
     expect(settings2.equalizer.enabled).toBe(false);
     expect(settings2.equalizer.gains[0]).toBe(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// P3 Fix Verification: Unique ID generation
 // ---------------------------------------------------------------------------
 
 describe('P3 Fix: preset ID generation is unique', () => {

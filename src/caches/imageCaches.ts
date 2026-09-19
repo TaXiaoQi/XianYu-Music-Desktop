@@ -20,8 +20,6 @@ export const albumHeaderCache = new MemoryCache<string, string>({
 
 export const sidebarPlaylistCoverCache = new MemoryCache<string, string>({
   maxEntries: 80,
-  // Sidebar playlist covers are few and stable; keep them longer to avoid
-  // disappearing thumbnails on unrelated rerenders after short TTL expiry.
   ttlMs: 24 * 60 * 60 * 1000,
 });
 

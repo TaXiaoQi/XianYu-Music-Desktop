@@ -104,7 +104,6 @@ export const createLibraryRuntime = ({
       flushBufferedLibraryScanBatch();
       const songs = await libraryApi.getLibrarySongsCached();
 
-      // 使用增量 Patch 和极速路径覆盖，替代高开销的全量 normalize，加速启动
       libraryStore.patchLibrarySongs({ songs, deleted_paths: [] });
       const paths = songs.map(song => song.path);
       libraryStore.setCanonicalSongOrder(paths);
@@ -180,10 +179,8 @@ export const createLibraryRuntime = ({
       try {
         const songs = await libraryApi.scanLibrary(settingsStore.settings.libraryMinDurationSeconds);
 
-        // 1. 先进行最终的增量补全 patch，规避未 patch 到的空洞风险项
         libraryStore.patchLibrarySongs({ songs, deleted_paths: [] });
 
-        // 2. 提取路径并使用独立的 setCanonicalSongOrder 极速重排覆盖，杜绝 setter 的全量 normalize
         const paths = songs.map(song => song.path);
         libraryStore.setCanonicalSongOrder(paths);
 
@@ -195,8 +192,6 @@ export const createLibraryRuntime = ({
           loadLibraryCatalogsFromCache(),
         ]);
 
-        // 扫描完成后刷新库统计（总歌曲数/总时长/库大小等），
-        // 让首页统计页在添加本地数据后立即更新，无需重启
         void useStatisticsStore().refreshStats();
 
         if (!libraryStore.libraryScanProgress?.done) {

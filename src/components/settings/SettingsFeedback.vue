@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 问题反馈独立设置页：从 SettingsAdvanced 摘出（对齐移动端独立反馈页）。
-// 包含问题反馈/功能建议/内测申请提交、我的反馈弹窗与图片查看器。
 import { ref, computed } from 'vue';
 import { ChevronLeft, ChevronRight, History, Loader2, Plus, X } from 'lucide-vue-next';
 
@@ -16,22 +14,17 @@ import { submitFeedback, getMyFeedback, type MyFeedbackItem } from '../../servic
 const { showToast } = useToast();
 const { entries } = useApplicationLogs();
 
-// ─── 问题反馈 ───
-// 反馈类型三选一：problem（问题反馈）/ suggestion（功能建议）/ beta（内测申请）
 const feedbackType = ref<'problem' | 'suggestion' | 'beta'>('problem');
 const feedbackContent = ref('');
 const submittingFeedback = ref(false);
 const feedbackAuth = ref(getStoredAuth());
 const attachErrorLogs = ref(false);
 const attachAllLogs = ref(false);
-// 功能建议上传图片（压缩后的 data URL）
 const feedbackImages = ref<string[]>([]);
 const maxFeedbackImages = 6;
 const feedbackImageInput = ref<HTMLInputElement | null>(null);
 const compressingImage = ref(false);
-// 我的反馈
 const showMyFeedback = ref(false);
-// 完成弹窗（提交成功 / 内测申请审核中）：对齐移动端用弹窗替代小提示
 const showDoneDialog = ref(false);
 const doneMessage = ref('');
 const openDoneDialog = (msg: string) => {
@@ -43,23 +36,18 @@ const closeDoneDialog = () => {
 };
 const myFeedbackList = ref<MyFeedbackItem[]>([]);
 const loadingMyFeedback = ref(false);
-// 我的反馈图片查看器
 const fbViewerVisible = ref(false);
 const fbViewerList = ref<string[]>([]);
 const fbViewerIndex = ref(0);
 
-// 登录态可能在设置页面打开后变化（如用户在其他窗口登录），聚焦时刷新一次
 const refreshFeedbackAuth = () => {
   feedbackAuth.value = getStoredAuth();
 };
 const isFeedbackLoggedIn = computed(() => !!feedbackAuth.value?.user?.ciyuanxi_id);
 
-// 是否有日志（用于控制「附上全部日志」勾选框显示）
 const hasAnyLogs = computed(() => entries.value.length > 0);
-// 是否有错误日志（用于控制「附上错误日志」勾选框显示）
 const hasErrorLogs = computed(() => entries.value.some(e => e.level === 'error'));
 
-/** 压缩图片为 data URL（JPEG），最大宽度 1600，质量 0.82 */
 const compressImageToDataUrl = (file: File, maxWidth = 1600, quality = 0.82): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -172,7 +160,6 @@ const submitUserFeedback = async () => {
     attachAllLogs.value = false;
   } catch (error: any) {
     const msg = error?.message || String(error);
-    // 重复内测申请被拒（服务端 429）：完成弹窗明示「审核中」，比小提示更显眼。
     if (msg.includes('正在审核')) {
       openDoneDialog(msg);
     } else {
@@ -205,7 +192,6 @@ const closeMyFeedback = () => {
   showMyFeedback.value = false;
 };
 
-// 我的反馈图片查看器
 const openFbViewer = (imgs: string[], index: number) => {
   fbViewerList.value = imgs;
   fbViewerIndex.value = index;
@@ -223,7 +209,6 @@ const fbViewerNext = () => {
   if (fbViewerList.value.length === 0) return;
   fbViewerIndex.value = (fbViewerIndex.value + 1) % fbViewerList.value.length;
 };
-// 堆叠样式：仅第一张完整显示，其余叠压其后
 const fbStackStyle = (i: number, total: number): Record<string, string> => {
   if (total <= 1) return {};
   const offset = Math.min(i, 3) * 5;
@@ -271,7 +256,6 @@ const myFeedbackTypeLabel = (type: string): string => {
         class="space-y-3 rounded-xl border border-gray-200/40 bg-white/20 p-5 dark:border-gray-800/40 dark:bg-black/10"
         @focusin="refreshFeedbackAuth"
       >
-      <!-- 未登录提示 -->
       <div
         v-if="!isFeedbackLoggedIn"
         class="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-xs text-amber-700 dark:text-amber-300"
@@ -279,9 +263,7 @@ const myFeedbackTypeLabel = (type: string): string => {
         请先登录账号后再提交反馈。
       </div>
 
-      <!-- 反馈表单（未登录时禁用） -->
       <div class="space-y-3" :class="{ 'pointer-events-none opacity-50': !isFeedbackLoggedIn }">
-        <!-- 反馈类型三选一 -->
         <div>
           <span class="text-xs text-gray-500 dark:text-white/45">反馈类型</span>
           <div class="mt-2 grid grid-cols-3 gap-2">
@@ -323,7 +305,6 @@ const myFeedbackTypeLabel = (type: string): string => {
           </span>
         </label>
 
-        <!-- 日志附送勾选：仅问题反馈可选，且无对应日志时不显示 -->
         <div v-if="feedbackType === 'problem' && (hasErrorLogs || hasAnyLogs)" class="flex flex-wrap items-center gap-4">
           <label v-if="hasErrorLogs" class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
             <input
@@ -345,7 +326,6 @@ const myFeedbackTypeLabel = (type: string): string => {
           </label>
         </div>
 
-        <!-- 图片上传：仅功能建议支持 -->
         <div v-if="feedbackType === 'suggestion'" class="feedback-images">
           <div class="fb-img-head">
             <span class="text-xs text-gray-500 dark:text-white/45">
@@ -403,7 +383,6 @@ const myFeedbackTypeLabel = (type: string): string => {
     </section>
     </div>
 
-    <!-- 我的反馈弹窗 -->
     <Teleport to="body">
       <transition name="modal-fade">
         <div v-if="showMyFeedback" class="fb-modal-overlay" @click.self="closeMyFeedback">
@@ -479,7 +458,6 @@ const myFeedbackTypeLabel = (type: string): string => {
       </transition>
     </Teleport>
 
-    <!-- 我的反馈图片查看器 -->
     <Teleport to="body">
       <transition name="viewer-fade">
         <div v-if="fbViewerVisible" class="fb-viewer-overlay" @click.self="closeFbViewer">
@@ -513,7 +491,6 @@ const myFeedbackTypeLabel = (type: string): string => {
       </transition>
     </Teleport>
 
-    <!-- 完成弹窗（提交成功 / 内测申请审核中） -->
     <Teleport to="body">
       <transition name="modal-fade">
         <div v-if="showDoneDialog" class="fb-modal-overlay" @click.self="closeDoneDialog">
@@ -529,7 +506,6 @@ const myFeedbackTypeLabel = (type: string): string => {
 </template>
 
 <style scoped>
-/* ─── 反馈类型二选一按钮 ─── */
 .fb-type-btn {
   display: inline-flex;
   align-items: center;
@@ -567,7 +543,6 @@ const myFeedbackTypeLabel = (type: string): string => {
   background: rgba(236, 65, 65, 0.16);
 }
 
-/* ─── 功能建议图片上传 ─── */
 .feedback-images {
   margin-top: 4px;
 }
@@ -642,7 +617,6 @@ const myFeedbackTypeLabel = (type: string): string => {
   background: rgba(0, 0, 0, 0.75);
 }
 
-/* ─── 我的反馈弹窗 ─── */
 .fb-modal-overlay {
   position: fixed;
   inset: 0;
@@ -1006,7 +980,6 @@ const myFeedbackTypeLabel = (type: string): string => {
   opacity: 0.9;
 }
 
-/* 弹窗淡入淡出 */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.2s ease;
@@ -1016,7 +989,6 @@ const myFeedbackTypeLabel = (type: string): string => {
   opacity: 0;
 }
 
-/* ─── 我的反馈图片查看器 ─── */
 .fb-viewer-overlay {
   position: fixed;
   inset: 0;
@@ -1097,7 +1069,6 @@ const myFeedbackTypeLabel = (type: string): string => {
   opacity: 0;
 }
 
-/* ─── 完成弹窗 ─── */
 .fb-done-modal {
   width: 320px;
   max-width: 88vw;

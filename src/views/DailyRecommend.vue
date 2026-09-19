@@ -1,6 +1,5 @@
 <template>
   <div class="flex flex-col h-full">
-    <!-- 头部：日期徽章 + 副标题 + 操作（嵌入首页 TAB，无大标题） -->
     <div class="px-6 pt-4 pb-3 shrink-0 select-none">
       <div class="flex items-end justify-between gap-6 flex-wrap">
         <div class="min-w-0 flex items-center gap-3 flex-wrap">
@@ -45,10 +44,8 @@
       </div>
     </div>
 
-    <!-- 内容区 -->
     <div class="flex-1 overflow-hidden relative">
       <transition name="page-fade" mode="out-in">
-        <!-- 加载中 -->
         <div v-if="loading" key="loading" class="h-full flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
             <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -59,7 +56,6 @@
           </div>
         </div>
 
-        <!-- 未登录 -->
         <div v-else-if="notLoggedIn" key="not-logged-in" class="h-full flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-1 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -77,7 +73,6 @@
           </div>
         </div>
 
-        <!-- 无插件 -->
         <div v-else-if="noPlugin" key="no-plugin" class="h-full flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/30 dark:text-white/30">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-1 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -95,7 +90,6 @@
           </div>
         </div>
 
-        <!-- 生成失败 -->
         <div v-else-if="loadError" key="error" class="h-full flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-1 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -112,7 +106,6 @@
           </div>
         </div>
 
-        <!-- 推荐歌曲列表：复用在线歌单列表容器（天然支持播放/下载/收藏/来源） -->
         <section v-else key="list" class="h-full flex overflow-hidden">
           <SongTable
             ref="songTableRef"
@@ -131,7 +124,6 @@
 
     <DragGhost />
 
-    <!-- 右键菜单（与在线详情页一致：支持收藏、下载、加入歌单、查看歌手/专辑等） -->
     <SongContextMenu
       v-if="showContextMenu"
       :visible="showContextMenu"
@@ -193,7 +185,6 @@ const items = ref<DailyRecommendItem[]>([]);
 const algorithm = ref<DailyRecommendAlgorithm | null>(null);
 const batch = ref(0);
 
-// 列表容器状态（SongTable 必需 props）
 const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const songTableRef = ref<any>(null);
@@ -256,11 +247,9 @@ async function load(refresh: boolean) {
     items.value = result.items;
     batch.value = result.batch;
     if (result.items.length === 0) {
-      // 插件全部搜索失败时给出提示
       loadError.value = '推荐生成失败，请检查音源插件后重试';
       items.value = [];
     }
-    // 异步补齐网易云歌曲缺失的封面/时长（不阻塞列表渲染，完成后 pop 进图）
     void backfillMissingCovers();
   } catch (e) {
     if (token !== loadToken) return;
@@ -281,19 +270,11 @@ function handleRefresh() {
   void load(true);
 }
 
-/** 判断音源是否为网易云（对齐在线搜索页 isNeteaseSource；决定是否走官方 weapi 批量补全封面） */
 const isNeteaseSource = (plugin: PluginSource): boolean => {
   if (plugin.sources?.some(s => s === 'wy' || /网易云|netease/i.test(s))) return true;
   return /网易云|netease/i.test(plugin.name || '');
 };
 
-/**
- * 日推中网易云歌曲的封面/时长批量补全。
- * 参考在线搜索页 backfillWyTrackMeta：部分第三方网易云 MusicFree 插件
- * （如时迁酱）的歌曲结果既不返回可用 artwork（weapi 的 album 只有 picId，
- * 没有 picUrl），也不返回 duration，导致日推列表里网易云歌曲无封面。
- * 这里复用官方 weapi 的 song/detail 按 ID 批量补全，绕过插件实现差异。
- */
 async function backfillMissingCovers() {
   const token = loadToken;
   const neteasePlugins = new Map<string, PluginSource>();
@@ -304,7 +285,6 @@ async function backfillMissingCovers() {
   }
   if (neteasePlugins.size === 0) return;
 
-  // 只补缺封面或缺时长、ID 是网易云纯数字、且确实来自网易云插件的条目
   const pending = items.value.filter((item) => {
     const song = item.song;
     if (!song || (song.coverUrl && song.duration)) return false;
@@ -334,7 +314,6 @@ async function backfillMissingCovers() {
   }
 }
 
-// 推荐结果变化时清空多选状态（换一批后 path 全新，旧选中集无效）
 watch(items, () => {
   isBatchMode.value = false;
   selectedPaths.value = new Set();
@@ -342,7 +321,6 @@ watch(items, () => {
 
 // ==================== 列表数据 ====================
 
-/** 将插件搜索结果转换为 Song（plugin:// 协议，由 playSong 解析真实播放地址） */
 function recommendItemToSong(item: DailyRecommendItem): Song {
   const result: PluginSearchResult = item.song;
   const artistNames = result.artist
@@ -383,27 +361,22 @@ function recommendItemToSong(item: DailyRecommendItem): Song {
 
 const songList = computed<Song[]>(() => items.value.map(recommendItemToSong));
 
-/** 列表滚动记忆键：含日期与批次，换一批/跨天自动重置滚动位置 */
 const memoryScopeKey = computed(
   () => `daily-recommend::${algorithm.value?.date ?? ''}::b${batch.value}`,
 );
 
 // ==================== 播放 ====================
 
-/** 播放单首：插入当前歌曲之后 */
 const handlePlaySong = (song: Song) => {
-  // 标记日推来源：底栏显示「不喜欢」按钮（跳过并上报负反馈）。
   markDailyRecommendPaths([song.path]);
   void playSong(song, { insertAfterCurrent: true });
 };
 
-/** 播放全部：清空队列加入全部推荐歌曲后播放第一首 */
 async function handlePlayAll() {
   if (songList.value.length === 0) return;
   try {
     const songs = songList.value;
     const firstSong = songs[0];
-    // 标记日推来源：底栏显示「不喜欢」按钮（跳过并上报负反馈）。
     markDailyRecommendPaths(songs.map(s => s.path));
     launchFlyingCover(firstSong.path, firstSong.cover_thumb_path || '');
     await clearQueue();
@@ -416,10 +389,8 @@ async function handlePlayAll() {
 
 // ==================== 拖拽与右键菜单 ====================
 
-// 拖拽到歌单/队列（与最近播放页一致的拖拽能力）
 const { handleTableDragStart } = useSongDrag(songList, isBatchMode, selectedPaths, songTableRef);
 
-// 右键菜单状态（自动区分本地/在线歌曲，已下载在线歌曲索引至本地文件）
 const {
   showContextMenu,
   contextMenuX,
@@ -432,7 +403,6 @@ const {
   handleOnlineViewAlbum,
 } = useSongContextActions({ isBatchMode });
 
-/** 右键菜单：收藏至歌单（在线歌曲需先缓存元信息到 songPool） */
 function handleContextMenuAddToPlaylist() {
   const song = contextMenuTargetSong.value;
   if (!song) return;
@@ -454,12 +424,10 @@ onMounted(() => {
   void load(false);
 });
 
-// 登录态变化（登录/登出/切换账号）时重新加载
 watch(() => authStore.isLoggedIn, () => {
   void load(false);
 });
 
-// 插件变更（安装/卸载/启停）时重新加载
 watch(pluginsVersion, () => {
   if (!loading.value) void load(false);
 });

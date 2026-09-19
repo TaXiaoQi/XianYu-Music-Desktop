@@ -1,17 +1,3 @@
-/**
- * lxLyricFetcher - 直接从各音乐平台 API 获取歌词（包括逐字歌词）
- *
- * 请求构造+解密逻辑已迁移到 Rust 后端 (lyric_fetcher.rs)，
- * 前端仅负责调用 Tauri 命令 fetch_lyric_from_source 并处理
- * LX 插件优先 / 直接 API 后备的两级歌词获取策略。
- *
- * 支持的音源：
- * - kg (酷狗): KRC 加密歌词，包含逐字时间
- * - kw (酷我): 加密歌词，包含逐字时间
- * - tx (QQ音乐): QRC 加密歌词，包含逐字时间
- * - wy (网易云): eapi 加密，yrc 逐字歌词
- * - mg (咪咕): resourceinfo.do 解 lrcUrl/trcUrl → LRC + 翻译歌词
- */
 
 import type { Song } from '../../types';
 import { getStoredPlugins } from './pluginEngine';
@@ -46,8 +32,6 @@ export interface LxSongInfo {
 }
 
 // ==================== Song Info Cache ====================
-// 缓存 lx://source/songmid → 完整歌曲元信息
-// 使 playerPlayback.ts 在处理 lx:// 协议时能获取到 hash/songId/interval 等字段
 const songInfoCache = new Map<string, LxSongInfo>();
 const MAX_CACHE_SIZE = 200;
 
@@ -73,43 +57,22 @@ function normalizeLxSongInfo(songInfo: LxSongInfo): LxSongInfo & { songmid: stri
   };
 }
 
-/**
- * 缓存歌曲元信息，供后续 playerPlayback.ts 获取歌词时使用
- * @param source 音源 (kw/kg/tx/wy)
- * @param songmid 歌曲 ID
- * @param info 完整的歌曲元信息
- */
 export function cacheLxSongInfo(source: string, songmid: string | number, info: LxSongInfo): void {
   const normalizedInfo = normalizeLxSongInfo(info);
   const key = `${source}/${String(songmid)}`;
   if (songInfoCache.size >= MAX_CACHE_SIZE) {
-    // 简单淘汰：删除最早的条目
     const firstKey = songInfoCache.keys().next().value;
     if (firstKey) songInfoCache.delete(firstKey);
   }
   songInfoCache.set(key, normalizedInfo);
 }
 
-/**
- * 从缓存中获取歌曲元信息
- * @param source 音源 (kw/kg/tx/wy)
- * @param songmid 歌曲 ID
- * @returns 缓存的歌曲元信息，未找到时返回 null
- */
 export function getCachedLxSongInfo(source: string, songmid: string | number): LxSongInfo | null {
   return songInfoCache.get(`${source}/${String(songmid)}`) ?? null;
 }
 
 // ==================== Unified Entry Point ====================
 
-/**
- * 获取歌词（包括逐字歌词）
- *
- * 请求构造+解密+解析均由 Rust 后端 (lyric_fetcher.rs) 完成，
- * 前端仅负责调用 Tauri 命令并返回结果。
- *
- * 注意：返回的 lxlyric 统一使用相对偏移格式 <offsetMs,durationMs>（相对于行首）。
- */
 export async function fetchLxLyric(
   source: LxDirectSource,
   songInfo: LxSongInfo,
@@ -132,12 +95,10 @@ async function fetchLxLyricBuiltin(
   }
 }
 
-// 后端 (lyric_fetcher.rs) 直连取词的音源
 const LX_SOURCES = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
 
 type LxDirectSource = 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
 
-/** 获取 LX 在线歌曲歌词并转换为播放器支持的原始歌词文本。 */
 export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
   if (song.lyrics_raw?.trim()) return song.lyrics_raw;
 
@@ -157,10 +118,6 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     _albumId?: string | number;
   };
   const cached = getCachedLxSongInfo(source, songmid);
-  // [修复] 缓存未命中时（如从队列播放/页面刷新后），从 song.duration 补全 _interval，
-  // 否则 KG 歌词搜索的 timelength=0 会导致搜索失败。
-  // 注意：缓存中 _interval 统一存储为秒数，但 LX 插件和后端酷狗API的 timelength 需要毫秒，
-  // 此处统一转换为毫秒值。
   const rawInterval = cached?._interval || (song.duration > 0 ? Math.round(song.duration) : undefined);
   const intervalMs = rawInterval ? rawInterval * 1000 : undefined;
 
@@ -190,10 +147,6 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
       if (pluginLyrics && (pluginLyrics.lyric || pluginLyrics.lxlyric || pluginLyrics.yrc || pluginLyrics.qrc || pluginLyrics.eslrc)) {
         const result = buildLxLyricsRaw(pluginLyrics);
         if (result && result.trim()) {
-          // 插件结果已含逐字内容（独立逐字字段，或内嵌在 lyric 字段的 LX 原生
-          // <offset,duration> 标记经 buildLxLyricsRaw 转成 Enhanced LRC），视为已处理。
-          // 插件只有普通 LRC（无逐字）时，若该源支持直接 API，则尝试用直接 API
-          // 拿逐字歌词（如 wy 的 yrc、kw 的 lyricx），拿到逐字则优先，否则回退插件的普通 LRC。
           if (hasWordLevelContent(result) || !LX_SOURCES.has(source)) {
             return result;
           }
@@ -226,14 +179,10 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
   return '';
 }
 
-/** 判断歌词文本是否包含逐字时间信息（Enhanced LRC 内联时间戳 / YRC 行格式）。 */
 function hasWordLevelContent(text: string): boolean {
   if (!text) return false;
-  // Enhanced LRC：<mm:ss.ms> 内联绝对时间戳
   if (/<\d+:\d{2}(?:\.\d{1,3})?>/.test(text)) return true;
-  // YRC（网易云）：行首 [mm:ss.mmm] 或 [ms,ms]，正文含 (start,dur,count) 逐字标记
   if (/^\[\d+:\d{2}(?:\.\d+)?\]\(/.test(text) || /^\[\d+,\d+\]/.test(text)) return true;
-  // LX 原生逐字标记 <offset,dur>（无冒号，区别于 Enhanced LRC）
   if (/<\d+,\d+>/.test(text)) return true;
   return false;
 }

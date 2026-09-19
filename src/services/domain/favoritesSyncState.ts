@@ -1,14 +1,3 @@
-/**
- * 收藏同步状态（localStore 持久化），与移动端 sync_provider 的 prefs 键语义一致。
- *
- * - syncedPaths「上次已同步」集合：删除跟踪基准（上传时 diff 出本机删除）。
- * - cloudKeepPaths「仅删本地」墓碑：收藏已从本机移除但云端保留，
- *   上传时排除出 delete_paths diff、下载合并时跳过回灌。
- *   重新收藏该 path 时清除（clearFavoriteTombstones）。
- * - localOnlyPaths「仅保留本地」墓碑：收藏保留本机但已从云端删除，
- *   上传时排除出 payload 防复活。取消收藏后自然失效（上传时清理），
- *   重新收藏该 path 时也清除（clearFavoriteTombstones）。
- */
 
 import { localStore } from '../storage/localStore';
 
@@ -80,10 +69,6 @@ export function removeLocalOnlyPaths(paths: Iterable<string>) {
   if (changed) persistSet(LOCAL_ONLY_KEY, s);
 }
 
-/**
- * 重新收藏 path：清除该 path 的双向墓碑，恢复正常同步行为
- * （上传 payload 与 delete_paths diff 都重新覆盖它）。
- */
 export function clearFavoriteTombstones(paths: string[]) {
   if (paths.length === 0) return;
   removeCloudKeepPaths(paths);

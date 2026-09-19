@@ -1,4 +1,3 @@
-// DLNA 双向投屏 Tauri 命令封装（对应 Rust dlna/commands.rs）。
 import { tauriInvoke } from './invoke';
 import type {
   DlnaCastMediaInfo,
@@ -49,7 +48,6 @@ export const dlnaApi = {
     tauriInvoke('dlna_renderer_status', undefined),
 };
 
-/** 判断路径是否为在线直链（http/https）。 */
 export function isDlnaRemotePath(path: string): boolean {
   const idx = path.indexOf('http://') >= 0 ? path.indexOf('http://') : path.indexOf('https://');
   return idx === 0;

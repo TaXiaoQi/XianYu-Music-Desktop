@@ -17,8 +17,6 @@ const { playQueue, currentSong, playSong, formatDuration } = usePlaybackControll
 const playbackStore = usePlaybackStore();
 const { tempQueue } = storeToRefs(playbackStore);
 
-// 合并显示：下一首播放（tempQueue）在前，播放队列（playQueue）在后；
-// 两者皆空时回退到当前视图歌曲列表
 const queue = computed(() => {
   if (playQueue.value.length > 0 || tempQueue.value.length > 0) {
     return [...tempQueue.value, ...playQueue.value];
@@ -27,10 +25,8 @@ const queue = computed(() => {
 });
 
 // --- 虚拟滚动 ---
-// 待播清单可能包含整个音乐库（数千首），全量渲染会导致 DOM 节点过多、内存占用高。
-// 使用虚拟滚动只渲染可视区域内的条目（+ overscan 缓冲），大幅降低 DOM 节点数量。
 const scrollContainerRef = ref<HTMLElement | null>(null);
-const ROW_HEIGHT = 56; // p-3(24px) + 两行文本(~28px) + 间距 ≈ 56px
+const ROW_HEIGHT = 56;
 
 const virtualizer = useVirtualizer({
   get count() { return queue.value.length; },
@@ -42,7 +38,6 @@ const virtualizer = useVirtualizer({
 const virtualItems = computed(() => virtualizer.value.getVirtualItems());
 const totalSize = computed(() => virtualizer.value.getTotalSize());
 
-// 自动滚动到当前播放歌曲
 watch(currentSong, async () => {
   await nextTick();
   scrollToCurrent();
@@ -82,7 +77,6 @@ const scrollToCurrent = () => {
           @click="songClickAction === 'single' && playSong(queue[vItem.index])"
           @dblclick="songClickAction !== 'single' && playSong(queue[vItem.index])"
         >
-          <!-- Playing Indicator or Index -->
           <div class="w-8 flex justify-center text-white/40 text-sm font-medium">
                <div v-if="currentSong?.path === queue[vItem.index].path" class="text-white animate-pulse">
                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>

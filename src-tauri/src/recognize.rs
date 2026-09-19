@@ -1,32 +1,12 @@
-//! 听歌识曲模块
-//!
-//! 复现 KuGouMusicApi（qwemusic/server）中 audio_match 模块的调用逻辑：
-//! 1. WASAPI Loopback 捕获系统音频输出（10 秒），降采样为 8000Hz / 16bit / 单声道 PCM
-//! 2. 构建酷狗 Android 客户端请求参数并生成 signature 签名
-//! 3. POST 到 gateway.kugou.com 的指纹识别接口
-//! 4. 返回 JSON 响应体，由前端映射为可播放的 Song 列表
-//!
-//! 签名算法（util/helper.js::signatureAndroidParams）：
-//!   salt = "OIlwieks28dk2k092lksi2UIkp"  // 标准版盐值
-//!   paramsString = params.keys().sort().map(k => `${k}=${params[k]}`).join("")
-//!   signature = MD5(salt + paramsString + dataBytes + salt)  // dataBytes 为原始 PCM
-//!
-//! 请求头（util/request.js::createRequest）：
-//!   dfid / clienttime / mid / kg-rc / kg-thash / kg-rec / kg-rf / User-Agent
-
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ==================== 取消标志 ====================
 
-/// 全局取消标志：前端调用 cancel_recognize_system_audio 时置为 true，
-/// 音频捕获循环和 HTTP 请求发送前会检查此标志，实现中途取消。
 static RECOGNIZE_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 // ==================== MD5 实现 ====================
-// 标准的 MD5 算法（RFC 1321），用于生成酷狗 android 签名。
-// 这里内置实现而非引入 md-5 crate，避免外部依赖下载问题。
 
 const S_TABLE: [u32; 64] = [
     7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9,
@@ -45,7 +25,6 @@ const K_TABLE: [u32; 64] = [
     0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
 ];
 
-/// 计算 `data` 的 MD5 哈希，返回 32 位小写 hex 字符串
 fn md5_hex(data: &[u8]) -> String {
     let digest = md5_compute(data);
     let mut s = String::with_capacity(32);
@@ -55,7 +34,6 @@ fn md5_hex(data: &[u8]) -> String {
     s
 }
 
-/// MD5 核心计算，返回 16 字节摘要
 fn md5_compute(input: &[u8]) -> [u8; 16] {
     let mut msg = input.to_vec();
     let orig_len_bits = (input.len() as u64).wrapping_mul(8);
@@ -119,16 +97,12 @@ fn md5_compute(input: &[u8]) -> [u8; 16] {
 
 // ==================== 酷狗 Android 签名 ====================
 
-/// Android 版签名盐值（标准版，util/helper.js）
 const ANDROID_SALT: &str = "OIlwieks28dk2k092lksi2UIkp";
 
-/// 生成设备 mid（运行时固定，由稳定种子计算得来）
 fn device_mid() -> String {
     md5_hex(b"xy-music-desktop-recognize-device-v1")
 }
 
-/// 构建签名参数字符串：按 key 字典序排序，拼接为 `k1=v1k2=v2...`
-/// 与 JS `Object.keys(params).sort().map(k => `${k}=${params[k]}`).join("")` 一致
 fn build_params_string(params: &BTreeMap<String, String>) -> String {
     params
         .iter()
@@ -137,8 +111,6 @@ fn build_params_string(params: &BTreeMap<String, String>) -> String {
         .join("")
 }
 
-/// 生成酷狗 Android 签名
-/// `signature = MD5(salt + paramsString + pcmBytes + salt)`
 fn sign_android(params: &BTreeMap<String, String>, pcm: &[u8]) -> String {
     let params_string = build_params_string(params);
     let salt = ANDROID_SALT.as_bytes();
@@ -160,30 +132,16 @@ pub struct RecognizeResponse {
     pub body: String,
 }
 
-/// 取消正在进行的音频识别
-///
-/// 前端在用户主动停止识别时调用此命令。后端会将全局取消标志置为 true，
-/// 正在进行的 WASAPI 捕获循环会在下一次迭代时退出并返回错误。
 #[tauri::command]
 pub async fn cancel_recognize_system_audio() -> Result<(), String> {
     RECOGNIZE_CANCELLED.store(true, Ordering::SeqCst);
     Ok(())
 }
 
-/// 一键无感识别：直接捕获系统音频并识别（无需用户选屏幕或勾选分享音频）
-///
-/// 在 Rust 后端用 WASAPI Loopback 捕获系统音频输出（10 秒），
-/// 重采样为 8000Hz / 16bit / 单声道 PCM 后直接调用酷狗指纹识别接口。
-/// 整个过程对用户完全透明，前端只需调用此命令即可。
-///
-/// 调用 cancel_recognize_system_audio 可中途取消捕获。
 #[tauri::command]
 pub async fn recognize_system_audio() -> Result<RecognizeResponse, String> {
-    // 重置取消标志
     RECOGNIZE_CANCELLED.store(false, Ordering::SeqCst);
 
-    // 在阻塞线程池中捕获系统音频（WASAPI loopback 是同步阻塞 API），
-    // 避免 std::thread::sleep 阻塞 tokio 异步运行时
     let cancel_flag = &RECOGNIZE_CANCELLED;
     let pcm = tokio::task::spawn_blocking(move || {
         crate::system_audio::capture_system_audio_pcm(10, cancel_flag)
@@ -191,7 +149,6 @@ pub async fn recognize_system_audio() -> Result<RecognizeResponse, String> {
     .await
     .map_err(|e| format!("音频捕获线程失败: {}", e))??;
 
-    // 捕获结束后检查是否被取消
     if RECOGNIZE_CANCELLED.load(Ordering::SeqCst) {
         return Err("识别已取消".to_string());
     }
@@ -203,24 +160,7 @@ pub async fn recognize_system_audio() -> Result<RecognizeResponse, String> {
     recognize_with_pcm_internal(&pcm).await
 }
 
-/// 使用自定义 PCM 数据识别歌曲
-///
-/// 接收 8000Hz / 16bit / 单声道 PCM 字节流，直接调用酷狗指纹识别接口。
-/// 可用于从文件或其他来源提取的音频识别，不依赖 WASAPI 系统音频捕获。
-#[tauri::command]
-pub async fn recognize_with_pcm(pcm: Vec<u8>) -> Result<RecognizeResponse, String> {
-    if pcm.is_empty() {
-        return Err("PCM 数据为空".to_string());
-    }
-    recognize_with_pcm_internal(&pcm).await
-}
-
-/// 内部核心逻辑：用 PCM 数据调用酷狗指纹识别接口
-///
-/// 构建酷狗 Android 客户端请求参数并生成 signature 签名，
-/// POST 到 gateway.kugou.com 的指纹识别接口。
 async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, String> {
-    // 1. 构建请求参数（audio_match 模块自定义参数 + createRequest 默认参数）
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?;
@@ -228,15 +168,12 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
     let fpid = now.as_millis();
     let mid = device_mid();
 
-    // BTreeMap 按 key 字典序排序，与 JS Object.keys().sort() 一致
     let mut params: BTreeMap<String, String> = BTreeMap::new();
-    // audio_match 自定义参数
     params.insert("area_code".into(), "1".into());
     params.insert("include_unpublish".into(), "1".into());
     params.insert("multi_result".into(), "1".into());
     params.insert("fpid".into(), fpid.to_string());
-    params.insert("useid".into(), "0".into()); // 未登录用户
-                                               // createRequest 默认参数
+    params.insert("useid".into(), "0".into());
     params.insert("dfid".into(), "-".into());
     params.insert("mid".into(), mid.clone());
     params.insert("uuid".into(), "-".into());
@@ -244,11 +181,9 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
     params.insert("clientver".into(), "20489".into());
     params.insert("clienttime".into(), clienttime.to_string());
 
-    // 2. 生成 Android 签名
     let signature = sign_android(&params, pcm);
     params.insert("signature".into(), signature);
 
-    // 3. 构建完整 URL（参数拼接到 query string）
     let query_string: String = params
         .iter()
         .map(|(k, v)| format!("{}={}", k, v))
@@ -259,7 +194,6 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
         query_string
     );
 
-    // 4. 构建请求头（复现 createRequest 中的 headers 构建）
     let mut headers = reqwest::header::HeaderMap::new();
     let insert =
         |headers: &mut reqwest::header::HeaderMap, name: &str, value: &str| -> Result<(), String> {
@@ -281,8 +215,6 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
     insert(&mut headers, "User-Agent", "KuGou/11490 (Android)")?;
     insert(&mut headers, "content-type", "application/octet-stream")?;
 
-    // 5. 发送 POST 请求（PCM 二进制作为 body）
-    // 检查是否已被取消（捕获阶段或手动取消）
     if RECOGNIZE_CANCELLED.load(Ordering::SeqCst) {
         return Err("识别已取消".to_string());
     }
@@ -317,7 +249,6 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
 mod tests {
     use super::*;
 
-    /// 验证 MD5 实现正确性（RFC 1321 标准测试向量）
     #[test]
     fn test_md5_known_vectors() {
         assert_eq!(md5_hex(b""), "d41d8cd98f00b204e9800998ecf8427e");
@@ -333,14 +264,12 @@ mod tests {
         );
     }
 
-    /// 验证签名算法与 JS 实现一致（空 PCM 场景）
     #[test]
     fn test_sign_android_empty_data() {
         let mut params: BTreeMap<String, String> = BTreeMap::new();
         params.insert("appid".into(), "1005".into());
         params.insert("clienttime".into(), "1000000000".into());
 
-        // 手动计算预期值：MD5(salt + "appid=1005clienttime=1000000000" + salt)
         let salt = ANDROID_SALT;
         let params_string = "appid=1005clienttime=1000000000";
         let mut input = Vec::new();
@@ -353,7 +282,6 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    /// 验证设备 mid 稳定
     #[test]
     fn test_device_mid_stable() {
         let m1 = device_mid();

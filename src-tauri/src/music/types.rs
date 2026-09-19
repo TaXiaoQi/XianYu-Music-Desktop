@@ -4,10 +4,8 @@ use tokio::sync::Semaphore;
 pub const THUMBNAIL_IMAGE_CONCURRENCY_LIMIT: usize = 2;
 pub const FULL_COVER_IMAGE_CONCURRENCY_LIMIT: usize = 2;
 
-/// 缩略图并发控制状态
 pub struct ThumbnailImageConcurrencyLimit(pub Semaphore);
 
-/// 高清封面并发控制状态
 pub struct FullCoverImageConcurrencyLimit(pub Semaphore);
 
 #[cfg(test)]
@@ -28,7 +26,7 @@ mod tests {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct Song {
-    pub id: Option<i64>, // 数据库主键 (新增用于行为统计关联)
+    pub id: Option<i64>,
     #[serde(skip)]
     pub artist_avatar_bytes: Option<Vec<u8>>,
     #[serde(skip)]

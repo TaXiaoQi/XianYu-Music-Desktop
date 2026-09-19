@@ -250,7 +250,6 @@ function cancel() {
 }
 </style>
 
-<!-- 深色模式使用非 scoped 选择器，避免 scoped + :global(.dark) 复合选择器构建后丢失目标元素。 -->
 <style>
 html.dark .profile-limit-overlay {
   background: rgba(0, 0, 0, 0.56);

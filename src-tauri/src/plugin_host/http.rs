@@ -1,13 +1,3 @@
-//! 插件 HTTP 桥 —— QuickJS 侧所有网络请求的统一出口
-//!
-//! 语义对齐原链路（worker tauriAdapter → plugin_http_request）：
-//!   - 请求前按 URL 域名注入已存 Cookie（headers 已带 Cookie 则跳过）
-//!   - 响应后捕获全部 Set-Cookie 存入 PluginStore
-//!   - gzip/br/deflate 自动解压，UA 兜底 Chrome 120
-//!   - 文本 body 按 Content-Type charset 解码（缺省 UTF-8，encoding_rs；
-//!     无效序列输出 U+FFFD，与浏览器一致）
-//!   - timeout_ms = 0 → 默认 30s；follow < 0 → 默认跟随 10 次重定向，0 → 不跟随
-
 use super::store::PluginStore;
 use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
@@ -21,7 +11,6 @@ const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REDIRECT_LIMIT: usize = 10;
 
-/// 把 reqwest 错误链展开成可读字符串，便于前端定位 timeout/dns/connection/proxy 等问题。
 fn format_request_error(err: reqwest::Error) -> String {
     let mut parts = Vec::new();
     parts.push(err.to_string());
@@ -47,7 +36,6 @@ pub struct HttpBridgeResponse {
     pub error: Option<String>,
 }
 
-/// 按 Content-Type 的 charset 解码文本 body；未声明或无法识别时按 UTF-8
 fn decode_text_body(bytes: &[u8], content_type: Option<&String>) -> String {
     let charset = content_type
         .and_then(|ct| {
@@ -86,7 +74,6 @@ impl HttpBridge {
         let policy = if redirect_limit == 0 {
             reqwest::redirect::Policy::none()
         } else {
-            // 跟随重定向，但每个跳转目标都需通过 SSRF 校验
             crate::security::ssrf::ssrf_redirect_policy()
         };
         let client = reqwest::Client::builder()
@@ -112,7 +99,10 @@ impl HttpBridge {
         follow: i64,
         want_binary: bool,
     ) -> HttpBridgeResponse {
-        match self.request_inner(method, url, headers, body, timeout_ms, follow, want_binary).await {
+        match self
+            .request_inner(method, url, headers, body, timeout_ms, follow, want_binary)
+            .await
+        {
             Ok(resp) => resp,
             Err(err) => HttpBridgeResponse {
                 status: 0,
@@ -144,7 +134,6 @@ impl HttpBridge {
         };
         let client = self.client_for(redirect_limit)?;
 
-        // SSRF 防护：插件请求只允许公网 http/https 目标，拒绝内网/回环/云元数据等
         crate::security::ssrf::validate_outbound_url(url)
             .await
             .map_err(|e| e.to_string())?;
@@ -249,7 +238,15 @@ mod tests {
     #[tokio::test]
     async fn invalid_method_returns_error() {
         let resp = bridge()
-            .request("BAD METHOD", "https://example.com", HashMap::new(), None, 0, -1, false)
+            .request(
+                "BAD METHOD",
+                "https://example.com",
+                HashMap::new(),
+                None,
+                0,
+                -1,
+                false,
+            )
             .await;
         assert!(resp.error.is_some());
     }
@@ -259,7 +256,6 @@ mod tests {
         let store = Arc::new(PluginStore::load(None));
         store.set_cookie("https://example.com/", "sid", "v1", None);
         let bridge = HttpBridge::new(store);
-        // 直接验证内部逻辑：有 Cookie 头时不重复注入（通过网络层不可测，跳过）
         assert!(bridge.client_for(0).is_ok());
         assert!(bridge.client_for(10).is_ok());
     }

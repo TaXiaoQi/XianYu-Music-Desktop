@@ -1,19 +1,3 @@
-//! QuickJS 插件宿主引擎
-//!
-//! 每个插件独占一个 AsyncRuntime + AsyncContext（完全隔离），
-//! 通过 host_shim.js 复刻浏览器环境，原生桥（__xyNative*）提供：
-//!   - HTTP（reqwest，含 Cookie 注入/捕获）
-//!   - Cookie / Storage（PluginStore 持久化）
-//!   - zlib inflate/deflate（flate2）
-//!   - 文本解码（encoding_rs，TextDecoder 全编码标签支持）
-//!   - 随机字节 / 日志 / 延时
-//!
-//! 超时双保险：interrupt handler 打断同步死循环；外层 tokio timeout
-//! 兜底挂起的原生 future（触发后销毁实例）。
-//!
-//! 结果协议（与 host_shim.js 的 __xyOk/__xyErr 对齐）：
-//!   {"ok":true,"data":...} / {"ok":false,"error":"..."}
-
 pub mod commands;
 mod http;
 mod store;
@@ -80,10 +64,7 @@ pub struct PluginInstance {
     pub kind: PluginKind,
     #[allow(dead_code)]
     pub metadata: serde_json::Value,
-    // ctx 必须先于 runtime 声明：parallel 模式下 ctx 析构把指针送入
-    // runtime 的 drop 通道，由 runtime Drop 统一释放
     pub ctx: AsyncContext,
-    // runtime 字段仅用于持有句柄直到实例销毁
     #[allow(dead_code)]
     pub runtime: AsyncRuntime,
     deadline_ms: Arc<AtomicI64>,
@@ -190,7 +171,8 @@ fn deflate_bytes(method: &str, data: &[u8]) -> Result<Vec<u8>, String> {
             e.finish().map_err(|e| e.to_string())
         }
         _ => {
-            let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+            let mut e =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
             e.write_all(data).map_err(|e| e.to_string())?;
             e.finish().map_err(|e| e.to_string())
         }
@@ -295,8 +277,6 @@ fn register_bridges<'js>(
     }
 
     // ---- __xyNativeDecodeText(base64, label) -> string 同步（浏览器 TextDecoder 语义）----
-    // 插件（如 Baka 酷我）用 new TextDecoder("gb18030") 解码歌词，shim 无法用
-    // 纯 JS 覆盖全部 WHATWG 编码标签，统一桥到 encoding_rs 解码
     {
         let f = Function::new(
             ctx.clone(),
@@ -304,14 +284,13 @@ fn register_bridges<'js>(
                 let data = general_purpose::STANDARD
                     .decode(data_b64.as_bytes())
                     .map_err(|e| Exception::throw_message(&ctx, &format!("decodeText: {}", e)))?;
-                let encoding = encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(
-                    || {
+                let encoding =
+                    encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(|| {
                         Exception::throw_message(
                             &ctx,
                             &format!("The encoding label provided ('{label}') is invalid."),
                         )
-                    },
-                )?;
+                    })?;
                 let (text, _, _) = encoding.decode(&data);
                 Ok(text.into_owned())
             },
@@ -341,10 +320,22 @@ fn register_bridges<'js>(
                         } else {
                             0
                         };
-                        let follow = if follow.is_finite() { follow as i64 } else { -1 };
+                        let follow = if follow.is_finite() {
+                            follow as i64
+                        } else {
+                            -1
+                        };
                         let body = if body.is_empty() { None } else { Some(body) };
                         let resp = http
-                            .request(&method, &url, headers, body, timeout_ms, follow, want_binary)
+                            .request(
+                                &method,
+                                &url,
+                                headers,
+                                body,
+                                timeout_ms,
+                                follow,
+                                want_binary,
+                            )
                             .await;
                         let json = serde_json::to_string(&resp)
                             .unwrap_or_else(|_| "{\"error\":\"响应序列化失败\"}".to_string());
@@ -455,7 +446,6 @@ fn json_error(message: &str) -> String {
     format!("{{\"ok\":false,\"error\":{}}}", json_quote(message))
 }
 
-/// 把 rquickjs 错误转成可读消息：JS 异常时提取异常消息与堆栈
 fn engine_error_message<'js>(ctx: &Ctx<'js>, e: &rquickjs::Error) -> String {
     if matches!(e, rquickjs::Error::Exception) {
         let v = ctx.catch();
@@ -486,17 +476,11 @@ fn json_ok_bool(data: bool) -> String {
     format!("{{\"ok\":true,\"data\":{}}}", data)
 }
 
-/// promise 结果统一转 JSON 协议字符串（拒绝时提取异常消息）
-async fn promise_to_json<'js>(
-    ctx: &Ctx<'js>,
-    promise: Promise<'js>,
-) -> rquickjs::Result<String> {
+async fn promise_to_json<'js>(ctx: &Ctx<'js>, promise: Promise<'js>) -> rquickjs::Result<String> {
     match promise.into_future::<String>().await.catch(ctx) {
         Ok(s) => Ok(s),
         Err(CaughtError::Exception(exc)) => {
             let msg = exc.message().unwrap_or_else(|| "未知异常".to_string());
-            // 附带触发点堆栈：QuickJS 的 "xxx is not a function" 常不带函数名，
-            // 有 stack 才能定位到具体行与调用链。
             let stack = (&exc as &rquickjs::Object)
                 .get::<_, String>("stack")
                 .ok()
@@ -518,7 +502,6 @@ async fn promise_to_json<'js>(
     }
 }
 
-/// 将调用 promise 链接到 __xyOk/__xyErr 序列化
 fn chain_result_serialization<'js>(
     globals: &rquickjs::Object<'js>,
     promise: Promise<'js>,
@@ -548,16 +531,10 @@ impl PluginEngine {
         self.instances.lock().await.remove(plugin_id);
     }
 
-    async fn create_runtime(
-        &self,
-    ) -> Result<(AsyncRuntime, AsyncContext, Arc<AtomicI64>), String> {
+    async fn create_runtime(&self) -> Result<(AsyncRuntime, AsyncContext, Arc<AtomicI64>), String> {
         let runtime = AsyncRuntime::new().map_err(|e| e.to_string())?;
-        runtime
-            .set_memory_limit(MEMORY_LIMIT)
-            .await;
-        runtime
-            .set_max_stack_size(MAX_STACK_SIZE)
-            .await;
+        runtime.set_memory_limit(MEMORY_LIMIT).await;
+        runtime.set_max_stack_size(MAX_STACK_SIZE).await;
         let deadline = Arc::new(AtomicI64::new(0));
         let d = deadline.clone();
         runtime
@@ -569,11 +546,12 @@ impl PluginEngine {
                 now_ms() >= until
             })))
             .await;
-        let ctx = AsyncContext::full(&runtime).await.map_err(|e| e.to_string())?;
+        let ctx = AsyncContext::full(&runtime)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok((runtime, ctx, deadline))
     }
 
-    /// 环境初始化：原生桥 + shim + 依赖包 + __xyPostSetup
     async fn setup_context(
         &self,
         ctx: &AsyncContext,
@@ -630,10 +608,7 @@ impl PluginEngine {
                         let globals = ctx.globals();
                         let inner: rquickjs::Result<String> = (|| {
                             let load: Function = globals.get("__xyLoadMusicFree")?;
-                            load.call((
-                                script_owned.as_str(),
-                                user_vars_owned.as_str(),
-                            ))
+                            load.call((script_owned.as_str(), user_vars_owned.as_str()))
                         })();
                         inner.map_err(|e| engine_error_message(&ctx, &e))
                     }),
@@ -666,7 +641,10 @@ impl PluginEngine {
         };
 
         if parsed.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
-            let metadata = parsed.get("metadata").cloned().unwrap_or(serde_json::Value::Null);
+            let metadata = parsed
+                .get("metadata")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             let instance = Arc::new(PluginInstance {
                 id: plugin_id.to_string(),
                 kind: PluginKind::MusicFree,
@@ -738,12 +716,9 @@ impl PluginEngine {
                         let globals = ctx.globals();
                         let inner: rquickjs::Result<Option<String>> = (|| {
                             let setup: Function = globals.get("__xySetupLx")?;
-                            let setup_result: Value = setup.call((
-                                script_info_owned.as_str(),
-                                script_owned.as_str(),
-                            ))?;
+                            let setup_result: Value =
+                                setup.call((script_info_owned.as_str(), script_owned.as_str()))?;
                             if !setup_result.is_null() && !setup_result.is_undefined() {
-                                // 同步加载失败，返回错误 JSON
                                 let s = rquickjs::String::from_js(&ctx, setup_result)?;
                                 return Ok(Some(s.to_string()?));
                             }
@@ -754,7 +729,6 @@ impl PluginEngine {
                             Ok(Some(json)) => return Ok(json),
                             Ok(None) => {}
                         }
-                        // 等待 inited 事件（驱动 job 队列直到 resolve/reject）
                         let init_promise: Promise = match globals.get("__xyLxInitPromise") {
                             Ok(p) => p,
                             Err(e) => return Err(engine_error_message(&ctx, &e)),
@@ -792,7 +766,10 @@ impl PluginEngine {
         };
 
         if parsed.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
-            let metadata = parsed.get("initInfo").cloned().unwrap_or(serde_json::Value::Null);
+            let metadata = parsed
+                .get("initInfo")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             let instance = Arc::new(PluginInstance {
                 id: plugin_id.to_string(),
                 kind: PluginKind::Lx,
@@ -846,7 +823,6 @@ impl PluginEngine {
             }
         };
 
-        // 同插件调用串行：日志按 call_id 归属 + 避免插件内部状态被并发覆盖
         let _guard = instance.call_lock.lock().await;
 
         let call_id = instance.call_seq.fetch_add(1, Ordering::Relaxed) + 1;
@@ -863,10 +839,11 @@ impl PluginEngine {
 
         let outcome = tokio::time::timeout(
             Duration::from_millis(timeout_ms + 2000),
-            instance.ctx.async_with(async |ctx| -> Result<String, String> {
-                let globals = ctx.globals();
-                let inner: rquickjs::Result<Promise> = (|| {
-                    match kind {
+            instance
+                .ctx
+                .async_with(async |ctx| -> Result<String, String> {
+                    let globals = ctx.globals();
+                    let inner: rquickjs::Result<Promise> = (|| match kind {
                         PluginKind::MusicFree => {
                             if let Some(vars) = &user_vars_owned {
                                 let set_vars: Function = globals.get("__xySetUserVars")?;
@@ -876,25 +853,23 @@ impl PluginEngine {
                             Ok(call_fn.call((method_owned.as_str(), args_owned.as_str()))?)
                         }
                         PluginKind::Lx => {
-                            // LX: method 固定为 request，参数取 args[0]
                             let data_json = extract_first_arg(&args_owned);
                             let call_fn: Function = globals.get("__xyLxRequest")?;
                             Ok(call_fn.call((data_json.as_str(),))?)
                         }
-                    }
-                })();
-                let promise = match inner {
-                    Ok(p) => p,
-                    Err(e) => return Err(engine_error_message(&ctx, &e)),
-                };
-                let chained = match chain_result_serialization(&globals, promise) {
-                    Ok(p) => p,
-                    Err(e) => return Err(engine_error_message(&ctx, &e)),
-                };
-                promise_to_json(&ctx, chained)
-                    .await
-                    .map_err(|e| engine_error_message(&ctx, &e))
-            }),
+                    })();
+                    let promise = match inner {
+                        Ok(p) => p,
+                        Err(e) => return Err(engine_error_message(&ctx, &e)),
+                    };
+                    let chained = match chain_result_serialization(&globals, promise) {
+                        Ok(p) => p,
+                        Err(e) => return Err(engine_error_message(&ctx, &e)),
+                    };
+                    promise_to_json(&ctx, chained)
+                        .await
+                        .map_err(|e| engine_error_message(&ctx, &e))
+                }),
         )
         .await;
 
@@ -905,35 +880,29 @@ impl PluginEngine {
 
         match outcome {
             Err(_) => {
-                // 外层超时：原生 future 挂起，实例 JS 状态未知，销毁重建
                 self.destroy(plugin_id).await;
-                call_err(
-                    format!("方法调用超时: {} ({}ms)", method, timeout_ms),
-                    logs,
-                )
+                call_err(format!("方法调用超时: {} ({}ms)", method, timeout_ms), logs)
             }
             Ok(Err(e)) => call_err(format!("引擎调用失败: {}", e), logs),
-            Ok(Ok(json)) => {
-                match serde_json::from_str::<serde_json::Value>(&json) {
-                    Ok(v) if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) => {
-                        EngineCallResult {
-                            ok: true,
-                            error: None,
-                            data: v.get("data").cloned(),
-                            logs,
-                        }
+            Ok(Ok(json)) => match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(v) if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) => {
+                    EngineCallResult {
+                        ok: true,
+                        error: None,
+                        data: v.get("data").cloned(),
+                        logs,
                     }
-                    Ok(v) => {
-                        let error = v
-                            .get("error")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("方法调用失败")
-                            .to_string();
-                        call_err(error, logs)
-                    }
-                    Err(e) => call_err(format!("调用结果解析失败: {}", e), logs),
                 }
-            }
+                Ok(v) => {
+                    let error = v
+                        .get("error")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("方法调用失败")
+                        .to_string();
+                    call_err(error, logs)
+                }
+                Err(e) => call_err(format!("调用结果解析失败: {}", e), logs),
+            },
         }
     }
 
@@ -993,7 +962,13 @@ mod tests {
         assert_eq!(meta["platform"], "test-source");
 
         let call = engine
-            .call("test-mf", "search", r#"["奇迹",1,"music"]"#, Some("{}"), 15_000)
+            .call(
+                "test-mf",
+                "search",
+                r#"["奇迹",1,"music"]"#,
+                Some("{}"),
+                15_000,
+            )
             .await;
         assert!(call.ok, "search failed: {:?}", call.error);
         let data = call.data.unwrap();
@@ -1076,9 +1051,7 @@ mod tests {
         let result = engine.load_musicfree("test-hang", script, "{}").await;
         assert!(result.ok, "load failed: {:?}", result.error);
 
-        let call = engine
-            .call("test-hang", "spin", "[]", None, 1200)
-            .await;
+        let call = engine.call("test-hang", "spin", "[]", None, 1200).await;
         assert!(!call.ok);
         assert!(
             call.error.as_deref().unwrap_or("").contains("超时")
@@ -1190,26 +1163,38 @@ mod tests {
         assert!(result.ok, "load failed: {:?}", result.error);
 
         let call = engine
-            .call("test-vars", "getVar", "[]", Some(r#"{"TOKEN":"abc"}"#), 10_000)
+            .call(
+                "test-vars",
+                "getVar",
+                "[]",
+                Some(r#"{"TOKEN":"abc"}"#),
+                10_000,
+            )
             .await;
         assert!(call.ok);
         assert_eq!(call.data.unwrap().as_str().unwrap(), "abc");
 
         let call2 = engine
-            .call("test-vars", "getVar", "[]", Some(r#"{"TOKEN":"xyz"}"#), 10_000)
+            .call(
+                "test-vars",
+                "getVar",
+                "[]",
+                Some(r#"{"TOKEN":"xyz"}"#),
+                10_000,
+            )
             .await;
         assert!(call2.ok);
         assert_eq!(call2.data.unwrap().as_str().unwrap(), "xyz");
     }
 
-    /// 真实插件冒烟：load → search → getMediaSource 全链路。
-    /// 运行：cargo test --lib plugin_smoke_live -- --ignored --nocapture
-    /// 插件目录由 env PLUGIN_ADAPT_DIR 指定（默认 %TEMP%\plugin_adapt）。
     #[tokio::test]
     #[ignore]
     async fn plugin_smoke_live() {
         let dir = std::env::var("PLUGIN_ADAPT_DIR").unwrap_or_else(|_| {
-            std::env::temp_dir().join("plugin_adapt").to_string_lossy().into_owned()
+            std::env::temp_dir()
+                .join("plugin_adapt")
+                .to_string_lossy()
+                .into_owned()
         });
         let mut files: Vec<_> = std::fs::read_dir(&dir)
             .expect("plugin dir missing")
@@ -1289,27 +1274,24 @@ mod tests {
                             .iter()
                             .map(|l| format!("{}|{}", l.level, l.message))
                             .collect();
-                        println!("[MEDIA {} FAILED] {:?} logs={:?}", quality, call.error, logs)
+                        println!(
+                            "[MEDIA {} FAILED] {:?} logs={:?}",
+                            quality, call.error, logs
+                        )
                     }
                 }
             }
         }
     }
 
-    /// 复刻应用完整取链链路：load → search → getMediaSource(应用侧音质键) → 直链可播性探测。
-    /// 运行：cargo test --lib plugin_app_flow_live -- --ignored --nocapture
-    ///
-    /// 与 plugin_smoke_live 的差异：
-    /// 1. MF 系插件按应用真实映射传旧三档键（320k→high / 128k→standard / flac→lossless），
-    ///    Baka 系传原生键，验证应用编排层的音质映射是否可用；
-    /// 2. 对解析出的直链做 Range GET 探测（复刻 Rust 播放器起播探测），
-    ///    报告 HTTP 状态/Content-Type/长度，定位"解析成功但起播失败"的断点；
-    /// 3. QQ 系插件额外用宿主兜底条目形状（songmid + qualities 门禁）复测。
     #[tokio::test]
     #[ignore]
     async fn plugin_app_flow_live() {
         let dir = std::env::var("PLUGIN_ADAPT_DIR").unwrap_or_else(|_| {
-            std::env::temp_dir().join("plugin_adapt").to_string_lossy().into_owned()
+            std::env::temp_dir()
+                .join("plugin_adapt")
+                .to_string_lossy()
+                .into_owned()
         });
         let mut files: Vec<_> = std::fs::read_dir(&dir)
             .expect("plugin dir missing")
@@ -1325,7 +1307,6 @@ mod tests {
         let engine = engine();
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(12))
-            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
             .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .unwrap();
@@ -1346,9 +1327,6 @@ mod tests {
                 continue;
             }
 
-            // QQ 系插件：宿主兜底条目形状复测（qqHostSearchFallback 的 lxItemToQqMusicFreeItem 输出）。
-            // 放在搜索之前：QQ 系搜索普遍被风控（这正是宿主兜底存在的原因），
-            // 取链验证不能依赖插件自身搜索成功。
             let platform = load
                 .metadata
                 .as_ref()
@@ -1385,11 +1363,7 @@ mod tests {
                             let url = data.get("url").and_then(|v| v.as_str()).unwrap_or("");
                             println!("[HOST-ITEM {}] url={}", quality, &url[..url.len().min(72)]);
                         }
-                        None => println!(
-                            "[HOST-ITEM {} FAILED] {:?}",
-                            quality,
-                            call.error
-                        ),
+                        None => println!("[HOST-ITEM {} FAILED] {:?}", quality, call.error),
                     }
                 }
             }
@@ -1421,8 +1395,6 @@ mod tests {
                 first["title"].as_str()
             );
 
-            // 应用侧音质键：MF 系（时迁酱）走 qualityKeyToMfQuality 三档映射，
-            // Baka 系走原生 12 档键
             let is_baka = name.starts_with("baka_");
             let quality_keys: [&str; 3] = if is_baka {
                 ["320k", "128k", "flac"]
@@ -1436,7 +1408,12 @@ mod tests {
                     .call(&name, "getMediaSource", &args, Some("{}"), 30_000)
                     .await;
                 let Some(data) = &call.data else {
-                    println!("[MEDIA {} FAILED] {:?} logs={:?}", quality, call.error, call.logs.len());
+                    println!(
+                        "[MEDIA {} FAILED] {:?} logs={:?}",
+                        quality,
+                        call.error,
+                        call.logs.len()
+                    );
                     continue;
                 };
                 let url = data.get("url").and_then(|v| v.as_str()).unwrap_or("");
@@ -1472,7 +1449,10 @@ mod tests {
                             .and_then(|v| v.to_str().ok())
                             .unwrap_or("-")
                             .to_string();
-                        println!("[MEDIA {} PROBE] HTTP {} ct={} range={} url={}", quality, status, ct, cr, short);
+                        println!(
+                            "[MEDIA {} PROBE] HTTP {} ct={} range={} url={}",
+                            quality, status, ct, cr, short
+                        );
                     }
                     Err(e) => println!("[MEDIA {} PROBE FAIL] {} -> {}", quality, short, e),
                 }
@@ -1501,6 +1481,9 @@ mod tests {
             .logs
             .iter()
             .any(|l| l.message.contains("hello-from-plugin")));
-        assert!(call.logs.iter().any(|l| l.level == "error" && l.message.contains("boom")));
+        assert!(call
+            .logs
+            .iter()
+            .any(|l| l.level == "error" && l.message.contains("boom")));
     }
 }

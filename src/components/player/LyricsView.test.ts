@@ -14,7 +14,6 @@ describe('LyricsView', () => {
   });
 
   it('passes playback state into AMLL so word highlighting pauses with audio', () => {
-    // 只断言必需成员，避免解构新增无关字段时误报
     expect(source).toMatch(/const \{[^}]*\bisPlaying\b[^}]*\} = usePlayer\(\);/);
     expect(source).toContain(':playing="isPlaying"');
   });
@@ -24,7 +23,6 @@ describe('LyricsView', () => {
   });
 
   it('uses seekTo from usePlayer for line click seeking', () => {
-    // 只断言必需成员，避免解构新增无关字段时误报
     expect(source).toMatch(/const \{[^}]*\bseekTo\b[^}]*\} = usePlayer\(\);/);
     expect(source).toContain('await seekTo(targetSeconds);');
   });

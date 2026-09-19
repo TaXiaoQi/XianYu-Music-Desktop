@@ -74,14 +74,12 @@ onUnmounted(() => {
       class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
       :class="{'pointer-events-none': isClosing}"
     >
-      <!-- Backdrop -->
       <div 
         class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
         :class="isClosing ? 'opacity-0' : 'opacity-100'"
         @click="handleClose"
       ></div>
 
-      <!-- Modal Card -->
       <div 
         class="relative bg-white/80 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1)"
         :class="[
@@ -89,12 +87,10 @@ onUnmounted(() => {
           'border border-white/20 ring-1 ring-black/5'
         ]"
       >
-        <!-- Header -->
         <div class="px-6 pt-6 pb-2 text-center">
           <h3 class="text-lg font-bold text-gray-900 dark:text-white leading-6">{{ title }}</h3>
         </div>
 
-        <!-- Body -->
         <div class="px-6 pb-6">
           <input
             ref="inputRef"
@@ -105,7 +101,6 @@ onUnmounted(() => {
           />
         </div>
 
-        <!-- Footer -->
         <div class="px-4 py-3 bg-gray-50/50 dark:bg-white/5 flex gap-3 flex-col sm:flex-row-reverse">
           <button 
             @click="handleConfirm" 

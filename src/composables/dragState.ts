@@ -31,8 +31,4 @@ export const dragSession = reactive<DragSessionState>({
   sortLineTop: -1,
 });
 
-/**
- * 当弹窗（如添加歌单弹窗）需要拦截全局拖放事件时设为 true，
- * useExternalPathBridge 会跳过处理，避免冲突。
- */
 export const modalDragInterceptActive = ref(false);

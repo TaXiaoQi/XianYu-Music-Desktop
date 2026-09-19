@@ -8,9 +8,6 @@ import {
 } from './pluginUpdateVersion';
 import type { PluginUpdateCheckResult, PluginUpdateServiceDeps } from './pluginUpdateTypes';
 
-/**
- * 检查插件是否有可用更新（含订阅清单解析与缓存）。
- */
 export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
   const {
     getSubscriptions,
@@ -22,7 +19,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     log,
   } = deps;
 
-  /** 从远程 URL 获取插件脚本。 */
   const fetchPluginScript = async (url: string): Promise<string | null> => {
     try {
       const resp = await fetchWithTimeout(url, 10000);
@@ -34,10 +30,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     return null;
   };
 
-  /**
-   * 解析订阅清单，提取其中的插件条目（按 url 定位）。
-   * 兼容 `{ plugins: [...] }` 或顶层数组两种结构。
-   */
   const parseSubscriptionItems = (content: string): Array<{ url: string; version?: string; name?: string }> => {
     try {
       const json = JSON.parse(content);
@@ -55,12 +47,8 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     }
   };
 
-  // 订阅内容按 URL 缓存，避免批量检查时对同一订阅重复请求。
-  // inFlight 保证缓存未命中时并发的多个插件只触发一次订阅下载，其余等待其复用，
-  // 避免一个慢订阅被 N 个插件各自重复拉取（这正是批量更新检测变慢的放大根因）。
   const subscriptionContentCache = new Map<string, { at: number; items: Array<{ url: string; version?: string; name?: string }> }>();
   const subscriptionFetchInFlight = new Map<string, Promise<{ at: number; items: Array<{ url: string; version?: string; name?: string }> }>>();
-  // TTL 提高到 5 分钟：订阅清单更新不频繁，缩短等待网络往返的次数。
   const SUB_CACHE_TTL_MS = 5 * 60_000;
 
   const getSubscriptionItems = async (subUrl: string) => {
@@ -84,12 +72,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     }
   };
 
-  /**
-   * 判断插件 target 是否命中订阅清单条目。
-   * 订阅安装时插件的 filePath = 清单里的 url，但同一插件在不同来源里可能带不同的
-   * query 参数（缓存指纹、渠道标记等），因此除了精确匹配外，也按"去 query 后的路径"
-   * 与"插件名"做宽松匹配。参考 BakaMusic：清单条目可相对清单 URL 解析。
-   */
   const stripUrlQuery = (u: string) => {
     try { return new URL(u).origin + new URL(u).pathname; } catch { return u; }
   };
@@ -104,11 +86,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     return false;
   };
 
-  /**
-   * 在已保存的订阅清单中按 filePath/name 匹配插件（订阅安装时 filePath = 清单里的 url）。
-   * 命中即返回订阅声明的 version —— 这才是订阅型插件（Baka 等）真正的更新依据。
-   * 无论 musicfree 还是 lx 格式都走这里，规避自引用 srcUrl 导致的"永远最新"。
-   */
   const findSubscriptionPlugin = async (filePath: string, pluginName: string) => {
     if (!filePath || !filePath.startsWith('http')) return null;
     for (const sub of getSubscriptions()) {
@@ -120,22 +97,9 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     return null;
   };
 
-  /**
-   * 检查插件是否有可用更新。
-   * - MusicFree 插件：优先使用实例的 srcUrl，回退到 filePath（如果是 http URL）。
-   * - LX 插件：使用 parseLxScriptInfo 提取的 @homepage，回退到 filePath。
-   *
-   * [修复] 新增脚本内容哈希对比：source.id 本身就是脚本 SHA256 哈希，
-   * 如果新脚本哈希与 source.id 相同，直接判定为无更新，避免版本提取误差导致的重复更新。
-   */
   const checkPluginUpdate = async (source: PluginSource): Promise<PluginUpdateCheckResult | null> => {
     let updateUrl: string | undefined;
 
-    // [修复] 订阅型插件（Baka 等，含 LX 格式）先走订阅清单：无论插件是 musicfree 还是 lx，
-    // 只要它来自订阅，订阅清单里声明的 version 才是真正的更新依据。
-    // 旧逻辑把订阅判断放在 musicfree 分支内，导致来自订阅的 LX 插件绕过该判断，转而重取
-    // 自身脚本（@homepage 自引用）→ 哈希一致 → 永远判"已是最新版本"，且重复下载 + 沙箱执行
-    // 同一脚本导致检测很慢。参考 BakaMusic：订阅清单即为权威源，版本比对优先、无更新时不拉脚本。
     const subPlugin = await findSubscriptionPlugin(source.filePath, source.name);
     if (subPlugin && subPlugin.version) {
       const hasUpdate = compareVersions(subPlugin.version, source.version) > 0;
@@ -149,7 +113,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
           updateUrl: subPlugin.url,
         };
       }
-      // 订阅声明了新版本 → 才去下载新脚本，避免无更新时白白拉取大脚本
       const newScript = await fetchPluginScript(subPlugin.url);
       if (newScript) {
         return {
@@ -163,7 +126,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
       log(`[checkPluginUpdate] ${source.name} 订阅声明新版本但下载新脚本失败`);
     }
 
-    // 未命中订阅（手动/URL/本地安装的插件）→ 回退到格式特定的 srcUrl/filePath 逻辑。
     if (source.format === 'musicfree') {
       const inst = await ensurePluginInstance(source);
       const instanceSrcUrl = (inst?.instance as any)?.srcUrl as string | undefined;
@@ -188,11 +150,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
         }
       }
     } else if (source.format === 'lx') {
-      // [修复] 与 BakaMusic 一致：优先重取插件脚本自身的 URL（filePath）作为更新源，
-      // 而不是 @homepage —— @homepage 常指向 GitHub 仓库/项目页（HTML），抓取它解析不到
-      // 版本号，导致 LX 插件"检查无结果"。远程安装的 lx 插件脚本就托管在 filePath 上，
-      // 重取它并与已安装版本比对，即 lx 插件惯例的更新方式。本地导入的插件没有远程脚本，
-      // 再回退到解析脚本里的 @homepage。
       if (source.filePath.startsWith('http')) {
         updateUrl = source.filePath;
       } else {
@@ -219,9 +176,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
       return null;
     }
 
-    // [修复] 脚本内容哈希对比：source.id 就是安装时脚本 SHA256 哈希（musicfree 与 lx 均为哈希）。
-    // 如果新脚本哈希与 source.id 完全一致，说明脚本内容未变化，直接判定无更新。
-    // 这可以避免因版本号正则提取误差导致的"永远有更新"问题，也避免"脚本已变但版本号未变"漏更新。
     if (source.id && /^[a-f0-9]{16,}$/i.test(source.id)) {
       const newHash = await hostSha256Hex(newScript);
       const idLower = source.id.toLowerCase();
@@ -263,7 +217,6 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     };
   };
 
-  /** 批量检查所有插件的更新。 */
   const checkAllPluginUpdates = async (): Promise<Map<string, PluginUpdateCheckResult>> => {
     const plugins = getStoredPlugins();
     const results = new Map<string, PluginUpdateCheckResult>();

@@ -16,7 +16,6 @@
     
     <div class="flex-1 flex overflow-hidden relative">
       <Transition name="fav-tab" mode="out-in">
-        <!-- 单曲 tab：收藏歌曲列表 -->
         <section v-if="favTab === 'songs'" key="songs" class="flex-1 flex overflow-hidden">
           <SongTable
             ref="songTableRef"
@@ -32,7 +31,6 @@
           />
         </section>
 
-        <!-- 歌单 tab：收藏的整张歌单网格 -->
         <FavoriteCollectionsGrid
           v-else-if="favTab === 'playlists'"
           key="playlists"
@@ -42,7 +40,6 @@
           @remove="handleRemoveCollection"
         />
 
-        <!-- 专辑 tab：收藏的整张专辑网格 -->
         <FavoriteCollectionsGrid
           v-else
           key="albums"
@@ -54,7 +51,6 @@
       </Transition>
     </div>
     
-    <!-- 弹窗组件 -->
     <DragGhost />
     
     <SongContextMenu 
@@ -155,7 +151,6 @@ const {
 
 const localSongList = computed(() => displaySongList.value);
 
-/** 搜索关键词过滤（歌单/专辑 tab 按标题与副标题匹配） */
 const filterEntriesBySearch = (entries: FavoriteCollectionEntry[]): FavoriteCollectionEntry[] => {
   const keyword = searchQuery.value.trim().toLowerCase();
   if (!keyword) return entries;
@@ -165,12 +160,10 @@ const filterEntriesBySearch = (entries: FavoriteCollectionEntry[]): FavoriteColl
   );
 };
 
-/** 收藏的歌单条目（含本地歌单与在线歌单） */
 const favoritePlaylistEntries = computed(() =>
   filterEntriesBySearch(favoriteCollections.value.filter(entry => entry.type === 'playlist')),
 );
 
-/** 收藏的专辑条目（在线专辑） */
 const favoriteAlbumEntries = computed(() =>
   filterEntriesBySearch(favoriteCollections.value.filter(entry => entry.type === 'album')),
 );
@@ -180,7 +173,6 @@ const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const songTableRef = ref<any>(null);
 
-// 离开单曲 tab 时退出批量模式并清空选择（歌单/专辑 tab 无批量操作）
 watch(favTab, (tab) => {
   if (tab !== 'songs') {
     isBatchMode.value = false;
@@ -188,10 +180,8 @@ watch(favTab, (tab) => {
   }
 });
 
-// 初始化拖拽逻辑
 const { handleTableDragStart } = useSongDrag(localSongList, isBatchMode, selectedPaths, songTableRef);
 
-// 打开收藏的歌单/专辑详情：本地歌单走首页歌单详情，在线歌单/专辑恢复上下文快照进在线详情
 const handleOpenCollection = (entry: FavoriteCollectionEntry) => {
   if (entry.localPlaylistId) {
     const playlist = collectionsStore.getPlaylistById(entry.localPlaylistId);
@@ -214,7 +204,6 @@ const handleRemoveCollection = (entry: FavoriteCollectionEntry) => {
   showToast(entry.type === 'album' ? '已取消收藏专辑' : '已取消收藏歌单', 'info');
 };
 
-// 弹窗状态
 const showConfirm = ref(false);
 const confirmMessage = ref('');
 const confirmAction = ref<() => void>(() => {});
@@ -230,7 +219,6 @@ const {
   handleOnlineViewAlbum,
 } = useSongContextActions({ isBatchMode });
 
-// 监听批量模式变化，清空选择
 watch(isBatchMode, (val) => { if (!val) selectedPaths.value.clear(); });
 
 
@@ -254,7 +242,6 @@ const handleAddAllToQueue = () => {
   addSongsToQueue(localSongList.value);
 };
 
-// 批量播放
 const handleBatchPlay = () => {
   const selected = localSongList.value.filter(s => selectedPaths.value.has(s.path));
   if (selected.length > 0) {
@@ -316,7 +303,6 @@ const handleBatchDownload = async () => {
   isBatchMode.value = false;
 };
 
-// 全选/取消全选
 const handleSelectAll = () => {
   const allPaths = localSongList.value.map(s => s.path);
   if (allPaths.length > 0 && selectedPaths.value.size === allPaths.length) {
@@ -326,7 +312,6 @@ const handleSelectAll = () => {
   }
 };
 
-// 批量删除（从收藏移除）
 const executeBatchDelete = () => {
   const newPathSet = new Set(selectedPaths.value);
   favoritePaths.value = favoritePaths.value.filter(p => !newPathSet.has(p));
@@ -337,7 +322,6 @@ const executeBatchDelete = () => {
 const requestBatchDelete = () => {
   if (selectedPaths.value.size === 0) return;
   const paths = Array.from(selectedPaths.value);
-  // 已登录且存在云端副本：弹删除范围三选一
   if (getCiyuanxiId() && paths.some(p => loadSyncedFavoritePaths().includes(p))) {
     deleteScopePaths.value = paths;
     deleteScopeIsClearAll.value = false;
@@ -362,7 +346,6 @@ const deleteScopeCanDeleteCloud = computed(() =>
   deleteScopePaths.value.some(p => loadSyncedFavoritePaths().includes(p)),
 );
 
-/** 从云端删除指定收藏（merge 模式空集合 + delete_paths）；失败返回 false */
 async function deleteCloudFavoritePaths(paths: string[]): Promise<boolean> {
   const ciyuanxiId = getCiyuanxiId();
   if (!ciyuanxiId || paths.length === 0) return false;
@@ -374,7 +357,6 @@ async function deleteCloudFavoritePaths(paths: string[]): Promise<boolean> {
   }
 }
 
-/** 清空歌单/专辑收藏（本地数据，与云端无关） */
 const removeFavoriteCollections = () => {
   favoriteCollections.value.forEach(entry => collectionsStore.removeFavoriteCollection(entry.key));
 };
@@ -389,7 +371,6 @@ async function confirmDeleteScope(scope: SyncDeleteScope) {
   const pathSet = new Set(paths);
 
   if (scope === 'cloud') {
-    // 仅保留本地：本机收藏不动，立即删除云端副本并写墓碑防止上传复活
     const ok = await deleteCloudFavoritePaths(paths);
     if (!ok) {
       showToast('云端删除失败，请检查网络后重试', 'error');
@@ -401,12 +382,10 @@ async function confirmDeleteScope(scope: SyncDeleteScope) {
     return;
   }
 
-  // 仅删本地：云端保留，写墓碑排除 delete_paths 与下载回灌
   if (scope === 'local') {
     addCloudKeepPaths(paths);
   }
   favoritePaths.value = favoritePaths.value.filter(p => !pathSet.has(p));
-  // 清空时连同歌单/专辑收藏与元信息一并清理（本地数据）
   if (isClearAll) clearFavorites();
   showToast(
     scope === 'local'
@@ -416,10 +395,8 @@ async function confirmDeleteScope(scope: SyncDeleteScope) {
   );
 }
 
-// 清空收藏
 const handleClearAll = () => {
   const paths = [...favoritePaths.value];
-  // 已登录且存在云端副本：弹删除范围三选一
   if (paths.length > 0 && getCiyuanxiId() && paths.some(p => loadSyncedFavoritePaths().includes(p))) {
     deleteScopePaths.value = paths;
     deleteScopeIsClearAll.value = true;
@@ -438,14 +415,12 @@ const openAddToPlaylistSelection = () => {
   openAddToPlaylistDialog(songPaths);
 };
 
-// 右键菜单由 useSongContextActions 提供（支持在线歌曲已下载/未下载的菜单区分）
 
 
 // ========== 路由监听 ==========
 </script>
 
 <style scoped>
-/* 单曲/歌单/专辑 tab 切换动画 */
 .fav-tab-enter-active {
   transition: opacity 240ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 240ms cubic-bezier(0.25, 0.8, 0.25, 1);
 }

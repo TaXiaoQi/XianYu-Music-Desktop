@@ -38,8 +38,6 @@ export const localStore = {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (e: any) {
-      // QuotaExceededError: localStorage 容量超限。
-      // 尝试清理已知的大体积键后重试一次，仍失败则静默跳过，不影响播放。
       if (e?.name === 'QuotaExceededError' || e?.code === 22) {
         const disposableKeys = [
           'player_recent_song_meta',
@@ -55,7 +53,6 @@ export const localStore = {
         try {
           localStorage.setItem(key, JSON.stringify(value));
         } catch {
-          // 仍然超限，静默跳过
           console.warn(`[localStore] localStorage 容量超限，跳过写入: ${key}`);
         }
       } else {

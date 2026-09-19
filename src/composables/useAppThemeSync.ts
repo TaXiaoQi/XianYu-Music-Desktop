@@ -47,12 +47,9 @@ export function useAppThemeSync() {
 
   const applyTheme = async () => {
     applyGlassSwitchClass();
-    // 切换深浅色时附带渐变过渡；首帧启动与减少动效场景内部会自动跳过动画
     applyDarkClassWithTransition(isDarkTheme.value);
 
     try {
-      // 跟随系统时传 null 让窗口主题跟随 OS，否则强制 light/dark 会覆盖
-      // WebView 的 prefers-color-scheme，导致系统主题变化后不再跟随
       if (theme.value.mode === 'system') {
         await appWindow.setTheme(null);
       } else {
@@ -111,7 +108,6 @@ export function useAppThemeSync() {
 
     void syncThemeAndMaterial();
 
-    // DWM can finish restoring a blurred transparent window after the focus event.
     restoreSyncTimer = setTimeout(() => {
       restoreSyncTimer = null;
       void syncThemeAndMaterial();

@@ -1,10 +1,3 @@
-// DLNA 双向投屏编排（Pinia）。
-//
-// - 发送端（DMC）：连接设备后，本地播放命令经 playbackApi 拦截路由到电视
-//   （playAudio→SetAVTransportURI+Play / pause / resume / stop / seek / volume），
-//   本地播放器静默；1s 轮询电视传输状态驱动进度条（playerPlayback 时钟桥接）。
-// - 接收端（DMR）：渲染器开关由设置页控制；指令经 Rust emit 的 `dlna:dmr-command`
-//   事件路由到本地播放器（play_audio http 直链分支天然兼容）。
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -19,7 +12,6 @@ import { usePlaybackStore } from './store';
 import { useSettingsStore } from '../settings/store';
 import { useToast } from '../../composables/toast';
 
-/** DMR 指令载荷（与 Rust dlna/types.rs DmrCommand serde 序列化一致）。 */
 export interface DmrCommandPayload {
   type: 'loadUri' | 'play' | 'pause' | 'stop' | 'seek' | 'setVolume' | 'setMute';
   uri?: string;
@@ -32,9 +24,7 @@ export interface DmrCommandPayload {
   on?: boolean;
 }
 
-/** 远程直链 TTL 主动续投阈值（毫秒）。 */
 const TTL_REFRESH_MS = 8.5 * 60 * 1000;
-/** 轮询周期。 */
 const POLL_INTERVAL_MS = 1000;
 
 interface CastMediaInfo {
@@ -106,14 +96,12 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
 
   function buildCoverPayload(cover: string): DlnaMediaPayload | null {
     const trimmed = (cover || '').trim();
-    // 仅 http(s) 直链可直接给电视；本地路径/data URL 走媒体代理封面分支也取不到，直接不给。
     if (!trimmed || !isDlnaRemotePath(trimmed)) return null;
     return { kind: 'cover', url: trimmed };
   }
 
   // ---------------- 连接 / 断开 ----------------
 
-  /** 由 playerPlayback 播放入口拦截调用：把当前待播歌曲投到电视（替代本地起播）。 */
   async function castFromPlayAudio(options: {
     path: string;
     title: string;
@@ -153,7 +141,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     info.token = result.media_token;
     currentCast = info;
     await dlnaApi.castPlay(dev);
-    // 恢复播放（togglePlay 走 playSong(startOffset)）或带起始位置投歌时，投完先 seek。
     const startSec = Math.max(0, (options.startOffsetMs ?? 0) / 1000);
     if (startSec > 0.5) {
       await dlnaApi.castSeek(dev, startSec).catch(() => {});
@@ -164,12 +151,10 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     startPolling();
   }
 
-  /** 连接设备：记下设备并暂停本地播放（后续由用户主动投歌或自动投当前歌）。 */
   async function connect(dev: DlnaDevicePayload): Promise<void> {
     phase.value = 'connecting';
     device.value = dev;
     try {
-      // 暂停本地播放，进入遥控器模式（不自动投歌，由用户点播）。
       const { playbackApi } = await import('../../services/tauri/playbackApi');
       if (playbackStore.isPlaying) {
         await playbackApi.pauseAudio().catch(() => {});
@@ -187,7 +172,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     }
   }
 
-  /** 断开投屏（stopTv=true 时向电视发 Stop）。 */
   async function disconnect(stopTv = true): Promise<void> {
     stopPolling();
     const dev = device.value;
@@ -235,7 +219,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     }
   }
 
-  /** 供 playerPlayback rAF 时钟桥接：插值后的电视端播放位置。 */
   function interpolatedPosition(): number {
     const playing = tvState.value === 'PLAYING';
     const elapsed = playing && lastPollAt > 0 ? (Date.now() - lastPollAt) / 1000 : 0;
@@ -255,7 +238,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
       tvState.value = st.state;
       lastPollAt = Date.now();
 
-      // [TTL 续投] 远程直链接近过期时热替换注册表上游（电视不断流）。
       const cast = currentCast;
       if (
         cast?.isRemote
@@ -300,7 +282,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     }
   }
 
-  // 渲染器 UDN 本地持久化：跨重启保持设备身份稳定（局域网控制端缓存不失效）。
   const RENDERER_UDN_KEY = 'dlna.renderer.udn';
   function getRendererUdn(): string {
     try {
@@ -315,7 +296,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     }
   }
 
-  /** 依据设置项同步渲染器启停（启动恢复 + 设置页开关共用；名称变更时幂等重建）。 */
   async function applyRendererSetting(): Promise<void> {
     const settingsStore = useSettingsStore();
     const enabled = settingsStore.settings.dlnaRendererEnabled;
@@ -346,10 +326,8 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     const { playbackApi } = await import('../../services/tauri/playbackApi');
     switch (cmd.type) {
       case 'loadUri': {
-        // 仅接受 http(s) 直链（本端投出去的 token URL 与第三方音源直链均为此形态）。
         const uri = (cmd.uri ?? '').trim();
         if (!isDlnaRemotePath(uri)) return;
-        // 他端投入本端时若正投给电视，先断开投屏，转为本地播放。
         if (isCasting.value) await disconnect(false);
         await playbackApi.playAudio({
           path: uri,
@@ -387,7 +365,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
         }
         break;
       case 'setMute':
-        // 本端无独立静音通道：静音=0 音量，取消静音恢复 100。
         await playbackApi.setVolume(cmd.on ? 0 : 1);
         break;
     }
@@ -395,7 +372,6 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
 
   // ---------------- 初始化 ----------------
 
-  /** App 启动时调用一次：注册 DMR 指令事件 + 按设置恢复渲染器开关。 */
   async function init(): Promise<void> {
     if (initialized) return;
     initialized = true;

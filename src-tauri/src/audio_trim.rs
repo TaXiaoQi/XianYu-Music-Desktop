@@ -1,21 +1,14 @@
-//! 工具箱 · 音频剪辑（裁剪）：探测音频时长，并用内置 ffmpeg 无损剪切音频区间。
-//!
-//! ffmpeg 由用户自行提供（同文件转换），通过 `ffmpeg_path` 显式指定或走 PATH。
-//! 无损剪切使用 `-ss <start> -t <duration> -i <in> -c copy <out>`，不重新编码、速度快。
-
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-/// 裁剪日志行（前端监听 `toolbox-trim-log` 事件实时展示）
 #[derive(Debug, Clone, Serialize)]
 pub struct TrimLog {
     pub input_path: String,
     pub line: String,
 }
 
-/// 单个文件裁剪结果
 #[derive(Debug, Serialize)]
 pub struct TrimAudioResult {
     pub input_path: String,
@@ -24,7 +17,6 @@ pub struct TrimAudioResult {
     pub error: Option<String>,
 }
 
-/// 解析 `Duration: HH:MM:SS.xx` 中的时长（秒）。
 fn parse_duration(s: &str) -> Option<f64> {
     let parts: Vec<&str> = s.trim().split(':').collect();
     if parts.len() != 3 {
@@ -36,9 +28,6 @@ fn parse_duration(s: &str) -> Option<f64> {
     Some(h * 3600.0 + m * 60.0 + sec)
 }
 
-/// 探测单个音频文件的时长（秒）。
-/// 通过 `ffmpeg -i <file>` 的 stderr 解析 `Duration:` 行（ffmpeg 对无输出操作会返回非零退出码，
-/// 因此这里只看 stderr 文本而非退出码）。
 #[tauri::command]
 pub async fn probe_audio_duration(
     input_path: String,
@@ -70,9 +59,6 @@ pub async fn probe_audio_duration(
     Err("无法解析音频时长（文件可能损坏或格式不受 ffmpeg 支持）".to_string())
 }
 
-/// 无损剪切音频区间：`-ss <start> -t <dur> -i <in> -c copy <out>`。
-/// 输出默认与输入同目录，文件名追加 `_trim` 后缀；也可指定 `output_dir`。
-/// ffmpeg stderr 逐行通过 `toolbox-trim-log` 事件实时推送前端。
 #[tauri::command]
 pub async fn trim_audio(
     app: tauri::AppHandle,
@@ -82,7 +68,6 @@ pub async fn trim_audio(
     output_dir: Option<String>,
     ffmpeg_path: Option<String>,
 ) -> Result<TrimAudioResult, String> {
-    // 参数校验
     let in_path = PathBuf::from(&input_path);
     if !in_path.is_file() {
         return Err("输入文件不存在".to_string());
@@ -120,7 +105,6 @@ pub async fn trim_audio(
         }
     };
 
-    // 无损剪切：input seek（快），`-c copy` 不重新编码
     let mut cmd = tokio::process::Command::new(&program);
     cmd.arg("-y")
         .arg("-ss")
@@ -140,7 +124,6 @@ pub async fn trim_audio(
         }
     };
 
-    // 逐行读取 stderr（进度与错误都在 stderr），实时 emit；失败时提取关键错误
     let mut err_text = String::new();
     if let Some(stderr) = child.stderr.take() {
         let mut reader = BufReader::new(stderr).lines();

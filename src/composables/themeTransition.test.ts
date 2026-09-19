@@ -15,7 +15,6 @@ const createClassList = () => {
   };
 };
 
-/** 构造一个最小 document stub，可选带启动上色标记 */
 const createDoc = (options: { startupPaint?: boolean } = {}) => {
   const attributes = new Set<string>();
   if (options.startupPaint) {
@@ -63,11 +62,9 @@ describe('themeTransition', () => {
     const doc = createDoc();
     resetThemeTransitionState(doc);
 
-    // 首次应用建立基线（浅色）
     applyDarkClassWithTransition(false, doc);
     expect(doc.documentElement.classList.contains('theme-transitioning')).toBe(false);
 
-    // 真正的切换：浅 -> 深
     applyDarkClassWithTransition(true, doc);
     expect(doc.documentElement.classList.contains('dark')).toBe(true);
     expect(doc.documentElement.classList.contains('theme-transitioning')).toBe(true);
@@ -118,11 +115,9 @@ describe('themeTransition', () => {
     applyDarkClassWithTransition(true, doc);
     vi.advanceTimersByTime(THEME_TRANSITION_DURATION - 100);
 
-    // 第一次的清理还差 100ms，此时再切一次
     applyDarkClassWithTransition(false, doc);
     vi.advanceTimersByTime(100);
 
-    // 旧计时器已被重置，过渡类应该还在
     expect(doc.documentElement.classList.contains('theme-transitioning')).toBe(true);
 
     vi.advanceTimersByTime(THEME_TRANSITION_DURATION);

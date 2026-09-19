@@ -10,9 +10,6 @@ const changePasswordDialogState = ref<ChangePasswordDialogState>({
   resolver: null,
 });
 
-/**
- * 打开修改密码弹窗（统一弹窗样式），返回用户点「确认修改」后 true
- */
 export function showChangePasswordDialog(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     changePasswordDialogState.value = {

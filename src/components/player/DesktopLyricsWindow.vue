@@ -195,8 +195,6 @@ const {
   inset: 0;
   z-index: 20;
   opacity: 0;
-  /* 始终穿透：空白区域拖拽由底层 desktop-widget 处理，
-     内部按钮行各自 pointer-events:auto（见 DesktopLyricsToolbar）。 */
   pointer-events: none;
   transition: opacity 200ms ease;
 }
@@ -223,7 +221,6 @@ const {
     outline-color 220ms ease;
 }
 
-/* 面板表面：QQ 音乐风格的中性深色圆角底板（自动隐藏时只剩歌词文字） */
 .desktop-widget--surface-visible {
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(45, 46, 50, 0.88), rgba(28, 29, 32, 0.88));
@@ -255,7 +252,6 @@ const {
   transition: padding 220ms ease;
 }
 
-/* 面板可见时给顶行/底行控件让位 */
 .desktop-widget--surface-visible .desktop-lyrics-body {
   padding: 56px 28px 68px;
 }

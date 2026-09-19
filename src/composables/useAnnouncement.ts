@@ -8,7 +8,6 @@ import {
 } from '../utils/announcement';
 import { useToast } from './toast';
 
-// 模块级单例状态，保证全局共享同一份公告状态
 const announcementVisible = ref(false);
 const currentAnnouncement = ref<Announcement | null>(null);
 const isFetchingAnnouncement = ref(false);
@@ -16,10 +15,6 @@ const isFetchingAnnouncement = ref(false);
 export function useAnnouncement() {
   const { showToast } = useToast();
 
-  /**
-   * 自动检查公告（应用启动时调用）
-   * 已被用户忽略（dismissed）的公告不会再次弹出
-   */
   const checkAnnouncement = async () => {
     if (isFetchingAnnouncement.value) return;
     isFetchingAnnouncement.value = true;
@@ -30,19 +25,12 @@ export function useAnnouncement() {
         announcementVisible.value = true;
       }
     } catch (error) {
-      // 启动时静默失败，仅在控制台记录
       console.error('[Announcement] 启动检查公告失败:', error);
     } finally {
       isFetchingAnnouncement.value = false;
     }
   };
 
-  /**
-   * 手动查看公告（点击标题栏铃铛按钮时调用）
-   * 每次点击都重新请求服务器获取最新公告并展示；
-   * 不受启动检查的 isFetchingAnnouncement 影响，避免启动拉取期间点击被静默吞掉
-   * （fetchAnnouncement 为幂等读取请求，并发调用无副作用）
-   */
   const manualCheckAnnouncement = async () => {
     isFetchingAnnouncement.value = true;
     try {
@@ -51,7 +39,6 @@ export function useAnnouncement() {
         currentAnnouncement.value = announcement;
         announcementVisible.value = true;
       } else {
-        // 服务端正常响应但无有效公告内容
         showToast('暂无公告', 'info');
       }
     } catch (e) {
@@ -88,7 +75,6 @@ export function useAnnouncement() {
     await closeAnnouncement();
   };
 
-  /** 调试用：使用模拟数据直接弹出公告弹窗，不做真实网络请求 */
   const simulateAnnouncement = () => {
     currentAnnouncement.value = {
       id: 'debug-simulated',

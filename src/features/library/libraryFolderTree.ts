@@ -53,8 +53,6 @@ const findNode = (nodes: FolderNode[], targetPath: string): FolderNode | null =>
 };
 
 const findOwningRoot = (nodes: FolderNode[], targetPath: string) => {
-  // 优先精确匹配根级节点，避免同时导入父级 F 与子级 S 时，
-  // 恢复展开状态把 S 当作 F 的后代来展开，而非直接展开根级 S。
   const exactMatch = nodes.find(node => node.path === targetPath);
   if (exactMatch) {
     return exactMatch;
@@ -160,8 +158,6 @@ export const createLibraryFolderTree = ({
     return true;
   };
 
-  // 组件点击时可直接传 node 引用，避免同路径根/子节点并存时用 path 命中错误节点。
-  // 其他业务入口仍可传 path 字符串。
   const toggleFolderNode = async (target: string | FolderNode) => {
     const targetNode = resolveFolderNode(target);
     if (!targetNode) {

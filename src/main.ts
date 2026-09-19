@@ -24,8 +24,6 @@ const currentWindowLabel = (() => {
 
 installApplicationLogger(currentWindowLabel)
 
-// 兜底模块同步：拉取服务器下发的兜底实现覆盖并缓存（仅主窗口，
-// 迷你窗口/歌词窗口复用主窗口已写入的本地缓存）
 if (currentWindowLabel === 'main') {
   initFallbackModuleSync()
 }
@@ -54,10 +52,6 @@ const formatError = (error: unknown) => {
 
 const DYNAMIC_IMPORT_RELOAD_KEY = 'xianyu_dynamic_import_reload'
 
-/**
- * 开发服务器热更新或应用升级后，旧分包地址可能瞬时失效。
- * 对这类错误自动刷新一次；冷却时间内再次失败则交给致命错误页，避免刷新循环。
- */
 const recoverDynamicImportError = createDynamicImportRecovery({
   getLastReloadAt: () => {
     try {
@@ -84,7 +78,6 @@ const showFatalError = (title: string, error: unknown) => {
   const message = formatError(error)
   console.error(title, error)
 
-  // 附带崩溃现场快照（如排行榜状态流转记录），便于离线定位崩溃诱因
   let diagnosticDump = ''
   try {
     const lbTrace = (window as any).__lbTrace
@@ -133,15 +126,8 @@ const app = createApp(App)
 const pinia = createPinia()
 setActivePinia(pinia)
 
-// 必须在初始导航 resolve 前注册首次进入同步直换的 guard：
-// 若不提前，初始导航直接落在 '/'（首页）时 guard 拦不到，首页首次挂载仍会
-// 走进 page-fade out-in 窗口而被异步列表补丁踩到 el=null 崩溃。
 installCriticalFirstPaintSync(router)
 
-/** 从 Vue 实例回溯父链，拼出崩溃所在的组件链（供诊断致命渲染错误定位）。
- * 沿用 Vue 内部 devtools 读取组件名的方式，避免无谓计算。
- * 注意：errorHandler 收到的第二参是 instance.proxy（公开代理），
- * 其 parent/type 挂在 proxy.$（即内部实例）上，需先取 $ 再回溯。 */
 const formatComponentChain = (instance: unknown): string => {
   const names: string[] = []
   let current: any = instance
@@ -158,13 +144,11 @@ const formatComponentChain = (instance: unknown): string => {
 app.use(pinia)
 app.use(router)
 app.config.errorHandler = (error, _instance, info) => {
-  // 渲染崩溃时回溯组件链，并写入致命错误页明细，便于直接定位到具体组件。
   const chain = _instance ? formatComponentChain(_instance) : ''
   console.error(`[VueError ${info}] component chain: ${chain || '(no instance)'}`)
   if (chain && error instanceof Error) {
     error = Object.assign(new Error(`${error.message}${chain}`), { name: error.name })
   }
-  // 上报到后台报错日志（fire-and-forget，失败静默）
   if (error instanceof Error) {
     reportError(error.name || 'VueError', error.message, error.stack, info)
   } else {
@@ -172,7 +156,6 @@ app.config.errorHandler = (error, _instance, info) => {
   }
   if (recoverDynamicImportError(error)) return
 
-  // Tauri 事件/通道的偶发内部错误，通常不影响主流程；记录即可，避免弹致命错误页。
   if (isBenignTauriChannelError(error)) {
     console.error(`[BenignTauriError ${info}]`, error)
     return
@@ -183,7 +166,6 @@ app.config.errorHandler = (error, _instance, info) => {
 
 document.addEventListener('contextmenu', (e) => e.preventDefault())
 
-// 统一滚动条浮现：鼠标悬停在滚动条条带上或滚动期间显示，带淡入淡出动画
 installScrollbarController()
 
 const isBenignResizeObserverError = (error: unknown): boolean => {
@@ -209,7 +191,6 @@ window.addEventListener('error', (event) => {
     event.preventDefault()
     return
   }
-  // 上报到后台报错日志（fire-and-forget，失败静默）
   if (error instanceof Error) {
     reportError(error.name || 'Error', error.message, error.stack, `${event.filename}:${event.lineno}:${event.colno}`)
   } else if (typeof error === 'string') {
@@ -223,7 +204,6 @@ window.addEventListener('error', (event) => {
 })
 
 window.addEventListener('unhandledrejection', (event) => {
-  // 上报到后台报错日志（fire-and-forget，失败静默）
   const reason = event.reason
   if (reason instanceof Error) {
     reportError('unhandledrejection', reason.message, reason.stack)
@@ -245,8 +225,6 @@ const mountApp = () => {
   }
 }
 
-// 等初始导航完成再挂载：否则首屏先按 '/' 渲染 Home，初始导航落定后立即切到上次会话路由，
-// page-fade 的 out-in 离场回调与后续路由更新竞态会导致 insertBefore(null) 崩溃
 router.isReady().then(mountApp, (error) => {
   showFatalError('初始路由解析失败', error)
   mountApp()

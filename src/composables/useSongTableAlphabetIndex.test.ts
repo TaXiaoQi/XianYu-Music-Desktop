@@ -83,8 +83,6 @@ describe('useSongTableAlphabetIndex', () => {
     },
   );
 
-  // 收藏/最近播放页复用 SongTable，但滚动控件此前被 `routePath === '/'` 挡住，
-  // 需放宽到这两个页面也能显示
   it.each([
     ['favorites', '/favorites'],
     ['recent', '/recent'],
@@ -116,8 +114,6 @@ describe('useSongTableAlphabetIndex', () => {
     },
   );
 
-  // 每日推荐是首页 TAB（route '/'），复用 SongTable；此前 currentViewMode='dailyRecommend'
-  // 不在回到顶部白名单，滚动后只有定位播放可显示、回到顶部被拦住，需一并纳入
   it('shows scroll-to-top button in the daily recommend list (home route) after scrolling past the first row', () => {
     const { result, unmount } = mountAlphabetIndex(ref('dailyRecommend'), ref('/'));
 
@@ -126,8 +122,6 @@ describe('useSongTableAlphabetIndex', () => {
     unmount();
   });
 
-  // 在线搜索/详情页复用 SongTable，滚动控件需同样可用。
-  // 这些页面 currentViewMode 保留进入前的页面状态（默认 statistics），不应成为显示障碍
   it.each([
     ['search', '/search'],
     ['online-detail', '/online-detail'],

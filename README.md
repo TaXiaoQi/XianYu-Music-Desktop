@@ -4,7 +4,7 @@
 # 弦予音乐
 ## (XianYu-Music)
 
-一款基于 **[Lycia Player](https://github.com/Billy636/LyciaMusic)** 修改构建的现代化、高颜值在线音乐播放框架，支持插件化在线音乐、本地音乐等播放功能,拥有良好的音乐播放体验。
+弦予音乐的桌面端（Windows / Linux / macOS）：本地音乐库管理 + 插件化在线音源，**VST3 / CLAP 第三方音频插件机架**、液态玻璃 UI、AMLL 逐字歌词、桌面歌词、迷你播放器与任务栏控制条，桌面听歌的全功能形态。
 
  [](https://tauri.app/)
  [](https://vuejs.org/)
@@ -37,6 +37,10 @@
   - **无缝本地管理**：提供高性能的本地音频文件扫描、标签元数据读取和物理文件重命名与整理。
   - **高级交互体验**：自研智能边界检测的上下文菜单，禁用浏览器默认右键行为，提供真正的原生应用质感。
   - **桌面歌词悬浮窗**：轻量化、高性能的桌面浮窗歌词，支持锁定、穿透与自定义样式。
+- 🎛️ **VST3 / CLAP 第三方插件机架**
+  
+  - **专业插件即插即用**：自动扫描系统 VST3 / CLAP 插件目录（Windows 含 `Program Files\Common Files` 标准路径），第三方混响、EQ、压缩等效果器直接挂进音频引擎。
+  - **机架式串联**：多槽位按顺序串联进播放链，参数实时调节 + 配置持久化；Windows 支持弹出插件原生编辑器窗口。
 - 📝 **歌词解析与文件管理**
   
   - **全格式歌词**：支持音频文件内嵌标签歌词、同名 `.lrc` 文件解析，以及基于 AMLL 的歌词逐字动画渲染。
@@ -54,82 +58,37 @@
 
 ### 环境要求
 
-| 依赖项 | 推荐版本 / 要求 |
+| 依赖项 | 要求 |
 | --- | --- |
-| **Node.js** | `>= 18`（三平台通用） |
-| **Rust** | Stable 稳定版最新版本（三平台通用） |
+| **Node.js** | `>= 18` |
+| **Rust** | Stable 最新版 |
+| **Windows** | WebView2 运行时（Win11 内置） |
+| **Linux** | `libwebkit2gtk-4.1-dev`、`build-essential`、`curl`、`wget`、`libssl-dev`、`libgtk-3-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`、`libasound2-dev`（Ubuntu/Debian 包名） |
+| **macOS** | Xcode Command Line Tools（`xcode-select --install`）+ `rustup target add aarch64-apple-darwin x86_64-apple-darwin` |
 
-各平台额外要求：
+### 运行与调试
 
-| 平台 | 操作系统 | 平台依赖 |
-| --- | --- | --- |
-| **Windows** | Windows 10 / 11 | WebView2 运行时（Windows 11 默认内置） |
-| **Linux** | 主流发行版 | `libwebkit2gtk-4.1-dev`、`build-essential`、`curl`、`wget`、`libssl-dev`、`libgtk-3-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`、`libasound2-dev`（Ubuntu/Debian 包名） |
-| **macOS** | macOS 10.15+ | Xcode Command Line Tools（`xcode-select --install`）与 Rust `aarch64-apple-darwin` / `x86_64-apple-darwin` 工具链 |
+```bash
+git clone https://github.com/ShenYichenCN/XianYu-Music-Desktop.git
+cd XianYu-Music-Desktop
+npm install
 
-### 运行与调试（通用）
-
-1. 克隆本仓库：
-  
-  ```bash
-  git clone https://github.com/ShenYichenCN/XianYu-Music-Desktop.git
-  cd XianYu-Music-Desktop
-  ```
-  
-2. 安装依赖项：
-  
-  ```bash
-  npm install
-  ```
-  
-3. 启动 Tauri 桌面端开发调试：
-  
-  ```bash
-  npm run tauri dev
-  ```
-  
-4. 仅在浏览器中调试前端页面：
-  
-  ```bash
-  npm run dev
-  ```
+npm run tauri dev    # 桌面端开发调试
+npm run dev          # 仅浏览器调试前端
+```
 
 ### 构建各平台安装包
 
-> Tauri 桌面端无法交叉编译：Windows 包需在 Windows 上构建，Linux 包需在 Linux 上构建，macOS 包需在 macOS 上构建。
->
-> 官网版产物构建后由 `scripts/move-bundles.js`（npm posttauri 钩子）自动归档到 `releases/`，统一命名 `弦予音乐v<版本>-Desktop[-Setup].<扩展名>`（NSIS 安装器加 `-Setup` 后缀；预发布版本自带 `-betaN` 段），与移动端/腕上端命名标准一致。版本号以 `version.ts` 为唯一源头。
-
-#### Windows（官网版，.msi / .exe）
-
 ```bash
-npm run tauri build
+npm run tauri build              # Windows 官网版（.msi / .exe）
+npm run tauri:build:store:msix   # Windows 微软商店版（MSIX，与官网版互不影响）
+npm run tauri:build:linux        # Linux（.deb / .rpm / .AppImage）
+npm run tauri:build:mac          # macOS（.app / .dmg）
 ```
 
-#### Windows（Microsoft Store 版，MSIX 商店分发包，与官网版互不影响）
-
-```bash
-npm run tauri:build:store:msix
-```
-
-产物经 `scripts/move-msix.js` 自动归集至 `releases/`（未签名 `.msix` 与 `.msixbundle`，Microsoft Store 终审时由微软自动代签，无需自有代码签名证书）。该构建通过 `store-build` 特性禁用应用内自更新，更新由商店接管。Identity 已配置为 Partner Center「弦予音乐」产品（Store ID `9NGDZXD62JQ7`）分配的正式值（`AppxManifest.xml.template` 的 Name 与 `bundle.config.json` 的 Publisher），改动会导致商店上传校验失败；版本号必须为纯数字四段正式版（无 beta 段），否则 MSIX 打包直接失败。
-
-#### Linux（.deb / .rpm / .AppImage）
-
-```bash
-npm run tauri:build:linux
-```
-
-前置依赖见上方环境要求表。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .deb/.rpm/.AppImage 包，服务端未提供对应格式时自动引导官网。
-
-#### macOS（.app / .dmg）
-
-```bash
-npm run tauri:build:mac
-```
-
-前置依赖见上方环境要求表。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .dmg 包（挂载后自动拷贝 .app 至 /Applications），未发布时引导官网；系统媒体控制走 MediaRemote（菜单栏「正在播放」/控制中心），凭据存钥匙串，防休眠经 caffeinate。分发需签名与公证（`tauri.conf.json` 的 bundle.macOS 配置 signingIdentity），未签名包首次打开需右键绕过 Gatekeeper。
-  
+- 产物自动归档到 `releases/`：`弦予音乐v<版本>-Desktop[-Setup].<扩展名>`（NSIS 安装器加 `-Setup` 后缀，版本号取自 `version.ts`）
+- MSIX 版通过 `store-build` 特性禁用应用内自更新（商店接管），版本号必须为纯数字四段正式版，Identity 与 Partner Center 配置绑定勿改
+- macOS 分发需签名与公证，未签名包首次打开右键绕过 Gatekeeper
 
 ---
 
@@ -156,12 +115,14 @@ graph TD
 
     subgraph Backend [Rust 后端服务层]
         direction TB
-        K[player 模块<br/>单音频线程 + 6 层 Source 链<br/>WASAPI 独占 / 共享模式<br/>30+ 种音效 DSP]
+        K[player 模块<br/>单音频线程 + 8 层 Source 链<br/>WASAPI 独占 / 共享模式<br/>30+ 种音效 DSP]
         L[music 模块<br/>rayon 并行扫描<br/>lofty + symphonia 双引擎]
         M[database 模块<br/>SQLite WAL · 14 张表]
         N[remote 模块<br/>WebDAV + 流式缓存]
         O[toolbox 模块<br/>下载 / 更新 / 重命名 / 识曲]
+        V[plugin_host 模块<br/>VST3 / CLAP 插件机架<br/>多槽位串联进播放链]
         H --> K & L & M & N & O
+        K --> V
     end
 
     subgraph Windows [多窗口架构 · 6 窗口]
@@ -205,8 +166,9 @@ Rust 后端由多个业务模块组成，通过 `src-tauri/src/lib.rs` 集中注
 
 | 模块 | 职责 | 关键技术 |
 | --- | --- | --- |
-| **`player/`** | 音频播放引擎 | 单音频线程 + mpsc 命令通道；6 层 Source 链（BufferedSource → VolumeNormalizer → Equalizer → SoundEffect → UserVolume → ClipGuard → TimedSource）；WASAPI 独占模式 + cpal 共享模式双后端；无锁可视化环形缓冲（AtomicU32）；vendored rodio 定制 100ms 缓冲 |
+| **`player/`** | 音频播放引擎 | 单音频线程 + mpsc 命令通道；8 层 Source 链（BufferedSource → VolumeNormalizer → Equalizer → SoundEffect → PluginHost → UserVolume → ClipGuard → TimedSource）；WASAPI 独占模式 + cpal 共享模式双后端；无锁可视化环形缓冲（AtomicU32）；vendored rodio 定制 100ms 缓冲 |
 | **`player/sound_effect/`** | 30+ 种音效 DSP | 变调变速（OLA）、10 段 EQ（Biquad 级联）、Freeverb + 卷积混响、3D/8D/36D 环绕、压缩/限制/激励器/LoFi；Mutex + dirty flag 非阻塞音频线程同步 |
+| **`player/plugin_host/`** | VST3 / CLAP 第三方插件机架 | truce-rack 宿主（VST3 + CLAP 双格式）；系统插件目录自动扫描；Rack 多槽位串联 + 参数持久化；Windows 原生编辑器窗口 |
 | **`music/`** | 音乐库管理 | rayon 并行增量扫描（mtime/size diff）；lofty + symphonia 双引擎标签解析；CUE 整轨分割；封面双级缓存（150px + 800px，LRU 4GB） |
 | **`database/`** | SQLite 数据持久化 | WAL 模式 + NORMAL 同步；14 张表（songs / artists / song_artists / play_history / song_stats / daily_stats / song_loudness / remote_sources ...）；增量迁移 |
 | **`remote/`** | 远程音源 | WebDAV PROPFIND/GET（quick-xml）；流式缓存（SHA256 命名，LRU 5GB）；播放 50% 预缓存整曲 |

@@ -8,7 +8,6 @@ import { audioConvertApi, type ConvertAudioResult, type FfmpegDetection } from '
 
 const toast = useToast();
 
-/** 支持的目标格式列表（与后端 audio_convert.rs 白名单一致） */
 const TARGET_FORMATS = [
   { value: 'mp3', label: 'MP3' },
   { value: 'aac', label: 'AAC' },
@@ -29,15 +28,12 @@ const FFMPEG_PATH_KEY = 'toolbox_ffmpeg_path';
 
 const ffmpeg = ref<FfmpegDetection | null>(null);
 const checking = ref(true);
-/** 手动指定的 ffmpeg.exe 路径（持久化，优先于 PATH） */
 const ffmpegPath = ref<string>(localStorage.getItem(FFMPEG_PATH_KEY) || '');
 
 const inputs = ref<string[]>([]);
 const outputDir = ref('');
 const targetFormat = ref('mp3');
-/** 输出文件名模板；空=原文件名；支持 {title}(原名) 与 {ext}(新扩展名) */
 const outName = ref('');
-/** 采样率（Hz）；0 表示保留原采样率 */
 const sampleRate = ref(0);
 const converting = ref(false);
 const results = ref<ConvertAudioResult[] | null>(null);
@@ -53,7 +49,6 @@ const SAMPLE_RATES = [
   { value: 192000, label: '192000 Hz' },
 ];
 
-/** 实时 ffmpeg 日志（精简） */
 interface ConvertLogEntry {
   file: string;
   text: string;
@@ -97,7 +92,6 @@ async function checkFfmpeg() {
   }
 }
 
-/** 手动选择 ffmpeg.exe，绕过 PATH 依赖 */
 const pickFfmpeg = async () => {
   try {
     const selected = await open({
@@ -115,7 +109,6 @@ const pickFfmpeg = async () => {
   }
 };
 
-/** 清除手动路径，回退到 PATH 检测 */
 const clearFfmpegPath = async () => {
   ffmpegPath.value = '';
   localStorage.removeItem(FFMPEG_PATH_KEY);
@@ -215,7 +208,6 @@ const resetAll = () => {
 
 <template>
   <div class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <!-- 检测中 -->
     <div v-if="checking" class="toolbox-panel toolbox-panel--muted flex items-center gap-3 text-sm text-gray-500 dark:text-white/45">
       <svg class="h-5 w-5 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -224,7 +216,6 @@ const resetAll = () => {
       <span>正在检测 ffmpeg...</span>
     </div>
 
-    <!-- 未检测到 ffmpeg：引导下载 -->
     <div v-else-if="!ffmpeg?.available" class="toolbox-panel p-6">
       <div class="flex items-start gap-4">
         <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300">
@@ -257,10 +248,8 @@ const resetAll = () => {
       </div>
     </div>
 
-    <!-- 已就绪：转换界面 -->
     <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(420px,3fr)]">
       <div class="space-y-6">
-        <!-- 状态条 -->
         <div class="flex items-center justify-between gap-3">
           <span class="inline-flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-300">
             <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
@@ -271,7 +260,6 @@ const resetAll = () => {
           </button>
         </div>
 
-        <!-- 1. 选择输入文件 -->
         <section class="toolbox-item p-4">
           <div class="flex items-center justify-between gap-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">① 选择音频文件</div>
@@ -287,7 +275,6 @@ const resetAll = () => {
           </div>
         </section>
 
-        <!-- 2. 选择目标格式 -->
         <section class="toolbox-item p-4">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">② 目标格式与采样率</div>
           <div class="mt-3 flex flex-wrap gap-2">
@@ -321,7 +308,6 @@ const resetAll = () => {
           </div>
         </section>
 
-        <!-- 3. 输出目录与文件名 -->
         <section class="toolbox-item p-4">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">③ 输出目录与文件名</div>
           <div class="mt-3 flex items-center justify-between gap-3">
@@ -354,10 +340,8 @@ const resetAll = () => {
         </div>
       </div>
 
-      <!-- 右侧：实时日志 + 结果 -->
       <aside class="xl:sticky xl:top-0 xl:self-start">
         <section class="space-y-3">
-          <!-- 实时 ffmpeg 日志 -->
           <div>
             <div class="flex items-center justify-between gap-3">
               <h2 class="toolbox-section-title"><span class="toolbox-section-bar"></span>实时日志</h2>

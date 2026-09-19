@@ -146,7 +146,6 @@ const handleOpenNativeEditor = () => {
         <div
           class="modal-content flex max-h-[calc(100vh-4rem)] w-full max-w-[520px] flex-col overflow-hidden"
         >
-          <!-- 顶栏 -->
           <div class="flex shrink-0 items-center justify-between border-b border-gray-200/70 px-5 py-4 dark:border-white/10">
             <div class="flex min-w-0 items-center gap-2">
               <span
@@ -178,7 +177,6 @@ const handleOpenNativeEditor = () => {
             </div>
           </div>
 
-        <!-- 主体 -->
         <div class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div v-if="loading" class="py-10 text-center text-xs text-gray-400 dark:text-white/35">
             {{ t('pluginHost.loadingParams') }}
@@ -187,7 +185,6 @@ const handleOpenNativeEditor = () => {
             {{ error }}
           </div>
           <template v-else-if="entry">
-            <!-- 工厂预设 -->
             <div v-if="presets.length > 0" class="mb-4 flex items-center gap-2">
               <span class="shrink-0 text-[11px] font-medium text-gray-500 dark:text-white/45">{{ t('pluginHost.factoryPresets') }}</span>
               <select
@@ -203,7 +200,6 @@ const handleOpenNativeEditor = () => {
               </select>
             </div>
 
-            <!-- 参数列表 -->
             <div v-if="visibleParams().length > 0" class="space-y-3">
               <div
                 v-for="param in visibleParams()"

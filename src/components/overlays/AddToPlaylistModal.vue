@@ -44,7 +44,6 @@ const scheduleClear = () => {
   }, 15000);
 };
 
-// 同步获取歌单封面：优先自定义封面 coverPath，其次云端同步封面 cloudCoverUrl，再取首歌曲的 cover_thumb_path（网络歌曲）
 const getPlaylistCover = (playlist: Playlist): string => {
   if (playlist.coverPath) {
     if (playlist.coverPath.startsWith('http') || playlist.coverPath.startsWith('asset:') || playlist.coverPath.startsWith('data:')) {
@@ -56,11 +55,9 @@ const getPlaylistCover = (playlist: Playlist): string => {
       return '';
     }
   }
-  // 云端同步封面（服务端存储的 https URL）
   if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) {
     return playlist.cloudCoverUrl;
   }
-  // 网络歌曲（plugin/remote）：使用首歌曲的 cover_thumb_path
   if (playlist.songPaths.length > 0) {
     const song = libraryStore.songLookup.get(playlist.songPaths[0]);
     const thumbPath = song?.cover_thumb_path;
@@ -91,7 +88,6 @@ const loadPlaylistCover = async (id: string, path: string) => {
 watch(() => props.visible, (val) => {
   if (val) {
     cancelClearTimer();
-    // 仅对没有自定义封面、且首歌曲无 cover_thumb_path 的歌单加载后端缩略图
     availablePlaylists.value.forEach(pl => {
       if (getPlaylistCover(pl)) return;
       if (pl.songPaths.length > 0) void loadPlaylistCover(pl.id, pl.songPaths[0]);

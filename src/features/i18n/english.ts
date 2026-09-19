@@ -1,5 +1,4 @@
 const exactEnglishTranslations: Record<string, string> = {
-  // Common actions and states
   '确定': 'OK',
   '取消': 'Cancel',
   '关闭': 'Close',
@@ -79,7 +78,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '批量操作': 'Batch actions',
   '退出批量操作': 'Exit batch mode',
 
-  // Music library and playback
   '首页': 'Home',
   '本地音乐': 'Local Music',
   '音乐库': 'Music Library',
@@ -165,7 +163,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '正在处理音乐库': 'Processing music library',
   '享受音乐时光': 'Enjoy the music',
 
-  // Lyrics and sound effects
   '歌词': 'Lyrics',
   '桌面歌词': 'Desktop Lyrics',
   '关闭桌面歌词': 'Close desktop lyrics',
@@ -212,7 +209,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '分享歌曲': 'Share Song',
   '收到一首分享歌曲，点击播放开始收听': 'You received a shared song — press play to start listening',
 
-  // Settings sections
   '设置': 'Settings',
   '常规': 'General',
   '外观': 'Appearance',
@@ -413,7 +409,6 @@ const exactEnglishTranslations: Record<string, string> = {
   'MusicTag 路径': 'MusicTag path',
   '选择 MusicTag 可执行文件': 'Choose MusicTag executable',
 
-  // Plugins
   '已安装插件': 'Installed Plugins',
   '搜索已安装插件': 'Search installed plugins',
   '插件安装': 'Install Plugin',
@@ -456,7 +451,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '落雪格式': 'LX format',
   '落雪': 'LX Music',
 
-  // Account, authentication and onboarding
   '登录': 'Sign in',
   '注册': 'Register',
   '退出登录': 'Sign out',
@@ -524,7 +518,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '提交申请': 'Submit application',
   '我知道了': 'Got it',
 
-  // Import, dialogs, tools and misc
   '新建歌单': 'New Playlist',
   '导入歌单': 'Import Playlist',
   '本地导入': 'Local Import',
@@ -582,7 +575,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '显示进度条': 'Show progress bar',
   '隐藏进度条': 'Hide progress bar',
 
-  // Remaining settings and management views
   '应用备份导入结果': 'App Backup Import Results',
   '备份导入结果': 'Backup Import Results',
   '已导入歌单': 'Playlists imported',
@@ -771,7 +763,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '插件运行所需的自定义参数': 'Custom parameters required by this plugin.',
   '正在加载插件用户变量...': 'Loading plugin variables...',
 
-  // Main views, player panels and dialogs
   '本地': 'Local',
   '在线': 'Online',
   '来源': 'Source',
@@ -2594,7 +2585,6 @@ const exactEnglishTranslations: Record<string, string> = {
   "取过但失败": "Fetched but failed",
   "未尝试": "Not attempted",
   "正在检测可用音源…": "Detecting available sources…",
-  // 工具箱（格式转换 / 音频剪辑 / DLNA / 音乐整理）
   "DLNA 投屏": "DLNA Casting",
   "DLNA 渲染器": "DLNA Renderer",
   "ffmpeg 可用": "ffmpeg available",

@@ -22,21 +22,6 @@ fn canonicalize_path_or_parent(path: &Path) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
-/// Validate that a path is safe and within allowed directories.
-///
-/// # Security
-/// - Rejects paths containing `..` components
-/// - Canonicalizes the path (resolves symlinks) when possible
-/// - Checks the canonical path starts with one of the allowed roots
-/// - If no allowed_roots provided, rejects symlink/reparse-point components after basic traversal checks
-///
-/// # Arguments
-/// * `input` - The raw path string from IPC
-/// * `allowed_roots` - Optional list of allowed root directories. If None, symlink components are still rejected.
-///
-/// # Returns
-/// * `Ok(PathBuf)` - The validated, canonicalized path
-/// * `Err(String)` - Error message describing why validation failed
 pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<PathBuf, String> {
     let path = PathBuf::from(input);
 
@@ -80,22 +65,14 @@ pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<P
 
         Ok(canonical)
     } else {
-        // Symlink check is skipped because there are no directory restrictions to enforce.
-        // The path is already canonicalized and directory traversal (..) is already rejected above.
         Ok(canonical)
     }
 }
 
-/// Validate that a path is within a specific directory.
-///
-/// Convenience wrapper around `validate_path` with a single allowed root.
 pub fn validate_path_in_dir(input: &str, allowed_root: &Path) -> Result<PathBuf, String> {
     validate_path(input, Some(&[allowed_root.to_path_buf()]))
 }
 
-/// Sanitize a filename by removing path separators and dangerous characters.
-///
-/// This is used when a user-provided string will be used as a filename component.
 pub fn sanitize_filename_component(name: &str) -> Result<String, String> {
     if name.is_empty() {
         return Err("文件名不能为空".to_string());
@@ -206,8 +183,6 @@ mod tests {
 
     #[test]
     fn test_validate_path_without_roots_allows_symlink_component() {
-        // When allowed_roots is None, symlink paths should be allowed (canonicalized)
-        // because there are no directory restrictions to enforce.
         let base =
             env::temp_dir().join(format!("xy_path_validator_symlink_{}", std::process::id()));
         let real = base.join("real");
@@ -230,9 +205,11 @@ mod tests {
             }
         }
 
-        // The symlink directory itself should be canonicalized (resolved to real path)
         let result = validate_path(&link.to_string_lossy(), None);
-        assert!(result.is_ok(), "symlink path should be allowed when no allowed_roots");
+        assert!(
+            result.is_ok(),
+            "symlink path should be allowed when no allowed_roots"
+        );
 
         fs::remove_dir_all(&base).ok();
     }
@@ -316,7 +293,6 @@ mod tests {
     fn test_validate_path_in_dir_accepts_inside() {
         let temp = env::temp_dir();
         let test_file = temp.join("test_file.txt");
-        // Create the file so canonicalization works
         fs::write(&test_file, "test").unwrap();
 
         let result = validate_path_in_dir(&test_file.to_string_lossy(), &temp);

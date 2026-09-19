@@ -59,10 +59,6 @@ mod platform {
     }
 }
 
-/// Linux：经 D-Bus 的 org.freedesktop.ScreenSaver 抑制系统休眠（GNOME/KDE
-/// 等主流桌面均实现该接口）。用 gdbus CLI 调用——glib 是 WebKitGTK 的强制
-/// 依赖、gdbus 随 glib 必装，避免为一次 IPC 引入 D-Bus 客户端 crate。
-/// Inhibit 成功返回 cookie，UnInhibit 必须携带同一 cookie，跨调用保存在模块状态。
 #[cfg(target_os = "linux")]
 mod platform {
     use std::sync::{Mutex, OnceLock};
@@ -89,7 +85,6 @@ mod platform {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// 从 gdbus 输出 `(uint32 42,)` 中解析 Inhibit 返回的 cookie。
     fn parse_cookie(stdout: &str) -> Option<u32> {
         let index = stdout.find("uint32")?;
         stdout[index + "uint32".len()..]
@@ -104,11 +99,9 @@ mod platform {
         let mut cookie = slot.lock().unwrap_or_else(|e| e.into_inner());
 
         if active {
-            // 已在抑制中则幂等返回，避免重复 Inhibit 在桌面环境堆积引用计数
             if cookie.is_some() {
                 return Ok(());
             }
-            // 字符串参数需按 GVariant 文本语法带引号
             let stdout = gdbus_call(&[
                 "--dest",
                 "org.freedesktop.ScreenSaver",
@@ -128,9 +121,8 @@ mod platform {
             }
         } else {
             let Some(value) = cookie.take() else {
-                return Ok(()); // 未在抑制中，幂等
+                return Ok(());
             };
-            // 解除失败仅记录，不回传错误：进程退出时 cookie 随会话抑制自动失效
             if let Err(e) = gdbus_call(&[
                 "--dest",
                 "org.freedesktop.ScreenSaver",
@@ -147,10 +139,6 @@ mod platform {
     }
 }
 
-/// macOS：用系统自带的 caffeinate 持有「防止系统睡眠」断言（IOPMAssertion
-/// 的命令行封装，零 IOKit 绑定）。`-i` 防 idle 睡眠，`-w <pid>` 让 caffeinate
-/// 常驻直到指定进程退出——传本进程 PID，应用被强杀时断言也会随之自动失效，
-/// 不会残留。UnInhibit 即 kill 子进程。
 #[cfg(target_os = "macos")]
 mod platform {
     use std::process::{Child, Command};
@@ -167,7 +155,6 @@ mod platform {
         let mut child = slot.lock().unwrap_or_else(|e| e.into_inner());
 
         if active {
-            // 已在防休眠中则幂等返回，避免重复起 caffeinate 进程
             if child.is_some() {
                 return Ok(());
             }
@@ -181,7 +168,6 @@ mod platform {
             Ok(())
         } else {
             if let Some(mut process) = child.take() {
-                // 退出码非 0 不影响语义：进程可能已被应用退出连带终止
                 let _ = process.kill();
                 let _ = process.wait();
             }

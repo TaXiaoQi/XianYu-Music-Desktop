@@ -301,7 +301,6 @@ describe('player library view', () => {
 
     expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha', 'Other', 'Zebra']);
 
-    // 歌单/专辑 tab 展示收藏网格，歌曲列表应为空
     navigationStore.favTab = 'playlists';
     await flushPromises();
     expect(displaySongList.value).toEqual([]);

@@ -11,12 +11,10 @@ export const MINI_PLAYER_BOUNDS_EVENT = 'mini-player:bounds';
 export const MINI_PLAYER_BOUNDS_KEY = 'mini_player_window_bounds';
 export const APP_SHOW_MAIN_EVENT = 'app:show-main';
 
-// mf-style 布局：400 x 144（主体行 88 + 进度条行 20 + 底部控件行 36）
 export const MINI_PLAYER_WINDOW_WIDTH = 400;
 export const MINI_PLAYER_WINDOW_BASE_HEIGHT = 144;
 export const MINI_PLAYER_WINDOW_EXPANDED_HEIGHT = 516;
 
-// 音量独立小窗
 export const VOLUME_POPOVER_WINDOW_LABEL = 'volume-popover';
 export const VOLUME_POPOVER_WINDOW_WIDTH = 180;
 export const VOLUME_POPOVER_WINDOW_HEIGHT = 56;
@@ -51,7 +49,7 @@ export interface MiniPlayerStatePayload {
   currentTime: number;
   duration: number;
   isFavorite: boolean;
-  playMode: number; // 0=顺序, 1=单曲循环, 2=随机
+  playMode: number;
   desktopLyricsEnabled: boolean;
 }
 

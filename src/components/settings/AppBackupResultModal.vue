@@ -49,7 +49,6 @@ const allSuccess = computed(() =>
           </header>
 
           <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5 custom-scrollbar">
-            <!-- 概览统计 -->
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div class="rounded-xl bg-emerald-500/8 px-4 py-3">
                 <div class="text-xl font-semibold text-emerald-600 dark:text-emerald-300">{{ result.importedPlaylists }}</div>
@@ -74,7 +73,6 @@ const allSuccess = computed(() =>
               </div>
             </div>
 
-            <!-- 歌单分类 -->
             <section v-if="summary" class="space-y-2">
               <div class="flex items-center gap-2">
                 <ListMusic class="h-4 w-4 text-[#EC4141]" />
@@ -102,7 +100,6 @@ const allSuccess = computed(() =>
               </div>
             </section>
 
-            <!-- 插件信息 -->
             <section v-if="summary && summary.pluginCount > 0" class="space-y-2">
               <div class="flex items-center gap-2">
                 <PlugZap class="h-4 w-4 text-emerald-500" />
@@ -113,7 +110,6 @@ const allSuccess = computed(() =>
               </p>
             </section>
 
-            <!-- 设置信息 -->
             <section v-if="result.settingsApplied" class="space-y-2">
               <div class="flex items-center gap-2">
                 <Settings2 class="h-4 w-4 text-violet-500" />
@@ -124,7 +120,6 @@ const allSuccess = computed(() =>
               </p>
             </section>
 
-            <!-- 错误列表 -->
             <section v-if="hasErrors" class="space-y-2">
               <div class="flex items-center gap-2 text-amber-600 dark:text-amber-300">
                 <AlertTriangle class="h-4 w-4" />
@@ -141,7 +136,6 @@ const allSuccess = computed(() =>
               </div>
             </section>
 
-            <!-- 全部成功提示 -->
             <div
               v-if="!hasErrors && (result.importedPlaylists > 0 || result.importedFavorites > 0)"
               class="rounded-xl bg-emerald-500/8 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-200"

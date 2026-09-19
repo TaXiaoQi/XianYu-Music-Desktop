@@ -237,7 +237,6 @@ describe('convertLyricsToAmlLines', () => {
 
     const lyric = semanticLineToLyricLine(semantic);
 
-    // All 9 main words preserved (including zero-duration space)
     expect(lyric.words).toHaveLength(9);
     expect(lyric.words!.map((w) => ({ text: w.text, romaji: w.romaji }))).toEqual([
       { text: 'あ', romaji: 'a' },
@@ -251,19 +250,15 @@ describe('convertLyricsToAmlLines', () => {
       { text: 'Avidity', romaji: 'Avidity' },
     ]);
 
-    // Conversion to AML lines with aligned romaji
     const amlLines = convertLyricsToAmlLines([lyric], true, true);
     expect(amlLines).toHaveLength(1);
 
     const aml = amlLines[0]!;
-    // Per-word romaji mode — romanLyric should be empty
     expect(aml.romanLyric).toBe('');
-    // Each word carries its romanWord
     const amlWordData = aml.words.map((w) => ({
       word: w.word,
       romanWord: stripAmlRomajiSeparators(w.romanWord),
     }));
-    // Whitespace word preserved for segmenter word-boundary detection
     expect(amlWordData).toEqual([
       { word: 'あ', romanWord: 'a' },
       { word: 'の', romanWord: 'no' },
@@ -278,9 +273,6 @@ describe('convertLyricsToAmlLines', () => {
   });
 
   it('still maps romaji through overlap alignment even when main word romanText is empty', () => {
-    // Scenario: Rust parser produces romanWords with all entries but
-    // the Avidity main word lacks romanText (parser only sets romanText
-    // for kana words, not latin words).
     const semantic: SemanticLine = {
       startMs: 44915,
       endMs: 51121,
@@ -294,7 +286,7 @@ describe('convertLyricsToAmlLines', () => {
         { text: 'し', startMs: 45993, endMs: 46601, romanText: 'shi' },
         { text: 'た', startMs: 46601, endMs: 47769, romanText: 'ta' },
         { text: ' ', startMs: 47769, endMs: 47769 },
-        { text: 'Avidity', startMs: 47769, endMs: 51121 }, // no romanText
+        { text: 'Avidity', startMs: 47769, endMs: 51121 },
       ],
       romanText: 'a no hi na ku shi ta Avidity',
       romanWords: [
@@ -312,11 +304,9 @@ describe('convertLyricsToAmlLines', () => {
     };
 
     const lyric = semanticLineToLyricLine(semantic);
-    // Overlap alignment maps romanWords[7] (Avidity) → mainWords[8] (Avidity)
     expect(lyric.words![8]!.romaji).toBe('Avidity');
-    expect(lyric.words![7]!.romaji).toBe(''); // space still empty
+    expect(lyric.words![7]!.romaji).toBe('');
 
-    // Should still enter aligned romaji mode
     const amlLines = convertLyricsToAmlLines([lyric], true, true);
     expect(amlLines[0]!.romanLyric).toBe('');
     expect(amlLines[0]!.words[8]!.romanWord).toBe('Avidity');

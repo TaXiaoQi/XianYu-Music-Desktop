@@ -178,7 +178,6 @@ describe('library collections domain', () => {
     await addToHistory(onlineSong);
     await removeFromHistory([onlineSong.path]);
 
-    // recent 元信息被清理，但仍被收藏，extraSong 不应被误删
     expect(collectionsStore.recentSongMeta[onlineSong.path]).toBeUndefined();
     expect(collectionsStore.recentSongs).toEqual([]);
     expect(libraryStore.getSongByPath(onlineSong.path)).toMatchObject({ path: onlineSong.path });

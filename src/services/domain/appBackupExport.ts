@@ -1,6 +1,3 @@
-/**
- * 应用备份 · 导出。
- */
 
 import type { Playlist, Song, AppSettings } from '../../types';
 import { getStoredPlugins, getPluginScript } from './pluginEngine';
@@ -22,9 +19,6 @@ import { APP_BACKUP_SCHEMA, APP_BACKUP_VERSION } from './appBackupTypes';
 function log(_msg: string) {
 }
 
-/**
- * 构建收藏歌曲列表：优先使用收藏元信息，缺失时经 resolveSongsByPaths 从本地库解析
- */
 function buildFavoriteSongs(
   paths: string[],
   songMeta: Record<string, Song>,
@@ -41,11 +35,6 @@ function buildFavoriteSongs(
   return out;
 }
 
-/**
- * 导出完整应用备份
- * @param playlists 歌单列表
- * @param options 可选配置：是否导出插件、设置、收藏，收藏数据，歌曲路径解析器
- */
 export async function exportAppBackup(
   playlists: Playlist[],
   options: {
@@ -66,7 +55,6 @@ export async function exportAppBackup(
     resolveSongsByPaths,
   } = options;
 
-  // 1. 收集歌单数据
   const backupPlaylists: BackupPlaylistEntry[] = [];
   let totalSongs = 0;
   let localSongs = 0;
@@ -74,10 +62,8 @@ export async function exportAppBackup(
 
   if (includePlaylists) {
     for (const pl of playlists) {
-      // 跳过收藏歌单（收藏作为独立数据，不纳入歌单导出）
       if (pl.isFavorite) continue;
 
-      // 优先使用内联歌曲；若无则从本地库解析
       let songs = pl.songs ?? [];
       if (songs.length === 0 && pl.songPaths.length > 0 && resolveSongsByPaths) {
         songs = resolveSongsByPaths(pl.songPaths);
@@ -100,18 +86,15 @@ export async function exportAppBackup(
     }
   }
 
-  // 2. 收集收藏歌曲（独立于歌单，含本地与在线元信息）
   let backupFavorites: Song[] = [];
   if (includeFavorites && favorites && favorites.paths.length > 0) {
     backupFavorites = buildFavoriteSongs(favorites.paths, favorites.songMeta, resolveSongsByPaths);
   }
 
-  // 3. 收集插件数据
   const backupPlugins: BackupPluginEntry[] = [];
   if (includePlugins) {
     const storedPlugins = getStoredPlugins();
     for (const source of storedPlugins) {
-      // 跳过内置插件（无法通过脚本恢复）
       if (source.filePath.startsWith('builtin://')) continue;
 
       const script = await getPluginScript(source.id);
@@ -119,7 +102,6 @@ export async function exportAppBackup(
         backupPlugins.push({
           source: {
             ...source,
-            // 清除运行时字段
             updateAvailable: undefined,
           },
           script,
@@ -130,7 +112,6 @@ export async function exportAppBackup(
     }
   }
 
-  // 4. 收集设置数据
   let settings: AppSettings | null = null;
   if (includeSettings) {
     settings = playerStorage.readSettings<AppSettings>();

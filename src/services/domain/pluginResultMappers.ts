@@ -8,7 +8,6 @@ export const stripHtmlTags = (str: unknown): string => {
   return str.replace(/<[^>]*>/g, '');
 };
 
-/** 单节点封面提取：直接字段 + 网易云专辑嵌套 + picId 兜底 */
 const extractCoverFromNode = (node: any): string => {
   if (!node || typeof node !== 'object') return '';
   const raw = node.rawData || node.raw || node;
@@ -16,8 +15,6 @@ const extractCoverFromNode = (node: any): string => {
     node.artwork || node.cover || node.coverImg || node.coverUrl || node.cover_url || node.pic || node.picurl || node.img || node.imgurl || node.imgUrl || node.albumPic || node.picture ||
     raw.artwork || raw.cover || raw.coverImg || raw.coverUrl || raw.cover_url || raw.pic || raw.picurl || raw.img || raw.imgurl || raw.imgUrl || raw.albumPic || raw.picture || '';
 
-  // 过滤非字符串真值：网易云搜索的 al.pic 是超大整数，JSON 解析后丢精度，
-  // 不能当 URL 用；清空后走下方 picId 加密拼 CDN 兜底
   if (url && typeof url !== 'string') url = '';
 
   if (!url && (node.al?.picUrl || raw.al?.picUrl)) url = node.al?.picUrl || raw.al?.picUrl;
@@ -26,7 +23,6 @@ const extractCoverFromNode = (node: any): string => {
   if (!url && (node.coverImgUrl || raw.coverImgUrl)) url = node.coverImgUrl || raw.coverImgUrl;
   if (!url && (node.picUrl || raw.picUrl)) url = node.picUrl || raw.picUrl;
 
-  // 网易云 weapi/search 常只给 picId 不给 picUrl；直接加密拼 CDN，避免再打 getMusicInfo
   if (!url) {
     const picId = extractNeteasePicId(node) ?? extractNeteasePicId(raw);
     if (picId !== null) url = neteasePicIdToUrl(picId);
@@ -34,7 +30,6 @@ const extractCoverFromNode = (node: any): string => {
   return typeof url === 'string' ? url : '';
 };
 
-/** 网易云类插件把数据藏在一层嵌套（song/data/music…）里，需递归一层再取封面 */
 const NESTED_ITEM_KEYS = ['song', 'data', 'music', 'musicInfo', 'detail'];
 
 export const extractCoverUrl = (item: any): string => {
@@ -61,8 +56,6 @@ const extractCoverUrlBuiltin = (item: any): string => {
   if (url && typeof url === 'string' && url.startsWith('http://')) {
     url = url.replace('http://', 'https://');
   }
-  // 酷我第三方(mf/baka)插件会直接返回证书异常的 CDN 域名（如 imgN.sycdn.kuwo.cn），
-  // 统一归一化到证书有效的 img3.kuwo.cn，保证所有渲染路径可直连显示。
   if (url && typeof url === 'string' && /kuwo\.cn/i.test(url)) {
     url = normalizeKuwoCoverUrl(url) || url;
   }
@@ -127,17 +120,11 @@ export const parseDuration = (val: any): number => {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') {
     if (!Number.isFinite(val) || val <= 0) return 0;
-    // 单位启发式（ms/s 歧义区间 1000~59999 只能取一解）：
-    // 该区间按秒解释 = 16.7 分钟 ~ 16.6 小时（B 站音乐合集视频极常见，
-    // 播客/串烧也在此区间）；按毫秒解释 = 1~60 秒的铃声级短音频（罕见）。
-    // 毫秒来源（网易云 dt / B 站 timelength）正常歌曲 ≥ 60000（1 分钟），
-    // 秒来源（插件 duration）B 站最长合集 < 60000，故以 60000 为界。
     return val >= 60000 ? Math.floor(val) : Math.floor(val * 1000);
   }
   if (typeof val === 'string') {
     const trimmed = val.trim();
     if (!trimmed) return 0;
-    // 处理 "03:45" 或 "01:02:03" 冒号分割格式
     if (trimmed.includes(':')) {
       const parts = trimmed.split(':').map((p) => parseInt(p, 10));
       if (parts.every((n) => !isNaN(n))) {
@@ -149,7 +136,6 @@ export const parseDuration = (val: any): number => {
         }
       }
     }
-    // 处理纯数字字符串 "215" 或 "215000"，单位启发式与数字分支一致（60000 为界）
     const n = parseFloat(trimmed);
     if (!isNaN(n) && n > 0) {
       return n >= 60000 ? Math.floor(n) : Math.floor(n * 1000);
@@ -198,7 +184,6 @@ export const extractDurationMs = (item: any): number => {
 
 export const extractDuration = extractDurationMs;
 
-/** 从歌手条目中提取头像 URL，兼容各平台常见字段（含嵌套对象） */
 export const extractArtistAvatarUrl = (item: any): string => {
   if (!item || typeof item !== 'object') return '';
   const candidates = [
@@ -210,7 +195,6 @@ export const extractArtistAvatarUrl = (item: any): string => {
     const v = item[key];
     if (typeof v === 'string' && v) return v;
   }
-  // 嵌套对象：avatar?.url / img?.url / cover?.picUrl 等
   for (const key of candidates) {
     const inner = item[key];
     if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
@@ -224,7 +208,6 @@ export const extractArtistAvatarUrl = (item: any): string => {
   return extractCoverUrl(item);
 };
 
-/** 从插件返回结果中提取 isEnd（分页结束标志），兼容 isEnd/is_end 及嵌套一层 */
 export const extractIsEnd = (result: any): boolean | undefined => {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined;
   if (typeof result.isEnd === 'boolean') return result.isEnd;
@@ -239,16 +222,13 @@ export const extractIsEnd = (result: any): boolean | undefined => {
   return undefined;
 };
 
-/** 从插件返回结果中提取歌曲列表，兼容 data/musicList/isEnd 等多种格式 */
 export const extractResultList = (result: any): any[] => {
   if (!result) return [];
   if (Array.isArray(result)) return result;
 
-  // 从对象节点中查找歌曲列表：尝试常见字段（含大小写变体），再深入一层嵌套
   const songFields = [
     'musicList', 'musiclist', 'songList', 'songlist', 'song_list',
     'songs', 'tracks', 'dataList', 'list', 'items', 'data', 'resData',
-    // 歌单搜索场景的字段变体（如 bilibili 等 MF 插件）
     'sheetList', 'sheetlist', 'playlists', 'playlist',
   ];
   for (const field of songFields) {
@@ -268,11 +248,6 @@ export const extractResultList = (result: any): any[] => {
   return [];
 };
 
-/**
- * 将插件 getTopLists 返回的分类数据展平为榜单条目列表。
- * 兼容「分类数组（{ title, data: [...] }）」与「扁平数组（条目本身）」两种结构。
- * 条目 rawData 带 _isTopList 标记，供详情加载走 getTopListDetail。
- */
 export const flattenTopListCategories = (
   topLists: any,
   source: PluginSource,
@@ -297,7 +272,6 @@ export const flattenTopListCategories = (
         });
       }
     } else if (category && typeof category === 'object') {
-      // 扁平数组：每个条目本身就是一个榜单
       results.push({
         id: String(category.id || ''),
         title: stripHtmlTags(category.title || category.name || ''),

@@ -4,7 +4,6 @@ import type {
   FooterLayoutSettings,
 } from '../../types';
 
-/** 各容器允许的最大控件数（超出会自动溢出到折叠收纳菜单） */
 export const FOOTER_CONTAINER_LIMITS: Record<FooterContainerKey, number> = {
   left: 2,
   middleLeft: 1,
@@ -12,7 +11,6 @@ export const FOOTER_CONTAINER_LIMITS: Record<FooterContainerKey, number> = {
   right: 5,
 };
 
-/** 歌词页专属工具项：默认留在"更多工具"菜单，不被自动补齐到主栏容器（用户可手动开关/拖拽定位） */
 export const LYRIC_FOOTER_ITEMS: ReadonlySet<FooterItemKey> = new Set<FooterItemKey>([
   'visualizer',
   'progress',
@@ -20,10 +18,8 @@ export const LYRIC_FOOTER_ITEMS: ReadonlySet<FooterItemKey> = new Set<FooterItem
   'pin',
 ]);
 
-/** 所有容器（用于设置面板遍历） */
 export const FOOTER_CONTAINERS: FooterContainerKey[] = ['left', 'middleLeft', 'middleRight', 'right'];
 
-/** 默认底部栏布局（恢复默认时使用） */
 export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
   left: ['favorite', 'download'],
   middleLeft: 'playMode',
@@ -33,7 +29,6 @@ export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
   collapsed: [],
 };
 
-/** 容器显示信息 */
 export const FOOTER_CONTAINER_LABELS: Record<FooterContainerKey, { label: string; hint: string }> = {
   left: { label: '左侧容器', hint: '紧邻封面与歌曲信息' },
   middleLeft: { label: '中间左侧', hint: '紧邻上一首按钮' },
@@ -41,21 +36,15 @@ export const FOOTER_CONTAINER_LABELS: Record<FooterContainerKey, { label: string
   right: { label: '右侧容器', hint: '紧邻窗口右边缘' },
 };
 
-/** 移动目标（包括收纳菜单） */
 export type FooterMoveTarget = FooterContainerKey | 'collapsed';
 
 export interface FooterItemMeta {
   key: FooterItemKey;
   label: string;
   description: string;
-  /** lucide 图标名（用于设置面板展示，运行时由 PlayerFooter 内联渲染） */
   icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle' | 'play' | 'share2' | 'cast' | 'audio-lines' | 'eye' | 'palette' | 'pin';
 }
 
-/**
- * 底部栏可配置控件元数据。
- * 每个控件均可放置到任意容器中，实现完全自定义布局。
- */
 export const FOOTER_ITEMS: FooterItemMeta[] = [
   { key: 'favorite',       label: '收藏',       description: '当前歌曲收藏切换', icon: 'heart' },
   { key: 'download',       label: '下载',       description: '在线歌曲下载、本地歌曲显示完成', icon: 'download' },
@@ -81,17 +70,8 @@ const FOOTER_ITEM_KEY_SET = new Set<FooterItemKey>(FOOTER_ITEM_KEYS);
 export const getFooterItemMeta = (key: FooterItemKey): FooterItemMeta | undefined =>
   FOOTER_ITEMS.find(item => item.key === key);
 
-/** 所有容器（含中间），按优先补齐顺序排列 */
 const ALL_CONTAINERS_ORDERED: FooterContainerKey[] = ['left', 'middleLeft', 'middleRight', 'right'];
 
-/**
- * 将任意输入归一化为合法的底部栏布局：
- * - 剔除非法 key、去重
- * - 超出容器容量的尾部项自动溢出
- * - 缺失的 key 补回到第一个仍有空位的容器（若已满则进入折叠）
- * - middleLeft / middleRight 为单值，若 key 非法或已占用则置 null
- * 每个控件均可放入任意容器，无 allowedContainers 限制。
- */
 export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
   const base = typeof value === 'object' && value !== null ? value as Partial<FooterLayoutSettings> : {};
   const seen = new Set<FooterItemKey>();
@@ -136,8 +116,6 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
   let middleLeft = cleanSingle(base.middleLeft);
   let middleRight = cleanSingle(base.middleRight);
 
-  // 旧配置只保存了 hidden，没有保留其槽位。迁移时把隐藏项补成不可见占位符：
-  // 左区靠左，因此占位符放末尾；右区靠右，因此占位符放开头。
   for (const key of hidden) {
     if (seen.has(key)) continue;
     if (DEFAULT_FOOTER_LAYOUT.left.includes(key) && left.length < FOOTER_CONTAINER_LIMITS.left) {
@@ -156,10 +134,8 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
     seen.add(key);
   }
 
-  // 补齐缺失项：按元数据顺序，把未分配的 key 放回第一个仍有空位的容器
   for (const key of FOOTER_ITEM_KEYS) {
     if (seen.has(key) || hiddenSet.has(key)) continue;
-    // 歌词页专属工具默认留在折叠菜单，不自动填充主栏容器
     if (LYRIC_FOOTER_ITEMS.has(key)) continue;
     for (const container of ALL_CONTAINERS_ORDERED) {
       if (container === 'middleLeft') {
@@ -186,7 +162,6 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
         break;
       }
     }
-    // 所有容器都满时，留在折叠区
   }
 
   const assignedSet = new Set<FooterItemKey>([
@@ -195,7 +170,6 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
     ...(middleRight ? [middleRight] : []),
     ...right,
   ]);
-  // 有序折叠列表：沿用用户已保存的顺序，丢弃已被分配到容器/无效的历史项
   const collapsed: FooterItemKey[] = [];
   const collapsedSeen = new Set<FooterItemKey>();
   if (Array.isArray(base.collapsed)) {
@@ -211,10 +185,6 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
   return { left, middleLeft, middleRight, right, hidden, collapsed };
 };
 
-/**
- * 计算折叠收纳菜单中控件的顺序：
- * 优先沿用用户自定义的有序排列（collapsed），其余未分配/隐藏项按元数据顺序补足。
- */
 export const computeCollapsedItems = (layout: FooterLayoutSettings): FooterItemKey[] => {
   const assigned = new Set<FooterItemKey>([
     ...layout.left,
@@ -235,7 +205,6 @@ export const computeCollapsedItems = (layout: FooterLayoutSettings): FooterItemK
   return result;
 };
 
-/** 查找控件当前所在的容器（不在任何容器则返回 'collapsed'） */
 export const findItemContainer = (
   layout: FooterLayoutSettings,
   key: FooterItemKey,
@@ -247,19 +216,11 @@ export const findItemContainer = (
   return 'collapsed';
 };
 
-/**
- * 将控件移动到目标容器（或收入折叠）。
- * - 移动到 collapsed：从所有容器移除
- * - 移动到列表容器（left/right）：若已满则返回 null
- * - 移动到中间容器（middleLeft/middleRight）：若已占用则返回 null
- * 返回 null 表示目标已满/已占用，调用方应给出提示。
- */
 export const moveFooterItemTo = (
   layout: FooterLayoutSettings,
   key: FooterItemKey,
   target: FooterMoveTarget,
 ): FooterLayoutSettings | null => {
-  // 从所有容器移除该 key
   const next: FooterLayoutSettings = {
     left: layout.left.filter(k => k !== key),
     middleLeft: layout.middleLeft === key ? null : layout.middleLeft,
@@ -269,7 +230,6 @@ export const moveFooterItemTo = (
     collapsed: (layout.collapsed ?? []).filter(k => k !== key),
   };
 
-  // 收入折叠：移除主栏并放入有序列尾
   if (target === 'collapsed') {
     next.collapsed = [...(next.collapsed ?? []), key];
     return normalizeFooterLayout(next);
@@ -371,7 +331,6 @@ const layoutFromPreviewSlots = (
   collapsed,
 });
 
-/** 在可视化预览的两个槽位之间交换控件。 */
 export const moveFooterItemToPreviewSlot = (
   value: FooterLayoutSettings,
   key: FooterItemKey,
@@ -394,7 +353,6 @@ const DEFAULT_SLOT_BY_ITEM = Object.fromEntries(
     .map(([slot, key]) => [key, slot]),
 ) as Partial<Record<FooterItemKey, FooterPreviewSlot>>;
 
-/** 切换控件显示状态；重新开启时优先回到默认位置，否则放入第一个空槽位。 */
 export const setFooterItemVisibility = (
   value: FooterLayoutSettings,
   key: FooterItemKey,
@@ -458,10 +416,6 @@ export const setFooterItemVisibility = (
   return layoutFromPreviewSlots(slots, hidden, layout.collapsed);
 };
 
-/**
- * 重排更多工具菜单中控件的顺序（用于设置预览弹窗内拖拽排序）。
- * 仅持久化仍处于折叠态（未分配主栏）的项。
- */
 export const reorderCollapsedItems = (
   value: FooterLayoutSettings,
   ordered: FooterItemKey[],
@@ -477,7 +431,6 @@ export const reorderCollapsedItems = (
   return normalizeFooterLayout({ ...layout, collapsed });
 };
 
-/** 从所有容器/隐藏标记中移除指定控件，其余保持不变。 */
 const omitFromContainers = (
   layout: FooterLayoutSettings,
   key: FooterItemKey,
@@ -490,10 +443,6 @@ const omitFromContainers = (
   collapsed: (layout.collapsed ?? []).filter(k => k !== key),
 });
 
-/**
- * 统一拖拽：把控件放入指定底栏槽位（适用于从收纳拖入或从其它槽位拖入）。
- * 目标槽位若已有控件，将其退回收纳区；同时清除该控件的隐藏标记。
- */
 export const dropFooterItemToSlot = (
   value: FooterLayoutSettings,
   key: FooterItemKey,
@@ -506,10 +455,6 @@ export const dropFooterItemToSlot = (
   return layoutFromPreviewSlots(slots, base.hidden, base.collapsed);
 };
 
-/**
- * 统一拖拽：把控件放入收纳区（从底栏拖入，或收纳内重排）。
- * 会从所有底栏容器移除该控件并插入到收纳顺序的 targetIndex（渲染坐标，负数表示追加末尾）。
- */
 export const dropFooterItemToPalette = (
   value: FooterLayoutSettings,
   key: FooterItemKey,

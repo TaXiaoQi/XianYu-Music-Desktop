@@ -331,7 +331,6 @@ mod tests {
             "  TRACK 03 AUDIO\n",
             "    INDEX 01 08:48:20\n",
         );
-        // Parse without file resolution by using a temp dir
         let tmp = std::env::temp_dir();
         std::fs::write(tmp.join("test.flac"), b"fake").ok();
         let cue_path = tmp.join("test.cue");
@@ -341,7 +340,7 @@ mod tests {
             assert_eq!(sheet.tracks[0].index01_start_ms, 0);
             assert_eq!(sheet.tracks[0].end_ms, Some(292800));
             assert_eq!(sheet.tracks[1].index01_start_ms, 292800);
-            assert_eq!(sheet.tracks[2].end_ms, None); // last track
+            assert_eq!(sheet.tracks[2].end_ms, None);
         }
     }
 

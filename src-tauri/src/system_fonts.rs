@@ -1,8 +1,5 @@
 use std::collections::BTreeSet;
 
-/// 字体样式修饰词。Windows 注册表里的字体名是 "face name"（含粗细/斜体等修饰），
-/// 而 CSS `font-family` 需要的是 "family name"。选中带修饰词的 face name 会导致
-/// 浏览器匹配失败并回退到默认字体，因此需要把这些尾部修饰词剥离掉。
 const FONT_STYLE_WORDS: &[&str] = &[
     "thin",
     "hairline",
@@ -26,10 +23,6 @@ const FONT_STYLE_WORDS: &[&str] = &[
     "oblique",
 ];
 
-/// 从单个 face name 中剥离尾部的样式修饰词，得到 family name。
-/// 例如 "Microsoft YaHei UI Bold" -> "Microsoft YaHei UI"，
-/// "Calibri Light Italic" -> "Calibri"。
-/// 若剥离后为空（整名都是样式词），则回退为原始名。
 fn strip_style_words(face_name: &str) -> String {
     let words: Vec<&str> = face_name.split_whitespace().collect();
     let mut end = words.len();
@@ -46,9 +39,6 @@ fn strip_style_words(face_name: &str) -> String {
     words[..end].join(" ")
 }
 
-/// 把注册表里的一个字体项名解析为一个或多个 CSS 可用的 family name。
-/// 处理：去除 "@" 前缀、去除尾部 " (TrueType)" 之类的后缀、
-/// 按 " & " 拆分合并项、剥离每个 face 的样式修饰词。
 fn sanitize_font_names(value: &str, out: &mut BTreeSet<String>) {
     let trimmed = value.trim().trim_start_matches('@').trim();
     if trimmed.is_empty() {
@@ -181,10 +171,6 @@ mod imp {
     use std::collections::BTreeSet;
     use std::process::Command;
 
-    /// 通过 fontconfig 的 fc-list 枚举系统字体 family（主流发行版预装）。
-    /// `--format '%{family}\n'` 每行输出一个字体的 family 集合，同一字体的
-    /// 多个别名/本地化名以逗号分隔（含中文名，如 "思源黑体,Source Han Sans SC"）。
-    /// fc-list 不存在或失败时返回空列表（前端回退默认字体选择）。
     pub fn get_system_fonts() -> Result<Vec<String>, String> {
         let Ok(output) = Command::new("fc-list")
             .arg("--format")
@@ -214,9 +200,6 @@ mod imp {
     use super::sanitize_font_names;
     use std::collections::BTreeSet;
 
-    /// 通过 CoreText 枚举系统字体 family（含系统字体、/Library/Fonts 与
-    /// ~/Library/Fonts 用户字体），与「字体册」App 的 family 列表一致。
-    /// 枚举失败时返回空列表（前端回退默认字体选择）。
     pub fn get_system_fonts() -> Result<Vec<String>, String> {
         let collection = core_text::font_collection::create_for_all_families();
         let mut names: BTreeSet<String> = BTreeSet::new();
@@ -267,7 +250,6 @@ mod tests {
 
     #[test]
     fn splits_and_strips_merged_styled_entries() {
-        // "Microsoft YaHei Bold & Microsoft YaHei UI Bold" 应规整为两个 family
         assert_eq!(
             parse("Microsoft YaHei Bold & Microsoft YaHei UI Bold (TrueType)"),
             vec![
@@ -279,7 +261,6 @@ mod tests {
 
     #[test]
     fn strips_at_prefix() {
-        // "@" 前缀用于竖排字体变体
         assert_eq!(
             parse("@Microsoft YaHei (TrueType)"),
             vec!["Microsoft YaHei"]
@@ -288,7 +269,6 @@ mod tests {
 
     #[test]
     fn keeps_name_when_all_words_are_styles() {
-        // 整名都是样式词时至少保留最后一个词，避免产出空串
         assert_eq!(parse("Black (TrueType)"), vec!["Black"]);
     }
 

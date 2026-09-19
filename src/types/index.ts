@@ -1,5 +1,5 @@
 export interface SongCore {
-  id?: number;       // 数据库主键 (用于播放记录关联)
+  id?: number;
   name: string;
   title?: string;
   path: string;
@@ -15,7 +15,6 @@ export interface SongCore {
   cover_thumb_path?: string;
   genre?: string;
   year?: string;
-  // Audio quality fields (v1.1.1)
   bitrate?: number;
   sample_rate?: number;
   bit_depth?: number;
@@ -29,26 +28,18 @@ export interface SongCore {
   file_modified_at?: number;
   source_type?: 'local' | 'remote' | 'plugin';
   remote_source_id?: string;
-  /** 预获取直链时使用的请求音质；播放时若当前设置不一致，应重新解析 */
   remote_requested_quality?: QualityKey;
-  /** 预获取直链时使用的音质失败行为；播放时若当前设置不一致，应重新解析 */
   remote_fallback_behavior?: OnlineQualityFallbackBehavior;
-  /** 预获取直链实际命中的音质，用于复用直链时同步底部栏显示 */
   remote_actual_quality?: QualityKey;
   plugin_id?: string;
   cue_source_path?: string;
   cue_start_offset?: number;
   cue_end_offset?: number;
   comment?: string;
-  /** 原始歌词文本（在线歌曲或内嵌歌词加载时可直接解析） */
   lyrics_raw?: string;
-  /** 在线歌曲的原始插件搜索结果数据（用于 plugin:// 协议歌曲的后续解析） */
   rawData?: any;
-  /** 在线歌曲的防盗链 headers（预获取直链时保存） */
   remote_headers?: Record<string, string>;
-  /** 在线插件歌曲的 QMC2 加密密钥（预获取直链时保存，播放时传给后端流式解密） */
   remote_ekey?: string;
-  /** 在线插件歌曲的 CENC 内容密钥（预留给后端解密链路） */
   remote_cek?: string;
 }
 
@@ -111,15 +102,10 @@ export interface Playlist {
   songPaths: string[];
   createdAt?: string;
   coverPath?: string;
-  /** 完整歌曲对象（插件导入等非本地来源，用于跨设备同步） */
   songs?: Song[];
-  /** 云端歌单 ID（同步后绑定，用于增量同步定位云端歌单），统一为字符串稳定 ID */
   cloudId?: string;
-  /** 是否从云端同步而来（下载合并时标记；cloudId 可能因历史数据缺失，用此标记判定"是否云端"） */
   isCloud?: boolean;
-  /** 云端歌单封面 URL */
   cloudCoverUrl?: string;
-  /** 是否为收藏歌单（"我喜欢的音乐"） */
   isFavorite?: boolean;
 }
 
@@ -256,9 +242,9 @@ export interface ThemeSettings {
   flowSpeed: number;
   flowTexture: number;
   windowBlurTint: number;
-  customBgPath: string; // Legacy field, keeping for compatibility if needed, but we'll use customBackground
-  opacity: number;      // Legacy field
-  blur: number;         // Legacy field
+  customBgPath: string;
+  opacity: number;
+  blur: number;
   customBackground: {
     imagePath: string;
     blur: number;
@@ -274,7 +260,6 @@ export interface ThemeSettings {
   }
 }
 
-/** 可排序的侧边栏项标识（"首页"固定置顶，不参与排序） */
 export type SidebarItemKey =
   | 'localMusic'
   | 'artists'
@@ -295,62 +280,37 @@ export interface SidebarSettings {
   showStatistics: boolean;
   showPlugins: boolean;
   showAccount: boolean;
-  /** 侧边栏项目的排列顺序 */
   order: SidebarItemKey[];
 }
 
-/**
- * 底部栏可配置控件标识。
- * - 封面、歌名/艺人、进度条为固定核心元素，不参与排序。
- * - 上一首/播放暂停/下一首为"播放三大件"，固定在中间容器中央，不可移动。
- */
 export type FooterItemKey =
-  | 'download'        // 下载按钮
-  | 'favorite'        // 收藏按钮
-  | 'playMode'        // 播放模式
-  | 'desktopLyrics'  // 桌面歌词
-  | 'quality'         // 音质选择
-  | 'volume'          // 音量
-  | 'equalizer'       // 均衡器
-  | 'playlist'        // 播放队列
-  | 'comment'         // 评论区
-  | 'mv'              // MV 背景视频（仅播放详情页显示）
-  | 'share'           // 分享当前歌曲（复制链接 / DLNA 投屏弹窗）
-  | 'visualizer'      // 可视化/频谱开关（仅播放详情页可用）
-  | 'progress'        // 歌词页进度条显示开关（仅播放详情页可用）
-  | 'pageStyle'       // 页面样式（仅播放详情页可用）
-  | 'pin';            // 固定状态栏（仅播放详情页可用）
+  | 'download'
+  | 'favorite'
+  | 'playMode'
+  | 'desktopLyrics'
+  | 'quality'
+  | 'volume'
+  | 'equalizer'
+  | 'playlist'
+  | 'comment'
+  | 'mv'
+  | 'share'
+  | 'visualizer'
+  | 'progress'
+  | 'pageStyle'
+  | 'pin';
 
-/** 底部栏容器标识 */
 export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';
 
-/**
- * 底部栏布局配置。
- * - left: 左侧容器控件顺序（最多 2 个；封面与歌名/艺人固定显示）
- * - middleLeft / middleRight: 中间容器紧邻"播放三大件"左右各 1 个（null 表示留空）
- * - right: 右侧容器控件顺序（最多 5 个）
- * 未在任何容器中出现的控件会自动收入工具收纳菜单。
- */
 export interface FooterLayoutSettings {
   left: FooterItemKey[];
   middleLeft: FooterItemKey | null;
   middleRight: FooterItemKey | null;
   right: FooterItemKey[];
-  /** 用户明确关闭显示的控件，不进入底栏或更多工具菜单。 */
   hidden: FooterItemKey[];
-  /**
-   * 更多工具菜单中控件的有序排列（未分配到主栏容器的项）。
-   * 用于用户在设置预览的更多工具弹窗内经拖拽自定义排序。
-   */
   collapsed?: FooterItemKey[];
 }
 
-/**
- * 顶部栏可配置控件标识。
- * - search（搜索框）与 settings（设置）为固定控件：始终显示、不可关闭，但可调整位置。
- * - 其余控件（back / recognize / theme / announcement / account / colorScheme）可自定义开关与位置。
- * 窗口控制（迷你窗、最小化、最大化、关闭）为固定区域，不属于自定义池。
- */
 export type TopBarItemKey =
   | 'back'
   | 'search'
@@ -361,14 +321,8 @@ export type TopBarItemKey =
   | 'account'
   | 'colorScheme';
 
-/** 顶部栏可自定义容器（固定区域：搜索框居中、窗口控制靠右，不参与编排） */
 export type TopBarContainerKey = 'left' | 'right';
 
-/**
- * 顶部栏布局配置。
- * - left / right：可自定义容器（搜索框固定的居中弹性区将剩余空间补齐）
- * - hidden：用户关闭显示的控件（search / settings 固定不可关闭）
- */
 export interface TopBarLayoutSettings {
   left: TopBarItemKey[];
   right: TopBarItemKey[];
@@ -401,11 +355,8 @@ export interface LyricsSettings {
   playerOffsetY: number;
   playerAlignment: LyricsPlayerAlignment;
   playerFontPreset: LyricsFontPreset;
-  /** 是否分开设置中文和外文字体 */
   playerFontSplitEnabled?: boolean;
-  /** 分开设置时的 CJK（中文/日文/韩文）字体 */
   playerFontPresetCJK?: LyricsFontPreset;
-  /** 分开设置时的外文（拉丁字母等）字体 */
   playerFontPresetLatin?: LyricsFontPreset;
   backgroundBlur: number;
   customBackgroundImage: string;
@@ -448,7 +399,6 @@ export type AudioOutputMode = 'shared' | 'wasapiExclusive';
 
 // ==================== 音质类型系统 ====================
 
-/** 统一音质键值（12 档，从低到高） */
 export type QualityKey =
   | 'mgg'
   | '128k'
@@ -463,18 +413,14 @@ export type QualityKey =
   | 'atmos_plus'
   | 'master';
 
-/** 音质元信息（UI 显示 + 内部映射） */
 export interface QualityMeta {
   key: QualityKey;
-  label: string;            /** 中文标签 */
-  description: string;      /** 详细音质：前端统一展示 Baka/LX 原生音质档位 */
-  /** 是否属于无损类（用于判断下载扩展名与无损识别） */
+  label: string;
+  description: string;
   isLossless: boolean;
-  /** 音质排序序号，越小音质越差，用于从高到低降级时翻转 */
   rank: number;
 }
 
-/** 音质元数据表：按音质从低到高排序 */
 export const QUALITY_META: Record<QualityKey, QualityMeta> = {
   mgg:         { key: 'mgg',         label: '低清',   description: '96k',         isLossless: false, rank: 1  },
   '128k':      { key: '128k',      label: '普通',   description: '128k',        isLossless: false, rank: 2  },
@@ -490,18 +436,14 @@ export const QUALITY_META: Record<QualityKey, QualityMeta> = {
   master:       { key: 'master',       label: '臻品母带', description: 'master',      isLossless: true,  rank: 12 },
 };
 
-/** 所有 12 种音质键值列表（按 rank 升序：低→高） */
 export const ALL_QUALITY_KEYS: QualityKey[] =
   (Object.keys(QUALITY_META) as QualityKey[])
     .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
 
-/** 所有 12 种音质键值列表（按 rank 降序：高→低） */
 export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse();
 
-/** BakaMusic 原生插件音质键（对外传给插件时使用；96k 是 mgg 的插件侧名称） */
 export const BAKA_PLUGIN_QUALITY_KEYS: string[] = ALL_QUALITY_KEYS.map(q => q === 'mgg' ? '96k' : q);
 
-/** BakaMusic 新音质键 → 旧 MF 兼容音质键映射（对齐 newToLegacyQualityMap） */
 export const BAKA_TO_LEGACY_QUALITY_MAP: Record<QualityKey, 'low' | 'standard' | 'high' | 'super'> = {
   mgg: 'low',
   '128k': 'low',
@@ -517,7 +459,6 @@ export const BAKA_TO_LEGACY_QUALITY_MAP: Record<QualityKey, 'low' | 'standard' |
   master: 'super',
 };
 
-/** 常见插件/音源别名 → 本项目统一 Baka 音质键 */
 const QUALITY_KEY_ALIASES: Record<string, QualityKey> = {
   '96k': 'mgg',
   ogg96: 'mgg',
@@ -555,7 +496,6 @@ const QUALITY_KEY_ALIASES: Record<string, QualityKey> = {
   master: 'master',
 };
 
-/** 将插件声明/接口入参里的音质字符串标准化为 Baka 12 档 QualityKey */
 export function normalizeQualityKey(raw: unknown): QualityKey | null {
   if (typeof raw !== 'string') return null;
   const normalized = raw.trim().toLowerCase().replace(/\s+/g, '').replace(/-/g, '_');
@@ -564,58 +504,24 @@ export function normalizeQualityKey(raw: unknown): QualityKey | null {
   return QUALITY_KEY_ALIASES[normalized] ?? null;
 }
 
-/** 将内部 QualityKey 转为 Baka 插件原生音质字符串 */
 export function qualityKeyToBakaPluginQuality(q: QualityKey): string {
   return q === 'mgg' ? '96k' : q;
 }
 
-/** 将内部 QualityKey 转为 BakaMusic 旧版兼容音质键 */
 export function qualityKeyToBakaLegacyQuality(q: QualityKey): 'low' | 'standard' | 'high' | 'super' {
   return BAKA_TO_LEGACY_QUALITY_MAP[q];
 }
 
-/**
- * 将内部 QualityKey 转为落雪（lx）插件 musicUrl 入参的 qualitys 原值。
- *
- * 落雪插件在 init 里声明 sources.<source>.qualitys（如 ['128k','320k','flac']），
- * musicUrl(songInfo, type) 的 type 入参必须是其中一个原值字符串，插件内部按它查
- * type_map / hash 表。绝不能用 MF 四级键（low/standard/high/super），也别用 Baka 键
- * （96k）——落雪体系里没有 96k，最低通常就是 128k。
- *
- * 映射规则：绝大多数档位与项目 QualityKey 同名（128k/320k/flac/flac24bit/hires/
- * vinyl/dolby/atmos/master），仅需要特殊处理两处：
- *   - mgg（96k 概念，lx 无）            → '128k'（取 lx 最低标准档）
- *   - 其余未知名档位                   → '320k'（lx 插件通用兜底档）
- */
 export function qualityKeyToLxQuality(q: QualityKey): string {
   if (q === 'mgg') return '128k';
   if (q in QUALITY_META) return q;
   return '320k';
 }
 
-/** 在线播放默认音质档位（对应落雪/插件引擎的音质标识） */
-/** 现在使用统一的 QualityKey */
 export type OnlineDefaultQuality = QualityKey;
-/** 在线歌曲起播失败时的行为：autoswitch = 自动换源（失败后等价 stop，对齐移动端） */
 export type OnlineFailureBehavior = 'skip' | 'stop' | 'autoswitch';
-/** 在线歌曲默认音质播放失败时的音质回退行为 */
 export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
 
-/**
- * 根据用户首选音质、音源可用音质列表和回退行为，计算实际应尝试的音质列表（有序）。
- *
- * 逻辑：
- * 1. 首选音质在可用列表中 → 首选排第一
- * 2. 根据回退行为添加候选：
- *    - 'lower': 添加低于首选的可用音质（从高到低依次）
- *    - 'higher': 添加高于首选的可用音质（从低到高依次）
- *    - 'pause': 不添加候选
- * 3. 若候选列表为空且回退行为不是 pause（音源不支持首选音质且回退行为无法产出候选，如首选最高且回退为更高但音源只有更低音质），
- *    回退到可用列表中的最低音质（低音质兜底），确保始终能播放；
- *    实际命中的低音质会通过 currentPlayingQuality 同步显示至底部栏音质按钮
- *
- * @returns 有序音质列表，第一个返回有效 URL 的即采用
- */
 export function resolveOnlinePlayQuality(
   preferred: QualityKey,
   available: QualityKey[] | null,
@@ -625,40 +531,31 @@ export function resolveOnlinePlayQuality(
   const availableSet = new Set(avail);
   const result: QualityKey[] = [];
 
-  // 1. 首选音质可用时优先
   if (availableSet.has(preferred)) {
     result.push(preferred);
   }
 
-  // 2. 根据回退行为添加候选
   const preferredIdx = ALL_QUALITY_KEYS.indexOf(preferred);
   if (preferredIdx !== -1) {
     if (fallbackBehavior === 'higher') {
-      // 向上升级：从首选+1 到最高
       for (let i = preferredIdx + 1; i < ALL_QUALITY_KEYS.length; i++) {
         if (availableSet.has(ALL_QUALITY_KEYS[i])) {
           result.push(ALL_QUALITY_KEYS[i]);
         }
       }
     } else if (fallbackBehavior === 'lower') {
-      // 向下降级：从首选-1 到最低
       for (let i = preferredIdx - 1; i >= 0; i--) {
         if (availableSet.has(ALL_QUALITY_KEYS[i])) {
           result.push(ALL_QUALITY_KEYS[i]);
         }
       }
     }
-    // 'pause': 不添加回退候选
   }
 
-  // 3. pause 表示严格不回退：首选不在可用列表时仍只尝试首选一次，
-  //    失败后交给在线起播失败行为（跳过/停止）处理，避免后台反复请求其他音质。
   if (fallbackBehavior === 'pause') {
     return result.length > 0 ? result : [preferred];
   }
 
-  // 4. 若候选为空（音源不支持首选音质且回退行为无法产出候选），回退到可用列表中的最低音质
-  //    （低音质兜底），实际命中音质会通过 currentPlayingQuality 同步显示至底部栏
   if (result.length === 0 && avail.length > 0) {
     const lowest = [...avail].sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)[0];
     result.push(lowest);
@@ -667,22 +564,6 @@ export function resolveOnlinePlayQuality(
   return result;
 }
 
-/**
- * 将 QualityKey 映射到 MusicFree 插件 getMediaSource 入参的四级键。
- *
- * 原版 MusicFree 插件的质量标准就是这 4 档：low / standard / high / super
- * （约相当于 128k / 320k / FLAC / 超高），插件内部的 QUALITY_MAPPING 也按
- * 这 4 个键编写（如时迁酱网易云：low→128k、standard→320k、high→flac、super→flac24bit）。
- * 因此必须映射到四级键，而不是按插件 supportedQualities 声明的字符串直传——
- * 否则 128k/flac 等在插件 QUALITY_MAPPING 里查不到，会全部回退到默认档（如 320k），
- * 导致音质列表塌缩成只有一档。
- *
- * 映射规则：
- *   mgg / 128k / 192k                                  → low
- *   320k                                               → standard
- *   flac                                               → high
- *   flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master  → super
- */
 export function qualityKeyToMfQuality(q: QualityKey): 'low' | 'standard' | 'high' | 'super' {
   const rank = QUALITY_META[q]?.rank ?? 0;
   if (rank >= 6) return 'super';
@@ -710,9 +591,7 @@ export interface EqualizerSettings {
 
 export interface AudioSettings {
   outputMode: AudioOutputMode;
-  /** bit-perfect 输出：强制 WASAPI 独占 + 关闭音量/均衡器/音效 DSP，按源采样率直出 */
   outputBitPerfect?: boolean;
-  /** DSD 原生 DoP 直通：仅 .dsf + WASAPI 独占时生效，关闭则走常规 PCM 解码 */
   dsdNativePassthrough?: boolean;
   volumeBalance: {
     enabled: boolean;
@@ -720,31 +599,20 @@ export interface AudioSettings {
     preventClipping: boolean;
   };
   equalizer: EqualizerSettings;
-  showEqualizerInFooter: boolean; // 运行态必选属性
-  /** 在线播放默认音质，默认 '320k'（HQ） */
+  showEqualizerInFooter: boolean;
   onlineDefaultQuality: OnlineDefaultQuality;
-  /** 在线歌曲起播失败时的行为，默认 'skip'（跳到下一首） */
   onlineFailureBehavior: OnlineFailureBehavior;
-  /** 在线歌曲默认音质播放失败时的音质回退行为，默认 'lower'（播放更低音质） */
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
-  /** 在线流式播放缓存上限（MB），默认 512MB */
   streamCacheSizeMB: number;
-  /** 在线流式播放缓存目录，空串表示使用默认目录（%APPDATA%/com.xymusic.desktop/stream_cache） */
   streamCacheDir?: string;
-  /** 播放/暂停渐入渐出（淡入淡出）开关，默认关闭 */
   fadeInOutEnabled: boolean;
-  /** 渐入渐出时长（毫秒），默认 1000ms，范围 100-2000ms */
   fadeInOutDurationMs: number;
-  /** MV 背景视频默认画质（播放），默认 '720P' */
   mvDefaultQuality?: MvQualityKey;
-  /** MV 画面手动校准偏移（毫秒）：正值画面提前、负值画面延后 */
   mvVideoSyncOffsetMs?: number;
 }
 
-/** MV 视频画质档位 */
 export type MvQualityKey = '360P' | '480P' | '720P' | '1080P' | '4K';
 
-/** MV 画质档位元数据（设置页与选择弹窗共用） */
 export const MV_QUALITY_META: Record<MvQualityKey, { label: string; description: string }> = {
   '360P': { label: '360P', description: '流畅' },
   '480P': { label: '480P', description: '清晰' },
@@ -792,7 +660,6 @@ export interface PluginSettings {
 
 export type SongClickAction = 'double' | 'single';
 export type AppLanguage = 'system' | 'zh-CN' | 'zh-TW' | 'en-US';
-/** 性能模式：auto 自动检测 / full 满特效 / performance 性能优先（渲染降级）。 */
 export type PerformanceMode = 'auto' | 'full' | 'performance';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -812,7 +679,6 @@ export interface AppSettings {
   showSongComments: boolean;
   enableScrollToTopButton: boolean;
   libraryMinDurationSeconds: number;
-  // Deprecated compat field. Retained only for legacy config deserialization.
   linkFoldersToLibrary: boolean;
   lyricsSyncOffset: number;
   organizeRoot: string;
@@ -830,7 +696,6 @@ export interface AppSettings {
   showTaskbarPlayer: boolean;
   taskbarPlayerCanDrag: boolean;
   gpuAcceleration: boolean;
-  /** 性能模式：auto 自动检测 / full 满特效 / performance 性能优先（渲染降级）。 */
   performanceMode: PerformanceMode;
   checkUpdateOnStartup: boolean;
   writeArtistAvatarToTags: boolean;
@@ -840,65 +705,41 @@ export interface AppSettings {
   autoSync: AutoSyncConfig;
   logging: LogSettings;
   songClickAction: SongClickAction;
-  /** 分享链接有效时长（分钟）：分享后 N 分钟过期（服务端丢弃），范围 5~1440，默认 120。 */
   shareLinkValidityMinutes: number;
-  /** 分享链接播放失败行为：pause 暂停播放（默认）/ replace 替换播放（走插件索引换源重播）。 */
   sharePlaybackFailureBehavior: 'pause' | 'replace';
-  /** DLNA 渲染器（接收端）：开启后局域网其它 App 可投歌到本端播放。 */
   dlnaRendererEnabled: boolean;
-  /** DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。 */
   dlnaRendererName: string;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
-/** 下载默认音质（使用统一的 QualityKey 枚举，和在线播放一致） */
 export type DownloadQuality = QualityKey;
 
-/**
- * 下载文件名样式：
- *   artist-title       → 歌手 - 歌名
- *   title-artist       → 歌名 - 歌手
- *   title-artist-album → 歌名 - 歌手 - 专辑
- */
 export type DownloadFileNameStyle = 'artist-title' | 'title-artist' | 'title-artist-album';
 
-/** 歌词下载样式：word-by-word 优先逐字歌词（回退逐行），line-by-line 仅逐行歌词 */
 export type DownloadLyricsStyle = 'word-by-word' | 'line-by-line';
 
-/** 底部下载按钮行为：default 使用下载设置，ask 每次打开详细弹窗 */
 export type DownloadBehavior = 'default' | 'ask';
 
 export interface DownloadSettings {
   downloadPath: string;
-  /** 底部下载按钮点击行为 */
   behavior: DownloadBehavior;
-  /** 批量下载同时下载数量上限，范围 1-5，默认 2 */
   batchDownloadLimit: number;
   format: DownloadFormat;
   quality: DownloadQuality;
-  /** 下载独立歌词文件（.lrc/.txt），默认 true */
   downloadLyrics: boolean;
   lyricsFormat: 'lrc' | 'txt';
-  /** 歌词样式：word-by-word 优先下载逐字歌词（回退到逐行），line-by-line 仅下载逐行歌词 */
   lyricsStyle: DownloadLyricsStyle;
   overwriteExisting: boolean;
   keepSourceFilename: boolean;
-  /** 文件名样式（keepSourceFilename 为真时不生效） */
   fileNameStyle: DownloadFileNameStyle;
   rememberDownloadPath: boolean;
-  /** 下载音质缺失时的回退行为，默认 'lower'（下载更低音质） */
   qualityFallbackBehavior: DownloadQualityFallbackBehavior;
-  /** 将歌曲元数据（标题、歌手、专辑等）写入音频文件 tag（默认 true） */
   embedMetadata: boolean;
-  /** 将歌词写入音频文件 tag（默认 true） */
   embedLyrics: boolean;
-  /** 将封面嵌入音频文件 tag（默认 true） */
   embedCover: boolean;
-  /** 下载 MV 视频的默认画质，默认 '720P' */
   mvDefaultQuality?: MvQualityKey;
 }
 
-/** 下载音质缺失行为 */
 export type DownloadQualityFallbackBehavior = 'lower' | 'higher';
 
 export interface UploadSettings {
@@ -909,34 +750,21 @@ export interface UploadSettings {
   settings: boolean;
 }
 
-/** 自动同步配置 */
 export interface AutoSyncConfig {
-  /** 是否启用自动同步 */
   enabled: boolean;
-  /** 同步间隔（秒），0 表示使用最小间隔 */
   syncIntervalSeconds: number;
-  /** 当服务器繁忙时自动延后的最大延迟（分钟） */
   maxDelayMinutes: number;
-  /** 已延后的同步次数 */
   delayedCount: number;
-  /** 最后一次同步尝试的时间戳 */
   lastSyncAttemptAt: number;
-  /** 最后一次成功同步的时间戳 */
   lastSyncSuccessAt: number;
-  /** 下一次计划同步的时间戳 */
   nextSyncAt: number;
 }
 
 export interface ServerLoadStatus {
-  /** 是否启用流量限制 */
   rateLimited: boolean;
-  /** 当前并发同步用户数 */
   activeSyncCount: number;
-  /** 服务器是否繁忙（带宽或负载过高） */
   busy: boolean;
-  /** 建议的延迟时间（秒） */
   suggestedDelaySeconds: number;
-  /** 带宽利用率（百分比） */
   bandwidthUsagePercent: number;
 }
 
@@ -948,60 +776,35 @@ export interface SaveArtistAvatarResponse {
 
 // ==================== 插件系统类型 ====================
 
-/** 插件格式枚举 */
 export type PluginFormat = 'lx' | 'musicfree' | 'unknown';
 
-/** 插件条目（存储中的完整描述） */
 export interface PluginSource {
-  /** SHA-256 哈希作为插件 ID */
   id: string;
-  /** 插件显示名称 */
   name: string;
-  /** 插件格式 */
   format: PluginFormat;
-  /** 插件版本 */
   version: string;
-  /** 作者 */
   author: string;
-  /** 描述 */
   description: string;
-  /** 文件路径或 URL */
   filePath: string;
-  /** 导入时间 */
   importedAt: number;
-  /** 是否启用 */
   enabled: boolean;
-  /** 支持的音源列表 */
   sources: string[];
-  /** 是否为内置插件 */
   isBuiltin?: boolean;
-  /** 是否有可用更新（用于在插件列表显示"可更新"标记） */
   updateAvailable?: boolean;
-  /** 用户自定义排序权重（数值越小越靠前），同一格式组内生效 */
   sortOrder?: number;
 }
 
-/** 插件订阅源（参考 MusicFreeDesktop 订阅管理设计） */
 export interface PluginSubscription {
-  /** 唯一 ID（sub_<时间戳>_<随机>） */
   id: string;
-  /** 订阅名称（用户可编辑） */
   name: string;
-  /** 订阅源 URL（必须以 .js 或 .json 结尾） */
   url: string;
-  /** 添加时间戳 */
   addedAt: number;
-  /** 上次同步时间戳 */
   lastSyncAt?: number;
-  /** 上次同步状态 */
   lastSyncStatus?: 'success' | 'failed' | 'partial';
-  /** 上次同步消息 */
   lastSyncMessage?: string;
-  /** 上次同步成功安装的插件数 */
   lastSyncCount?: number;
 }
 
-/** 插件 HTTP 响应 */
 export interface PluginHttpResponse {
   status: number;
   url: string;
@@ -1009,7 +812,6 @@ export interface PluginHttpResponse {
   body: string;
 }
 
-/** MusicFree 插件搜索结果 */
 export interface PluginSearchResult {
   id: string;
   title: string;
@@ -1024,34 +826,23 @@ export interface PluginSearchResult {
   rawData?: any;
 }
 
-/** MusicFree 插件音乐信息（含播放URL） */
 export interface PluginMusicInfo {
   url: string;
   lyric?: string;
   tlyric?: string;
-  /** 逐字歌词（lx-music-desktop 格式），由 Toskysun 系列插件提供 */
   lxlyric?: string;
-  /** 网易云 YRC 逐字歌词，由 Baka/MF 插件提供 */
   yrc?: string;
-  /** QQ 音乐 QRC 逐字歌词，由 Baka/MF 插件提供，可能为 hex 加密串 */
   qrc?: string;
-  /** Baka ESLRC 增强逐字歌词 */
   eslrc?: string;
-  /** Baka MP3/XML 逐字歌词（JOOX 等平台），由 Baka 插件提供 */
   ttml?: string;
-  /** 构建好的歌词文本（优先使用逐字歌词），可直接赋值给 song.lyrics_raw */
   lyricsRaw?: string;
   coverUrl?: string;
   headers?: Record<string, string>;
-  /** 实际获取到有效 URL 的音质（用于底部栏同步显示） */
   actualQuality?: QualityKey;
-  /** QMC2 加密密钥（QQ音乐 L2 等加密音源），由 Baka 插件 getMediaSource 返回 */
   ekey?: string;
-  /** CENC 内容密钥（32-hex），由 Baka 插件 getMediaSource 返回 */
   cek?: string;
 }
 
-/** MusicFree 插件歌单搜索结果 */
 export interface PluginPlaylistSearchResult {
   id: string;
   title: string;

@@ -10,11 +10,6 @@ import {
   type LxSearchResultItem,
 } from './lxMusicSdkBase';
 
-/**
- * LX 平台搜索层 · TX (QQ音乐)：歌曲搜索（Mobile/Desktop/Web 三通道）、
- * TX 专辑搜索与歌曲时长内置、歌单搜索 Desktop 兜底。
- * 仅依赖 lxMusicSdkBase，作为叶子模块被 lxSearchPlatform 门面 re-export。
- */
 
 // ==================== TX (QQ音乐) Search ====================
 
@@ -24,9 +19,6 @@ export function txHandleResult(rawList: any[]): LxSearchResultItem[] {
   rawList.forEach(rawItem => {
     const item = rawItem?.song || rawItem?.songInfo || rawItem?.musicInfo || rawItem?.item || rawItem?.doc?.song || rawItem?.doc || rawItem;
     if (!item || typeof item !== 'object') return;
-    // 放宽过滤：仅要求 mid 或 id 存在即可（与 playlistImport.ts 的 parseTxSong 对齐）。
-    // 原 media_mid 非空过滤过严：QQ 音乐响应中 file/media_mid 可能为空或缺失，
-    // 导致搜索结果被全部静默过滤 → 列表为空（小秋搜索无法加载歌曲列表的根因）。
     const songmid = String(firstValue(item, ['mid', 'songmid', 'songMid', 'strMediaMid', 'mediaMid', 'mediamid', 'song_mid', 'songMID', 'id', 'songid']) || '');
     const songId = firstValue(item, ['id', 'songid', 'songId', 'songID']);
     if (!songmid && songId === undefined) return;
@@ -120,9 +112,6 @@ function pickArrayFromTxNode(node: any): any[] {
   return Array.isArray(direct) ? direct : [];
 }
 
-// 从 direct_result / direct_result2 直达结果中提取歌曲列表。
-// 该字段可能是对象（{ song:{list}, item_song:{list} }），也可能是数组（直接结果分组，
-// 每组形如 { type:'song', grp:[...] }，仅歌曲类型分组内是真正可播放的歌曲）。
 function pickTxDirectResultList(dr: any): any[] {
   if (!dr || typeof dr !== 'object') return [];
   const groups = Array.isArray(dr) ? dr : [dr];
@@ -224,8 +213,6 @@ function pickTxSearchRawList(data: any): any[] {
     if (list.length > 0 && txHandleResult(list).length > 0) return list;
   }
 
-  // direct_result / direct_result2 常以“直接结果分组数组”形式返回精确匹配的歌曲，
-  // 此时常规候选（song.list / item_song 等）可能为空，需从分组里提取。
   const direct = pickTxDirectResultList(body?.direct_result)
     ?? pickTxDirectResultList(body?.direct_result2);
   if (direct.length > 0) return direct;
@@ -252,8 +239,6 @@ function getTxSearchTotal(data: any, fallbackCount: number, limit: number): numb
 }
 
 function createTxSearchRequestData(str: string, page: number, limit: number) {
-  // 仅使用移动端接口（落雪官方验证有效）。需携带完整设备参数，
-  // 否则会返回降级响应，常规 item_song 为空、歌曲只出现在 direct_result2 直达结果里。
   return {
     comm: {
       ct: '11', cv: '14090508', v: '14090508', tmeAppID: 'qqmusic',
@@ -289,14 +274,12 @@ async function requestTxSearch(str: string, page: number, limit: number): Promis
   });
 }
 
-/** Desktop 接口随机 guid：32 位大写 hex */
 function randomTxDeviceGuid(): string {
   let value = '';
   for (let i = 0; i < 32; i++) value += Math.floor(Math.random() * 16).toString(16).toUpperCase();
   return value;
 }
 
-/** Desktop 接口随机 wid：19 位数字（首位非零） */
 function randomTxDeviceWid(): string {
   let value = String(Math.floor(Math.random() * 9) + 1);
   while (value.length < 19) value += Math.floor(Math.random() * 10);
@@ -304,8 +287,6 @@ function randomTxDeviceWid(): string {
 }
 
 function createTxDesktopSearchRequestData(str: string, page: number, limit: number) {
-  // Desktop 接口（DoSearchForQQMusicDesktop）按请求随机 guid/wid：
-  // 与 Mobile 分属不同风控池，实测持续稳定；固定共享身份反而易被按设备维度限流。
   return {
     comm: {
       _channelid: '0',
@@ -350,7 +331,6 @@ async function requestTxSearchDesktop(str: string, page: number, limit: number):
   });
 }
 
-/** 经典 Web 搜索接口兜底：不依赖新签名(Mobile)风控体系，Mobile 被持续风控时使用 */
 async function txSearchWebFallback(str: string, page: number, limit: number): Promise<LxSearchResult> {
   const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&inCharset=utf-8&outCharset=utf-8&cr=1&platform=h5&catZhida=0&w=${encodeURIComponent(str)}&p=${page}&n=${limit}`;
   const result = await httpGetJson(url, {
@@ -387,9 +367,6 @@ function txBuildSearchResult(data: any, rawList: any[], limit: number): LxSearch
 }
 
 export async function searchTx(str: string, page = 1, limit = 50): Promise<LxSearchResult> {
-  // 主通道：签名 Desktop 接口。实测 Mobile 接口（DoSearchForQQMusicMobile）请求两次
-  // 即累积风控（reqCode 2001，全列表恒空），而 Desktop 接口按请求随机 guid/wid，
-  // 与 Mobile 分属不同风控池，持续稳定且不累积。
   try {
     const desktopBody = await requestTxSearchDesktop(str, page, limit);
     const desktopOk = desktopBody?.code === 0 && desktopBody?.req?.code === 0;
@@ -404,8 +381,6 @@ export async function searchTx(str: string, page = 1, limit = 50): Promise<LxSea
     console.warn('[LxMusicSdk] TX search: Desktop 接口异常', e?.message || e);
   }
 
-  // 备用：签名 Mobile 接口（落雪官方链路，未风控环境可用）。
-  // 已被风控时恒 2001，不做重试退避——多轮重试只会加剧累积且白等十几秒。
   try {
     const mobileBody = await requestTxSearch(str, page, limit);
     const reqCode = mobileBody?.req?.code;
@@ -423,12 +398,10 @@ export async function searchTx(str: string, page = 1, limit = 50): Promise<LxSea
     console.warn('[LxMusicSdk] TX search: Mobile 接口异常', e?.message || e);
   }
 
-  // 兜底：经典 Web 接口（无签名，独立于 musics.fcg 风控体系）
   console.warn('[LxMusicSdk] TX search: Desktop/Mobile 均失败，走经典 Web 兜底接口');
   return txSearchWebFallback(str, page, limit);
 }
 
-/** QQ 专辑搜索（签名 Desktop 接口，search_type=2）内置实现；dispatch 包装在 lxMusicSdk 门面 */
 export async function txSearchAlbumsRawBuiltin(
   keyword: string,
   page = 1,
@@ -475,12 +448,10 @@ export async function txSearchAlbumsRawBuiltin(
       'Referer': 'https://y.qq.com/',
     },
   );
-  // Desktop 响应专辑在 body.album.list（Mobile/无签名接口才是 item_album）
   const list = resp?.req?.data?.body?.album?.list;
   return Array.isArray(list) ? list : [];
 }
 
-/** 批量查询 QQ 歌曲时长内置实现；dispatch 包装在 lxMusicSdk 门面 */
 export async function txBatchTrackIntervalBuiltin(
   songIds: Array<string | number>,
 ): Promise<Map<string, number>> {
@@ -521,13 +492,6 @@ export async function txBatchTrackIntervalBuiltin(
 
 // ==================== LX 歌单搜索 Web 兜底（TX） ====================
 
-/**
- * TX 歌单搜索兜底：无签名 Desktop 通道（musicu.fcg DoSearchForQQMusicDesktop，
- * search_type=3 → req.data.body.songlist.list，字段 dissid/dissname/imgurl/
- * song_count/listennum/creator.name）。
- * 客户端签名(Mobile)通道被风控降级返回空时使用，实测无 sign 也稳定可用；
- * 经典 t=3 client_search_cp 接口已死（data 仅剩 zhida/taglist 空结构，不再返回歌单）。
- */
 export async function txSheetSearchDesktopFallback(keyword: string, page = 1, limit = 30): Promise<any[]> {
   const body = {
     comm: { ct: 19, cv: 1859, uin: '0' },

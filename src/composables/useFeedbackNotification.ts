@@ -3,7 +3,6 @@ import { signedRequest, getStoredAuth } from '../services/auth/authService';
 import { getDeviceId } from '../services/domain/usageStats';
 import type { Announcement } from '../utils/announcement';
 
-// 模块级单例状态，全局共享同一份反馈通知状态
 const feedbackVisible = ref(false);
 const currentFeedbackNotification = ref<Announcement | null>(null);
 const currentNotificationId = ref<number>(0);
@@ -50,16 +49,7 @@ async function fetchFeedbackNotifications(): Promise<FeedbackNotificationRaw[]> 
   }
 }
 
-/**
- * 反馈完成通知：后台将反馈标记为已完成并填写说明后，用户端拉取到
- * 未确认的完成通知，通过公告弹窗展示处理管理员与完成说明。
- */
 export function useFeedbackNotification() {
-  /**
-   * 检查并展示反馈完成通知（应用启动 / 定时轮询时调用）。
-   * 仅当没有普通公告在展示时才弹出，避免多个弹窗叠加。
-   * @param announcementVisible 当前是否有普通公告在展示
-   */
   const checkFeedbackNotification = async (announcementVisible = false) => {
     if (isFetchingFeedback.value || feedbackVisible.value) return;
     if (announcementVisible) return;
@@ -90,7 +80,6 @@ export function useFeedbackNotification() {
     }
   };
 
-  /** 关闭反馈完成通知：确认已读，避免重复弹出 */
   const closeFeedbackNotification = async () => {
     const id = currentNotificationId.value;
     const auth = getStoredAuth();

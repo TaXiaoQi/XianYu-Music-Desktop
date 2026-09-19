@@ -6,7 +6,6 @@ const isDownloadDialogVisible = ref(false);
 const currentDownloadSong = ref<Song | null>(null);
 const currentDownloadInitialQuality = ref<DownloadQuality | null>(null);
 
-// 下载内容勾选状态（localStorage 持久化，跨弹窗打开记忆上次选择）
 const SK_AUDIO = 'dl_dialog_audio';
 const SK_LYRICS = 'dl_dialog_lyrics';
 const SK_COVER = 'dl_dialog_cover';
@@ -62,7 +61,6 @@ export function useDownloadDialog() {
 
   const closeDownloadDialog = () => {
     isDownloadDialogVisible.value = false;
-    // 延迟清理对象以保持关闭动画过渡的平滑性
     if (closeDialogTimer) {
       clearTimeout(closeDialogTimer);
     }

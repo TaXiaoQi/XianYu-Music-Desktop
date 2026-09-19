@@ -16,7 +16,6 @@ const toggleEasterEgg = () => {
 
 <template>
   <div class="h-16 relative px-6 shrink-0 mb-2 cursor-pointer" data-tauri-drag-region>
-    <!-- 原状态：居中 -->
     <div
       class="absolute inset-0 flex items-center justify-center transition-opacity duration-200"
       :class="isEasterEgg ? 'opacity-0 pointer-events-none' : 'opacity-100'"
@@ -31,7 +30,6 @@ const toggleEasterEgg = () => {
         弦予音乐
       </h1>
     </div>
-    <!-- 彩蛋状态：居中 -->
     <div
       class="absolute inset-0 flex items-center justify-center transition-opacity duration-200"
       :class="isEasterEgg ? 'opacity-100' : 'opacity-0 pointer-events-none'"

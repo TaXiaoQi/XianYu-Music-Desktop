@@ -1,10 +1,3 @@
-/**
- * 插件引擎 · 实例运行时（加载 / 懒加载缓存 / 重载）。
- *
- * 负责把插件源码（MusicFree/LX）加载为可调用的 IPluginInstance，并维护
- * pluginInstances 内存缓存、错误记录与并发加载保护。被搜索、目录、媒体、
- * 存储等插件引擎子模块共享。仅依赖 pluginEngineBase 与外部工具模块。
- */
 import {
   BUILTIN_PLUGINS,
   MAX_PLUGIN_SIZE,
@@ -53,21 +46,17 @@ export async function loadPluginFromScript(
       log(`检测到落雪 LX 插件格式，委托给 lxPluginEngine`);
       const lxSource = await loadLxPluginFromScript(script, uri);
       if (lxSource) return lxSource;
-      // [修复防御]: 落雪插件无法以 MusicFree 格式运行（完全不同的 API 协议）
       throw new Error('落雪 LX 插件加载失败，请检查插件是否兼容');
     }
 
     log(`=== 开始加载插件: ${uri} (${script.length} chars) ===`);
 
-    // 预计算 hash，用于 env.getUserVariables() 按插件 ID 索引用户变量值。
-    // 提前到 Step 1 之前，确保插件脚本执行期间调用 getUserVariables() 也能拿到值。
     const hash = await hostSha256Hex(script);
 
     // ===== 沙箱模式：在 Web Worker 中隔离执行插件脚本 =====
     if (USE_SANDBOX) {
       log(`[loadPluginFromScript] 沙箱模式加载: ${uri}`);
       try {
-        // 注册用户变量提供器（供 Worker 通过 RPC 获取用户变量）
         setUserVarsProvider((pluginId: string) => getPluginUserVariableValues(pluginId));
 
         const userVars = getPluginUserVariableValues(userVarsPluginId || hash);
@@ -79,7 +68,6 @@ export async function loadPluginFromScript(
           throw new Error('沙箱: 插件缺少 platform 字段');
         }
 
-        // [诊断] 记录插件声明的 userVariables 定义
         const declaredVars = normalizePluginUserVariables(metadata.userVariables);
         if (declaredVars.length > 0) {
           log(`[loadPluginFromScript] 插件 "${metadata.platform}" 声明 userVariables: ${declaredVars.map(v => `name=${v.name} type=${v.type || 'text'}`).join(', ')}`);
@@ -87,7 +75,6 @@ export async function loadPluginFromScript(
           log(`[loadPluginFromScript] 插件 "${metadata.platform}" 未声明 userVariables`);
         }
 
-        // 创建代理实例（所有方法调用通过 RPC 转发到 Worker）
         const proxyInstance = createSandboxProxy(hash, metadata);
 
         const source: import('../../types').PluginSource = {
@@ -128,12 +115,8 @@ export async function loadPluginFromScript(
 
 // ==================== 实例加载（懒加载缓存 + 并发保护） ====================
 
-// 正在加载中的插件实例 Promise 缓存，避免并发加载同一插件时互相销毁沙箱导致加载失败
 const pendingPluginInstances = new Map<string, Promise<PluginInstance | null>>();
 
-/**
- * 确保插件实例已加载到内存中
- */
 export async function ensurePluginInstance(source: import('../../types').PluginSource): Promise<PluginInstance | null> {
   const inst = pluginInstances.get(source.id);
   if (inst) {
@@ -141,7 +124,6 @@ export async function ensurePluginInstance(source: import('../../types').PluginS
     return inst;
   }
 
-  // 并发保护：同一插件正在加载时共享同一个 Promise，避免重复加载互相干扰
   const pending = pendingPluginInstances.get(source.id);
   if (pending) return pending;
 
@@ -167,7 +149,6 @@ async function loadPluginInstance(source: import('../../types').PluginSource): P
         if (resp.ok) script = await resp.text();
       }
     } else if (source.filePath.startsWith('http')) {
-      // [修复防御]: 远程 URL 先尝试浏览器 fetch，失败则回退 Tauri 后端（绕过 CORS）
       const resp = await fetchWithTimeout(source.filePath, 10000);
       if (resp.ok) script = await resp.text();
       else readError = `插件地址返回 HTTP ${resp.status}`;
@@ -197,7 +178,6 @@ async function loadPluginInstance(source: import('../../types').PluginSource): P
         log(`[ensurePluginInstance] ${source.name} loadPluginFromScript 返回 null`);
       } else {
         log(`[ensurePluginInstance] ${source.name} loadPluginFromScript 成功: loadedId=${loadedSource.id.substring(0, 16)}... sourceId=${source.id.substring(0, 16)}... match=${loadedSource.id === source.id}`);
-        // [修复] 直接用 source.id 缓存实例，不依赖 SHA256 hash 匹配
         const entry = pluginInstances.get(loadedSource.id);
         if (entry) {
           linkSandboxAlias(source.id, loadedSource.id);
@@ -217,7 +197,6 @@ async function loadPluginInstance(source: import('../../types').PluginSource): P
           log(`[ensurePluginInstance] ${source.name} 警告: loadedSource.id 在 pluginInstances 中未找到`);
         }
       }
-      // 回退: 遍历找到 filePath 匹配的条目
       if (!pluginInstances.has(source.id)) {
         for (const [key, entry] of pluginInstances) {
           if (entry.source.filePath === source.filePath && key !== source.id) {
@@ -259,21 +238,13 @@ async function loadPluginInstance(source: import('../../types').PluginSource): P
   }
 }
 
-/**
- * 用户变量变更后重新加载插件实例，使新值通过 env.getUserVariables() 生效。
- * 清除缓存后下次 ensurePluginInstance 会重新执行插件脚本。
- */
 export function reloadPluginInstance(pluginId: string) {
-  // 用户变量或插件实例变化后，清理 Baka 短时直链缓存，避免继续复用旧 key 解析出来的 URL。
   BakaPluginManager.clearMediaSourceCache(pluginId);
-  // 沙箱模式清理：销毁 Worker，下次加载时重新创建
   if (_sandboxedPlugins.has(pluginId)) {
     _sandboxedPlugins.delete(pluginId);
     destroySandbox(pluginId).catch(() => {});
   }
   pluginInstances.delete(pluginId);
-  // 不清除 userVarDefsCache：用户变量定义不因值变更而改变，
-  // 重新加载后 ensurePluginInstance 会自动刷新缓存
   bumpPluginsVersion();
 }
 
@@ -285,12 +256,6 @@ export function getLastPluginError(): string {
 
 // ==================== 可播能力判定 ====================
 
-/**
- * 可播能力判定（对齐移动端 engine.canPlayMusic）：插件启用且声明了播放能力。
- * - musicfree：实例方法表含 getMediaSource（含 _availableMethods 元数据回退）
- * - lx：已声明音源即可（LX 协议音乐源必有 musicUrl action）
- * 注意：仅判定声明能力，不代表接口运行时可用（服务器宕机/密钥失效无法预知）。
- */
 export async function canPlayMusic(source: import('../../types').PluginSource): Promise<boolean> {
   if (!source.enabled) return false;
   try {
@@ -301,7 +266,6 @@ export async function canPlayMusic(source: import('../../types').PluginSource): 
     if (!inst?.instance) return false;
     const fn = inst.instance as unknown as Record<string, unknown>;
     if (typeof fn.getMediaSource === 'function') return true;
-    // 回退：沙箱元数据 _availableMethods（函数代理晚挂载的场景）
     const meta = (inst.instance as unknown as { _availableMethods?: unknown })._availableMethods;
     return Array.isArray(meta) && meta.includes('getMediaSource');
   } catch {

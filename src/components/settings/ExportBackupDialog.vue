@@ -27,7 +27,6 @@ const selection = ref<ExportSelection>({
   favorites: true,
 });
 
-/** 每次打开时重置回全选 */
 watch(
   () => props.visible,
   (visible) => {
@@ -285,7 +284,6 @@ function close() {
 }
 </style>
 
-<!-- 深色模式用非 scoped 块，适配 html.dark（与设置同步冲突弹窗一致的做法） -->
 <style>
 html.dark .export-card {
   background: rgba(17, 24, 39, 0.9);

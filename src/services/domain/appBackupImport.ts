@@ -1,6 +1,3 @@
-/**
- * 应用备份 · 解析/摘要/导入。
- */
 
 import type { Song, AppSettings, LibrarySong } from '../../types';
 import { getStoredPlugins, addPluginSource, loadPluginFromScript, persistPluginScriptToDataDir, pluginsVersion } from './pluginEngine';
@@ -12,9 +9,6 @@ import { APP_BACKUP_SCHEMA } from './appBackupTypes';
 function log(_msg: string) {
 }
 
-/**
- * 解析备份 JSON 字符串
- */
 export function parseAppBackup(jsonContent: string): AppBackup {
   let data: any;
   try {
@@ -34,9 +28,6 @@ export function parseAppBackup(jsonContent: string): AppBackup {
   return data as AppBackup;
 }
 
-/**
- * 从备份中计算摘要信息
- */
 function getBackupSummary(backup: AppBackup): AppBackupSummary {
   const { playlists, favorites, plugins, settings } = backup.data;
   let totalSongs = 0;
@@ -65,14 +56,6 @@ function getBackupSummary(backup: AppBackup): AppBackupSummary {
   };
 }
 
-/**
- * 导入应用备份
- * @param backup 解析后的备份对象
- * @param collectionsStore 歌单 store（需提供 createPlaylist / setFavoritePaths / setFavoriteSongMetaMap 方法）
- * @param libraryStore 本地库 store（需提供 setExtraSong / setExtraSongs 方法）
- * @param settingsStore 设置 store（需提供 patchSettings / replaceSettings 方法）
- * @param options 导入选项：是否导入歌单、收藏、插件、设置
- */
 export async function importAppBackup(
   backup: AppBackup,
   collectionsStore: {
@@ -105,7 +88,6 @@ export async function importAppBackup(
   let skippedPlugins = 0;
   let settingsApplied = false;
 
-  // 1. 导入插件（先于歌单，确保在线歌曲能匹配到插件）
   if (includePlugins && backup.data.plugins.length > 0) {
     const existingPlugins = getStoredPlugins();
     const existingIds = new Set(existingPlugins.map(p => p.id));
@@ -118,15 +100,12 @@ export async function importAppBackup(
           continue;
         }
 
-        // 通过脚本重新加载插件，自动生成 PluginSource
         const loaded = await loadPluginFromScript(entry.script, entry.source.filePath);
         if (loaded) {
-          // 本地文件路径的插件：保存副本到数据目录，避免原文件移动后失效
           const savedPath = await persistPluginScriptToDataDir(loaded, entry.script);
           if (savedPath) {
             loaded.filePath = savedPath;
           }
-          // 保留原始排序和启用状态
           addPluginSource({
             ...loaded,
             enabled: entry.source.enabled,
@@ -143,16 +122,13 @@ export async function importAppBackup(
       }
     }
 
-    // 触发插件版本刷新
     pluginsVersion.value++;
   }
 
-  // 2. 导入歌单
   if (includePlaylists) {
     for (const pl of backup.data.playlists) {
       if (pl.songs.length === 0) continue;
 
-      // 注册歌曲到 libraryStore
       libraryStore.setExtraSongs(pl.songs);
 
       const songPaths = pl.songs.map(s => s.path);
@@ -165,10 +141,8 @@ export async function importAppBackup(
     }
   }
 
-  // 3. 导入收藏（独立于歌单；在线歌曲需保留完整元信息供展示与播放）
   if (includeFavorites && backup.data.favorites && backup.data.favorites.length > 0) {
     const favSongs = backup.data.favorites;
-    // 注册歌曲到 libraryStore，确保本地/在线歌曲都能被解析
     libraryStore.setExtraSongs(favSongs);
 
     const savedPaths: string[] = [];
@@ -176,7 +150,6 @@ export async function importAppBackup(
     for (const song of favSongs) {
       if (!song?.path) continue;
       savedPaths.push(song.path);
-      // 本地歌曲由本地库还原；在线歌曲不在本地库中，需额外保存完整元信息
       if (classifySong(song) === 'online') {
         metaMap[song.path] = song;
       }
@@ -188,12 +161,9 @@ export async function importAppBackup(
     importedFavorites = savedPaths.length;
   }
 
-  // 4. 导入设置
   if (includeSettings && backup.data.settings) {
     try {
-      // 使用 replaceSettings 完全替换设置
       settingsStore.replaceSettings(backup.data.settings);
-      // 持久化
       playerStorage.writeSettings(backup.data.settings);
       settingsApplied = true;
     } catch (e: any) {

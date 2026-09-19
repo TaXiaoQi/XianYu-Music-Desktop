@@ -1,7 +1,3 @@
-/**
- * Additional tests for localStore non-browser environment guards.
- * Specifically validates the P1 fix: localStorage access in Node environments.
- */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { localStore } from './localStore';
@@ -43,9 +39,7 @@ describe('localStore: non-browser environment safety', () => {
   });
 
   it('typeof localStorage === "undefined" check is used (source code verification)', () => {
-    // Every method that accesses localStorage should have the guard
     const guardCount = (localStoreSource.match(/typeof localStorage === 'undefined'/g) || []).length;
-    // There should be at least 6 guards: getString, setString, remove, clear, getJson, setJson
     expect(guardCount).toBeGreaterThanOrEqual(6);
   });
 });

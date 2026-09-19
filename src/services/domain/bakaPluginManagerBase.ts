@@ -1,13 +1,3 @@
-/**
- * Baka 插件引擎 · 共享底座（叶子模块）。
- *
- * 汇聚 Baka 插件随机操作子模块共用的类型、日志、音质回退映射、缓存键、
- * URL 清洗/预检、音质适配、Baka 识别锚点、歌词格式检测与落雪式重试。
- *
- * 仅依赖外部工具模块（types / pluginResultMappers / pluginApi），
- * 不依赖 domain 下其它插件引擎子模块，作为叶子被
- * bakaPluginManagerCore / bakaPluginManagerMedia / bakaPluginManagerCatalog 共同引用。
- */
 import type {
   PluginSource,
   PluginSearchResult,
@@ -35,12 +25,10 @@ export function log(msg: string) {
   try { if (_logCallback) { _logCallback(msg); } } catch { /* ignore */ }
 }
 
-/** 目录加载日志（供日志系统记录，便于排查歌单/歌手/专辑间歇加载问题） */
 export const catalogLog = (msg: string) => {
   log(msg);
 };
 
-/** 汇总一次插件返回的结构，便于日志中人工判断返回了什么 */
 export const describeResultWrapper = (r: any): string => {
   if (!r || typeof r !== 'object') return `type=${typeof r}`;
   const keys = Object.keys(r).filter(k => k !== 'isEnd').join(',') || '空对象';
@@ -92,12 +80,10 @@ export const firstHeaderMap = (...candidates: any[]): Record<string, string> => 
 
 // ==================== 类型定义 ====================
 
-/** Baka 歌词格式（对齐 BakaMusic ILyric.LyricFormat） */
 export type BakaLyricFormat =
   | 'ttml' | 'lrc' | 'lrc-a2' | 'yrc' | 'qrc'
   | 'eslrc' | 'lyl' | 'lys' | 'lqe' | 'krc' | 'plain';
 
-/** Baka 评论项（对齐 BakaMusic IComment.IComment） */
 export interface BakaComment {
   id?: string;
   nickName: string;
@@ -109,13 +95,11 @@ export interface BakaComment {
   replies?: BakaComment[];
 }
 
-/** Baka 评论结果（对齐 BakaMusic IGetCommentResult） */
 export interface BakaCommentResult {
   isEnd?: boolean;
   data?: BakaComment[];
 }
 
-/** Baka 插件实例接口（对齐 BakaMusic IPlugin.IPluginInstance） */
 export interface IBakaPluginInstance {
   platform: string;
   version?: string;
@@ -129,7 +113,6 @@ export interface IBakaPluginInstance {
   supportedSearchType?: string[];
   userVariables?: any[];
   hints?: Record<string, string[]>;
-  /** Baka 系列特有：12 档音质声明 */
   supportedQualities?: string[];
 
   search?: (query: string, page: number, type: string) => Promise<any>;
@@ -155,7 +138,6 @@ export interface MediaSourceCacheEntry {
   value: PluginMusicInfo;
 }
 
-/** Baka 插件方法名列表（16 个，对齐 BakaMusic pluginMethodNames） */
 export const BAKA_PLUGIN_METHODS = [
   'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
   'getAlbumInfo', 'getMusicSheetInfo', 'getArtistWorks',
@@ -166,17 +148,8 @@ export const BAKA_PLUGIN_METHODS = [
 
 // ==================== 音质回退映射（对齐 BakaMusic newToLegacyQualityMap）====================
 
-/**
- * 新音质键 → 旧插件兼容音质键映射
- *
- * Baka 插件可能使用 12 档新音质键（如 '320k', 'flac'），
- * 也可能使用旧版 MusicFree 的 4 档键（low/standard/high/super）。
- * 当新键请求失败时，回退到旧键重试。
- */
 export const newToLegacyQualityMap: Record<string, string> = BAKA_TO_LEGACY_QUALITY_MAP;
 
-// Baka 音源通常需要向第三方接口换取临时直链。短时缓存可优化重复播放/切回同一首歌的等待，
-// 同时避免长时间复用可能过期的 vkey/ekey。
 export const MEDIA_SOURCE_CACHE_TTL_MS = 3 * 60 * 1000;
 
 export function clonePluginMusicInfo(value: PluginMusicInfo): PluginMusicInfo {
@@ -222,13 +195,6 @@ export function buildMediaSourceCacheKey(
   ].join('|');
 }
 
-/**
- * 从插件返回的媒体 URL 参数中推断实际播放音质。
- *
- * 有些 Baka/MF 插件在请求高音质（如 master）时，会在插件内部自动降级，
- * 但仍返回一个可播放 URL，例如 `level=standard`。这种情况下不能继续把
- * 底部栏显示为 master，应以 URL 中的实际 level/quality 参数为准。
- */
 export function inferActualQualityFromMediaUrl(urlLike: string, fallback?: QualityKey): QualityKey | undefined {
   const legacyToQuality: Record<string, QualityKey> = {
     low: '128k',
@@ -330,17 +296,10 @@ export function isNeteaseLikeSource(source: PluginSource, mediaItem: any): boole
   return text.includes('网易') || text.includes('netease') || /\bwy\b/.test(text);
 }
 
-/** 网易云系插件判定（供外链预检等网易云专属处理使用） */
 export function isNeteaseMusicPluginSource(source: PluginSource): boolean {
   return isNeteaseLikeSource(source, null);
 }
 
-/**
- * 网易云官方外链（music.163.com/song/media/outer/url?id=xxx.mp3）。
- * Baka 系网易云插件的免费公共 API（bugpk/oiapi 等）恒返此格式：
- * 非版权歌 302 到 CDN 音频，版权歌 302 到 music.163.com/404 HTML 页。
- * URL 形态无法区分好坏，必须跟随重定向实测。
- */
 export function isNeteaseOuterUrl(urlLike: string): boolean {
   try {
     const url = new URL(urlLike);
@@ -351,18 +310,9 @@ export function isNeteaseOuterUrl(urlLike: string): boolean {
   }
 }
 
-/**
- * 酷狗插件专用 URL 清洗器。
- *
- * 酷狗（含赞助版）插件返回的 URL 常被反引号包裹、尾部带逗号，
- * 且通用 sanitizeMediaUrl 在某些环境下可能无法正确剥离。
- * 此方法使用白名单策略：从 http(s):// 开始，从尾部逐字符检查，
- * 只保留 URL 合法字符，遇到任何非法字符即截断。
- */
 export function cleanKugouPluginUrl(raw: unknown): string {
   if (typeof raw !== 'string' || !raw) return '';
 
-  // Step 1: 用 indexOf 定位 http(s):// 起点
   const httpsIdx = raw.indexOf('https://');
   const httpIdx = raw.indexOf('http://');
   let start: number;
@@ -378,30 +328,27 @@ export function cleanKugouPluginUrl(raw: unknown): string {
     return '';
   }
 
-  // Step 2: 从起点截取到末尾
   let url = raw.substring(start);
 
-  // Step 3: 白名单剥离尾部 —— 只保留 URL 合法字符
-  // 合法：字母、数字、/:?&=_-.~#+%@
   while (url.length > 0) {
     const c = url.charCodeAt(url.length - 1);
     const isAllowed =
-      (c >= 0x30 && c <= 0x39)  // 0-9
-      || (c >= 0x41 && c <= 0x5a)  // A-Z
-      || (c >= 0x61 && c <= 0x7a)  // a-z
-      || c === 0x2f  // /
-      || c === 0x3a  // :
-      || c === 0x3f  // ?
-      || c === 0x26  // &
-      || c === 0x3d  // =
-      || c === 0x5f  // _
-      || c === 0x2d  // -
-      || c === 0x2e  // .
-      || c === 0x7e  // ~
-      || c === 0x23  // #
-      || c === 0x2b  // +
-      || c === 0x25  // %
-      || c === 0x40; // @
+      (c >= 0x30 && c <= 0x39)
+      || (c >= 0x41 && c <= 0x5a)
+      || (c >= 0x61 && c <= 0x7a)
+      || c === 0x2f
+      || c === 0x3a
+      || c === 0x3f
+      || c === 0x26
+      || c === 0x3d
+      || c === 0x5f
+      || c === 0x2d
+      || c === 0x2e
+      || c === 0x7e
+      || c === 0x23
+      || c === 0x2b
+      || c === 0x25
+      || c === 0x40;
     if (isAllowed) break;
     url = url.substring(0, url.length - 1);
   }
@@ -529,8 +476,6 @@ export async function probeKugouProxyCandidate(
     }
     const headResp = await pluginHttpRequest('HEAD', url, probeHeaders, undefined, 8, 3);
     if (headResp.status >= 400) {
-      // 部分代理接口不支持 HEAD。此时不直接判失败，交给 GET 正文判断；
-      // 如果 GET 也失败，才跳过该音质。
       const getResp = await pluginHttpRequest('GET', url, probeHeaders, undefined, 8, 3);
       if (getResp.status >= 400) {
         return { playable: false, reason: `GET HTTP ${getResp.status}` };
@@ -567,17 +512,10 @@ export async function probeKugouProxyCandidate(
 
     return { playable: true };
   } catch (error: any) {
-    // 探测失败不应误杀候选 URL，保留 Rust 播放链路的最终提取/重试能力。
     return { playable: true, reason: error?.message || String(error || '') };
   }
 }
 
-/**
- * 网易云官方外链可用性预检：跟随重定向后校验最终落点。
- * 版权受限歌的 outer/url 302 到 music.163.com/404（text/html），照常返回
- * 会在播放/下载阶段才暴露为"服务器返回非音频内容"。这里提前识别拒绝，
- * 让上层音质回退有机会尝试其余档位。
- */
 export async function probeNeteaseOuterUrl(
   url: string,
 ): Promise<{ playable: boolean; reason?: string }> {
@@ -590,7 +528,6 @@ export async function probeNeteaseOuterUrl(
       return { playable: true };
     }
     if (contentType.includes('text/html')) {
-      // 302 后落到 404 页/版权提示页；最终 URL 里的 /404 是最直接的证据
       const finalPath = new URL(finalUrl).pathname.toLowerCase();
       if (finalPath.includes('/404')) {
         return { playable: false, reason: '版权受限（跳转 404 页）' };
@@ -601,22 +538,15 @@ export async function probeNeteaseOuterUrl(
   };
   try {
     let resp = await pluginHttpRequest('HEAD', url, { Accept: '*/*' }, undefined, 8, 3);
-    // 部分节点对 HEAD 返回 405：改用 Range GET（限 4KB，避免整曲下载）
     if (resp.status === 405 || resp.status === 501) {
       resp = await pluginHttpRequest('GET', url, { Accept: '*/*', Range: 'bytes=0-4095' }, undefined, 8, 3);
     }
     return judge(resp.status, resp.headers, resp.url);
   } catch (error: any) {
-    // 网络异常不判死，保留后续播放链路的重试机会
     return { playable: true, reason: error?.message || String(error || '') };
   }
 }
 
-/**
- * 读取酷狗音源的 hash，适配不同音质键到插件期望的字段。
- *
- * @return 若取到对应音质的 hash 字符串则返回，否则返回空字符串
- */
 export function readQualityHash(mediaItem: any, qualityKey: QualityKey): string {
   const qualities = mediaItem?.qualities;
   const fromQuality = qualities?.[qualityKey]?.hash;
@@ -696,14 +626,6 @@ export function adaptMediaItemForPluginQuality(
 
 // ==================== Baka 识别锚点 ====================
 
-/**
- * Baka/Toskysun 插件的稳定识别锚点：声明 Baka 新音质能力。
- *
- * BakaMusic 插件 API 向下兼容 MusicFree，但 `supportedQualities` 使用
- * 96k/128k/320k/flac/hires/master 等原生音质键。不能要求插件一次声明完整
- * 12 档，否则只声明部分档位的 Baka 系插件会被误判成 MF，进而被传入
- * standard/high/lossless 导致“不支持音质”。
- */
 export const isBakaSupportedQualities = (raw: unknown): raw is string[] => {
   if (!Array.isArray(raw)) return false;
 
@@ -716,13 +638,6 @@ export const isBakaSupportedQualities = (raw: unknown): raw is string[] => {
   return ALL_QUALITY_KEYS.some(q => normalized.has(q));
 };
 
-/**
- * 检测插件实例（或沙箱元数据）是否实现了评论区 API `getMusicComments`。
- *
- * 这是最可靠的 Baka 特征：原版 MusicFree 及时迁酱系列插件都不实现该方法。
- * 沙箱元数据用 `_availableMethods` 数组声明实现的方法名；全局实例则可直接
- * 检查 `getMusicComments` 是否为函数。
- */
 export const hasCommentApi = (meta: any): boolean => {
   if (!meta) return false;
   if (Array.isArray(meta._availableMethods) && meta._availableMethods.includes('getMusicComments')) {
@@ -731,33 +646,18 @@ export const hasCommentApi = (meta: any): boolean => {
   return typeof meta.getMusicComments === 'function';
 };
 
-/**
- * 已知的 MusicFree 插件作者（小写）。
- *
- * 这些作者的插件虽然可能声明 Baka 风格的 supportedQualities，但本质是
- * 原版 MusicFree 插件，必须强制排除以免被能力检测误判为 Baka。
- * 例如「时迁酱」的 v7 系列音源。
- */
 export const NON_BAKA_PLUGIN_AUTHORS = ['时迁酱'];
 
 // ==================== 歌词格式检测 ====================
 
-/**
- * 根据歌词内容检测格式（对齐 BakaMusic getLyricFormat）
- *
- * Baka 插件可能返回多种歌词格式，优先级：
- * ttml > yrc > qrc > eslrc > lrc-a2 > lyl > lys > lqe > lrc > plain
- */
 export function detectLyricFormat(content: string): BakaLyricFormat {
   const trimmed = content.trim();
   if (!trimmed) return 'plain';
 
-  // TTML: XML 格式
   if (trimmed.startsWith('<?xml') || trimmed.startsWith('<tt') || trimmed.includes('<tt ')) {
     return 'ttml';
   }
 
-  // YRC: 网易云逐字格式，以 [开头的 JSON-like 结构
   if (trimmed.startsWith('{') && trimmed.includes('"content"')) {
     try {
       const parsed = JSON.parse(trimmed);
@@ -765,42 +665,34 @@ export function detectLyricFormat(content: string): BakaLyricFormat {
     } catch { /* not JSON */ }
   }
 
-  // QRC: QQ 音乐逐字格式，包含 [ti:] 等标签 + 逐字时间戳
   if (/^\[(?:ti|ar|al|by|offset):/.test(trimmed) && /\[\d+,\d+\]/.test(trimmed)) {
     return 'qrc';
   }
 
-  // ESLRC: 增强型 LRC 逐字格式
   if (/\[\d+:\d+\.\d+\]<\d+:\d+\.\d+>/.test(trimmed)) {
     return 'eslrc';
   }
 
-  // KRC: 酷狗逐字格式，[行开始,行时长]字(字偏移,字时长)
   if (/^\[\d+,\d+].*\(-?\d+,-?\d+(?:,-?\d+)?\)/m.test(trimmed)) {
     return 'krc';
   }
 
-  // LRC-A2 (ALRC): 高级 LRC 格式
   if (trimmed.includes('[ti:') && trimmed.includes('[al:')) {
     return 'lrc-a2';
   }
 
-  // LYL: 自定义逐字格式
   if (/<\d+>/.test(trimmed) && /\[\d+:\d+\.\d+\]/.test(trimmed)) {
     return 'lyl';
   }
 
-  // LYS: 另一种逐字格式
   if (/^\{.*"startTime".*"endTime".*\}/m.test(trimmed)) {
     return 'lys';
   }
 
-  // LQE: 歌词质量增强格式
   if (trimmed.startsWith('[lqe:') || trimmed.includes('[lqe:')) {
     return 'lqe';
   }
 
-  // 标准 LRC
   if (/\[\d+:\d+\.\d+\]/.test(trimmed) || /\[\d+:\d+\]/.test(trimmed)) {
     return 'lrc';
   }
@@ -810,11 +702,6 @@ export function detectLyricFormat(content: string): BakaLyricFormat {
 
 // ==================== 落雪式增量退避重试（与 pluginEngine.retryOnEmpty 一致） ====================
 
-/**
- * 当插件接口偶发空返回/异常时，参考落雪(lx) 的加载方式：
- * 每次失败间隔递增（800/1600/2400...），最多 attempts 次（约 12s）才放弃并抛错。
- * 不做短固定间隔的快速限次重试。
- */
 export async function retryWithBackoff<T>(
   label: string,
   fn: () => Promise<any>,

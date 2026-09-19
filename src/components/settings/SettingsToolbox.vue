@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useToast } from '../../composables/toast';
 import { fileApi } from '../../services/tauri/fileApi';
+import { appApi } from '../../services/tauri/appApi';
 import type { Song } from '../../types';
 import ToolboxStep1 from './ToolboxStep1.vue';
 import ToolboxStep2 from './ToolboxStep2.vue';
@@ -19,17 +20,14 @@ interface ProgressStep {
   label: string;
 }
 
-/** 工具箱功能卡片：后续新增功能只需向对应分区的 tools 数组追加一项 */
 interface ToolboxTool {
   id: string;
   name: string;
   desc: string;
   icon: 'tag' | 'convert' | 'trim';
-  /** 是否已实现；未实现时点击给出"即将上线"提示，作为占位展示 */
   available: boolean;
 }
 
-/** 工具箱分区卡片 */
 interface ToolboxCategory {
   id: string;
   title: string;
@@ -37,7 +35,6 @@ interface ToolboxCategory {
   tools: ToolboxTool[];
 }
 
-/** 分区数据（数据驱动，后续扩展只需改这里） */
 const toolboxCategories: ToolboxCategory[] = [
   {
     id: 'organize',
@@ -95,12 +92,9 @@ const currentView = ref<ToolboxView>('setup');
 const targetPath = ref('');
 const musicTagPath = ref('');
 
-/** 选中的功能 id；null 表示停留在"分区网格"主页，非 null 进入对应功能界面 */
 const activeToolId = ref<string | null>(null);
 
-/** 当前选中的分区（顶部按钮切换） */
 const activeCategoryId = ref<string>(toolboxCategories[0]?.id ?? '');
-/** 当前分区对象（tab 切换后用于渲染其下功能列表） */
 const currentCategory = computed(
   () => toolboxCategories.find((c) => c.id === activeCategoryId.value) ?? toolboxCategories[0],
 );
@@ -238,13 +232,10 @@ onMounted(() => {
 
 const selectExecutable = async () => {
   try {
-    const selected = await open({
-      multiple: false,
-      title: '选择 MusicTag 可执行文件',
-      filters: [{ name: '可执行文件', extensions: ['exe'] }],
-    });
+    const selected = await appApi.registerExternalProgram();
 
-    if (!selected || typeof selected !== 'string') {
+    if (!selected) {
+      toast.showToast('已取消选择 MusicTag', 'info');
       return;
     }
 
@@ -363,7 +354,6 @@ const restart = () => {
       <p class="text-sm text-gray-500 dark:text-white/50">按类别整理的音乐实用工具，功能会持续扩充。</p>
     </div>
 
-    <!-- 分区切换按钮 -->
     <div class="mb-6 flex flex-wrap gap-1 border-b border-black/5 pb-px dark:border-white/10">
       <button
         v-for="category in toolboxCategories"
@@ -381,7 +371,6 @@ const restart = () => {
       </button>
     </div>
 
-    <!-- 当前分区下的功能列表 -->
     <div v-if="currentCategory" class="space-y-2">
       <div class="px-5 text-[13px] text-gray-500 dark:text-white/50">{{ currentCategory.subtitle }}</div>
 
@@ -398,17 +387,14 @@ const restart = () => {
             ? 'bg-[#EC4141]/10 text-[#EC4141] group-hover:bg-[#EC4141] group-hover:text-white'
             : 'bg-white/10 text-gray-400 dark:text-white/30'"
         >
-          <!-- 标签图标 -->
           <svg v-if="tool.icon === 'tag'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" />
           </svg>
-          <!-- 转换(循环箭头)图标 -->
           <svg v-else-if="tool.icon === 'convert'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 8.5 6 5l3 3.5M6.5 6C6.5 10.5 9 14 13 14" />
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 15.5 18 19l-3-3.5M17.5 18c0-4.5-2.5-8-6.5-8" />
           </svg>
-          <!-- 音频剪辑(剪刀)图标 -->
           <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
             <path stroke-linecap="round" stroke-linejoin="round" d="m6 6 8 8M6 18l8-8" />
             <path stroke-linecap="round" stroke-linejoin="round" d="M7 6a2 2 0 1 1-1.414.586A2 2 0 0 1 7 6Zm10 12a2 2 0 1 0 1.414-.586A2 2 0 0 0 17 18Z" />
@@ -1025,12 +1011,6 @@ const restart = () => {
 </style>
 
 <style>
-/* ==========================================================================
-   桌面歌词工具箱深色模式样式覆盖
-   Vue scoped style 中 :global(.dark) .xxx 复合选择器无法正确编译，
-   深色模式样式需放在非 scoped <style> 块中，使用 html.dark .xxx 选择器。
-   底色/边框/hover 与下载页 UI 一致。
-   ========================================================================== */
 
 html.dark .toolbox-panel,
 html.dark .toolbox-panel--muted {

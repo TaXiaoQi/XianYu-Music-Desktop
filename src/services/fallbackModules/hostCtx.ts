@@ -1,7 +1,3 @@
-/**
- * 兜底模块宿主 ctx：注入给服务器下发代码的能力白名单。
- * 网络走 Rust 代理（plugin_http_request），缓存为内存 TTL，配置读取用户设置。
- */
 import { APP_VERSION } from '../../../version';
 import { pluginApi } from '../tauri/pluginApi';
 import { normalizeQualityKey } from '../../types';
@@ -12,7 +8,6 @@ import type {
   FallbackHttpResponse,
 } from './types';
 
-/** 与 utils/remoteSong 同实现的 "mm:ss" → 秒；内联以切断 hostCtx → remoteSong → lxMusicSdk 的模块环 */
 const parseIntervalToSeconds = (interval?: string | null): number => {
   if (!interval) return 0;
   const parts = interval.trim().split(':').map(part => parseInt(part, 10));
@@ -20,7 +15,6 @@ const parseIntervalToSeconds = (interval?: string | null): number => {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 };
 
-/** 与 pluginResultMappers 同实现；内联以切断 hostCtx → pluginResultMappers → registry 的模块环 */
 const stripHtmlTags = (str: unknown): string => {
   if (!str || typeof str !== 'string') return '';
   return str.replace(/<[^>]*>/g, '');
@@ -100,7 +94,6 @@ const doRequest = async (
   };
 };
 
-/** 创建宿主 ctx。模块加载时传入，闭包持有同一份缓存/日志实现。 */
 export const createFallbackHostCtx = (): FallbackHostCtx => ({
   appVersion: APP_VERSION,
   http: {

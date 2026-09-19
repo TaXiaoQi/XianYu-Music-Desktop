@@ -15,12 +15,13 @@ describe('debugApi', () => {
     tauriInvoke.mockReset();
   });
 
-  it('exports logs through the write_text_file command', () => {
-    debugApi.writeLogExport('C:\\Logs\\xianyu.log', 'log content');
+  it('exports logs through the save_text_via_dialog command', () => {
+    debugApi.writeLogExport('xianyu-all-logs.log', 'log content');
 
-    expect(tauriInvoke).toHaveBeenCalledWith('write_text_file', {
+    expect(tauriInvoke).toHaveBeenCalledWith('save_text_via_dialog', {
+      defaultFileName: 'xianyu-all-logs.log',
+      filter: { name: '日志文件', extensions: ['log', 'txt'] },
       content: 'log content',
-      destPath: 'C:\\Logs\\xianyu.log',
     });
   });
 });

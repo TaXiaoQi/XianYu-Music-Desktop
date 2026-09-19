@@ -33,11 +33,8 @@ export interface ResolveOnlineAudioResult {
   currentPlayingAudioUrl: string | null;
   lyricsRaw?: string;
   coverThumbPath?: string;
-  /** QMC2 加密密钥（Baka 插件加密音源） */
   ekey?: string;
-  /** CENC 内容密钥 */
   cek?: string;
-  /** 解析失败时的可读原因（供 UI toast 使用） */
   errorMessage?: string;
 }
 
@@ -45,11 +42,6 @@ const sortQualities = (qualities: QualityKey[]) => (
   qualities.sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
 );
 
-/**
- * 为 B 站 CDN 取流请求合并会话 Cookie（buvid3/4 · SESSDATA），
- * 避免匿名分流只返回几秒预览流（插件 headers 通常不含 Cookie，需从这里补上）。
- * 供播放与预缓存链路共用。
- */
 export const withBilibiliStreamCookie = async (
   url: string,
   headers: Record<string, string> | null,
@@ -107,7 +99,6 @@ export const getOnlineAvailableQualities = async (
     const plugins = getStoredPlugins();
     let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled) ?? null;
     if (!pluginSource) {
-      // 悬空 pluginId（插件更新/重装后 id 必变）：运行时按平台重匹配并回写记录
       pluginSource = healDanglingPluginId(song, plugins);
     }
     if (!pluginSource) {
@@ -136,9 +127,6 @@ export const resolveOnlineAudio = async ({
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
   if (audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://')) {
     try {
-      // [共享同歌探测 · 起播先行] 起播复用同一轮音质探测已解析的直链，
-      // 避免与音质/下载菜单的探测重复请求。等待首选档位解析出来后，以该档位 +
-      // 共享探测结果调用 resolveOnlineQualityUrl，直接命中预解析 URL（含封面等播放附加信息）。
       const probe = await ensureSharedQualityProbe(song, availableQualities);
       if (probe) {
         const startQuality = await sharedProbeAwaitTop(
@@ -160,10 +148,6 @@ export const resolveOnlineAudio = async ({
             return buildResolveResult(resolved);
           }
         }
-        // [失败冷却 · 请求收敛] 共享探测已结束且未解析出任何直链（整首全档失败）。
-        // 直接按失败返回，不再走下方 fallback 重新逐档请求插件——否则一首不可播的歌
-        // 会绕过探针池每轮重复向插件发起 musicUrl 请求（请求风暴）。配合
-        // qualitySharedProbe 的失败冷却，失败后在冷却期内一律复用失败结果。
         if (probe.done && Object.keys(probe.resolvedUrls).length === 0) {
           return {
             audioFilePath,
@@ -192,7 +176,6 @@ export const resolveOnlineAudio = async ({
         return buildResolveResult(resolved);
       }
 
-      // 解析流程完成但未拿到有效直链：把真实原因带出去，避免 UI 只能显示泛化提示
       return {
         audioFilePath,
         pluginHeaders: null,
@@ -220,7 +203,6 @@ export const resolveOnlineAudio = async ({
   };
 };
 
-/** 将由在线解析得到的直链整理成起播所需的统一结果（含 B 站 Cookie 补全） */
 const buildResolveResult = async (
   resolved: Awaited<ReturnType<typeof resolveOnlineQualityUrl>> & { url: string },
 ): Promise<ResolveOnlineAudioResult> => {

@@ -24,10 +24,8 @@ const cloudTimeDisplay = computed(() => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 });
 
-/** 二级确认状态 */
 const pendingDirection = ref<CategoryChoice | null>(null);
 
-/** 按类别的选择，默认跟随第一弹窗的整体选择 */
 const categoryChoices = ref<SyncCategoryChoices>({
   settings: 'local',
   playlists: 'local',
@@ -40,7 +38,6 @@ const categoryItems = computed(() => [
   { key: 'plugins' as const, label: '插件', desc: '已安装的插件配置' },
 ]);
 
-/** 主弹窗关闭时重置二级确认状态 */
 watch(() => conflictState.value.visible, (visible) => {
   if (!visible) {
     pendingDirection.value = null;
@@ -48,7 +45,6 @@ watch(() => conflictState.value.visible, (visible) => {
 });
 
 function handleFirstChoice(direction: CategoryChoice) {
-  // 预选所有类别为同一方向
   categoryChoices.value = {
     settings: direction,
     playlists: direction,
@@ -80,7 +76,6 @@ function cancelAll() {
 
 <template>
   <Teleport to="body">
-    <!-- 第一弹窗：冲突选择 -->
     <Transition name="conflict-modal" appear>
       <div
         v-if="conflictState.visible && !pendingDirection"
@@ -145,7 +140,6 @@ function cancelAll() {
       </div>
     </Transition>
 
-    <!-- 第二弹窗：按类别精细选择 -->
     <Transition name="confirm-modal" appear>
       <div
         v-if="pendingDirection"
@@ -571,10 +565,6 @@ function cancelAll() {
 
 </style>
 
-<!-- 深色模式使用非 scoped style 块 -->
-<!-- 原因：Vue scoped 的 :global(.dark) .xxx 复合选择器在构建时会被错误编译，
-     .xxx 部分被丢弃，导致深色样式直接应用到 html.dark 元素而非目标元素。
-     改用非 scoped 块 + html.dark .xxx 选择器可正确适配深色模式。 -->
 <style>
 /* ==================== 深色模式 - 主弹窗 ==================== */
 html.dark .conflict-card {

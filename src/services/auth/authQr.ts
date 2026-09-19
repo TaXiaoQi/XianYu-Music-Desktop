@@ -6,10 +6,6 @@ import type { AuthUser } from './authTypes';
 
 const LOCATION_CACHE_KEY = 'xy.qr.location';
 
-/**
- * 获取本机位置（IP 归属地），供移动端扫码确认页展示「被扫码设备位置」。
- * 尽力而为：失败或超时回退为设备信息，不影响二维码生成。
- */
 async function getDesktopLocation(): Promise<string> {
   try {
     const cached = localStorage.getItem(LOCATION_CACHE_KEY);
@@ -45,11 +41,6 @@ async function getDesktopLocation(): Promise<string> {
   return dev.device_model || 'Windows';
 }
 
-/**
- * 账号认证服务 · 扫码登录（桌面端）。
- * generate_tv_login_code / poll_tv_login_status 均为免签接口；
- * 二维码内容（含 code）由前端生成并渲染，手机 App 扫码确认后轮询拿回凭证。
- */
 
 export type QrLoginStatus = 'pending' | 'scanned' | 'logged_in' | 'invalid' | 'expired';
 
@@ -64,10 +55,6 @@ export type QrPollResult = {
   user?: AuthUser;
 };
 
-/**
- * 创建扫码登录二维码（桌面端）。
- * POST /api/?action=generate_tv_login_code
- */
 export async function createQrLoginCode(): Promise<QrCodeInfo> {
   try {
     const location = await getDesktopLocation();
@@ -84,11 +71,6 @@ export async function createQrLoginCode(): Promise<QrCodeInfo> {
   }
 }
 
-/**
- * 轮询扫码登录状态（桌面端）。
- * POST /api/?action=poll_tv_login_status
- * 状态收敛：pending / scanned / logged_in（带 token+user）/ invalid（过期/禁用）。
- */
 export async function pollQrLoginStatus(code: string): Promise<QrPollResult> {
   try {
     const data = await requestAction<Record<string, unknown>>('poll_tv_login_status', {
@@ -98,8 +80,6 @@ export async function pollQrLoginStatus(code: string): Promise<QrPollResult> {
     const status = String(data.status ?? 'pending');
     if (status === 'logged_in' && data.token) {
       const user = data.user_id != null ? mapUser(data) : undefined;
-      // 与账号密码登录一致：更新 authSession 缓存并持久化 keyring，
-      // 保证后续 getProfile 可执行、重启后登录态不丢
       if (user) saveAuth({ token: String(data.token), user });
       return {
         status: 'logged_in',
@@ -110,7 +90,6 @@ export async function pollQrLoginStatus(code: string): Promise<QrPollResult> {
     if (status === 'scanned') return { status: 'scanned' };
     return { status: 'pending' };
   } catch {
-    // invalid(404) / banned(403) 一律收敛为 invalid，由 UI 提示刷新
     return { status: 'invalid' };
   }
 }

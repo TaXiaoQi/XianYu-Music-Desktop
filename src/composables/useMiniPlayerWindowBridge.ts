@@ -40,7 +40,6 @@ let resolveMiniPlayerStateApplied: (() => void) | null = null;
 
 let miniPlayerPrewarmTimer: number | null = null;
 
-// 迷你窗位置持久化 key（磁盘 state 文件，重启后仍保留）
 const MINI_PLAYER_BOUNDS_STATE_KEY = 'mini_player_window_bounds';
 
 function clearMiniPlayerPrewarmTimer() {
@@ -51,7 +50,6 @@ function clearMiniPlayerPrewarmTimer() {
 }
 
 async function readMiniPlayerBounds(): Promise<MiniPlayerWindowBounds | null> {
-  // 优先从磁盘 state 文件读取（重启后仍保留），localStorage 仅作兼容回退
   let stored: string | null = null;
   try {
     stored = await stateApi.readStateJson(MINI_PLAYER_BOUNDS_STATE_KEY);
@@ -262,13 +260,8 @@ export async function restoreMainWindowFromMiniMode(options: {
   if (!options.keepMiniPlayerVisible) {
     await options.hideMiniPlayerWindow();
   }
-  // 小窗消失后再延迟 0.5s 显示主窗
   await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
-  // 主窗淡入：用不透明遮罩盖住内容，再让遮罩淡出露出主窗。
-  // 主窗是 transparent 窗口，窗口级 setOpacity 在 Windows 上不生效；
-  // 直接对 #app 做 opacity 过渡会因 WebView2 隐藏时保留旧帧而先闪出完整画面。
-  // 遮罩从第一帧就覆盖，无论 WebView2 呈现什么缓存都不会闪。
   let fadeMask: HTMLDivElement | null = null;
   if (typeof document !== 'undefined') {
     const isDark = document.documentElement.classList.contains('dark');
@@ -289,8 +282,6 @@ export async function restoreMainWindowFromMiniMode(options: {
     window.setTimeout(() => fadeMask?.remove(), 400);
   }
 
-  // 主窗口 hide → show 后 shell 会忘记之前的全屏标记，导致任务栏重新显示遮挡窗口底部。
-  // 若仍处于沉浸全屏状态，重新告知 shell 让任务栏让位（不改变窗口样式/位置，无动画开销）。
   if (options.isImmersiveFullscreen) {
     try {
       await windowApi.refreshImmersiveFullscreen();
@@ -388,7 +379,6 @@ export function useMiniPlayerWindowBridge() {
   const openMiniPlayerWindow = async () => {
     clearMiniPlayerPrewarmTimer();
 
-    // 立刻隐藏主窗口，避免小窗冷启动期间主窗口残留造成卡顿
     uiStore.mainWindowUiSleepRequested = true;
     await nextTick();
     await mainWindow.hide();
@@ -429,7 +419,6 @@ export function useMiniPlayerWindowBridge() {
   };
 
   const revealMainWindowFromTray = async () => {
-    // 从托盘恢复主窗口时，始终关闭小窗口（不保持可见）
     keepMiniPlayerVisibleOnMiniModeExit = false;
     uiStore.mainWindowUiSleepRequested = false;
 
@@ -529,7 +518,6 @@ export function useMiniPlayerWindowBridge() {
       void writeMiniPlayerBounds(event.payload);
     }));
 
-    // mini 窗口不再预热常驻：主窗口与 mini 窗口互切时应释放对方前端资源。
   });
 
   onUnmounted(() => {
@@ -553,14 +541,6 @@ export function useMiniPlayerWindowBridge() {
     await hideMiniPlayerWindow();
   });
 
-  // [性能优化] 拆分原 deep watcher：
-  // 原 watcher 同时监听 currentTime（60fps 变化）和 playQueue/tempQueue/songList（600+ 歌曲数组），
-  // 并使用 deep:true，导致每帧 Vue traverse() 深度遍历所有歌曲对象的所有属性（O(n) per frame）。
-  // 当播放队列含 600+ 在线歌曲时，仅此 watcher 每帧就产生数万次属性访问，叠加歌词渲染开销后导致卡顿。
-  //
-  // 拆为两个 watcher：
-  // 1. 重量级 watcher：监听歌曲/队列/设置变化（不含 currentTime），去掉 deep:true
-  // 2. 轻量级 watcher：仅监听 currentTime，节流发送进度更新
   watch(
     [
       currentSong,
@@ -580,7 +560,6 @@ export function useMiniPlayerWindowBridge() {
     },
   );
 
-  // 轻量级进度 watcher：节流到每 250ms 最多发送一次，避免 60fps 全量状态序列化
   let lastProgressEmitMs = 0;
   const PROGRESS_EMIT_THROTTLE_MS = 250;
   watch(currentTime, () => {

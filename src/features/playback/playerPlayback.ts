@@ -51,16 +51,12 @@ interface PlaySongOptions {
   insertAfterCurrent?: boolean;
   startTime?: number;
   continueStatisticsSession?: boolean;
-  /** [内部] 强制重播同一首歌，用于单曲循环自然结束后绕过重复播放去重 */
   forceReplay?: boolean;
-  /** [分享链接] 标记为分享链接深链触发的播放：失败行为走「分享链接播放失败行为」设置 */
   shareLinkPlayback?: boolean;
-  /** [内部] 自动换源上下文，递归 playSong 时传递已失败源集合防死循环 */
   _sourceSwitchCtx?: {
     originKey: string;
     failedSources: Set<string>;
   };
-  /** [内部] 自动换源阶段一：已尝试过的同平台插件 id 集合，递归时传递防死循环 */
   _siblingTriedPluginIds?: Set<string>;
 }
 
@@ -79,24 +75,14 @@ interface CreatePlayerPlaybackDeps {
 
 let progressFrameId: number | null = null;
 let progressTimerId: ReturnType<typeof setTimeout> | null = null;
-// [项3 播放状态机] Rust 后端通过 playback:progress 事件推送进度，
-// 前端订阅替代原先每秒轮询 getPlaybackProgress / getPlaybackDuration 的 IPC 调用
 let progressUnlisten: (() => void) | null = null;
 let progressListeningActive = false;
 let periodicFlushTimerId: ReturnType<typeof setInterval> | null = null;
-// [渐入渐出] 淡入淡出动画帧 ID，用于取消正在进行的音量渐变
 let fadeFrameId: number | null = null;
-// [渐入渐出] 当前渐变 Promise 的 resolve 函数；取消时调用以确保 await 不会永久挂起
 let fadeResolveFn: (() => void) | null = null;
-// [渐入渐出] 追踪后端实际输出音量（0-1），用于 fade 中途打断后从中断点继续
 let currentBackendVolume = 1;
-// [快速操作] togglePlay 调用 token，每次调用递增；过时的 async 流程通过对比 token 提前退出
 let togglePlayToken = 0;
 let playRequestId = 0;
-// [暂停竞态] 在线歌曲起播需要先异步解析直链（可能几秒）。这期间用户按暂停时，
-// togglePlay 只能把 isPlaying 置 false —— 音频还没创建，pause 无处可施；
-// 随后 playSong 跑完又会把状态设回播放中并真的出声，表现为「点暂停没反应」。
-// 这里记录「哪个 playRequestId 已被用户取消」，playSong 在真正启动播放前后据此中止。
 let cancelledPlayRequestId = -1;
 let lastHandledOnlineFailure: {
   path: string;
@@ -104,10 +90,7 @@ let lastHandledOnlineFailure: {
   handledAt: number;
 } | null = null;
 const recentOnlineFailurePaths = new Map<string, number>();
-// [plugin:// 失败前缀] 记录已确认无法播放的 plugin:// 路径前缀（plugin://<pluginId>/），
-// 用于快速跳过同一无效来源的所有歌曲，而无需逐首尝试。每次用户手动切歌时清空。
 const knownFailedPluginPrefixes = new Set<string>();
-// [分享链接] 当前播放是否由分享链接深链触发：失败时按「分享链接播放失败行为」处理
 let shareLinkPlaybackActive = false;
 let latestSeekRequestId = 0;
 let playbackAnchorTime = 0;
@@ -115,15 +98,11 @@ let playbackStartOffset = 0;
 let sessionStartTime: number | null = null;
 let accumulatedTime = 0;
 let currentPlayCountRecorded = false;
-// [统计] 当前是否有音频输出设备（由 audio-output-device-changed 事件维护）。
-// 无设备或音量<1 时播放无实际声音输出，这段时间不计入播放时长统计、不上报。
 let hasAudioOutputDevice = true;
-// [统计] 上次结算时的输出有效性（有设备且音量>=1），用于在状态翻转时精确结算有效时长
 let lastOutputValid = true;
 let deviceStatusUnlisten: (() => void) | null = null;
 let volumeValidityWatcher: ReturnType<typeof watch> | null = null;
 let isSeeking = false;
-// duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
 let stalledProgressTicks = 0;
 let volumeRestoreTimerId: ReturnType<typeof setTimeout> | null = null;
@@ -135,17 +114,9 @@ const ONLINE_FAILURE_LOOP_GUARD_MS = 30_000;
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 // ==================== [试听片段] 在线音源试听流处理 ====================
-// 检测逻辑与映射读取已下沉至 onlineFailover.ts；此处仅保留当前播放歌曲的映射状态。
-// 部分插件（如汽水音乐）对 VIP 歌曲匿名只返回 30~60 秒试听片段，且片段截取自歌曲中段
-// （如 3:28 处的高潮部分），表现为"一上来就从高潮播放、歌词对不上"。
-// 这里通过实际音频时长与元数据时长的差异检测试听流，并将播放进度映射回完整歌曲时间轴，
-// 使进度条与歌词正确对齐片段在原曲中的位置。
 
-/** 当前歌曲若为试听片段，保存其映射信息；非试听为 null */
 let activePreviewClip: PreviewClipInfo | null = null;
-/** activePreviewClip 所属歌曲路径（同一首歌重播时保留映射） */
 let previewClipPath = '';
-/** 已完成试听检测的歌曲路径，防止同一首歌重复检测/重复弹提示 */
 let previewDetectedPath = '';
 
 export const createPlayerPlayback = ({
@@ -192,9 +163,6 @@ const dlnaCast = useDlnaCastStore();
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
 
-  // [统计] 输出有效性（有设备且音量>=1）翻转时精确结算统计会话：
-  // 变为无效（静音/无设备）→ 结算当前有效 session 到 accumulatedTime，避免无效时段混入；
-  // 恢复有效 → 若正在播放重新开始统计会话（不含无效时段）。
   const syncStatisticsValidity = () => {
     const valid = playbackStore.volume >= 1 && hasAudioOutputDevice;
     if (valid === lastOutputValid) return;
@@ -207,22 +175,16 @@ const dlnaCast = useDlnaCastStore();
     }
   };
 
-  // [统计] 仅在输出有效（有设备且音量>=1）时开启统计会话。
-  // 起播/恢复/周期刷新若在无效时段无条件重置 sessionStartTime，会把静音/无设备时段
-  // 重新计入统计，故统一走此入口：无效时置 null，由 syncStatisticsValidity 在恢复有效时接管。
   const startStatisticsSession = () => {
     sessionStartTime = (playbackStore.volume >= 1 && hasAudioOutputDevice) ? Date.now() : null;
   };
 
-  // [统计] 订阅音频输出设备变更事件，维护 hasAudioOutputDevice 状态。
-  // 无设备时播放不出声，不应计入播放时长。
   listen<AudioOutputStatus>('audio-output-device-changed', (event) => {
     hasAudioOutputDevice = event.payload.active_device_name != null;
     playbackStore.activeOutputMode = event.payload.active_output_mode;
     syncStatisticsValidity();
   }).then(fn => { deviceStatusUnlisten = fn; }).catch(() => {});
 
-  // [统计] 应用启动时主动获取一次设备状态（事件仅在设备变化时发射，启动时可能无事件）
   playbackApi.getCurrentOutputDevice()
     .then(status => {
       hasAudioOutputDevice = status.active_device_name != null;
@@ -231,7 +193,6 @@ const dlnaCast = useDlnaCastStore();
     })
     .catch(() => {});
 
-  // [统计] 音量变化时同步统计会话有效性（静音/恢复）
   volumeValidityWatcher = watch(() => playbackStore.volume, () => {
     syncStatisticsValidity();
   });
@@ -280,11 +241,6 @@ const dlnaCast = useDlnaCastStore();
     }, 200);
   };
 
-  // [性能优化] 将 addToHistory 延迟到空闲时执行，避免其触发的响应式级联阻塞播放启动。
-  // addToHistory 会修改 recentSongs（触发 IPC 序列化所有歌单）和 songCatalogVersion
-  // （触发 canonicalSongs/playQueue/currentViewSongs 等 computed 级联重算），
-  // 歌单和歌曲数量越多，级联开销越大，导致飞封面动画和起播卡顿。
-  // addToHistory 仅影响历史记录和最近播放列表，不影响当前播放，可安全延迟。
   const scheduleAddToHistory = (song: Song) => {
     const idle = typeof window !== 'undefined' && 'requestIdleCallback' in window
       ? window.requestIdleCallback.bind(window)
@@ -376,7 +332,6 @@ const dlnaCast = useDlnaCastStore();
       clearTimeout(progressTimerId);
       progressTimerId = null;
     }
-    // [项3 播放状态机] 取消 playback:progress 事件订阅
     progressListeningActive = false;
     if (progressUnlisten) {
       progressUnlisten();
@@ -388,7 +343,6 @@ const dlnaCast = useDlnaCastStore();
     }
   };
 
-  // [渐入渐出] 取消正在进行的音量渐变动画
   const cancelFade = () => {
     if (fadeFrameId !== null) {
       cancelAnimationFrame(fadeFrameId);
@@ -401,8 +355,6 @@ const dlnaCast = useDlnaCastStore();
     }
   };
 
-  // [渐入渐出] 将实际输出音量从当前值渐变到目标值（不影响 playbackStore.volume 显示值）
-  // startVolumeOverride 用于指定起始音量（如切歌淡入时从 0 开始），不传则从 currentBackendVolume 继续（支持中途打断）
   const fadeVolumeTo = (targetVolume: number, durationMs: number, startVolumeOverride?: number): Promise<void> => {
     return new Promise((resolve) => {
       cancelFade();
@@ -415,9 +367,6 @@ const dlnaCast = useDlnaCastStore();
         return;
       }
       const startTime = performance.now();
-      // 淡入用 easeInQuad（前慢后快，声音慢慢浮现），淡出用 easeOutQuad（前快后慢，声音慢慢消失）。
-      // 两者在 50% 处都经过 25%，保证淡入/淡出时长相等且对称。
-      // 之前两者都用 easeOutQuad，导致淡入前半段音量就到 75%，听感上淡入时长只有淡出的一半。
       const isFadeIn = targetVol > startVolume;
       const step = (now: number) => {
         const elapsed = now - startTime;
@@ -434,7 +383,6 @@ const dlnaCast = useDlnaCastStore();
           fadeFrameId = null;
           fadeResolveFn = null;
           currentBackendVolume = targetVol;
-          // 确保最终设置精确的目标音量
           void playbackApi.setVolume(targetVol).catch(() => {});
           resolve();
         }
@@ -450,23 +398,16 @@ const dlnaCast = useDlnaCastStore();
     currentTime.value = time;
   };
 
-  /**
-   * [试听片段] 实际音频时长远小于元数据时长时判定为试听流。
-   * 汽水歌曲可从 SEO 端点拿到片段起点，将 currentTime 映射回完整歌曲时间轴；
-   * 拿不到起点时按实际片段时长修正 duration，保证进度条自洽。
-   */
   const handlePreviewClipDetected = async (song: Song, actualDuration: number) => {
     previewDetectedPath = song.path;
     const trackId = isQishuiPluginPath(song.path) ? extractPluginTrackId(song.path) : '';
     const previewInfo = trackId ? await fetchQishuiPreviewInfo(trackId) : null;
 
-    // 等待期间可能已切歌
     if (currentSong.value?.path !== song.path) return;
 
     if (previewInfo && Math.abs(previewInfo.duration - actualDuration) <= 3) {
       activePreviewClip = { start: previewInfo.start, duration: actualDuration };
       previewClipPath = song.path;
-      // currentTime 从片段内进度映射到完整歌曲时间轴（进度条/歌词立即对齐片段位置）
       reanchorPlaybackClock(previewInfo.start + currentTime.value);
       showToast(
         `「${getSmtcTitle(song)}」为 VIP 试听片段（${Math.round(actualDuration)} 秒，${formatPreviewClock(previewInfo.start)} 起），完整播放请配置插件登录或更换音源`,
@@ -508,9 +449,7 @@ const dlnaCast = useDlnaCastStore();
       if (!currentSong.value || !isPlaying.value) return;
 
       if (dlnaCast.isCasting) {
-        // [DLNA 投屏] 本地播放器静默，进度来自电视轮询位置 + 插值，rAF 锚点不适用
         currentTime.value = dlnaCast.interpolatedPosition();
-        // 电视端实测时长回填（插件歌曲 duration 可能未知/为 0）
         const tvDur = dlnaCast.tvDuration;
         const songForDur = currentSong.value;
         if (tvDur > 0.5 && songForDur && (!songForDur.duration || songForDur.duration <= 0)) {
@@ -525,7 +464,6 @@ const dlnaCast = useDlnaCastStore();
         currentTime.value = playbackStartOffset + delta;
       }
 
-      // [试听片段] 试听流的自然结束位置以片段终点为准
       const endTime = activePreviewClip
         ? activePreviewClip.start + activePreviewClip.duration
         : currentSong.value.duration;
@@ -539,8 +477,6 @@ const dlnaCast = useDlnaCastStore();
 
     scheduleUpdate(update);
 
-    // [定时刷新] 每 30 秒将听歌时长刷写到统计数据库。
-    // 同一次播放仅首个有效分片计入播放次数，后续分片只累计时长。
     periodicFlushTimerId = setInterval(() => {
       if (isPlaying.value && currentSong.value) {
         flushPlaySession();
@@ -548,16 +484,11 @@ const dlnaCast = useDlnaCastStore();
       }
     }, 30_000);
 
-    // [项3 播放状态机] 订阅 Rust 后端的 playback:progress 事件，
-    // 替代原先每秒轮询 getPlaybackProgress / getPlaybackDuration 的 IPC 调用。
-    // 事件约每 500ms 发射一次，携带 position / duration / is_playing。
     progressListeningActive = true;
     listen<PlaybackProgressPayload>('playback:progress', (event) => {
       if (!progressListeningActive || !isPlaying.value || isSeeking || dlnaCast.isCasting) return;
 
       const {position: rawTime, duration} = event.payload;
-      // [试听片段] 同一首歌重播后若实际时长与片段时长不符（如已配置登录态拿到完整流），
-      // 清除陈旧映射并允许重新检测
       if (
         activePreviewClip
         && duration > 0
@@ -568,14 +499,12 @@ const dlnaCast = useDlnaCastStore();
         previewDetectedPath = '';
       }
       const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-      // [试听片段] 试听流的 rawTime 是片段内进度，加上片段起点映射回完整歌曲时间轴
       const previewStart = activePreviewClip?.start ?? 0;
       const adjustedTime = Math.max(0, rawTime - offsetSec + previewStart);
       if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
         reanchorPlaybackClock(adjustedTime);
       }
 
-      // [试听片段检测] 实际音频时长远小于元数据时长 → 插件只返回了试听片段（如汽水 VIP 歌曲）
       const songForPreviewCheck = currentSong.value;
       if (
         songForPreviewCheck
@@ -586,8 +515,6 @@ const dlnaCast = useDlnaCastStore();
         void handlePreviewClipDetected(songForPreviewCheck, duration);
       }
 
-      // 播放结束兜底检测：后端进度连续多轮停滞且已播放过则视为结束。
-      // 试听流/在线流/未知时长的判定规则见 playbackTiming.evaluateStallAutoNext。
       const song = currentSong.value;
       if (song) {
         const {stalledProgressTicks: ticks, shouldAutoAdvance} = evaluateStallAutoNext({
@@ -607,8 +534,6 @@ const dlnaCast = useDlnaCastStore();
       }
       lastRawProgress = rawTime;
 
-      // [在线歌曲时长修正] Song.duration 可能为 0（插件未返回时长），
-      // duration 直接从事件载荷获取，无需额外 IPC 调用
       const songForDuration = currentSong.value;
       if (songForDuration && (!songForDuration.duration || songForDuration.duration <= 0) && duration > 0) {
         const newDuration = Math.floor(duration);
@@ -617,7 +542,6 @@ const dlnaCast = useDlnaCastStore();
         playbackStore.patchQueueSongMeta(songForDuration.path, {duration: newDuration});
       }
     }).then(unlisten => {
-      // 竞态保护：如果 listen 返回前 stopPlaybackRuntime 已被调用，立即取消订阅
       if (!progressListeningActive) {
         unlisten();
       } else {
@@ -630,8 +554,6 @@ const dlnaCast = useDlnaCastStore();
     const song = currentSong.value;
     if (!song) return;
 
-    // [统计] 无有效音频输出（无输出设备或音量<1）时，这段播放时长不计入统计、不上报。
-    // 丢弃当前会话起点，避免静音/无设备时段被后续 flush 累计。
     if (playbackStore.volume < 1 || !hasAudioOutputDevice) {
       sessionStartTime = null;
       return;
@@ -645,7 +567,6 @@ const dlnaCast = useDlnaCastStore();
     const totalDuration = accumulatedTime + currentSession;
     const shouldPersist = totalDuration >= 10 || (currentPlayCountRecorded && totalDuration > 0);
 
-    // 上报用户播放行为到后台统计（不受 shouldPersist 限制，确保切歌/暂停都能及时上报）
     const user = authStore.user;
     let songSource = 'local';
     if (song.path.startsWith('lx://')) {
@@ -688,13 +609,6 @@ const dlnaCast = useDlnaCastStore();
     sessionStartTime = null;
   };
 
-  /**
-   * [自动换源 · 阶段一] plugin:// 歌曲同平台插件重试（对齐移动端 switchViaSibling）。
-   * 按搜索结果/路径中的平台标签在已装同格式插件中重匹配，命中未试过的插件后
-   * 变更绑定（rawData 为 markRaw 对象可直接变更，同步 plugin_id，对齐 pluginIdHeal）
-   * 并重播同一首歌：歌曲身份不变，仅换解析插件。解析结果由播放失败链路递归验证，
-   * 已试插件沿 _siblingTriedPluginIds 传递防止死循环。返回 true 表示已发起重播。
-   */
   const trySiblingPluginPlayback = async (
     song: Song,
     options: PlaySongOptions,
@@ -704,7 +618,6 @@ const dlnaCast = useDlnaCastStore();
       const searchResult = song.rawData as { pluginId?: string; platform?: string } | undefined;
       if (!searchResult?.pluginId) return false;
 
-      // 平台标签：搜索结果自带 platform 优先，其次从路径段解码（plugin://<平台名>/<id>）
       let platformLabel = searchResult.platform || '';
       if (!platformLabel.trim()) {
         const segment = (song.cue_source_path || song.path || '').slice('plugin://'.length).split('/')[0] || '';
@@ -718,7 +631,6 @@ const dlnaCast = useDlnaCastStore();
       const sibling = findMatchingPlugin(describePlatform(platformLabel), candidates, 'musicfree');
       if (!sibling) return false;
 
-      // 竞态检查：匹配期间用户可能已切歌
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) return false;
 
       console.info(`[Audio] 自动换源 · 同平台插件重试: ${sibling.name} (${sibling.id.slice(0, 8)}…)`);
@@ -736,16 +648,6 @@ const dlnaCast = useDlnaCastStore();
     }
   };
 
-  /**
-   * 统一处理在线播放失败：状态清理 + 自动换源（lx:// 与 plugin://）+ onlineFailureBehavior
-   *
-   * 触发场景：
-   * 1. lx:// / plugin:// URL 解析失败（插件获取直链失败，token 过期/无权限/接口异常等），
-   *    audioFilePath 仍是 lx:// 或 plugin:// 开头，无法走在线或本地播放
-   * 2. 在线直链走 Rust 后端起播探测失败（403/不支持Range/解码失败/超时）
-   *
-   * @returns 调用方应在调用后立即 return（已处理完所有失败后续）
-   */
   const handleOnlinePlaybackFailure = async (
     song: Song,
     options: PlaySongOptions,
@@ -777,7 +679,6 @@ const dlnaCast = useDlnaCastStore();
     }
 
     try { await playbackApi.stopAudio(); } catch {}
-    // [渐入渐出] 起播失败时恢复后端音量到用户设定值
     if (shouldFade) {
       currentBackendVolume = playbackStore.volume / 100;
       void playbackApi.setVolume(currentBackendVolume).catch(() => {});
@@ -791,11 +692,6 @@ const dlnaCast = useDlnaCastStore();
       return;
     }
 
-    // [自动换源] 起播失败时自动换源重播同一首歌（全插件通用，对齐移动端）：
-    //   阶段一（plugin://）：同平台其他已装插件重试（仅换解析插件，歌曲身份不变）
-    //   阶段二：跨平台公共音源（Rust find_alternative_lx_source，lx:// 与 plugin:// 通用）
-    // 分享链接播放失败行为：pause（默认）→ 本次失败直接停止，不走换源/切歌；
-    // replace → 强制换源（绕过通用 autoswitch 行为开关）。
     const isSharePlayback = shareLinkPlaybackActive;
     const shareFailureBehavior = settingsStore.settings.sharePlaybackFailureBehavior ?? 'pause';
     if (isSharePlayback && song.path.startsWith('lx://') && shareFailureBehavior === 'pause') {
@@ -808,19 +704,16 @@ const dlnaCast = useDlnaCastStore();
     const allowAutoSwitch = (song.path.startsWith('lx://') || isPluginSong)
       && (autoSwitchEnabled || (isSharePlayback && shareFailureBehavior === 'replace'));
     if (allowAutoSwitch) {
-      // 阶段一：plugin:// 同平台插件重试（命中后直接重播，失败走递归失败处理）
       if (isPluginSong) {
         const switched = await trySiblingPluginPlayback(song, options, requestId);
         if (switched) return;
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
       }
 
-      // 复用或初始化换源上下文：failedSources 单调增长，防止递归死循环
       const switchCtx = options._sourceSwitchCtx ?? {
         originKey: `${song.name}|${song.artist}`,
         failedSources: new Set<string>(),
       };
-      // 失败源集合：lx:// 记源码；plugin:// 把平台显示名映射到 LX 源码（无映射记 'plugin'）
       if (song.path.startsWith('lx://')) {
         switchCtx.failedSources.add(song.path.slice('lx://'.length).split('/')[0]);
       } else {
@@ -841,7 +734,6 @@ const dlnaCast = useDlnaCastStore();
         console.warn(`[Audio] 自动换源查找异常: ${getErrorMessage(error)}`);
       }
 
-      // [竞态检查] 搜索期间用户可能已切歌
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
         return;
       }
@@ -849,13 +741,10 @@ const dlnaCast = useDlnaCastStore();
       if (alternativeSong) {
         const { getLxSourceDisplayName } = await import('../../services/domain/lxSourceFallback');
         const newSource = alternativeSong.path.slice('lx://'.length).split('/')[0];
-        // [封面回退] 若新源搜索结果未返回封面 URL（部分平台不返回 img），
-        // 复用原歌曲封面（同一首歌，封面图通常相同）
         if (!alternativeSong.cover_thumb_path && song.cover_thumb_path) {
           alternativeSong.cover_thumb_path = song.cover_thumb_path;
         }
         showToast(`已自动切换到 ${getLxSourceDisplayName(newSource)} 音源`, 'info');
-        // preserveQueue: 保持队列不变，仅切 currentSong；递归传递上下文以便新源失败时继续换源
         await playSong(alternativeSong, {
           preserveQueue: true,
           _sourceSwitchCtx: switchCtx,
@@ -863,27 +752,19 @@ const dlnaCast = useDlnaCastStore();
         });
         return;
       }
-      // alternativeSong 为 null：所有源穷尽或均未匹配，落入下方失败行为处理
     }
 
-    // [分享链接] 替换播放模式下仍未换到可用音源 → 停止（不回退到通用 skip 切歌）
     if (isSharePlayback) {
       showToast('分享歌曲播放失败，未找到可替换音源', 'error');
       return;
     }
 
-    // [autoswitch 等价 stop] 换源已尝试但无果：提示并停止，不回退到 skip 切歌（对齐移动端）
     if (allowAutoSwitch) {
       showToast('已自动换源无果，请重试或更换音源', 'error');
       return;
     }
 
     if (failureBehavior === 'skip') {
-      // [plugin:// 失败前缀标记] 当 plugin:// 歌曲播放失败时，提取其路径前缀
-      //（plugin://<pluginId>/），将其加入已知失败前缀集合，后续扫描队列时批量跳过
-      // 同一来源的所有歌曲——避免逐首尝试整个队列（如 622 首全部来自同一无效平台）。
-      // 注意：pluginId 在桌面端是 SHA256 哈希，移动端是平台名，两端不兼容，
-      // 所以不尝试匹配插件 ID，仅靠前缀来识别同一无效来源。
       if (song.path.startsWith('plugin://')) {
         const withoutScheme = song.path.slice('plugin://'.length);
         const slashIdx = withoutScheme.indexOf('/');
@@ -893,7 +774,6 @@ const dlnaCast = useDlnaCastStore();
         }
       }
 
-      // 判断一首歌是否可以尝试播放（未在失败集合里，且不属于已知失败前缀）
       const isLikelyPlayable = (item: Song): boolean => {
         if (recentOnlineFailurePaths.has(item.path)) return false;
         if (item.path.startsWith('plugin://')) {
@@ -910,7 +790,6 @@ const dlnaCast = useDlnaCastStore();
       );
 
       if (!hasAlternativeQueueSong) {
-        // 如果所有歌曲都因同一 plugin 前缀失败，给出明确提示
         if (knownFailedPluginPrefixes.size > 0 && queueSongs.every(item =>
           !isLikelyPlayable(item) || item.path === song.path,
         )) {
@@ -920,7 +799,6 @@ const dlnaCast = useDlnaCastStore();
         return;
       }
 
-      // 批量标记同前缀的队列歌曲为失败，避免 handleAutoNext 逐首触发再次解析
       if (knownFailedPluginPrefixes.size > 0) {
         const now = Date.now();
         for (const item of queueSongs) {
@@ -939,11 +817,9 @@ const dlnaCast = useDlnaCastStore();
         if (currentSong.value?.path === song.path) handleAutoNext();
       }, 400);
     }
-    // 'stop'：保持停止，不做额外处理
   };
 
   const playSong = async (song: Song, options: PlaySongOptions = {}) => {
-    // [分享链接] 普通新播放按选项记录是否分享触达；换源递归（_sourceSwitchCtx）沿用原标记
     if (!options._sourceSwitchCtx) {
       shareLinkPlaybackActive = !!options.shareLinkPlayback;
     }
@@ -956,26 +832,18 @@ const dlnaCast = useDlnaCastStore();
       && !options.forceReplay
       && !options._sourceSwitchCtx;
 
-    // 重复点击正在播放的同一首歌时不重新加载，避免进度被重置、音频重建和封面动画重复触发。
-    // 音质切换、自动换源、指定起播时间等内部重播请求仍继续执行。
     if (isSameCurrentlyPlayingSong) {
       return;
     }
 
-    // [plugin:// 失败前缀快速跳过] 该歌曲的 plugin:// 来源前缀已被标记为无效
-    //（如移动端同步的 plugin://网易音乐/ 在桌面端没有对应插件），直接触发下一首，
-    // 避免再次走完整的插件解析流程。
     if (song.path.startsWith('plugin://') && !options._sourceSwitchCtx) {
       const withoutScheme = song.path.slice('plugin://'.length);
       const slashIdx = withoutScheme.indexOf('/');
       if (slashIdx >= 0) {
         const prefix = 'plugin://' + withoutScheme.slice(0, slashIdx + 1);
         if (knownFailedPluginPrefixes.has(prefix)) {
-          // [不重复自动切歌] 记录该歌是否已在失败集合中：若是，说明它在短时间内已失败过
-          // 并触发过一次自动切歌，不能再次 handleAutoNext，否则会反复跳歌形成死循环。
           const alreadyFailedRecently = recentOnlineFailurePaths.has(song.path);
           recentOnlineFailurePaths.set(song.path, Date.now());
-          // 检查队列中是否还有不属于已知失败前缀的歌曲
           const queueSongs = [...playbackStore.tempQueue, ...playbackStore.playQueue];
           const hasPlayable = queueSongs.some(item => {
             if (recentOnlineFailurePaths.has(item.path)) return false;
@@ -988,7 +856,6 @@ const dlnaCast = useDlnaCastStore();
           if (!hasPlayable) {
             showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
             console.warn('[Audio] 队列中无可播放歌曲（所有 plugin:// 均属于已知失败来源），停止');
-            // [停止而非跳过] 队列已无可播放歌曲，立即停止当前播放，而不是继续卡在加载态
             try { await playbackApi.stopAudio(); } catch {}
             isPlaying.value = false;
             isSongLoaded.value = false;
@@ -1007,27 +874,19 @@ const dlnaCast = useDlnaCastStore();
     const requestId = ++playRequestId;
     clearVolumeRestoreTimer();
 
-    // 新的播放请求：清掉上一次可能残留的取消标记
     cancelledPlayRequestId = -1;
     if (lastHandledOnlineFailure?.path !== song.path) {
       lastHandledOnlineFailure = null;
     }
     pruneRecentOnlineFailurePaths();
 
-    // [渐入渐出] 切歌时先淡出当前正在播放的歌曲，避免新歌起播前旧歌仍在出声。
-    // 本地、在线均适用：在线歌 URL 解析期间旧歌会持续淡出，解析完成新歌起播后再淡入。
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
-    // [音质切换] 同一首歌切换音质（continueStatisticsSession=true）时，
-    // 旧音频会被先停止再重新起播新音质。由于网络 URL 解析期间存在静音间隔，
-    // 淡出→静音→淡入的体验割裂，因此音质切换不做淡进淡出。
     const isQualitySwitch = !!options.continueStatisticsSession
       && !!previousSong
       && previousSong.path === song.path;
 
-    // [在线播放预解析] 点击切歌后立即启动下一首的在线 URL 解析，与上一首淡出并行。
-    // 这样 Source API / LX URL 等网络等待不会排在淡出动画之后，体感切歌更快。
     let audioFilePath = song.cue_source_path || song.path;
     const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
 
@@ -1049,12 +908,8 @@ const dlnaCast = useDlnaCastStore();
     let pluginCek: string | undefined = undefined;
 
     currentAvailableQualities.value = null;
-    // [音质跟踪] 切歌时重置实际播放音质，URL 解析成功后重新设置
     playbackStore.currentPlayingQuality = null;
-    // [缓存复用] 切歌时清空上一首的音频直链，URL 解析成功后重新记录
     playbackStore.currentPlayingAudioUrl = null;
-    // [会话音质] 切换到不同歌曲时清空底部栏会话级音质覆盖，让新歌优先应用设置页的在线播放音质。
-    // 同一首歌重播（如底部栏切音质触发的 replay）保留覆盖，以确保切音质立即生效。
     if (previousSong && previousSong.path !== song.path) {
       playbackStore.sessionQualityOverride = null;
     }
@@ -1064,8 +919,6 @@ const dlnaCast = useDlnaCastStore();
       let preparedUsingDownloadedAudioFile = false;
       let preparedAvailableQualities: QualityKey[] | null = null;
 
-      // [本地优先] 收藏、最近播放、歌单中保存的是在线歌曲路径，但若该歌曲已下载且文件仍存在，
-      // 直接播放下载文件，避免每次起播都调用 LX/插件解析直链。未命中时才进入后续在线解析流程。
       if (isOriginalOnlineSong) {
         const downloadedRecord = await checkDownloadExists(preparedAudioFilePath);
         if (downloadedRecord?.filePath) {
@@ -1117,24 +970,15 @@ const dlnaCast = useDlnaCastStore();
     });
 
     if (shouldFadeOnSwitch) {
-      // [渐入渐出] 不 await 淡出完成——让 fade-out 与后续切歌流程并行执行。
-      // 旧歌音量会在后台平滑降低，待新歌 ready 后旧音频会被 stopAudio/playAudio 终止，
-      // fade-out 自然结束。避免切歌被 fade duration 阻塞导致体感延迟。
       fadeVolumeTo(0, effectiveFadeDuration).catch(() => {});
     } else {
       cancelFade();
     }
 
-    // [可打断] fade-out 期间用户可能再次点击播放另一首歌，此时 playRequestId 已递增、
-    // cancelFade 已 resolve 旧的 fade promise。若不检查，旧的 playSong 会继续处理旧歌曲，
-    // 与新的 playSong 产生竞态（旧歌覆盖新歌的 currentSong/queue/playAudio）。
     if (requestId !== playRequestId) return;
 
     flushPlaySession();
     if (shouldStopPreviousAudioBeforeOnlineResolve) {
-      // 在线歌曲需要先解析直链。若等到新直链响应后才调用 playAudio，
-      // 后端旧音频会在网络等待期间继续出声，造成“下一首响应后才暂停上一首”的错觉。
-      // 这里先停止旧音频，再进入新歌加载态；后续新歌解析成功后会重新 playAudio。
       try { await playbackApi.stopAudio(); } catch {}
       stopPlaybackRuntime();
       sessionStartTime = null;
@@ -1154,9 +998,6 @@ const dlnaCast = useDlnaCastStore();
       if (options.insertAfterCurrent) {
         playQueue.value = buildQueueWithInsertedSong(song, previousSong, playQueue.value);
       } else {
-        // [性能优化] 用路径数组直接设置队列，避免 playQueue.value 物化所有歌曲对象。
-        // 同一容器内切歌时路径未变 → setQueueFromPaths 内部 areSamePaths 短路返回，
-        // 不触发 normalizeSongs / pruneFallbackSongs / 响应式更新。
         const displaySongList = getDisplaySongList();
         if (displaySongList.some(item => item.path === song.path)) {
           const displayPaths = displaySongList.map(s => s.path);
@@ -1171,15 +1012,12 @@ const dlnaCast = useDlnaCastStore();
       }
     }
 
-    // [歌词获取] LX/plugin:// 歌曲的异步歌词获取已移至 URL 解析之后，
-    // 确保插件实例已初始化且 musicUrl 请求已完成（部分插件依赖 song-specific 状态）。
 
     const retainedFullCoverPaths = prepareDetailFullCovers(song);
 
     isPlaying.value = true;
     isSongLoaded.value = false;
     const coverLookupPath = song.cue_source_path || song.path;
-    // [落雪] lx:// 协议歌曲的 cover_thumb_path 是远程 URL，直接使用不走 convertFileSrc
     const isLxSong = coverLookupPath.startsWith('lx://');
     const cachedCover = peekCoverUrl(coverLookupPath);
     const cachedCoverPath = peekCoverPath(coverLookupPath) || song.cover_thumb_path || '';
@@ -1190,7 +1028,6 @@ const dlnaCast = useDlnaCastStore();
     const immediateCover = cachedCover || persistedCover;
     let displayCover = '';
     if (immediateCover) {
-      // B站等需代理的封面：先显示原始 URL，异步代理完成后刷新底部栏/歌词封面
       displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
         currentCover.value = dataUrl;
@@ -1199,10 +1036,8 @@ const dlnaCast = useDlnaCastStore();
       currentCover.value = displayCover;
       currentCoverPath.value = coverLookupPath;
     }
-    // 展开大图同样优先用代理后的封面，避免网易云等防盗链封面白屏
     currentCoverFull.value = cachedFullCover || displayCover || immediateCover || '';
     preloadPriorityCovers(getLikelyThumbnailPaths(song));
-    // [落雪] lx:// 歌曲跳过本地封面加载（loadCover 会调用后端读取本地文件）
     const currentThumbnailLoad = isLxSong
       ? Promise.resolve([immediateCover || '', cachedCoverPath] as [string, string])
       : Promise.all([loadCover(coverLookupPath), loadCoverPath(coverLookupPath)]);
@@ -1214,14 +1049,9 @@ const dlnaCast = useDlnaCastStore();
 
         const normalizedCover = cover || '';
         if (normalizedCover) {
-          // [在线歌曲] loadCover 返回缓存中的原始 URL（如B站 hdslb.com），
-          // 需经过 getDisplayCoverUrl 取代理后的 data: URL，避免覆盖 immediateCover
-          // 路径已异步设置的代理封面。无 onReady：代理已由 immediateCover 路径发起。
           currentCover.value = getDisplayCoverUrl(normalizedCover);
           currentCoverPath.value = song.path;
         } else if (!immediateCover) {
-          // 保留上一首封面只用于遮盖异步加载阶段；确认当前歌曲确实没有封面后清空，
-          // 让底栏显示默认音乐占位图，避免旧封面残留或封面区域完全空白。
           currentCover.value = '';
           currentCoverPath.value = '';
         }
@@ -1255,8 +1085,6 @@ const dlnaCast = useDlnaCastStore();
     let resumeTime = Math.max(0, Math.min(requestedStartTime, song.duration || requestedStartTime));
 
     stopPlaybackRuntime();
-    // [试听片段] 换歌时重置试听映射并预热汽水试听元数据；同一首歌重播（暂停恢复/重试）
-    // 保留映射，并把续播位置限制在片段区间内（resumeTime 保持完整歌曲时间轴）。
     if (previewClipPath !== song.path) {
       activePreviewClip = null;
       previewClipPath = '';
@@ -1275,19 +1103,12 @@ const dlnaCast = useDlnaCastStore();
       );
     }
     reanchorPlaybackClock(resumeTime);
-    // [进度同步] 提前启动播放时钟和 playback:progress 监听器，不必等 Rust 起播探测完成。
-    // 之前在线歌曲的 startPlaybackRuntime 在 tryPlayOnlineViaRust 之后才调用（最长 20 秒），
-    // 期间 currentTime 卡在 0，但实际音频已在 Rust 后端播放，导致"有声音但进度条不动"。
-    // 提前启动后，动画时钟从 0 开始走动，首个 playback:progress 事件到达时自动修正到正确位置。
     startPlaybackRuntime();
     accumulatedTime = 0;
     sessionStartTime = null;
     lastRawProgress = -1;
     stalledProgressTicks = 0;
 
-    // [最近播放] 只能在后端确认起播成功后记录。
-    // 在线歌曲可能解析失败、后端探测失败或自动换源；若在这里提前记录，会把队列里的原歌曲写入最近播放，
-    // 而不是用户实际听到的歌曲。由本地/在线成功起播分支调用该函数。
     let historyRecordedForRequest = false;
     const recordStartedSongToHistory = () => {
       if (
@@ -1303,7 +1124,6 @@ const dlnaCast = useDlnaCastStore();
       scheduleAddToHistory(currentSong.value ?? song);
     };
 
-    // [试听片段] Rust 侧起始位置需要片段内时间（resumeTime 是完整歌曲时间轴）
     const startOffsetMs = cueStartOffset
       + Math.round((resumeTime - (activePreviewClip?.start ?? 0)) * 1000);
 
@@ -1328,7 +1148,6 @@ const dlnaCast = useDlnaCastStore();
             resolvedOnlineAudio.currentPlayingAudioUrl = sanitizedAudioFilePath;
           }
         }
-        // 终极兜底：如果 URL 仍不以 http 开头，用 indexOf 强制提取
         if (audioFilePath && !audioFilePath.startsWith('http://') && !audioFilePath.startsWith('https://')) {
           const idx1 = audioFilePath.indexOf('https://');
           const idx2 = audioFilePath.indexOf('http://');
@@ -1353,8 +1172,6 @@ const dlnaCast = useDlnaCastStore();
         pluginHeaders = resolvedOnlineAudio.pluginHeaders;
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;
-        // [B站防盗链] 缓存 headers 到歌曲对象，避免预解析 URL 路径复用时丢失 Cookie/Referer，
-        // 导致 B站 CDN 对部分视频只返回 3-4 秒预览片段。
         if (pluginHeaders) {
           song.remote_headers = pluginHeaders;
         }
@@ -1369,8 +1186,6 @@ const dlnaCast = useDlnaCastStore();
         }
         if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
           song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
-          // [封面] 播放时异步取回的封面同步到底栏/歌词页（含 B站等需代理的 URL）。
-          // 此前仅写入 song.cover_thumb_path，未更新 currentCover，导致晚获取的封面不显示。
           if (requestId === playRequestId && currentSong.value?.path === song.path) {
             const displayCover = getDisplayCoverUrl(resolvedOnlineAudio.coverThumbPath, (dataUrl) => {
               if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
@@ -1384,12 +1199,8 @@ const dlnaCast = useDlnaCastStore();
         }
       }
 
-    // [可打断] lx:///plugin:// URL 解析期间用户可能切歌，需检查是否仍是当前请求
     if (requestId !== playRequestId) return;
 
-    // [歌词获取] URL 解析完成后启动异步歌词请求。
-    // 移至此处确保插件实例已初始化且 musicUrl 请求已完成（部分 LX 插件依赖 song-specific 状态才能获取歌词）。
-    // LX 歌曲：通过落雪插件引擎或直接 API 获取歌词
     if (!usingDownloadedAudioFile && song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
       clearOnlineLyricsUnavailable(song.path);
       void fetchLxSongLyricsRaw(song)
@@ -1406,7 +1217,6 @@ const dlnaCast = useDlnaCastStore();
           }
 
           song.lyrics_raw = lyricsRaw;
-          // 同步更新 library store 中的 songPool 条目，否则 loadLyrics 读到的 currentSong.lyrics_raw 仍为空
           libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
           playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
           currentSong.value = {...currentSong.value, lyrics_raw: lyricsRaw};
@@ -1420,8 +1230,6 @@ const dlnaCast = useDlnaCastStore();
         });
     }
 
-    // [歌词获取] plugin:// 歌曲：通过 pluginGetLyric 补获歌词（支持逐字歌词）
-    // 播放入口可能已通过 pluginGetMusicInfo 获取歌词并设置到 lyrics_raw，此处仅在为空时补获
     if (!usingDownloadedAudioFile && song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
       clearOnlineLyricsUnavailable(song.path);
       const pluginSearchResult = song.rawData;
@@ -1452,7 +1260,6 @@ const dlnaCast = useDlnaCastStore();
               return;
             }
             song.lyrics_raw = lyricData.lyricsRaw;
-            // [修复] 同步更新 library store 池中条目（与 LX 歌词处理一致）
             libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
             playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw });
             currentSong.value = {...currentSong.value, lyrics_raw: lyricData.lyricsRaw};
@@ -1468,16 +1275,10 @@ const dlnaCast = useDlnaCastStore();
         markOnlineLyricsUnavailable(song.path);
       }
     }
-      // [飞封面同步] consumeFlyCoverPromise 取出飞封面 Promise（取出后立即清除，避免后续误等）。
-      // - 在线歌曲：在 playAudio 前等待飞封面（URL 解析已在上游并行完成）
-      // - 本地歌曲（开启渐入渐出）：先 playAudio（fade-out 已将音量降为0，加载不发声），
-      //   再等待飞封面，实现加载与动画并行，封面飞到后淡入播放
       const flyPromise = consumeFlyCoverPromise();
 
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
-      // [lx:// URL 解析失败] 落雪插件获取直链失败（token 过期/无权限/接口异常等），
-      // audioFilePath 仍是 lx:// 开头，既非在线直链也非本地文件，直接触发失败处理（含自动换源）
       if (!isNetworkAudio && audioFilePath.startsWith('lx://')) {
         console.warn('[Audio] lx:// 直链解析失败（audioFilePath 仍为 lx://）:', {
           path: song.path,
@@ -1490,16 +1291,11 @@ const dlnaCast = useDlnaCastStore();
         return;
       }
 
-      // [plugin:// URL 解析失败/异常清洗失败]
-      // 插件应解析为 http(s) 直链。若仍是 plugin://，或含反引号等坏字符导致不再以 http 开头，
-      // 不要继续按本地文件播放，否则 UI 会停在“加载中”。
       if (!isNetworkAudio && isOriginalOnlineSong && !usingDownloadedAudioFile) {
         console.warn('[Audio] 在线插件解析后不是有效 http(s) URL:', {
           originalPath: song.path,
           resolvedPathPrefix: audioFilePath.slice(0, 120),
         });
-        // [失败原因提示] 插件解析失败（试听链被拒/外链不可用等）时明确告知原因，
-        // 避免用户以为歌曲损坏或软件故障
         const pluginError = getLastPluginError();
         if (pluginError.includes('60 秒试听')) {
           showToast('该音源仅能获取 60 秒试听，已跳过', 'error');
@@ -1510,16 +1306,10 @@ const dlnaCast = useDlnaCastStore();
         return;
       }
 
-      // [B站 m4s] 先通过后端异步下载到临时文件，再作为本地文件播放
-      // 避免 RemoteRangeReader 阻塞 + HTML5 Audio 不支持 m4s 格式
       let actualAudioPath = audioFilePath;
       if (isNetworkAudio && (audioFilePath.includes('.m4s') || audioFilePath.includes('bilivideo.com') || audioFilePath.includes('bilivideo.cn'))) {
         try {
-          // 合并插件返回的 headers（含 Cookie 等防盗链信息），避免无 Cookie 时
-          // B站 CDN 对部分视频只返回预览片段（3-4秒）
           const m4sHeaders: Record<string, string> = { ...(pluginHeaders ?? {}) };
-          // [B站防盗链] 强制确保 Referer/Origin 是有效值：插件可能返回小写 referer 或空值，
-          // 若留着无效值，CDN 仍当匿名返回 4 秒预览。这里按大小写不敏感查找，无效则用有效值覆盖。
           const ensureEffectiveHeader = (want: string, value: string): void => {
             const lower = want.toLowerCase();
             let foundKey: string | null = null;
@@ -1538,9 +1328,6 @@ const dlnaCast = useDlnaCastStore();
           };
           ensureEffectiveHeader('Referer', 'https://www.bilibili.com');
           ensureEffectiveHeader('Origin', 'https://www.bilibili.com');
-          // [B站防盗链] 插件 getMediaSource 可能不返回 Cookie，但 B站 API 调用时
-          // 已将 Cookie 存入 pluginCookieStore。此处从 cookie store 补充 B站 Cookie，
-          // 确保对需要登录鉴权的视频 CDN 也能下载完整音频而非 3-4 秒预览。
           if (!Object.keys(m4sHeaders).some(key => key.toLowerCase() === 'cookie')) {
             const bilibiliCookies = await getPluginBilibiliCookies();
             if (bilibiliCookies) {
@@ -1556,20 +1343,12 @@ const dlnaCast = useDlnaCastStore();
         }
       }
 
-      // m4s 已下载为本地文件时按本地文件走 Rust 后端
       const isM4sLocal = actualAudioPath !== audioFilePath;
 
-      // [Rust 播放收尾] 本地文件与在线直链走 Rust 成功后共用的收尾逻辑：
-      // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
       const finishRustPlaybackStart = () => {
         isSongLoaded.value = true;
         startStatisticsSession();
         loadLyrics();
-        // [进度同步] 起播确认后立即将时钟锚定到实际起播位置（resumeTime），
-        // 消除下载/探测期间 rAF 时钟超前导致的进度与声音不匹配。
-        // 不再重复 startPlaybackRuntime()：早期启动的 rAF 时钟与 playback:progress
-        // 监听器继续沿用，避免重复订阅导致事件丢失或时钟被重置到超前位置。
-        // resumeTime 始终是完整歌曲时间轴（试听映射在 progress 事件中统一处理）。
         reanchorPlaybackClock(resumeTime);
         recordStartedSongToHistory();
 
@@ -1581,10 +1360,6 @@ const dlnaCast = useDlnaCastStore();
 
             const normalizedCover = cover || '';
             const normalizedCoverPath = coverPath || '';
-            // [在线歌曲] loadCover 返回缓存中的原始 URL，需经 getDisplayCoverUrl 取代理后的
-            // data: URL，否则会覆盖 immediateCover 路径已异步设置的代理封面。
-            // 与 playSong 内首个缩略图回调语义一致：异步加载无结果时保留立即封面，
-            // 仅在确认本歌确实没有封面（连立即封面都没有）时才清空，避免闪烁回退。
             if (normalizedCover) {
               currentCover.value = getDisplayCoverUrl(normalizedCover);
             } else if (!immediateCover) {
@@ -1606,19 +1381,12 @@ const dlnaCast = useDlnaCastStore();
           .catch(() => {});
       };
 
-      // [在线走 Rust] 所有在线音频统一通过 Rust 后端流式下载到临时文件 + 本地引擎播放。
-      // 成功返回 true；失败返回 false 由调用方处理错误。
       const tryPlayOnlineViaRust = async (): Promise<boolean> => {
-        // 在线直链可能带反引号/引号等脏字符（汽水等插件返回），先清洗再交给后端取流，
-        // 否则 Rust 侧 URL 解析失败导致起播失败。先强制转成字符串（audioFilePath 可能是
-        // 响应式 Proxy，typeof 为 object，sanitizeMediaUrl 会直接返回空串）；
-        // sanitize 为空时再剥离首尾反引号/引号/空白兜底，避免退回带反引号的原文。
         const audioPathStr = String(audioFilePath == null ? '' : audioFilePath);
         const finalAudioPath = sanitizeMediaUrl(audioPathStr)
           || audioPathStr.replace(/^[`'"\s]+|[`'"\s]+$/g, '')
           || audioPathStr;
 
-        // [DLNA 投屏] 投屏中：把在线直链直接投给电视（本端做遥控器），不走本地起播探测。
         if (dlnaCast.isCasting) {
           try {
             await dlnaCast.castFromPlayAudio({
@@ -1663,27 +1431,14 @@ const dlnaCast = useDlnaCastStore();
           return false;
         }
 
-        // [起播探测] play_audio 是异步投递命令：调用立即返回，真正的取流/解码/播放在后台线程进行。
-        // 若远程取流失败（防盗链 403 / 不支持 Range / 解码失败），后端不会抛错，需前端探测。
-        //
-        // 判定就绪的主信号：getPlaybackReady()（sample_rate>0，即 Decoder::new 成功）。
-        // - 对支持 Range 的流：解码器读到文件头即就绪，通常很快。
-        // - 对不支持 Range 的直链：后端会整曲下载到内存后才解码，可能耗时数秒到十几秒，
-        //   因此给较长超时；只要期间 ready 变 true 就算成功，不误判为失败。
-        //
-        // [优化] ready 后立即返回，不再等待进度推进 0.3 秒。
-        // 流式文件已在 play_audio 中等待 512KB 缓冲（约 15 秒音频），
-        // decoder ready 即意味着已有足够数据开始播放，无需额外等待。
         const READY_TIMEOUT_MS = 20000;
         const PROBE_INTERVAL_MS = 200;
         const probeStart = Date.now();
         let ready = false;
         while (Date.now() - probeStart < READY_TIMEOUT_MS) {
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-            return true; // 已被新切歌请求接管，无需回退
+            return true;
           }
-          // [诊断] 硬失败（403 / 不支持 Range / 解码失败）：后端已置位，立即回退，不必死等超时。
-          // 独立 try/catch：即使该命令异常，也绝不阻断下方的 ready 探测。
           try {
             const failInfo = await playbackApi.getPlaybackStartFailedInfo();
             if (failInfo.failed) {
@@ -1698,7 +1453,6 @@ const dlnaCast = useDlnaCastStore();
               ready = await playbackApi.getPlaybackReady();
             }
             if (ready) {
-              // decoder 就绪即可，不再等待进度推进
               return true;
             }
           } catch { /* ignore, keep probing */ }
@@ -1710,10 +1464,7 @@ const dlnaCast = useDlnaCastStore();
       };
 
       if (isNetworkAudio && !isM4sLocal) {
-        // [在线播放重构] 所有在线音乐统一走 Rust 后端：流式下载到临时文件 + 本地引擎播放。
-        // Rust 后端处理下载、解码、设备切换恢复全流程。
 
-        // [飞封面同步] 在线歌曲 URL 解析耗时远超 520ms 飞行时间，此 await 通常已 resolve。
         if (flyPromise) {
           await Promise.race([
             flyPromise,
@@ -1732,10 +1483,8 @@ const dlnaCast = useDlnaCastStore();
         const rustOk = await tryPlayOnlineViaRust();
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
-        // 用户在解析直链期间按了暂停：停掉刚起来的播放并保持暂停态，不要继续出声
         if (cancelledPlayRequestId === requestId) {
           try { await playbackApi.stopAudio(); } catch {}
-          // [渐入渐出] 暂停时恢复后端音量到用户设定值
           if (shouldFadeOnSwitch) {
             currentBackendVolume = playbackStore.volume / 100;
             void playbackApi.setVolume(currentBackendVolume).catch(() => {});
@@ -1748,25 +1497,20 @@ const dlnaCast = useDlnaCastStore();
 
         if (rustOk) {
           if (shouldFadeOnSwitch) {
-            // [渐入渐出] 淡入：新歌从 0 音量起播，然后渐变到目标音量
             currentBackendVolume = 0;
             try { await playbackApi.setVolume(0); } catch {}
             finishRustPlaybackStart();
             void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
           } else {
-            // 确保后端已接管，音量同步到后端
             currentBackendVolume = playbackStore.volume / 100;
             try { await playbackApi.setVolume(currentBackendVolume); } catch {}
             finishRustPlaybackStart();
           }
-          // [在线歌曲预缓存] 本首开播成功：预取队列后续 5 首在线歌的
-          // 音质/直链/封面/歌词/15 秒片头，切歌秒开（顺序与临时队列模式）
           scheduleOnlinePrecache(
             settingsStore.settings.audio.onlineDefaultQuality || '320k',
             settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower',
           );
         } else {
-          // [在线播放起播失败] Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时）
           console.warn('[Audio] Rust 起播失败（tryPlayOnlineViaRust=false）:', {
             path: song.path,
             audioFilePath: audioFilePath.slice(0, 150),
@@ -1775,17 +1519,7 @@ const dlnaCast = useDlnaCastStore();
           return;
         }
       } else {
-        // 本地音频走 Rust 后端播放
 
-        // [飞封面并行优化] 无论是否开启渐入渐出，都将 playAudio 提前到飞封面等待之前。
-        // playAudio 是 IPC 调用（前端 await 即释放主线程），与飞封面动画并行执行。
-        //
-        // 渐入渐出开启时：fade-out 已将音量降为 0，playAudio 加载新歌但不发声。
-        // 渐入渐出关闭时：playAudio 直接以用户音量加载并播放，飞封面动画掩盖起播延迟。
-        //
-        // 此前非 fade 场景先 await flyPromise（520ms）再 playAudio，导致：
-        // 1. 飞封面动画虽已启动但主线程被同步代码占用，动画首帧延迟（"卡半秒才开始飞"）
-        // 2. playAudio 在 520ms 后才开始，起播延迟叠加
         const playBeforeFlyCover = !!flyPromise;
 
         const localPlayAudioParams = {
@@ -1806,9 +1540,6 @@ const dlnaCast = useDlnaCastStore();
         };
 
         if (playBeforeFlyCover) {
-          // fade-out 已将 currentBackendVolume 置为 0（渐入渐出场景），playAudio 加载但不发声
-          // 非渐入渐出场景 currentBackendVolume 为用户音量，playAudio 加载并直接播放
-          // [DLNA 投屏] 投屏中：本地文件经媒体代理 token 投给电视，不起播本地引擎
           if (dlnaCast.isCasting) {
             await dlnaCast.castFromPlayAudio({
               path: localPlayAudioParams.path,
@@ -1824,7 +1555,6 @@ const dlnaCast = useDlnaCastStore();
           }
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
-          // 用户在加载期间按了暂停：立刻暂停后端，保持暂停态
           if (cancelledPlayRequestId === requestId) {
             isSongLoaded.value = true;
             isPlaying.value = false;
@@ -1835,9 +1565,6 @@ const dlnaCast = useDlnaCastStore();
           }
         }
 
-        // 等待飞封面动画飞抵底部栏
-        // playBeforeFlyCover 时歌曲已静音加载，此处仅等动画完成
-        // 非 playBeforeFlyCover（无飞封面）时跳过
         if (flyPromise) {
           await Promise.race([
             flyPromise,
@@ -1846,7 +1573,6 @@ const dlnaCast = useDlnaCastStore();
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
           if (cancelledPlayRequestId === requestId) {
             if (playBeforeFlyCover) {
-              // playAudio 已调用，需暂停后端
               isSongLoaded.value = true;
               try { await playbackApi.pauseAudio(); } catch {}
             } else {
@@ -1860,8 +1586,6 @@ const dlnaCast = useDlnaCastStore();
         }
 
         if (!playBeforeFlyCover) {
-          // 标准流程：无飞封面时直接 playAudio
-          // [DLNA 投屏] 投屏中：本地文件经媒体代理 token 投给电视，不起播本地引擎
           if (dlnaCast.isCasting) {
             await dlnaCast.castFromPlayAudio({
               path: localPlayAudioParams.path,
@@ -1877,7 +1601,6 @@ const dlnaCast = useDlnaCastStore();
           }
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
-          // 用户在起播期间按了暂停：立刻暂停后端，保持暂停态
           if (cancelledPlayRequestId === requestId) {
             isSongLoaded.value = true;
             isPlaying.value = false;
@@ -1894,17 +1617,13 @@ const dlnaCast = useDlnaCastStore();
         startPlaybackRuntime();
         recordStartedSongToHistory();
 
-        // [渐入渐出] 淡入或设置音量
         if (shouldFadeOnSwitch) {
-          // playBeforeFlyCover 时 volume 已为 0（来自 fade-out）；非 playBeforeFlyCover 时显式置 0
           if (!playBeforeFlyCover) {
             currentBackendVolume = 0;
             try { await playbackApi.setVolume(0); } catch {}
           }
           void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
         } else {
-          // [渐入渐出] 非切歌场景（首次播放/恢复播放）：同步后端音量追踪值，
-          // 避免 currentBackendVolume 停留在模块初始值 1，导致首次淡出时音量跳变
           currentBackendVolume = playbackStore.volume / 100;
           void playbackApi.setVolume(currentBackendVolume).catch(() => {});
         }
@@ -1938,11 +1657,8 @@ const dlnaCast = useDlnaCastStore();
           .catch(() => {});
       }
     } catch {
-      // [异常兜底] 仅处理状态清理，不执行起播失败行为
-      // 起播失败行为已移至 rustOk===false 路径，仅在线引擎完全无法生效时执行
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
-      // [渐入渐出] 异常时恢复后端音量到用户设定值
       if (shouldFadeOnSwitch) {
         currentBackendVolume = playbackStore.volume / 100;
         void playbackApi.setVolume(currentBackendVolume).catch(() => {});
@@ -1960,16 +1676,12 @@ const dlnaCast = useDlnaCastStore();
       sessionStartTime = null;
     }
 
-    // 暂停时立即刷写当前播放会话到统计数据库，确保听歌时长实时更新
     flushPlaySession();
 
-    // 歌曲仍在起播过程中（在线歌曲解析直链期间）：标记本次请求已取消，
-    // 避免 playSong 拿到直链后继续出声
     if (!isSongLoaded.value) {
       cancelledPlayRequestId = playRequestId;
     }
 
-    // [渐入渐出] 淡出：渐变音量到0后再暂停
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
     if (fadeEnabled && isPlaying.value && isSongLoaded.value) {
@@ -1977,7 +1689,6 @@ const dlnaCast = useDlnaCastStore();
     }
 
     isPlaying.value = false;
-    // [DLNA 投屏] 投屏中：暂停电视而非本地引擎
     if (dlnaCast.isCasting) {
       await dlnaCast.castPause();
     } else {
@@ -1985,9 +1696,6 @@ const dlnaCast = useDlnaCastStore();
     }
     stopPlaybackRuntime();
 
-    // [渐入渐出] 淡出完成后延迟恢复后端音量：
-    // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
-    // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
     if (fadeEnabled) {
       const restoreVol = playbackStore.volume / 100;
       scheduleBackendVolumeRestore(restoreVol);
@@ -2000,8 +1708,6 @@ const dlnaCast = useDlnaCastStore();
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
-    // [快速操作] 立即翻转 isPlaying，让并发的 togglePlay 调用看到正确状态。
-    // 例如：第一次点击（暂停）进入 await fade，第二次点击（播放）会看到 isPlaying=false 从而进入播放分支。
     const wasPlaying = isPlaying.value;
     isPlaying.value = !wasPlaying;
     const myToken = ++togglePlayToken;
@@ -2013,19 +1719,14 @@ const dlnaCast = useDlnaCastStore();
         sessionStartTime = null;
       }
 
-      // 暂停时立即刷写当前播放会话到统计数据库，确保听歌时长实时更新
       flushPlaySession();
 
-      // 若当前歌曲仍在起播过程中（在线歌曲解析直链期间），标记该次请求已被取消，
-      // 让 playSong 在拿到直链后不要继续出声。
       if (!isSongLoaded.value) {
         cancelledPlayRequestId = playRequestId;
       }
 
-      // [渐入渐出] 淡出：从当前音量渐变到0后再暂停
       if (fadeEnabled && isSongLoaded.value) {
         await fadeVolumeTo(0, fadeDuration);
-        // 被新的 togglePlay 取消（用户快速点了播放）：不再执行 pauseAudio，让播放分支接管
         if (myToken !== togglePlayToken) return;
       }
 
@@ -2033,9 +1734,6 @@ const dlnaCast = useDlnaCastStore();
       if (myToken !== togglePlayToken) return;
       stopPlaybackRuntime();
 
-      // [渐入渐出] 淡出完成后延迟恢复后端音量：
-      // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
-      // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
       if (fadeEnabled) {
         const restoreVol = playbackStore.volume / 100;
         scheduleBackendVolumeRestore(restoreVol, () => myToken === togglePlayToken);
@@ -2044,13 +1742,11 @@ const dlnaCast = useDlnaCastStore();
     }
 
     // === 播放分支 ===
-    // 用户重新点了播放，撤销之前的取消标记，并取消可能正在进行的淡出
     cancelFade();
     clearVolumeRestoreTimer();
     cancelledPlayRequestId = -1;
 
     if (!isSongLoaded.value) {
-      // playSong 内部会自行设置 isPlaying / 启动播放时钟，这里直接返回避免重复
       await playSong(currentSong.value, {
         startTime: currentTime.value,
         continueStatisticsSession: true,
@@ -2058,9 +1754,6 @@ const dlnaCast = useDlnaCastStore();
       return;
     }
 
-    // [渐入渐出] 淡入：从当前后端音量渐变到目标音量。
-    // - 中途打断（淡出途中点播放）：currentBackendVolume 是中间值，从此处继续淡入，听感更自然
-    // - 正常暂停后恢复：currentBackendVolume ≈ 目标值（暂停时已恢复），需从 0 开始淡入
     if (fadeEnabled) {
       const targetVol = playbackStore.volume / 100;
       const startVol = currentBackendVolume < targetVol - 0.01
@@ -2093,12 +1786,9 @@ const dlnaCast = useDlnaCastStore();
     isSeeking = true;
     stopPlaybackRuntime();
     const trackDuration = currentSong.value.duration;
-    // duration 未知/为 0 时不对上限进行 clamp，否则 seekTo 任意时间都会被压缩到 0
-    // 导致点击歌词从头播放
     let targetTime = trackDuration > 0
       ? Math.max(0, Math.min(newTime, trackDuration))
       : Math.max(0, newTime);
-    // [试听片段] 拖动范围限制在片段区间内，Rust 侧需要的是片段内时间
     if (activePreviewClip) {
       targetTime = Math.max(
         activePreviewClip.start,
@@ -2111,7 +1801,6 @@ const dlnaCast = useDlnaCastStore();
     try {
       const offsetSec = (currentSong.value.cue_start_offset || 0) / 1000;
       const seekClipTime = targetTime + offsetSec - (activePreviewClip?.start ?? 0);
-      // [DLNA 投屏] 投屏中：seek 电视端；无 seek 完成回执事件，需手动复位 isSeeking
       if (dlnaCast.isCasting) {
         await dlnaCast.castSeek(Math.max(0, seekClipTime));
         isSeeking = false;
@@ -2165,7 +1854,6 @@ const dlnaCast = useDlnaCastStore();
 
     isSeeking = false;
     const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-    // [试听片段] seek 完成回执是片段内时间，映射回完整歌曲时间轴
     const trackTime = Math.max(0, payload.time - offsetSec + (activePreviewClip?.start ?? 0));
     reanchorPlaybackClock(trackTime);
   };

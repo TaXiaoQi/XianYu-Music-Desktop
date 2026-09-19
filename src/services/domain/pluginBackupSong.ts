@@ -7,11 +7,6 @@ import {
   type SupportedPluginBackupFormat,
 } from './pluginBackupTypes';
 
-/**
- * 插件备份导出导入 · 歌曲规范化。
- * 歌曲字段提取、平台描述/插件匹配、以及把备份歌曲构造为本应用 Song 对象
- * （本地 / MusicFree / 洛雪 LX 三种）。被 pluginBackupImport 门面编排复用。
- */
 
 const PLATFORM_ALIASES: Array<{
   canonical: string;
@@ -66,9 +61,6 @@ function pluginMatchScore(
 ): number {
   if (plugin.format !== 'musicfree' && plugin.format !== 'lx') return 0;
 
-  // 洛雪备份的歌曲用 LX source code（如 'wy'）标识来源，
-  // LX 插件原生支持这些 code，应优先于 MusicFree 插件匹配。
-  // 提升到 150 确保 LX 插件击败 MusicFree 的 canonical 匹配（130）和精确匹配（140）。
   if (plugin.format === 'lx' && platform.lxSource && plugin.sources.includes(platform.lxSource)) {
     return format === 'lxmusic' ? 150 : 120;
   }
@@ -101,7 +93,6 @@ export function findMatchingPlugin(
     .sort((a, b) => {
       if (a.plugin.enabled !== b.plugin.enabled) return a.plugin.enabled ? -1 : 1;
       if (a.score !== b.score) return b.score - a.score;
-      // 洛雪备份优先选择 LX 插件，其他备份优先 MusicFree 插件
       if (a.plugin.format !== b.plugin.format) {
         if (format === 'lxmusic') return a.plugin.format === 'lx' ? -1 : 1;
         return a.plugin.format === 'musicfree' ? -1 : 1;
@@ -149,7 +140,6 @@ export function extractAlbum(rawSong: any): string {
   return '未知专辑';
 }
 
-/** 按优先级取出歌曲 ID 的原始值（未做类型转换） */
 function pickRawSongId(rawSong: any): unknown {
   return rawSong.id
     ?? rawSong.songmid
@@ -160,23 +150,10 @@ function pickRawSongId(rawSong: any): unknown {
     ?? '';
 }
 
-/**
- * 歌曲 ID 的字符串形式，用于构造 `plugin://` / `lx://` 路径与非空校验。
- * 路径是 URL，必须字符串化。
- */
 export function extractSongId(rawSong: any): string {
   return String(pickRawSongId(rawSong)).trim();
 }
 
-/**
- * 保留原始标量类型的歌曲 ID，用于写入传给插件的 musicItem.id。
- *
- * 插件把该字段原样发给上游 API，其 JSON 标量类型属于契约的一部分：
- * 部分歌词接口只在收到 number 时才返回逐字歌词。因此这里不能一律 String()。
- *
- * @param restoreStringifiedNumber 是否尝试把字符串化的数字还原为 number（导入 v2 备份时启用）
- * @returns 归一化后的 ID，无有效 ID 时返回 null
- */
 function normalizeTrackId(
   value: unknown,
   restoreStringifiedNumber: boolean,
@@ -184,7 +161,6 @@ function normalizeTrackId(
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : null;
   }
-  // bigint 超出 Number 安全范围，只能以字符串承载
   if (typeof value === 'bigint') {
     const text = String(value);
     return text.length > 0 ? text : null;
@@ -195,9 +171,6 @@ function normalizeTrackId(
   if (!text.length) return null;
   if (!restoreStringifiedNumber) return text;
 
-  // 双重校验避免误转：Number.isSafeInteger 排除精度不可靠的超大值，
-  // String(n) === text 排除前导零（"007"）、正号、小数、科学计数法等
-  // 往返不一致的情形。酷狗的 hex hash 与 bilibili 的 BV 号因此不受影响。
   const numericId = Number(text);
   return Number.isSafeInteger(numericId) && String(numericId) === text
     ? numericId
@@ -208,10 +181,6 @@ export function extractTitle(rawSong: any): string {
   return String(rawSong.title ?? rawSong.name ?? rawSong.songname ?? '').trim();
 }
 
-/**
- * 从备份歌曲对象中提取本地文件路径
- * 优先使用 localPath，其次解码 file:// URL，最后检查 qualities 中的本地路径
- */
 export function resolveLocalPath(rawSong: any): string {
   if (typeof rawSong.localPath === 'string' && rawSong.localPath.trim()) {
     return rawSong.localPath.trim();
@@ -239,7 +208,6 @@ export function resolveLocalPath(rawSong: any): string {
   return '';
 }
 
-/** 为带有本地文件路径的歌曲创建 Song 对象 */
 export function createLocalSong(rawSong: any, localPath: string): Song {
   const title = extractTitle(rawSong);
   const artist = extractArtist(rawSong);
@@ -304,9 +272,6 @@ function buildBaseSong(
     source_type: 'remote',
     plugin_id: plugin.id,
     remote_source_id: path,
-    // rawData 包含完整的插件搜索结果（含 qualities/privilege/singerList 等深层嵌套对象），
-    // 这些数据仅用于播放时传给插件引擎，不需要响应式追踪。
-    // 使用 markRaw 阻止 Vue 为每个嵌套属性创建代理，避免大量歌曲时界面卡顿。
     rawData: markRaw(rawData),
   };
 
@@ -330,8 +295,6 @@ export function createMusicFreeSong(
   const album = extractAlbum(rawSong);
   const durationSeconds = parseDurationSeconds(rawSong.duration ?? rawSong.interval ?? rawSong.dt);
 
-  // musicItem 会原样传给插件，其 id 必须保留原始标量类型（详见 normalizeTrackId）。
-  // 回退到字符串 id 以保证字段始终存在。
   const rawId = pickRawSongId(rawSong);
   const normalizedId = normalizeTrackId(rawId, restoreStringifiedIds) ?? id;
   if (typeof rawId === 'string' && typeof normalizedId === 'number') {
@@ -346,10 +309,6 @@ export function createMusicFreeSong(
     album,
     platform: rawSong.platform || platform.displayName || plugin.name,
   };
-  // 剥离来源 App 写入的临时代理直链（如 BakaMusic 备份的 share.*.cn/url/...）：
-  // 该链接会过期/被限流，且 BakaMusic 自身播放从不复用 musicItem.url，而是每次
-  // 经插件 getMediaSource 按歌曲 id 重新解析。保留它会让个别插件直接回传陈旧
-  // 链接导致「导入能播、过段时间失效」，必须剥离强制重新解析。
   const staleUrl = (musicItem as Record<string, unknown>).url;
   if (typeof staleUrl === 'string' && staleUrl.startsWith('http')) {
     delete (musicItem as Record<string, unknown>).url;

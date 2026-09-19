@@ -55,17 +55,11 @@ const props = defineProps<{
   selectedCount: number;
   totalSongCount?: number;
   showRename?: boolean;
-  /** 只读模式：禁用管理按钮、排序按钮和排序菜单 */
   readOnly?: boolean;
-  /** 是否显示"收藏至歌单/添加到歌单"入口 */
   showAddToPlaylist?: boolean;
-  /** 是否在详情展示模式显示"收藏至歌单"入口，默认跟随 showAddToPlaylist */
   showHeaderAddToPlaylist?: boolean;
-  /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
-  /** 待收藏的歌单/专辑条目（传入即显示"收藏整张"按钮） */
   favoriteEntry?: FavoriteCollectionEntry | null;
-  /** 歌曲列表滚动容器（用于滚动缩小封面效果） */
   scrollContainerRef?: HTMLElement | null;
 }>();
 
@@ -92,7 +86,6 @@ const shouldShowHeaderAddToPlaylist = computed(() =>
 );
 
 const headerCover = ref('');
-// 显示用封面：B站等防盗链封面经后端代理成 data:URL（代理完成回填刷新），本地封面原样
 const displayedHeaderCover = ref('');
 watch(headerCover, (url) => {
   if (!url) { displayedHeaderCover.value = ''; return; }
@@ -103,7 +96,6 @@ watch(headerCover, (url) => {
 let coverRequestId = 0;
 const { loadCover, loadFullCover, primeCoverPath } = useCoverCache();
 
-/** 判断字符串是否为可直接显示的网络/资源 URL */
 const isDirectUrl = (path: string) =>
   /^https?:\/\//i.test(path) || path.startsWith('asset:') || path.startsWith('data:');
 
@@ -132,7 +124,6 @@ const activePlaylistCoverKey = computed(() => {
 const updateHeaderCover = async () => {
   const requestId = ++coverRequestId;
 
-  // readOnly 模式优先使用在线封面 URL
   if (props.readOnly && props.coverUrlOverride) {
     headerCover.value = props.coverUrlOverride;
     return;
@@ -140,13 +131,11 @@ const updateHeaderCover = async () => {
 
   if (currentViewMode.value === 'playlist') {
       const pl = activePlaylist.value;
-      // 优先使用歌单自定义封面
       if (pl && pl.coverPath) {
         if (requestId !== coverRequestId) return;
         headerCover.value = resolveCoverPath(pl.coverPath);
         return;
       }
-      // 云端同步封面（cloudCoverUrl）：服务端存储的 https URL，本地封面不可用时优先使用
       if (pl && pl.cloudCoverUrl && /^https?:\/\//i.test(pl.cloudCoverUrl)) {
         if (requestId !== coverRequestId) return;
         headerCover.value = pl.cloudCoverUrl;
@@ -155,7 +144,6 @@ const updateHeaderCover = async () => {
       if (pl && pl.songPaths.length > 0) {
         const firstSongPath = pl.songPaths[0];
 
-        // 1. 尝试多渠道查找首曲元信息（pl.songs -> songLookup -> props.songs）
         const songFromPl = pl.songs?.find(s => s.path === firstSongPath) ?? pl.songs?.[0];
         const songFromLookup = libraryStore.songLookup.get(firstSongPath);
         const songFromProps = props.songs.find(s => s.path === firstSongPath) ?? props.songs[0];
@@ -172,7 +160,6 @@ const updateHeaderCover = async () => {
           }
         }
 
-        // 2. 在线歌曲协议（lx://, plugin://, http://, https://）跳过后端本地文件解包，避免 invoke 失败清空封面
         const isOnlinePath = firstSongPath.startsWith('lx://') ||
           firstSongPath.startsWith('plugin://') ||
           firstSongPath.startsWith('http://') ||
@@ -273,14 +260,10 @@ const handlePlayAll = () => {
 const scrollContainer = computed(() => props.scrollContainerRef ?? null);
 const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 160);
 
-/** 封面尺寸：160px → 44px */
 const coverSize = computed(() => `${160 - 116 * scrollProgress.value}px`);
-/** 右侧信息列高度：160px → 64px */
 const columnHeight = computed(() => `${160 - 96 * scrollProgress.value}px`);
-/** 标题字号：30px → 16px（同步压缩行高避免占位过高） */
 const titleSize = computed(() => `${30 - 14 * scrollProgress.value}px`);
 const titleLineHeight = computed(() => `${36 - 18 * scrollProgress.value}px`);
-/** 副标题在收缩早期淡出并收起 */
 const subtitleOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 3));
 const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scrollProgress.value * 3))}px`);
 </script>
@@ -288,7 +271,6 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
 <template>
   <div class="relative z-20 w-full px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(8px,1.4vh,16px)] h-auto justify-start">
     
-    <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
         <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
@@ -315,9 +297,7 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
       </div>
     </div>
 
-    <!-- 详情展示模式 -->
     <div v-else class="flex items-center gap-6 h-auto mt-1">
-      <!-- 封面图 -->
       <div :style="{ width: coverSize, height: coverSize }" class="rounded-2xl shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5">
         <img v-if="displayedHeaderCover" :src="displayedHeaderCover" class="w-full h-full object-cover animate-in fade-in duration-300" alt="Cover" decoding="async" />
         <div v-else class="flex flex-col items-center justify-center h-full w-full">
@@ -325,7 +305,6 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
         </div>
       </div>
       
-      <!-- 文本信息与操作 -->
       <div :style="{ minHeight: columnHeight }" class="flex flex-col justify-between gap-2 py-1 flex-1 min-w-0 relative z-20">
         <div>
           <div class="flex items-center gap-2 mb-1">
@@ -379,7 +358,6 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
            </button>
 
            <template v-if="!readOnly">
-           <!-- 排序方式按钮 -->
            <button 
              @click.stop="handleSortClick"
              title="排序方式"
@@ -389,7 +367,6 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
              <SortModeIcon class="h-5 w-5" />
            </button>
 
-           <!-- 排序菜单 -->
            <Teleport to="body">
              <div 
                v-if="showSortMenu"

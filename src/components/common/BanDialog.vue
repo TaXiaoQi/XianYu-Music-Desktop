@@ -11,14 +11,12 @@ const { banDialogState, resolveBanDialog } = useBanDialog();
 
 const mode = computed(() => banDialogState.value.mode);
 
-/** 内测锁两种形态：beta=未申请（可填理由申请）；betaPending=审核中（仅退出） */
 const isBetaMode = computed(() => mode.value === 'beta' || mode.value === 'betaPending');
 
 const APPEAL_MAX = 1000;
 const appealing = ref(false);
 const appealText = ref('');
 const submitting = ref(false);
-// beta 模式：内测申请是否已提交（提交后「申请资格」按钮置灰，弹窗保持拦截）
 const betaSubmitted = ref(false);
 
 watch(
@@ -61,12 +59,10 @@ function confirm() {
   resolveBanDialog(true);
 }
 
-/** session 模式：仅关闭弹窗，不跳转 */
 function confirmClose() {
   resolveBanDialog(false);
 }
 
-/** 切换按钮：仅关闭并告知调用方「去登录」，由调用方跳转登录页 */
 function goLogin() {
   resolveBanDialog(true);
 }
@@ -97,7 +93,6 @@ async function submitAppealHandler() {
   submitting.value = true;
   try {
     if (banDialogState.value.debug) {
-      // 调试模式：仅模拟提交流程，不发送服务器
       await new Promise((r) => setTimeout(r, 600));
       showToast('（调试）申诉已提交，请耐心等待处理', 'success');
     } else {
@@ -116,18 +111,15 @@ async function submitAppealHandler() {
   }
 }
 
-/** beta 模式：退出软件（弹窗唯一关闭路径，由调用方执行真正的退出） */
 function exitApp() {
   resolveBanDialog(true);
 }
 
-/** beta 模式：进入内测申请理由填写（复用申诉表单的视觉） */
 function startBetaApply() {
   appealText.value = '';
   appealing.value = true;
 }
 
-/** beta 模式：提交内测申请（feedback_type=beta，复用反馈通道） */
 async function submitBetaApply() {
   const content = appealText.value.trim();
   if (!content) {
