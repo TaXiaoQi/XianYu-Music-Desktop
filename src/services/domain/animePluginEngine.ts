@@ -111,6 +111,7 @@ export function createAnimeInstance(pluginId: string, metadata: any) {
       });
       if (!env?.ok) {
         log(`[anime] ${pluginLabel} search 失败: ${envelopeErrorText(env)}`);
+        console.warn(`[anime] ${pluginLabel} search 失败: ${envelopeErrorText(env)}`);
         return {};
       }
       const list = Array.isArray(env.list) ? env.list : [];
@@ -212,6 +213,9 @@ export async function loadAnimePluginFromScript(
   const metadata = await loadMusicFreeInSandbox(hash, script, userVars);
 
   if (!metadata?.platform) {
+    const keys = metadata ? Object.keys(metadata).join(',') : String(metadata);
+    log(`[anime] 加载失败: metadata 缺 platform (metadata=${keys})`);
+    console.warn(`[anime] 加载失败: metadata 缺 platform (metadata=${keys})`);
     throw new Error('anime 插件缺少 meta.platform 字段');
   }
 

@@ -52,7 +52,6 @@ export async function loadPluginFromScript(
 
     // ===== Step 0.5: 格式检测 - anime (animemusic/1) 插件委托给 animePluginEngine =====
     if (isAnimePluginScript(script)) {
-      log(`检测到 anime (animemusic/1) 插件格式，委托给 animePluginEngine`);
       return await loadAnimePluginFromScript(script, uri, userVarsPluginId);
     }
 
