@@ -652,8 +652,11 @@ impl RemoteRangeReader {
                     return Ok(());
                 }
                 PrefetchResult::Error {
-                    start: res_start, ..
-                } if res_start == start => {}
+                    start: res_start,
+                    message,
+                } if res_start == start => {
+                    eprintln!("[Audio][remote] 流预取失败 start={res_start}: {message}");
+                }
                 _ => {}
             }
         }
@@ -1278,7 +1281,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         let mut exclusive_playback: Option<WasapiExclusivePlayback> = None;
         let mut current_path = String::new();
         let mut current_volume = 1.0;
-        let mut current_speed = 1.0;
+        let current_speed = 1.0;
         let mut is_playing_flag = false;
         let mut requested_output_mode = AudioOutputMode::Shared;
         let mut active_output_mode = AudioOutputMode::Shared;
@@ -1706,12 +1709,6 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             AudioCommand::SetVolume(vol) => {
                                 current_volume = vol;
                                 thread_user_volume.store(vol.to_bits(), Ordering::Relaxed);
-                            }
-                            AudioCommand::SetSpeed(speed) => {
-                                current_speed = speed;
-                                if let Some(sink) = &current_sink {
-                                    sink.set_speed(speed);
-                                }
                             }
                             AudioCommand::SetDevice(device_name) => {
                                 selected_device_name = device_name;

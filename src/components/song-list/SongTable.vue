@@ -97,6 +97,7 @@ const props = defineProps<{
   disableScrollMemory?: boolean;
   downloadCompletedAsLocal?: boolean;
   indexOffset?: number;
+  songReasons?: Map<string, string>;
 }>(); 
 
 const emit = defineEmits<{
@@ -295,6 +296,8 @@ const getSongComment = (song: Song) => (
 );
 
 const hasVisibleSongComment = (song: Song) => settings.value.showSongComments && getSongComment(song).length > 0;
+
+const getSongReason = (song: Song) => props.songReasons?.get(song.path)?.trim() || '';
 
 const extractExtension = (value: string | undefined) => {
   if (!value) {
@@ -932,6 +935,11 @@ const getRowStyle = (songIndex: number, songPath: string) => {
                 class="max-w-[42%] shrink-0 truncate text-xs font-medium text-gray-500 dark:text-white/45"
                 :title="getSongComment(song)"
               >（{{ getSongComment(song) }}）</span>
+              <span
+                v-if="getSongReason(song)"
+                class="max-w-[42%] shrink-0 truncate text-xs font-medium text-[#EC4141]/75 dark:text-[#EC4141]/60"
+                :title="getSongReason(song)"
+              >（{{ getSongReason(song) }}）</span>
             </div>
             <div class="flex items-center gap-1.5 text-xs text-gray-900 dark:text-gray-100 leading-snug">
               <span v-if="currentViewMode === 'album'" class="truncate flex items-center gap-1 flex-wrap" :title="song.artist">

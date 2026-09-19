@@ -75,7 +75,9 @@ pub enum LyricTrackRole {
     Romanization,
     Secondary,
     AlternateMain,
+    #[allow(dead_code)]
     Background,
+    #[allow(dead_code)]
     Metadata,
     Unknown,
 }
@@ -85,6 +87,7 @@ pub enum LyricTrackRole {
 pub enum LyricTimingMode {
     Line,
     Word,
+    #[allow(dead_code)]
     Syllable,
     None,
 }

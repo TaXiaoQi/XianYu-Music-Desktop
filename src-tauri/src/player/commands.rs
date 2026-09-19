@@ -34,6 +34,41 @@ struct RemoteLyricsCacheReadyPayload {
     song: Option<Song>,
 }
 
+/// 在线流播放中途下载失败上报：StreamingTempFileReader 读到下载失败会返回 EOF，
+/// 后端表现为“自然播完”，前端无从触发换源；监视任务在失败时显式通知前端（对齐移动/腕上端中断换源）
+fn spawn_stream_failure_watcher(
+    app: &tauri::AppHandle,
+    state: &crate::player::stream_cache::StreamingTempFileState,
+    url: &str,
+) {
+    let app = app.clone();
+    let failed_flag = state.download_failed.clone();
+    let complete_flag = state.download_complete.clone();
+    let error_store = state.download_error.clone();
+    let failed_url = url.to_string();
+    tokio::spawn(async move {
+        // 下载完成（成功/失败）或复用已完成缓存时不再可能中途失败，监视即退出
+        while !complete_flag.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if failed_flag.load(Ordering::Relaxed) {
+                let reason = error_store
+                    .lock()
+                    .ok()
+                    .and_then(|e| e.clone())
+                    .unwrap_or_default();
+                let _ = app.emit(
+                    "online-stream-failed",
+                    serde_json::json!({ "url": failed_url, "reason": reason }),
+                );
+                break;
+            }
+            if complete_flag.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+    });
+}
+
 fn normalize_cover_for_smtc(cover: &str) -> Option<String> {
     let trimmed = cover.trim();
     if trimmed.is_empty() {
@@ -133,6 +168,8 @@ pub async fn play_audio(
                 error_reason
             ));
         }
+
+        spawn_stream_failure_watcher(&app, &stream_state, &path);
 
         AudioSource::StreamingTempFile(stream_state)
     } else if is_remote_uri(&path) {

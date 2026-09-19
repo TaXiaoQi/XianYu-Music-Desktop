@@ -746,7 +746,7 @@ fn run_exclusive_playback(
                         request.bit_perfect,
                     );
                     match opened {
-                        Ok((next_source, _)) => {
+                        Ok((next_source, _, _, _)) => {
                             if is_playing {
                                 let _ = audio_client.stop_stream();
                             }

@@ -200,7 +200,7 @@ pub(crate) fn save_source(
         .password
         .or_else(|| existing.as_ref().and_then(|source| source.password.clone()));
     let created_at = existing.map(|source| source.created_at).unwrap_or(now);
-    let db_password = match password.as_deref() {
+    let db_password: Option<String> = match password.as_deref() {
         Some(password) if write_password_to_keyring_verified(&id, password) => None,
         Some(_) => {
             return Err("系统凭据管理器不可用，无法安全保存密码".to_string());

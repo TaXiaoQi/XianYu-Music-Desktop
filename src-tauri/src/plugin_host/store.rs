@@ -187,14 +187,6 @@ impl PluginStore {
             self.persist(&data);
         }
     }
-
-    pub fn cookie_snapshot(&self) -> HashMap<String, CookieEntry> {
-        self.data.lock().unwrap().cookies.clone()
-    }
-
-    pub fn storage_snapshot(&self) -> HashMap<String, String> {
-        self.data.lock().unwrap().storage.clone()
-    }
 }
 
 #[cfg(test)]

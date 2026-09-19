@@ -909,10 +909,6 @@ impl PluginEngine {
     pub async fn unload(&self, plugin_id: &str) {
         self.destroy(plugin_id).await;
     }
-
-    pub async fn unload_all(&self) {
-        self.instances.lock().await.clear();
-    }
 }
 
 fn extract_first_arg(args_json: &str) -> String {
