@@ -1,5 +1,5 @@
 /**
- * 构建后脚本 —— 将 Tauri 构建产物移动到根目录的 releases/ 文件夹
+ * 构建后脚本 —— 将 Tauri 构建产物移动到根目录的 releases/windows/ 文件夹
  *
  * 触发条件：
  *   1. 通过 npm posttauri 钩子运行（npm run tauri build / npm run tauri dev 后均会触发）
@@ -20,7 +20,7 @@ if (process.env.BUILD_RELEASES_MODE === 'true') {
 }
 
 const bundleDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle');
-const releasesDir = path.join(rootDir, 'releases');
+const releasesDir = path.join(rootDir, 'releases', 'windows');
 
 // 检查 bundle 目录是否存在
 if (!fs.existsSync(bundleDir)) {
@@ -82,7 +82,7 @@ function archiveName(originalName) {
   return `弦予音乐v${version}-Desktop${suffix}${ext}`;
 }
 
-console.log('[move-bundles] 正在移动构建产物到 releases/ ...');
+console.log('[move-bundles] 正在移动构建产物到 releases/windows/ ...');
 for (const file of files) {
   const fileName = path.basename(file);
   const destName = archiveName(fileName);
@@ -119,4 +119,4 @@ function cleanupEmptyDirs(dir) {
 }
 cleanupEmptyDirs(bundleDir);
 
-console.log(`[move-bundles] 完成，共移动 ${files.length} 个文件到 releases/`);
+console.log(`[move-bundles] 完成，共移动 ${files.length} 个文件到 releases/windows/`);

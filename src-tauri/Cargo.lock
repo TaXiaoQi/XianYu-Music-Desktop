@@ -7762,6 +7762,7 @@ dependencies = [
  "flate2",
  "getrandom 0.3.4",
  "hex",
+ "hmac",
  "id3",
  "image",
  "keyring",

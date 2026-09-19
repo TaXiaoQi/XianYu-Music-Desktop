@@ -1,11 +1,12 @@
 /**
- * MSIX 商店版构建后脚本 —— 将 MSIX 产物移动到根目录的 releases/ 文件夹
+ * MSIX 商店版构建后脚本 —— 将 MSIX 产物移动到根目录的 releases/windows/ 文件夹
  *
  * 由 npm script tauri:build:store:msix 在构建完成后调用。
  * @choochmeque/tauri-windows-bundle 固定输出到 src-tauri/target/msix/，
  * 不会被 move-bundles.js 覆盖（后者只扫 target/release/bundle）。
  *
- * 仅移动最近 30 分钟内新生成的 .msix/.msixbundle，避免误移历史产物。
+ * 仅移动最近 30 分钟内新生成的 .msix，避免误移历史产物。
+ * .msixbundle 是多架构合并包，单架构构建用不上，不搬入 releases/windows/。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,7 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 
 const msixDir = path.join(rootDir, 'src-tauri', 'target', 'msix');
-const releasesDir = path.join(rootDir, 'releases');
+const releasesDir = path.join(rootDir, 'releases', 'windows');
 
 if (!fs.existsSync(msixDir)) {
   process.exit(0);
@@ -25,7 +26,7 @@ if (!fs.existsSync(releasesDir)) {
   fs.mkdirSync(releasesDir, { recursive: true });
 }
 
-const MSIX_EXTENSIONS = /\.(msix|msixbundle)$/i;
+const MSIX_EXTENSIONS = /\.msix$/i;
 const FRESH_THRESHOLD_MS = 30 * 60 * 1000;
 const now = Date.now();
 
@@ -46,7 +47,7 @@ if (files.length === 0) {
   process.exit(0);
 }
 
-console.log('[move-msix] 正在移动 MSIX 产物到 releases/ ...');
+console.log('[move-msix] 正在移动 MSIX 产物到 releases/windows/ ...');
 for (const file of files) {
   const fileName = path.basename(file);
   const destPath = path.join(releasesDir, fileName);
@@ -59,4 +60,4 @@ for (const file of files) {
   console.log(`[move-msix] 已移动: ${fileName}`);
 }
 
-console.log(`[move-msix] 完成，共移动 ${files.length} 个文件到 releases/`);
+console.log(`[move-msix] 完成，共移动 ${files.length} 个文件到 releases/windows/`);
