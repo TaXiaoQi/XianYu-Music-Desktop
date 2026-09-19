@@ -4492,6 +4492,25 @@ mod tests {
     }
 
     #[test]
+    fn kg_enhanced_lrc_keeps_words_through_display_payload() {
+        // LX 直连 kg 链路最终产物：convertLxLyricToEnhancedLrc 输出的 A2 格式
+        let payload = build_structured_lyrics_payload(
+            "[00:18.000]<00:18.000>那阵子<00:18.500>我们的感情<00:20.000>出了一些问题<00:25.000>\n"
+                .to_string(),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        let words = payload.display_lines[0]
+            .words
+            .as_ref()
+            .unwrap_or_else(|| panic!("词级时间戳应保留到 display_lines.words"));
+        assert_eq!(words.len(), 3);
+        assert_eq!(words[0].text, "那阵子");
+        assert!((words[0].start - 18.0).abs() < 0.01);
+        assert!((words[1].end - 20.0).abs() < 0.01);
+    }
+
+    #[test]
     fn hard_role_rules_keep_single_line_as_main() {
         let payload = build_structured_lyrics_payload("[00:01.000]Hello darling".to_string());
 

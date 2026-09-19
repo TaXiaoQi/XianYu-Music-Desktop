@@ -20,6 +20,12 @@ if (!_g.__lxRequestLock) {
 }
 let _requestLock: Promise<unknown> = _g.__lxRequestLock;
 
+const _picUnsupportedPluginIds = new Set<string>();
+
+function isActionNotSupported(errMsg: string): boolean {
+  return /action\s+not\s+support|not\s+support/i.test(errMsg);
+}
+
 export async function lxPluginRequest(
   source: PluginSource,
   action: 'musicUrl' | 'lyric' | 'pic',
@@ -89,8 +95,13 @@ export async function lxPluginRequest(
       }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : (typeof e === 'string' ? e : String(e || 'unknown error'));
-      if (action === 'lyric' && /action\s+not\s+support|not\s+support/i.test(errMsg)) {
+      if (action === 'lyric' && isActionNotSupported(errMsg)) {
         log(`[lxPluginRequest] 沙箱 ${source.name} lyric 不支持，交给后备歌词接口处理`);
+        return null;
+      }
+      if (action === 'pic' && isActionNotSupported(errMsg)) {
+        _picUnsupportedPluginIds.add(source.id);
+        log(`[lxPluginRequest] 沙箱 ${source.name} pic 不支持，后续跳过插件封面请求`);
         return null;
       }
       console.error(`[lxPluginRequest] 沙箱模式 ${source.name} ${action} 失败: ${errMsg}`);
@@ -182,8 +193,13 @@ export async function lxPluginRequest(
     return await run;
   } catch (e) {
       const errMsg = e instanceof Error ? e.message : (typeof e === 'string' ? e : String(e || 'unknown error'));
-      if (action === 'lyric' && /action\s+not\s+support|not\s+support/i.test(errMsg)) {
+      if (action === 'lyric' && isActionNotSupported(errMsg)) {
         log(`[lxPluginRequest] ${source.name} lyric 不支持，交给后备歌词接口处理`);
+        return null;
+      }
+      if (action === 'pic' && isActionNotSupported(errMsg)) {
+        _picUnsupportedPluginIds.add(source.id);
+        log(`[lxPluginRequest] ${source.name} pic 不支持，后续跳过插件封面请求`);
         return null;
       }
       log(`[lxPluginRequest] ${source.name} ${action} 失败: ${errMsg}`);
@@ -230,6 +246,7 @@ export async function lxPluginGetLyric(
 export async function lxPluginGetPic(
   source: PluginSource, sourceKey: string, songInfo: any,
 ): Promise<string | null> {
+  if (_picUnsupportedPluginIds.has(source.id)) return null;
   const result = await lxPluginRequest(source, 'pic', { source: sourceKey, musicInfo: songInfo });
   return result?.data ?? result ?? null;
 }

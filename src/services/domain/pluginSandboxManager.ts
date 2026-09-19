@@ -195,7 +195,7 @@ const AUTH_BAN_TTL_MS = 5 * 60 * 1000;
 const AUTH_BAN_THRESHOLD = 2;
 
 function isAuthError(msg: string): boolean {
-  return /API密钥|API\s*key|api[_\s-]?secret|401/i.test(msg);
+  return /API密钥|API\s*key|api[_\s-]?secret|\b40[13]\b/i.test(msg);
 }
 
 export function isPluginAuthBanned(pluginId: string): boolean {
