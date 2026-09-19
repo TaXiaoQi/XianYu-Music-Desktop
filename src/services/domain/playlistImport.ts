@@ -22,6 +22,7 @@ export type {
   PlaylistImportResult,
   PlaylistInfo,
   PlaylistSource,
+  PlaylistSourceRef,
   ParsedLink,
   WyTrackMetaPatch,
 } from './playlistImportBase';
@@ -166,6 +167,13 @@ export async function importPlaylistFromMusicFreePlugin(
     page++;
   }
 
+  const sourceRaw = sheetItem.rawData
+    ? JSON.parse(JSON.stringify(sheetItem.rawData))
+    : undefined;
+  if (sourceRaw && Array.isArray(sourceRaw._importedTracks)) {
+    delete sourceRaw._importedTracks;
+  }
+
   return {
     source: pluginSource.name,
     songs: allSongs,
@@ -176,6 +184,10 @@ export async function importPlaylistFromMusicFreePlugin(
       desc: '',
       author: sheetItem.artist || '',
       playCount: '',
+    },
+    sourceRef: {
+      sourcePluginId: pluginSource.id,
+      sourceRaw,
     },
   };
 }
@@ -211,6 +223,10 @@ export async function importPlaylistFromFavorites(
       author: '',
       playCount: '',
     },
+    sourceRef: {
+      sourcePluginId: pluginSource.id,
+      sourceUrl: input,
+    },
   };
 }
 
@@ -240,20 +256,33 @@ export async function importPlaylist(
     throw new Error('请选择对应音源后重试，或直接粘贴歌单链接');
   }
 
+  let result: PlaylistImportResult;
   try {
     switch (actualSource) {
       case 'wy':
-        return await getListDetailWy(actualId);
+        result = await getListDetailWy(actualId);
+        break;
       case 'tx':
-        return await getListDetailTx(actualId);
+        result = await getListDetailTx(actualId);
+        break;
       case 'kw':
-        return await getListDetailKw(actualId);
+        result = await getListDetailKw(actualId);
+        break;
       case 'kg':
-        return await getListDetailKg(actualId);
+        result = await getListDetailKg(actualId);
+        break;
       default:
         throw new Error(`不支持的音源: ${actualSource}`);
     }
   } catch (e: any) {
     throw e;
   }
+
+  return {
+    ...result,
+    sourceRef: {
+      sourcePluginId: actualSource,
+      sourceUrl: input,
+    },
+  };
 }

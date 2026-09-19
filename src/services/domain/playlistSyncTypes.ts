@@ -36,6 +36,9 @@ export interface FileSyncPlaylistData {
   cloudCoverUrl?: string;
   isFavorite?: boolean;
   createdAt?: string;
+  sourcePluginId?: string;
+  sourceUrl?: string;
+  sourceRaw?: any;
   songs: SyncSongPayload[];
 }
 
@@ -55,6 +58,9 @@ export interface FileSyncDownloadData {
     cloudCoverUrl?: string;
     isFavorite?: boolean;
     createdAt?: string;
+    sourcePluginId?: string;
+    sourceUrl?: string;
+    sourceRaw?: any;
     songs: SyncSongPayload[];
     deletedSongPaths?: string[];
   }>;

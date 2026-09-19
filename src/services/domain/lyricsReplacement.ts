@@ -102,7 +102,7 @@ const createMusicFreeGroup = async (
     pluginId: plugin.id,
     pluginName: plugin.name,
     pluginFormat: plugin.format,
-    formatLabel: 'MusicFree',
+    formatLabel: plugin.format === 'anime' ? 'anime' : 'MusicFree',
     sources: [{
       id: plugin.id,
       sourceName: plugin.name,
@@ -268,7 +268,7 @@ export async function searchLyricsFromAllPlugins(query: string): Promise<LyricsP
 
   const tasks: Promise<LyricsPluginGroup>[] = [];
   for (const plugin of sortedEnabledPlugins()) {
-    if (plugin.format === 'musicfree') {
+    if (plugin.format === 'musicfree' || plugin.format === 'anime') {
       tasks.push(createMusicFreeGroup(plugin, normalizedQuery));
       continue;
     }

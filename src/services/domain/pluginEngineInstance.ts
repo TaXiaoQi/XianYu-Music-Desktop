@@ -20,6 +20,7 @@ import {
   loadMusicFreeInSandbox,
 } from './pluginSandboxManager';
 import { isLxPluginScript, loadLxPluginFromScript } from './lxPluginEngine';
+import { isAnimePluginScript, loadAnimePluginFromScript } from './animePluginEngine';
 import { hostSha256Hex } from '../tauri/hostCryptoApi';
 import { pluginApi } from '../tauri/pluginApi';
 import { fetchWithTimeout } from './pluginFetch';
@@ -47,6 +48,12 @@ export async function loadPluginFromScript(
       const lxSource = await loadLxPluginFromScript(script, uri);
       if (lxSource) return lxSource;
       throw new Error('落雪 LX 插件加载失败，请检查插件是否兼容');
+    }
+
+    // ===== Step 0.5: 格式检测 - anime (animemusic/1) 插件委托给 animePluginEngine =====
+    if (isAnimePluginScript(script)) {
+      log(`检测到 anime (animemusic/1) 插件格式，委托给 animePluginEngine`);
+      return await loadAnimePluginFromScript(script, uri, userVarsPluginId);
     }
 
     log(`=== 开始加载插件: ${uri} (${script.length} chars) ===`);
@@ -178,6 +185,15 @@ async function loadPluginInstance(source: import('../../types').PluginSource): P
         log(`[ensurePluginInstance] ${source.name} loadPluginFromScript 返回 null`);
       } else {
         log(`[ensurePluginInstance] ${source.name} loadPluginFromScript 成功: loadedId=${loadedSource.id.substring(0, 16)}... sourceId=${source.id.substring(0, 16)}... match=${loadedSource.id === source.id}`);
+        if (loadedSource.format === 'anime') {
+          // anime 适配器是主线程实例（hash === source.id），加载时已注册，不能再用沙箱代理包装
+          const animeEntry = pluginInstances.get(source.id) || null;
+          if (animeEntry) {
+            pluginInstanceErrors.delete(source.id);
+            log(`[ensurePluginInstance] ${source.name} anime 实例已就绪（无代理包装）`);
+            return animeEntry;
+          }
+        }
         const entry = pluginInstances.get(loadedSource.id);
         if (entry) {
           linkSandboxAlias(source.id, loadedSource.id);

@@ -27,6 +27,8 @@ export interface SongCore {
   added_at?: number;
   file_modified_at?: number;
   source_type?: 'local' | 'remote' | 'plugin';
+  /** 本软件内手动添加（导入歌单从源端更新时跳过删除） */
+  addedInApp?: boolean;
   remote_source_id?: string;
   remote_requested_quality?: QualityKey;
   remote_fallback_behavior?: OnlineQualityFallbackBehavior;
@@ -107,6 +109,12 @@ export interface Playlist {
   isCloud?: boolean;
   cloudCoverUrl?: string;
   isFavorite?: boolean;
+  /** 来源插件 id（MusicFree 插件 id 或 wy|tx|kw|kg 平台），用于从源端更新 */
+  sourcePluginId?: string;
+  /** 来源链接或 ID（平台歌单链接/ID、收藏夹链接或 ID） */
+  sourceUrl?: string;
+  /** 来源歌单原始数据（插件搜索结果的 rawData），用于从源端更新 */
+  sourceRaw?: any;
 }
 
 export interface LibraryFolder {
@@ -776,7 +784,7 @@ export interface SaveArtistAvatarResponse {
 
 // ==================== 插件系统类型 ====================
 
-export type PluginFormat = 'lx' | 'musicfree' | 'unknown';
+export type PluginFormat = 'lx' | 'musicfree' | 'anime' | 'unknown';
 
 export interface PluginSource {
   id: string;
