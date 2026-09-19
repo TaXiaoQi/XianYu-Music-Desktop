@@ -59,7 +59,7 @@ function pluginMatchScore(
   platform: PlatformDescriptor,
   format?: SupportedPluginBackupFormat,
 ): number {
-  if (plugin.format !== 'musicfree' && plugin.format !== 'lx') return 0;
+  if (plugin.format !== 'musicfree' && plugin.format !== 'anime' && plugin.format !== 'lx') return 0;
 
   if (plugin.format === 'lx' && platform.lxSource && plugin.sources.includes(platform.lxSource)) {
     return format === 'lxmusic' ? 150 : 120;
@@ -71,11 +71,11 @@ function pluginMatchScore(
     const normalized = normalizePlatformLabel(label);
     if (!normalized) continue;
     if (normalized === platform.normalized) {
-      best = Math.max(best, plugin.format === 'musicfree' ? 140 : 110);
+      best = Math.max(best, plugin.format === 'lx' ? 110 : 140);
     }
     const descriptor = describePlatform(label);
     if (descriptor.canonical && descriptor.canonical === platform.canonical) {
-      best = Math.max(best, plugin.format === 'musicfree' ? 130 : 100);
+      best = Math.max(best, plugin.format === 'lx' ? 100 : 130);
     }
   }
 

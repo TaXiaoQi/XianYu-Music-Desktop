@@ -23,7 +23,7 @@ export const findHealedPluginForSong = (
   const plugins = installedPlugins ?? getStoredPlugins();
   if (plugins.some(p => p.id === searchResult.pluginId && p.enabled)) return null;
 
-  const candidates = plugins.filter(p => p.format === 'musicfree' && p.enabled);
+  const candidates = plugins.filter(p => (p.format === 'musicfree' || p.format === 'anime') && p.enabled);
   if (candidates.length === 0) return null;
 
   const platformLabel = searchResult.platform

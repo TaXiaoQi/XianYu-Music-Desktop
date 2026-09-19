@@ -152,6 +152,71 @@ export const useCollectionsStore = defineStore('collections', () => {
     return false;
   };
 
+  const setPlaylistSource = (
+    id: string,
+    source: { sourcePluginId?: string; sourceUrl?: string; sourceRaw?: any } | null,
+  ) => {
+    const playlist = getPlaylistById(id);
+    if (!playlist) {
+      return false;
+    }
+    if (!source || (!source.sourcePluginId && !source.sourceUrl)) {
+      playlist.sourcePluginId = undefined;
+      playlist.sourceUrl = undefined;
+      playlist.sourceRaw = undefined;
+      return false;
+    }
+    playlist.sourcePluginId = source.sourcePluginId;
+    playlist.sourceUrl = source.sourceUrl;
+    playlist.sourceRaw = source.sourceRaw;
+    return true;
+  };
+
+  // 从源端同步导入的歌单：添加源端新歌曲；完全同步时移除源端已删除的歌曲。
+  // 本软件内手动添加的歌曲（addedInApp）与无元数据（path-only）的歌曲不参与删除。
+  const applySourceSync = (id: string, sourceSongs: Song[], fullSync: boolean) => {
+    const playlist = getPlaylistById(id);
+    if (!playlist) {
+      return { added: 0, removed: 0 };
+    }
+
+    const sourceKeys = new Set(sourceSongs.map(song => song.path));
+
+    let removed = 0;
+    if (fullSync) {
+      const metaList = playlist.songs ?? [];
+      const removable = new Set(
+        metaList
+          .filter(song => !song.addedInApp && !sourceKeys.has(song.path))
+          .map(song => song.path),
+      );
+      if (removable.size > 0) {
+        const before = playlist.songPaths.length;
+        playlist.songPaths = playlist.songPaths.filter(path => !removable.has(path));
+        removed = before - playlist.songPaths.length;
+        const keptMeta = metaList.filter(song => !removable.has(song.path));
+        playlist.songs = keptMeta.length > 0 ? keptMeta : undefined;
+      }
+    }
+
+    const existingPaths = new Set(playlist.songPaths);
+    const existingMetaPaths = new Set((playlist.songs ?? []).map(song => song.path));
+    const newSongs = sourceSongs.filter(song => song.path && !existingPaths.has(song.path));
+    for (const song of newSongs) {
+      playlist.songPaths.push(song.path);
+      existingPaths.add(song.path);
+      if (!existingMetaPaths.has(song.path)) {
+        if (!playlist.songs) {
+          playlist.songs = [];
+        }
+        playlist.songs.push({ ...song });
+        existingMetaPaths.add(song.path);
+      }
+    }
+
+    return { added: newSongs.length, removed };
+  };
+
   const getPlaylistByCloudId = (cloudId?: string) =>
     cloudId ? playlists.value.find(item => item.cloudId === cloudId) : undefined;
 
@@ -202,7 +267,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       const existingSongPaths = new Set(playlist.songs.map(s => s.path));
       for (const song of fullSongs) {
         if (song?.path && !existingSongPaths.has(song.path)) {
-          playlist.songs.push({ ...song });
+          playlist.songs.push({ ...song, addedInApp: true });
           existingSongPaths.add(song.path);
         }
       }
@@ -416,6 +481,8 @@ export const useCollectionsStore = defineStore('collections', () => {
     setPlaylistCover,
     setPlaylistCloudId,
     setPlaylistCloudCoverUrl,
+    setPlaylistSource,
+    applySourceSync,
     getPlaylistByCloudId,
     getPlaylistById,
     addToPlaylist,

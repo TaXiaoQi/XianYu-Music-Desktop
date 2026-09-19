@@ -20,6 +20,7 @@ import { useLibraryStore } from '../../features/library/store';
 import { useToast } from '../../composables/toast';
 import type { Song, SidebarItemKey } from '../../types';
 import type { PlaylistImportResult } from '../../services/domain/playlistImport';
+import { importResultToSongs } from '../../services/domain/playlistSourceUpdate';
 import { matchSongsToLocalLibrary, type ImportedPlaylist } from '../../services/domain/backupImport';
 import type { PreparedPluginBackupImport } from '../../services/domain/pluginBackupImport';
 import { cacheLxSong } from '../../services/domain/lxSongCache';
@@ -53,6 +54,7 @@ const {
   deletePlaylist,
   reorderPlaylists,
   getSongsFromPlaylist,
+  setPlaylistSource,
 } = useLibraryCollections();
 
 const collectionsStore = useCollectionsStore();
@@ -199,39 +201,11 @@ const confirmCreatePlaylist = (name: string) => {
 const libraryStore = useLibraryStore();
 const { showToast } = useToast();
 
-function importResultToSongs(result: PlaylistImportResult): Song[] {
-  return result.songs.map((item) => {
-    const artistNames = item.artist
-      ? item.artist.split(/[、,/&]/).filter(Boolean).map((s) => s.trim())
-      : ['未知歌手'];
-    const sourceKey = item.pluginId || 'wy';
-    const path = `lx://${sourceKey}/${item.id}`;
-    return {
-      name: item.title,
-      title: item.title,
-      path,
-      artist: item.artist || '未知歌手',
-      artist_names: artistNames,
-      effective_artist_names: artistNames,
-      album: item.album || '未知专辑',
-      album_artist: item.artist || '未知歌手',
-      album_key: `${item.album || '未知专辑'}-${item.artist || '未知歌手'}`,
-      is_various_artists_album: false,
-      collapse_artist_credits: false,
-      duration: Math.floor((item.duration || 0) / 1000),
-      cover_thumb_path: item.coverUrl || '',
-      source_type: 'remote' as const,
-      remote_source_id: path,
-      rawData: item.rawData ?? item,
-    } as Song;
-  });
-}
-
 const confirmImportPlaylist = (payload: { result: PlaylistImportResult; rename?: string }) => {
   const { result, rename } = payload;
   if (result.songs.length === 0) return;
 
-  const songs = importResultToSongs(result);
+  const songs = importResultToSongs(result.songs);
   const songPaths = songs.map((s) => s.path);
 
   for (const song of songs) {
@@ -264,6 +238,7 @@ const confirmImportPlaylist = (payload: { result: PlaylistImportResult; rename?:
   const playlistId = createPlaylist(playlistName, songPaths, songs);
 
   if (playlistId) {
+    setPlaylistSource(playlistId, result.sourceRef ?? null);
     showToast(`已创建歌单「${playlistName}」，共 ${songPaths.length} 首歌曲`, 'success');
   } else {
     showToast('创建歌单失败', 'error');

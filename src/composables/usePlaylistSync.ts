@@ -387,6 +387,9 @@ export function usePlaylistSync() {
           isFavorite: pl.isFavorite,
           createdAt: pl.createdAt,
           songs: payloadSongs,
+          ...(pl.sourcePluginId ? { sourcePluginId: pl.sourcePluginId } : {}),
+          ...(pl.sourceUrl ? { sourceUrl: pl.sourceUrl } : {}),
+          ...(pl.sourceRaw ? { sourceRaw: pl.sourceRaw } : {}),
           ...(deletedSongPaths ? { deletedSongPaths } : {}),
         });
       }
@@ -529,6 +532,9 @@ export function usePlaylistSync() {
             libraryStore.setExtraSong(song);
           }
           if (cloudPl.cloudCoverUrl) existing.cloudCoverUrl = cloudPl.cloudCoverUrl;
+          if (cloudPl.sourcePluginId) existing.sourcePluginId = cloudPl.sourcePluginId;
+          if (cloudPl.sourceUrl) existing.sourceUrl = cloudPl.sourceUrl;
+          if (cloudPl.sourceRaw) existing.sourceRaw = cloudPl.sourceRaw;
           existing.isCloud = true;
           if (cloudPl.cloudId) existing.cloudId = cloudPl.cloudId;
 
@@ -548,6 +554,9 @@ export function usePlaylistSync() {
             cloudCoverUrl: cloudPl.cloudCoverUrl || '',
             isFavorite: cloudPl.isFavorite,
             createdAt: cloudPl.createdAt,
+            ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
+            ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
+            ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
           };
 
           collectionsStore.playlists.push(newPlaylist);

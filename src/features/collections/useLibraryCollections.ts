@@ -52,6 +52,14 @@ export function useLibraryCollections() {
   const addSongsToPlaylist = (playlistId: string, songPaths: string[], fullSongs?: Song[]) =>
     collectionsStore.addSongsToPlaylist(playlistId, songPaths, fullSongs);
 
+  const setPlaylistSource = (
+    id: string,
+    source: { sourcePluginId?: string; sourceUrl?: string; sourceRaw?: any } | null,
+  ) => collectionsStore.setPlaylistSource(id, source);
+
+  const applySourceSync = (id: string, sourceSongs: Song[], fullSync: boolean) =>
+    collectionsStore.applySourceSync(id, sourceSongs, fullSync);
+
   const reorderPlaylists = (from: number, to: number) =>
     collectionsStore.reorderPlaylists(from, to);
 
@@ -197,6 +205,8 @@ export function useLibraryCollections() {
     addToPlaylist,
     removeFromPlaylist,
     addSongsToPlaylist,
+    setPlaylistSource,
+    applySourceSync,
     reorderPlaylists,
     getSongsFromPlaylist,
     viewPlaylist,

@@ -58,6 +58,7 @@ const props = defineProps<{
   readOnly?: boolean;
   showAddToPlaylist?: boolean;
   showHeaderAddToPlaylist?: boolean;
+  showSourceUpdate?: boolean;
   coverUrlOverride?: string;
   favoriteEntry?: FavoriteCollectionEntry | null;
   scrollContainerRef?: HTMLElement | null;
@@ -73,6 +74,7 @@ const emit = defineEmits([
   'batchDownload',
   'rename',
   'selectAll',
+  'updateFromSource',
 ]);
 
 const isAllSelected = computed(() => {
@@ -332,6 +334,19 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
                <path d="M9 5.5v13l10-6.5-10-6.5Z" />
              </svg>
              全部播放
+           </button>
+
+           <button
+             v-if="showSourceUpdate"
+             @click="emit('updateFromSource')"
+             title="从源端更新歌单"
+             class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
+           >
+             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+               <path d="M23 4v6h-6M1 20v-6h6" />
+               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+             </svg>
+             更新
            </button>
 
            <button

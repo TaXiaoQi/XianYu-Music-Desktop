@@ -303,7 +303,7 @@ const handleSearchTypeChange = (type: SearchTypeKey) => {
 type SourceItem = {
   id: string;
   name: string;
-  type: 'musicfree' | 'lx' | 'local';
+  type: 'musicfree' | 'anime' | 'lx' | 'local';
   source?: PluginSource;
   lxSourceId?: LxSourceId;
 };
@@ -328,6 +328,8 @@ function refreshPluginSourceList() {
   for (const p of plugins) {
     if (p.format === 'musicfree') {
       items.push({ id: p.id, name: p.name, type: 'musicfree', source: p });
+    } else if (p.format === 'anime') {
+      items.push({ id: p.id, name: p.name, type: 'anime', source: p });
     } else if (p.format === 'lx' && p.sources.length > 0) {
       const lxSources = p.sources.filter(s => VALID_LX_SOURCES.has(s)) as LxSourceId[];
       if (lxSources.length === 0) continue;
@@ -888,7 +890,7 @@ const performSearch = async () => {
         }));
         hasMore.value = false;
       }
-    } else if (source.type === 'musicfree' && source.source) {
+    } else if ((source.type === 'musicfree' || source.type === 'anime') && source.source) {
       lxSearchResults.value = [];
       localSearchResults.value = [];
       localArtistResults.value = [];
@@ -904,8 +906,10 @@ const performSearch = async () => {
         pluginSearchResults.value = results;
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
-        void backfillWyTrackMeta(source.source, results);
-        void backfillQqTrackMeta(source.source, results);
+        if (source.type === 'musicfree') {
+          void backfillWyTrackMeta(source.source, results);
+          void backfillQqTrackMeta(source.source, results);
+        }
       } else if (activeSearchType.value === 'artist') {
         pluginSearchResults.value = [];
         if (pluginSupportsSearchType(source.source, 'artist')) {
@@ -987,15 +991,17 @@ const loadMore = async () => {
       } else {
         hasMore.value = false;
       }
-    } else if (source.type === 'musicfree' && source.source) {
+    } else if ((source.type === 'musicfree' || source.type === 'anime') && source.source) {
       const results = await pluginSearch(source.source, query, nextPage, 30);
       if (results.length > 0) {
         currentPage.value = nextPage;
         pluginSearchResults.value = [...pluginSearchResults.value, ...results];
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
-        void backfillWyTrackMeta(source.source, results);
-        void backfillQqTrackMeta(source.source, results);
+        if (source.type === 'musicfree') {
+          void backfillWyTrackMeta(source.source, results);
+          void backfillQqTrackMeta(source.source, results);
+        }
       } else {
         hasMore.value = false;
       }

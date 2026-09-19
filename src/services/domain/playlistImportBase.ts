@@ -19,11 +19,22 @@ export interface PlaylistInfo {
   playCount: string;
 }
 
+export interface PlaylistSourceRef {
+  /** 来源插件 id（MusicFree 插件 id 或 wy|tx|kw|kg 平台） */
+  sourcePluginId?: string;
+  /** 来源链接或 ID */
+  sourceUrl?: string;
+  /** 来源歌单原始数据（插件搜索结果 rawData） */
+  sourceRaw?: any;
+}
+
 export interface PlaylistImportResult {
   source: string;
   songs: import('../../types').PluginSearchResult[];
   total: number;
   info: PlaylistInfo;
+  /** 来源信息，用于之后从源端更新歌单 */
+  sourceRef?: PlaylistSourceRef;
 }
 
 export interface ParsedLink {
