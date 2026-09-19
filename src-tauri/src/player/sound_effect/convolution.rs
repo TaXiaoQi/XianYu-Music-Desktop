@@ -1,56 +1,26 @@
-//! FFT 卷积混响引擎 —— 基于分块 overlap-add 算法实现实时流式卷积。
-//!
-//! 架构：
-//! - 块大小 B = 2048，FFT 大小 N = 2B = 4096
-//! - IR 预处理：WAV 解析 → 降混为立体声 → 重采样 → 峰值归一化 → 分块 FFT
-//! - 流式处理：逐样本累积输入，满 B 个样本做一次 FFT 卷积，产生 B 个输出
-//! - 延迟：2B 个样本（~93ms @ 44100Hz），对混响效果可接受
-//!
-//! 性能：
-//! - 所有 Vec 在 load_ir() 一次性分配，process_sample() 热路径零分配
-//! - FFT(input_history) 每块只计算一次，对所有 IR 块复用
-//! - IR 频域表示在 load_ir() 时预计算并缓存
-
 use rustfft::{num_complex::Complex, Fft, FftPlanner};
 use std::sync::Arc;
 
-/// 输入块大小 B（每次累积的样本数）
 const BLOCK_SIZE: usize = 2048;
 
 // =========================================================================
-// 单声道 FFT 卷积引擎（流式 overlap-add）
 // =========================================================================
 
 struct ConvolutionChannel {
-    /// IR 频域分块（每块 N 个复数，预计算）
     ir_blocks: Vec<Vec<Complex<f32>>>,
-    /// FFT 大小 N = 2 * BLOCK_SIZE
     fft_size: usize,
-    /// 块大小 B
     block_size: usize,
-    /// IR 块数
     num_blocks: usize,
-    /// 输入历史（大小 N，前 B 个是上一块，后 B 个是当前块）
     input_history: Vec<Complex<f32>>,
-    /// 输入 FFT 结果 X（保存副本，避免被 IFFT 覆盖后重复 FFT）
     x_freq: Vec<Complex<f32>>,
-    /// IFFT 工作区
     ifft_buf: Vec<Complex<f32>>,
-    /// 输出重叠缓冲（大小 (num_blocks + 1) * B）
     overlap_buf: Vec<f32>,
-    /// 输入累积（大小 B，逐帧积累）
     input_accum: Vec<f32>,
-    /// 当前输入累积计数
     input_count: usize,
-    /// 输出缓冲（大小 B，逐帧输出）
     output_buf: Vec<f32>,
-    /// 当前输出读取位置
     output_pos: usize,
-    /// 前向 FFT
     fft: Arc<dyn Fft<f32>>,
-    /// 反向 FFT
     ifft: Arc<dyn Fft<f32>>,
-    /// 是否已加载 IR
     loaded: bool,
 }
 
@@ -81,7 +51,6 @@ impl ConvolutionChannel {
         }
     }
 
-    /// 加载 IR（f32 样本数组），预计算分块 FFT。
     fn load_ir(&mut self, ir: &[f32]) {
         if ir.is_empty() {
             self.loaded = false;
@@ -123,7 +92,6 @@ impl ConvolutionChannel {
         self.output_pos = self.block_size;
     }
 
-    /// 处理一个输入样本，返回一个输出样本（延迟 = 2 * block_size 个样本）。
     #[inline]
     fn process_sample(&mut self, input: f32) -> f32 {
         self.input_accum[self.input_count] = input;
@@ -143,7 +111,6 @@ impl ConvolutionChannel {
         }
     }
 
-    /// 处理一个完整块（block_size 个样本已累积到 input_accum）。
     fn process_block(&mut self) {
         if !self.loaded || self.num_blocks == 0 {
             self.output_buf.fill(0.0);
@@ -151,26 +118,21 @@ impl ConvolutionChannel {
             return;
         }
 
-        // 滑动输入历史：[old_front, old_back] → [old_back, new_input]
         for i in 0..self.block_size {
             self.input_history[i] = self.input_history[i + self.block_size];
             self.input_history[i + self.block_size] = Complex::new(self.input_accum[i], 0.0);
         }
 
-        // FFT(input_history) → x_freq
         self.x_freq.copy_from_slice(&self.input_history);
         self.fft.process(&mut self.x_freq);
 
-        // 输出重叠缓冲：左移 B（丢弃已输出的前 B 个），后面补零
         let overlap_len = self.overlap_buf.len();
-        self.overlap_buf.copy_within(self.block_size..overlap_len, 0);
+        self.overlap_buf
+            .copy_within(self.block_size..overlap_len, 0);
         for i in overlap_len - self.block_size..overlap_len {
             self.overlap_buf[i] = 0.0;
         }
 
-        // 对每个 IR 块：频域乘 → IFFT → 重叠相加（Overlap-Save）
-        // OLS: 使用滑动窗口 [x_{k-1}, x_k] 作为输入，IFFT 结果的前 B 个样本
-        // 包含循环卷积混叠（丢弃），后 B 个样本是有效线性卷积结果（保留）
         let scale = 1.0 / self.fft_size as f32;
         for (block_idx, ir_block) in self.ir_blocks.iter().enumerate() {
             for i in 0..self.fft_size {
@@ -179,25 +141,21 @@ impl ConvolutionChannel {
             self.ifft.process(&mut self.ifft_buf);
 
             let offset = block_idx * self.block_size;
-            // 只取 IFFT[B..2B]（有效部分），添加到 overlap_buf 的对应位置
             let valid_len = self.block_size.min(overlap_len - offset);
             for i in 0..valid_len {
-                self.overlap_buf[offset + i] +=
-                    self.ifft_buf[i + self.block_size].re * scale;
+                self.overlap_buf[offset + i] += self.ifft_buf[i + self.block_size].re * scale;
             }
         }
 
-        // 取前 B 个样本作为本块输出
-        self.output_buf.copy_from_slice(&self.overlap_buf[..self.block_size]);
+        self.output_buf
+            .copy_from_slice(&self.overlap_buf[..self.block_size]);
         self.output_pos = 0;
     }
 }
 
 // =========================================================================
-// 立体声 FFT 卷积混响
 // =========================================================================
 
-/// 立体声 FFT 卷积混响（管理 L/R 两个卷积引擎）。
 pub struct ConvolutionReverb {
     channel_l: ConvolutionChannel,
     channel_r: ConvolutionChannel,
@@ -217,7 +175,6 @@ impl ConvolutionReverb {
 
     pub fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
-        // 采样率变化时需要重新加载 IR
         if !self.current_preset.is_empty() {
             let preset = self.current_preset.clone();
             self.current_preset.clear();
@@ -225,8 +182,6 @@ impl ConvolutionReverb {
         }
     }
 
-    /// 加载预设对应的 IR。相同预设不重复加载。
-    /// 未知预设或 IR 解析失败时不更新状态，保留上一次的有效 IR。
     pub fn load_preset(&mut self, preset: &str) {
         if preset == self.current_preset {
             return;
@@ -247,7 +202,6 @@ impl ConvolutionReverb {
         self.channel_r.reset();
     }
 
-    /// 处理一帧，返回 (wet_l, wet_r)。输入为 frame[0]=L, frame[1]=R。
     #[inline]
     pub fn process(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
         let wet_l = self.channel_l.process_sample(in_l);
@@ -261,10 +215,8 @@ impl ConvolutionReverb {
 }
 
 // =========================================================================
-// 预设 → IR 文件映射（编译时嵌入）
 // =========================================================================
 
-/// 预设名 → IR WAV 二进制数据。13 个卷积预设对应 13 个 IR 文件。
 fn preset_to_ir_data(preset: &str) -> Option<&'static [u8]> {
     match preset {
         "phone" => Some(include_bytes!(
@@ -281,7 +233,9 @@ fn preset_to_ir_data(preset: &str) -> Option<&'static [u8]> {
         "bathroom" => Some(include_bytes!(
             "../../../resources/filters/living-bedroom-leveled.wav"
         )),
-        "room" => Some(include_bytes!("../../../resources/filters/medium-room1.wav")),
+        "room" => Some(include_bytes!(
+            "../../../resources/filters/medium-room1.wav"
+        )),
         "stereo" => Some(include_bytes!(
             "../../../resources/filters/dining-living-true-stereo.wav"
         )),
@@ -305,11 +259,8 @@ fn preset_to_ir_data(preset: &str) -> Option<&'static [u8]> {
 }
 
 // =========================================================================
-// WAV 解析 + IR 预处理
 // =========================================================================
 
-/// 解析 16-bit PCM WAV，返回 (左声道 IR, 右声道 IR)。
-/// 支持 1/2/4 声道，自动降混为立体声。采样率不匹配时线性重采样。
 fn parse_wav_ir(data: &[u8], target_sample_rate: f32) -> (Vec<f32>, Vec<f32>) {
     if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         return (Vec::new(), Vec::new());
@@ -325,12 +276,9 @@ fn parse_wav_ir(data: &[u8], target_sample_rate: f32) -> (Vec<f32>, Vec<f32>) {
 
     while pos + 8 <= data.len() {
         let chunk_id = &data[pos..pos + 4];
-        let chunk_size = u32::from_le_bytes([
-            data[pos + 4],
-            data[pos + 5],
-            data[pos + 6],
-            data[pos + 7],
-        ]) as usize;
+        let chunk_size =
+            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                as usize;
 
         if chunk_id == b"fmt " {
             if pos + 8 + chunk_size > data.len() {
@@ -369,29 +317,24 @@ fn parse_wav_ir(data: &[u8], target_sample_rate: f32) -> (Vec<f32>, Vec<f32>) {
     let data_end = (data_offset + data_size).min(data.len());
     let raw = &data[data_offset..data_end];
     let ch_count = channels as usize;
-    let frame_size = ch_count * 2; // 16-bit = 2 bytes per sample
+    let frame_size = ch_count * 2;
     let num_frames = raw.len() / frame_size;
 
-    // 提取各声道 f32 数据
-    let mut ch_data: Vec<Vec<f32>> = (0..ch_count).map(|_| Vec::with_capacity(num_frames)).collect();
+    let mut ch_data: Vec<Vec<f32>> = (0..ch_count)
+        .map(|_| Vec::with_capacity(num_frames))
+        .collect();
     for i in 0..num_frames {
         let frame_start = i * frame_size;
         for c in 0..ch_count {
-            let s = i16::from_le_bytes([
-                raw[frame_start + c * 2],
-                raw[frame_start + c * 2 + 1],
-            ]);
+            let s = i16::from_le_bytes([raw[frame_start + c * 2], raw[frame_start + c * 2 + 1]]);
             ch_data[c].push(s as f32 / 32768.0);
         }
     }
 
-    // 降混为立体声
     let (mut ir_l, mut ir_r) = match ch_count {
         1 => (ch_data[0].clone(), ch_data[0].clone()),
         2 => (ch_data[0].clone(), ch_data[1].clone()),
         4 => {
-            // True stereo: ch0=L→L, ch1=L→R, ch2=R→L, ch3=R→R
-            // 降混: L = (ch0 + ch2) / 2, R = (ch1 + ch3) / 2
             let l: Vec<f32> = ch_data[0]
                 .iter()
                 .zip(ch_data[2].iter())
@@ -406,18 +349,19 @@ fn parse_wav_ir(data: &[u8], target_sample_rate: f32) -> (Vec<f32>, Vec<f32>) {
         }
         _ => (
             ch_data[0].clone(),
-            ch_data.get(1).cloned().unwrap_or_else(|| ch_data[0].clone()),
+            ch_data
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| ch_data[0].clone()),
         ),
     };
 
-    // 采样率不匹配时线性重采样
     let ir_sr = sample_rate as f32;
     if (ir_sr - target_sample_rate).abs() > 1.0 {
         ir_l = linear_resample(&ir_l, ir_sr, target_sample_rate);
         ir_r = linear_resample(&ir_r, ir_sr, target_sample_rate);
     }
 
-    // 峰值归一化到 0.5（留 headroom 防止卷积后削波）
     let peak = ir_l
         .iter()
         .chain(ir_r.iter())
@@ -435,7 +379,6 @@ fn parse_wav_ir(data: &[u8], target_sample_rate: f32) -> (Vec<f32>, Vec<f32>) {
     (ir_l, ir_r)
 }
 
-/// 线性重采样。
 fn linear_resample(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
     if input.is_empty() || src_rate <= 0.0 {
         return Vec::new();
@@ -455,7 +398,6 @@ fn linear_resample(input: &[f32], src_rate: f32, dst_rate: f32) -> Vec<f32> {
 }
 
 // =========================================================================
-// 单元测试
 // =========================================================================
 
 #[cfg(test)]
@@ -464,12 +406,10 @@ mod tests {
 
     #[test]
     fn test_convolution_channel_impulse_response() {
-        // 单位脉冲 IR → 卷积输出应等于输入（延迟 ~BLOCK_SIZE 后）
         let mut ch = ConvolutionChannel::new();
         let ir = vec![1.0_f32];
         ch.load_ir(&ir);
 
-        // 前 BLOCK_SIZE-1 个样本是输入累积延迟（输出 0）
         for i in 0..BLOCK_SIZE - 1 {
             let out = ch.process_sample(0.5);
             assert!(
@@ -480,7 +420,6 @@ mod tests {
             );
         }
 
-        // 第 BLOCK_SIZE 个样本触发第一次块处理，输出应接近输入
         for _ in 0..100 {
             let out = ch.process_sample(0.5);
             assert!(
@@ -537,7 +476,6 @@ mod tests {
         assert!(!ir_r.is_empty(), "IR 右声道不应为空");
         assert_eq!(ir_l.len(), ir_r.len(), "IR 左右声道长度应一致");
 
-        // 归一化后峰值应 <= 0.5
         let peak = ir_l.iter().fold(0.0f32, |m, &v| m.max(v.abs()));
         assert!(peak <= 0.51, "IR 峰值应 <= 0.5, 实际 {}", peak);
     }

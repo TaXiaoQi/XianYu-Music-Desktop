@@ -15,11 +15,6 @@ import type {
   VerifyCodeType,
 } from './authTypes';
 
-/**
- * 账号认证服务 · 账号操作。
- * 登录/注册/弦予号/邮箱绑定/验证码/找回密码/注销/改密等接口封装。
- * 依赖 authSession（凭证）、authHttp（签名请求）、authShared（映射）。
- */
 
 function withCaptcha(body: Record<string, unknown>, captcha: HumanCaptchaPayload): Record<string, unknown> {
   if (captcha.captchaToken) {
@@ -37,15 +32,9 @@ function withCaptcha(body: Record<string, unknown>, captcha: HumanCaptchaPayload
   };
 }
 
-/** 人机验证配置缓存有效期：配置极少变动，缓存可避免每次弹验证题都先请求一次配置 */
 const CAPTCHA_CONFIG_CACHE_MS = 10 * 60 * 1000;
 let cachedCaptchaConfig: { value: HumanCaptchaConfig; fetchedAt: number } | null = null;
 
-/**
- * 获取新版人机验证配置（10 分钟本地缓存）。
- * 启用 Turnstile / hCaptcha 时，客户端弹窗直接渲染第三方组件；未启用时回退旧算术题。
- * 远程服务器 RTT 较高，缓存命中时验证题弹窗可少一次网络往返。
- */
 export async function getHumanCaptchaConfig(): Promise<HumanCaptchaConfig> {
   if (cachedCaptchaConfig && Date.now() - cachedCaptchaConfig.fetchedAt < CAPTCHA_CONFIG_CACHE_MS) {
     return cachedCaptchaConfig.value;
@@ -60,7 +49,6 @@ export async function getHumanCaptchaConfig(): Promise<HumanCaptchaConfig> {
     cachedCaptchaConfig = { value, fetchedAt: Date.now() };
     return value;
   } catch {
-    // 请求失败时回退旧缓存（若有），避免网络抖动时误降级为算术题
     if (cachedCaptchaConfig) {
       return cachedCaptchaConfig.value;
     }
@@ -80,10 +68,6 @@ export async function getUserAgreement(): Promise<UserAgreement> {
   };
 }
 
-/**
- * 获取一次性人机验证码题目。
- * 当前服务端实现为简单数学题，提交登录/注册/验证码发送/找回密码时一并校验。
- */
 export async function getHumanCaptcha(): Promise<HumanCaptcha> {
   const data = await requestAction<Record<string, unknown>>('get_captcha', {
     purpose: 'auth',
@@ -95,10 +79,6 @@ export async function getHumanCaptcha(): Promise<HumanCaptcha> {
   };
 }
 
-/**
- * 预校验人机验证码。
- * 此接口只确认答案是否正确，不消费验证码；后续真实登录/注册/发码请求仍会再次校验并消费。
- */
 export async function verifyHumanCaptcha(captcha: HumanCaptchaPayload): Promise<void> {
   if (captcha.captchaToken) return;
   await requestAction<Record<string, unknown>>('verify_captcha', {
@@ -108,10 +88,6 @@ export async function verifyHumanCaptcha(captcha: HumanCaptchaPayload): Promise<
   });
 }
 
-/**
- * 弦予号登录（参考微信号设计：弦予号是唯一登录标识）
- * POST /api/?action=user_login
- */
 export async function login(
   ciyuanxiId: string,
   password: string,
@@ -132,10 +108,6 @@ export async function login(
   }
 }
 
-/**
- * 邮箱验证码登录（无需密码，通过发送到注册邮箱的验证码登录）。
- * POST /api/?action=login_by_code
- */
 export async function loginByEmail(
   email: string,
   verifyCode: string,
@@ -156,10 +128,6 @@ export async function loginByEmail(
   }
 }
 
-/**
- * 用户注册（弦予号必填，昵称可选留空则服务端默认"弦予+号"；注册成功后自动登录获取会话）。
- * POST /api/?action=register
- */
 export async function register(
   ciyuanxiId: string,
   nickname: string,
@@ -186,11 +154,6 @@ export async function register(
   }
 }
 
-/**
- * 修改弦予号（参考微信号设计：可修改但每月仅限一次）。
- * 需当前弦予号 + 登录密码校验。
- * POST /api/?action=update_ciyuanxi_id
- */
 export async function updateCiyuanxiId(
   oldCiyuanxiId: string,
   newCiyuanxiId: string,
@@ -211,10 +174,6 @@ export async function updateCiyuanxiId(
   }
 }
 
-/**
- * 绑定邮箱（通过 type='bind' 的邮箱验证码）
- * POST /api/?action=bind_email
- */
 export async function bindEmail(
   ciyuanxiId: string,
   email: string,
@@ -232,10 +191,6 @@ export async function bindEmail(
   }
 }
 
-/**
- * 发送邮箱验证码（注册 / 登录 / 找回密码 / 绑定邮箱等场景，通过 type 区分）
- * POST /api/?action=send_verify_code
- */
 export async function sendEmailCode(
   email: string,
   type: VerifyCodeType = 'register',
@@ -257,10 +212,6 @@ export async function sendEmailCode(
   }
 }
 
-/**
- * 找回密码（重置密码）
- * POST /api/?action=reset_password
- */
 export async function resetPassword(
   email: string,
   verifyCode: string,
@@ -282,11 +233,6 @@ export async function resetPassword(
   }
 }
 
-/**
- * 预验证注销凭据（密码 + 邮箱验证码）。
- * 仅校验凭据是否正确，不执行实际注销。
- * 用于二级确认弹窗弹出时提前验证，减少用户点击确认后的等待时间。
- */
 export async function preVerifyDeleteAccount(
   verifyCode: string,
   password: string,
@@ -318,10 +264,6 @@ export async function preVerifyDeleteAccount(
   }
 }
 
-/**
- * 注销当前账号。
- * 需要当前账号登录密码 + 注册邮箱收到的 delete_account 验证码，双重验证。
- */
 export async function deleteAccount(
   verifyCode: string,
   password: string,
@@ -351,10 +293,6 @@ export async function deleteAccount(
   }
 }
 
-/**
- * 修改密码（需登录，使用弦予号 + 旧密码验证）
- * POST /api/?action=change_password
- */
 export async function changePassword(
   oldPassword: string,
   newPassword: string,

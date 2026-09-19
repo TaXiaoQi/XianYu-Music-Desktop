@@ -1,25 +1,3 @@
-//! 共享插件机架（P1/P2 架构核心）。
-//!
-//! P0 时代每个 `PluginHostSource`（每次起播）独立 dlopen 插件并在停止时丢弃，
-//! 参数只能在 activate 前一次性下发、编辑器无从谈起。共享机架把实例链提升为
-//! 全局单例：
-//!
-//! - **实例跨起播存活**：播放停止后实例与编辑器状态保留，下次起播
-//!   （采样率/声道不变时）零重建直接复用；
-//! - **实时参数**：UI 修改经 `set_parameter`（VST3 走 pending_params 队列、
-//!   CLAP 走 pending_param_changes + flush）在下一个 process 块生效，
-//!   不再等下次起播；
-//! - **线程纪律**：实例链在 `state` 互斥锁之后。音频线程每块
-//!   `try_lock`（拿不到锁本块旁路直通，绝不阻塞等待）；命令线程
-//!   （起播/设置/编辑器）用常规 `lock`，持锁时间受控（块处理微秒级）；
-//!   dlopen/activate/实例 drop 等慢操作一律在锁外完成，锁内只做指针交换；
-//! - **熔断安全**：process 错误时机架 deactivate 全链并移入 `retired`
-//!   （不在音频线程 drop —— 插件编辑器子窗口可能仍指向插件代码，音频线程
-//!   不能等编辑器线程退出；retired 由命令线程在确认编辑器关闭后清理）。
-//!
-//! 链内容始终镜像配置中的「启用槽位」集合与顺序；采样率/声道变化通过
-//! deactivate → activate 循环重建（编辑器保持打开，VST3 视图不失效）。
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -32,16 +10,11 @@ use truce_rack::core::plugin::{Plugin, ProcessContext, ProcessStatus};
 use super::scanner::load_instance;
 use super::{RackConfig, RackSlotConfig};
 
-/// 处理块大小（帧）。512 帧在 44.1kHz 下约 11.6ms，兼顾插件内部块粒度
-/// 与起播延迟。
 pub(crate) const BLOCK_SIZE: usize = 512;
 
-/// 编辑器先行打开（从未播放）时的默认激活参数。
 const DEFAULT_CHANNELS: u16 = 2;
 const DEFAULT_SAMPLE_RATE: u32 = 44_100;
 
-/// 关闭指定槽位的编辑器窗口（不阻塞等待）。编辑器原生窗口仅 Windows 实现
-/// （editor_window 模块 cfg 门控），非 Windows 平台为空操作。
 fn close_editor_blocking(format: &str, unique_id: &str) {
     #[cfg(target_os = "windows")]
     super::editor_window::close_editor_blocking(format, unique_id);
@@ -49,7 +22,6 @@ fn close_editor_blocking(format: &str, unique_id: &str) {
     let _ = (format, unique_id);
 }
 
-/// 机架中已加载的插件实例（链或 retired 中）。
 pub(crate) struct RackSlot {
     pub format: String,
     pub unique_id: String,
@@ -67,7 +39,6 @@ impl RackSlot {
     }
 }
 
-/// 当前链的激活参数（链非空时必有）。
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Activation {
     channels: u16,
@@ -77,22 +48,14 @@ struct Activation {
 struct RackState {
     chain: Vec<RackSlot>,
     activation: Option<Activation>,
-    /// 熔断后的退役实例（等待命令线程在编辑器关闭后清理）。
     retired: Vec<RackSlot>,
 }
 
-/// 全局共享机架。配置（UI 写）与实例链（音频/命令线程共用）分别加锁，
-/// 重建全程由 `rebuild_lock` 串行化。
 pub struct SharedRack {
     config: Mutex<RackConfig>,
     state: Mutex<RackState>,
-    /// 最近一次起播传入的真实采样率/声道。链为空且 `set_config`（播放中
-    /// 开启机架/添加首槽）时用它对当前曲目立即构建，避免"本曲不生效、
-    /// 要下一首才生效"。从未播放时为 `None`。
     last_ready: Mutex<Option<Activation>>,
-    /// 音频线程无锁快速路径：链为空时逐样本直通。
     chain_empty: AtomicBool,
-    /// 命令线程重建串行化（不挡音频线程）。
     rebuild_lock: Mutex<()>,
     last_process_error: Mutex<Option<String>>,
 }
@@ -114,10 +77,8 @@ impl SharedRack {
     }
 
     // ------------------------------------------------------------------
-    // 配置读写
     // ------------------------------------------------------------------
 
-    /// 写入新配置并同步实例链（命令线程）。
     pub fn set_config(&self, config: RackConfig) {
         let old = {
             let mut guard = self.config.lock().unwrap_or_else(|e| e.into_inner());
@@ -127,15 +88,10 @@ impl SharedRack {
         self.sync_chain(None, &param_diffs(&old, &new));
     }
 
-    /// 配置快照（持久化 / 前端读取）。
     pub fn snapshot_config(&self) -> RackConfig {
-        self.config
-            .lock()
-            .map(|c| c.clone())
-            .unwrap_or_default()
+        self.config.lock().map(|c| c.clone()).unwrap_or_default()
     }
 
-    /// 更新单个参数：写配置（持久语义）+ 若实例已加载则实时下发。
     pub fn update_slot_param(&self, format: &str, unique_id: &str, index: usize, value: f64) {
         {
             let mut config = self.config.lock().unwrap_or_else(|e| e.into_inner());
@@ -150,13 +106,13 @@ impl SharedRack {
     }
 
     // ------------------------------------------------------------------
-    // 链同步（命令线程）
     // ------------------------------------------------------------------
 
-    /// 起播/编辑器路径：按 `channels × sample_rate` 同步链到当前配置。
-    /// 采样率/声道与已激活参数一致且槽位集合未变时不做任何事（复用实例）。
     pub fn ensure_ready(&self, channels: u16, sample_rate: u32) {
-        let act = Activation { channels, sample_rate };
+        let act = Activation {
+            channels,
+            sample_rate,
+        };
         {
             let mut last = self.last_ready.lock().unwrap_or_else(|e| e.into_inner());
             *last = Some(act);
@@ -164,35 +120,28 @@ impl SharedRack {
         self.sync_chain(Some(act), &HashMap::new());
     }
 
-    /// 编辑器先行打开：从未播放时以默认参数构建链。
     pub fn ensure_ready_default(&self) {
         self.ensure_ready(DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE);
     }
 
-    /// 同步链到配置。
-    ///
-    /// - `desired`：期望激活参数。`None`（set_config 路径）沿用现有激活参数，
-    ///   且链为空时直接返回（构建推迟到下次起播）；
-    /// - `param_diffs`：仅对「保留槽位」下发的参数差异（旧配置 → 新配置），
-    ///   避免把插件编辑器内的手工调整回滚到旧配置值。
     fn sync_chain(
         &self,
         desired: Option<Activation>,
         param_diffs: &HashMap<(String, String), Vec<(usize, f64)>>,
     ) {
-        // 清理退役实例（编辑器关闭后 drop，命令线程安全）
         self.sweep_retired();
 
         let _guard = self.rebuild_lock.lock().unwrap_or_else(|e| e.into_inner());
         let config = self.snapshot_config();
 
-        // 快速路径：链空且 set_config 路径 → 若已有最近起播参数则据此立即构建，
-        // 让播放中的开启机架/添加首槽本曲即时生效；从未播放（无参数可沿用）
-        // 才推迟到下次起播。
         let (current_keys, current_activation) = {
             let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             (
-                state.chain.iter().map(|s| (s.format.clone(), s.unique_id.clone())).collect::<Vec<_>>(),
+                state
+                    .chain
+                    .iter()
+                    .map(|s| (s.format.clone(), s.unique_id.clone()))
+                    .collect::<Vec<_>>(),
                 state.activation,
             )
         };
@@ -203,8 +152,6 @@ impl SharedRack {
             }
         }
 
-        // 目标：启用槽位（顺序即处理顺序）；总开关关闭时目标为空链
-        // （实例退役、编辑器关闭，恢复总开关后下次同步重建）
         let target: Vec<&RackSlotConfig> = if config.has_active_slots() {
             config.slots.iter().filter(|s| s.enabled).collect()
         } else {
@@ -215,18 +162,16 @@ impl SharedRack {
             .map(|s| RackSlot::key(&s.format, &s.unique_id))
             .collect();
 
-        // 期望激活参数：set_config 路径沿用现有（链非空必有）；
-        // 链为空时改用最近一次起播的真实参数，使本曲开关机架立即生效。
         let activation = desired
             .or(current_activation)
             .or(*self.last_ready.lock().unwrap_or_else(|e| e.into_inner()));
 
-        // 槽位集合与顺序都未变，且激活参数匹配 → 只下发参数差异
         let activation_matches = activation.is_some() && activation == current_activation;
         if target_keys == current_keys && activation_matches {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             for slot in state.chain.iter_mut() {
-                if let Some(diffs) = param_diffs.get(&RackSlot::key(&slot.format, &slot.unique_id)) {
+                if let Some(diffs) = param_diffs.get(&RackSlot::key(&slot.format, &slot.unique_id))
+                {
                     for &(index, value) in diffs {
                         let _ = slot.instance.set_parameter(index, value);
                     }
@@ -236,14 +181,12 @@ impl SharedRack {
         }
 
         // ---- 全量重建（锁外完成 dlopen/activate） ----
-        // 1. 关闭被移除槽位的编辑器（实例仍在链上，编辑器线程能找到并 close）
         for key in &current_keys {
             if !target_keys.contains(key) {
                 close_editor_blocking(&key.0, &key.1);
             }
         }
 
-        // 2. 取出旧链（锁内瞬时限），锁外构建
         let mut old_chain = {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             std::mem::take(&mut state.chain)
@@ -258,13 +201,11 @@ impl SharedRack {
             let reused_keys: Vec<(String, String)> = target_keys.clone();
 
             for (cfg, key) in target.iter().zip(reused_keys) {
-                // 复用现有实例（保编辑器与实时状态）
                 let reused = old_chain
                     .iter()
                     .position(|s| s.matches(&key.0, &key.1))
                     .map(|i| old_chain.swap_remove(i));
                 if let Some(mut slot) = reused {
-                    // 激活参数变化 → deactivate → activate（编辑器保持打开）
                     if current_activation != Some(act) {
                         slot.instance.deactivate();
                     }
@@ -276,7 +217,6 @@ impl SharedRack {
                             continue;
                         }
                     }
-                    // 下发参数差异（保留槽位）
                     if let Some(diffs) = param_diffs.get(&key) {
                         for &(index, value) in diffs {
                             let _ = slot.instance.set_parameter(index, value);
@@ -286,7 +226,6 @@ impl SharedRack {
                     continue;
                 }
 
-                // 新槽位：dlopen + 设参 + activate（全部锁外）
                 match load_instance(&cfg.format, &cfg.unique_id, &cfg.path) {
                     Ok(mut instance) => {
                         for (&index, &value) in &cfg.params {
@@ -310,16 +249,18 @@ impl SharedRack {
             }
         }
 
-        // 3. 换入新链（锁内瞬时）
         {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.chain = new_chain;
-            state.activation = if state.chain.is_empty() { None } else { activation };
+            state.activation = if state.chain.is_empty() {
+                None
+            } else {
+                activation
+            };
             self.chain_empty
                 .store(state.chain.is_empty(), Ordering::Release);
         }
 
-        // 4. 旧链中未被复用的实例退役（编辑器先关，命令线程 drop）
         for slot in old_chain {
             self.retire_slot(slot);
         }
@@ -333,22 +274,27 @@ impl SharedRack {
         }
     }
 
-    /// 退役一个实例：编辑器若开着先关（等编辑器线程退出），再 deactivate，
-    /// 移入 retired 等待 sweep drop。必须在命令线程调用。
     fn retire_slot(&self, slot: RackSlot) {
-        close_editor_blocking(&slot.format, &slot.unique_id);
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        let mut slot = slot;
-        slot.instance.deactivate();
-        state.retired.push(slot);
+        let format = slot.format.clone();
+        let unique_id = slot.unique_id.clone();
+        {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut slot = slot;
+            slot.instance.deactivate();
+            state.retired.push(slot);
+        }
+        close_editor_blocking(&format, &unique_id);
     }
 
-    /// 清理退役实例（命令线程；编辑器全部关闭后才能 drop）。
     pub fn sweep_retired(&self) {
-        if self.state.lock().map(|s| s.retired.is_empty()).unwrap_or(true) {
+        if self
+            .state
+            .lock()
+            .map(|s| s.retired.is_empty())
+            .unwrap_or(true)
+        {
             return;
         }
-        // 逐个处理：先确保编辑器关闭（可能需要等线程退出），再取出 drop
         loop {
             let slot = {
                 let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -363,10 +309,8 @@ impl SharedRack {
     }
 
     // ------------------------------------------------------------------
-    // 查询（命令线程 / 编辑器线程）
     // ------------------------------------------------------------------
 
-    /// 槽位实例是否已在链上。
     pub fn slot_loaded(&self, format: &str, unique_id: &str) -> bool {
         self.state
             .lock()
@@ -374,7 +318,6 @@ impl SharedRack {
             .unwrap_or(false)
     }
 
-    /// 对链上槽位实例执行操作（持锁；操作应为快速元数据/参数调用）。
     pub fn with_slot<R>(
         &self,
         format: &str,
@@ -385,12 +328,6 @@ impl SharedRack {
         find_chain_slot(&mut state, format, unique_id).map(f)
     }
 
-    /// 非阻塞版 `with_slot`：拿不到 `state` 锁立即返回 `None`。
-    ///
-    /// 窗口过程里对插件的空闲驱动（on_idle / set_size 等）不得在等锁上
-    /// 排队——它们若持锁后又被插件回调宿主而互等，会像“点编辑器整应用
-    /// 无响应”那样死锁。拿不到锁就跳过本帧，与音频线程的 try_lock 纪律
-    /// 一致。
     pub fn try_with_slot<R>(
         &self,
         format: &str,
@@ -404,19 +341,12 @@ impl SharedRack {
     }
 
     // ------------------------------------------------------------------
-    // 音频路径
     // ------------------------------------------------------------------
 
-    /// 链是否为空（音频线程无锁快速路径）。
     pub fn is_bypassed(&self) -> bool {
         self.chain_empty.load(Ordering::Acquire)
     }
 
-    /// 处理一个块（音频线程；try_lock，拿不到锁本块旁路）。
-    ///
-    /// 结果写回 `planar_a`（内部 A/B 交换，最终结果落回 a）；
-    /// 返回 `false` 表示旁路（`planar_a` 保持输入未动，调用方直接采用）。
-    /// process 错误触发熔断：deactivate 全链并移入 retired（不在音频线程 drop）。
     pub fn process_block(
         &self,
         channels: u16,
@@ -438,8 +368,6 @@ impl SharedRack {
             return false;
         }
 
-        // 动态适配：如果当前音频流的采样率/声道数与插件激活参数不一致，
-        // 自动按真实的 channels 和 sample_rate 重新激活全链，避免被误判旁路
         let needs_reactivate = match state.activation {
             Some(act) => act.channels != channels || act.sample_rate != sample_rate,
             None => true,
@@ -448,18 +376,42 @@ impl SharedRack {
         if needs_reactivate {
             let layout = layout_for_channels(channels as usize);
             let rate = sample_rate as f64;
-            for slot in state.chain.iter_mut() {
+            let mut index = 0;
+            while index < state.chain.len() {
+                let slot = &mut state.chain[index];
                 if slot.instance.is_active() {
                     slot.instance.deactivate();
                 }
-                let _ = slot.instance.activate(layout.clone(), rate, BLOCK_SIZE);
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    slot.instance.activate(layout.clone(), rate, BLOCK_SIZE)
+                }));
+                match outcome {
+                    Ok(Ok(())) | Ok(Err(_)) => index += 1,
+                    Err(_) => {
+                        let name = slot.name.clone();
+                        let dead = state.chain.remove(index);
+                        state.retired.push(dead);
+                        self.report_process_error(format!(
+                            "插件「{name}」activate 发生 panic，槽位已移除"
+                        ));
+                    }
+                }
             }
-            state.activation = Some(Activation { channels, sample_rate });
+            if state.chain.is_empty() {
+                state.activation = None;
+                self.chain_empty.store(true, Ordering::Release);
+                return false;
+            }
+            state.activation = Some(Activation {
+                channels,
+                sample_rate,
+            });
         }
 
         let ch = channels as usize;
-        for slot in state.chain.iter_mut() {
-            // 复制当前输入到输出平面，避免 Out-of-Place 时全 0 或不覆盖
+        let mut index = 0;
+        while index < state.chain.len() {
+            let slot = &mut state.chain[index];
             for (dest, src) in planar_b.iter_mut().zip(planar_a.iter()) {
                 dest[..frames].copy_from_slice(&src[..frames]);
             }
@@ -486,19 +438,36 @@ impl SharedRack {
                     }),
                     output_events,
                 };
-                slot.instance
-                    .process(&mut buffer, events, &mut context)
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    slot.instance.process(&mut buffer, events, &mut context)
+                }))
             };
             let failed = match result {
-                Err(e) => Some(format!("插件「{}」处理失败: {e}", slot.name)),
-                Ok(ProcessStatus::Error) => {
+                Err(_) => {
+                    for channel in planar_b.iter_mut() {
+                        channel[..frames].fill(0.0);
+                    }
+                    let name = slot.name.clone();
+                    let dead = state.chain.remove(index);
+                    state.retired.push(dead);
+                    if state.chain.is_empty() {
+                        state.activation = None;
+                        self.chain_empty.store(true, Ordering::Release);
+                    }
+                    std::mem::swap(planar_a, planar_b);
+                    output_events.clear();
+                    self.report_process_error(format!(
+                        "插件「{name}」process 发生 panic，槽位已移除，本块输出已静音"
+                    ));
+                    return true;
+                }
+                Ok(Err(e)) => Some(format!("插件「{}」处理失败: {e}", slot.name)),
+                Ok(Ok(ProcessStatus::Error)) => {
                     Some(format!("插件「{}」process 报告错误状态", slot.name))
                 }
-                Ok(_) => None,
+                Ok(Ok(_)) => None,
             };
             if let Some(message) = failed {
-                // 熔断：deactivate 全链 → retired（编辑器保持打开，
-                // 实例由命令线程在 sweep_retired 中关闭编辑器后 drop）
                 let mut retired = std::mem::take(&mut state.chain);
                 state.activation = None;
                 for slot in retired.iter_mut() {
@@ -511,22 +480,20 @@ impl SharedRack {
             }
             std::mem::swap(planar_a, planar_b);
             output_events.clear();
+            index += 1;
         }
         true
     }
 
     // ------------------------------------------------------------------
-    // 错误上报
     // ------------------------------------------------------------------
 
-    /// 上报一次性处理错误（音频线程 try_lock 非阻塞）。
     pub fn report_process_error(&self, message: String) {
         if let Ok(mut slot) = self.last_process_error.try_lock() {
             *slot = Some(message);
         }
     }
 
-    /// 读取并清除最近的处理错误（命令线程；顺带清理退役实例）。
     pub fn take_process_error(&self) -> Option<String> {
         self.sweep_retired();
         self.last_process_error
@@ -558,19 +525,12 @@ fn find_chain_slot<'a>(
         .find(|s| s.matches(format, unique_id))
 }
 
-/// 计算旧配置 → 新配置的参数差异（只含双方都有且值不同的参数）。
-/// 只对「保留槽位」生效，避免回滚插件编辑器内的手工调整。
-fn param_diffs(
-    old: &RackConfig,
-    new: &RackConfig,
-) -> HashMap<(String, String), Vec<(usize, f64)>> {
+fn param_diffs(old: &RackConfig, new: &RackConfig) -> HashMap<(String, String), Vec<(usize, f64)>> {
     let mut out = HashMap::new();
     for new_slot in new.slots.iter().filter(|s| s.enabled) {
-        let Some(old_slot) = old
-            .slots
-            .iter()
-            .find(|s| s.enabled && s.format == new_slot.format && s.unique_id == new_slot.unique_id)
-        else {
+        let Some(old_slot) = old.slots.iter().find(|s| {
+            s.enabled && s.format == new_slot.format && s.unique_id == new_slot.unique_id
+        }) else {
             continue;
         };
         let mut diffs = Vec::new();
@@ -586,7 +546,6 @@ fn param_diffs(
     out
 }
 
-/// 按声道数选择主线布局（音乐播放器无侧链/辅助总线需求）。
 pub(crate) fn layout_for_channels(ch: usize) -> BusLayout {
     match ch {
         1 => BusLayout::mono(),
@@ -602,7 +561,6 @@ pub(crate) fn layout_for_channels(ch: usize) -> BusLayout {
 }
 
 // =========================================================================
-// 测试
 // =========================================================================
 
 #[cfg(test)]
@@ -628,7 +586,6 @@ mod tests {
     fn set_config_with_empty_chain_defers_build() {
         let rack = SharedRack::new(RackConfig::default());
         rack.set_config(config_with_slot(true, HashMap::new()));
-        // 链为空：set_config 不构建（推迟到起播）
         assert!(!rack.slot_loaded("vst3", "X"));
     }
 
@@ -670,10 +627,8 @@ mod tests {
     fn param_diffs_ignores_disabled_and_new_slots() {
         let old = config_with_slot(true, HashMap::from([(0usize, 0.5)]));
         let mut new = config_with_slot(false, HashMap::from([(0usize, 0.9)]));
-        // 禁用槽位不算保留槽位
         let diffs = param_diffs(&old, &new);
         assert!(diffs.is_empty());
-        // 全新槽位无旧值可比
         new.slots[0].enabled = true;
         new.slots[0].unique_id = "Y".into();
         let diffs = param_diffs(&old, &new);

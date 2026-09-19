@@ -120,7 +120,6 @@ const openPluginManager = () => {
 
 const closePluginManager = () => {
   showPluginManager.value = false;
-  // stepContentHidden is reset in @after-leave to keep step content hidden during the leave transition
 };
 
 const onPluginManagerClosed = () => {
@@ -231,7 +230,6 @@ const skipRest = () => handleComplete();
 const showLoginConfirm = ref(false);
 
 const handleComplete = () => {
-  // 账号步骤：检测是否已登录，未登录弹出二次确认
   if (step.value === 'account' && !authStore.isLoggedIn) {
     showLoginConfirm.value = true;
     return;
@@ -279,10 +277,8 @@ const handleCustomThemeClick = () => {
 // --- 账号步骤：登录/注册 UI（搬自 Auth.vue）---
 const authMode = ref<AuthMode>('login');
 const authForm = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
-/** 密码输入框的明文可见状态（自定义"查看密码"按钮，替代不可靠的浏览器原生眼睛图标） */
 const pwdVisible = reactive<Record<string, boolean>>({});
 
-/** 密码输入框的聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现） */
 const pwdFocused = reactive<Record<string, boolean>>({});
 const authLoading = ref(false);
 const codeLoading = ref(false);
@@ -321,7 +317,6 @@ const authHeaderLabel = computed(() =>
 const switchAuthMode = (m: AuthMode) => {
   authMode.value = m;
   authMessage.value = '';
-  // 切换模式时清空密码相关字段，防止登录与注册页之间密码同步
   authForm.value.password = '';
   authForm.value.confirmPassword = '';
 };
@@ -432,7 +427,6 @@ const handleAuthSubmit = async () => {
     authForm.value = { account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' };
     showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
-    // 登录成功后稍作停留再完成
     if (authCompleteTimer) {
       clearTimeout(authCompleteTimer);
     }
@@ -605,7 +599,6 @@ onUnmounted(() => {
         class="fixed inset-0 z-[9998] flex flex-col overflow-hidden transition-colors duration-300"
         :class="onboardingSurfaceClass"
       >
-        <!-- 初始化流程会覆盖主标题栏，因此在顶部中央保留独立的原生窗口拖动区域。 -->
         <div
           data-tauri-drag-region
           class="absolute left-1/4 right-1/4 top-0 z-[70] h-10"
@@ -613,7 +606,6 @@ onUnmounted(() => {
           @click.stop
         ></div>
 
-        <!-- 启动画面 -->
         <transition name="splash-fade">
           <div
             v-if="step === 'splash'"
@@ -660,7 +652,6 @@ onUnmounted(() => {
           </div>
         </transition>
 
-        <!-- 步骤内容 -->
         <transition name="step-fade" mode="out-in">
           <div
             v-if="step !== 'splash'"
@@ -668,7 +659,6 @@ onUnmounted(() => {
             class="relative w-full h-full flex flex-col"
             :class="{ 'invisible pointer-events-none': stepContentHidden }"
           >
-            <!-- 顶部栏：左上角品牌 + 右上角进度 -->
             <header
               class="flex items-center justify-between px-[clamp(2rem,4vw,4rem)] py-[clamp(1.5rem,3vh,2.5rem)]"
             >
@@ -708,11 +698,9 @@ onUnmounted(() => {
               </div>
             </header>
 
-            <!-- 主内容区：垂直居中 -->
             <main class="flex-1 overflow-y-auto lg:overflow-hidden custom-scrollbar">
               <div class="max-w-6xl mx-auto min-h-full lg:h-full px-[clamp(2rem,5vw,5rem)] py-[clamp(1rem,3vh,3rem)] flex flex-col justify-center lg:block">
 
-                <!-- 步骤 1: 主题 -->
                 <transition name="step-content" mode="out-in">
                   <div v-if="step === 'theme'" key="theme" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center lg:items-stretch lg:h-full lg:overflow-hidden">
                     <header class="lg:flex lg:flex-col lg:justify-center">
@@ -806,7 +794,6 @@ onUnmounted(() => {
                     </div>
                   </div>
 
-                  <!-- 步骤 2: 窗口材质 -->
                   <div v-else-if="step === 'material'" key="material" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center lg:items-stretch lg:h-full lg:overflow-hidden">
                     <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
@@ -1000,7 +987,6 @@ onUnmounted(() => {
                     </label>
                   </div>
 
-                  <!-- 步骤 3: 快捷键 -->
                   <div v-else-if="step === 'shortcuts'" key="shortcuts" class="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-[clamp(2rem,5vw,5rem)] items-start lg:items-stretch lg:h-full lg:overflow-hidden">
                     <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
@@ -1082,7 +1068,6 @@ onUnmounted(() => {
                     </div>
                   </div>
 
-                  <!-- 步骤 4: 插件管理 -->
                   <div v-else-if="step === 'plugins'" key="plugins" class="grid grid-cols-1 lg:grid-cols-[1fr_1.45fr] gap-[clamp(2rem,5vw,5rem)] items-center lg:items-stretch lg:h-full lg:overflow-hidden">
                     <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
@@ -1147,7 +1132,6 @@ onUnmounted(() => {
                     </div>
                   </div>
 
-                  <!-- 步骤 5: 账号（搬自 Auth.vue 登录注册 UI）-->
                   <div v-else-if="step === 'account'" key="account" class="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-[clamp(2rem,5vw,5rem)] items-start lg:items-stretch lg:h-full lg:overflow-hidden">
                     <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
@@ -1174,7 +1158,6 @@ onUnmounted(() => {
                     </header>
 
                     <div class="w-full lg:overflow-y-auto lg:custom-scrollbar lg:min-h-0 lg:flex lg:flex-col lg:justify-center">
-                      <!-- 已登录：直接展示当前账号信息，不再显示登录/注册表单 -->
                       <div v-if="authStore.isLoggedIn" class="w-full">
                         <div class="mb-6">
                           <p
@@ -1239,7 +1222,6 @@ onUnmounted(() => {
                       </div>
 
                       <template v-else>
-                      <!-- 顶部标签 -->
                       <div class="mb-6">
                         <p
                           class="text-black/70 dark:text-white/70 font-light tracking-wider mb-3"
@@ -1261,7 +1243,6 @@ onUnmounted(() => {
                         </p>
                       </div>
 
-                      <!-- 模式切换 -->
                       <nav class="mb-6">
                         <div class="flex items-center gap-2 border-b border-black/10 dark:border-white/10">
                           <button
@@ -1297,7 +1278,6 @@ onUnmounted(() => {
                         </div>
                       </nav>
 
-                      <!-- 表单 -->
                       <Transition name="auth-mode" mode="out-in">
                         <form
                           :key="authMode"
@@ -1437,7 +1417,6 @@ onUnmounted(() => {
                             </div>
                           </label>
 
-                          <!-- 用户协议勾选 -->
                           <div class="flex items-start gap-3 text-black/60 dark:text-white/60 select-none" style="font-size: clamp(12px, 1vw, 14px);">
                             <input
                               v-model="agreementAccepted"
@@ -1458,7 +1437,6 @@ onUnmounted(() => {
                             </span>
                           </div>
 
-                          <!-- 消息条 -->
                           <div
                             v-if="authMessage"
                             class="px-4 py-2 rounded-md text-sm font-medium"
@@ -1497,11 +1475,9 @@ onUnmounted(() => {
               </div>
             </main>
 
-            <!-- 底部操作栏 -->
             <footer
               class="flex items-center justify-between px-[clamp(2rem,4vw,4rem)] py-[clamp(1.25rem,2.5vh,2rem)]"
             >
-              <!-- 左下角：始终是"暂不进行初始化设置" -->
               <button
                 type="button"
                 class="text-black/70 dark:text-white/70 hover:text-[#EC4141] font-medium tracking-wide transition"
@@ -1511,7 +1487,6 @@ onUnmounted(() => {
                 暂不进行初始化设置
               </button>
 
-              <!-- 右下角：上一步 + 下一步/完成 -->
               <div class="flex items-center gap-[clamp(1rem,2vw,2rem)]">
                 <button
                   v-if="step !== 'theme'"
@@ -1543,7 +1518,6 @@ onUnmounted(() => {
               </div>
             </footer>
 
-            <!-- 未登录二次确认对话框 -->
             <transition name="confirm-fade">
               <div
                 v-if="showLoginConfirm"
@@ -1594,7 +1568,6 @@ onUnmounted(() => {
           </div>
         </transition>
 
-        <!-- 初始化期间的插件管理层：按需加载并复用设置中的完整插件管理能力 -->
         <transition name="step-fade" @after-leave="onPluginManagerClosed">
           <div
             v-if="showPluginManager"
@@ -1629,7 +1602,6 @@ onUnmounted(() => {
           </div>
         </transition>
 
-        <!-- "暂不支持自定义"提示弹窗 -->
         <transition name="confirm-fade">
           <div
             v-if="showCustomUnsupported"
@@ -1673,7 +1645,6 @@ onUnmounted(() => {
     </transition>
   </Teleport>
 
-  <!-- 用户协议弹窗 -->
   <Teleport to="body">
     <Transition name="avatar-modal">
       <div
@@ -1737,7 +1708,6 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 整体淡入 */
 .onboarding-fade-enter-active,
 .onboarding-fade-leave-active {
   transition: opacity 0.4s ease;
@@ -1747,7 +1717,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* 启动画面淡入淡出 */
 .splash-fade-enter-active,
 .splash-fade-leave-active {
   transition: opacity 0.5s ease, transform 0.5s ease;
@@ -1774,7 +1743,6 @@ onUnmounted(() => {
   transform: translateY(10px);
 }
 
-/* 步骤切换 */
 .step-fade-enter-active,
 .step-fade-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -1788,7 +1756,6 @@ onUnmounted(() => {
   transform: translateX(-20px);
 }
 
-/* 步骤内容切换 */
 .step-content-enter-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
@@ -1803,7 +1770,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* 登录/注册表单切换动画 */
 .auth-mode-enter-active,
 .auth-mode-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -1817,7 +1783,6 @@ onUnmounted(() => {
   transform: translateX(-10px);
 }
 
-/* 未登录二次确认对话框 */
 .confirm-fade-enter-active,
 .confirm-fade-leave-active {
   transition: opacity 0.25s ease;
@@ -1836,7 +1801,6 @@ onUnmounted(() => {
   transform: scale(0.92);
 }
 
-/* 用户协议弹窗 */
 .terms-card {
   width: min(92vw, 680px);
   max-height: min(86vh, 760px);
@@ -1961,7 +1925,6 @@ onUnmounted(() => {
   background: rgba(236, 65, 65, 0.45);
 }
 
-/* 弹窗过渡动画 */
 .avatar-modal-enter-active .terms-card,
 .avatar-modal-leave-active .terms-card {
   transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1973,7 +1936,6 @@ onUnmounted(() => {
   transform: scale(0.92) translateY(8px);
 }
 
-/* 深色模式 */
 :global(.dark) .terms-card {
   background: #262626;
   color: rgba(255, 255, 255, 0.92);

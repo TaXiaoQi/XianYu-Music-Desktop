@@ -12,17 +12,9 @@ import {
   type WyTrackMetaPatch,
 } from './playlistImportBase';
 
-/**
- * 酷狗（小蜗）歌单详情与曲目元数据导入。
- * 仅依赖 playlistImportBase，作为叶子模块被 playlistImport 门面消费。
- */
 
 // ==================== 酷狗签名（Rust host_crypto 计算） ====================
 
-/**
- * 酷狗签名参数（与 LxSdkSongList.signatureParamsKg 一致）
- * sign = md5(keyparam + sortedParams + body + keyparam)
- */
 function signatureParamsKg(params: string, platform: string, body: string): Promise<string> {
   return hostKugouSign(params, platform, body);
 }
@@ -30,18 +22,15 @@ function signatureParamsKg(params: string, platform: string, body: string): Prom
 // ==================== 歌单详情 ====================
 
 async function getListDetailKg(rawId: string): Promise<PlaylistImportResult> {
-  // 分支 1：gcid_ 分享链接
   if (rawId.includes('gcid_')) {
     return getKgListDetailByGcid(rawId);
   }
-  // 分支 2：包含 global_collection_id 参数
   if (rawId.includes('global_collection_id')) {
     const m = rawId.match(/global_collection_id=(\w+)/);
     if (m && m[1]) {
       return getKgUserListDetail2(m[1]);
     }
   }
-  // 分支 3：先尝试本地正则提取 specialid
   let id = getKgListId(rawId);
   if (!id && (rawId.startsWith('http://') || rawId.startsWith('https://'))) {
     const gcid = await resolveKgShareUrl(rawId);
@@ -49,7 +38,6 @@ async function getListDetailKg(rawId: string): Promise<PlaylistImportResult> {
   }
   if (!id) return { source: 'kg', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
 
-  // 通过 specialid 获取歌单详情（HTML 解析）
   const url = `https://www2.kugou.kugou.com/yueku/v9/special/single/${id}-5-9999.html`;
   const resp = await httpFetch(url, 'GET');
   const body = typeof resp.body === 'string' ? resp.body : '';
@@ -117,7 +105,6 @@ function parseKgSong(item: any): PluginSearchResult | null {
   });
 }
 
-/** 处理 gcid_ 分享链接 */
 async function getKgListDetailByGcid(rawId: string): Promise<PlaylistImportResult> {
   const gcidMatch = rawId.match(/gcid_(\w+)/);
   let globalCollectionId: string | null = null;
@@ -131,7 +118,6 @@ async function getKgListDetailByGcid(rawId: string): Promise<PlaylistImportResul
     }
   }
 
-  // 回退：fetch 分享链接 HTML
   if (!globalCollectionId && (rawId.startsWith('http://') || rawId.startsWith('https://'))) {
     globalCollectionId = await resolveKgShareUrl(rawId);
   }
@@ -143,7 +129,6 @@ async function getKgListDetailByGcid(rawId: string): Promise<PlaylistImportResul
   return getKgUserListDetail2(globalCollectionId);
 }
 
-/** 从分享 URL HTML 中提取 global_collection_id */
 async function resolveKgShareUrl(url: string): Promise<string | null> {
   try {
     const resp = await httpFetch(url, 'GET', {
@@ -153,11 +138,9 @@ async function resolveKgShareUrl(url: string): Promise<string | null> {
     const body = typeof resp.body === 'string' ? resp.body : JSON.stringify(resp.body);
     if (!body) return null;
 
-    // 1. 直接提取 global_collection_id
     let m = body.match(/global_collection_id["']?\s*[:=]\s*["']?(\w+)/);
     if (m && m[1]) return m[1];
 
-    // 2. 提取 encode_gic / encode_src_gid → decodeGcid
     const gcid = body.match(/"encode_gic"\s*:\s*"(\w+)"/)?.[1]
       || body.match(/"encode_src_gid"\s*:\s*"(\w+)"/)?.[1]
       || body.match(/encode_gic["']?\s*[:=]\s*["']?(\w+)/)?.[1]
@@ -178,7 +161,6 @@ async function resolveKgShareUrl(url: string): Promise<string | null> {
   }
 }
 
-/** 酷狗 decodeGcid（与 kg/songList.js decodeGcid 一致） */
 async function decodeGcid(gcid: string): Promise<string> {
   const params = 'dfid=-&appid=1005&mid=0&clientver=20109&clienttime=640612895&uuid=-';
   const bodyStr = `{"ret_info":1,"data":[{"id":"${gcid}","id_type":2}]}`;
@@ -214,7 +196,6 @@ async function decodeGcid(gcid: string): Promise<string> {
   return globalCollectionId;
 }
 
-/** 酷狗 getUserListDetail2（与 kg/songList.js 一致） */
 async function getKgUserListDetail2(globalCollectionId: string): Promise<PlaylistImportResult> {
   if (globalCollectionId.length > 1000) {
     return { source: 'kg', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
@@ -229,7 +210,6 @@ async function getKgUserListDetail2(globalCollectionId: string): Promise<Playlis
     'clienttime': '1586163242519',
   };
 
-  // 1. 获取歌单元信息
   const infoParams = `appid=1058&specialid=0&global_specialid=${id}&format=jsonp&srcappid=2919&clientver=20000&clienttime=1586163242519&mid=1586163242519&uuid=1586163242519&dfid=-`;
   const infoSig = await signatureParamsKg(infoParams, 'web', '');
   const infoUrl = `https://mobiles.kugou.com/api/v5/special/info_v2?${infoParams}&signature=${infoSig}`;
@@ -251,7 +231,6 @@ async function getKgUserListDetail2(globalCollectionId: string): Promise<Playlis
   const playlistDesc = decodeName(info.intro || '');
   const playlistAuthor = decodeName(info.nickname || '');
 
-  // 2. 分页获取歌曲 hash 列表
   const hashList: any[] = [];
   let total = songCount;
   let p = 0;
@@ -275,7 +254,6 @@ async function getKgUserListDetail2(globalCollectionId: string): Promise<Playlis
     }
   }
 
-  // 3. 批量获取完整歌曲信息
   const songs = await getKgMusicInfos(hashList);
 
   const infoObj: PlaylistInfo = {
@@ -289,11 +267,9 @@ async function getKgUserListDetail2(globalCollectionId: string): Promise<Playlis
   return { source: 'kg', songs, total: songs.length, info: infoObj };
 }
 
-/** 酷狗批量获取歌曲信息 */
 async function getKgMusicInfos(list: any[]): Promise<PluginSearchResult[]> {
   if (list.length === 0) return [];
 
-  // 去重（按 hash）
   const seen = new Set<string>();
   const deduped: any[] = [];
   for (const item of list) {
@@ -303,7 +279,6 @@ async function getKgMusicInfos(list: any[]): Promise<PluginSearchResult[]> {
     deduped.push(item);
   }
 
-  // 分批（每批 100 个）
   const batches: any[][] = [];
   for (let i = 0; i < deduped.length; i += 100) {
     batches.push(deduped.slice(i, i + 100));
@@ -351,7 +326,6 @@ async function getKgMusicInfos(list: any[]): Promise<PluginSearchResult[]> {
       const dataArr = body.data || [];
       const songs: PluginSearchResult[] = [];
       for (const item of dataArr) {
-        // 每个元素是数组，取 [0]
         const first = Array.isArray(item) ? item[0] : item;
         if (first) {
           const parsed = parseKgSongDetailV2(first);
@@ -403,13 +377,6 @@ function parseKgSongDetailV2(item: any): PluginSearchResult | null {
   });
 }
 
-/**
- * 按酷狗歌曲标识补全时长（专辑页优先整张专辑一次拉全，精确 hash 匹配）。
- *
- * 时迁酱系酷狗插件的 getAlbumInfo 结果不带时长。mobilecdn v3 album/song 按专辑 ID
- * 返回全量曲目（字段小写：hash/duration 秒/filename），一次请求即可补完整页；
- * 无专辑 ID（歌手页等）或未命中时回退 song_search_v2 按歌名搜索，hash 精确匹配。
- */
 export async function fetchKgTrackMetaByIds(
   items: { id: string; title?: string; artist?: string }[],
   albumId?: string,
@@ -417,7 +384,6 @@ export async function fetchKgTrackMetaByIds(
   const patches = new Map<string, WyTrackMetaPatch>();
   if (items.length === 0) return patches;
 
-  // hash 小写索引 + 数字 ID（audio_id/mixsongid）索引，同一曲目双键登记
   const hashIndex = new Map<string, { durationMs: number; coverUrl: string }>();
   const numIndex = new Map<string, { durationMs: number; coverUrl: string }>();
   const register = (hash: any, nums: any[], durationSec: number, coverUrl: string) => {
@@ -433,7 +399,6 @@ export async function fetchKgTrackMetaByIds(
   const lookup = (id: string): { durationMs: number; coverUrl: string } | undefined =>
     hashIndex.get(id.toLowerCase()) || numIndex.get(id);
 
-  // 专辑页：一次拉全量曲目
   if (albumId && /^\d+$/.test(albumId)) {
     try {
       const resp = await httpFetch(
@@ -455,7 +420,6 @@ export async function fetchKgTrackMetaByIds(
       patches.set(item.id, hit);
       continue;
     }
-    // 搜索兜底：按歌名搜索，hash/数字 ID 精确匹配（限量防刷）
     if (!item.title || searched >= 40) continue;
     searched++;
     try {

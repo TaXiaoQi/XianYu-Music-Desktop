@@ -1,24 +1,12 @@
 import type { SidebarItemKey, SidebarSettings } from '../../types';
 
-/**
- * 侧边栏项目元数据（单一数据源）
- *
- * 侧边栏渲染与「设置 → 侧边栏管理」共用这份定义，避免图标/文案在两处重复维护。
- * 注意：「首页」固定置顶、不可隐藏、不参与排序，因此不在此列表中。
- */
 export interface SidebarItemMeta {
   key: SidebarItemKey;
-  /** 显示名称 */
   label: string;
-  /** 对应 SidebarSettings 中控制可见性的字段 */
   visibilityKey: keyof SidebarSettings;
-  /** 图标渲染方式：普通 path，或专辑的双同心圆 */
   iconKind: 'path' | 'albums';
-  /** iconKind 为 'path' 时的 svg path d 属性 */
   iconPath?: string;
-  /** 设置页中是否禁止隐藏（核心功能） */
   lockedVisible?: boolean;
-  /** 设置页中的补充说明 */
   description?: string;
 }
 
@@ -82,7 +70,6 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   },
 ];
 
-/** 默认排列顺序 */
 export const DEFAULT_SIDEBAR_ORDER: SidebarItemKey[] = [
   'artists',
   'albums',
@@ -96,17 +83,9 @@ export const DEFAULT_SIDEBAR_ORDER: SidebarItemKey[] = [
 
 const SIDEBAR_ITEM_KEY_SET = new Set<SidebarItemKey>(DEFAULT_SIDEBAR_ORDER);
 
-/** 按 key 查询元数据 */
 export const getSidebarItemMeta = (key: SidebarItemKey): SidebarItemMeta | undefined =>
   SIDEBAR_ITEMS.find(item => item.key === key);
 
-/**
- * 归一化侧边栏顺序，保证向后兼容与健壮性：
- * - 剔除非法/已废弃的 key
- * - 去重
- * - 补齐缺失项（按默认顺序追加到末尾），因此新增侧边栏项不会丢失
- * - 输入无效时回落到默认顺序
- */
 export const normalizeSidebarOrder = (value: unknown): SidebarItemKey[] => {
   if (!Array.isArray(value)) {
     return [...DEFAULT_SIDEBAR_ORDER];

@@ -51,7 +51,6 @@ let resolveTaskbarPlayerReady: (() => void) | null = null;
 let resolveTaskbarPlayerStateApplied: (() => void) | null = null;
 let unlistenScaleChange: (() => void) | null = null;
 
-// 高可用定位并发控制锁
 let isPositioning = false;
 let pendingPositionUpdate = false;
 let isTaskbarPlayerDragging = false;
@@ -88,7 +87,6 @@ function scheduleTaskbarWindowGeometryStabilization(targetWindow: WebviewWindow)
   }
 }
 
-// 读取保存的 x 坐标
 function readSavedPositionX(): number | null {
   if (typeof localStorage === 'undefined') return null;
   const stored = localStorage.getItem(TASKBAR_PLAYER_POSITION_X_KEY);
@@ -97,13 +95,11 @@ function readSavedPositionX(): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-// 写入保存的 x 坐标
 export function writeSavedPositionX(x: number) {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem(TASKBAR_PLAYER_POSITION_X_KEY, String(Math.round(x)));
 }
 
-// 核心自愈与几何定位控制器（带 pending 控制的并发锁机制）
 async function updatePosition() {
   if (isTaskbarPlayerDragging) return;
 
@@ -120,7 +116,6 @@ async function updatePosition() {
     do {
       pendingPositionUpdate = false;
 
-      // 1. 安全的主显示器获取机制：优先 primaryMonitor()，失败时回退 availableMonitors()[0]
       let primary = await primaryMonitor().catch(() => null);
       if (!primary) {
         const monitors = await availableMonitors().catch(() => []);
@@ -130,7 +125,6 @@ async function updatePosition() {
       }
       const scaleFactor = primary?.scaleFactor ?? 1;
 
-      // 2. 调用 Rust 底层，返回 Win32 API 在当前进程 DPI awareness 下的原始物理屏幕坐标
       const geometry = await windowApi.getTaskbarTrayGeometry().catch((err) => {
         console.warn('Failed to invoke get_taskbar_tray_geometry:', err);
         return null;
@@ -140,7 +134,6 @@ async function updatePosition() {
         break;
       }
 
-      // 3. DPI 跨屏单次换算契约：物理坐标除以 scaleFactor，在前端转换为标准逻辑像素
       const toLogicalVal = (val: number) => val / scaleFactor;
 
       const taskbarRect = {
@@ -162,7 +155,6 @@ async function updatePosition() {
         };
       }
 
-      // 获取主屏幕工作区大小与定位边界
       const workArea = primary
         ? primary.workArea.position.toLogical(scaleFactor)
         : { x: 0, y: 0 };
@@ -173,7 +165,6 @@ async function updatePosition() {
       const winWidth = TASKBAR_PLAYER_WINDOW_WIDTH;
       const winHeight = TASKBAR_PLAYER_WINDOW_HEIGHT;
 
-      // 四边任务栏朝向识别
       const isBottom = taskbarRect.top > workArea.y && taskbarWidth > taskbarHeight;
       const isTop = taskbarRect.top === 0 && taskbarWidth > taskbarHeight;
 
@@ -182,22 +173,17 @@ async function updatePosition() {
 
       const savedX = readSavedPositionX();
 
-      // 多边定位公式单独定义与精细避让
       if (isBottom) {
-        // 底部任务栏：在任务栏矩形内精致居中
         y = taskbarRect.top + (taskbarHeight - winHeight) / 2;
         if (trayRect && geometry.source === 'tray') {
-          // 精密避让：托盘左边界 - 窗口宽度 - 12px 呼吸间隙
           x = trayRect.left - winWidth - 12;
         } else {
-          // Fallback：安全边界兜底
           x = taskbarRect.right - 16 - winWidth;
         }
         if (savedX !== null) {
           x = savedX;
         }
       } else if (isTop) {
-        // 顶部任务栏
         y = taskbarRect.top + (taskbarHeight - winHeight) / 2;
         if (trayRect && geometry.source === 'tray') {
           x = trayRect.left - winWidth - 12;
@@ -208,7 +194,6 @@ async function updatePosition() {
           x = savedX;
         }
       } else {
-        // 侧边（左/右）任务栏或异常布局下，采取在主屏底部工作区边缘悬浮的兜底策略，不飞屏
         x = workArea.x + (workAreaSize.width - winWidth) / 2;
         y = workArea.y + workAreaSize.height - winHeight - 8;
         if (savedX !== null) {
@@ -216,10 +201,8 @@ async function updatePosition() {
         }
       }
 
-      // 三级防护边界裁剪（防止溢出工作区）
       x = Math.max(workArea.x, Math.min(workArea.x + workAreaSize.width - winWidth, x));
 
-      // 执行最终的 setPosition
       await targetWindow.setPosition(new LogicalPosition(Math.round(x), Math.round(y))).catch((err) => {
         console.warn('Failed to set window position:', err);
       });
@@ -234,7 +217,6 @@ async function getTaskbarPlayerWindow() {
   return WebviewWindow.getByLabel(TASKBAR_PLAYER_WINDOW_LABEL);
 }
 
-// 确保并初始化任务栏播控窗口
 async function ensureTaskbarPlayerWindow() {
   const existing = await getTaskbarPlayerWindow();
   if (existing) {
@@ -247,7 +229,6 @@ async function ensureTaskbarPlayerWindow() {
     resolveTaskbarPlayerReady = null;
 
     taskbarPlayerWindowPromise = (async () => {
-      // 预创建时的默认虚拟定位，展示时会被 updatePosition 进行秒级精准对齐纠正
       const windowInstance = new WebviewWindow(TASKBAR_PLAYER_WINDOW_LABEL, {
         url: '/',
         title: 'XY-Music Taskbar Player',
@@ -277,7 +258,6 @@ async function ensureTaskbarPlayerWindow() {
           if (settled) return;
 
           try {
-            // 通过 Rust 底层 Win32 接口应用 WS_EX_NOACTIVATE 扩展样式，并绑定主任务栏 Owner
             await windowApi.setupTaskbarWindow();
 
             settled = true;
@@ -379,7 +359,6 @@ export function useTaskbarPlayerBridge() {
     const targetWindow = await ensureTaskbarPlayerWindow();
     await waitForTaskbarPlayerReady();
 
-    // 对齐最新几何坐标并置顶
     await stabilizeTaskbarWindowGeometry(targetWindow);
 
     await emitStateToTaskbarPlayer();
@@ -388,11 +367,9 @@ export function useTaskbarPlayerBridge() {
     await stabilizeTaskbarWindowGeometry(targetWindow);
     isTaskbarPlayerVisible.value = true;
 
-    // 安装 Z-order 守护，防止点击任务栏时播控窗口被遮盖
     void windowApi.installTaskbarZorderGuard().catch((err) => {
       console.warn('Failed to install taskbar zorder guard:', err);
     });
-    // Tauri 2 官方 API 缩放更改监听绑定
     if (unlistenScaleChange) {
       unlistenScaleChange();
       unlistenScaleChange = null;
@@ -404,7 +381,6 @@ export function useTaskbarPlayerBridge() {
       return null;
     });
 
-    // 启动全屏防遮挡及秒级位置自愈轮询
     startCheckLoop();
   };
 
@@ -420,7 +396,6 @@ export function useTaskbarPlayerBridge() {
       unlistenScaleChange();
       unlistenScaleChange = null;
     }
-    // 卸载 Z-order 守护
     void windowApi.uninstallTaskbarZorderGuard().catch(() => {});
     await emitTo(TASKBAR_PLAYER_WINDOW_LABEL, TASKBAR_PLAYER_VISIBILITY_EVENT, { visible: false });
     await targetWindow.hide();
@@ -439,7 +414,6 @@ export function useTaskbarPlayerBridge() {
       unlistenScaleChange();
       unlistenScaleChange = null;
     }
-    // 在 destroy 前卸载守护，防止回调访问已失效的 HWND
     void windowApi.uninstallTaskbarZorderGuard().catch(() => {});
     try {
       await targetWindow.destroy();
@@ -451,7 +425,6 @@ export function useTaskbarPlayerBridge() {
     }
   };
 
-  // 全屏屏蔽防盖以及秒级自愈对齐复合轮询机制
   const startCheckLoop = () => {
     if (checkTimer) return;
 
@@ -468,13 +441,11 @@ export function useTaskbarPlayerBridge() {
           }
         } else {
           if (!isTaskbarPlayerVisible.value) {
-            // 对齐一次坐标并显示
             await stabilizeTaskbarWindowGeometry(targetWindow);
             await targetWindow.show();
             await stabilizeTaskbarWindowGeometry(targetWindow);
             isTaskbarPlayerVisible.value = true;
           } else if (!isTaskbarPlayerDragging) {
-            // 正常显示状态下，每 1 秒进行位置的静默校验和动态纠偏（应对托盘变化或 Explorer 重建）
             void stabilizeTaskbarWindowGeometry(targetWindow);
           }
         }
@@ -553,7 +524,6 @@ export function useTaskbarPlayerBridge() {
       })
     );
 
-    // 观察用户配置的开启/关闭
     watch(
       () => settings.value.showTaskbarPlayer,
       async (enabled) => {
@@ -566,7 +536,6 @@ export function useTaskbarPlayerBridge() {
       { immediate: true }
     );
 
-    // 观察播放器核心状态改变，向子窗口推送
     watch(
       [
         currentSong,

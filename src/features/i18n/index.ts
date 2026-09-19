@@ -384,17 +384,14 @@ const enUS: Record<I18nKey, string> = {
 };
 
 const messages: Record<AppLanguage, Record<I18nKey, string>> = {
-  // 'system' 在运行时由 resolveLanguage 解析为实际语言，此处仅满足类型约束。
   'system': zhCN,
   'zh-CN': zhCN,
-  // 繁体词条由简体运行时转换生成，避免维护第三份词表。
   'zh-TW': zhCN,
   'en-US': enUS,
 };
 
 export type TranslationParams = Record<string, string | number>;
 
-/** 根据 navigator.language 推测系统语言，映射到支持的 AppLanguage。 */
 function resolveSystemLanguage(): AppLanguage {
   if (typeof navigator === 'undefined') return 'zh-CN';
   const navLang = navigator.language || 'zh-CN';
@@ -405,7 +402,6 @@ function resolveSystemLanguage(): AppLanguage {
   return 'zh-CN';
 }
 
-/** 将 'system' 解析为实际语言，非 'system' 原样返回。 */
 export function resolveLanguage(lang: AppLanguage): AppLanguage {
   return lang === 'system' ? resolveSystemLanguage() : lang;
 }
@@ -417,7 +413,6 @@ export const translate = (
 ): string => {
   const resolved = resolveLanguage(language);
   const template = messages[resolved]?.[key] ?? zhCN[key] ?? key;
-  // 繁体：先取简体模板再整体转换（含插值后的中文参数由调用方自理）。
   const translated = resolved === 'zh-TW' ? toTraditional(template) : template;
   return translated.replace(/\{(\w+)\}/g, (match, name: string) => (
     Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match

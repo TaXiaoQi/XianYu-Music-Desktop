@@ -54,7 +54,6 @@ const VolumePopoverWindow = defineAsyncComponent(() => import('./components/layo
 const { settings } = useSettings();
 const { language, t } = useI18n();
 
-// 为尚未迁移到类型安全词条的旧界面提供全局英文与繁体转换。
 useGlobalInterfaceLanguage();
 
 watch(language, value => {
@@ -72,8 +71,6 @@ watch(
   { deep: true, immediate: true },
 );
 
-// 沉浸全屏时给 body 添加 class，CSS 全局禁用所有 data-tauri-drag-region 的指针事件，
-// 防止全屏窗口被拖动（主页 TitleBar/SidebarBrand、歌词页顶栏等）。
 const uiStore = useUiStore();
 const { isImmersiveFullscreen, mainWindowUiSleepRequested } = storeToRefs(uiStore);
 watch(isImmersiveFullscreen, (fs) => {
@@ -86,10 +83,8 @@ if (currentWindowLabel === 'main') {
   const playlistSync = usePlaylistSync();
   const authStore = useAuthStore();
 
-  // VST3/CLAP 插件宿主：实例化即恢复机架配置并推送 Rust 共享机架（起播前完成）。
   usePluginHostStore();
 
-  // 登录状态变化时：登录后触发首次全量同步（仅首次、冲突才弹窗），随后启动自动同步调度器
   watch(() => authStore.isLoggedIn, (loggedIn) => {
     if (loggedIn) {
       void playlistSync.syncOnLoginSuccess();
@@ -97,7 +92,6 @@ if (currentWindowLabel === 'main') {
     }
   });
 
-  // 主程序语言变化时同步到注册表，使卸载器语言跟随主程序当前语言。
   watch(language, (value) => {
     void syncLanguageToInstaller(value);
   });
@@ -163,23 +157,17 @@ if (currentWindowLabel === 'main') {
   });
 
   onMounted(async () => {
-    // 上报软件打开事件（fire-and-forget，失败静默），用于后台"软件打开次数/设备连接数"统计
     reportAppOpen();
 
-    // DLNA 双向投屏初始化：注册 DMR 指令监听 + 按设置恢复接收端渲染器（仅主窗口）
     if (currentWindowLabel === 'main') {
       void useDlnaCastStore().init();
     }
 
-    // 启动时初始化自动同步调度器（已登录且开启自动同步则按间隔上传歌单/收藏/插件/设置，
-    // 不再依赖用户打开「设置 → 账号」页才初始化）
     playlistSync.initAutoSync();
 
-    // 消费安装器写入的语言：新安装/重新安装时使界面语言与安装选择一致。
     try {
       const languageBeforeInstallRead = settings.value.language;
       const installLanguage = await consumeInstallLanguage();
-      // 注册表读取是异步的。期间若用户已手动切换语言，不得用较早的安装器值覆盖。
       if (
         installLanguage
         && settings.value.language === languageBeforeInstallRead
@@ -188,7 +176,6 @@ if (currentWindowLabel === 'main') {
         settings.value.language = installLanguage;
         playerStorage.writeSettings(settings.value);
       } else if (installLanguage && settings.value.language !== languageBeforeInstallRead) {
-        // consumeInstallLanguage 已更新消费标记；重新写回用户的最新选择以保持两端一致。
         void syncLanguageToInstaller(settings.value.language);
       }
     } catch (error) {
@@ -203,8 +190,6 @@ if (currentWindowLabel === 'main') {
     }
 
     const closeRequestedUnlisten = await getCurrentWindow().onCloseRequested(async (event) => {
-      // 开发模式下直接关闭，不走托盘隐藏；主动走 Tauri 正常退出链路，
-      // 让 cargo tauri dev 能感知进程退出，避免终端和 Vite 长时间挂起
       if (import.meta.env.DEV) {
         event.preventDefault();
         await appApi.exitApp();
@@ -233,10 +218,8 @@ if (currentWindowLabel === 'main') {
       unlistenFocusChanged = focusChangedUnlisten;
     }
 
-    // 启动时加载插件（尊重懒加载设置）
     const pluginConfig = settings.value.plugins;
     void loadPlugins(pluginConfig.lazyLoad).then(async () => {
-      // 启动时自动检查并更新插件
       if (!pluginConfig.autoUpdateOnStartup) return;
       try {
         const results = await checkAllPluginUpdates();
@@ -258,8 +241,6 @@ if (currentWindowLabel === 'main') {
       }
     });
 
-    // F12 打开 DevTools（WebView2 已禁用浏览器快捷键，需通过自定义命令恢复）
-    // 生产构建中 open_devtools 命令返回错误，invoke 被 catch 静默处理
     handleDevtoolsKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'F12') {
         event.preventDefault();
@@ -290,10 +271,6 @@ if (currentWindowLabel === 'main') {
 </script>
 
 <template>
-  <!--
-    语言变化时重建界面树，让尚未迁移到 t() 的旧模板重新生成原始中文节点。
-    Pinia/播放器状态位于组件树外，不会因重建丢失；同时避免依赖整页刷新恢复文案。
-  -->
   <DesktopLyricsWindow v-if="isDesktopLyricsWindow" :key="language" />
   <MiniPlayerWindow v-else-if="isMiniPlayerWindow" :key="language" />
   <TrayMenuWindow v-else-if="isTrayMenuWindow" :key="language" />
@@ -317,9 +294,6 @@ textarea,
   user-select: text;
 }
 
-/* 沉浸全屏时禁用所有拖动区域，防止窗口被拖动。
-   仅禁用 drag-region 元素自身的指针事件以阻止 Tauri 原生拖动，
-   子元素（按钮、输入框等）恢复 pointer-events: auto 保持可交互。 */
 body.immersive-fullscreen [data-tauri-drag-region] {
   pointer-events: none !important;
 }
@@ -327,8 +301,6 @@ body.immersive-fullscreen [data-tauri-drag-region] * {
   pointer-events: auto;
 }
 
-/* 沉浸全屏切换动画：主页容器与歌词页同步播放 scale 动画，
-   盖住原生 maximize→SetWindowPos 的尺寸跳变。全局样式供 MainShell 与 PlayerDetail 共用。 */
 .fs-entering {
   animation: fs-enter 320ms cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: center center;

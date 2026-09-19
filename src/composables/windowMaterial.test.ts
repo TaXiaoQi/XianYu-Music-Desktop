@@ -94,10 +94,6 @@ describe('window material resolver', () => {
 
 describe('materialSwitching 过渡抑制范围', () => {
   it('无材质重同步（none → none）不禁用 CSS 过渡', () => {
-    // 深浅色切换与窗口聚焦都会以 none → none 走一遍 applyWindowMaterial。
-    // 若此时置 materialSwitching=true，MainShell 的
-    // `.material-switching * { transition: none !important }`
-    // 会掐掉整棵树的过渡，主题渐变将永远不生效。
     expect(source).toContain('const shouldSuppressTransitions = needsTransitionMask;');
     expect(source).toContain('if (shouldSuppressTransitions) {\n        materialSwitching.value = true;');
   });

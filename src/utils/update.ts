@@ -27,7 +27,6 @@ interface ParsedVersion {
   pre: string | null;
 }
 
-/** 解析主版本 + 预发布段（如 `2.0.0-beta5` → [2,0,0] + `beta5`）。 */
 function parseVersion(value: string): ParsedVersion {
   const trimmed = value.trim().replace(/^[vV]/, '');
   const dash = trimmed.indexOf('-');
@@ -37,11 +36,6 @@ function parseVersion(value: string): ParsedVersion {
   return { fields, pre };
 }
 
-/**
- * 版本号比较（支持 `-betaN`/`-alphaN` 等预发布后缀）：
- * 主版本数字逐段比较；相等时正式版 > 预发布版；
- * 预发布之间按前缀（字母）再数字比较，避免 `beta5` 与 `beta4` 被判为相等。
- */
 export function compareVersions(left: string, right: string): number {
   const a = parseVersion(left);
   const b = parseVersion(right);
@@ -53,7 +47,6 @@ export function compareVersions(left: string, right: string): number {
     if (av !== bv) return av > bv ? 1 : -1;
   }
 
-  // 主版本相等：正式版 > 预发布版。
   if (a.pre === null && b.pre !== null) return 1;
   if (a.pre !== null && b.pre === null) return -1;
   if (a.pre !== null && b.pre !== null) {
@@ -81,7 +74,6 @@ export async function fetchLatestRelease(owner: string, repo: string): Promise<R
     }
   } else {
     const githubUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-    // 非 Tauri 环境（浏览器预览）直连 GitHub 前做出站校验（host 须为 api.github.com）
     assertSafeOutboundUrl(githubUrl);
     const response = await fetch(githubUrl, {
       headers: { Accept: 'application/vnd.github+json' }
@@ -117,7 +109,6 @@ export interface ServerUpdateInfo {
 
 export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
   try {
-    // 携带设备ID：服务端据此判断是否下发测试版（内测名单设备专属）
     const data = await signedRequest<Record<string, unknown>>(
       'get_latest_version',
       { platform: 'desktop', device_id: getDeviceId() },
@@ -141,10 +132,6 @@ export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
   }
 }
 
-/**
- * 内测资格检查：当前设备是否在内测名单中。
- * 仅在本地版本号为 beta 构建时调用；调用方需 try/catch（旧服务器无此接口时 fail-open）。
- */
 export async function fetchBetaAccess(): Promise<{ allowed: boolean; pending: boolean }> {
   const data = await signedRequest<{ allowed?: boolean; pending?: boolean }>(
     'check_beta_access',
@@ -157,10 +144,6 @@ export async function fetchBetaAccess(): Promise<{ allowed: boolean; pending: bo
   };
 }
 
-/**
- * 把服务端返回的相对下载链接（如 `/uploads/packages/...`）拼成可打开的绝对地址。
- * 默认 server 的 API 前缀为 /api，而静态文件 /uploads 挂在站点根下，需去掉前缀。
- */
 function absoluteDownloadUrl(url: string): string {
   if (!url) return '';
   if (/^https?:\/\//i.test(url)) return url;
@@ -168,7 +151,7 @@ function absoluteDownloadUrl(url: string): string {
   if (!base) return url;
   const parsed = /^([a-z]+:\/\/([^/]+))(\/.*)?$/i.exec(base);
   if (!parsed) return url;
-  const origin = parsed[1]; // scheme://host[:port]
+  const origin = parsed[1];
   let root = parsed[3] || '';
   if (root.endsWith('/api')) {
     root = root.slice(0, -'/api'.length);

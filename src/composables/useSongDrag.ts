@@ -15,7 +15,7 @@ export function useSongDrag(
 ) {
     const {
         songList, currentViewMode, addSongsToPlaylist,
-        currentFolderFilter, updateFolderOrder // 🟢 导入文件夹排序函数
+        currentFolderFilter, updateFolderOrder
     } = usePlayer();
     const { playlists } = storeToRefs(useCollectionsStore());
     const { filterCondition, setPlaylistSortMode } = usePlayer();
@@ -78,7 +78,6 @@ export function useSongDrag(
     let startY = 0;
     const ROW_HEIGHT = 72;
 
-    // 自动滚动
     let autoScrollTimer: number | null = null;
     const startAutoScroll = (direction: 'up' | 'down') => {
         if (autoScrollTimer) return;
@@ -106,7 +105,6 @@ export function useSongDrag(
     const isPrimaryDragPointer = (event: PointerEvent) =>
         event.isPrimary !== false && (event.pointerType !== 'mouse' || event.button === 0);
 
-    // 1. PointerDown 处理项
     const handleTableDragStart = ({ event, song, index }: { event: PointerEvent; song: Song; index: number }) => {
         if (!isPrimaryDragPointer(event)) {
             return;
@@ -121,11 +119,9 @@ export function useSongDrag(
             const tr = event.currentTarget as HTMLElement;
             const rect = tr.getBoundingClientRect();
 
-            // 判断点击位置：如果点击在左侧 60% 区域，视为“选择操作”
             if ((event.clientX - rect.left) / rect.width < 0.6) {
                 isSelectionDragging.value = true;
 
-                // Shift 连选逻辑
                 if (event.shiftKey && lastSelectedIndex.value !== -1) {
                     const start = Math.min(lastSelectedIndex.value, index);
                     const end = Math.max(lastSelectedIndex.value, index);
@@ -133,7 +129,6 @@ export function useSongDrag(
                         if (displaySongList.value[i]) selectedPaths.value.add(displaySongList.value[i].path);
                     }
                 } else {
-                    // 普通点击：单选/反选
                     if (selectedPaths.value.has(song.path)) {
                         selectedPaths.value.delete(song.path);
                     } else {
@@ -144,7 +139,6 @@ export function useSongDrag(
 
                 dragSelectAction.value = selectedPaths.value.has(song.path) ? 'select' : 'deselect';
             } else {
-                // 点击右侧区域，视为“拖拽已选歌曲”
                 isSelectionDragging.value = false;
                 if (!selectedPaths.value.has(song.path)) selectedPaths.value.add(song.path);
                 dragSession.songs = displaySongList.value.filter(s => selectedPaths.value.has(s.path));
@@ -161,22 +155,18 @@ export function useSongDrag(
         }
     };
 
-    // 2. PointerMove
     const onGlobalPointerMove = (e: PointerEvent) => {
         if (!isPointerDown) return;
         if (e.pointerType !== 'mouse') {
             e.preventDefault();
         }
 
-        // 滑动框选逻辑
         if (isBatchMode.value && isSelectionDragging.value) {
             const container = songTableRef.value?.containerRef;
             if (!container) return;
 
             const rect = container.getBoundingClientRect();
             if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-                // 🔥 使用 elementFromPoint 精确命中鼠标下方的行元素
-                // 不再依赖 ROW_HEIGHT 常量，彻底避免行高不一致导致的选择偏移
                 const target = document.elementFromPoint(e.clientX, e.clientY);
                 const rowEl = target?.closest('[data-index]') as HTMLElement | null;
 
@@ -184,7 +174,6 @@ export function useSongDrag(
                 if (rowEl) {
                     currentIndex = parseInt(rowEl.dataset.index!, 10);
                 } else {
-                    // 兜底：鼠标在虚拟滚动 padding 区域
                     const rowElements = container.querySelectorAll('[data-index]');
                     if (rowElements.length > 0) {
                         const firstRow = rowElements[0] as HTMLElement;
@@ -225,7 +214,6 @@ export function useSongDrag(
             return;
         }
 
-        // 拖拽激活判断
         if (!dragSession.active) {
             const dist = Math.sqrt(Math.pow(e.clientX - startX, 2) + Math.pow(e.clientY - startY, 2));
             if (dist > 5) {
@@ -302,7 +290,6 @@ export function useSongDrag(
         }
     };
 
-    // 3. PointerUp / PointerCancel
     const resetDragState = () => {
         dragSession.showGhost = false;
         dragSession.active = false;
@@ -342,13 +329,11 @@ export function useSongDrag(
                     const targetVisualSong = displaySongList.value[dragSession.insertIndex];
                     const targetPath = targetVisualSong?.path;
 
-                    // 处理歌单内排序
                     if (currentViewMode.value === 'playlist') {
                         const plId = filterCondition.value;
                         const pl = playlists.value.find(p => p.id === plId);
 
                         if (pl) {
-                            // Keep drag behavior consistent with current visual order.
                             const visualPaths = displaySongList.value.map(s => s.path);
                             const { reordered, changed } = reorderPathOrder(visualPaths, movingPaths, targetPath);
                             if (changed) {
@@ -357,7 +342,6 @@ export function useSongDrag(
                             }
                         }
                     }
-                    // 处理全局排序
                     else {
                         const fullList = [...songList.value];
                         const { reordered, changed } = reorderSongArrayByPaths(fullList, movingPaths, targetPath);
@@ -365,7 +349,6 @@ export function useSongDrag(
                             songList.value = reordered;
                         }
 
-                        // 🟢 文件夹视图:保存自定义排序顺序
                         if (currentViewMode.value === 'folder' && currentFolderFilter.value) {
                             const visualPaths = displaySongList.value.map(s => s.path);
                             const { reordered: newOrder, changed: folderOrderChanged } = reorderPathOrder(
@@ -378,7 +361,6 @@ export function useSongDrag(
                             }
                         }
 
-                        // 本地音乐视图: 保存自定义排序并自动切换到 custom 模式
                         if (currentViewMode.value === 'all') {
                             const visualPaths = displaySongList.value.map(s => s.path);
                             const { reordered: newOrder, changed: localOrderChanged } = reorderPathOrder(

@@ -7,7 +7,6 @@ import {
 
 const getStorage = () => (typeof localStorage === 'undefined' ? null : localStorage);
 
-// 模块级共享状态：TitleBar 触发，MainShell 监听
 const showOnboarding = ref(resolveInitialOnboardingVisibility(getStorage()));
 
 export function useOnboarding() {

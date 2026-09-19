@@ -40,7 +40,6 @@ function handleItemEnter(id: string) {
   clearTimeout(leaveTimer);
   hoveredItem.value = id;
 
-  // 歌手/专辑悬浮时预加载对应列表（保持原有行为）
   if (id === 'artists') emit('hoverArtists');
   if (id === 'albums') emit('hoverAlbums');
 }
@@ -51,7 +50,6 @@ function handleItemLeave() {
   }, 150);
 }
 
-/** 按用户配置的顺序渲染，并过滤掉已隐藏的项 */
 const orderedItems = computed(() => {
   const order = normalizeSidebarOrder(props.sidebar.order);
   return order
@@ -60,18 +58,12 @@ const orderedItems = computed(() => {
     .filter(item => props.sidebar[item.visibilityKey] === true);
 });
 
-/** 首页是否激活（发现区三种 TAB：统计/每日推荐/音源榜单都属于首页） */
 const isHomeActive = computed(
   () =>
     props.currentPath === '/' &&
     ['statistics', 'dailyRecommend', 'topLists'].includes(props.currentViewMode),
 );
 
-/**
- * 当前激活的侧边栏项。
- * 各项判定规则与改造前逐项保持一致：
- * 本地音乐/文件夹依赖 currentViewMode + 根路径，其余依赖具体路由路径。
- */
 const activeKey = computed<SidebarItemKey | null>(() => {
   const { currentPath, currentViewMode } = props;
 
@@ -100,8 +92,6 @@ const activeKey = computed<SidebarItemKey | null>(() => {
 });
 
 const baseNavClasses = 'px-3 py-2 mx-2 rounded-md cursor-pointer flex items-center transition-all duration-100 text-sm font-medium active:scale-[0.97] whitespace-nowrap min-w-0';
-/* 选中态不再 translate-x-1：高亮块基于 mx-2 左右对称，
-   右移会破坏对称（左 12px / 右 4px），视觉上"左边更宽" */
 const activeNavClasses = 'bg-black/10 dark:bg-white/10 text-black dark:text-white font-semibold shadow-sm';
 const idleClasses = 'text-gray-800 dark:text-gray-200';
 const hoverClasses = 'bg-black/5 dark:bg-white/5 text-black dark:text-white translate-x-1';
@@ -118,7 +108,6 @@ const itemClasses = (key: SidebarItemKey) => {
 
 <template>
   <ul class="space-y-1 transition-all duration-200" :class="{ 'opacity-30 grayscale pointer-events-none': isDragActive }">
-    <!-- 首页：固定置顶，不参与排序 -->
     <li
       @click="emit('openHome')"
       @mouseenter="handleItemEnter('home')"
@@ -129,7 +118,6 @@ const itemClasses = (key: SidebarItemKey) => {
       <span class="truncate min-w-0">{{ t('sidebar.home') }}</span>
     </li>
 
-    <!-- 其余项：按用户配置的顺序渲染 -->
     <li
       v-for="item in orderedItems"
       :key="item.key"

@@ -6,7 +6,6 @@ defineProps<{
   title: string;
   description?: string;
   canDeleteCloud?: boolean;
-  /** 云端选项禁用时的提示文案（默认为歌单场景） */
   disabledHint?: string;
 }>();
 const emit = defineEmits([

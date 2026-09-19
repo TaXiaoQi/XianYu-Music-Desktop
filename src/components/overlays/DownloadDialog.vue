@@ -27,21 +27,13 @@ const emit = defineEmits<{ (e: 'close'): void }>();
 const { settings } = useSettings();
 const playbackStore = usePlaybackStore();
 
-// 音质与目录每次打开都重新初始化（不记忆）
 const selectedQuality = ref<DownloadQuality>('320k');
 const downloadDir = ref('');
 const selectedFileNameStyle = ref<DownloadFileNameStyle>('artist-title');
 const downloadLyrics = ref(false);
-/**
- * 实测可下载的音质列表。
- * null 表示尚未探测（回退到全部可选）；空数组表示探测完成且无可用档位。
- */
 const availableQualities = ref<QualityKey[] | null>(null);
-/** 插件声明的档位列表，探测期间用于显示骨架 */
 const declaredQualities = ref<QualityKey[] | null>(null);
-/** 探测阶段已解析的直链，下载时透传复用 */
 const probedUrls = ref<Partial<Record<QualityKey, string>>>({});
-/** 各音质直链探测到的文件体积（字节） */
 const qualitySizes = ref<Partial<Record<QualityKey, number>>>({});
 const isProbing = ref(false);
 const qualityListRef = ref<HTMLElement | null>(null);
@@ -61,10 +53,8 @@ const dialogTitle = computed(() => {
   return `${title}-${artist}`;
 });
 
-/** 当前探测任务的订阅句柄（弹窗关闭或切歌时解除，防止旧结果覆盖新歌） */
 let probeOff: (() => void) | null = null;
 
-/** 判断下载目标是否就是当前播放歌曲 */
 const isCurrentPlaybackSong = (song: Song) => {
   const playingSong = playbackStore.currentSong;
   const targetPath = song.path;
@@ -74,20 +64,12 @@ const isCurrentPlaybackSong = (song: Song) => {
   return playingPath === targetPath || playingSourcePath === targetSourcePath;
 };
 
-/**
- * 复用播放链路已获取的可用音质列表。
- *
- * currentAvailableQualities 已在播放前由 getOnlineAvailableQualities 获取，
- * 底栏音质/下载选择也使用同一份列表。下载弹窗打开时若目标就是当前播放歌曲，
- * 直接使用这份列表，避免再次请求插件或音源探测。
- */
 const getPlaybackAvailableQualities = (song: Song): QualityKey[] | null => {
   if (!isCurrentPlaybackSong(song)) return null;
   const qualities = playbackStore.currentAvailableQualities;
   return qualities && qualities.length > 0 ? [...qualities] : null;
 };
 
-/** 打开下载弹窗时的初始音质：当前播放歌曲优先对齐实际播放音质 */
 const getInitialDownloadQuality = (song: Song | null): DownloadQuality => {
   if (props.initialQuality) {
     return props.initialQuality;
@@ -99,7 +81,6 @@ const getInitialDownloadQuality = (song: Song | null): DownloadQuality => {
   return (settings.value.download.quality as DownloadQuality) ?? '320k';
 };
 
-/** 当前选中档位不可用时，按下载设置的回退方向选择最接近的可用档 */
 const ensureSelectedQualityAvailable = (available: QualityKey[]) => {
   if (available.length === 0) return;
   const selected = selectedQuality.value as QualityKey;
@@ -146,16 +127,13 @@ const qualityExtraText = (key: QualityKey) => {
   return `${ext} · 未知体积`;
 };
 
-/** 解除共享探测订阅，并清理本弹窗的订阅状态 */
 const releaseDownloadProbe = () => {
   probeOff?.();
   probeOff = null;
 };
 
-/** 已在本弹窗探过体积的档位集合，避免增量更新时对同一档位重复请求 */
 const probedSizesSet = new Set<QualityKey>();
 
-/** 增量探测各直链的文件体积（仅对新增档位请求；直链实测失败回退元数据体积） */
 const probeQualitySizesIncremental = async (
   song: Song,
   keys: QualityKey[],
@@ -168,7 +146,6 @@ const probeQualitySizesIncremental = async (
   });
 };
 
-/** 主区展示的档位：探测中显示声明列表（骨架），探测后显示实测可用列表 */
 const supportedQualityKeys = computed<QualityKey[]>(() => {
   if (isProbing.value) {
     const declared = declaredQualities.value;
@@ -216,28 +193,18 @@ const updateQualityScrollProgress = () => {
   qualityScrollProgress.value = { show: true, top, height };
 };
 
-/** 探测完成且所有档位都不可用 */
 const hasNoAvailableQuality = computed(() =>
   !isProbing.value
   && availableQualities.value !== null
   && availableQualities.value.length === 0,
 );
 
-/** 中止进行中的探测 */
 const abortProbe = () => {
   probeOff?.();
   probeOff = null;
   isProbing.value = false;
 };
 
-/**
- * 探测当前歌曲各档位的真实可下载性。
- *
- * 分两步：先取插件声明列表（快，通常无网络请求，用于确定探测范围与展示骨架），
- * 再对声明的档位实际请求直链，只保留真正拿到有效 URL 的档位。
- * 这里复用共享同歌探测（qualitySharedProbe）的一轮结果，与起播/底栏菜单
- * 共用同一轮请求，避免重复；弹窗通过订阅增量结果后台补齐各档直链与体积。
- */
 const probeQualities = async (song: Song) => {
   const songPath = song.cue_source_path || song.path;
   if (!songPath.startsWith('lx://') && !songPath.startsWith('plugin://')) {
@@ -247,7 +214,6 @@ const probeQualities = async (song: Song) => {
   abortProbe();
   isProbing.value = true;
 
-  // 1. 插件声明列表：作为探测范围与展示骨架
   try {
     declaredQualities.value = await getOnlineAvailableQualities(songPath, song);
   } catch {
@@ -258,7 +224,6 @@ const probeQualities = async (song: Song) => {
     return;
   }
 
-  // 2. 消费共享同歌探测：增量累积各档直链与体积，后台补齐
   const probe = await ensureSharedQualityProbe(song, declaredQualities.value);
   if (!probe) {
     isProbing.value = false;
@@ -266,8 +231,6 @@ const probeQualities = async (song: Song) => {
   }
 
   const apply = () => {
-    // 展示档 = Baka 信任模式声明档全量 + 实测档（对齐移动端菜单）；体积表按
-    // 展示档按键：直链取补解析的请求档键，缺失时回退实际档键。
     const shown = sharedProbeAvailable(probe);
     availableQualities.value = probe.done ? shown : null;
     probedUrls.value = { ...probe.resolvedUrls };
@@ -287,7 +250,6 @@ const probeQualities = async (song: Song) => {
   apply();
 };
 
-// 弹窗打开时初始化音质和目录，并探测真实可用音质
 watch(
   () => [props.visible, props.song] as const,
   ([visible, song]) => {
@@ -351,8 +313,6 @@ const handleDownload = async () => {
     downloadDir: downloadDir.value || undefined,
     downloadAudio: true,
     downloadLyrics: downloadLyrics.value,
-    // 封面由下载设置中的“嵌入封面”写入音频标签；
-    // 下载歌曲时不额外保存独立封面文件。
     downloadCover: false,
     fileNameStyle: selectedFileNameStyle.value,
     preResolvedUrls,
@@ -369,7 +329,6 @@ const handleDownload = async () => {
         @click.self="emit('close')"
       >
         <div class="modal-content bg-white/80 dark:bg-gray-900/90 rounded-xl shadow-2xl w-[380px] max-w-[84vw] overflow-hidden">
-          <!-- 标题栏 -->
           <div class="px-3.5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
             <h3
               class="font-bold text-gray-800 dark:text-gray-200 text-base truncate pr-3"
@@ -383,15 +342,12 @@ const handleDownload = async () => {
             </button>
           </div>
 
-          <!-- 主体 -->
           <div class="px-3.5 py-2.5 space-y-2.5 max-h-[64vh] overflow-y-auto custom-scrollbar">
-            <!-- 下载音质 -->
             <div>
               <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
                 下载音质
                 <span v-if="isProbing" class="text-gray-400 font-normal">（正在探测可用音质…）</span>
               </div>
-              <!-- 可用音质：探测中显示声明列表并禁用交互，避免点到最终不可用的档位 -->
               <div class="relative">
                 <div
                   v-if="!hasNoQualityOptions"
@@ -446,7 +402,6 @@ const handleDownload = async () => {
                 </div>
               </div>
 
-              <!-- 探测完成但无可用档位：仍允许直接下载（走降级 + 后端兜底） -->
               <div
                 v-if="hasNoAvailableQuality"
                 class="mt-2 px-3 py-2.5 text-xs rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
@@ -456,7 +411,6 @@ const handleDownload = async () => {
 
             </div>
 
-            <!-- 下载目录 -->
             <div>
               <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">下载目录</div>
               <div class="flex items-center gap-2">
@@ -476,7 +430,6 @@ const handleDownload = async () => {
               </div>
             </div>
 
-            <!-- 文件命名样式 -->
             <div>
               <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">文件命名样式</div>
               <div class="grid grid-cols-3 gap-1.5">
@@ -500,7 +453,6 @@ const handleDownload = async () => {
               </div>
             </div>
 
-            <!-- 下载独立歌词 -->
             <div>
               <button
                 type="button"
@@ -525,7 +477,6 @@ const handleDownload = async () => {
 
           </div>
 
-          <!-- 底部按钮 -->
           <div class="px-3.5 py-2.5 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2">
             <button
               type="button"

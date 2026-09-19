@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 const MAX_GROUP_TOLERANCE_MS: u32 = 50;
-/// 兼容「最后时间戳后带文本」的逐字行（如 JOOX 格式）时，为最后一个词推断的时长（毫秒）
 const ENHANCED_TRAILING_WORD_DURATION_MS: u32 = 400;
 
 // ==================== Regex caches (module-level, compiled once) ====================
@@ -70,7 +69,6 @@ pub enum DominantScript {
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-#[allow(dead_code)]
 pub enum LyricTrackRole {
     Main,
     Translation,
@@ -84,7 +82,6 @@ pub enum LyricTrackRole {
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-#[allow(dead_code)]
 pub enum LyricTimingMode {
     Line,
     Word,
@@ -642,8 +639,6 @@ fn normalize_end_times(lines: &mut [ParsedLine]) {
         let current_start = lines[index].start_ms;
         let next_start = lines.get(index + 1).map(|line| line.start_ms);
         let fallback_end = next_start.unwrap_or(current_start.saturating_add(5000));
-        // 标准 LRC 行的 end 是 start+5000 默认值，需延伸到下一行起点以消除空档；
-        // 其余格式（TTML/LQE/LYL/逐字格式）自带显式结束时间，仅在未设置（end <= start）时兜底。
         if lines[index].source_format == ParsedLineSourceFormat::Lrc
             && lines[index].end_ms == current_start.saturating_add(5000)
         {
@@ -764,10 +759,6 @@ static NON_SPEAKER_LABEL_RE: OnceLock<Regex> = OnceLock::new();
 static SPEAKER_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
 static PARENTHETICAL_VOCAL_RE: OnceLock<Regex> = OnceLock::new();
 
-/// 制作信息行（作词/作曲/编曲/演唱/混音等），不是可演唱歌词，应排除出主歌词。
-/// (?i)：英文标签大小写不敏感；「词/曲」「作词/作曲」等斜杠组合写法一并覆盖。
-/// 标签与冒号之间允许 ≤4 个字符的修饰语（「音乐总监：」「后期混音：」「Lyrics by:」），
-/// 防复合 credit 标签漏网被误判成对唱角色。
 fn is_credit_line(text: &str) -> bool {
     let re = CREDIT_LINE_RE.get_or_init(|| {
         Regex::new(r"(?i)^(?:(?:作)?词|(?:作)?詞|曲|作曲|编曲|編曲|词曲|詞曲|(?:作)?[词詞]\s*[/、&＆]\s*曲|原唱|演唱|主唱|领唱|領唱|和音|和声|和聲|歌手|歌词|歌詞|制作|製作|出品|发行|發行|策划|策劃|统筹|統籌|监制|監製|导演|導演|混音|母带|母帶|录音|錄音|翻译|翻譯|譯|字幕|后期|後期|压制|壓制|来源|來源|出处|封面|美工|鸣谢|鳴謝|感谢|感謝|宣传|宣傳|赞助|贊助|吉他|贝斯|貝斯|贝司|貝司|鼓|键盘|鍵盤|钢琴|鋼琴|提琴|二胡|琵琶|古筝|古箏|笛子|箫|簫|口琴|萨克斯|薩克斯|小号|小號|长笛|長笛|竖琴|豎琴|lyrics?|lyricist|compos(?:er|ed)|music|arrang(?:er|ement|ed)|produc(?:er|ed|tion)|mix(?:ed|ing)?|master(?:ed|ing)?|record(?:ed|ing)?|vocal(?:s|ist)?|guitar|bass|drums?|piano|keyboard|violin|cello|viola|strings|brass|flute|trumpet|sax(?:ophone)?|translator|subtitle|cover|artwork|design|copyright|staff|pv|mv|movie|video|animation|illustration|illustrator|thanks|written|wrote)[^:：\r\n]{0,4}\s*[:：]").unwrap()
@@ -775,8 +766,6 @@ fn is_credit_line(text: &str) -> bool {
     re.is_match(text.trim())
 }
 
-/// 检测演唱者标签前缀（`A:`、`男:`、`v1:` 等），返回 (演唱者名, 去除前缀后的文本)。
-/// 排除制作信息行与 `http:` 等非演唱者标签。
 fn detect_speaker_prefix(text: &str) -> (Option<String>, String) {
     let trimmed = text.trim();
     if trimmed.is_empty() || is_credit_line(trimmed) {
@@ -805,7 +794,6 @@ fn detect_speaker_prefix(text: &str) -> (Option<String>, String) {
     (Some(name.to_string()), rest)
 }
 
-/// 整行被 `()` 或 `[]` 整体包裹 → 背景和声行，返回去除包裹后的文本。
 fn strip_whole_wrapped(text: &str) -> Option<String> {
     let trimmed = text.trim();
     let inner = if trimmed.starts_with('(') && trimmed.ends_with(')') {
@@ -823,14 +811,14 @@ fn strip_whole_wrapped(text: &str) -> Option<String> {
 }
 
 fn contains_kana(text: &str) -> bool {
-    text.chars().any(|ch| matches!(ch as u32, 0x3040..=0x30ff | 0x31f0..=0x31ff))
+    text.chars()
+        .any(|ch| matches!(ch as u32, 0x3040..=0x30ff | 0x31f0..=0x31ff))
 }
 
 fn contains_hangul(text: &str) -> bool {
     text.chars().any(|ch| matches!(ch as u32, 0xac00..=0xd7af))
 }
 
-/// 判断括号内容是否为和声段（含明确和声标记，或为短内容且非已知标签）。
 fn is_vocal_parenthetical(content: &str) -> bool {
     let trimmed = content.trim();
     if trimmed.is_empty() {
@@ -848,8 +836,27 @@ fn is_vocal_parenthetical(content: &str) -> bool {
         return true;
     }
     let known_labels = [
-        "翻译", "译文", "注音", "罗马音", "罗马字", "音译", "旁白", "独白", "对白", "白",
-        "男", "女", "合", "主", "伴", "os", "intro", "outro", "间奏", "前奏", "尾奏",
+        "翻译",
+        "译文",
+        "注音",
+        "罗马音",
+        "罗马字",
+        "音译",
+        "旁白",
+        "独白",
+        "对白",
+        "白",
+        "男",
+        "女",
+        "合",
+        "主",
+        "伴",
+        "os",
+        "intro",
+        "outro",
+        "间奏",
+        "前奏",
+        "尾奏",
     ];
     if trimmed.chars().count() <= 6 && !known_labels.contains(&lower.as_str()) {
         return true;
@@ -857,11 +864,9 @@ fn is_vocal_parenthetical(content: &str) -> bool {
     false
 }
 
-/// 拆分主行内嵌的括号和声：`主唱 啦啦啦 (和声 哦哦哦)` → (主唱 啦啦啦, 和声 哦哦哦)。
-/// 假名/谚文括号通常是注音，跳过。
 fn split_parenthetical_vocal(text: &str) -> Option<(String, String)> {
-    let re = PARENTHETICAL_VOCAL_RE
-        .get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
+    let re =
+        PARENTHETICAL_VOCAL_RE.get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
     let mut main_parts = Vec::new();
     let mut duet_parts = Vec::new();
     let mut last_end = 0usize;
@@ -902,25 +907,14 @@ fn split_parenthetical_vocal(text: &str) -> Option<(String, String)> {
     Some((main_text, duet_text))
 }
 
-/// 判断歌词是否呈现对唱/和声证据：存在演唱者标签前缀，或出现多个不同的括号和声段。
-/// 近似 BakaMusic 的"双歌手"门控——无对唱证据时不拆分括号，避免误伤普通括号歌词。
-/// 演唱者前缀直接从文本统计（不依赖已标注的 speaker 字段），使本函数可先于
-/// speaker 标注执行，为下方的 speaker 判定提供统一门控。
-///
-/// 前缀证据带结构化校验：真对唱的标签前缀贯穿全曲——要么出现在首个无前缀
-/// 正文行之后，要么全曲正文都带前缀。仅集中在开头的连续前缀块是制作信息
-/// （「Lyrics by:」「Music by:」「吉他：」等 is_credit_line 未覆盖的写法），
-/// 不是对唱；否则这些行会被标注 is_duet，AMLL 渲染成右偏。
 fn has_duet_vocal_evidence(lines: &[ParsedLine]) -> bool {
     let mut speaker_count = 0;
     let mut plain_line_seen = false;
     let mut prefix_after_plain_seen = false;
     let mut vocal_contents = std::collections::HashSet::new();
-    let re = PARENTHETICAL_VOCAL_RE
-        .get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
+    let re =
+        PARENTHETICAL_VOCAL_RE.get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
     for line in lines {
-        // 背景行（整行括号包裹）不参与前缀统计，避免结尾孤立 (和声) 行
-        // 干扰"全曲正文都带前缀"的判定。
         if line.is_bg {
             continue;
         }
@@ -947,9 +941,7 @@ fn has_duet_vocal_evidence(lines: &[ParsedLine]) -> bool {
         || vocal_contents.len() >= 2
 }
 
-/// 对解析出的行做演唱者/和声标注：整行背景和声、演唱者前缀、括号和声拆分。
 fn annotate_line_vocals(lines: &mut Vec<ParsedLine>) {
-    // 第一遍：整行括号包裹 → 背景和声行（无对唱歧义，不受门控约束）
     for line in lines.iter_mut() {
         if let Some(inner) = strip_whole_wrapped(&line.text) {
             line.is_bg = true;
@@ -957,14 +949,6 @@ fn annotate_line_vocals(lines: &mut Vec<ParsedLine>) {
         }
     }
 
-    // 演唱者前缀标注需要统一门控：歌词开头孤立的 credit 变体（「词/曲：XXX」
-    // 「主唱：XXX」「Lyrics by: XXX」「吉他：XXX」等 is_credit_line 未覆盖的
-    // 写法）不应被判成对唱角色——AMLL 会把 duet 行右偏渲染，表现为开头几行
-    // 歌词"往右偏"。真对唱歌词（A:/B: 等前缀贯穿全曲）经 has_duet_vocal_evidence
-    // 的结构化校验（前缀出现在首个无前缀正文行之后，或全曲正文都带前缀）
-    // 仍会正常标注。
-    // 证据在 speaker 标注前一次性统计并复用：标注会剥掉前缀文本，之后重算
-    // speaker_count 会归零，导致括号和声拆分被错误跳过。
     let duet_evidence = has_duet_vocal_evidence(lines);
 
     if duet_evidence {
@@ -978,7 +962,6 @@ fn annotate_line_vocals(lines: &mut Vec<ParsedLine>) {
         }
     }
 
-    // 括号和声拆分仅在歌词存在对唱证据时进行（近似 BakaMusic 的双歌手门控）。
     if !duet_evidence {
         return;
     }
@@ -1071,7 +1054,9 @@ fn prepare_amll_line(
         return None;
     }
 
-    let is_pure_divider = text.chars().all(|c| c == '/' || c == '\\' || c == '_' || c == '-' || c == '—' || c == '–' || c.is_whitespace());
+    let is_pure_divider = text.chars().all(|c| {
+        c == '/' || c == '\\' || c == '_' || c == '-' || c == '—' || c == '–' || c.is_whitespace()
+    });
     if is_pure_divider && translated_text.is_empty() && roman_text.is_empty() {
         return None;
     }
@@ -1105,10 +1090,10 @@ fn prepare_amll_line(
         source_format,
         source_index: source_index as f64,
         explicit_role,
-    speaker: None,
-    is_bg: false,
-    is_duet: false,
-    is_duet_partner: false,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
@@ -1197,15 +1182,13 @@ fn parse_inline_square_timed_line(line: &str, source_index: usize) -> Option<Par
         source_format: ParsedLineSourceFormat::Eslrc,
         source_index: source_index as f64,
         explicit_role,
-    speaker: None,
-    is_bg: false,
-    is_duet: false,
-    is_duet_partner: false,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
-/// 内联逐字 LRC 格式：`[mm:ss.xx]词(start,dur)词(start,dur)...`。
-/// 行首 `[mm:ss.xx]` 为行起始时间，每个词后跟 `(相对毫秒, 时长毫秒[, 额外])` 标记。
 fn parse_inline_word_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine> {
     let leading = collect_markers(line, '[', ']');
     let (_, body_start, line_start_ms) = *leading.first()?;
@@ -1262,16 +1245,13 @@ fn parse_inline_word_lrc_line(line: &str, source_index: usize) -> Option<ParsedL
         source_format: ParsedLineSourceFormat::Eslrc,
         source_index: source_index as f64,
         explicit_role,
-    speaker: None,
-    is_bg: false,
-    is_duet: false,
-    is_duet_partner: false,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
-/// 判定 LRC A2 尖括号词时间戳是否为相对行起始的偏移（近似 BakaMusic 的
-/// shouldUseRelativeAngleWordTime）。相对情形：首词时间 ≈ 0，或首词明显早于
-/// 行起始（>0.5s）且末词未超过行起始（<0.5s）。
 fn should_use_relative_angle_word_time(line_start_ms: u32, word_times: &[u32]) -> bool {
     if line_start_ms == 0 || word_times.is_empty() {
         return false;
@@ -1290,9 +1270,6 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
         return None;
     }
 
-    // LRC A2 相对/绝对时间戳判定：词时间戳可能是相对行起始的偏移而非绝对时间。
-    // 近似 BakaMusic 的 shouldUseRelativeAngleWordTime——首词 ≈ 0，或首词明显早于
-    // 行起始且末词未超过行起始时，判定为相对偏移，统一加上行起始时间。
     let word_times = markers.iter().map(|marker| marker.2).collect::<Vec<_>>();
     if should_use_relative_angle_word_time(line_start_ms, &word_times) {
         for marker in markers.iter_mut() {
@@ -1326,9 +1303,6 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
         });
     }
 
-    // 兼容 JOOX 等插件格式的最后时间戳后带文本（如 <00:42.590>单）。
-    // 该格式没有显式行结束标记，把尾随文本作为最后一个词，
-    // end 用当前时间 + 一个合理间隔推断，避免整行被丢弃导致歌词后半段黑屏。
     if let Some((_, last_marker_end, last_start_ms)) = markers.last() {
         let trailing_text = sanitize_word_text(&body[*last_marker_end..]);
         if !trailing_text.is_empty() {
@@ -1352,7 +1326,10 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
             .collect::<String>(),
     );
     let (explicit_role, normalized_text) = detect_explicit_role(&text);
-    let last_word_end = words.last().map(|word| word.end_ms).unwrap_or(line_start_ms);
+    let last_word_end = words
+        .last()
+        .map(|word| word.end_ms)
+        .unwrap_or(line_start_ms);
     let end_ms = markers
         .last()
         .map(|marker| marker.2)
@@ -1369,17 +1346,16 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
         source_format: ParsedLineSourceFormat::EnhancedLrc,
         source_index: source_index as f64,
         explicit_role,
-    speaker: None,
-    is_bg: false,
-    is_duet: false,
-    is_duet_partner: false,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
 fn parse_plain_lrc_line(line: &str, source_index: usize) -> Vec<ParsedLine> {
     let markers = collect_markers(line, '[', ']');
     if markers.is_empty() {
-        // 无时间戳但为网易云 JSON 单行（`{"t":..,"c":[{"tx":..}]}`），按逐字行解析。
         if let Some(parsed) = parse_netease_json_single_line(line, source_index) {
             return vec![parsed];
         }
@@ -1421,7 +1397,6 @@ fn parse_plain_lrc_line(line: &str, source_index: usize) -> Vec<ParsedLine> {
 
     let (explicit_role, normalized_text) = detect_explicit_role(body);
     if normalized_text.is_empty() {
-        // 空时间行保留为收尾标记，由 finalize_lrc_blank_lines 决定是否作为上一句结束时间。
         return leading
             .into_iter()
             .enumerate()
@@ -1460,7 +1435,7 @@ fn parse_plain_lrc_line(line: &str, source_index: usize) -> Vec<ParsedLine> {
             is_bg: false,
             is_duet: false,
             is_duet_partner: false,
-            })
+        })
         .collect()
 }
 
@@ -1470,10 +1445,12 @@ fn strip_xml_tags(raw: &str) -> String {
 }
 
 fn parse_ttml(raw: &str) -> Vec<ParsedLine> {
-    let paragraph_re = TTML_PARAGRAPH_RE.get_or_init(|| Regex::new(r#"(?s)<p\b([^>]*)>(.*?)</p>"#).unwrap());
+    let paragraph_re =
+        TTML_PARAGRAPH_RE.get_or_init(|| Regex::new(r#"(?s)<p\b([^>]*)>(.*?)</p>"#).unwrap());
     let begin_re = TTML_BEGIN_RE.get_or_init(|| Regex::new(r#"(?i)\bbegin="([^"]+)""#).unwrap());
     let end_re = TTML_END_RE.get_or_init(|| Regex::new(r#"(?i)\bend="([^"]+)""#).unwrap());
-    let span_re = TTML_SPAN_RE.get_or_init(|| Regex::new(r#"(?s)<span\b([^>]*)>(.*?)</span>"#).unwrap());
+    let span_re =
+        TTML_SPAN_RE.get_or_init(|| Regex::new(r#"(?s)<span\b([^>]*)>(.*?)</span>"#).unwrap());
     let role_re = TTML_ROLE_RE.get_or_init(|| Regex::new(r#"(?i)\bttm:role="([^"]+)""#).unwrap());
 
     let mut lines = Vec::new();
@@ -1565,19 +1542,16 @@ fn parse_ttml(raw: &str) -> Vec<ParsedLine> {
             source_format: ParsedLineSourceFormat::Ttml,
             source_index: index as f64,
             explicit_role,
-        speaker: None,
-        is_bg: false,
-        is_duet: false,
-        is_duet_partner: false,
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
         });
     }
 
     lines
 }
 
-/// LRC 里的空时间行可能是上一句的收尾标记，也可能只是音源用来和翻译、罗马音
-/// 逐行对齐的占位。只有后面确实接着一段静默（≥4s）时才当作收尾采信，否则上一句
-/// 会在还在演唱时就被截断淡出。空行本身不进入渲染。
 fn finalize_lrc_blank_lines(lines: Vec<ParsedLine>) -> Vec<ParsedLine> {
     const BLANK_LINE_INTERLUDE_MS: u32 = 4000;
     let mut meaningful: Vec<ParsedLine> = Vec::with_capacity(lines.len());
@@ -1589,7 +1563,6 @@ fn finalize_lrc_blank_lines(lines: Vec<ParsedLine>) -> Vec<ParsedLine> {
         let Some(previous) = meaningful.last_mut() else {
             continue;
         };
-        // 上一句已有显式结束时间（非 LRC 默认 start+5000）则跳过
         if previous.end_ms != previous.start_ms.saturating_add(5000) {
             continue;
         }
@@ -1642,9 +1615,6 @@ fn collect_candidate(
         .iter()
         .any(|line| line.source_format == ParsedLineSourceFormat::EnhancedLrc)
     {
-        // parse_manual_lrc_like 可以同时解析普通 LRC 与 LX 构建出的 Enhanced LRC。
-        // 只要其中包含逐字 Enhanced LRC 行，候选排序就应按 EnhancedLrc 优先级参与竞争，
-        // 否则可能被 amll 的 eslrc/lrc 候选抢走，导致前端拿不到稳定的 words。
         ParsedLineSourceFormat::EnhancedLrc
     } else {
         source
@@ -1655,8 +1625,6 @@ fn collect_candidate(
     });
 }
 
-/// 解析 LRC 头部元数据标签：`[offset:±ms]`、`[ti:标题]`、`[ar:歌手]`、`[al:专辑]`、
-/// `[by:编辑者]`、`[re:制作]`、`[ve:版本]`。`offset` 为正表示歌词整体延后，负表示提前。
 fn extract_lyrics_meta(raw: &str) -> LyricsMeta {
     let mut meta = LyricsMeta::default();
     for line in raw.lines() {
@@ -1703,7 +1671,6 @@ fn extract_lyrics_meta(raw: &str) -> LyricsMeta {
     meta
 }
 
-/// 对解析出的行应用 `[offset:]` 时间偏移（含逐字词时间）。
 fn apply_lyrics_offset(lines: &mut [ParsedLine], offset_ms: i64) {
     if offset_ms == 0 {
         return;
@@ -1720,7 +1687,6 @@ fn apply_lyrics_offset(lines: &mut [ParsedLine], offset_ms: i64) {
     }
 }
 
-/// 解析前的文本预处理：统一换行、解码 HTML 实体、还原转义换行、过滤注释行。
 fn preprocess_lyrics_text(raw: &str) -> String {
     let mut normalized = raw
         .replace('\u{FEFF}', "")
@@ -1729,19 +1695,14 @@ fn preprocess_lyrics_text(raw: &str) -> String {
 
     normalized = super::lyric_fetcher::decode_html_entities(&normalized);
 
-    // 部分来源（如 JSON 内嵌歌词）会把多行用字面量 \n 拼在单行里，还原为真实换行。
     normalized = normalized.replace("\\n", "\n");
 
-    // 过滤注释行：以 //、#、; 开头且不含时间戳的行属于注释/说明，直接丢弃。
-    // # 开头的十六进制颜色（如 #ffffff）不视为注释。
     let mut filtered = String::with_capacity(normalized.len());
     for line in normalized.split('\n') {
         let trimmed = line.trim_start();
-        let is_hex_color = trimmed
-            .strip_prefix('#')
-            .is_some_and(|rest| {
-                (rest.len() == 3 || rest.len() == 6) && rest.chars().all(|c| c.is_ascii_hexdigit())
-            });
+        let is_hex_color = trimmed.strip_prefix('#').is_some_and(|rest| {
+            (rest.len() == 3 || rest.len() == 6) && rest.chars().all(|c| c.is_ascii_hexdigit())
+        });
         let is_comment = trimmed.starts_with("//")
             || (trimmed.starts_with('#') && !is_hex_color && !trimmed.contains('['))
             || (trimmed.starts_with(';') && !trimmed.contains('['));
@@ -1754,8 +1715,6 @@ fn preprocess_lyrics_text(raw: &str) -> String {
     filtered
 }
 
-/// 网易云逐字歌词 JSON 格式：`[{"t":1234,"c":[{"tx":"你"},{"tx":"好"}]}, ...]`。
-/// 每行含 `t`（起始毫秒）、`c`（逐字数组，`tx` 为文本），部分行带 `x`（结束毫秒）。
 fn parse_netease_json_word_lrc(raw: &str) -> Vec<ParsedLine> {
     let value: serde_json::Value = match serde_json::from_str(raw.trim()) {
         Ok(value) => value,
@@ -1814,17 +1773,15 @@ fn parse_netease_json_word_lrc(raw: &str) -> Vec<ParsedLine> {
             source_format: ParsedLineSourceFormat::Yrc,
             source_index: index as f64,
             explicit_role,
-        speaker: None,
-        is_bg: false,
-        is_duet: false,
-        is_duet_partner: false,
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
         });
     }
     result
 }
 
-/// 网易云 JSON 单行：`{"t":1234,"c":[{"tx":"你"},{"tx":"好"}]}`。
-/// 出现在 LRC 文件内混排时按逐字行解析；无 `x` 结束时间时按行起始 + 500ms 兜底。
 fn parse_netease_json_single_line(line: &str, source_index: usize) -> Option<ParsedLine> {
     let trimmed = line.trim();
     if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
@@ -1875,15 +1832,13 @@ fn parse_netease_json_single_line(line: &str, source_index: usize) -> Option<Par
         source_format: ParsedLineSourceFormat::Yrc,
         source_index: source_index as f64,
         explicit_role,
-    speaker: None,
-    is_bg: false,
-    is_duet: false,
-    is_duet_partner: false,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
-/// Lyricify Quick Export（LQE）与 LyricifyLines（LYL）共用行格式：`[start,end,type]text`。
-/// start/end 为毫秒，type 为演唱者类型（0 主唱、1 背景等）。头部行（如 `[Lyricify Quick Export]`）不含数字参数，自动跳过。
 fn parse_lqe_like(raw: &str) -> Vec<ParsedLine> {
     let mut result = Vec::new();
     for (index, line) in raw.lines().enumerate() {
@@ -1903,7 +1858,10 @@ fn parse_lqe_like(raw: &str) -> Vec<ParsedLine> {
         ) else {
             continue;
         };
-        let _vocal_type: i64 = parts.next().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+        let _vocal_type: i64 = parts
+            .next()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
         if text.trim().is_empty() {
             continue;
         }
@@ -1921,10 +1879,10 @@ fn parse_lqe_like(raw: &str) -> Vec<ParsedLine> {
             source_format: ParsedLineSourceFormat::Lrc,
             source_index: index as f64,
             explicit_role,
-        speaker: None,
-        is_bg: false,
-        is_duet: false,
-        is_duet_partner: false,
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
         });
     }
     result
@@ -2031,7 +1989,6 @@ fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
         .map(|candidate| candidate.lines)
         .unwrap_or_default();
 
-    // 若没有任何带时间戳的候选，兜底按纯文本逐行合成均匀时间戳，保证歌词仍可展示。
     if lines.is_empty() {
         lines = synthesize_plain_text_lines(&normalized);
     }
@@ -2041,7 +1998,6 @@ fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
     lines
 }
 
-/// 纯文本兜底：无任何时间戳时，按非空文本行合成均匀时间戳（每行 3 秒）。
 fn synthesize_plain_text_lines(raw: &str) -> Vec<ParsedLine> {
     let mut lines = Vec::new();
     let mut start_ms = 0u32;
@@ -2068,7 +2024,7 @@ fn synthesize_plain_text_lines(raw: &str) -> Vec<ParsedLine> {
             is_bg: false,
             is_duet: false,
             is_duet_partner: false,
-            });
+        });
         start_ms = start_ms.saturating_add(3000);
     }
     lines
@@ -3833,8 +3789,6 @@ fn build_hard_role_semantic_line_from_cluster(
                     (*first_line, *second_line)
                 };
 
-            // [修复] 落雪歌词中 lyric 与 tlyric 可能内容完全相同（如源未提供翻译，
-            // tlyric 复用了 lyric），此时不应把同一句再当翻译显示，避免主副词重复。
             if sanitize_line_text(&main_line.text) == sanitize_line_text(&translation_line.text) {
                 Some(build_hard_role_semantic_line(main_line, None, None))
             } else {
@@ -3846,7 +3800,6 @@ fn build_hard_role_semantic_line_from_cluster(
             }
         }
         [roman_line, main_line, translation_line] => {
-            // [修复] 同理：若主词与翻译文本完全相同，则丢弃重复翻译，仅保留主词+罗马音
             let translation = if sanitize_line_text(&main_line.text)
                 == sanitize_line_text(&translation_line.text)
             {
@@ -4403,11 +4356,9 @@ pub fn build_structured_lyrics_payload(raw_lyrics: String) -> StructuredLyricsPa
 mod tests {
     use super::{
         build_structured_lyrics_payload, parse_raw_lyrics, score_romanized_latin_text,
-        ENHANCED_TRAILING_WORD_DURATION_MS, ParsedLineSourceFormat,
+        ParsedLineSourceFormat, ENHANCED_TRAILING_WORD_DURATION_MS,
     };
 
-    /// 回归：开头 credit 变体（is_credit_line 未覆盖的「词/曲：」「主唱：」写法）
-    /// 不得被误判成对唱角色——AMLL 会把 duet 行右偏渲染，表现为开头几行歌词往右偏。
     #[test]
     fn credit_variant_lines_at_head_are_not_duet() {
         let payload = build_structured_lyrics_payload(
@@ -4432,7 +4383,6 @@ mod tests {
         );
     }
 
-    /// 防回归：真正的对唱歌词（演唱者前缀贯穿全曲）仍要标注 is_duet。
     #[test]
     fn real_duet_speaker_prefixes_are_still_annotated() {
         let payload = build_structured_lyrics_payload(
@@ -4451,8 +4401,6 @@ mod tests {
         );
     }
 
-    /// 回归：开头英文 credit 变体（「Lyrics by:」「Music by:」等 is_credit_line
-    /// 旧版未覆盖的写法）恰好两行即可凑出对唱证据，AMLL 渲染成右偏。
     #[test]
     fn by_variant_credits_at_head_are_not_duet() {
         let payload = build_structured_lyrics_payload(
@@ -4477,8 +4425,6 @@ mod tests {
         );
     }
 
-    /// 回归：演唱者前缀仅集中在开头的连续块、之后不再出现 → 是制作信息块
-    /// （如歌词来源署名），不是对唱，不得标注 is_duet。
     #[test]
     fn head_only_prefix_block_is_not_duet() {
         let payload = build_structured_lyrics_payload(
@@ -4503,8 +4449,6 @@ mod tests {
         );
     }
 
-    /// 回归：开头乐器演奏 credit（「吉他：」「贝斯：」）与真对唱前缀并存时，
-    /// credit 行不得标注 is_duet，真对唱行仍要标注。
     #[test]
     fn instrument_credits_at_head_are_excluded_from_duet() {
         let payload = build_structured_lyrics_payload(
@@ -4521,10 +4465,7 @@ mod tests {
         let credit_lines = ["吉他：某某某", "贝斯：某某某"];
         for line in &payload.display_lines {
             if credit_lines.contains(&line.text.as_str()) {
-                assert!(
-                    !line.is_duet,
-                    "乐器 credit 行不应被标注为对唱行: {line:?}"
-                );
+                assert!(!line.is_duet, "乐器 credit 行不应被标注为对唱行: {line:?}");
             }
         }
         assert!(
@@ -4685,8 +4626,6 @@ mod tests {
 
     #[test]
     fn parses_joox_trailing_text_after_last_timestamp() {
-        // JOOX 等插件格式：最后时间戳后仍带文本（无显式行结束标记），
-        // 修复前该行会被丢弃导致歌词后半段黑屏。
         let parsed = parse_raw_lyrics(
             [
                 "[00:00.728]<00:01.456>租<00:03.450>購<00:03.980> - <00:04.510>薛<00:06.148>之<00:07.597>謙<00:08.292>",
@@ -4803,7 +4742,6 @@ mod tests {
 
     #[test]
     fn hard_role_rules_deduplicate_identical_main_and_translation() {
-        // 模拟落雪歌词 lyric 与 tlyric 内容完全相同（源未提供真实翻译）
         let payload = build_structured_lyrics_payload(
             ["[00:01.000]相同歌词", "[00:01.000]相同歌词"].join("\n"),
         );
@@ -4816,7 +4754,6 @@ mod tests {
 
     #[test]
     fn hard_role_rules_keep_different_main_and_translation() {
-        // 真实翻译场景：lyric 与 tlyric 不同，应保留翻译
         let payload =
             build_structured_lyrics_payload(["[00:01.000]Hello", "[00:01.000]你好"].join("\n"));
 
@@ -4849,16 +4786,14 @@ mod tests {
 
     #[test]
     fn preprocess_keeps_hex_color_and_timestamp_lines() {
-        let parsed = parse_raw_lyrics(
-            &["[00:01.00]#ffffff is a color", "[00:02.00]next"].join("\n"),
-        );
+        let parsed =
+            parse_raw_lyrics(&["[00:01.00]#ffffff is a color", "[00:02.00]next"].join("\n"));
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].text, "#ffffff is a color");
     }
 
     #[test]
     fn preprocess_expands_escaped_newlines() {
-        // JSON 内嵌歌词把多行用字面量 \n 拼在单行里，预处理需还原为真实换行
         let parsed = parse_raw_lyrics("[00:01.00]line one\\n[00:02.00]line two");
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].text, "line one");
@@ -4889,7 +4824,6 @@ mod tests {
 
     #[test]
     fn parses_inline_word_lrc_format() {
-        // [mm:ss.xx]词(相对毫秒,时长毫秒)词(相对毫秒,时长毫秒)
         let parsed = parse_raw_lyrics("[00:12.00]Hello(0,300)World(300,400)");
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].text, "HelloWorld");
@@ -4906,7 +4840,6 @@ mod tests {
 
     #[test]
     fn keeps_parenthesized_lyrics_as_plain_text() {
-        // 普通括号歌词不应被误判为内联逐字格式
         let parsed = parse_raw_lyrics("[00:01.00](和声) 啦啦啦");
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].text, "(和声) 啦啦啦");
@@ -4939,10 +4872,7 @@ mod tests {
 
     #[test]
     fn lrc_a2_relative_word_times_are_shifted_by_line_start() {
-        // 首词时间 ≈ 0 → 判定为相对行起始的偏移，统一加上行起始时间。
-        let parsed = parse_raw_lyrics(
-            "[00:10.00]<00:00.00>Hello<00:00.50>World<00:01.00>",
-        );
+        let parsed = parse_raw_lyrics("[00:10.00]<00:00.00>Hello<00:00.50>World<00:01.00>");
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].start_ms, 10000);
         let words = parsed[0].words.as_ref().unwrap();
@@ -4956,10 +4886,7 @@ mod tests {
 
     #[test]
     fn lrc_a2_absolute_word_times_are_kept() {
-        // 词时间戳与行起始一致或在其后 → 判定为绝对时间，原样保留。
-        let parsed = parse_raw_lyrics(
-            "[00:10.00]<00:10.00>Hello <00:10.50>World<00:11.00>",
-        );
+        let parsed = parse_raw_lyrics("[00:10.00]<00:10.00>Hello <00:10.50>World<00:11.00>");
         assert_eq!(parsed.len(), 1);
         let words = parsed[0].words.as_ref().unwrap();
         assert_eq!(words[0].start_ms, 10000);
@@ -4969,10 +4896,7 @@ mod tests {
 
     #[test]
     fn lrc_a2_early_relative_word_times_are_shifted() {
-        // 首词明显早于行起始（>0.5s）且末词未超过行起始 → 判定为相对偏移。
-        let parsed = parse_raw_lyrics(
-            "[00:10.00]<00:09.00>Hello <00:09.50>World<00:10.00>",
-        );
+        let parsed = parse_raw_lyrics("[00:10.00]<00:09.00>Hello <00:09.50>World<00:10.00>");
         assert_eq!(parsed.len(), 1);
         let words = parsed[0].words.as_ref().unwrap();
         assert_eq!(words[0].start_ms, 19000);
@@ -4981,7 +4905,6 @@ mod tests {
 
     #[test]
     fn blank_line_after_silence_sets_previous_end_time() {
-        // 空时间行后紧跟 ≥4s 静默 → 作为上一句收尾标记。
         let parsed = parse_raw_lyrics("[00:01.00]Hello\n[00:10.00]\n[00:20.00]World");
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].text, "Hello");
@@ -4991,7 +4914,6 @@ mod tests {
 
     #[test]
     fn blank_line_without_silence_is_dropped() {
-        // 空时间行后紧跟 <4s 的下一句 → 视为对齐占位，不采信为收尾。
         let parsed = parse_raw_lyrics("[00:01.00]Hello\n[00:02.00]\n[00:03.00]World");
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].text, "Hello");
@@ -5020,15 +4942,11 @@ mod tests {
 
     #[test]
     fn parenthetical_vocal_split_requires_duet_evidence() {
-        // 无对唱证据（无演唱者标签、仅一个括号和声）→ 不拆分括号。
         let parsed = parse_raw_lyrics("[00:01.00]主唱 (和声)");
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].text, "主唱 (和声)");
 
-        // 存在演唱者标签 → 对唱证据成立，括号和声拆分为独立行。
-        let parsed = parse_raw_lyrics(
-            "[00:01.00]A: 主唱 (和声)\n[00:02.00]B: 副唱 (和声)",
-        );
+        let parsed = parse_raw_lyrics("[00:01.00]A: 主唱 (和声)\n[00:02.00]B: 副唱 (和声)");
         assert_eq!(parsed.len(), 4);
         assert_eq!(parsed[0].text, "主唱");
         assert!(parsed[0].is_duet);

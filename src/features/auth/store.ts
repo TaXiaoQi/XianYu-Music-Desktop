@@ -19,16 +19,8 @@ import {
 import { showBanDialog, showSessionExpiredDialog } from '../../composables/useBanDialog';
 import router from '../../router/index';
 
-/** 只注册一次自动登出回调（setup store 可能被复用） */
 let expiredHandlerRegistered = false;
 
-/**
- * 账号认证状态
- *
- * 提供 token / user / stats 的响应式封装，
- * 以及登录态恢复与登出。所有具体的请求逻辑仍在
- * authService 中，本 store 仅负责 UI 层订阅的状态。
- */
 export const useAuthStore = defineStore('auth', () => {
   const initial = getStoredAuth();
 
@@ -79,11 +71,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (initialized.value || initializing.value) return;
     initializing.value = true;
     try {
-      // 从 keyring 加载凭证到内存缓存（含 localStorage 迁移）
       await initAuthFromKeyring();
       const session = await refreshSession();
       if (session) {
-        // 页面刷新时校验登录状态：状态正常则继承登录态，异常（封禁）才要求下线
         const status = await checkBanStatus();
         if (status.banned) {
           reset();
@@ -103,9 +93,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // 服务端硬校验开启后，keyring 中可能残留旧版签发的失效 token。
-  // 任一账号请求返回「登录态失效」即自动登出，并用复用的封禁弹窗提示重新登录。
-  // 弹窗点「登录」时前往个人主页登录页。
   if (!expiredHandlerRegistered) {
     expiredHandlerRegistered = true;
     onAccountExpired(() => {

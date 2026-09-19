@@ -609,7 +609,6 @@ mod tests {
         assert_eq!(names, vec!["周杰伦"]);
     }
 
-    // 最小真实可解码的 1x1 透明 PNG 图片数据 (真实为 68 字节)
     const MINIMAL_PNG: &[u8] = &[
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
         0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
@@ -620,7 +619,6 @@ mod tests {
 
     #[test]
     fn test_single_and_multi_artist_filtering() {
-        // 复用 make_song
         let mut song_single = make_song("/music/test.flac");
         song_single.artist_names = vec!["周杰伦".to_string()];
         assert_eq!(
@@ -639,15 +637,12 @@ mod tests {
 
     #[test]
     fn test_avatar_format_validation() {
-        // 复用 create_empty_temp_dir
         let temp_dir = create_empty_temp_dir();
 
-        // 真实 PNG 格式保存
         let path = crate::music::covers::save_artist_avatar_auto(MINIMAL_PNG, &temp_dir);
         assert!(path.is_some());
         assert!(path.unwrap().ends_with(".png"));
 
-        // 未知格式跳过
         let raw_bytes = vec![0x11, 0x22, 0x33, 0x44];
         let path = crate::music::covers::save_artist_avatar_auto(&raw_bytes, &temp_dir);
         assert!(path.is_none());
@@ -657,13 +652,11 @@ mod tests {
 
     #[test]
     fn test_db_avatar_no_override() {
-        // 复用 setup_test_db
         let mut conn = setup_test_db();
         let mut song = make_song("/music/test.flac");
         song.artist_names = vec!["周杰伦".to_string()];
         song.artist_avatar_path = Some("/cache/avatar.jpg".to_string());
 
-        // 首次写入
         super::apply_scan_changes(&mut conn, &[song.clone()], &[], &[], None).unwrap();
         let db_path: Option<String> = conn
             .query_row(
@@ -674,7 +667,6 @@ mod tests {
             .unwrap();
         assert_eq!(db_path, Some("/cache/avatar.jpg".to_string()));
 
-        // 已有头像不覆盖验证
         let mut song_new = song.clone();
         song_new.artist_avatar_path = Some("/cache/new_avatar.jpg".to_string());
         super::apply_scan_changes(&mut conn, &[], &[song_new], &[], None).unwrap();

@@ -1,9 +1,6 @@
 import type { PluginSource } from '../../types';
 import type { PluginUpdateCheckResult, PluginUpdateServiceDeps } from './pluginUpdateTypes';
 
-/**
- * 执行插件更新：重新加载新脚本并替换旧插件。
- */
 export function createPluginUpdateExecutor(deps: PluginUpdateServiceDeps) {
   const {
     loadPluginFromScript,
@@ -33,9 +30,6 @@ export function createPluginUpdateExecutor(deps: PluginUpdateServiceDeps) {
       newSource.enabled = source.enabled;
       newSource.sortOrder = source.sortOrder;
 
-      // 插件 ID 使用脚本 SHA-256。Baka/MusicFree 插件更新后脚本内容变化会导致 ID 变化，
-      // 而用户变量值按插件 ID 存储。删除旧插件前先取出旧值，安装新插件后迁移到新 ID，
-      // 避免 QQ音乐[L2] 等插件的 SOURCE_API_KEY 在更新后丢失。
       const oldUserVars = getPluginUserVariableValues(source.id);
 
       if (newSource.id !== source.id) {

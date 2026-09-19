@@ -1,10 +1,3 @@
-/**
- * 颜色提取模块（主线程入口）
- *
- * 计算已迁移到 Rust 侧（src-tauri/src/music/palette.rs 的 extract_palette 命令），
- * 前端仅保留：内存缓存、超时保护、静态回退调色板。
- * 不再使用 Web Worker，切歌取色不再占用 Worker 线程。
- */
 
 import { fileApi } from '../services/tauri/fileApi';
 import { MemoryCache } from '../utils/MemoryCache';
@@ -61,12 +54,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   });
 }
 
-/**
- * 从封面提取主色调调色板。
- *
- * `source` 可为：本地文件路径、`http(s)://` 直链、`data:` URI。
- * 命中缓存时直接返回；否则调用 Rust 侧 `extract_palette`，并在 10 秒超时后回退。
- */
 export async function extractDominantColors(
   source: string,
   count: number = DEFAULT_COUNT,

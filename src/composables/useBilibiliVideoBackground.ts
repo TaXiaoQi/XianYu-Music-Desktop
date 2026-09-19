@@ -20,24 +20,17 @@ const loading = ref(false);
 const error = ref('');
 const availableQualities = ref<PluginVideoQuality[]>([]);
 const activeQuality = ref('');
-/**
- * 自动音画对齐偏移（秒）：MV 音轨与播放音频包络互相关得出。
- * 0 = 未分析/不可信/无需偏移；正值画面提前（MV 有片头）。
- */
 const syncOffsetSec = ref(0);
-/** 会话级偏移缓存：同曲切换画质/重开 MV 不重复下载分析 */
 const syncOffsetCache = new Map<string, number>();
 let requestVersion = 0;
 let activeSong: Song | null = null;
 
-/** 供“下载视频”使用的最后一次成功解析结果（原始直链 + 请求头） */
 const lastResolvedSource = ref<Pick<PluginVideoSource, 'url' | 'headers' | 'backupUrls' | 'videoQuality' | 'codec' | 'height' | 'width'> | null>(null);
 
 const BILIBILI_IDENTITY_PATTERN = /bilibili|哔哩哔哩|哔哩|b站/i;
 const DEFAULT_MV_QUALITY = '720P';
 const BILIBILI_720P_QUALITY_ID = 64;
 
-/** 目标画质起步的降档候选（对齐 BakaMusic 多画质候选语义） */
 const MV_QUALITY_LADDER = ['4K', '1080P', '720P', '480P', '360P'];
 function mvQualityLadder(quality: string): string[] {
   const idx = MV_QUALITY_LADDER.indexOf(quality);
@@ -45,7 +38,6 @@ function mvQualityLadder(quality: string): string[] {
   return MV_QUALITY_LADDER.slice(start, start + 3);
 }
 
-/** B 站兜底解析支持的画质档位（未登录账号一般最高 1080P） */
 const BILIBILI_QUALITY_PRESETS: Array<PluginVideoQuality & { qn: number }> = [
   { key: '360P', label: '360P 流畅', qn: 16 },
   { key: '480P', label: '480P 清晰', qn: 32 },
@@ -74,18 +66,11 @@ function preferredMvQuality(): string {
   return DEFAULT_MV_QUALITY;
 }
 
-/**
- * 是否为插件在线歌曲（本地 / LX 无 MV 概念）。
- * 播放路径构造的 Song 不写 plugin_id（与音频解析一致），需回退 rawData.pluginId。
- */
 function isMusicVideoSong(song: Song | null | undefined): boolean {
   if (!song || song.source_type !== 'plugin') return false;
   return !!song.plugin_id || !!nestedValue(song.rawData, 'pluginId');
 }
 
-/**
- * 合并插件 MV 返回的请求头与 UA（仅通用插件分支使用；B 站走 withBilibiliHeaders 强制补 Referer）
- */
 function mergedPluginHeaders(videoSource: PluginVideoSource): Record<string, string> | undefined {
   const headers = { ...(videoSource.headers || {}) };
   if (videoSource.userAgent && !Object.keys(headers).some(key => key.toLowerCase() === 'user-agent')) {
@@ -94,13 +79,6 @@ function mergedPluginHeaders(videoSource: PluginVideoSource): Record<string, str
   return Object.keys(headers).length ? headers : undefined;
 }
 
-/**
- * 当前歌曲是否可能支持 MV：
- * - 插件在线歌曲为前提
- * - B 站插件歌曲必然可解析（BV/AV 兜底）
- * - 酷狗插件歌曲携带 mvHash 时必然可解析（宿主兜底直连 m.kugou.com）
- * - 其余 musicfree 插件歌曲：有对应插件且非 LX 即视为可能（真正是否提供见 start 的解析结果）
- */
 export function supportsMusicVideo(song: Song | null | undefined): boolean {
   if (!isMusicVideoSong(song)) return false;
   if (isBilibiliPluginSong(song)) return true;
@@ -162,10 +140,6 @@ function bilibiliQualityId(quality: string): number {
   return BILIBILI_QUALITY_PRESETS.find(preset => preset.key === quality)?.qn ?? BILIBILI_720P_QUALITY_ID;
 }
 
-/**
- * 旧版 Bilibili 插件只负责歌曲解析，没有 getMvSource 扩展。
- * 这里使用歌曲自身的 BV/AV 号补齐视频流，避免把“接口不存在”误报成插件损坏。
- */
 async function resolveBilibiliVideoSource(song: Song, quality: string): Promise<PluginVideoSource | null> {
   const identity = extractBilibiliIdentity(song);
   if (!identity.bvid && !identity.aid) return null;
@@ -246,10 +220,6 @@ export function isBilibiliPluginSong(song: Song | null | undefined): boolean {
 const KUGOU_IDENTITY_PATTERN = /kugou|酷狗/i;
 const KUGOU_MV_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36';
 
-/**
- * m.kugou.com/app/i/mv.php 返回的 mvdata 档位键 → 画质。
- * sq 与 hd 同为 1080P，解析时按文件体积去重保留更高码流。
- */
 const KUGOU_MV_LEVELS = [
   { key: 'le', quality: '480P', height: 480 },
   { key: 'sd', quality: '720P', height: 720 },
@@ -271,7 +241,6 @@ function isKugouPluginSong(song: Song | null | undefined): boolean {
   return KUGOU_IDENTITY_PATTERN.test(identity);
 }
 
-/** 提取歌曲携带的酷狗 MV hash（仅接受 32 位十六进制） */
 function extractKugouMvHash(song: Song): string {
   const raw = song.rawData;
   const mvValue = nestedValue(raw, 'mvHash') ?? nestedValue(raw, 'mv') ?? nestedValue(raw, 'mvdata');
@@ -318,10 +287,6 @@ function pickKugouMvStream(entries: KugouMvEntry[], quality: string): KugouMvEnt
     || entries[0];
 }
 
-/**
- * 酷狗 MV 宿主兜底解析：m.kugou.com/app/i/mv.php 无需签名，
- * 插件未实现 getMvSource（或解析失败）时用歌曲自带的 mvHash 直接换取 MP4 流。
- */
 async function resolveKugouMvSource(mvHash: string, quality: string): Promise<PluginVideoSource | null> {
   const response = await pluginApi.pluginHttpRequest(
     'GET',
@@ -408,7 +373,6 @@ async function removeCachedFile(path: string) {
   await pluginApi.removeCachedBackgroundVideo(path).catch(() => {});
 }
 
-/** 解析 MV 视频源（不写缓存）：供播放 start 与下载 resolveDownloadSource 共用 */
 async function resolveMvVideoSource(song: Song, quality: string): Promise<{
   videoSource: PluginVideoSource;
   headers: Record<string, string> | undefined;
@@ -419,8 +383,6 @@ async function resolveMvVideoSource(song: Song, quality: string): Promise<{
   if (!source) {
     throw new Error('未找到当前歌曲对应的插件');
   }
-  // 插件 getMvSource 按目标画质起步，失败后降档重试（对齐 BakaMusic
-  // declaredCandidates 多档候选：优先档不支持时自动试更低档）。
   let resolved: PluginVideoSource | null = null;
   for (const q of mvQualityLadder(quality)) {
     resolved = await pluginGetVideoSource(source, toPluginSearchResult(song), q);
@@ -444,11 +406,6 @@ async function resolveMvVideoSource(song: Song, quality: string): Promise<{
   return { videoSource: resolved, headers };
 }
 
-/**
- * MV 加载完成后自动分析音画偏移（异步，不阻塞视频起播）。
- * 分析期间视频按 0 偏移播放，得出可信结果后由播放背景层重对齐（一次性小跳）。
- * B 站歌曲音画同源（音频即取自视频）且 DASH 视频流无音轨，跳过。
- */
 async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: number): Promise<void> {
   if (isBili) return;
   const cached = syncOffsetCache.get(song.path);
@@ -460,14 +417,12 @@ async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: numbe
   try {
     audioUrl = usePlaybackStore().currentPlayingAudioUrl;
   } catch {
-    // Pinia 未就绪（测试环境/极早期）时跳过本次分析
     return;
   }
   if (!audioUrl || !/^https?:\/\//i.test(audioUrl)) return;
 
   try {
     const estimate = await analyzeMvAudioSync(videoUrl.value, audioUrl, song.remote_headers);
-    // 分析期间可能已切歌/关闭 MV，过期结果丢弃
     if (requestId !== requestVersion || sourceSongPath.value !== song.path) return;
     if (estimate) {
       syncOffsetSec.value = estimate.offsetSec;
@@ -475,7 +430,6 @@ async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: numbe
     } else {
       syncOffsetSec.value = 0;
       syncOffsetCache.set(song.path, 0);
-      // 诊断：分析不可信/失败时透出，便于确认是否下载带不上 Referer 或 MV 无音轨
       console.warn(`[MV自动对齐] ${song.name}: 未得出可信偏移，保持 0（本次不校正内容错位）`);
     }
   } catch (e) {
@@ -579,20 +533,17 @@ export function useBilibiliVideoBackground() {
         ? BILIBILI_QUALITY_PRESETS.map(({ qn: _qn, ...preset }) => preset)
         : [{ key: videoSource.videoQuality || targetQuality }]);
     activeQuality.value = videoSource.videoQuality || targetQuality;
-    // 视频先按 0 偏移起播，自动音画对齐在后台分析完成后一次性校正
     syncOffsetSec.value = syncOffsetCache.get(song.path) ?? 0;
     void runAutoSyncAnalysis(song, isBili, requestId);
     return true;
   };
 
-  /** MV 播放中切换画质：以新档位重新解析并加载 */
   const setQuality = async (qualityKey: string) => {
     if (!requested.value || !activeSong) return false;
     if (qualityKey === activeQuality.value) return true;
     return start(activeSong, qualityKey);
   };
 
-  /** 按指定画质解析下载用直链（不影响播放状态；同档位时优先复用当前解析结果） */
   const resolveDownloadSource = async (song: Song, quality: string) => {
     const last = lastResolvedSource.value;
     if (quality === activeQuality.value && last?.url) {

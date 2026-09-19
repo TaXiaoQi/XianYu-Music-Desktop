@@ -22,7 +22,6 @@ import type {
 } from '../../types';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS } from '../../types';
 import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../../utils/themeColor';
-// 直接从 constants.ts 叶子模块导入，避免经由 index → state → settings/store 形成循环依赖
 import {
   createDefaultDesktopLyricsSettings,
   createDefaultLyricsSettings,
@@ -238,7 +237,6 @@ export const defaultAppSettings: AppSettings = {
   showSongComments: true,
   enableScrollToTopButton: true,
   libraryMinDurationSeconds: 0,
-  // Deprecated compat field. Main folder-source behavior no longer depends on it.
   linkFoldersToLibrary: false,
   lyricsSyncOffset: 0,
   organizeRoot: 'D:\\Music',
@@ -280,7 +278,6 @@ export const createDefaultThemeSettings = (): ThemeSettings => ({
 
 export const createDefaultSidebarSettings = (): SidebarSettings => ({
   ...defaultSidebarSettings,
-  // order 必须深拷贝，避免多处共享同一数组引用被就地修改
   order: [...defaultSidebarSettings.order],
 });
 
@@ -472,14 +469,9 @@ export const mergeSidebarSettings = (
 ): SidebarSettings => ({
   ...base,
   ...patch,
-  // 归一化顺序：剔除非法项、去重、补齐缺失项，兼容旧配置（无 order 字段）
   order: normalizeSidebarOrder(patch.order ?? base.order),
 });
 
-/**
- * 合并底部栏布局：把 patch 与 base 合并后整体归一化。
- * 直接用 normalizeFooterLayout 处理合并结果，确保任何路径写入的布局都合法。
- */
 export const mergeFooterLayoutSettings = (
   base: FooterLayoutSettings,
   patch: FooterLayoutSettingsPatch,
@@ -492,10 +484,6 @@ export const mergeFooterLayoutSettings = (
   collapsed: patch.collapsed ?? base.collapsed,
 });
 
-/**
- * 合并顶部栏布局：把 patch 与 base 合并后整体归一化。
- * 直接用 normalizeTopBarLayout 处理合并结果，确保任何路径写入的布局都合法。
- */
 export const mergeTopBarLayoutSettings = (
   base: TopBarLayoutSettings,
   patch: TopBarLayoutSettingsPatch,
@@ -544,7 +532,6 @@ export const mergeAudioSettings = (
       : base.outputMode ?? 'shared';
 
   const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
-  // autoswitch（自动换源）已并入起播失败行为（对齐移动端），不再有独立开关
   const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'autoswitch'];
   const VALID_QUALITY_FALLBACK_BEHAVIORS = ['pause', 'lower', 'higher'];
 
@@ -576,8 +563,6 @@ export const mergeAudioSettings = (
       if (VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)) {
         return patch.onlineFailureBehavior as AudioSettings['onlineFailureBehavior'];
       }
-      // 存量迁移：旧版「播放失败自动换源」独立开关已并入起播失败行为，
-      // 开关为 true 的存量用户提升为 autoswitch；关闭/未设置时维持原读取链。
       if ((base as unknown as Record<string, unknown>).autoSwitchSourceOnFailure === true) {
         return 'autoswitch';
       }
@@ -617,7 +602,6 @@ export const mergeAppSettings = (
   } = patch;
 
   return {
-    // Ignore removed legacy fields that may still exist in persisted settings.
     ...base,
     ...rest,
     language: language === 'system' || language === 'zh-CN' || language === 'zh-TW' || language === 'en-US' ? language : base.language,
@@ -630,7 +614,6 @@ export const mergeAppSettings = (
     libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds(
       libraryMinDurationSeconds ?? base.libraryMinDurationSeconds,
     ),
-    // 仅在 patch 含对应子对象时才 merge，避免无谓重建引用触发下游 computed 重算
     lyrics: patch.lyrics ? mergeLyricsSettings(base.lyrics, patch.lyrics) : base.lyrics,
     desktopLyrics: patch.desktopLyrics ? mergeDesktopLyricsSettings(base.desktopLyrics, patch.desktopLyrics) : base.desktopLyrics,
     audio: patch.audio ? mergeAudioSettings(base.audio ?? createDefaultAudioSettings(), patch.audio) : (base.audio ?? createDefaultAudioSettings()),
@@ -765,7 +748,6 @@ export const useSettingsStore = defineStore('settings', () => {
     };
   };
 
-  // 均衡器预设管理
   const equalizerPresets = ref<EqualizerPreset[]>(
     playerStorage.readEqualizerPresets()
   );
@@ -788,7 +770,6 @@ export const useSettingsStore = defineStore('settings', () => {
     equalizerPresets.value.push(newPreset);
     playerStorage.writeEqualizerPresets(userPresets.value);
     
-    // 使用patchSettings替换整个equalizer对象
     patchSettings({
       audio: {
         equalizer: {
@@ -818,7 +799,6 @@ export const useSettingsStore = defineStore('settings', () => {
       equalizerPresets.value.splice(index, 1);
       playerStorage.writeEqualizerPresets(userPresets.value);
       
-      // 如果删除的是当前预设，清除当前预设ID
       if (settings.value.audio.equalizer.currentPresetId === presetId) {
         patchSettings({
           audio: {

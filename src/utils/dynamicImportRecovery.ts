@@ -20,8 +20,6 @@ export const createDynamicImportRecovery = (options: DynamicImportRecoveryOption
   return (error: unknown) => {
     if (!isDynamicImportFetchError(error)) return false;
 
-    // 同一次失败可能同时触发 Vue errorHandler 和 unhandledrejection。
-    // 首个通道已安排刷新后，其余通道仍应视为已处理。
     if (recoveryScheduled) return true;
 
     const now = (options.now ?? Date.now)();

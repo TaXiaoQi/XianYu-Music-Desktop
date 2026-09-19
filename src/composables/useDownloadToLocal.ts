@@ -7,34 +7,16 @@ import { useLibraryRuntimeActions } from '../features/library/useLibraryRuntimeA
 import { QUALITY_META } from '../types';
 import type { Song, QualityKey, DownloadQuality, DownloadFileNameStyle } from '../types';
 
-/** 下载弹窗传入的覆盖选项，未指定字段回退到设置中的默认值 */
 export interface DownloadLocalOptions {
-  /** 下载音质 */
   quality?: DownloadQuality;
-  /** 下载目录（覆盖设置中的 downloadPath） */
   downloadDir?: string;
-  /** 是否下载音频文件（默认 true） */
   downloadAudio?: boolean;
-  /** 是否下载独立歌词文件（默认跟随设置） */
   downloadLyrics?: boolean;
-  /** 是否下载独立封面文件（默认跟随设置） */
   downloadCover?: boolean;
-  /** 文件命名样式（覆盖设置中的 fileNameStyle） */
   fileNameStyle?: DownloadFileNameStyle;
-  /** 音质探测阶段已解析的直链，命中档位跳过重复解析 */
   preResolvedUrls?: Partial<Record<QualityKey, string>>;
 }
 
-/**
- * 统一的「下载至本地」逻辑，供下载弹窗复用。
- *
- * 写入 download store 驱动底栏下载 UI（Loader2 旋转动画），
- * 下载完成后记录历史并刷新底栏已下载状态。
- *
- * @param song 要下载的歌曲
- * @param options 覆盖选项（音质/目录/下载内容），未传字段回退到设置默认值
- * @returns 是否下载成功（用于调用方决定后续 UI 行为）
- */
 export async function downloadToLocal(
   song: Song,
   options?: DownloadLocalOptions,
@@ -59,7 +41,6 @@ export async function downloadToLocal(
   const downloadCover = options?.downloadCover ?? settings.value.download.embedCover;
   const fileNameStyle = options?.fileNameStyle ?? settings.value.download.fileNameStyle;
 
-  // 至少需要下载一项内容
   if (!downloadAudio && !downloadLyrics && !downloadCover) {
     showToast('请至少选择一项下载内容', 'info');
     return false;
@@ -105,7 +86,6 @@ export async function downloadToLocal(
         artist: song.artist,
       });
 
-      // 命中的实际档位可能低于用户所选（无版权自动降级）
       const hitMeta = QUALITY_META[result.hitQuality as QualityKey];
       const selectedMeta = QUALITY_META[quality as QualityKey];
       const degraded = selectedMeta && hitMeta
@@ -120,7 +100,6 @@ export async function downloadToLocal(
         : '';
       showToast(`下载完成${note}${extraNote}`, degraded ? 'info' : 'success');
     } else {
-      // 仅下载歌词和封面（不下载音频）
       const result = await downloadSongExtras(song, {
         downloadDir,
         fileNameStyle,
@@ -137,7 +116,6 @@ export async function downloadToLocal(
       showToast(`下载完成${extraNote}`, 'success');
     }
 
-    // 下载完成后静默刷新本地音乐库，确保新下载的歌曲出现在本地歌曲页
     try {
       const { scanLibrary } = useLibraryRuntimeActions();
       void scanLibrary({ trigger: 'manual-rescan', visibility: 'silent' });

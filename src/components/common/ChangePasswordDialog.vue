@@ -26,13 +26,10 @@ const codeLoading = ref(false);
 const countdown = ref(0);
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
-// 密码可见性状态
 const pwdVisible = reactive<Record<string, boolean>>({});
 
-// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
 const pwdFocused = reactive<Record<string, boolean>>({});
 
-// 人机验证
 const captchaOpen = ref(false);
 const captchaTitle = ref('');
 const captchaDescription = ref('');
@@ -272,7 +269,6 @@ async function submit() {
       </div>
     </transition>
 
-    <!-- 人机验证 -->
     <HumanCaptchaModal
       :open="captchaOpen"
       :title="captchaTitle"

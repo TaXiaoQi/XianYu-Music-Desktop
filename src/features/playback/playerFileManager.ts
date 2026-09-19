@@ -323,8 +323,6 @@ export const createPlayerFileManager = ({
       hasMetadataChanges;
 
     if (!hasChanges) {
-      // 即使前端内存数据未变，后端扫描可能已更新数据库（如元数据修正）。
-      // 必须清掉文件夹视图路径缓存，否则列表会继续展示旧缓存，用户感觉"刷新没反应"。
       clearLibraryPathCaches();
       libraryDataVersion.value += 1;
       return {

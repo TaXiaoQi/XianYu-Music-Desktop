@@ -24,7 +24,6 @@ use tauri::Emitter;
 
 const REMOTE_LYRICS_CACHE_READY_EVENT: &str = "remote-lyrics-cache-ready";
 
-// 在线直链播放的默认 User-Agent（部分音源防盗链需要浏览器 UA）
 pub(crate) const DEFAULT_STREAM_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -66,16 +65,11 @@ pub async fn play_audio(
     song_id: Option<i64>,
     volume_balance_enabled: Option<bool>,
     gain_offset_db: Option<f32>,
-    prevent_clipping: Option<bool>, // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效
+    prevent_clipping: Option<bool>,
     headers: Option<std::collections::HashMap<String, String>>,
-    // QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2），由前端从插件 getMediaSource 响应中提取
     ekey: Option<String>,
-    // CENC 内容密钥（汽水音乐等音源加密音轨），由插件从 PlayAuth 解密得到。
-    // 下载完成后在 stream_cache 中用 CEK 解密样本并将 enca 补丁为 mp4a。
     cek: Option<String>,
-    // DSD 原生 DoP 直通开关：仅对 .dsf + WASAPI 独占生效，默认开启。
     dsd_native_passthrough: Option<bool>,
-    // Bit-perfect 输出：独占时跳过全部 DSP（响度/EQ/音效/音量），按源位深整数直出，默认关闭。
     output_bit_perfect: Option<bool>,
     app: tauri::AppHandle,
     db_state: tauri::State<'_, DbState>,
@@ -84,9 +78,6 @@ pub async fn play_audio(
     let playback_id = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let mut selected_output_mode = output_mode;
 
-    // [URL 清洗] 在 is_http_stream 判断之前清洗 URL，移除插件可能返回的首尾反引号、
-    // 引号、逗号等脏字符。如果不在此时清洗，带反引号的 URL 不会被识别为 HTTP 流，
-    // 导致走错误的播放分支。
     let path = {
         let trimmed = path.trim();
         let http_idx = trimmed.find("http://");
@@ -98,7 +89,12 @@ pub async fn play_audio(
             (None, None) => 0,
         };
         let mut result = trimmed[start..].to_string();
-        while result.ends_with(|c: char| matches!(c, '`' | '\'' | '"' | ',' | '，' | ';' | '；' | ' ' | '\t' | '\n' | '\r' | '<' | '>')) {
+        while result.ends_with(|c: char| {
+            matches!(
+                c,
+                '`' | '\'' | '"' | ',' | '，' | ';' | '；' | ' ' | '\t' | '\n' | '\r' | '<' | '>'
+            )
+        }) {
             result.pop();
         }
 
@@ -107,16 +103,9 @@ pub async fn play_audio(
 
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
     let source = if is_http_stream {
-
-        // SSRF 纵深：直链为 IP 字面量且命中内网/回环/保留地址时拒绝。
-        // 不做 DNS/端口白名单，避免误伤音源 CDN 的多端口与共享 IP 段。
         crate::security::ssrf::validate_url_ip_literal(&path)
             .map_err(|e| format!("播放链接校验失败: {}", e))?;
 
-        // [在线播放重构] 把在线音频流式下载到本地临时文件，再用本地引擎播放。
-        // 这样所有音乐都走统一的 File::open + Decoder 路径，设备切换恢复天然支持，
-        // 无需维护 RemoteRangeReader 的复杂重建逻辑。
-        // 下载够最小缓冲（512KB）后才开始播放，避免起播立即卡顿。
         selected_output_mode = AudioOutputMode::Shared;
         let stream_state = crate::player::stream_cache::start_streaming_download(
             &path,
@@ -127,17 +116,17 @@ pub async fn play_audio(
         )
         .map_err(|e| format!("在线音频缓存启动失败: {}", e))?;
 
-        // 等待最小缓冲就绪（最多等 30 秒，超时则放弃等待直接播放让 reader 阻塞缓冲）
         let wait_start = std::time::Instant::now();
         while !crate::player::stream_cache::is_buffer_ready(&stream_state) {
             if wait_start.elapsed() > std::time::Duration::from_secs(30) {
-
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         if stream_state.download_failed.load(Ordering::Relaxed) {
-            let error_reason = stream_state.download_error().unwrap_or_else(|| "未知原因".to_string());
+            let error_reason = stream_state
+                .download_error()
+                .unwrap_or_else(|| "未知原因".to_string());
             return Err(format!(
                 "在线音频缓存下载失败，已下载 {} bytes，原因: {}",
                 stream_state.downloaded_bytes(),
@@ -162,7 +151,6 @@ pub async fn play_audio(
                 );
                 AudioSource::RemoteWebDav(stream)
             }
-            // [落雪] URL 不在数据库中（非 WebDAV 远程源），作为直接 HTTP 音频流播放
             Err(_) => {
                 selected_output_mode = AudioOutputMode::Shared;
                 AudioSource::RemoteWebDav(crate::remote::cache::RemoteStreamSource {
@@ -223,25 +211,21 @@ pub async fn play_audio(
     Ok(())
 }
 
-/// 设置在线音频流式缓存上限（字节）
 #[tauri::command]
 pub fn set_stream_cache_max_size(bytes: u64) {
     crate::player::stream_cache::set_max_cache_size(bytes);
 }
 
-/// 设置在线音频流式缓存目录，空串表示恢复默认
 #[tauri::command]
 pub fn set_stream_cache_dir(path: String) {
     crate::player::stream_cache::set_cache_dir(&path);
 }
 
-/// 获取当前生效的缓存目录路径
 #[tauri::command]
 pub fn get_stream_cache_dir() -> String {
     crate::player::stream_cache::get_cache_dir_str()
 }
 
-/// 获取在线音频流式缓存信息：当前使用大小和上限（字节）
 #[tauri::command]
 pub fn get_stream_cache_info() -> std::collections::HashMap<&'static str, u64> {
     let mut info = std::collections::HashMap::new();
@@ -250,36 +234,37 @@ pub fn get_stream_cache_info() -> std::collections::HashMap<&'static str, u64> {
     info
 }
 
-/// 清空在线音频流式缓存
 #[tauri::command]
 pub fn clear_stream_cache() {
     crate::player::stream_cache::clear_all();
 }
 
-/// 检查指定 URL 是否已缓存且下载完成（前端用于跳过插件重复请求）
 #[tauri::command]
 pub fn is_stream_cached(url: String) -> bool {
     crate::player::stream_cache::is_url_cached(&url)
 }
 
-/// 将指定 URL 的播放缓存复制为目标下载文件（复用播放缓存，避免重复下载）
 #[tauri::command]
-pub fn copy_stream_cache(url: String, dest_path: String) -> Result<u64, String> {
-    crate::player::stream_cache::copy_cache_to(&url, &dest_path)
+pub fn copy_stream_cache(
+    app_handle: tauri::AppHandle,
+    url: String,
+    file_name: String,
+) -> Result<u64, String> {
+    let dir = crate::toolbox::read_authorized_download_dir(&app_handle)?;
+    let file_name = crate::security::path_validator::sanitize_filename_component(&file_name)?;
+    let dest = dir.join(&file_name);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建下载目录失败: {e}"))?;
+    }
+    crate::player::stream_cache::copy_cache_to(&url, &dest.to_string_lossy())
 }
 
-/// 预取在线音频「15 秒片头」到内存缓存（在线歌曲预缓存）。
-///
-/// 后台线程执行 Range 请求拉取头部字节；命中后 start_streaming_download
-/// 起播时直接注入片头并从断点续传，切歌秒开。仅缓存头部约 15 秒数据，
-/// 内存有界（12 条 / 24MB / 15 分钟 TTL）。返回是否实际发起了请求。
 #[tauri::command]
 pub fn prefetch_audio_head(
     url: String,
     headers: Option<std::collections::HashMap<String, String>>,
     max_bytes: Option<u64>,
 ) -> Result<bool, String> {
-    // SSRF 纵深：与 play_audio 同样的 IP 字面量校验
     crate::security::ssrf::validate_url_ip_literal(&url)
         .map_err(|e| format!("预取链接校验失败: {e}"))?;
     Ok(crate::player::audio_head_cache::prefetch(
@@ -493,14 +478,6 @@ pub fn set_volume(volume: f32, state: tauri::State<PlayerState>) -> Result<(), S
 }
 
 #[tauri::command]
-pub fn set_playback_speed(speed: f32, state: tauri::State<PlayerState>) -> Result<(), String> {
-    let tx = state.tx.lock().map_err(|e| e.to_string())?;
-    tx.send(AudioCommand::SetSpeed(speed))
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
 pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
     let samples = state.progress.samples_played.load(Ordering::Relaxed);
     let rate = state.progress.sample_rate.load(Ordering::Relaxed);
@@ -514,38 +491,32 @@ pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
     samples as f64 / total_samples_per_sec as f64
 }
 
-/// 获取当前音频源的总时长（秒）。
-/// 在线歌曲的 Song.duration 可能为 0，此命令从解码后的音频源提取实际时长，
-/// 供前端在播放开始后更新进度条的总时长显示。
 #[tauri::command]
 pub fn get_playback_duration(state: tauri::State<PlayerState>) -> f64 {
     let bits = state.progress.total_duration_secs.load(Ordering::Relaxed);
     f64::from_bits(bits)
 }
 
-// 播放是否已就绪：sample_rate>0 表示解码器已成功初始化（Decoder::new 成功后立即写入）。
-// 用于前端在线走 Rust 的「起播探测」：区分"仍在加载/下载中"（rate=0）与"已就绪"（rate>0），
-// 避免不支持 Range 的直链整曲下载耗时被误判为失败而回退 H5。
 #[tauri::command]
 pub fn get_playback_ready(state: tauri::State<PlayerState>) -> bool {
     state.progress.sample_rate.load(Ordering::Relaxed) > 0
 }
 
-// 本次播放启动是否失败（远程取流 403 / 不支持 Range / 解码失败）。
-// 供前端在线走 Rust 的起播探测快速感知硬失败，无需死等超时即可回退 H5。
 #[tauri::command]
 pub fn get_playback_start_failed(state: tauri::State<PlayerState>) -> bool {
     state.progress.start_failed.load(Ordering::Relaxed)
 }
 
-/// 起播失败的具体原因（解码失败/取流失败/流式读取失败），供前端诊断。
 #[tauri::command]
 pub fn get_playback_start_failed_reason(state: tauri::State<PlayerState>) -> Option<String> {
-    state.progress.start_failed_reason.lock().ok().and_then(|r| r.clone())
+    state
+        .progress
+        .start_failed_reason
+        .lock()
+        .ok()
+        .and_then(|r| r.clone())
 }
 
-/// 起播失败探测信息：失败标志 + 具体原因一次性返回，避免两次 IPC 之间的竞态
-/// （前端先读 failed=true，再读 reason 时可能已被下一次 reset 清空）。
 #[derive(serde::Serialize)]
 pub struct PlaybackStartFailedInfo {
     pub failed: bool,
@@ -555,7 +526,12 @@ pub struct PlaybackStartFailedInfo {
 #[tauri::command]
 pub fn get_playback_start_failed_info(state: tauri::State<PlayerState>) -> PlaybackStartFailedInfo {
     let failed = state.progress.start_failed.load(Ordering::Relaxed);
-    let reason = state.progress.start_failed_reason.lock().ok().and_then(|r| r.clone());
+    let reason = state
+        .progress
+        .start_failed_reason
+        .lock()
+        .ok()
+        .and_then(|r| r.clone());
     PlaybackStartFailedInfo { failed, reason }
 }
 
@@ -613,12 +589,10 @@ pub fn set_equalizer_settings(
     gains: Vec<f32>,
     state: tauri::State<'_, PlayerState>,
 ) -> Result<(), String> {
-    // 1. 严格入参校验：长度必须等于 10
     if gains.len() != 10 {
         return Err(format!("均衡器频段数量错误，期望 10，实际 {}", gains.len()));
     }
 
-    // 2. 校验浮点数有限性，严禁 NaN / Inf
     if !preamp.is_finite() {
         return Err("Preamp 增益必须为有限浮点数，严禁 NaN/Inf".to_string());
     }
@@ -628,14 +602,12 @@ pub fn set_equalizer_settings(
         }
     }
 
-    // 3. 数值 Clamp
     let preamp_clamped = preamp.clamp(-12.0, 12.0);
     let mut gains_clamped = [0.0; 10];
     for i in 0..10 {
         gains_clamped[i] = gains[i].clamp(-12.0, 12.0);
     }
 
-    // 4. 发送指令
     let tx = state.tx.lock().map_err(|e| e.to_string())?;
     let settings = EqualizerSettings {
         enabled,
@@ -649,16 +621,11 @@ pub fn set_equalizer_settings(
     Ok(())
 }
 
-/// 设置音效参数（阶段 1：通路打通，Rust 侧 SoundEffectSource 为直通占位）。
-///
-/// 前端 `soundEffectStore` 收集全部音效状态构建 `SoundEffectSettings`，防抖后单次调用本命令。
-/// Rust 侧通过 mpsc 通道转发到音频线程，由 `SoundEffectHandle` 持有，`SoundEffectSource` 读取。
 #[tauri::command]
 pub fn set_sound_effect_settings(
     settings: SoundEffectSettings,
     state: tauri::State<'_, PlayerState>,
 ) -> Result<(), String> {
-    // 基本校验：关键浮点字段必须有限，防止 NaN/Inf 进入音频线程导致爆音。
     if !settings.pitch_shift.is_finite() || !settings.playback_rate.is_finite() {
         return Err("音效参数 pitchShift/playbackRate 必须为有限浮点数".to_string());
     }

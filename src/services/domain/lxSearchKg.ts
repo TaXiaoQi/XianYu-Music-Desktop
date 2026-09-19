@@ -7,17 +7,9 @@ import {
   type LxSearchResultItem,
 } from './lxMusicSdkBase';
 
-/**
- * LX 平台搜索层 · KG (酷狗)。
- * 仅依赖 lxMusicSdkBase，作为叶子模块被 lxSearchPlatform 门面 re-export。
- */
 
 // ==================== KG (酷狗) Search ====================
 
-/**
- * 构造酷狗封面 URL：搜索结果 Image 字段含 {size} 占位符，替换为实际尺寸并升级为 HTTPS。
- * 例：`http://imge.kugou.com/stdmusic/{size}/xxx.jpg` → `https://imge.kugou.com/stdmusic/480/xxx.jpg`
- */
 function buildKugouCoverUrl(url: string | null | undefined, size = 480): string | null {
   if (!url || typeof url !== 'string') return null;
   let u = url.trim();
@@ -50,7 +42,6 @@ export function kgFilterData(rawData: any): LxSearchResultItem {
     types.push({ type: 'flac24bit', size, hash: rawData.ResFileHash });
     _types.flac24bit = { size, hash: rawData.ResFileHash };
   }
-  // 酷狗搜索结果 Image 字段含专辑封面 URL（带 {size} 占位符），直接提取避免 img=null
   const imgUrl = buildKugouCoverUrl(rawData.Image || rawData.trans_param?.union_cover);
   return {
     singer: decodeName(formatSingerName(rawData.Singers, 'name')),
@@ -68,8 +59,6 @@ export function kgFilterData(rawData: any): LxSearchResultItem {
 }
 
 function kgItemQualityScore(item: LxSearchResultItem): number {
-  // 音质档位权重：128k < 320k < flac < flac24bit。同一首歌的多个专辑版本里，
-  // 保留最高音质档的那条，避免去重后留下低码率版本。
   const rank: Record<string, number> = { '128k': 1, '320k': 2, flac: 3, flac24bit: 4 };
   let score = 0;
   for (const t of item?.types || []) {
@@ -90,9 +79,6 @@ function kgHandleResult(rawData: any[]): LxSearchResultItem[] {
       for (const childItem of item.Grp) rawList.push(kgFilterData(childItem));
     }
   });
-  // 酷狗搜索常把同一首歌按不同专辑版本重复返回（同名同歌手、仅专辑不同），
-  // 连带 Grp 一起展开后会出现成批重名的歌。这里按「歌名+歌手」去重并保留最高
-  // 音质档的那条，既消除批量同名，又不误伤同名但不同歌手的歌曲。
   const best = new Map<string, LxSearchResultItem>();
   for (const item of rawList) {
     const key = `${kgNormalKey(item.name)}|${kgNormalKey(item.singer)}`;
@@ -102,7 +88,6 @@ function kgHandleResult(rawData: any[]): LxSearchResultItem[] {
       best.set(key, item);
     }
   }
-  // 保持首次出现顺序，内容替换为最高音质版本
   const list: LxSearchResultItem[] = [];
   const seen = new Set<string>();
   for (const item of rawList) {

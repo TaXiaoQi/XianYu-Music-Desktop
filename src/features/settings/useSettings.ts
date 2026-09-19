@@ -45,8 +45,6 @@ export function useSettings() {
     restorePersistedAppSettings(settings.value, settingsStore.replaceSettings);
   }
 
-  // 主题（含自定义皮肤图片路径 customBackground.imagePath）之前没有任何落盘入口，
-  // 重启后即丢失。这里对 theme 做深层 watch，节流写回磁盘兜底持久化。
   let themePersistTimer: ReturnType<typeof setTimeout> | undefined;
   watch(
     theme,

@@ -8,10 +8,6 @@ import {
   type LxSearchResultItem,
 } from './lxMusicSdkBase';
 
-/**
- * LX 平台搜索层 · MG (咪咕)。
- * 仅依赖 lxMusicSdkBase 与 hostCryptoApi，作为叶子模块被 lxSearchPlatform 门面 re-export。
- */
 
 // ==================== MG (咪咕) Search ====================
 

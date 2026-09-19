@@ -1,11 +1,3 @@
-/**
- * MV 自动音画对齐算法测试。
- *
- * 核心回归点：
- * - estimateEnvelopeLag 能从合成包络中恢复已知时移（MV 片头偏移），含亚帧插值精度
- * - 不相关内容（不同编曲/现场版）置信度低于阈值，isTrustworthyEstimate 拒绝
- * - 时移触到搜索边界（真实错位超出 ±15s 范围）时拒绝而非给出错误偏移
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -17,7 +9,6 @@ import {
 
 const HOP_SEC = 512 / 8000;
 
-/** 构造确定性脉冲包络：高斯脉冲叠加轻微正弦扰动，模拟音乐能量起伏 */
 function makePulseEnvelope(pulsePositions: number[], length: number, seed = 1): Float32Array {
   const envelope = new Float32Array(length);
   for (let i = 0; i < length; i += 1) {
@@ -31,7 +22,6 @@ function makePulseEnvelope(pulsePositions: number[], length: number, seed = 1): 
   return envelope;
 }
 
-/** MV 有 d 秒片头：mv(t + d) = song(t) → mv 包络 = song 包络前插 dHops 帧 */
 function shiftEnvelope(source: Float32Array, lagFrames: number): Float32Array {
   const result = new Float32Array(source.length + Math.abs(lagFrames));
   if (lagFrames >= 0) {
@@ -105,7 +95,6 @@ describe('mvAutoSync estimateEnvelopeLag', () => {
   });
 
   it('不相关内容置信度不足，被可信度门槛拒绝', () => {
-    // 伪随机噪声包络（mulberry32 确定性生成）：与脉冲包络无稳定相关结构
     const unrelated = new Float32Array(600);
     let state = 42;
     for (let i = 0; i < unrelated.length; i += 1) {
@@ -124,7 +113,6 @@ describe('mvAutoSync estimateEnvelopeLag', () => {
   it('偏移触及搜索边界时拒绝（真实错位可能超出范围）', () => {
     const mv = shiftEnvelope(song, Math.round(15 / HOP_SEC));
     const estimate = estimateEnvelopeLag(mv, song);
-    // 即使互相关在边界找到峰值，也应被触边规则否决
     expect(isTrustworthyEstimate(estimate)).toBe(false);
   });
 

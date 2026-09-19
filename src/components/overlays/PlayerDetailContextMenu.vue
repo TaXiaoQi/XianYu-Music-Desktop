@@ -53,14 +53,12 @@ const { closePlayerDetail } = usePlaybackController();
 const menuRef = ref<HTMLElement | null>(null);
 const menuSize = ref({ width: 0, height: 0 });
 
-/** 是否为在线歌曲（plugin:// 或 lx://） */
 const isOnlineSong = computed(() => {
   const path = props.song?.path ?? '';
   return path.startsWith('plugin://') || path.startsWith('lx://');
 });
 const isBilibiliSong = computed(() => supportsMusicVideo(props.song));
 
-/** 图标定义 */
 const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
   viewArtist: {
     viewBox: '0 0 24 24',
@@ -127,7 +125,6 @@ const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
   },
 };
 
-/** 菜单项：歌手/专辑 → 歌曲信息(仅本地) → 更改歌词 → 分隔线 → 添加到歌单 */
 const menuEntries = computed<MenuEntry[]>(() => {
   const entries: MenuEntry[] = [];
 
@@ -144,7 +141,6 @@ const menuEntries = computed<MenuEntry[]>(() => {
     },
   );
 
-  // 本地歌曲才显示"查看歌曲信息"和"修改歌曲封面"，在线歌曲屏蔽
   if (!isOnlineSong.value) {
     entries.push({
       key: 'viewSongInfo',
@@ -172,7 +168,6 @@ const menuEntries = computed<MenuEntry[]>(() => {
     });
   }
 
-  // 添加到歌单放置在最后
   entries.push({
     key: 'addToPlaylist',
     label: '添加到歌单',
@@ -182,7 +177,6 @@ const menuEntries = computed<MenuEntry[]>(() => {
   return entries;
 });
 
-/** 分隔线位置：在歌词操作后（与添加到歌单组分隔） */
 const dividerAfterKeys = computed(() => new Set<DetailMenuAction>(['changeLyrics']));
 
 watch(
@@ -239,14 +233,12 @@ const handleGlobalClick = (event: MouseEvent) => {
 onMounted(() => window.addEventListener('mousedown', handleGlobalClick));
 onUnmounted(() => window.removeEventListener('mousedown', handleGlobalClick));
 
-/** 在线歌曲：通过 plugin_id 查找 PluginSource */
 const resolvePluginSource = (song: Song) => {
   const pluginId = song.plugin_id || song.rawData?.pluginId;
   if (!pluginId) return null;
   return getStoredPlugins().find(p => p.id === pluginId) ?? null;
 };
 
-/** 在线歌曲查看歌手：搜索歌手后跳转到在线详情页 */
 const handleOnlineViewArtist = async (song: Song) => {
   const artistName = song.effective_artist_names?.[0]
     || song.artist_names?.[0]
@@ -257,7 +249,6 @@ const handleOnlineViewArtist = async (song: Song) => {
     return;
   }
 
-  // LX 音源暂不支持歌手详情页
   if (song.path.startsWith('lx://')) {
     showToast('当前音源暂不支持查看歌手', 'info');
     return;
@@ -292,7 +283,6 @@ const handleOnlineViewArtist = async (song: Song) => {
   }
 };
 
-/** 在线歌曲查看专辑：搜索专辑后跳转到在线详情页 */
 const handleOnlineViewAlbum = async (song: Song) => {
   const albumName = song.album || '';
   if (!albumName || albumName === '未知专辑') {
@@ -300,7 +290,6 @@ const handleOnlineViewAlbum = async (song: Song) => {
     return;
   }
 
-  // LX 音源暂不支持专辑详情页
   if (song.path.startsWith('lx://')) {
     showToast('当前音源暂不支持查看专辑', 'info');
     return;
@@ -395,7 +384,6 @@ const handleAction = (action: DetailMenuAction) => {
         @contextmenu.prevent
       >
         <template v-for="(entry, index) in menuEntries" :key="entry.key">
-          <!-- 分隔线：在 changeLyrics 后（封面/字幕组与歌手/专辑组分隔）和 addToPlaylist 前 -->
           <div
             v-if="index > 0 && dividerAfterKeys.has(menuEntries[index - 1].key)"
             class="player-detail-menu-divider"

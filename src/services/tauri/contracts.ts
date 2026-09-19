@@ -162,23 +162,16 @@ export interface PlayAudioOptions {
   volumeBalanceEnabled?: boolean | null;
   gainOffsetDb?: number | null;
   preventClipping?: boolean | null;
-  /** 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效 */
   headers?: Record<string, string> | null;
-  /** QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2），由 Rust 后端流式解密 */
   ekey?: string;
-  /** CENC 内容密钥（Baka 插件可能返回，如酷狗加密音源），透传给 Rust 后端 */
   cek?: string;
-  /** DSD 原生 DoP 直通：仅 .dsf + WASAPI 独占时生效（关闭则走常规 PCM 解码） */
   dsdNativePassthrough?: boolean;
-  /** Bit-perfect 输出：WASAPI 独占时跳过响度归一化/EQ/音效/主音量等全部 DSP，按源位深整数直出 */
   outputBitPerfect?: boolean;
 }
 
 export interface PrefetchAudioHeadOptions {
   url: string;
-  /** 插件返回的自定义请求头（防盗链 Cookie/Referer 等），与播放时一致 */
   headers?: Record<string, string> | null;
-  /** 片头字节数（按音质估算的约 15 秒音频大小） */
   maxBytes?: number;
 }
 
@@ -241,8 +234,6 @@ export interface DlnaRendererStatus {
 }
 
 // ===== 音效参数（与 Rust src-tauri/src/player/sound_effect.rs 的 SoundEffectSettings 一一对应）=====
-// 字段单位与 UI 滑块一致（百分比 / dB / Hz / ms），Rust DSP 在各 Source 内部做单位换算。
-// 所有字段均可省略（Rust 侧 #[serde(default)]），便于跨版本前向兼容与增量更新。
 
 export type ReverbKind = 'none' | 'algorithmic' | 'convolution';
 export type SpatialMode = 'none' | 'surround3d' | 'd8' | 'd36' | 'virtual';
@@ -362,30 +353,25 @@ interface DynamicEqParams {
 }
 
 export interface SoundEffectSettings {
-  // 变调/变速
-  pitchShift: number; // 50-200 (百分比，100=原调)
-  playbackRate: number; // 50-200 (百分比，100=原速)
+  pitchShift: number;
+  playbackRate: number;
   preservesPitch: boolean;
-  // 混响
   reverbKind: ReverbKind;
   reverbPreset: string;
-  reverbDry: number; // 干信号增益
-  reverbWet: number; // 湿信号增益
-  // 空间
+  reverbDry: number;
+  reverbWet: number;
   spatialMode: SpatialMode;
-  spatialSpeed: number; // 秒/圈
-  spatialRadius: number; // 虚拟距离
-  spatialIntensity: number; // 环绕强度
+  spatialSpeed: number;
+  spatialRadius: number;
+  spatialIntensity: number;
   virtualSurroundMode: VirtualSurroundMode;
-  virtualSurroundSpread: number; // 1-20
-  // 调制
+  virtualSurroundSpread: number;
   vibrato: ModulationParams;
   pitchDrift: ModulationParams;
   tremolo: ModulationParams;
   flanger: FlangerParams;
   phaser: PhaserParams;
   delay: DelayParams;
-  // 动态
   compressor: CompressorParams;
   multiband: MultibandParams;
   limiter: LimiterParams;
@@ -393,13 +379,11 @@ export interface SoundEffectSettings {
   expander: ExpanderParams;
   agc: AgcParams;
   deEsser: DeEsserParams;
-  // 波形整形
   distortion: DistortionParams;
   exciter: ExciterParams;
   subBass: SubBassParams;
   loFi: LoFiParams;
   bitcrush: BitcrushParams;
-  // 声道处理
   vocalRemoval: boolean;
   stereoWiden: StereoWidenParams;
   monoMerge: boolean;
@@ -408,10 +392,9 @@ export interface SoundEffectSettings {
   crossfeed: CrossfeedParams;
   bassBoost: BassBoostParams;
   dynamicEq: DynamicEqParams;
-  // 组合
   v4aEnabled: boolean;
   bypass: boolean;
-  audioBoost: number; // 0-100
+  audioBoost: number;
 }
 
 export interface WindowMaterialCapabilities {
@@ -427,7 +410,6 @@ export interface ForegroundFullscreenState {
   isFullscreen: boolean;
 }
 
-/** 任务栏托盘几何信息（Rust 无 rename_all → snake_case） */
 export interface TaskbarTrayGeometry {
   taskbar_rect_physical: RectPhysical;
   tray_rect_physical: RectPhysical | null;
@@ -447,7 +429,6 @@ export interface RectPhysical {
 export type OwnerBindingState = 'bound' | 'failed' | 'unsupported' | 'already_bound';
 export type GeometrySource = 'tray' | 'taskbar_fallback';
 
-/** 原生托盘菜单状态（Rust camelCase） */
 export interface NativeTrayMenuState {
   currentSong?: NativeTrayMenuSong | null;
   isPlaying: boolean;
@@ -464,7 +445,6 @@ export interface NativeTrayMenuSong {
   artist?: string | null;
 }
 
-/** 曲库统计（Rust 无 rename_all → snake_case） */
 export interface LibraryStats {
   total_songs: number;
   total_duration: number;
@@ -476,7 +456,6 @@ export interface LibraryStats {
   this_month_added: number;
 }
 
-/** 行为统计时间范围（Rust tag="type" 内部标签枚举，变体名原样） */
 export type TimeRange =
   | { type: 'All' }
   | { type: 'Days7' }
@@ -494,25 +473,17 @@ export interface BehaviorStats {
   recent_activity: number[];
 }
 
-/** 听歌时长（按周期），用于排行榜分周期上报 */
 export interface ListenDurations {
-  /** 今日听歌时长（秒） */
   daily: number;
-  /** 最近 7 天听歌时长（秒） */
   weekly: number;
-  /** 累计听歌时长（秒） */
   total: number;
 }
 
-/** 云端总时长合并到本地的结果 */
 export interface CloudMergeResult {
-  /** 合并后本地累计总听歌时长（秒） */
   total_duration: number;
-  /** 是否因云端总时长更长而被抬高（本地被云端覆盖） */
   merged: boolean;
 }
 
-/** 听歌时长快照 · global 段（与移动端键名一致，snake_case） */
 export interface ListenSnapshotGlobal {
   total_play_count: number;
   total_play_time_ms: number;
@@ -520,7 +491,6 @@ export interface ListenSnapshotGlobal {
   last_played_at: string | null;
 }
 
-/** 听歌时长快照 · daily 段 */
 export interface ListenSnapshotDaily {
   date: string;
   play_count: number;
@@ -529,13 +499,11 @@ export interface ListenSnapshotDaily {
   unique_artists: number;
 }
 
-/** 听歌时长快照（跨端同步用） */
 export interface ListenSnapshot {
   global: ListenSnapshotGlobal;
   daily: ListenSnapshotDaily[];
 }
 
-/** 快照合并到本地后的结果 */
 export interface ListenSnapshotMergeResult {
   total_play_time_ms: number;
   total_play_count: number;
@@ -575,14 +543,12 @@ export interface FormatDistribution {
   other: number;
 }
 
-/** 扫描文件夹生成的播放列表（Rust 无 rename_all → snake_case） */
 export interface GeneratedFolder {
   name: string;
   path: string;
   songs: Song[];
 }
 
-/** 重命名工具配置（Rust 无 rename_all → snake_case） */
 export interface RenameConfig {
   mode: string;
   template: string;
@@ -603,7 +569,6 @@ export interface RenameOperation {
   new_name: string;
 }
 
-/** 工具箱 · 文件转换 ffmpeg 检测结果 */
 export interface FfmpegDetection {
   available: boolean;
   path: string | null;
@@ -611,7 +576,6 @@ export interface FfmpegDetection {
   error: string | null;
 }
 
-/** 工具箱 · 文件转换单个文件结果 */
 export interface ConvertAudioResult {
   input_path: string;
   output_path: string;
@@ -619,7 +583,6 @@ export interface ConvertAudioResult {
   error: string | null;
 }
 
-/** 工具箱 · 音频剪辑单个文件结果 */
 export interface TrimAudioResult {
   input_path: string;
   output_path: string;
@@ -655,7 +618,6 @@ export interface TauriCommandMap {
   };
   get_folder_children: { payload: { folderPath: string }; response: FolderNode[] };
   get_library_folders: { payload: undefined; response: LibraryFolder[] };
-  get_library_songs_by_paths: { payload: { paths: string[] }; response: LibrarySong[] };
   search_library_songs: { payload: { query: string; limit?: number }; response: LibrarySong[] };
   get_remote_sources: { payload: undefined; response: RemoteSource[] };
   test_remote_source: { payload: { source: RemoteSourceInput }; response: RemoteConnectionResult };
@@ -702,7 +664,6 @@ export interface TauriCommandMap {
     response: Song[];
   };
   set_volume: { payload: { volume: number }; response: void };
-  set_playback_speed: { payload: { speed: number }; response: void };
   get_playback_progress: { payload: undefined; response: number };
   get_playback_duration: { payload: undefined; response: number };
   get_playback_ready: { payload: undefined; response: boolean };
@@ -756,7 +717,6 @@ export interface TauriCommandMap {
     response: boolean;
   };
   clear_cover_cache: { payload: undefined; response: void };
-  get_song_lyrics: { payload: { path: string }; response: string };
   read_lyrics_file: { payload: { path: string }; response: string };
   get_song_lyrics_for_edit: { payload: { path: string }; response: SongLyricsForEdit };
   save_song_lyrics: {
@@ -856,7 +816,7 @@ export interface TauriCommandMap {
   export_statistics_file: {
     payload: {
       options: {
-        filePath: string;
+        defaultFileName: string;
         includeRecentPlays: boolean;
       };
     };
@@ -883,8 +843,6 @@ export interface TauriCommandMap {
   set_mini_boundary_enabled: { payload: { enabled: boolean }; response: void };
   set_immersive_fullscreen: { payload: { enter: boolean }; response: boolean };
   refresh_immersive_fullscreen: { payload: undefined; response: boolean };
-  save_window_placement: { payload: undefined; response: boolean };
-  set_taskbar_fullscreen_flag: { payload: { enter: boolean }; response: boolean };
   smart_toggle_maximize: { payload: undefined; response: boolean };
   set_dark_mode_for_window: { payload: { dark: boolean }; response: void };
   get_window_material_capabilities: {
@@ -911,12 +869,32 @@ export interface TauriCommandMap {
     payload: { path: string; args: string[] };
     response: void;
   };
-  consume_pending_open_paths: { payload: undefined; response: string[] };
-  consume_pending_deep_links: { payload: undefined; response: string[] };
-  save_download_lyrics: {
-    payload: { content: string; destPath: string };
+  register_external_program: {
+    payload: undefined;
     response: string;
   };
+  register_download_directory: {
+    payload: undefined;
+    response: string;
+  };
+  save_text_via_dialog: {
+    payload: {
+      defaultFileName: string;
+      filter: { name: string; extensions: string[] } | null;
+      content: string;
+    };
+    response: string | null;
+  };
+  save_bytes_via_dialog: {
+    payload: {
+      defaultFileName: string;
+      filter: { name: string; extensions: string[] } | null;
+      data: number[];
+    };
+    response: string | null;
+  };
+  consume_pending_open_paths: { payload: undefined; response: string[] };
+  consume_pending_deep_links: { payload: undefined; response: string[] };
   get_track_loudness_info: {
     payload: { songId: number };
     response: LoudnessRecord | null;
@@ -958,12 +936,11 @@ export interface TauriCommandMap {
     response: boolean;
   };
   resolve_download_path: {
-    payload: { directory: string; fileName: string; overwriteExisting: boolean };
+    payload: { fileName: string; overwriteExisting: boolean };
     response: string;
   };
   resolve_download_full_path: {
     payload: {
-      directory: string;
       title: string;
       artist: string;
       album: string;
@@ -980,7 +957,7 @@ export interface TauriCommandMap {
     response: string;
   };
   download_online_song: {
-    payload: { url: string; destPath: string; ekey: string | null; headers: Record<string, string> | null };
+    payload: { url: string; fileName: string; ekey: string | null; headers: Record<string, string> | null };
     response: string;
   };
   decrypt_qmc_file: {
@@ -1008,12 +985,8 @@ export interface TauriCommandMap {
     response: boolean;
   };
   copy_stream_cache: {
-    payload: { url: string; destPath: string };
+    payload: { url: string; fileName: string };
     response: number;
-  };
-  save_download_bytes: {
-    payload: { data: number[]; destPath: string };
-    response: string;
   };
   fetch_image_bytes: {
     payload: { url: string };
@@ -1069,10 +1042,6 @@ export interface TauriCommandMap {
     payload: { pluginId: string };
     response: void;
   };
-  plugin_engine_destroy_all: {
-    payload: undefined;
-    response: void;
-  };
   plugin_engine_store_import: {
     payload: {
       payload: {
@@ -1085,10 +1054,6 @@ export interface TauriCommandMap {
   plugin_engine_cookie_header_for_domain: {
     payload: { domain: string };
     response: string;
-  };
-  plugin_engine_store_snapshot: {
-    payload: undefined;
-    response: { cookies: Record<string, { value: string; domain: string }>; storage: Record<string, string> };
   };
   // ===== 宿主侧平台签名/加密（Rust host_crypto）=====
   host_zzc_sign: {
@@ -1163,7 +1128,6 @@ export interface TauriCommandMap {
     payload: { songInfo: LxUrlSongInfoContract };
     response: string | null;
   };
-  clear_lx_url_cache: { payload: undefined; response: void };
   find_alternative_lx_source: {
     payload: {
       songName: string;
@@ -1173,7 +1137,6 @@ export interface TauriCommandMap {
     };
     response: AlternativeSourceResultContract | null;
   };
-  clear_lx_all_cache: { payload: undefined; response: void };
 
   save_playback_session: {
     payload: { session: PlaybackSessionDataContract };
@@ -1193,7 +1156,6 @@ export interface TauriCommandMap {
   };
   flush_playback_session: { payload: undefined; response: void };
   recognize_system_audio: { payload: undefined; response: RecognizeResponseContract };
-  recognize_with_pcm: { payload: { pcm: number[] }; response: RecognizeResponseContract };
   cancel_recognize_system_audio: { payload: undefined; response: void };
   save_song_background: {
     payload: { songPath: string; backgroundPath: string };
@@ -1211,7 +1173,6 @@ export interface TauriCommandMap {
   check_update_by_rust: { payload: { owner: string; repo: string }; response: string };
   download_update_file: { payload: { url: string }; response: string };
   run_installer: { payload: { path: string }; response: void };
-  // 商店版判定：进程带 MSIX 包身份即为 Microsoft Store / winget MSIX 安装
   is_store_build: { payload: undefined; response: boolean };
   // ============ 应用生命周期 ============
   exit_app: { payload: undefined; response: void };
@@ -1223,7 +1184,6 @@ export interface TauriCommandMap {
   import_lyrics_font: { payload: { sourcePath: string }; response: ImportedLyricsFont };
   get_system_fonts: { payload: undefined; response: string[] };
   get_system_info: { payload: undefined; response: SystemInfoPayload };
-  /** 硬件级机器指纹（SMBIOS 序列号 SHA-256，重装系统不变；全空回退 MachineGuid） */
   get_machine_id: { payload: undefined; response: string };
   // ============ 歌词解析 ============
   parse_lyrics_text: { payload: { text: string }; response: LyricsPayload };
@@ -1288,8 +1248,6 @@ export interface TauriCommandMap {
   // ============ 壁纸下载 ============
   download_wallpaper: { payload: { url: string; filename: string }; response: string };
   delete_wallpaper_file: { payload: { localPath: string }; response: void };
-  // ============ 通用文件写入 ============
-  write_text_file: { payload: { content: string; destPath: string }; response: string };
   // ============ 背景视频缓存 ============
   download_video_to_cache: {
     payload: { url: string; headers?: Record<string, string> | null };
@@ -1335,7 +1293,6 @@ export interface TauriCommandMap {
   plugin_host_take_process_error: { payload: undefined; response: string | null };
 }
 
-/** 听歌识曲接口响应 */
 export interface RecognizeResponseContract {
   status: number;
   body: string;
@@ -1411,14 +1368,12 @@ interface PlaybackSessionDataContract {
 
 // ===== 下载服务类型契约 =====
 
-/** URL 大小探测结果（与 Rust ProbeUrlInfo 对应，response 使用 Rust 序列化字段名） */
 export interface ProbeUrlInfoContract {
   url: string;
   size: number;
   error?: string;
 }
 
-/** 元数据嵌入请求（与 Rust EmbedMetadataRequest 对应，payload 使用 camelCase） */
 export interface EmbedMetadataRequestContract {
   filePath: string;
   title?: string;
@@ -1433,7 +1388,6 @@ export interface EmbedMetadataRequestContract {
   coverMime?: string;
 }
 
-/** 下载收尾请求（与 Rust FinalizeDownloadExtrasRequest 对应，payload 使用 camelCase） */
 export interface FinalizeDownloadExtrasRequestContract {
   lyricsText?: string | null;
   lyricsPath?: string | null;
@@ -1443,7 +1397,6 @@ export interface FinalizeDownloadExtrasRequestContract {
   embedCover: boolean;
 }
 
-/** 下载收尾结果（与 Rust FinalizeDownloadExtrasResult 对应，response 使用 Rust 序列化字段名） */
 export interface FinalizeDownloadExtrasResultContract {
   lyrics_saved: boolean;
   cover_saved: boolean;
@@ -1455,7 +1408,6 @@ export interface FinalizeDownloadExtrasResultContract {
 
 // ===== 插件基础设施类型契约 =====
 
-/** 插件 HTTP 代理响应（与 Rust PluginHttpResponse 对应） */
 export interface PluginHttpResponseContract {
   status: number;
   url: string;
@@ -1465,14 +1417,12 @@ export interface PluginHttpResponseContract {
 
 // ===== QuickJS 插件引擎类型契约（与 Rust plugin_host 对应）=====
 
-/** 插件引擎日志条目（与 Rust EngineLog 对应，camelCase 序列化） */
 export interface PluginEngineLogContract {
   level: string;
   message: string;
   callId: number;
 }
 
-/** 插件引擎加载结果（与 Rust EngineLoadResult 对应） */
 export interface PluginEngineLoadResultContract {
   ok: boolean;
   error: string | null;
@@ -1480,7 +1430,6 @@ export interface PluginEngineLoadResultContract {
   logs: PluginEngineLogContract[];
 }
 
-/** 插件引擎方法调用结果（与 Rust EngineCallResult 对应） */
 export interface PluginEngineCallResultContract {
   ok: boolean;
   error: string | null;
@@ -1488,7 +1437,6 @@ export interface PluginEngineCallResultContract {
   logs: PluginEngineLogContract[];
 }
 
-/** 插件 HTTP 二进制代理响应（与 Rust PluginHttpBinaryResponse 对应） */
 export interface PluginHttpBinaryResponseContract {
   status: number;
   url: string;
@@ -1498,23 +1446,18 @@ export interface PluginHttpBinaryResponseContract {
 
 // ===== VST3/CLAP 原生插件宿主类型契约（与 Rust plugin_host 对应）=====
 
-/** 扫描到的插件条目（与 Rust PluginScanEntry 对应，camelCase 序列化） */
 export interface PluginHostScanEntry {
-  /** "vst3" | "clap" */
   format: string;
-  /** 格式内稳定 ID（加载实例的 key） */
   uniqueId: string;
   name: string;
   vendor: string;
   version: number;
-  /** "effect" | "instrument" | ... */
   category: string;
   path: string;
   hasEditor: boolean;
   acceptsMidi: boolean;
 }
 
-/** 机架槽位配置（与 Rust RackSlotConfig 对应） */
 export interface PluginHostRackSlotConfig {
   format: string;
   uniqueId: string;
@@ -1522,28 +1465,22 @@ export interface PluginHostRackSlotConfig {
   name: string;
   vendor: string;
   enabled: boolean;
-  /** 参数下标（枚举序）→ 归一化值 [0,1] */
   params: Record<string, number>;
 }
 
-/** 机架完整配置（与 Rust RackConfig 对应） */
 export interface PluginHostRackConfig {
   masterEnabled: boolean;
-  /** 顺序即处理顺序 */
   slots: PluginHostRackSlotConfig[];
 }
 
-/** 插件参数元数据（与 Rust PluginParameterEntry 对应） */
 export interface PluginHostParameterEntry {
   index: number;
   id: number;
   name: string;
   unit: string;
-  /** 原生单位区间（set_parameter 写入的是归一化 [0,1]） */
   min: number;
   max: number;
   default: number;
-  /** 步进参数的离散档位数（0 = 连续） */
   stepCount: number;
   isBypass: boolean;
   automatable: boolean;
@@ -1551,25 +1488,19 @@ export interface PluginHostParameterEntry {
   readOnly: boolean;
 }
 
-/** 参数当前值（实时轮询用，与 Rust PluginParameterValueEntry 对应） */
 export interface PluginHostParameterValueEntry {
   index: number;
   id: number;
-  /** 归一化值 [0,1] */
   value: number;
-  /** 插件原生格式化文本（如 "-6.0 dB"） */
   text: string;
 }
 
-/** 工厂预设条目（与 Rust PluginPresetEntry 对应） */
 export interface PluginHostPresetEntry {
   index: number;
   name: string;
-  /** load_preset 入参 */
   presetNumber: number;
 }
 
-/** 打开中的编辑器（与 Rust EditorStateEntry 对应） */
 export interface PluginHostEditorStateEntry {
   format: string;
   uniqueId: string;

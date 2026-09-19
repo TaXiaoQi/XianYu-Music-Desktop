@@ -241,10 +241,6 @@ export const createPlayerLifecycle = ({
   };
 
   const syncEqualizerSettings = async () => {
-    // 10 段 EQ 的唯一数据源是 soundEffectStore.eqBands（新音效面板）。
-    // 不再读旧的 settings.audio.equalizer——其默认 enabled=false 会让 Rust Equalizer 整体
-    // 直通，导致新面板 EQ 滑块拖动后听不到任何变化（「均衡器没效果」的根因）。
-    // preamp 固定 0（新面板无 preamp 控件），enabled 由 bypassAll（AB 对比旁通）决定。
     const soundEffectStore = useSoundEffectStore();
     const eqFreqLabels = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'] as const;
     const gains = eqFreqLabels.map(label => soundEffectStore.eqBands[label] ?? 0);
@@ -252,10 +248,8 @@ export const createPlayerLifecycle = ({
     const preamp = 0;
     const eq = { enabled, preamp, gains };
     
-    // 生成当前即将写入的规范化高精度参数签名
     const currentParamsSignature = createEqualizerSignature(eq.enabled, eq.preamp, eq.gains);
     
-    // 从底层查询最后一次成功同步过的签名缓存
     const lastSynced = playbackApi.getLastSyncedParams();
     
     if (currentParamsSignature === lastSynced) {
@@ -298,14 +292,12 @@ export const createPlayerLifecycle = ({
       listen('player:prev', () => {
         prevSong();
       }),
-      // Win11 SMTC 进度条拖动：跳转到指定位置
       listen<number>('player:seek-to', event => {
         const time = Number(event.payload);
         if (Number.isFinite(time) && time >= 0) {
           void seekTo(time);
         }
       }),
-      // Win11 SMTC 停止按钮：停止播放
       listen('player:stop', () => {
         void stopPlayback();
       }),
@@ -356,15 +348,9 @@ export const createPlayerLifecycle = ({
     watch(favoritePaths, scheduleStatePersistence);
     watch(favoriteCollections, scheduleStatePersistence, { deep: true });
 
-    // 合并两个对 playlists 的 watch：持久化保存 + 在线歌曲注入 songPool。
-    // 使用 deep 监听以捕获歌单内歌曲增删，但批量合并 setExtraSongs 以减少 songCatalogVersion 递增。
     let lastPlaylistSongsSignature = '';
     watch(playlists, (newPlaylists) => {
-      // 1. 持久化保存
       scheduleStatePersistence();
-      // 2. 将 playlist.songs 缓存中的在线歌曲注入 songPool，
-      //    确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中）
-      // 用签名检测歌曲内容是否实际变化，避免重命名等无关变更触发 setExtraSongs
       const songGroups: LibrarySong[][] = [];
       let currentSignature = '';
       for (const pl of newPlaylists) {
@@ -439,8 +425,6 @@ export const createPlayerLifecycle = ({
         return;
       }
 
-      // 取色在 Rust 侧完成，可直接传入原始封面值（本地路径 / http 直链 / data URI），
-      // 无需再经 convertFileSrc 转成 webview 资源 URL。
       const signature = JSON.stringify({
         cover,
         colorBoost: settings.value.theme.flowColorBoost,
@@ -469,10 +453,6 @@ export const createPlayerLifecycle = ({
     let cachedQueueIndex = -1;
     let cachedQueueVersion = -1;
 
-    // 切歌时（currentSongPath 变化）在 path 数组上算一次 indexOf，缓存 index。
-    // playQueuePaths 变化时（增删/重排）使缓存失效，下次切歌时重算。
-    // 这样播放期间的 currentTime watcher 只需 O(1) 读取缓存 index，
-    // 不再每帧读取 playQueue computed（会触发 600 首物化）+ findIndex(O(n))。
     const ensureQueueIndex = (path: string) => {
       const version = playQueuePaths.value.length;
       if (cachedQueueVersion === version && cachedQueueIndex >= 0) {
@@ -488,17 +468,11 @@ export const createPlayerLifecycle = ({
       cachedQueueVersion = -1;
     });
 
-    // 仅 watch currentSong + currentTime，playQueue 在回调内直接读取。
-    // 原先 watch 三源会在每次 currentTime 更新时创建 [song, time, queue] 数组，
-    // 其中 queue 可能是包含数千首歌的大数组——移出 watch 源可避免每次 tick 的无谓读取和数组分配。
     watch([currentSong, currentTime], ([song, time]) => {
       if (!isPlaying.value || !song || song.duration <= 0 || time / song.duration < 0.6) {
         return;
       }
 
-      // 预缓存只针对 remote:// (WebDAV) 歌曲。
-      // 若当前歌不是 remote://，下一首也不需要预缓存，直接跳过队列扫描，
-      // 避免 lx:// / plugin:// 歌曲播放时每帧白跑 findIndex(O(n))。
       if (!isRemoteSong(song)) {
         return;
       }
@@ -509,7 +483,6 @@ export const createPlayerLifecycle = ({
         return;
       }
 
-      // 确认下一首是 remote:// 歌曲，才发起预缓存
       if (!nextPath.startsWith('remote://')) {
         return;
       }
@@ -545,7 +518,6 @@ export const createPlayerLifecycle = ({
       }
     };
 
-    // 流光/桌面歌词封面取色共用主色，参数微调时 debounce 延迟重提取，避免拖动滑块时频繁触发层切换闪烁
     let flowTweakTimer: ReturnType<typeof setTimeout> | null = null;
     let lastPersistedPlaybackTime = Number.NaN;
 
@@ -606,10 +578,8 @@ export const createPlayerLifecycle = ({
     const playbackTimePersistTimer = setInterval(persistCurrentPlaybackTime, 2000);
 
     const beforeUnloadHandler = () => {
-      // beforeunload 中 best-effort 持久化：无法 await，失败只能静默忽略
       flushPersistedState().catch(() => {});
       persistCurrentPlaybackTime();
-      // 强制将播放会话状态持久化到 Rust/SQLite（beforeunload best-effort，失败忽略）
       sessionApi.flushPlaybackSession().catch(() => {});
     };
 
@@ -635,28 +605,19 @@ export const createPlayerLifecycle = ({
         playerStorage.readStringArray(playerStorageKeys.favorites) ?? [],
       );
 
-      // 恢复整张收藏的歌单/专辑（收藏页"歌单/专辑"tab 数据源）
       collectionsStore.setFavoriteCollections(playerStorage.readFavoriteCollections());
 
-      // 恢复在线收藏歌曲的元信息，并写入额外歌曲池，
-      // 使收藏列表能反查出这些不在本地音乐库中的歌曲
       const favoriteSongMeta = playerStorage.readFavoriteSongMeta();
       collectionsStore.setFavoriteSongMetaMap(favoriteSongMeta);
       const extraSongs = Object.values(favoriteSongMeta);
 
-      // 恢复在线最近播放歌曲的元信息，并写入额外歌曲池，
-      // 使最近播放列表能反查出这些不在本地音乐库中的歌曲
       const recentSongMeta = playerStorage.readRecentSongMeta();
       collectionsStore.setRecentSongMetaMap(recentSongMeta);
       const recentExtraSongs = Object.values(recentSongMeta);
 
-      // 恢复队列/歌单中在线歌曲的元信息（含非收藏），写入额外歌曲池，
-      // 使 resolveSongsByPaths 能还原这些不在本地库的在线歌（含 duration），
-      // 否则非收藏在线歌重启后会从播放队列中整首丢失
       const queueSongMeta = playerStorage.readQueueSongMeta();
       const queueExtraSongs = Object.values(queueSongMeta);
 
-      // 从 Rust 加载播放会话（单一事实源），并注入其中的 queueSongMeta
       let rustSession: Awaited<ReturnType<typeof sessionApi.loadPlaybackSession>> | null = null;
       try {
         rustSession = await sessionApi.loadPlaybackSession();
@@ -664,13 +625,10 @@ export const createPlayerLifecycle = ({
         console.warn('[restore] loadPlaybackSession failed, falling back to localStorage:', err);
       }
 
-      // 合并 Rust 会话中的在线歌曲元数据（优先于 localStorage）
       const rustQueueExtraSongs = rustSession?.queueSongMeta
         ? Object.values(rustSession.queueSongMeta)
         : [];
 
-      // 批量写入所有在线歌曲元信息，仅递增一次 songCatalogVersion，
-      // 避免 songLookup/canonicalSongs/currentViewSongs 级联重算 3+ 次
       const extraSongGroups = [extraSongs, recentExtraSongs, queueExtraSongs, rustQueueExtraSongs].filter(g => g.length > 0);
       if (extraSongGroups.length > 0) {
         libraryStore.setExtraSongsBatch(extraSongGroups);
@@ -678,8 +636,6 @@ export const createPlayerLifecycle = ({
 
       collectionsStore.setPlaylists(await playerStorage.readPlaylistsAsync());
 
-      // 恢复歌单后，将 playlist.songs 缓存中的在线歌曲注入 songPool，
-      // 确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中，重启后会丢失）
       const playlistSongGroups = collectionsStore.playlists
         .filter(pl => pl.songs && pl.songs.length > 0)
         .map(pl => pl.songs!);
@@ -712,13 +668,10 @@ export const createPlayerLifecycle = ({
       await restoreRecentHistory();
       refreshStateSongReferences();
 
-      // 恢复记忆播放的歌曲后，主动加载其歌词。否则重启后直接进入详情页会显示"无歌词"，
-      // 因为恢复流程只还原了 currentSong/封面，没有像正常播放那样触发 loadLyrics。
       if (currentSong.value) {
         void loadLyrics();
       }
 
-      // 恢复播放进度：优先使用 Rust 会话中的进度，回退到 localStorage
       if (rustSession?.currentPositionSecs && rustSession.currentPositionSecs > 0) {
         currentTime.value = rustSession.currentPositionSecs;
       } else {
@@ -728,7 +681,6 @@ export const createPlayerLifecycle = ({
         }
       }
 
-      // 初始化播放会话同步（将后续状态变更同步到 Rust）
       disposeSessionSync = usePlaybackSessionSync().init();
 
       window.addEventListener('beforeunload', beforeUnloadHandler);

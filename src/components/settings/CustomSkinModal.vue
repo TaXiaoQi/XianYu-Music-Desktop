@@ -81,11 +81,9 @@ const viewportHeight = ref(0);
 const imageNaturalWidth = ref(preview.value.imageWidth || 0);
 const imageNaturalHeight = ref(preview.value.imageHeight || 0);
 
-// 模糊安全膨胀（防漏底保守化）
 const blurCompensation = computed(() => Math.min(0.08, (preview.value.blur || 0) * 0.002));
 const renderScale = computed(() => Math.max(1.0, (preview.value.scale || 1.0) + blurCompensation.value));
 
-// 共享几何尺寸计算
 const viewportGeometry = computed(() => {
   return calculateCoverGeometry(
     viewportWidth.value,
@@ -95,7 +93,6 @@ const viewportGeometry = computed(() => {
   );
 });
 
-// 计算当前图片在 Viewport 中是否存在可拖拽物理余地
 const canDrag = computed(() => {
   if (!preview.value.imagePath || !viewportGeometry.value || viewportWidth.value <= 0 || viewportHeight.value <= 0) return false;
 
@@ -109,7 +106,6 @@ const canDrag = computed(() => {
   return maxTxPx > 0.5 || maxTyPx > 0.5;
 });
 
-// 探测大背景的宽高比以对齐几何
 const getActualBackgroundRatio = () => {
   const bgEl = document.querySelector('[data-global-background]');
   if (bgEl) {
@@ -121,7 +117,6 @@ const getActualBackgroundRatio = () => {
   return window.innerWidth / window.innerHeight;
 };
 
-// 动态更新 Viewport 尺寸
 const updateViewportSize = () => {
   if (!containerRef.value) return;
   const containerRect = containerRef.value.getBoundingClientRect();
@@ -154,15 +149,12 @@ const getClampedTranslation = (tx: number, ty: number, scale = preview.value.sca
   const scaledImgW = viewportGeometry.value.width * safeScale;
   const scaledImgH = viewportGeometry.value.height * safeScale;
 
-  // 根据物理公式，平移最大像素限制为 (S * W_img - W) / 2
   const maxTxPx = Math.max(0, (scaledImgW - viewportWidth.value) / 2);
   const maxTyPx = Math.max(0, (scaledImgH - viewportHeight.value) / 2);
 
-  // 转换比例值为像素
   const txPx = tx * viewportWidth.value;
   const tyPx = ty * viewportHeight.value;
 
-  // 物理 Clamp 限幅
   const clampedTxPx = Math.max(-maxTxPx, Math.min(maxTxPx, txPx));
   const clampedTyPx = Math.max(-maxTyPx, Math.min(maxTyPx, tyPx));
 
@@ -197,7 +189,6 @@ const handlePointerMove = (e: PointerEvent) => {
   const rawTx = startTranslateX + deltaX / viewportWidth.value;
   const rawTy = startTranslateY + deltaY / viewportHeight.value;
   
-  // 在事件中当场执行物理 Clamp 限制，极速渲染
   const clamped = getClampedTranslation(rawTx, rawTy);
   
   preview.value.translateX = clamped.tx;
@@ -230,7 +221,6 @@ const handleLostPointerCapture = (e: PointerEvent) => {
 const handleWheel = (e: WheelEvent) => {
   if (!preview.value.imagePath || viewportWidth.value <= 0 || viewportHeight.value <= 0) return;
 
-  // 阻止外层容器联动滚动
   e.preventDefault();
 
   const viewportElement = document.getElementById('skin-preview-viewport');
@@ -238,16 +228,13 @@ const handleWheel = (e: WheelEvent) => {
 
   const viewportRect = viewportElement.getBoundingClientRect();
   
-  // 1. 计算以 Viewport 物理几何中心为原点的鼠标坐标
   const cursorX = e.clientX - viewportRect.left - viewportWidth.value / 2;
   const cursorY = e.clientY - viewportRect.top - viewportHeight.value / 2;
 
-  // 2. 物理平移像素值
   const oldScale = preview.value.scale || 1.0;
   const oldTxPx = (preview.value.translateX || 0) * viewportWidth.value;
   const oldTyPx = (preview.value.translateY || 0) * viewportHeight.value;
 
-  // 3. 滚轮步进，强制限制 minScale = 1.0
   const zoomStep = 0.05;
   const delta = e.deltaY < 0 ? zoomStep : -zoomStep;
   let nextScale = oldScale + delta;
@@ -256,7 +243,6 @@ const handleWheel = (e: WheelEvent) => {
 
   if (nextScale === oldScale) return;
 
-  // 4. 精密悬浮锚点物理公式
   const ratio = nextScale / oldScale;
   const nextTxPx = cursorX - (cursorX - oldTxPx) * ratio;
   const nextTyPx = cursorY - (cursorY - oldTyPx) * ratio;
@@ -264,7 +250,6 @@ const handleWheel = (e: WheelEvent) => {
   const nextTx = nextTxPx / viewportWidth.value;
   const nextTy = nextTyPx / viewportHeight.value;
 
-  // 5. 当场执行 Clamp 并写入 Vue ref
   const clamped = getClampedTranslation(nextTx, nextTy, nextScale);
 
   preview.value.scale = nextScale;
@@ -298,7 +283,6 @@ onMounted(async () => {
     resizeObserver.observe(containerRef.value);
   }
 
-  // 旧皮肤配置的异步高度模糊补偿与尺寸补齐回写机制
   if (preview.value.imagePath && (!imageNaturalWidth.value || !imageNaturalHeight.value)) {
     try {
       const metadata = await loadImageMetadata(convertFileSrc(preview.value.imagePath));
@@ -335,7 +319,6 @@ const handleSelectNewImage = async () => {
     preview.value.translateX = 0;
     preview.value.translateY = 0;
 
-    // 获取新选图片的真实宽高并写入持久化 preview 对象中
     try {
       const metadata = await loadImageMetadata(convertFileSrc(newImagePath));
       if (isUnmounted) return;
@@ -439,7 +422,6 @@ const handleWallpaperSelect = async (localPath: string) => {
                 'cursor-grabbing': canDrag && isDragging
               }"
             >
-              <!-- 比例自适应的真实裁剪 Viewport -->
               <div
                 id="skin-preview-viewport"
                 class="relative overflow-visible z-10 transition-all duration-300"
@@ -449,7 +431,6 @@ const handleWallpaperSelect = async (localPath: string) => {
                 }"
               >
                 <div v-if="preview.imagePath" class="absolute inset-0">
-                  <!-- 物理双层解耦图片布局 -->
                   <div
                     v-if="viewportGeometry"
                     class="absolute"
@@ -476,7 +457,6 @@ const handleWallpaperSelect = async (localPath: string) => {
                     />
                   </div>
 
-                  <!-- 纯色混合遮罩层，z-index: 5 -->
                   <div
                     class="absolute inset-0 z-[5] pointer-events-none"
                     :style="{ backgroundColor: preview.maskColor, opacity: preview.maskAlpha }"
@@ -490,7 +470,6 @@ const handleWallpaperSelect = async (localPath: string) => {
                   <span class="text-xs">未选择图片</span>
                 </div>
 
-                <!-- 镂空遮罩与 dashed 虚线框层，z-index: 10 -->
                 <div
                   class="absolute inset-0 z-10 pointer-events-none border border-dashed border-white/50 rounded-[4px] transition-all duration-300"
                   :class="{
@@ -498,7 +477,6 @@ const handleWallpaperSelect = async (localPath: string) => {
                   }"
                 ></div>
 
-                <!-- 智能悬浮标签，z-index: 20 -->
                 <div
                   v-if="preview.imagePath"
                   class="absolute right-2 top-2 z-20 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-medium tracking-wider text-white/40 backdrop-blur-sm transition-opacity duration-300 group-hover:opacity-0"
@@ -506,7 +484,6 @@ const handleWallpaperSelect = async (localPath: string) => {
                   软件背景区域
                 </div>
 
-                <!-- 字体及预览文字层，z-index: 30，移入虚线 Viewport 内部以保证真实预览对比度 -->
                 <div 
                   v-if="preview.imagePath" 
                   class="absolute inset-x-0 bottom-0 z-30 px-3 pb-3 pointer-events-none animate-in fade-in duration-300"
@@ -693,7 +670,6 @@ input[type='range']::-webkit-slider-thumb {
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* 离开动画（is-closing 类驱动） */
 .skin-overlay.is-closing {
   opacity: 0;
 }

@@ -38,7 +38,6 @@ export function showProfileLimitDialog(
   });
 }
 
-/** 封禁提示：复用头像提示框 UI，展示账号/设备被封禁及原因 */
 export function showBanDialog(banType: BanType, reason: string): Promise<boolean> {
   return showProfileLimitDialog('ban', { blocked: true, message: reason, banType });
 }

@@ -1,27 +1,15 @@
 import type { Song } from '../../types';
 
-/**
- * 备份文件导入服务 · 歌曲/路径转换。
- * file:// URL 解码、本地路径解析，以及将备份/M3U/TXT 中的歌曲条目
- * 构造成本应用 Song 对象。被 backupImportParse 与门面 backupImport 复用。
- */
 
-/**
- * 将 file:/// URL 解码为本地文件路径
- * 例如: file:///C:/Users/%E5%B0%8F%E5%A5%87/Music/song.flac → C:\Users\小奇\Music\song.flac
- */
 export function decodeFileUrl(url: string): string {
   try {
     let path = url;
-    // 移除 file:/// 前缀
     if (path.startsWith('file:///')) {
       path = path.slice('file:///'.length);
     } else if (path.startsWith('file://')) {
       path = path.slice('file://'.length);
     }
-    // URL 解码
     path = decodeURIComponent(path);
-    // 统一为当前系统路径分隔符 (Windows)
     path = path.replace(/\//g, '\\');
     return path;
   } catch {
@@ -29,10 +17,6 @@ export function decodeFileUrl(url: string): string {
   }
 }
 
-/**
- * 从备份歌曲对象中提取本地文件路径
- * 优先使用 localPath，其次解码 url
- */
 export function resolveLocalPath(rawSong: any): string {
   if (rawSong.localPath && typeof rawSong.localPath === 'string') {
     return rawSong.localPath;
@@ -40,7 +24,6 @@ export function resolveLocalPath(rawSong: any): string {
   if (rawSong.url && typeof rawSong.url === 'string' && rawSong.url.startsWith('file:')) {
     return decodeFileUrl(rawSong.url);
   }
-  // BakaMusic 的 qualities 字段中可能包含 url
   if (rawSong.qualities && typeof rawSong.qualities === 'object') {
     for (const quality of Object.values(rawSong.qualities) as any[]) {
       if (quality?.url && typeof quality.url === 'string' && quality.url.startsWith('file:')) {
@@ -51,9 +34,6 @@ export function resolveLocalPath(rawSong: any): string {
   return '';
 }
 
-/**
- * 将备份歌曲对象转换为 Song 对象
- */
 export function convertBackupSong(rawSong: any): Song | null {
   const title = rawSong.title || rawSong.name || '';
   if (!title) return null;
@@ -68,7 +48,6 @@ export function convertBackupSong(rawSong: any): Song | null {
 
   const localPath = resolveLocalPath(rawSong);
 
-  // 如果没有本地路径，跳过该歌曲（无法播放）
   if (!localPath) {
     return null;
   }
@@ -89,12 +68,10 @@ export function convertBackupSong(rawSong: any): Song | null {
     source_type: 'local',
   };
 
-  // 歌词
   if (rawSong.rawLrc && typeof rawSong.rawLrc === 'string') {
     song.lyrics_raw = rawSong.rawLrc;
   }
 
-  // 封面 (BakaMusic 的 artwork 是 data URI)
   if (rawSong.artwork && typeof rawSong.artwork === 'string') {
     song.cover_thumb_path = rawSong.artwork;
   }
@@ -102,10 +79,6 @@ export function convertBackupSong(rawSong: any): Song | null {
   return song;
 }
 
-/**
- * 从文件路径创建 Song 对象
- * 如果有 EXTINF 元信息则优先使用，否则从文件名 "title-artist.ext" 模式解析
- */
 export function createSongFromPath(
   filePath: string,
   titleFromMeta: string,
@@ -121,7 +94,6 @@ export function createSongFromPath(
   let title = titleFromMeta;
   let artist = artistFromMeta;
 
-  // 无元信息时从文件名解析 "title-artist" 模式
   if (!title && baseName) {
     const dashIdx = baseName.lastIndexOf('-');
     if (dashIdx > 0) {

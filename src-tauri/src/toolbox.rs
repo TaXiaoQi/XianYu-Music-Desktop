@@ -17,8 +17,8 @@ static SOURCE_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RenameConfig {
-    pub mode: String,     // "tags", "rules", "auto"
-    pub template: String, // e.g. "{artist} - {title}"
+    pub mode: String,
+    pub template: String,
     pub remove_track_prefix: bool,
     pub remove_source_prefix: bool,
 }
@@ -28,7 +28,7 @@ pub struct RenamePreview {
     pub original_path: String,
     pub original_name: String,
     pub new_name: String,
-    pub status: String, // "tags" (success via tags), "rules" (cleaned via rules), "skipped" (no change/error)
+    pub status: String,
     pub error: Option<String>,
 }
 
@@ -64,7 +64,6 @@ fn process_file(path: &Path, config: &RenameConfig) -> RenamePreview {
         .to_string_lossy()
         .to_string();
 
-    // Mode A: Standardize via Tags
     if config.mode == "tags" || config.mode == "auto" {
         if let Ok(tagged_file) = read_tagged_file_from_path(path) {
             let metadata = extract_text_metadata(&tagged_file);
@@ -113,7 +112,6 @@ fn process_file(path: &Path, config: &RenameConfig) -> RenamePreview {
             }
         }
 
-        // If mode is "tags" and we failed, return skipped
         if config.mode == "tags" {
             return RenamePreview {
                 original_path: original_path_str,
@@ -125,11 +123,9 @@ fn process_file(path: &Path, config: &RenameConfig) -> RenamePreview {
         }
     }
 
-    // Mode B: Clean via Rules (or Auto fallback)
     if config.mode == "rules" || config.mode == "auto" {
         let mut cleaned_name = original_name.clone();
 
-        // Apply regex rules only to the stem (filename without extension)
         if let Some(stem) = path.file_stem() {
             let mut stem_str = stem.to_string_lossy().to_string();
 
@@ -157,7 +153,6 @@ fn process_file(path: &Path, config: &RenameConfig) -> RenamePreview {
         }
     }
 
-    // Fallback: Skipped
     RenamePreview {
         original_path: original_path_str,
         original_name: original_name.clone(),
@@ -192,7 +187,6 @@ pub fn preview_rename(
         }
     }
 
-    // Sort logic: changed files first
     results.sort_by(|a, b| {
         let a_changed = a.status != "skipped";
         let b_changed = b.status != "skipped";
@@ -209,13 +203,32 @@ pub fn preview_rename(
 }
 
 #[tauri::command]
-pub fn apply_rename(operations: Vec<RenameOperation>) -> Result<u32, String> {
+pub fn apply_rename(
+    operations: Vec<RenameOperation>,
+    db_state: tauri::State<'_, crate::database::DbState>,
+) -> Result<u32, String> {
+    let roots: Vec<PathBuf> = {
+        let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT path FROM library_folders")
+            .map_err(|e| e.to_string())?;
+        let paths: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        paths.into_iter().map(PathBuf::from).collect()
+    };
+
+    if roots.is_empty() {
+        return Err("音乐库为空，请先在音乐库中添加文件夹".to_string());
+    }
+
     let mut success_count = 0;
 
     for mut op in operations {
-        let validated_path = path_validator::validate_path(&op.original_path, None)?;
+        let validated_path = path_validator::validate_path(&op.original_path, Some(&roots))?;
         op.original_path = validated_path.to_string_lossy().to_string();
-        // Also sanitize new_name
         op.new_name = path_validator::sanitize_filename_component(&op.new_name)?;
         let src = PathBuf::from(&op.original_path);
         if let Some(parent) = src.parent() {
@@ -229,18 +242,107 @@ pub fn apply_rename(operations: Vec<RenameOperation>) -> Result<u32, String> {
     Ok(success_count)
 }
 
+fn authorized_programs_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))
+        .map(|dir| dir.join("authorized_programs.json"))
+}
+
+fn read_authorized_programs(app_handle: &tauri::AppHandle) -> Vec<PathBuf> {
+    let Ok(path) = authorized_programs_path(app_handle) else {
+        return Vec::new();
+    };
+    let Ok(content) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<String>>(&content)
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn save_authorized_programs(
+    app_handle: &tauri::AppHandle,
+    programs: &[PathBuf],
+) -> Result<(), String> {
+    let path = authorized_programs_path(app_handle)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建应用数据目录失败: {e}"))?;
+    }
+    let entries: Vec<String> = programs
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    let content = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
+    fs::write(&path, content).map_err(|e| format!("写入授权程序列表失败: {e}"))
+}
+
 #[tauri::command]
-pub fn open_external_program(path: String, args: Vec<String>) -> Result<(), String> {
+pub fn register_external_program(app_handle: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let mut dialog = app_handle.dialog().file();
+    #[cfg(target_os = "windows")]
+    {
+        dialog = dialog.add_filter("可执行文件", &["exe"]);
+    }
+    let Some(picked) = dialog.blocking_pick_file() else {
+        return Ok(String::new());
+    };
+    let program_path = picked
+        .into_path()
+        .map_err(|e| format!("解析所选路径失败: {e}"))?;
+
+    if !program_path.is_file() {
+        return Err(format!("目标程序文件不存在: {}", program_path.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let ext = program_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        if ext != "exe" {
+            return Err(format!("仅允许添加 .exe 程序，当前扩展名: .{ext}"));
+        }
+    }
+
+    let canonical = program_path
+        .canonicalize()
+        .map_err(|e| format!("路径规范化失败: {e}"))?;
+
+    let mut programs = read_authorized_programs(&app_handle);
+    if !programs.contains(&canonical) {
+        programs.push(canonical.clone());
+        save_authorized_programs(&app_handle, &programs)?;
+    }
+
+    Ok(canonical.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn open_external_program(
+    app_handle: tauri::AppHandle,
+    path: String,
+    args: Vec<String>,
+) -> Result<(), String> {
     use std::process::Command;
 
     let validated = path_validator::validate_path(&path, None)?;
 
-    // 确保路径指向一个实际存在的文件
     if !validated.is_file() {
         return Err(format!("目标程序文件不存在: {}", validated.display()));
     }
 
-    // 扩展名白名单：Windows 仅允许 .exe，其他平台允许常见可执行扩展名
+    if !read_authorized_programs(&app_handle).contains(&validated) {
+        return Err("该程序未获授权，请先在工具箱中重新选择".to_string());
+    }
+
     #[cfg(target_os = "windows")]
     {
         let ext = validated
@@ -249,20 +351,14 @@ pub fn open_external_program(path: String, args: Vec<String>) -> Result<(), Stri
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
         if ext != "exe" {
-            return Err(format!(
-                "仅允许启动 .exe 程序，当前扩展名: .{ext}"
-            ));
+            return Err(format!("仅允许启动 .exe 程序，当前扩展名: .{ext}"));
         }
     }
 
-    // 仅允许「打开单个目标文件/目录」语义：最多一个参数（现有调用方
-    // ToolboxStep2 / SongInfoModal 均只传 0~1 个参数），封顶防止被用来
-    // 向任意程序注入多条命令行参数。
     if args.len() > 1 {
         return Err("最多允许传递一个启动参数".to_string());
     }
 
-    // 清理参数：拒绝包含空字节或其他控制字符的参数
     let safe_args: Vec<String> = args
         .into_iter()
         .map(|arg| {
@@ -292,7 +388,6 @@ pub fn refresh_folder_songs(
 ) -> Result<Vec<crate::music::types::Song>, String> {
     let validated = path_validator::validate_path(&folder_path, None)?;
     let folder_path = validated.to_string_lossy().to_string();
-    // 复用现有的扫描逻辑
     crate::music::scanner::scan_single_directory_internal(
         folder_path,
         db_state.conn.clone(),
@@ -311,28 +406,68 @@ pub fn file_exists(path: String) -> bool {
     std::path::Path::new(&path).is_file()
 }
 
-/// [项4 下载编排] 在目标目录中解析非冲突文件路径。
-///
-/// 替代前端 `resolveNonConflictingPath` 逐次调用 `file_exists` 的 N 次 IPC 往返。
-/// 若文件已存在且 `overwrite_existing` 为 false，自动追加 ` (1)`/` (2)`… 直到不冲突。
+const DOWNLOAD_DIR_FILE: &str = "download_dir.json";
+
+fn download_dir_config_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))
+        .map(|dir| dir.join(DOWNLOAD_DIR_FILE))
+}
+
+pub fn read_authorized_download_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let path = download_dir_config_path(app_handle)?;
+    if !path.is_file() {
+        return Err("未设置下载目录，请先在设置中选择下载目录".to_string());
+    }
+    let content = fs::read_to_string(&path).map_err(|e| format!("读取下载目录配置失败: {e}"))?;
+    let dir = PathBuf::from(content.trim());
+    if !dir.is_dir() {
+        return Err("下载目录不可用，请重新在设置中选择下载目录".to_string());
+    }
+    Ok(dir)
+}
+
+#[tauri::command]
+pub fn register_download_directory(app_handle: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let Some(picked) = app_handle.dialog().file().blocking_pick_folder() else {
+        return Ok(String::new());
+    };
+    let dir = picked
+        .into_path()
+        .map_err(|e| format!("解析所选路径失败: {e}"))?;
+    if !dir.is_dir() {
+        return Err(format!("所选路径不是目录: {}", dir.display()));
+    }
+
+    let config_path = download_dir_config_path(&app_handle)?;
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建应用数据目录失败: {e}"))?;
+    }
+    fs::write(&config_path, dir.to_string_lossy().as_bytes())
+        .map_err(|e| format!("写入下载目录配置失败: {e}"))?;
+
+    Ok(dir.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 pub fn resolve_download_path(
-    directory: String,
+    app_handle: tauri::AppHandle,
     file_name: String,
     overwrite_existing: bool,
 ) -> Result<String, String> {
-    let validated_dir = path_validator::validate_path(&directory, None)?;
-    let dir = validated_dir;
+    let dir = read_authorized_download_dir(&app_handle)?;
     let file_name = path_validator::sanitize_filename_component(&file_name)?;
     let direct = dir.join(&file_name);
 
     if overwrite_existing || !direct.exists() {
-        // 确保目录存在
         std::fs::create_dir_all(&dir).map_err(|e| format!("创建下载目录失败: {e}"))?;
         return Ok(direct.to_string_lossy().to_string());
     }
 
-    // 分离扩展名
     let dot = file_name.rfind('.');
     let (stem, ext) = match dot {
         Some(idx) => (&file_name[..idx], &file_name[idx..]),
@@ -347,21 +482,11 @@ pub fn resolve_download_path(
         }
     }
 
-    // 兜底：返回原始路径（极不可能走到这里）
     Ok(direct.to_string_lossy().to_string())
 }
 
 // ==================== 下载文件名统一计算 ====================
-//
-// 前端原先自带 sanitizeFileName / buildFileNameBase / buildDownloadFileName / extFromUrl /
-// extFromQuality 等纯计算函数，与 Rust 侧 toolbox 的 sanitize_filename 规则不一致
-//（前者替换非法字符为空格、限长 180；后者替换为下划线、不限长）。
-// 现将下载专用的文件名计算统一下沉到 Rust，前端只传参数，避免两份命名规则漂移。
 
-/// 下载文件名清洗：非法字符替换为空格、折叠连续空白、限长 180 字符
-///
-/// 与前端旧 sanitizeFileName 行为完全一致：
-/// `<>:"/\\|?*` 及控制字符 \x00-\x1f → 空格 → 折叠连续空格 → trim → 截断 180 → 空则 "download"
 fn sanitize_download_filename(name: &str) -> String {
     let sanitized: String = name
         .chars()
@@ -378,15 +503,10 @@ fn sanitize_download_filename(name: &str) -> String {
     if trimmed.is_empty() {
         return "download".to_string();
     }
-    // 按 char 截断到 180 字符（与前端 .slice(0, 180) 一致）
     trimmed.chars().take(180).collect()
 }
 
-/// 从 URL 路径推断音频文件扩展名（含点，如 ".flac"）；无法识别返回空串
-///
-/// 仅接受常见音频扩展名，避免把 query 参数误判为扩展名
 fn ext_from_url(url: &str) -> String {
-    // 使用 reqwest 重导出的 url::Url 解析 URL，提取 pathname
     let path = match reqwest::Url::parse(url) {
         Ok(u) => u.path().to_string(),
         Err(_) => return String::new(),
@@ -402,15 +522,10 @@ fn ext_from_url(url: &str) -> String {
     }
 }
 
-/// 判断音质档位是否属于无损类（用于推断扩展名）
-///
-/// 无损：flac, flac24bit, hires, vinyl, master → .flac
-/// 有损：mgg, 128k, 192k, 320k, dolby, atmos, atmos_plus → .mp3
 fn is_lossless_quality(quality: &str) -> bool {
     matches!(quality, "flac" | "flac24bit" | "hires" | "vinyl" | "master")
 }
 
-/// 根据命中的音质档位推断扩展名兜底
 fn ext_from_quality(quality: &str) -> String {
     if is_lossless_quality(quality) {
         ".flac".to_string()
@@ -419,9 +534,6 @@ fn ext_from_quality(quality: &str) -> String {
     }
 }
 
-/// 按样式拼接文件名主体（不含扩展名）
-///
-/// 缺失字段会被跳过，避免出现 "歌名 -  - " 空段
 fn build_filename_base(title: &str, artist: &str, album: &str, style: &str) -> String {
     let title = if title.is_empty() {
         "未知歌曲"
@@ -431,7 +543,7 @@ fn build_filename_base(title: &str, artist: &str, album: &str, style: &str) -> S
     let parts: Vec<&str> = match style {
         "title-artist" => vec![title, artist],
         "title-artist-album" => vec![title, artist, album],
-        _ => vec![artist, title], // "artist-title" 为默认
+        _ => vec![artist, title],
     };
     let joined: String = parts
         .iter()
@@ -446,10 +558,6 @@ fn build_filename_base(title: &str, artist: &str, album: &str, style: &str) -> S
     }
 }
 
-/// 构造下载文件名（含扩展名，不含目录）
-///
-/// keep_source_filename 为真时使用 URL 原始文件名（去扩展名后清洗 + 追加推断的扩展名），
-/// 否则按 style 拼接歌名/歌手/专辑后清洗 + 追加扩展名。
 fn build_download_filename(
     title: &str,
     artist: &str,
@@ -474,7 +582,6 @@ fn build_download_filename(
             if let Some(base) = path.rsplit('/').next() {
                 if let Some(dot_idx) = base.rfind('.') {
                     let stem = &base[..dot_idx];
-                    // 使用 urlencoding crate 做 percent-decode（与前端 decodeURIComponent 一致）
                     let decoded = urlencoding::decode(stem)
                         .map(|cow| cow.into_owned())
                         .unwrap_or_else(|_| stem.to_string());
@@ -490,22 +597,9 @@ fn build_download_filename(
     format!("{}{}", sanitize_download_filename(&base), ext)
 }
 
-/// [项3 下载命名统一] 构建下载文件名并解析非冲突完整路径（单次 IPC）
-///
-/// 将前端原先的 buildDownloadFileName + joinPath + resolveNonConflictingPath 三步
-/// 合并为一次 Rust 调用，确保文件名清洗规则在 Rust 侧统一实现。
-///
-/// 参数：
-/// - `directory`: 下载目录
-/// - `title`, `artist`, `album`: 歌曲元信息
-/// - `url`: 音源直链（用于推断扩展名和原始文件名）
-/// - `quality`: 命中的音质档位（如 "320k", "flac" 等，用于扩展名兜底）
-/// - `keep_source_filename`: 是否保留 URL 原始文件名
-/// - `file_name_style`: 命名样式 ("artist-title" | "title-artist" | "title-artist-album")
-/// - `overwrite_existing`: 是否覆盖已存在文件
 #[tauri::command]
 pub fn resolve_download_full_path(
-    directory: String,
+    app_handle: tauri::AppHandle,
     title: String,
     artist: String,
     album: String,
@@ -515,8 +609,6 @@ pub fn resolve_download_full_path(
     file_name_style: String,
     overwrite_existing: bool,
 ) -> Result<String, String> {
-    let validated_dir = path_validator::validate_path(&directory, None)?;
-    let directory = validated_dir.to_string_lossy().to_string();
     let file_name = build_download_filename(
         &title,
         &artist,
@@ -527,14 +619,9 @@ pub fn resolve_download_full_path(
         &file_name_style,
     );
     let file_name = path_validator::sanitize_filename_component(&file_name)?;
-    // 复用已有的 resolve_download_path 逻辑
-    resolve_download_path(directory, file_name, overwrite_existing)
+    resolve_download_path(app_handle, file_name, overwrite_existing)
 }
 
-/// [项3 下载命名统一] 构建下载附件（歌词/封面）的清洗后文件名基名（不含扩展名）
-///
-/// 供 downloadSongExtras 使用：歌词/封面文件命名需与音频文件名保持一致的前缀，
-/// 但不需要扩展名（由调用方追加 .lrc / .jpg 等）。
 #[tauri::command]
 pub fn build_download_basename(
     title: String,
@@ -544,7 +631,6 @@ pub fn build_download_basename(
 ) -> String {
     let base = build_filename_base(&title, &artist, &album, &file_name_style);
     let cleaned = sanitize_download_filename(&base);
-    // 路径安全校验：确保文件名组件不含路径分隔符或目录遍历引用
     path_validator::sanitize_filename_component(&cleaned).unwrap_or_else(|_| "download".to_string())
 }
 
@@ -565,9 +651,6 @@ pub fn gpu_config_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "APPDATA environment variable not found".to_string())
 }
 
-/// Linux 版 GPU 配置路径，与 `set_gpu_acceleration` 写入端（Tauri app_data_dir）
-/// 保持同一目录约定：`$XDG_DATA_HOME/com.xymusic.desktop/gpu_config.json`，
-/// XDG_DATA_HOME 未设置时回退 `~/.local/share`（与 Tauri 推导一致）。
 #[cfg(not(target_os = "windows"))]
 pub fn gpu_config_path() -> Result<PathBuf, String> {
     let base = std::env::var_os("XDG_DATA_HOME")
@@ -582,7 +665,6 @@ pub fn gpu_config_path() -> Result<PathBuf, String> {
     Ok(base.join(APP_IDENTIFIER).join(GPU_CONFIG_FILE))
 }
 
-/// 启动早期读取 GPU 加速开关（双平台共用；路径由各平台 gpu_config_path 提供）。
 pub fn should_disable_gpu_for_startup() -> bool {
     let Ok(path) = gpu_config_path() else {
         return false;
@@ -700,7 +782,6 @@ pub async fn download_update_file(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
-        // 每次跳转目标都需通过 SSRF 校验，防重定向到内网/元数据地址
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XY-Music-Updater")
@@ -712,7 +793,6 @@ pub async fn download_update_file(
         download_url = format!("https://gh-proxy.com/{}", download_url);
     }
 
-    // SSRF 防护：更新包仅允许公网 http/https 直链
     ssrf::validate_outbound_url(&download_url)
         .await
         .map_err(|e| format!("更新包下载链接校验失败: {e}"))?;
@@ -808,7 +888,6 @@ pub async fn download_update_file(
     Ok(dest_path.to_string_lossy().to_string())
 }
 
-/// 在线歌曲下载进度事件负载。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SongDownloadProgress {
     pub progress: f64,
@@ -817,11 +896,6 @@ pub struct SongDownloadProgress {
     pub speed: f64,
 }
 
-/// 生成媒体流请求的 URL 候选：http 直链优先升级为 https。
-///
-/// IDM 等下载工具经 Winsock LSP 拦截系统级明文 HTTP 流量，按 URL 扩展名/
-/// MIME 嗅探音频直链并弹窗接管；https 的 TLS 加密让嗅探失效。
-/// 音源 CDN 不支持 https（连接失败/非 2xx）时由调用方回退原 http URL。
 pub(crate) fn media_url_candidates(url: &str) -> Vec<String> {
     match url.strip_prefix("http://") {
         Some(rest) => vec![format!("https://{rest}"), url.to_string()],
@@ -829,19 +903,11 @@ pub(crate) fn media_url_candidates(url: &str) -> Vec<String> {
     }
 }
 
-/// 下载在线歌曲的真实音源直链到指定目标路径（流式写入 + 进度回报）。
-///
-/// 前端负责解析音源直链、计算最终目标文件路径（含扩展名与命名冲突处理），
-/// 此命令负责下载、写盘、以及 QMC2 解密（若提供 ekey），进度通过 `song-download-progress` 事件回报。
-///
-/// 新增参数：
-/// - `ekey`: QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2）。提供时下载后自动解密。
-/// - `headers`: 自定义请求头（防盗链 Cookie/Referer 等）。
 #[tauri::command]
 pub async fn download_online_song(
     app_handle: tauri::AppHandle,
     url: String,
-    dest_path: String,
+    file_name: String,
     ekey: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
@@ -854,23 +920,18 @@ pub async fn download_online_song(
         return Err("无效的下载链接".to_string());
     }
 
-    // SSRF 防护：音源直链仅允许公网 http/https 目标，拒绝内网/回环/云元数据等
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|e| format!("下载链接校验失败: {e}"))?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
-        // 每个跳转目标都需通过 SSRF 校验，防重定向到内网/元数据地址
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
 
-    // 模拟浏览器媒体流请求（Accept/Range），降低被下载器识别为“文件下载”的概率。
-    // 但部分音源 CDN 对开放式 Range（高品/无损直链节点尤其常见）会返回 502/416/403，
-    // 此时自动回退到不带 Range 的普通 GET。
     let send_with_range = |req_url: &str, with_range: bool| {
         let mut builder = client.get(req_url).header(
             "Accept",
@@ -879,7 +940,6 @@ pub async fn download_online_song(
         if with_range {
             builder = builder.header("Range", "bytes=0-");
         }
-        // 透传插件返回的自定义请求头（防盗链 Cookie/Referer/Origin 等）
         if let Some(ref hdrs) = headers {
             for (key, value) in hdrs {
                 if key.eq_ignore_ascii_case("accept") || key.eq_ignore_ascii_case("range") {
@@ -891,14 +951,11 @@ pub async fn download_online_song(
         builder.send()
     };
 
-    // http 直链优先升级 https（规避 IDM 等下载工具的系统级明文嗅探），
-    // 每个 URL 候选先带 Range 请求，CDN 拒绝开放式 Range 时回退普通 GET。
     let mut response: Option<reqwest::Response> = None;
     let mut last_err = String::new();
     for candidate in media_url_candidates(&url) {
         match send_with_range(&candidate, true).await {
             Ok(resp) if resp.status().is_success() => {
-                // https 升级候选返回 200 但内容非音频（CDN 错误页）时跳过，回退 http 原 URL
                 let ct = resp
                     .headers()
                     .get(reqwest::header::CONTENT_TYPE)
@@ -911,7 +968,8 @@ pub async fn download_online_song(
                     || ct.contains("application/xml")
                     || ct.contains("text/xml");
                 if is_non_audio && candidate.starts_with("https://") && url.starts_with("http://") {
-                    last_err = format!("https 候选返回非音频内容 (Content-Type: {})，回退 http", ct);
+                    last_err =
+                        format!("https 候选返回非音频内容 (Content-Type: {})，回退 http", ct);
                     continue;
                 }
                 response = Some(resp);
@@ -942,9 +1000,10 @@ pub async fn download_online_song(
 
     let total_size = response.content_length().unwrap_or(0);
 
-    // 复检写入路径：拒绝目录穿越/符号链接逃逸，规范化后再落盘
-    let dest = path_validator::validate_path(&dest_path, None)
-        .map_err(|e| format!("下载目标路径非法: {e}"))?;
+    let dir = read_authorized_download_dir(&app_handle)?;
+    let file_name = path_validator::sanitize_filename_component(&file_name)
+        .map_err(|e| format!("下载文件名非法: {e}"))?;
+    let dest = dir.join(&file_name);
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -991,7 +1050,6 @@ pub async fn download_online_song(
             }
             Ok(None) => break,
             Err(e) => {
-                // 下载中断，清理不完整文件
                 drop(file);
                 let _ = tokio::fs::remove_file(&dest).await;
                 return Err(format!("下载数据分块失败: {e}"));
@@ -1004,9 +1062,6 @@ pub async fn download_online_song(
         .map_err(|e| format!("刷新文件缓存失败: {e}"))?;
     drop(file);
 
-    // 完整性校验：若服务器声明了文件大小但实际下载字节数不足，说明下载被中途干扰
-    // （例如 IDM 等下载器接管/拦截了同一链接，导致本进程连接被打断），
-    // 此时删除不完整文件并报错，避免留下“能双击但无法播放”的损坏文件。
     if total_size > 0 && downloaded < total_size {
         let _ = tokio::fs::remove_file(&dest).await;
         return Err(format!(
@@ -1014,9 +1069,6 @@ pub async fn download_online_song(
         ));
     }
 
-    // QMC2 解密：若提供了 ekey，下载的文件是 QMC2 加密数据，需要解密后才能播放/读取标签。
-    // 解密在原地完成：读取加密文件 -> 逐块解密 -> 覆盖写回。
-    // 若未提供 ekey 但文件头看起来像 QMC 加密，尝试从文件尾部提取 ekey（QTag/V1 footer）。
     if let Some(ref ek) = ekey {
         if !ek.is_empty() {
             match decrypt_qmc_file_inplace(&dest, ek) {
@@ -1035,7 +1087,6 @@ pub async fn download_online_song(
         }
     }
 
-    // 发送最终 100% 进度，确保前端收到完成状态
     let elapsed = start_time.elapsed().as_secs_f64();
     let speed = if elapsed > 0.0 {
         downloaded as f64 / elapsed
@@ -1059,8 +1110,6 @@ pub async fn download_online_song(
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// 从文件尾部提取 QMC ekey（QTag/V1 footer 格式）。
-/// 返回 base64 编码的 ekey 字符串，若文件不含 footer 则返回 None。
 fn try_extract_ekey_from_file(path: &Path) -> Option<String> {
     let metadata = fs::metadata(path).ok()?;
     let file_size = metadata.len();
@@ -1068,19 +1117,17 @@ fn try_extract_ekey_from_file(path: &Path) -> Option<String> {
         return None;
     }
 
-    // 只读取文件尾部 4KB 用于检测 footer
     let tail_size = (file_size.min(4096)) as usize;
     let mut file = fs::File::open(path).ok()?;
     use std::io::{Read, Seek, SeekFrom};
-    file.seek(SeekFrom::Start(file_size - tail_size as u64)).ok()?;
+    file.seek(SeekFrom::Start(file_size - tail_size as u64))
+        .ok()?;
     let mut tail = vec![0u8; tail_size];
     file.read_exact(&mut tail).ok()?;
 
     crate::player::qmc2::extract_ekey_from_footer(&tail)
 }
 
-/// 原地解密 QMC2 加密文件：读取加密内容，逐块解密，覆盖写回。
-/// 返回解密后的文件大小（字节）。
 fn decrypt_qmc_file_inplace(path: &Path, ekey: &str) -> Result<u64, String> {
     use std::io::{Read, Write};
 
@@ -1091,57 +1138,45 @@ fn decrypt_qmc_file_inplace(path: &Path, ekey: &str) -> Result<u64, String> {
         .map_err(|e| format!("读取文件元数据失败: {e}"))?
         .len();
 
-    // 使用临时文件写入解密数据，完成后原子替换原文件
     let temp_path = path.with_extension("qmc_tmp_dec");
 
     {
-        let mut input = fs::File::open(path)
-            .map_err(|e| format!("打开加密文件失败: {e}"))?;
-        let mut output = fs::File::create(&temp_path)
-            .map_err(|e| format!("创建临时解密文件失败: {e}"))?;
+        let mut input = fs::File::open(path).map_err(|e| format!("打开加密文件失败: {e}"))?;
+        let mut output =
+            fs::File::create(&temp_path).map_err(|e| format!("创建临时解密文件失败: {e}"))?;
 
         let mut offset: u64 = 0;
-        let mut buf = vec![0u8; 64 * 1024]; // 64KB chunks
+        let mut buf = vec![0u8; 64 * 1024];
 
         loop {
-            let n = input.read(&mut buf)
+            let n = input
+                .read(&mut buf)
                 .map_err(|e| format!("读取加密数据失败: {e}"))?;
             if n == 0 {
                 break;
             }
             crypto.decrypt(offset as usize, &mut buf[..n]);
-            output.write_all(&buf[..n])
+            output
+                .write_all(&buf[..n])
                 .map_err(|e| format!("写入解密数据失败: {e}"))?;
             offset += n as u64;
         }
 
-        output.flush()
+        output
+            .flush()
             .map_err(|e| format!("刷新解密文件失败: {e}"))?;
     }
 
-    // 原子替换：重命名临时文件为原文件
-    fs::rename(&temp_path, path)
-        .map_err(|e| {
-            let _ = fs::remove_file(&temp_path);
-            format!("替换原文件失败: {e}")
-        })?;
+    fs::rename(&temp_path, path).map_err(|e| {
+        let _ = fs::remove_file(&temp_path);
+        format!("替换原文件失败: {e}")
+    })?;
 
-    // 返回解密后文件大小（QTag/V1 footer 会被移除，但 QmcCrypto::decrypt 不处理 footer 移除，
-    // 解密后的文件包含原始音频数据 + footer 垃圾字节。
-    // 实际上 QMC2 的 footer 在解密后仍存在但已被破坏，音频播放器通常能忽略尾部垃圾。
-    // 若需要精确裁剪，可在此处检测并截断 footer。）
     Ok(file_size)
 }
 
-/// 原地解密 QMC2 加密文件（用于缓存复用路径）。
-///
-/// 当 ekey 已知时直接使用；否则尝试从文件尾部 footer 提取 ekey。
-/// 若文件不含 QMC 加密特征（无 ekey、无 footer），返回 Ok(false) 表示无需解密。
 #[tauri::command]
-pub fn decrypt_qmc_file(
-    file_path: String,
-    ekey: Option<String>,
-) -> Result<bool, String> {
+pub fn decrypt_qmc_file(file_path: String, ekey: Option<String>) -> Result<bool, String> {
     let validated = path_validator::validate_path(&file_path, None)?;
     let path = validated;
 
@@ -1165,37 +1200,10 @@ pub fn decrypt_qmc_file(
             Err(e) => Err(format!("QMC2 解密失败: {e}")),
         }
     } else {
-        // 无 ekey 且文件不含 QMC footer，可能是非加密音源，无需解密
         Ok(false)
     }
 }
 
-/// 保存歌词文本到指定文件（用于下载歌曲时一并保存歌词）。
-#[tauri::command]
-pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<String, String> {
-    write_text_file(content, dest_path).await
-}
-
-/// 将文本内容写入指定路径（通用文本写入，自动创建父目录）。
-#[tauri::command]
-pub async fn write_text_file(content: String, dest_path: String) -> Result<String, String> {
-    let validated = path_validator::validate_path(&dest_path, None)?;
-    let dest = validated;
-    if let Some(parent) = dest.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("创建目录失败: {e}"))?;
-    }
-    tokio::fs::write(&dest, content)
-        .await
-        .map_err(|e| format!("写入文件失败: {e}"))?;
-    Ok(dest.to_string_lossy().to_string())
-}
-
-/// 通过 Rust 后端下载图片二进制数据（绕过 WebView 的 CORS 限制）。
-///
-/// 前端 `fetch()` 下载远程封面时会因 CORS 策略静默失败，
-/// 此命令使用 `reqwest` 在 Rust 侧发起请求，返回图片字节和 Content-Type。
 #[derive(Debug, Serialize)]
 pub struct FetchedImage {
     pub data: Vec<u8>,
@@ -1210,14 +1218,12 @@ pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
         return Err("无效的图片链接".to_string());
     }
 
-    // SSRF 防护：图片直链仅允许公网 http/https 目标
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|e| format!("图片链接校验失败: {e}"))?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
-        // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -1254,46 +1260,84 @@ pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
     Ok(FetchedImage { data, mime })
 }
 
-/// 将前端已下载的字节数据写入目标文件（用于前端 fetch 下载音频后落盘）。
-///
-/// 前端在 WebView 中用 fetch 拉取音频数据（IDM 等下载器默认不接管 AJAX 请求，
-/// 可规避被拦截），再把字节交给此命令写盘。
-#[tauri::command]
-pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<String, String> {
-    if data.is_empty() {
-        return Err("下载数据为空".to_string());
-    }
-    let validated = path_validator::validate_path(&dest_path, None)?;
-    let dest = validated;
-    if let Some(parent) = dest.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("创建下载目录失败: {e}"))?;
-    }
-    tokio::fs::write(&dest, &data)
-        .await
-        .map_err(|e| format!("写入文件失败: {e}"))?;
-    Ok(dest.to_string_lossy().to_string())
+#[derive(Debug, Deserialize)]
+pub struct SaveDialogFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
 }
 
-/// [项4 下载编排] 下载后收尾编排：歌词保存 + 封面下载保存 + 元数据嵌入，单次 IPC 完成。
-///
-/// 替代前端 `downloadSong` 在音频下载完成后发起的 3-4 次独立 IPC 调用
-/// (`save_download_lyrics` + `fetch_image_bytes` + `save_download_bytes` + `embed_audio_metadata`)。
-/// 所有子步骤独立执行，单步失败不影响其他步骤，最终统一返回各步骤结果。
+pub fn pick_save_path(
+    app_handle: &tauri::AppHandle,
+    default_file_name: &str,
+    filter: Option<&SaveDialogFilter>,
+) -> Result<Option<PathBuf>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let file_name = path_validator::sanitize_filename_component(default_file_name)?;
+
+    let mut dialog = app_handle.dialog().file();
+    dialog = dialog.set_file_name(&file_name);
+    if let Some(f) = filter {
+        let exts: Vec<&str> = f.extensions.iter().map(|s| s.as_str()).collect();
+        dialog = dialog.add_filter(&f.name, &exts);
+    }
+
+    let Some(picked) = dialog.blocking_save_file() else {
+        return Ok(None);
+    };
+    Ok(Some(
+        picked
+            .into_path()
+            .map_err(|e| format!("解析所选路径失败: {e}"))?,
+    ))
+}
+
+fn write_file_bytes(dest: &Path, data: &[u8]) -> Result<(), String> {
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+    fs::write(dest, data).map_err(|e| format!("写入文件失败: {e}"))
+}
+
+#[tauri::command]
+pub fn save_text_via_dialog(
+    app_handle: tauri::AppHandle,
+    default_file_name: String,
+    filter: Option<SaveDialogFilter>,
+    content: String,
+) -> Result<Option<String>, String> {
+    let Some(dest) = pick_save_path(&app_handle, &default_file_name, filter.as_ref())? else {
+        return Ok(None);
+    };
+    write_file_bytes(&dest, content.as_bytes())?;
+    Ok(Some(dest.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub fn save_bytes_via_dialog(
+    app_handle: tauri::AppHandle,
+    default_file_name: String,
+    filter: Option<SaveDialogFilter>,
+    data: Vec<u8>,
+) -> Result<Option<String>, String> {
+    if data.is_empty() {
+        return Err("保存数据为空".to_string());
+    }
+    let Some(dest) = pick_save_path(&app_handle, &default_file_name, filter.as_ref())? else {
+        return Ok(None);
+    };
+    write_file_bytes(&dest, &data)?;
+    Ok(Some(dest.to_string_lossy().to_string()))
+}
+
 #[derive(Debug, serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct FinalizeDownloadExtrasRequest {
-    /// 歌词：文本内容 + 保存路径；为 None 则不保存歌词文件
     pub lyrics_text: Option<String>,
     pub lyrics_path: Option<String>,
-    /// 封面：远程 URL + 保存路径；URL 为 None 则不下载封面
-    /// cover_path 为 None 时仅下载字节供元数据嵌入，不保存独立文件
     pub cover_url: Option<String>,
     pub cover_path: Option<String>,
-    /// 元数据嵌入请求；为 None 则不嵌入
     pub metadata: Option<EmbedMetadataRequest>,
-    /// 是否将下载的封面自动填充到元数据请求中
     pub embed_cover: bool,
 }
 
@@ -1303,25 +1347,28 @@ pub struct FinalizeDownloadExtrasResult {
     pub cover_saved: bool,
     pub metadata_embedded: bool,
     pub metadata_error: Option<String>,
-    /// 下载到的封面二进制数据（供前端后续使用，如嵌入已有数据的场景）
     pub cover_data: Option<Vec<u8>>,
-    /// 封面 MIME 类型
     pub cover_mime: String,
 }
 
 #[tauri::command]
 pub async fn finalize_download_extras(
+    app_handle: tauri::AppHandle,
     request: FinalizeDownloadExtrasRequest,
 ) -> Result<FinalizeDownloadExtrasResult, String> {
     let mut result = FinalizeDownloadExtrasResult::default();
 
-    // 1. 保存歌词文件
-    if let (Some(text), Some(path)) = (&request.lyrics_text, &request.lyrics_path) {
+    let download_dir = if request.lyrics_path.is_some() || request.cover_path.is_some() {
+        Some(read_authorized_download_dir(&app_handle)?)
+    } else {
+        None
+    };
+
+    if let (Some(text), Some(name)) = (&request.lyrics_text, &request.lyrics_path) {
         if !text.is_empty() {
-            let dest = PathBuf::from(path);
-            if let Some(parent) = dest.parent() {
-                let _ = tokio::fs::create_dir_all(parent).await;
-            }
+            let dir = download_dir.clone().ok_or("下载目录未授权")?;
+            let name = path_validator::sanitize_filename_component(name)?;
+            let dest = dir.join(name);
             match tokio::fs::write(&dest, text).await {
                 Ok(_) => result.lyrics_saved = true,
                 Err(_) => {}
@@ -1329,31 +1376,27 @@ pub async fn finalize_download_extras(
         }
     }
 
-    // 2. 下载封面（用于独立文件保存和/或元数据嵌入）
     if let Some(url) = &request.cover_url {
         if !url.is_empty() && (url.starts_with("http://") || url.starts_with("https://")) {
             match fetch_image_bytes(url.clone()).await {
                 Ok(img) => {
-                    // 保存封面文件（若请求了独立文件保存）
-                    if let Some(path) = &request.cover_path {
-                        // 根据 MIME 类型确定正确的扩展名
+                    if let Some(name) = &request.cover_path {
+                        let dir = download_dir.clone().ok_or("下载目录未授权")?;
+                        let name = path_validator::sanitize_filename_component(name)?;
                         let actual_ext = if img.mime.contains("png") {
                             ".png"
                         } else {
                             ".jpg"
                         };
-                        // 若前端传入的路径扩展名与实际 MIME 不符，替换之
-                        let final_path = if path.ends_with(".jpg") && actual_ext == ".png" {
-                            format!("{}.png", &path[..path.len() - 4])
-                        } else if path.ends_with(".png") && actual_ext == ".jpg" {
-                            format!("{}.jpg", &path[..path.len() - 4])
+                        let name_str = name.to_string_lossy().to_string();
+                        let final_name = if name_str.ends_with(".jpg") && actual_ext == ".png" {
+                            format!("{}.png", &name_str[..name_str.len() - 4])
+                        } else if name_str.ends_with(".png") && actual_ext == ".jpg" {
+                            format!("{}.jpg", &name_str[..name_str.len() - 4])
                         } else {
-                            path.clone()
+                            name_str
                         };
-                        let dest = PathBuf::from(&final_path);
-                        if let Some(parent) = dest.parent() {
-                            let _ = tokio::fs::create_dir_all(parent).await;
-                        }
+                        let dest = dir.join(final_name);
                         match tokio::fs::write(&dest, &img.data).await {
                             Ok(_) => {
                                 result.cover_saved = true;
@@ -1369,9 +1412,7 @@ pub async fn finalize_download_extras(
         }
     }
 
-    // 3. 嵌入元数据
     if let Some(mut meta) = request.metadata {
-        // 若请求了封面嵌入但未单独提供封面数据，使用步骤 2 下载的封面数据
         if request.embed_cover && meta.cover_data.is_none() {
             if let Some(data) = &result.cover_data {
                 meta.cover_data = Some(data.clone());
@@ -1394,9 +1435,6 @@ pub async fn finalize_download_extras(
     Ok(result)
 }
 
-/// 下载记录文件路径：`%APPDATA%\com.xymusic.desktop\download_history.json`。
-///
-/// 与 `gpu_config_path` 保持同一目录约定。非 Windows 平台走 Tauri 的 app_data_dir。
 fn download_history_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     {
@@ -1418,10 +1456,6 @@ fn download_history_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, Strin
     }
 }
 
-/// 读取下载记录 JSON 文本。
-///
-/// 文件不存在或内容损坏时返回 `"{}"` 而不是报错，让前端始终能拿到可解析的结果。
-/// 记录结构由前端定义（传 JSON 字符串而非结构体），后续加字段无需改动 Rust 侧。
 #[tauri::command]
 pub async fn read_download_history(app_handle: tauri::AppHandle) -> Result<String, String> {
     let path = download_history_path(&app_handle)?;
@@ -1435,7 +1469,6 @@ pub async fn read_download_history(app_handle: tauri::AppHandle) -> Result<Strin
     }
 }
 
-/// 写入下载记录 JSON 文本（整体覆盖），自动创建父目录。
 #[tauri::command]
 pub async fn write_download_history(
     app_handle: tauri::AppHandle,
@@ -1453,42 +1486,32 @@ pub async fn write_download_history(
     Ok(())
 }
 
-/// 探测在线音频直链的大小与最终 URL（用于下载对话框显示各档位文件大小）。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ProbeUrlInfo {
     pub url: String,
     pub size: u64,
-    /// 探测失败时的诊断信息，便于前端在控制台看到具体原因（403/超时等）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
-/// 用 `Range: bytes=0-0` 探测直链文件大小。
-///
-/// 支持 Range 的服务器返回 206 + `Content-Range: bytes 0-0/TOTAL`；
-/// 不支持的返回 200 + `Content-Length`（整个文件大小）。
-/// 之所以不先发 HEAD：很多音源 CDN 对 HEAD 返回 403/405，反而更慢。
 #[tauri::command]
 pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("无效的探测链接".to_string());
     }
 
-    // SSRF 防护：探测目标仅允许公网 http/https 地址
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|e| format!("探测链接校验失败: {e}"))?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
-        // 每次跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建探测客户端失败: {e}"))?;
 
-    // http 直链优先 https（规避下载工具嗅探）；https 失败/非 2xx 时回退原 URL
     let candidates = media_url_candidates(&url);
     let mut resp_opt: Option<reqwest::Response> = None;
     let mut probe_err: Option<String> = None;
@@ -1508,7 +1531,6 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
                     resp_opt = Some(r);
                     break;
                 }
-                // https 非 2xx：CDN 可能不支持 https，记录状态后回退 http
                 if probe_err.is_none() {
                     probe_err = Some(format!("HTTP {}", r.status()));
                 }
@@ -1569,15 +1591,6 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
     })
 }
 
-/// 是否为微软商店环境（用于禁用应用内自更新：商店政策禁止绕过商店自行更新）。
-/// 优先级 1——构建期开关：`store-build` feature（npm run tauri:build:store）。
-/// MSI 直传商店安装后是普通 Win32 程序、无 MSIX 包身份，运行时检测会误判为
-/// 官网版，因此商店专用产物必须在构建期直接判定为 true。
-/// 优先级 2——运行时包身份检测：对 MSIX 路径生效（Microsoft Store / winget
-/// MSIX 安装、winapp CLI 带身份调试）。实现为 Win32
-/// `GetCurrentPackageFullName`——普通 Win32 进程返回
-/// APPMODEL_ERROR_NO_PACKAGE(15700)，带包身份时走两次调用返回完整包名。
-/// 直接声明 kernel32 导入，不新增依赖。
 #[tauri::command]
 pub fn is_store_build() -> bool {
     #[cfg(feature = "store-build")]
@@ -1590,7 +1603,6 @@ pub fn is_store_build() -> bool {
         }
         const ERROR_INSUFFICIENT_BUFFER: i32 = 122;
         let mut len: u32 = 0;
-        // 第一次调用传空缓冲取包名长度；无包身份时返回 NO_PACKAGE 等非 122 值
         let rc = unsafe { GetCurrentPackageFullName(&mut len, std::ptr::null_mut()) };
         if rc == ERROR_INSUFFICIENT_BUFFER && len > 0 {
             let mut buf = vec![0u16; len as usize];
@@ -1609,7 +1621,6 @@ pub fn is_store_build() -> bool {
 pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
     use std::process::Command;
 
-    // 安全限制：仅允许执行系统下载目录中的安装包
     let download_dir = app_handle
         .path()
         .download_dir()
@@ -1617,8 +1628,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
 
     let validated = path_validator::validate_path_in_dir(&path, &download_dir)?;
 
-    // 扩展名白名单（按平台）：Windows 仅 .msi/.exe；Linux 仅 .deb/.rpm/.AppImage；
-    // macOS 仅 .dmg（挂载后自动拷贝 .app 到 /Applications）
     let ext = validated
         .extension()
         .and_then(|e| e.to_str())
@@ -1640,7 +1649,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
         ));
     }
 
-    // 确保文件实际存在
     if !validated.is_file() {
         return Err(format!("安装程序文件不存在: {}", validated.display()));
     }
@@ -1655,7 +1663,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
                 .spawn()
                 .map_err(|e| format!("启动 MSI 安装程序失败: {e}"))?;
         } else {
-            // 直接启动 .exe，避免使用 cmd /C start 造成命令注入风险
             Command::new(&path_str)
                 .spawn()
                 .map_err(|e| format!("启动安装程序失败: {e}"))?;
@@ -1666,7 +1673,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
     {
         let _ = &ext;
         if ext == "appimage" {
-            // AppImage 不会经包管理器，确保可执行位后直接启动
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -1683,7 +1689,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
                 .spawn()
                 .map_err(|e| format!("启动 AppImage 失败: {e}"))?;
         } else {
-            // .deb/.rpm 交给系统安装器（软件中心）处理
             Command::new("xdg-open")
                 .arg(&path_str)
                 .spawn()
@@ -1693,9 +1698,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
 
     #[cfg(target_os = "macos")]
     {
-        // macOS：挂载 dmg → 拷贝 .app 到 /Applications → 卸载 → 启动新版本。
-        // 覆盖运行中的 .app 需先退出应用，所以把安装动作写成独立 shell 脚本
-        // spawn（sleep 等应用退出），dmg 路径经 argv 传递（脚本固定文本，无注入面）。
         let script = "#!/bin/sh\n\
             # XY-Music 应用内更新安装脚本（参数: $1=dmg 路径）\n\
             sleep 2\n\
@@ -1712,8 +1714,7 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
             fi\n\
             hdiutil detach \"$MOUNT\" >/dev/null 2>&1 || true\n";
         let script_path = std::env::temp_dir().join("xianyu_update_install.sh");
-        std::fs::write(&script_path, script)
-            .map_err(|e| format!("写入安装脚本失败: {e}"))?;
+        std::fs::write(&script_path, script).map_err(|e| format!("写入安装脚本失败: {e}"))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1736,7 +1737,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
     Ok(())
 }
 
-/// 将 JSON 字符串写入 app_data_dir/state/{key}.json，用于持久化超过 localStorage 配额的大数据（如含 9000+ 歌曲的歌单）。
 #[tauri::command]
 pub async fn write_state_json(
     app_handle: tauri::AppHandle,
@@ -1760,7 +1760,6 @@ pub async fn write_state_json(
     Ok(())
 }
 
-/// 从 app_data_dir/state/{key}.json 读取 JSON 字符串。文件不存在时返回 null。
 #[tauri::command]
 pub async fn read_state_json(
     app_handle: tauri::AppHandle,
@@ -1782,8 +1781,6 @@ pub async fn read_state_json(
     Ok(Some(content))
 }
 
-/// 下载壁纸图片到 app_data_dir/wallpapers/{filename}，返回本地文件路径。
-/// 壁纸体积小，无需进度事件；下载到应用数据目录，更新应用不会丢失。
 #[tauri::command]
 pub async fn download_wallpaper(
     app_handle: tauri::AppHandle,
@@ -1797,24 +1794,20 @@ pub async fn download_wallpaper(
         return Err("无效的壁纸下载链接".to_string());
     }
 
-    // SSRF 防护：壁纸源仅允许公网 http/https 目标
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|e| format!("壁纸链接校验失败: {e}"))?;
 
-    // 防止路径穿越：仅保留文件名部分，去除任何路径分隔符
     let safe_name = std::path::Path::new(&filename)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("wallpaper.jpg")
         .to_string();
-    // 确保有图片扩展名，默认补 .jpg
     let safe_name = if std::path::Path::new(&safe_name).extension().is_none() {
         format!("{safe_name}.jpg")
     } else {
         safe_name
     };
-    // 文件名组件清洗：拒绝空/./..，防止特殊名逃逸
     let safe_name = crate::security::path_validator::sanitize_filename_component(&safe_name)?;
 
     let app_dir = app_handle
@@ -1829,7 +1822,6 @@ pub async fn download_wallpaper(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
-        // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XY-Music-WallpaperDownloader")
@@ -1861,7 +1853,6 @@ pub async fn download_wallpaper(
     Ok(dest_path.to_string_lossy().to_string())
 }
 
-/// 删除 app_data_dir/wallpapers 下的已下载壁纸文件。
 #[tauri::command]
 pub async fn delete_wallpaper_file(
     app_handle: tauri::AppHandle,
@@ -1880,10 +1871,10 @@ pub async fn delete_wallpaper_file(
     if !target.is_file() {
         return Err("目标不是可删除的壁纸文件".to_string());
     }
-    let canonical_dir = std::fs::canonicalize(&wallpaper_dir)
-        .map_err(|e| format!("读取壁纸目录失败: {e}"))?;
-    let canonical_target = std::fs::canonicalize(&target)
-        .map_err(|e| format!("读取壁纸文件失败: {e}"))?;
+    let canonical_dir =
+        std::fs::canonicalize(&wallpaper_dir).map_err(|e| format!("读取壁纸目录失败: {e}"))?;
+    let canonical_target =
+        std::fs::canonicalize(&target).map_err(|e| format!("读取壁纸文件失败: {e}"))?;
     if !canonical_target.starts_with(&canonical_dir) {
         return Err("只能删除应用壁纸目录中的文件".to_string());
     }
@@ -1919,7 +1910,10 @@ mod tests {
 
         assert_eq!(request.lyrics_text.as_deref(), Some("[00:00.00]测试歌词"));
         assert_eq!(request.lyrics_path.as_deref(), Some("D:\\Music\\song.lrc"));
-        assert_eq!(request.cover_url.as_deref(), Some("https://example.com/cover.jpg"));
+        assert_eq!(
+            request.cover_url.as_deref(),
+            Some("https://example.com/cover.jpg")
+        );
         assert_eq!(request.cover_path.as_deref(), Some("D:\\Music\\song.jpg"));
         assert!(request.embed_cover);
 

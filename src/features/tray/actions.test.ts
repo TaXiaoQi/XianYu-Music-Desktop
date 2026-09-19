@@ -54,15 +54,12 @@ describe('tray menu actions', () => {
   it('toggles mini player mode on repeated show-mini-player actions', async () => {
     const deps = createDeps();
 
-    // 初始状态：非 mini 模式
     expect(deps.isMiniMode.value).toBe(false);
 
-    // 第一次点击：进入 mini 模式
     await handleTrayMenuAction('show-mini-player', deps);
     expect(deps.isMiniMode.value).toBe(true);
     expect(deps.revealMainWindow).not.toHaveBeenCalled();
 
-    // 第二次点击：退出 mini 模式并恢复主窗口
     await handleTrayMenuAction('show-mini-player', deps);
     expect(deps.isMiniMode.value).toBe(false);
     expect(deps.revealMainWindow).toHaveBeenCalledTimes(1);

@@ -63,7 +63,6 @@ interface SongMenuIcon {
   }>;
 }
 
-/** 排行榜用户条目摘要（右键"查看"跳转用户详情用） */
 interface LeaderboardUserSummary {
   username: string;
   nickname: string;
@@ -79,11 +78,8 @@ const props = defineProps<{
   isFolderView?: boolean;
   isManagementMode?: boolean;
   isOnlineSearch?: boolean;
-  /** 在线详情页容器类型：用于在歌手/专辑容器中隐藏"查看歌手/查看专辑" */
   onlineDetailType?: 'artist' | 'album' | 'playlist' | 'user';
-  /** 已下载在线歌曲的本地文件路径（供"打开文件所在目录""查看歌曲信息"使用） */
   resolvedFilePath?: string;
-  /** 排行榜用户模式：仅显示"查看"菜单项（song 可为 null） */
   leaderboardEntry?: LeaderboardUserSummary | null;
 }>();
 
@@ -151,7 +147,6 @@ addAlbumToQueueTail: {
     { d: 'M 2,12 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0' },
     { d: 'M 5.5,12 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0' },
 
-    // 队列线条：轻微递增，整体不超过 x≈21.2
     { d: 'M14.75 8.5H19.25' },
     { d: 'M14.75 12H20.25' },
     { d: 'M14.75 15.5H21.25' },
@@ -235,7 +230,6 @@ addAlbumToQueueTail: {
 };
 
 const menuEntries = computed<SongMenuEntry[]>(() => {
-  // 排行榜用户模式：仅显示"查看"菜单项
   if (props.leaderboardEntry) {
     return [{ type: 'action', key: 'viewLeaderboardUser', label: '查看' }];
   }
@@ -250,19 +244,15 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
     { type: 'action', key: 'addToQueueTail', label: '添加到队尾' },
   ];
 
-  // 在线搜索模式：在"添加到队尾"后追加"下载至本地"（仅对可下载的在线歌曲）
   if (online && props.song && isDownloadableOnlineSong(props.song)) {
     entries.push({ type: 'action', key: 'downloadToLocal', label: '下载至本地' });
   }
 
-  // 在线搜索模式和歌单视图不显示"整张专辑添加到队尾"
   if (!online && !props.isPlaylistView && props.song && hasSongAlbumMetadata(props.song)) {
     entries.push({ type: 'action', key: 'addAlbumToQueueTail', label: '整张专辑添加到队尾' });
   }
 
   if (online) {
-    // 在线搜索模式：查看歌手、查看专辑，最后是添加到歌单
-    // 歌手/专辑容器中隐藏"查看歌手/查看专辑"，歌单容器和搜索页显示完整菜单
     const hideViewNavigation = props.onlineDetailType === 'artist' || props.onlineDetailType === 'album';
 
     if (!hideViewNavigation) {
@@ -278,7 +268,6 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
       { type: 'action', key: 'favorite', label: favoriteLabel },
     );
 
-    // 在歌单视图内，在线歌曲右键应显示"从歌单中移除"而非"添加到歌单"
     if (props.isPlaylistView) {
       entries.push({ type: 'action', key: 'removeFromList', label: '从歌单中移除' });
     } else {
@@ -463,12 +452,10 @@ const handleRemoveFromList = () => {
   }
 
   if (props.isPlaylistView) {
-    // 已同步歌单（持有 cloudId）：弹「删除范围三选一」，未同步走原直接移除
     const collectionsStore = useCollectionsStore();
     const playlist = collectionsStore.getPlaylistById(filterCondition.value);
     const cloudId = playlist?.cloudId || '';
     if (playlist && cloudId) {
-      // 菜单关闭后 song prop 可能被父级置空：打开弹窗前先固化本次数据
       const payloadJson = JSON.stringify(songToSyncPayload(props.song));
       pendingRemove.value = {
         playlistId: filterCondition.value,
@@ -508,7 +495,6 @@ const handleRemoveScope = (scope: SyncDeleteScope) => {
   const playlist = collectionsStore.getPlaylistById(target.playlistId);
   if (!playlist) return;
 
-  // 顺带清理 songs 元信息缓存（在线歌曲缓存于 playlist.songs，仅清 songPaths 会残留）
   const pruneMeta = () => {
     if (playlist.songs?.length) {
       const kept = playlist.songs.filter(s => s.path !== target.path);
@@ -519,17 +505,14 @@ const handleRemoveScope = (scope: SyncDeleteScope) => {
   };
 
   if (scope === 'local') {
-    // 仅本机移除：缓存上传载荷供下次上传回填（云端保留）
     addCloudKeepSongs(target.cloudId, [{ path: target.path, payloadJson: target.payloadJson }]);
     removeFromPlaylist(target.playlistId, target.path);
     pruneMeta();
   } else if (scope === 'all') {
-    // 删除全部：本机移除 + 上报删除，服务端墓碑传播到其他端
     addPendingDeletedSongs(target.cloudId, [target.path]);
     removeFromPlaylist(target.playlistId, target.path);
     pruneMeta();
   } else {
-    // 仅保留本地：本机不动，墓碑使下次上传剔除并上报云端删除
     addLocalOnlySongs(target.cloudId, [target.path]);
   }
 };
@@ -543,10 +526,6 @@ const handleEntryMouseEnter = (action: SongMenuAction) => {
   closeArtistSubmenu();
 };
 
-/**
- * 下载至本地：复用共享下载逻辑（useDownloadToLocal），
- * 状态写入 download store，自动联动底栏下载 UI 动画。
- */
 const { openDownloadDialog } = useDownloadDialog();
 
 const handleDownloadToLocal = (song: Song) => {
@@ -566,10 +545,6 @@ const handleAction = (action: SongMenuAction) => {
 
   switch (action) {
     case 'play':
-      // [飞封面] 与双击播放保持一致：先启动飞封面动画，再调用 playSong。
-      // 在线歌曲（lx://plugin://http://）的 cover_thumb_path 是 URL，直接传入可靠；
-      // 本地歌曲的 cover_thumb_path 是文件路径（非 URL），传空让 launchFlyingCover
-      // 从列表行 [data-cover-path] 内的 <img> src 自动提取已转换的封面 URL。
       void launchFlyingCover(
         props.song.path,
         props.song.cover_thumb_path && /^https?:\/\//.test(props.song.cover_thumb_path)
@@ -741,7 +716,6 @@ const setViewArtistTriggerRef = (element: Element | ComponentPublicInstance | nu
       </div>
     </Transition>
 
-    <!-- 已同步歌单移除单曲：删除范围三选一 -->
     <SyncDeleteScopeModal
       :visible="showDeleteScopeModal"
       title="歌曲已同步到云端"

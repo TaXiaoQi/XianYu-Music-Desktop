@@ -109,7 +109,6 @@
       </div>
     </div>
 
-    <!-- 远程音乐库（并入音乐库） -->
     <SettingsRemoteLibrary />
 
     <ConfirmModal
@@ -160,7 +159,6 @@ const libraryMinDurationSeconds = computed({
   },
 });
 
-/** 输入浮点防御：四舍五入并回写显示值 */
 const handleMinDurationChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const rounded = normalizeLibraryMinDurationSeconds(parseFloat(target.value));

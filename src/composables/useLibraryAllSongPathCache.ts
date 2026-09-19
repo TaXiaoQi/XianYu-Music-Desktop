@@ -52,13 +52,11 @@ export function useLibraryAllSongPathCache() {
       return inFlight;
     }
 
-    // 记录发起异步请求时的全局数据版本
     const requestVersion = libraryStore.libraryDataVersion;
 
     const request = libraryApi
       .getLibrarySongPathsForAllView(query, artistFilter, albumFilter, sortMode)
       .then((paths) => {
-        // 强一致性校验：若在请求未决期间数据版本发生变更（如新增、删除或重排），则丢弃缓存回填
         if (libraryStore.libraryDataVersion === requestVersion) {
           allViewPathCache.set(cacheKey, paths);
           cacheVersion.value += 1;

@@ -1,10 +1,3 @@
-/**
- * LX 协议 SDK · 目录搜索（歌手/专辑/歌单）。
- *
- * 跨模块编排：genres/artist/album 由搜索结果派生（derive*），歌单走各源原生歌单接口，
- * 命中源缺封面字段时调用封面模块补齐。搜索实现在 lxMusicSdkSearch，封面补获在
- * lxMusicSdkCover，本模块仅做组合与协调，并保持原有 public 导出面。
- */
 import { firstValue, httpGetJson, httpGetLooseJson, httpPostJson, zzcSign } from './lxMusicSdkBase';
 import type { LxSearchResultItem } from './lxMusicSdkBase';
 import { mgCreateSignature, txSheetSearchDesktopFallback } from './lxSearchPlatform';
@@ -31,7 +24,6 @@ export function deriveLxArtistResults(list: LxSearchResultItem[]): LxArtistSearc
   for (const song of list) {
     for (const name of splitLxArtists(song.singer)) {
       const key = name.toLocaleLowerCase();
-      // 优先使用歌手头像（singerAvatars），其次回退到歌曲封面（song.img）
       const singerAvatar = song.singerAvatars?.[name];
       const avatarUrl = singerAvatar || song.img || '';
       const existing = artists.get(key);
@@ -45,8 +37,6 @@ export function deriveLxArtistResults(list: LxSearchResultItem[]): LxArtistSearc
         name,
         avatarUrl,
         songCount: 1,
-        // 保存 source/songmid/artistId 供 lxCatalogSearch 异步补充头像
-        // （kw 源无图片字段用 songmid；wy 源 img1v1Url 是占位头像，用 artistId 调艺人接口）
         rawData: {
           source: song.source,
           name,
@@ -121,7 +111,6 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
 
 async function searchLxPlaylists(source: LxSourceId, keyword: string, page: number, limit: number): Promise<LxPlaylistSearchResult[]> {
   if (source === 'kw') {
-    // 优先用新 API，回退到旧 API
     try {
       const data = await httpGetJson(`https://www.kuwo.cn/api/www/search/searchPlayListBykeyWord?key=${encodeURIComponent(keyword)}&pn=${page}&rn=${limit}`, {
         csrf: 'ABCDEF',
@@ -133,8 +122,6 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
         return normalizeLxPlaylistResults(source, list);
       }
     } catch { /* 回退到旧 API */ }
-    // 旧 r.s 接口返回单引号 JSON（httpGetLooseJson 兼容），字段为
-    // playlistid/name/nickname/hts_pic|pic/songnum/playcnt
     const data = await httpGetLooseJson(`https://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(keyword)}&pn=${page - 1}&rn=${limit}&ft=playlist&encoding=utf8&rformat=json`, {
       Referer: 'https://www.kuwo.cn/',
     });
@@ -178,8 +165,6 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
         },
       },
     };
-    // 该接口与 searchTx 同属新签名(Mobile)风控体系，被风控/降级时 body 为空，
-    // 走无签名 Desktop 通道兜底（txSheetSearchDesktopFallback，实测稳定可用）
     let list: any[];
     try {
       const sign = await zzcSign(JSON.stringify(requestData));
@@ -236,7 +221,6 @@ export async function lxCatalogSearch(
   const result = await lxSearch(source, keyword, page, limit);
   if (type !== 'artist') {
     const albums = deriveLxAlbumResults(result.list);
-    // kw/wy 源搜索结果无可靠封面对应字段（kw 无图片字段、wy 只有超大整数 picId），异步补专辑封面
     if (source === 'kw') {
       await fillKwAlbumCovers(albums as LxAlbumSearchResult[]);
     } else if (source === 'wy') {
@@ -245,8 +229,6 @@ export async function lxCatalogSearch(
     return albums;
   }
   const artists = deriveLxArtistResults(result.list);
-  // kw 源搜索结果无图片字段，用 songmid 调 artistpicserver 异步获取封面作为歌手头像；
-  // wy 源搜索接口的 img1v1Url 是全局占位头像，需用 artistId 调艺人接口补真实头像
   if (source === 'kw') {
     await fillKwArtistAvatars(artists);
   } else if (source === 'wy') {
@@ -255,5 +237,4 @@ export async function lxCatalogSearch(
   return artists;
 }
 
-// Re-export 类型，保持 lxMusicSdk 消费方单一入口
 export type { LxSourceId, LxAlbumSearchResult, LxArtistSearchResult, LxPlaylistSearchResult } from './lxMusicSdkTypes';

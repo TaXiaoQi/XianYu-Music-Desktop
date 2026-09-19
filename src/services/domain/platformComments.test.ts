@@ -46,7 +46,6 @@ function source(overrides: Partial<PluginSource> = {}): PluginSource {
   };
 }
 
-/** CommentPanel 传入的条目形状：rawData 是搜索阶段的 PluginSearchResult */
 function searchResult(mediaItem: Record<string, unknown>, platform: string): PluginSearchResult {
   return {
     id: String(mediaItem.id ?? ''),
@@ -199,7 +198,6 @@ describe('fetchPlatformMusicComments', () => {
       1,
     );
 
-    // 数字 id 已存在，不应先发 CgiGetTrackInfo 解析
     expect(pluginHttpRequestMock).toHaveBeenCalledTimes(1);
     expect(result?.data[0].createAt).toBe(1700000000000);
     expect(result?.data[0].replies?.[0].nickName).toBe('子');

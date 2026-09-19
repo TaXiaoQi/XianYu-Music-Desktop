@@ -12,8 +12,6 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('JOOX KRC 词偏移为绝对时间，词时间不再翻倍', () => {
-    // JOOX 插件返回酷狗 KRC 格式，但词偏移是绝对时间（等于行时间戳），
-    // 若按标准相对偏移计算会翻倍。检测到多数行首词偏移≈行时间戳即按绝对处理。
     const result = buildBakaMfLyricsRaw({
       lyric: [
         '[0,1000](0,677)你(677,677)還',
@@ -30,9 +28,6 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('JOOX KRC 多行时仍能识别绝对偏移，不因全局正则 lastIndex 残留而漏判', () => {
-    // 真实 JOOX 数据：每行首词偏移都等于行时间戳（绝对时间）。若检测循环复用
-    // 全局正则 exec，lastIndex 会在行间残留，导致多数行取不到真正的首词偏移，
-    // 对齐统计低于阈值而误判为相对偏移，词时间翻倍。
     const result = buildBakaMfLyricsRaw({
       lyric: [
         '[0,1000](0,640)有(640,640)何',
@@ -71,9 +66,6 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('同一份文件里绝对偏移(JOOX)与相对偏移(酷狗)逐行各自正确，不再被全局布尔一锤定音', () => {
-    // 第 3 行是标准酷狗相对偏移（首词偏移≈0、行首 16000）。若按旧的「整份文件一个
-    // 绝对/相对布尔值」规则：前两行对齐绝对、第三行不对齐，多数对齐仍判整份为绝对，
-    // 第三行首词就会被算成 0ms（远早于行首），导致该行歌词错乱。逐行判定则各自正确。
     const result = buildBakaMfLyricsRaw({
       lyric: [
         '[0,1000](0,640)有(640,640)何',

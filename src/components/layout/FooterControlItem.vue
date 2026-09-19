@@ -8,31 +8,18 @@ import FooterControlIcon from './FooterControlIcon.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
 import type { DownloadRecord } from '../../services/domain/downloadHistory';
 
-/**
- * 底部栏可配置控件渲染组件。
- * 根据传入的 itemKey 渲染对应的控件（收藏/下载/播放模式/桌面歌词/音质/音量/均衡器/播放队列）。
- * 每个控件均可在任意容器（左/中左/中右/右/折叠收纳）中渲染，行为一致。
- *
- * 上下文通过 provide/inject 从 PlayerFooter 共享：
- * - 响应式状态（currentSong、volume 等）
- * - 事件处理函数（toggleFavorite、handleDownloadClick 等）
- * - 模板引用（qualityButtonRef、volumeBarRef 等，用于点击外部检测与拖拽）
- */
 defineProps<{
   itemKey: FooterItemKey;
 }>();
 
 // --- 注入 PlayerFooter 共享上下文 ---
 const ctx = inject<{
-  // 通用
   currentSong: Ref<Song | null>;
   showPlayerDetail: Ref<boolean>;
   footerQualityExtraText: (qualityKey: QualityKey) => string;
   isFooterQualityInfoProbing: Ref<boolean>;
-  // 收藏
   isFavorite: (song: Song) => boolean;
   toggleFavorite: (song: Song) => void;
-  // 下载
   isOnlineSong: Ref<boolean>;
   isDownloading: Ref<boolean>;
   downloadedRecord: Ref<DownloadRecord | null>;
@@ -44,13 +31,10 @@ const ctx = inject<{
   startDownload: (qualityKey: DownloadQuality) => Promise<void>;
   downloadQualityButtonRef: Ref<HTMLElement | null>;
   downloadQualityMenuRef: Ref<HTMLElement | null>;
-  // 播放模式
   playMode: Ref<number>;
   toggleMode: () => void;
-  // 桌面歌词
   showDesktopLyrics: Ref<boolean>;
   toggleLyrics: () => void;
-  // 音质
   isQualitySelectableSong: Ref<boolean>;
   qualityButtonLabel: Ref<string>;
   showQualityMenu: Ref<boolean>;
@@ -60,7 +44,6 @@ const ctx = inject<{
   selectQuality: (qualityKey: QualityKey) => Promise<void>;
   qualityButtonRef: Ref<HTMLElement | null>;
   qualityMenuRef: Ref<HTMLElement | null>;
-  // 音量
   volume: Ref<number>;
   showVolumeSlider: Ref<boolean>;
   isDraggingVolume: Ref<boolean>;
@@ -70,33 +53,24 @@ const ctx = inject<{
   volumeBarRef: Ref<HTMLElement | null>;
   startDrag: (e: PointerEvent) => void;
   toggleMute: () => void;
-  // Bit-perfect / DSD / 插件机架 音效锁定态（仅均衡器使用）
   isAudioControlLocked: Ref<boolean>;
   audioLockTooltip: Ref<string>;
   isEffectLocked: Ref<boolean>;
   effectLockTooltip: Ref<string>;
-  // 均衡器
   showEqPanel: Ref<boolean>;
   toggleEqPanel: (e: MouseEvent) => void;
-  // 播放队列
   showPlaylist: Ref<boolean>;
   togglePlaylist: () => void;
-  // 评论区
   isPluginSong: Ref<boolean>;
   showComment: Ref<boolean>;
   toggleComment: () => void;
-  // MV
   mvSupport: (song: Song | null | undefined) => boolean;
   mvActive: Ref<boolean>;
   mvLoading: Ref<boolean>;
   toggleMv: () => Promise<void>;
-  // MV 视频下载中（下载按钮 loading 态）
   isMvVideoDownloading: Ref<boolean>;
-  // 分享弹窗（复制链接 / DLNA 投屏统一入口）
   openShareDialog: () => void;
-  // DLNA 投屏弹窗（由分享弹窗拉起）
   openDlnaCastDialog: () => void;
-  // 歌词页工具（仅播放详情页可用）
   isVisualizerEnabled: Ref<boolean>;
   toggleVisualizer: () => void;
   isProgressHidden: Ref<boolean>;
@@ -107,7 +81,6 @@ const ctx = inject<{
   togglePin: () => void;
 }>('footerContext')!;
 
-// 解构上下文供模板使用（模板引用不解构，通过 ctx.xxx 访问以避免 Vue 自动解包导致 .value 不可用）
 const {
   currentSong,
   showPlayerDetail,
@@ -171,8 +144,6 @@ const {
 } = ctx;
 
 // ==================== 日推「不喜欢」====================
-// 当前歌曲来自每日推荐时，收藏按钮左侧显示「不喜欢」（爱心+贯穿斜线）：
-// 上报负反馈到服务器（调整日推算法）并自动跳过本曲。
 const playbackCtl = usePlaybackController();
 const { showToast } = useToast();
 const isDailyRecommendSong = computed(() => {
@@ -274,7 +245,6 @@ watch(
 </script>
 
 <template>
-  <!-- 不喜欢按钮：仅日推歌曲显示（收藏左侧，跳过并上报负反馈） -->
   <button
     v-if="itemKey === 'favorite' && currentSong && isDailyRecommendSong"
     @mousedown.stop
@@ -291,7 +261,6 @@ watch(
     </svg>
   </button>
 
-  <!-- 收藏按钮 -->
   <button
     v-if="itemKey === 'favorite' && currentSong"
     @mousedown.stop
@@ -305,7 +274,6 @@ watch(
     <FooterControlIcon item-key="favorite" :active="isFavorite(currentSong)" class="h-5 w-5" />
   </button>
 
-  <!-- 下载按钮：本地歌曲显示绿色已完成图标，在线歌曲支持下载 -->
   <div v-else-if="itemKey === 'download'" class="relative flex items-center justify-center h-full z-[70] shrink-0">
     <button
       :ref="el => { if (el) ctx.downloadQualityButtonRef.value = el as HTMLElement; }"
@@ -339,7 +307,6 @@ watch(
       />
     </button>
 
-    <!-- 下载音质下拉菜单 -->
     <transition name="fade-scale">
       <div
         v-if="showDownloadQualityMenu"
@@ -404,7 +371,6 @@ watch(
     </transition>
   </div>
 
-  <!-- 播放模式 -->
   <button
     v-else-if="itemKey === 'playMode'"
     @click="toggleMode"
@@ -415,7 +381,6 @@ watch(
     <FooterControlIcon item-key="playMode" :play-mode="playMode" class="h-5 w-5" />
   </button>
 
-  <!-- 桌面歌词 -->
   <button
     v-else-if="itemKey === 'desktopLyrics'"
     @click="toggleLyrics"
@@ -426,7 +391,6 @@ watch(
     <FooterControlIcon item-key="desktopLyrics" />
   </button>
 
-  <!-- 音质选择按钮 -->
   <div v-else-if="itemKey === 'quality'" class="relative flex items-center justify-center h-full z-[70]">
     <button
       :ref="el => { if (el) ctx.qualityButtonRef.value = el as HTMLElement; }"
@@ -520,7 +484,6 @@ watch(
     </transition>
   </div>
 
-  <!-- 音量控制 -->
   <div
     v-else-if="itemKey === 'volume'"
     class="relative flex items-center justify-center h-full z-[70]"
@@ -560,7 +523,6 @@ watch(
     </button>
   </div>
 
-  <!-- 均衡器按钮与弹出面板 -->
   <div v-else-if="itemKey === 'equalizer'" class="relative flex items-center justify-center h-full z-[70]">
     <button
       @click="!isEffectLocked && toggleEqPanel($event)"
@@ -580,11 +542,9 @@ watch(
       <FooterControlIcon item-key="equalizer" class="h-4 w-4" />
     </button>
 
-    <!-- 本地均衡器面板：自带 Teleport 模态弹窗 + 遮罩 + Transition，无需外层定位包裹 -->
     <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" />
   </div>
 
-  <!-- 播放队列 -->
   <div v-else-if="itemKey === 'playlist'" class="relative flex items-center justify-center h-full z-[70]">
     <button @click="togglePlaylist"
       class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
@@ -595,7 +555,6 @@ watch(
     </button>
   </div>
 
-  <!-- 评论区 -->
   <div v-else-if="itemKey === 'comment'" class="relative flex items-center justify-center h-full z-[70]">
     <button
       v-if="isPluginSong"
@@ -616,7 +575,6 @@ watch(
     </button>
   </div>
 
-  <!-- MV：播放当前歌曲的 MV 背景视频（仅播放详情页底栏显示，主页由布局过滤隐藏） -->
   <div v-else-if="itemKey === 'mv'" class="relative flex items-center justify-center h-full z-[70]">
     <button
       v-if="mvSupport(currentSong)"
@@ -639,7 +597,6 @@ watch(
     </button>
   </div>
 
-  <!-- 分享歌曲：打开分享弹窗（复制链接 / 投屏到 DLNA 设备） -->
   <button
     v-else-if="itemKey === 'share' && currentSong"
     @mousedown.stop
@@ -651,7 +608,6 @@ watch(
     <FooterControlIcon item-key="share" class="h-5 w-5" />
   </button>
 
-  <!-- 可视化/频谱（歌词页专属，主页禁用不可开关） -->
   <button
     v-else-if="itemKey === 'visualizer'"
     @click="showPlayerDetail && toggleVisualizer()"
@@ -662,7 +618,6 @@ watch(
     <FooterControlIcon item-key="visualizer" class="h-4 w-4" />
   </button>
 
-  <!-- 进度条显示开关（歌词页专属，主页禁用不可开关） -->
   <button
     v-else-if="itemKey === 'progress'"
     @click="showPlayerDetail && toggleProgressVisibility()"
@@ -673,7 +628,6 @@ watch(
     <FooterControlIcon item-key="progress" :active="isProgressHidden" class="h-4 w-4" />
   </button>
 
-  <!-- 页面样式（歌词页专属，主页禁用不可开关） -->
   <button
     v-else-if="itemKey === 'pageStyle'"
     @click.stop="showPlayerDetail && toggleLyricsPlayerSettings()"
@@ -684,7 +638,6 @@ watch(
     <FooterControlIcon item-key="pageStyle" class="h-4 w-4" />
   </button>
 
-  <!-- 固定状态栏（歌词页专属，主页禁用不可开关） -->
   <button
     v-else-if="itemKey === 'pin'"
     @click="showPlayerDetail && togglePin()"

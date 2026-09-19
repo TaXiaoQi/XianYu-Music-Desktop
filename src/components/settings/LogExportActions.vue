@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
-import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { FileWarning, Upload } from 'lucide-vue-next';
 
 import { useToast } from '../../composables/toast';
@@ -15,9 +14,6 @@ const { showToast } = useToast();
 const { entries } = useApplicationLogs();
 const exportingMode = ref<'all' | 'error' | null>(null);
 
-// 使用本地 ref 存储计数，模板不直接依赖 entries 响应式源。
-// 当全局 logger flush 修改 logEntries 时，不会立即触发模板重渲染，
-// 避免在 leave transition 期间干扰 transition 状态机。
 const entryCount = ref(entries.value.length);
 const errorCount = ref(0);
 let countTimer: ReturnType<typeof setTimeout> | null = null;
@@ -31,7 +27,6 @@ const refreshCounts = () => {
   entryCount.value = entries.value.length;
 };
 
-// 初始同步快速计数（仅遍历一次，不调用 analyzeApplicationLogs）
 refreshCounts();
 
 watch(
@@ -61,15 +56,10 @@ const exportLogs = async (mode: 'all' | 'error') => {
 
   exportingMode.value = mode;
   try {
-    const filePath = await saveDialog({
-      defaultPath: createExportName(mode),
-      filters: [{ name: '日志文件', extensions: ['log', 'txt'] }],
-    });
-    if (!filePath) return;
-
     const analysis = analyzeApplicationLogs(entries.value);
     const content = formatApplicationLogExport(entries.value, mode, analysis);
-    await debugApi.writeLogExport(filePath, content);
+    const savedPath = await debugApi.writeLogExport(createExportName(mode), content);
+    if (savedPath === null) return;
     showToast(mode === 'error' ? '错误日志已导出' : '全部日志已导出', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

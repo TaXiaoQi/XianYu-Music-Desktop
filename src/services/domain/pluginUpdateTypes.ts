@@ -13,7 +13,6 @@ export interface PluginUpdateServiceDeps {
   ensurePluginInstance: (source: PluginSource) => Promise<{ instance: any } | null>;
   loadPluginFromScript: (script: string, filePath: string) => Promise<PluginSource | null>;
   getStoredPlugins: () => PluginSource[];
-  /** 已保存的订阅清单（供订阅型插件的版本比对）。 */
   getSubscriptions: () => Array<{ id: string; url: string; name?: string }>;
   addPluginSource: (source: PluginSource) => void;
   removePluginSource: (id: string) => void;

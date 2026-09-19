@@ -32,8 +32,6 @@ fn normalize_skin_image_extension(source: &Path) -> Result<&'static str, String>
     }
 }
 
-// 将用户选择的本地皮肤图片复制到应用数据目录（$APPDATA/**，位于 assetProtocol scope 内）。
-// 直接使用 open() 返回的任意目录路径会被 asset 协议拒绝导致图片破损，且不会随设置持久有效。
 #[tauri::command]
 pub fn import_skin_image(app: AppHandle, source_path: String) -> Result<String, String> {
     let source = PathBuf::from(source_path);

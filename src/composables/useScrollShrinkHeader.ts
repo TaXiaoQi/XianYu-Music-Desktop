@@ -1,11 +1,5 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue';
 
-/**
- * 监听滚动容器，计算封面收缩进度（0 = 展开，1 = 完全收缩）。
- * 用于 QQ 音乐桌面版风格的"滚动缩小封面"效果。
- * @param scrollContainerRef 滚动容器元素（可为 null，容器就绪后自动绑定）
- * @param threshold 完全收缩所需的滚动距离（px）
- */
 export function useScrollShrinkHeader(
   scrollContainerRef: Ref<HTMLElement | null>,
   threshold = 160,

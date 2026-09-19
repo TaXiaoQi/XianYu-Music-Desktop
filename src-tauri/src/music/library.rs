@@ -1,5 +1,3 @@
-// music/library.rs - 音乐库管理命令
-
 use super::scanner::ScanOptions;
 use super::scanner::{scan_folder_recursive, scan_single_directory_internal};
 use super::types::{AlbumCatalogItem, ArtistCatalogItem, FolderNode, LibraryFolder, LibrarySong};
@@ -199,7 +197,6 @@ fn folder_song_matches_query(row: &FolderViewSongRow, query: &str) -> bool {
             .any(|name| name.to_lowercase().contains(&lowered_query))
 }
 
-/// 从 rusqlite::Row 解析 LibrarySong（共享行解析逻辑）
 fn parse_song_from_row(row: &rusqlite::Row) -> rusqlite::Result<LibrarySong> {
     let path: String = row.get(1)?;
     let duration = clamp_i64_to_u32(row.get::<_, Option<i64>>(11)?.unwrap_or(0));
@@ -253,7 +250,6 @@ fn parse_song_from_row(row: &rusqlite::Row) -> rusqlite::Result<LibrarySong> {
     })
 }
 
-/// 所有歌曲字段的 SELECT 子句（与 parse_song_from_row 的列顺序一一对应）
 const SONG_SELECT_COLUMNS: &str = "id, path, title, artist, artist_names, effective_artist_names, album, album_artist, album_key, is_various_artists_album, collapse_artist_credits, duration, cover_thumb_path, bitrate, sample_rate, bit_depth, format, container, codec, file_size, track_number, disc_number, added_at, file_modified_at, cue_source_path, cue_start_offset, cue_end_offset, source_type, remote_source_id, comment";
 
 fn load_cached_songs(conn: &rusqlite::Connection) -> Result<Vec<LibrarySong>, String> {
@@ -269,32 +265,6 @@ fn load_cached_songs(conn: &rusqlite::Connection) -> Result<Vec<LibrarySong>, St
     Ok(songs)
 }
 
-/// 按路径批量查询歌曲（用于前端按需 invoke，减少 canonicalSongs 内存依赖）
-fn load_cached_songs_by_paths(
-    conn: &rusqlite::Connection,
-    paths: &[String],
-) -> Result<Vec<LibrarySong>, String> {
-    if paths.is_empty() {
-        return Ok(Vec::new());
-    }
-    let placeholders: Vec<&str> = paths.iter().map(|_| "?").collect();
-    let sql = format!(
-        "SELECT {} FROM songs WHERE path IN ({})",
-        SONG_SELECT_COLUMNS,
-        placeholders.join(", ")
-    );
-    let params: Vec<&dyn rusqlite::ToSql> =
-        paths.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(params.as_slice(), parse_song_from_row)
-        .map_err(|e| e.to_string())?;
-    let songs: Vec<LibrarySong> = rows.filter_map(|row| row.ok()).collect();
-    Ok(songs)
-}
-
-/// 搜索归一化（对齐 BakaMusic search-matcher）：NFKC 全角→半角、转小写、
-/// NFKD 去变音符（é→e）、繁转简（周杰倫↔周杰伦 双向兼容）。
 fn normalize_search_value(s: &str) -> String {
     let nfkc: String = s.chars().nfkc().collect();
     let no_accent: String = nfkc
@@ -306,12 +276,6 @@ fn normalize_search_value(s: &str) -> String {
     fast2s::convert(&no_accent)
 }
 
-/// 离散搜索：旧实现整串 `LIKE %query%`，要求连续子串全对上，「周杰伦 晴天」
-/// 这种跨歌手/歌名字段的词组搜不到。改为分词 AND 匹配（与移动端/腕上端
-/// 双端同步的同源实现）：
-/// - 查询按空格拆词，每个词命中任一归一化字段即算（跨字段、顺序无关）
-/// - 词也可命中字段去空格后的串（「tinyme」命中「Tiny Me」）
-/// - 整串连写命中的歌排前面（强匹配），散词全中的排后面
 fn search_cached_songs(
     conn: &rusqlite::Connection,
     query: &str,
@@ -324,7 +288,6 @@ fn search_cached_songs(
     }
     let whole = normalized_query.replace(' ', "");
 
-    // 被搜字段组：title/artist/album/album_artist/path + 冗余歌手名列，全部归一化
     let haystacks = |song: &LibrarySong| -> Vec<String> {
         let mut v = vec![
             normalize_search_value(&song.title),
@@ -493,25 +456,6 @@ pub async fn get_library_songs_cached(
     Ok(result)
 }
 
-/// 按路径批量查询歌曲（用于前端按需 invoke，减少 canonicalSongs 内存依赖）
-#[tauri::command]
-pub async fn get_library_songs_by_paths(
-    paths: Vec<String>,
-    db_state: State<'_, DbState>,
-) -> Result<Vec<LibrarySong>, String> {
-    let db_conn = db_state.conn.clone();
-
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let conn = db_conn.lock().map_err(|e| e.to_string())?;
-        load_cached_songs_by_paths(&conn, &paths)
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-
-    Ok(result)
-}
-
-/// 搜索本地音乐库（标题/艺术家/专辑/路径），返回完整 Song 对象
 #[tauri::command]
 pub async fn search_library_songs(
     query: String,

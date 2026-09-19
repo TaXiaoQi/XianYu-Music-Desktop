@@ -61,7 +61,6 @@ export const createLibraryCoreActions = ({
     }
     await libraryFolderTree.fetchFolderTree();
     await libraryFolderTree.expandFolderPath(folderPath);
-    // 文件夹内容有变化时同步刷新库统计
     void useStatisticsStore().refreshStats();
     return summary;
   };

@@ -33,14 +33,9 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
   const isOnlineSongPath = (path: string) =>
     path.startsWith('lx://') || path.startsWith('remote://') || path.startsWith('plugin://');
 
-  // 收集最近播放中的在线歌曲条目（含 playedAt），用于持久化。
-  // 后端 play_history 不记录在线歌曲，需靠前端持久化在重启后还原其最近播放记录。
   const collectRecentOnlineHistory = () =>
     collectionsStore.recentSongs.filter(item => isOnlineSongPath(item.path));
 
-  // 收集队列/歌单中所有在线歌（lx:// 等）的完整 Song 元数据。
-  // 队列持久化只存 path，在线歌不在本地库，若不额外保存元数据，重启恢复时非收藏在线歌
-  // 会因查不到而整首从队列丢失。这里把它们的完整 Song（含 duration）一并存下。
   const collectQueueSongMeta = (): Record<string, Song> => {
     const meta: Record<string, Song> = {};
     const paths = new Set<string>([
@@ -63,10 +58,8 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
       persistTimer = null;
     }
 
-    // 使用 toRaw + JSON 深拷贝，确保 Vue 响应式代理中的所有字段（包括 songs）被正确序列化
     const rawPlaylists = JSON.parse(JSON.stringify(toRaw(collectionsStore.playlists)));
 
-    // 歌单数据异步写入文件系统（避免 localStorage 超限），其余数据仍走 localStorage
     await playerStorage.writePlaylistsAsync(rawPlaylists);
 
     playerStorage.writePlayerState({
@@ -98,7 +91,6 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
     }
     persistTimer = setTimeout(() => {
       void flushPersistedState().catch(e => {
-        // QuotaExceededError 已在 localStore.setJson 中处理，此处仅记录非配额错误
         if (e?.name !== 'QuotaExceededError' && e?.code !== 22) {
           console.error('[persist] flushPersistedState failed:', e);
         }

@@ -13,17 +13,14 @@ import type {
 } from './contracts';
 import { useConcurrentScheduler } from '../../composables/useConcurrentScheduler';
 
-// 导出集中化高精度签名生成函数
 export function createEqualizerSignature(enabled: boolean, preamp: number, gains: number[]): string {
   const gainsStr = gains.map(g => g.toFixed(1)).join(',');
   return `${enabled}:${preamp.toFixed(1)}:[${gainsStr}]`;
 }
 
-// 模块级单例调度器与缓存
 const eqScheduler = useConcurrentScheduler();
 let lastSyncedParams: string | null = null;
 
-// 全局单例节流管理变量
 let throttleTimer: any = null;
 let nextRequestArgs: { enabled: boolean, preamp: number, gains: number[] } | null = null;
 let lastThrottleTime = 0;
@@ -74,11 +71,9 @@ export const playbackApi = {
   updateLoudnessSettings: (options: UpdateLoudnessSettingsOptions): Promise<void> =>
     tauriInvoke('update_loudness_settings', options),
 
-  // 音效参数同步（阶段 1：通路打通，Rust 侧 SoundEffectSource 为直通占位）
   setSoundEffectSettings: (settings: SoundEffectSettings): Promise<void> =>
     tauriInvoke('set_sound_effect_settings', { settings }),
 
-  // 在线音频流式缓存管理
   setStreamCacheMaxSize: (bytes: number): Promise<void> =>
     tauriInvoke('set_stream_cache_max_size', { bytes }),
   getStreamCacheInfo: (): Promise<{ current: number; max: number }> =>
@@ -89,14 +84,11 @@ export const playbackApi = {
   getStreamCacheDir: (): Promise<string> =>
     tauriInvoke('get_stream_cache_dir'),
 
-  // 在线歌曲预缓存：预取直链头部约 15 秒音频到内存片头缓存（切歌秒开）
   prefetchAudioHead: (options: PrefetchAudioHeadOptions): Promise<boolean> =>
     tauriInvoke('prefetch_audio_head', options),
 
-  // 获取最后一次成功同步给底层的签名参数
   getLastSyncedParams: () => lastSyncedParams,
 
-  // 原有 setEqualizerSettings 签名保持 100% 兼容。在内部使用通用并发调度器保护，且成功后更新签名。
   setEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]): Promise<void> => {
     return eqScheduler.execute(() => {
       return tauriInvoke('set_equalizer_settings', { enabled, preamp, gains })
@@ -106,7 +98,6 @@ export const playbackApi = {
     });
   },
 
-  // 拖拽中 50ms 全局节流请求底层同步，内部使用已受并发保护的 setEqualizerSettings
   requestEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]) => {
     const now = Date.now();
     nextRequestArgs = { enabled, preamp, gains };
@@ -136,7 +127,6 @@ export const playbackApi = {
     }
   },
 
-  // 松手/停止后强制最终同步，返回 Promise<void>，确保顺序并发互斥
   flushEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]): Promise<void> => {
     if (throttleTimer) {
       clearTimeout(throttleTimer);

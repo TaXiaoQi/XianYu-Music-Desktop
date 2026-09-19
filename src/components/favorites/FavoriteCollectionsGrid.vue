@@ -18,7 +18,6 @@ defineEmits<{
 
 const collectionsStore = useCollectionsStore();
 
-/** 本地歌单封面实时解析：歌单自定义封面/歌单内在线歌曲封面，随歌单更新保持新鲜 */
 const getLocalPlaylistCover = (entry: FavoriteCollectionEntry): string => {
   if (!entry.localPlaylistId) return '';
   const playlist = collectionsStore.getPlaylistById(entry.localPlaylistId);
@@ -29,7 +28,6 @@ const getLocalPlaylistCover = (entry: FavoriteCollectionEntry): string => {
   return playlist.songs?.find(song => song.cover_thumb_path)?.cover_thumb_path || '';
 };
 
-// 网格封面显示 URL：B站等防盗链封面直连 403，须经后端代理转 data:URL，代理完成回填刷新
 const coverDisplayMap = ref(new Map<string, string>());
 const getEntryCover = (entry: FavoriteCollectionEntry) => {
   const url = entry.coverUrl || getLocalPlaylistCover(entry);
@@ -86,7 +84,6 @@ const formatFavoritedAt = (timestamp: number) => new Intl.DateTimeFormat('zh-CN'
           <p class="mt-1 truncate text-[11px] text-gray-400 dark:text-white/30">收藏于 {{ formatFavoritedAt(entry.favoritedAt) }}</p>
         </button>
 
-        <!-- 悬停显示的取消收藏按钮 -->
         <button
           type="button"
           class="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-sm transition hover:bg-[color:var(--favorite-color)] active:scale-90 group-hover:opacity-100"

@@ -1,12 +1,3 @@
-/**
- * 洛雪 .lxmc 真实备份回归测试（星海 LX 插件导入场景）。
- *
- * 用真实导出的 lx_backup.lxmc（洛雪桌面 v3 全量备份，456 首、2 歌单）
- * 走 preparePluginBackupImport 全链路：gzip 解压 → 格式识别 → LX 平台
- * 归类 → LX 格式插件绑定。
- *
- * 备份文件不在本机时自动跳过，避免 CI 缺素材失败。
- */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,7 +11,6 @@ import { preparePluginBackupImport } from './pluginBackupImport';
 const LXMC_FILE = 'C:\\Users\\小奇\\Downloads\\lx_backup.lxmc';
 const hasFixture = fs.existsSync(LXMC_FILE);
 
-/** 星海插件的 LX 源 key + 中文平台名都给上，覆盖匹配器的两种输入 */
 function makeLxPlugin(): PluginSource {
   return {
     id: 'lx-xinghai-test',
@@ -36,7 +26,6 @@ function makeLxPlugin(): PluginSource {
   } as unknown as PluginSource;
 }
 
-/** 解码 .lxmc：gzip 解压 + UTF-8（对齐 readBackupFileContent 的 lxmc 分支） */
 function decodeLxmc(file: string): string {
   const bytes = fs.readFileSync(file);
   return new TextDecoder().decode(gunzipSync(new Uint8Array(bytes)));

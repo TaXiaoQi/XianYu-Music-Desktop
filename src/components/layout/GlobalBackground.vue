@@ -67,7 +67,6 @@ const loadImageMetadata = (src: string) => new Promise<{ width: number; height: 
   img.src = src;
 });
 
-// 监听自定义背景图片路径及尺寸
 watch(
   [
     () => theme.value.customBackground?.imagePath,
@@ -86,14 +85,12 @@ watch(
       return;
     }
 
-    // 如果配置中已经带有尺寸，直接使用
     if (w && h) {
       imageNaturalWidth.value = w;
       imageNaturalHeight.value = h;
       return;
     }
 
-    // 否则为旧版配置，需要异步加载元数据并写回
     try {
       const metadata = await loadImageMetadata(convertFileSrc(path));
       if (isCancelled) return;
@@ -101,7 +98,6 @@ watch(
       imageNaturalWidth.value = metadata.width;
       imageNaturalHeight.value = metadata.height;
       
-      // 回写补齐配置
       patchTheme({
         customBackground: {
           ...theme.value.customBackground,
@@ -266,8 +262,6 @@ const dynamicOverlayStyle = computed(() => {
   return { opacity: Math.min(1.1, Math.max(0.80, overlayOpacity)) };
 });
 
-// signature 只追踪「需要触发整层切换」的极少数条件
-// 颜色变化通过 CSS transition-colors 在当前层内平滑渐变
 const flowSceneSignature = computed(() => {
   if (activeBackgroundInfo.value?.type !== 'flow') return null;
   return JSON.stringify({
@@ -341,7 +335,6 @@ function buildFlowLayerSnapshot(scene: NonNullable<typeof flowScene.value>): Flo
   };
 }
 
-// 只有 signature 变了（颜色/shell 切换）才触发溶解过场
 watch(flowSceneSignature, (newSig) => {
   if (!newSig) {
     clearFlowTransitionTimer();
@@ -394,7 +387,6 @@ watch(flowSceneSignature, (newSig) => {
   }, FLOW_SCENE_TRANSITION_MS);
 }, { immediate: true });
 
-// 所有视觉参数变化时直接 patch 当前层（利用模板上已有的 CSS transition 平滑渐变）
 watch(
   [resolvedFlowColors, dynamicBaseStyle, dynamicBlobOpacity, dynamicNoiseOpacity, dynamicOverlayClass, dynamicOverlayStyle, flowMotionStyle],
   () => {
@@ -687,7 +679,6 @@ const customBgTransform = computed(() => {
           }"
         ></div>
 
-        <!-- 完美的物理双层解耦图片布局 -->
         <div
           v-if="customBgGeometry"
           class="absolute"

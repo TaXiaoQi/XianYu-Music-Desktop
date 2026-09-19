@@ -154,7 +154,6 @@ function applyChanges() {
   useLyricsSettingsStore().patchDesktopLyricsSettings(toRaw(localSettings.value));
 }
 
-// 实时应用：localSettings 变化时立即同步到 store，桌面歌词即时更新
 watch(localSettings, () => {
   if (isSyncingFromStore) return;
   applyChanges();
@@ -312,7 +311,6 @@ const lyricsSyncOffsetMs = computed({
   },
 });
 
-/** 输入浮点防御：四舍五入并回写显示值 */
 const handleLyricsSyncOffsetChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const next = clampLyricsSyncOffset(Number(target.value));
@@ -573,7 +571,6 @@ function dragCustomPickerArea(event: PointerEvent) {
 function setCustomPickerRgb(channel: 'r' | 'g' | 'b', value: number | string, event?: Event) {
   const rgb = customPickerRgb.value;
   const clamped = clampRgb(typeof value === 'string' ? Number(value) : value);
-  // 输入浮点防御：四舍五入并回写显示值
   if (event) {
     const target = event.target as HTMLInputElement;
     target.value = String(clamped);
@@ -992,7 +989,6 @@ onUnmounted(() => {
         排版与字体
       </h2>
 
-      <!-- 桌面歌词排版效果预览区 (回归单栏顶部，与下方紧凑滑块同视口呈现) -->
       <div class="desktop-lyrics-preview-container select-none">
         <div class="desktop-lyrics-preview-header">
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
@@ -1013,7 +1009,6 @@ onUnmounted(() => {
         >
           <div class="desktop-lyrics-preview-body" :style="previewLyricsPlayerStyle" :class="previewLyricsAlignmentClass">
             <div class="desktop-lyric-block">
-              <!-- 第一行 正在播放 -->
               <div class="desktop-lyric-row desktop-lyric-row--active">
                 <div class="desktop-lyric-main">
                   <span class="desktop-lyric-word" :class="{ 'desktop-lyric-word--with-romaji': lyricsSettings.showRomaji }">
@@ -1034,7 +1029,6 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- 第二行 模拟双行显示 (当开启双行且未激活时展示) -->
               <div v-if="desktopLyricsSettings.showDoubleLine" class="desktop-lyric-row desktop-lyric-row--inactive desktop-lyric-row--second-line">
                 <div class="desktop-lyric-main desktop-lyric-main--inactive">
                   <span class="desktop-lyric-word" :class="{ 'desktop-lyric-word--with-romaji': lyricsSettings.showRomaji }">
@@ -1051,11 +1045,8 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 网易云式：极致紧凑控制面板 -->
       <div class="desktop-typography-panel desktop-typography-panel--compact">
-        <!-- 行一：字号 & 副词字号 -->
         <div class="desktop-compact-row">
-          <!-- 字号 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">字号</div>
             <input
@@ -1071,7 +1062,6 @@ onUnmounted(() => {
               {{ Math.round(localSettings.playerFontScale * 100) }}%
             </span>
           </div>
-          <!-- 副词字号 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">副词字号</div>
             <input
@@ -1089,9 +1079,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行二：行距 & 文字不透明度 -->
         <div class="desktop-compact-row">
-          <!-- 行距 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">行距</div>
             <input
@@ -1107,7 +1095,6 @@ onUnmounted(() => {
               {{ Math.round(localSettings.playerLineGap * 100) }}%
             </span>
           </div>
-          <!-- 文字不透明度 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">不透明度</div>
             <input
@@ -1125,9 +1112,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行三：描边阴影 & 阴影颜色 -->
         <div class="desktop-compact-row">
-          <!-- 描边阴影 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">描边阴影</div>
             <input
@@ -1145,7 +1130,6 @@ onUnmounted(() => {
             </span>
           </div>
 
-          <!-- 阴影颜色 -->
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label">阴影颜色</div>
             <div class="desktop-compact-selector-shadow flex items-center gap-1.5">
@@ -1176,9 +1160,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行四：对齐方式 & 双行显示 -->
         <div class="desktop-compact-row">
-          <!-- 对齐方式 (Segmented Control) -->
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">对齐</div>
             <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
@@ -1206,7 +1188,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行五：显示翻译 & 显示罗马音 -->
         <div class="desktop-compact-row">
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">显示翻译</div>
@@ -1228,7 +1209,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行六：字体方案 & 配色方案 -->
         <div class="desktop-compact-row">
           <div class="desktop-compact-cell flex items-center justify-between gap-4">
             <div class="desktop-compact-label shrink-0">字体方案</div>
@@ -1366,7 +1346,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行七：逐字效果 & 歌词描边 -->
         <div class="desktop-compact-row">
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">逐字效果</div>
@@ -1570,7 +1549,6 @@ onUnmounted(() => {
 
 <style scoped>
 :root {
-  /* 桌面歌词设置组件 - 浅色模式 CSS 变量 */
   --desktop-chip-bg: rgba(255, 255, 255, 0.72);
   --desktop-chip-border: rgba(15, 23, 42, 0.08);
   --desktop-chip-text: rgb(55 65 81);
@@ -1604,7 +1582,6 @@ onUnmounted(() => {
 }
 
 :global(.dark) {
-  /* 桌面歌词设置组件 - 深色模式 CSS 变量重写 */
   --desktop-chip-bg: rgba(255, 255, 255, 0.04);
   --desktop-chip-border: rgba(255, 255, 255, 0.08);
   --desktop-chip-text: rgba(255, 255, 255, 0.82);
@@ -2431,7 +2408,6 @@ onUnmounted(() => {
   box-shadow: 0 2px 8px rgba(236, 65, 65, 0.3);
 }
 
-/* 桌面歌词排版效果预览区样式 */
 .desktop-lyrics-preview-container {
   display: flex;
   flex-direction: column;
@@ -2524,7 +2500,6 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 高拟真预览背景：采用中灰色/暗色/浅色磨砂渐变模拟桌面壁纸，但不影响判断透明度、阴影 */
 .desktop-lyrics-preview-card {
   position: relative;
   height: 220px;
@@ -2537,7 +2512,6 @@ onUnmounted(() => {
   transition: background 250ms ease, border-color 250ms ease;
 }
 
-/* 深色模式背景壁纸 */
 .desktop-lyrics-preview-card--dark {
   border-color: rgba(255, 255, 255, 0.08);
   background:
@@ -2554,7 +2528,6 @@ onUnmounted(() => {
     linear-gradient(135deg, #0f172a, #020617);
 }
 
-/* 浅色模式背景壁纸：用于测试亮色壁纸下阴影与透明度的判断，高品质浅灰微暖渐变 */
 .desktop-lyrics-preview-card--light {
   border-color: rgba(15, 23, 42, 0.08);
   background:
@@ -2720,11 +2693,7 @@ onUnmounted(() => {
   --lyrics-line-transform-origin: 100%;
 }
 
-/* ==========================================================================
-   网易云式极致紧凑排版仪表盘样式 (Compact Panel)
-   ========================================================================== */
 
-/* 紧凑容器：去掉大底，控件本身保留各自的底色 */
 .desktop-typography-panel--compact {
   display: flex;
   flex-direction: column;
@@ -2732,7 +2701,6 @@ onUnmounted(() => {
   padding: 0;
 }
 
-/* 紧凑控制行：横向二等分 */
 .desktop-compact-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -2741,7 +2709,6 @@ onUnmounted(() => {
   width: 100%;
 }
 
-/* 紧凑单元格：平分 50% 宽度（底色/边框/hover 与外观页底部栏布局 footer-visibility-row 一致） */
 .desktop-compact-cell {
   flex: 1;
   display: flex;
@@ -2771,7 +2738,6 @@ onUnmounted(() => {
   border-color: rgba(236, 65, 65, 0.35);
 }
 
-/* 精致等宽网格单元格：专门用于滑块 Cell，强制使用 Grid 布局保证 Label 56px 固定且滑块起点完美对齐 */
 .desktop-compact-slider-cell {
   flex: 1;
   display: grid;
@@ -2802,7 +2768,6 @@ onUnmounted(() => {
   border-color: rgba(236, 65, 65, 0.35);
 }
 
-/* 紧凑标签：左侧标签，易读大气 */
 .desktop-compact-label {
   font-size: 13px;
   font-weight: 700;
@@ -2817,7 +2782,6 @@ onUnmounted(() => {
 
 
 
-/* 阴影色块选择器区域 */
 .desktop-compact-selector-shadow {
   display: flex;
   align-items: center;
@@ -2825,7 +2789,6 @@ onUnmounted(() => {
   height: 28px;
 }
 
-/* 配色方案下拉中的颜色标识 */
 .desktop-color-scheme-swatch {
   display: inline-block;
   width: 14px;
@@ -2848,7 +2811,6 @@ onUnmounted(() => {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
-/* 阴影预设小圆点 */
 .desktop-compact-color-preset {
   width: 14px;
   height: 14px;
@@ -2883,7 +2845,6 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px #ff8b8b, 0 3px 8px rgba(236, 65, 65, 0.3) !important;
 }
 
-/* 自定义阴影色块容器 */
 .desktop-compact-color-custom {
   position: relative;
   width: 14px;
@@ -2939,7 +2900,6 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px #ff8b8b, 0 3px 8px rgba(236, 65, 65, 0.3) !important;
 }
 
-/* 分段对齐控制器 (Segmented Control) */
 .desktop-segmented-control {
   padding: 2px;
   background: rgba(15, 23, 42, 0.03);
@@ -2955,7 +2915,6 @@ onUnmounted(() => {
   border-color: rgba(31, 41, 55, 0.4);
 }
 
-/* 分段按钮 */
 .desktop-segmented-btn {
   display: flex;
   align-items: center;
@@ -2987,7 +2946,6 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* 激活态的分段按钮 */
 .desktop-segmented-btn--active {
   background: #fff !important;
   color: #ec4141 !important;
@@ -3000,9 +2958,6 @@ onUnmounted(() => {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* ==========================================================================
-   开关样式 (与底部栏预览 footer-visibility-switch 完全一致)
-   ========================================================================== */
 
 .desktop-lyrics-toggle {
   position: relative;
@@ -3042,16 +2997,13 @@ onUnmounted(() => {
   transform: translateX(16px);
 }
 
-/* ==========================================================================
-   精致极细滑动条样式 (iOS / macOS 风格定制)
-   ========================================================================== */
 
 .desktop-compact-range-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 20px; /* 轨道本体热区高度 20px，保证大鼠标点击命中热区 */
-  background: transparent; /* 容器背景透明 */
+  height: 20px;
+  background: transparent;
   border: none;
   outline: none;
   cursor: pointer;
@@ -3059,10 +3011,9 @@ onUnmounted(() => {
   padding: 0;
 }
 
-/* Chrome / Safari / Edge / Tauri Runnable Track 轨道 */
 .desktop-compact-range-slider::-webkit-slider-runnable-track {
   width: 100%;
-  height: 4px; /* 精致 4px 极细轨道 */
+  height: 4px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.1);
   transition: background 150ms ease;
@@ -3080,7 +3031,6 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.24);
 }
 
-/* Firefox Runnable Track 轨道 */
 .desktop-compact-range-slider::-moz-range-track {
   width: 100%;
   height: 4px;
@@ -3102,7 +3052,6 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.24);
 }
 
-/* Chrome / Safari / Edge / Tauri Thumb 圆形按钮 (居中) */
 .desktop-compact-range-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -3112,7 +3061,6 @@ onUnmounted(() => {
   background: #ffffff;
   border: 1px solid rgba(15, 23, 42, 0.06);
   box-shadow: 0 2px 4px rgba(15, 23, 42, 0.12), 0 0 1px rgba(15, 23, 42, 0.2);
-  /* 垂直居中于 20px 容器内：14px 按钮，偏移为 (4px-14px)/2 = -5px */
   margin-top: -5px; 
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
@@ -3127,7 +3075,6 @@ onUnmounted(() => {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
 }
 
-/* Firefox Thumb 圆形按钮 (自动居中) */
 .desktop-compact-range-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
@@ -3151,14 +3098,7 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* ==========================================================================
-   桌面歌词「排版与字体」控件深色模式样式
-   Vue scoped style 中 :global(.dark) .xxx 复合选择器无法正确编译，
-   深色模式样式需放在非 scoped <style> 块中，使用 html.dark .xxx 选择器。
-   底色/边框/hover 与外观页底部栏布局 footer-visibility-row 一致。
-   ========================================================================== */
 
-/* CSS 变量 - 浅色模式默认值（确保 Teleport 弹窗等脱离组件 DOM 的元素也能获取变量） */
 :root {
   --desktop-chip-bg: rgba(255, 255, 255, 0.72);
   --desktop-chip-border: rgba(15, 23, 42, 0.08);
@@ -3192,7 +3132,6 @@ onUnmounted(() => {
   --desktop-font-option-active-text: #ec4141;
 }
 
-/* CSS 变量 - 深色模式重写（确保 font-trigger 等通过变量引用的控件也正确） */
 html.dark {
   --desktop-font-trigger-bg: rgba(0, 0, 0, 0.1);
   --desktop-font-trigger-border: rgba(31, 41, 55, 0.4);
@@ -3214,7 +3153,6 @@ html.dark {
   --desktop-font-option-active-text: #ff9a9a;
 }
 
-/* 紧凑单元格（设置类：对齐、双行、翻译、罗马音、逐字效果、歌词描边等） */
 html.dark .desktop-compact-cell {
   background: rgba(0, 0, 0, 0.1);
   border-color: rgba(31, 41, 55, 0.4);
@@ -3225,7 +3163,6 @@ html.dark .desktop-compact-cell:hover {
   border-color: rgba(236, 65, 65, 0.35);
 }
 
-/* 紧凑滑块单元格（字号、副词字号、行距、不透明度、描边阴影） */
 html.dark .desktop-compact-slider-cell {
   background: rgba(0, 0, 0, 0.1);
   border-color: rgba(31, 41, 55, 0.4);
@@ -3236,18 +3173,15 @@ html.dark .desktop-compact-slider-cell:hover {
   border-color: rgba(236, 65, 65, 0.35);
 }
 
-/* 紧凑标签 */
 html.dark .desktop-compact-label {
   color: rgba(255, 255, 255, 0.68);
 }
 
-/* 配色方案下拉颜色标识 */
 html.dark .desktop-color-scheme-swatch {
   border-color: rgba(0, 0, 0, 0.38);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
-/* 阴影预设小圆点 */
 html.dark .desktop-compact-color-preset {
   border-color: rgba(0, 0, 0, 0.4);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.2);
@@ -3261,7 +3195,6 @@ html.dark .desktop-compact-color-preset--active {
   box-shadow: 0 0 0 2px #ff8b8b, 0 3px 8px rgba(236, 65, 65, 0.3) !important;
 }
 
-/* 自定义阴影色块 */
 html.dark .desktop-compact-color-custom-swatch {
   border-color: rgba(0, 0, 0, 0.4);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.2);
@@ -3275,7 +3208,6 @@ html.dark .desktop-compact-color-custom--active {
   box-shadow: 0 0 0 2px #ff8b8b, 0 3px 8px rgba(236, 65, 65, 0.3) !important;
 }
 
-/* 分段对齐控制器 */
 html.dark .desktop-segmented-control {
   background: rgba(0, 0, 0, 0.1);
   border-color: rgba(31, 41, 55, 0.4);
@@ -3296,13 +3228,11 @@ html.dark .desktop-segmented-btn--active {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* 开关（与底部栏预览 footer-visibility-switch 一致） */
 html.dark .desktop-lyrics-toggle {
   border-color: rgba(31, 41, 55, 0.4);
   background: rgba(0, 0, 0, 0.1);
 }
 
-/* 滑动条轨道 */
 html.dark .desktop-compact-range-slider::-webkit-slider-runnable-track {
   background: rgba(255, 255, 255, 0.16);
 }
@@ -3319,7 +3249,6 @@ html.dark .desktop-compact-range-slider:hover::-moz-range-track {
   background: rgba(255, 255, 255, 0.24);
 }
 
-/* 预览区恢复默认按钮 */
 html.dark .desktop-preview-btn--default {
   border-color: rgba(31, 41, 55, 0.4);
   background: rgba(0, 0, 0, 0.1);
@@ -3330,7 +3259,6 @@ html.dark .desktop-preview-btn--default:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 自定义配色弹窗（从「排版与字体」配色方案触发） */
 html.dark .desktop-custom-modal {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(18, 18, 20, 0.92);

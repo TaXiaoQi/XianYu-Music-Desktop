@@ -1,13 +1,3 @@
-/**
- * 外部歌单导入服务（门面）
- *
- * 完全移植自 yyy 项目中的 LxSdkSongList.kt 和 LinkParser.kt
- * 支持从网易云(小芸)、QQ音乐(小秋)、酷我(小枸)、酷狗(小蜗)导入歌单。
- *
- * 各平台实现已拆到独立子模块：playlistImportBase（共享底座）、
- * playlistImportWy/Tx/Kw/Kg（每平台歌单详情与曲目元数据）。本模块负责
- * 音源列表、MusicFree 收藏夹/插件导入、LX 主入口编排，并 re-export 公共 API。
- */
 import {
   getStoredPlugins,
   pluginGetPlaylistDetailWithEnd,
@@ -42,10 +32,8 @@ export { fetchKgTrackMetaByIds } from './playlistImportKg';
 
 // ==================== 音源定义 ====================
 
-/** importPlaylist 支持的 LX 源 key 集合 */
 const SUPPORTED_IMPORT_SOURCES: ReadonlySet<string> = new Set(['wy', 'tx', 'kw', 'kg']);
 
-/** 平台中文名映射 */
 const SOURCE_PLATFORM_NAMES: Record<string, string> = {
   wy: '网易云',
   tx: 'QQ音乐',
@@ -54,14 +42,6 @@ const SOURCE_PLATFORM_NAMES: Record<string, string> = {
   mg: '咪咕',
 };
 
-/**
- * 从已安装的插件中读取支持歌单导入的音源列表
- * 参考 Search.vue 的 refreshPluginSourceList 逻辑：
- * - LX 插件多平台时拆分为独立条目，使用平台名显示
- * - LX 插件单平台时以插件名显示
- * - MusicFree 插件（如 BakaMusic）直接以插件名显示，key 带 mf_ 前缀
- * - 始终在首位包含"自动识别"
- */
 export function getImportSourcesFromPlugins(): PlaylistSource[] {
   const sources: PlaylistSource[] = [
     { key: 'auto', name: '自动识别', platform: '', type: 'lx' },
@@ -109,7 +89,6 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
         }
       }
     } else if (p.format === 'musicfree') {
-      // MusicFree 插件（如 BakaMusic）：以插件名显示，key 带 mf_ 前缀避免与 LX 源冲突
       const key = `mf_${p.id}`;
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
@@ -121,7 +100,6 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
         pluginSource: p,
       });
 
-      // 哔哩哔哩插件：额外添加收藏夹导入入口
       if (p.sources.some(s => s.toLowerCase() === 'bilibili')) {
         const favKey = `fav_${p.id}`;
         if (!seenKeys.has(favKey)) {
@@ -143,14 +121,6 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
 
 // ==================== MusicFree 插件歌单导入 ====================
 
-/**
- * 通过 MusicFree 插件导入歌单
- * 流程：用户输入关键词 → 插件搜索歌单 → 取第一个结果 → 获取歌单详情
- *
- * @param pluginSource MusicFree 插件源
- * @param keyword 歌单名称、ID 或链接（作为搜索关键词）
- * @returns 导入结果
- */
 export async function importPlaylistFromMusicFreePlugin(
   pluginSource: PlaylistSource['pluginSource'],
   keyword: string,
@@ -164,27 +134,23 @@ export async function importPlaylistFromMusicFreePlugin(
     throw new Error('插件源不可用，请重新选择音源');
   }
 
-  // 1. 搜索歌单
   const searchResults = await pluginPlaylistSearch(pluginSource, input, 1);
   if (searchResults.length === 0) {
     throw new Error(`未在 ${pluginSource.name} 中找到匹配的歌单`);
   }
 
-  // 取第一个搜索结果
   const sheetItem = searchResults[0];
 
-  // 2. 获取歌单详情（可能分页，循环获取全部歌曲）
   const allSongs: PluginSearchResult[] = [];
   const seen = new Set<string>();
   let page = 1;
   let maxPageSize = 0;
-  const MAX_PAGES = 50; // 安全上限
+  const MAX_PAGES = 50;
   const total = Number(sheetItem.trackCount) || 0;
 
   while (page <= MAX_PAGES) {
     const { songs, isEnd } = await pluginGetPlaylistDetailWithEnd(pluginSource, sheetItem.rawData, page);
     if (songs.length === 0) break;
-    // 去重：部分插件忽略 page 参数，每页返回同一批
     const fresh = songs.filter(s => {
       const key = `${s.platformId ?? s.id}|${s.title}|${s.artist}`;
       if (seen.has(key)) return false;
@@ -193,12 +159,9 @@ export async function importPlaylistFromMusicFreePlugin(
     });
     if (fresh.length === 0) break;
     allSongs.push(...fresh);
-    // 插件明确返回 isEnd → 已到最后一页
     if (isEnd === true) break;
-    // 已拉满歌单总数 → 结束
     if (total > 0 && allSongs.length >= total) break;
     maxPageSize = Math.max(maxPageSize, songs.length);
-    // 兜底：isEnd 缺失时，本页数量不足已见最大页大小 → 最后一页（部分页）
     if (songs.length < maxPageSize) break;
     page++;
   }
@@ -219,16 +182,6 @@ export async function importPlaylistFromMusicFreePlugin(
 
 // ==================== 收藏夹导入（哔哩哔哩等） ====================
 
-/**
- * 通过插件的 importMusicSheet 接口直接导入收藏夹
- *
- * 与 importPlaylistFromMusicFreePlugin 不同，此函数不经过搜索步骤，
- * 直接将 URL/ID 传给插件的 importMusicSheet 方法获取全部曲目。
- *
- * @param pluginSource 支持收藏夹导入的插件源（如哔哩哔哩）
- * @param urlOrId 收藏夹链接或 ID
- * @returns 导入结果
- */
 export async function importPlaylistFromFavorites(
   pluginSource: PlaylistSource['pluginSource'],
   urlOrId: string,
@@ -263,13 +216,6 @@ export async function importPlaylistFromFavorites(
 
 // ==================== 主入口 ====================
 
-/**
- * 导入外部歌单（LX 音源）
- *
- * @param source 音源 key: "wy" | "tx" | "kw" | "kg" | "auto"
- * @param idOrUrl 歌单 ID 或分享链接
- * @returns 导入结果
- */
 export async function importPlaylist(
   source: string,
   idOrUrl: string,
@@ -279,8 +225,6 @@ export async function importPlaylist(
     throw new Error('请输入歌单链接或 ID');
   }
 
-  // 当输入是 URL 时，自动从 URL 识别平台（忽略用户选择的源，避免选错）
-  // 当输入是纯 ID 时，使用用户选择的源
   let actualSource = source;
   let actualId = input;
 

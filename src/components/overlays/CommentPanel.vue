@@ -36,28 +36,23 @@ const loadingMore = ref(false);
 const currentPage = ref(1);
 const isEnd = ref(false);
 const error = ref<string | null>(null);
-/** 插件与宿主平台兜底都无法提供评论（平台不支持），区别于"暂无评论" */
 const unsupported = ref(false);
 const scrollContainer = ref<HTMLElement | null>(null);
 const canLoadMore = computed(() => !isEnd.value && !loadingMore.value && comments.value.length > 0);
 
-/** 评论排序模式：'likes' 最多赞（默认）| 'newest' 最新 */
 const sortMode = ref<'likes' | 'newest'>('likes');
 
-/** 记录已展开二级评论的一级评论 key 集合 */
 const expandedReplies = ref<Set<string>>(new Set());
 
 const resolvedSong = computed<Song | null>(() => props.song ?? currentSong.value ?? null);
 const commentCount = computed(() => comments.value.length);
 
-/** 当前歌曲所属插件 id：播放链路构造的 Song 不写 plugin_id，回退 rawData.pluginId（与播放解析/MV 判定一致） */
 const activePluginId = computed(() =>
   resolvedSong.value?.plugin_id
   || (resolvedSong.value?.rawData as Record<string, unknown> | undefined)?.pluginId as string | undefined
   || '',
 );
 
-/** 排序后的评论列表（仅排序一级评论，不影响分页加载） */
 const sortedComments = computed(() => {
   const list = [...comments.value];
   if (sortMode.value === 'likes') {
@@ -79,7 +74,6 @@ function toggleReplies(comment: CommentItem, idx: number) {
   } else {
     expandedReplies.value.add(key);
   }
-  // 触发响应式更新
   expandedReplies.value = new Set(expandedReplies.value);
 }
 
@@ -90,10 +84,6 @@ function isRepliesExpanded(comment: CommentItem, idx: number): boolean {
 function buildSearchResult(song: Song, pluginId: string): PluginSearchResult | null {
   if (!song.rawData) return null;
   const raw = song.rawData as Record<string, any>;
-  // 播放主路径把搜索阶段的 PluginSearchResult 整个存进 song.rawData；
-  // 插件 getMediaSource / 宿主平台兜底消费的是内层 MusicFree 条目
-  // （songmid/id/qualities 都在内层），外层整体传入会让插件读到
-  // songmid=undefined（QQ 插件报"无效的歌曲ID: null"）。
   const mediaItem = raw.rawData && typeof raw.rawData === 'object' ? raw.rawData : raw;
   return {
     id: String(raw.id || raw.songId || ''),
@@ -170,10 +160,6 @@ async function fetchComments(page: number = 1) {
   }
 }
 
-/**
- * 规范化评论数据：兼容不同插件返回的二级评论字段名。
- * 有些插件用 replyList / subComments / children / replys 等字段名而非 replies。
- */
 function normalizeComment(raw: any): CommentItem {
   const c: CommentItem = {
     id: raw.id ?? raw.commentId ?? raw.comment_id,
@@ -186,7 +172,6 @@ function normalizeComment(raw: any): CommentItem {
     replies: undefined,
   };
 
-  // 兼容多种二级评论字段名
   const replyFields = ['replies', 'replyList', 'subComments', 'children', 'replys', 'sub_comment', 'reply_list'];
   for (const field of replyFields) {
     if (Array.isArray(raw[field]) && raw[field].length > 0) {
@@ -272,7 +257,6 @@ onUnmounted(() => {
         :style="{ width: 'clamp(360px, 28vw, 560px)', maxWidth: '95vw', height: 'calc(100vh - 180px)', minHeight: '200px', bottom: '96px' }"
         @click.stop
       >
-        <!-- Header -->
         <div
           class="px-5 py-4 border-b border-[#d9e0ea] dark:border-white/10 flex justify-between items-center bg-[#f8fafc]/95 dark:bg-[#262626]/95 z-10 shadow-sm"
           :class="[(theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-sm']"
@@ -300,7 +284,6 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- Sort Bar -->
         <div
           v-if="activePluginId && comments.length > 0"
           class="flex items-center gap-1 px-4 py-2 border-b border-[#d9e0ea]/60 dark:border-white/8 bg-[#f3f6fa]/80 dark:bg-[#2a2a2a]/80"
@@ -327,13 +310,11 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- Content -->
         <div
           ref="scrollContainer"
           @scroll="handleScroll"
           class="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 bg-[#eef3f8]/45 dark:bg-[#262626]/35"
         >
-          <!-- Not supported -->
           <div
             v-if="!activePluginId || unsupported"
             class="h-full flex flex-col items-center justify-center text-[#34445c] dark:text-white/90 space-y-4 py-20"
@@ -348,25 +329,21 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Loading -->
           <div v-else-if="loading" class="flex items-center justify-center py-12">
             <Loader2 class="h-5 w-5 text-[#EC4141] animate-spin" :stroke-width="2.2" />
             <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">加载评论中...</span>
           </div>
 
-          <!-- Error -->
           <div v-else-if="error" class="flex flex-col items-center justify-center py-12">
             <span class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ error }}</span>
             <button @click="fetchComments(1)" class="text-xs text-[#EC4141] hover:underline">重试</button>
           </div>
 
-          <!-- Empty -->
           <div v-else-if="comments.length === 0" class="flex flex-col items-center justify-center py-20">
             <MessageCircle class="h-10 w-10 text-gray-300 dark:text-zinc-700 mb-2" :stroke-width="1.5" />
             <span class="text-sm text-gray-400 dark:text-gray-500">暂无评论</span>
           </div>
 
-          <!-- Comment List -->
           <template v-else>
             <div
               v-for="(comment, idx) in sortedComments"
@@ -374,7 +351,6 @@ onUnmounted(() => {
               class="flex gap-3 py-3"
               :class="{ 'border-t border-gray-100/60 dark:border-zinc-800/60': idx > 0 }"
             >
-              <!-- Avatar -->
               <div class="shrink-0 w-9 h-9 rounded-full overflow-hidden bg-gray-200 dark:bg-zinc-700 flex items-center justify-center">
                 <img
                   v-if="comment.avatar"
@@ -389,7 +365,6 @@ onUnmounted(() => {
                 </span>
               </div>
 
-              <!-- Comment Body -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-0.5">
                   <span class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{{ comment.nickName }}</span>
@@ -402,7 +377,6 @@ onUnmounted(() => {
                     <Heart class="h-3 w-3" :stroke-width="2" />
                     <span>{{ formatLike(comment.like) }}</span>
                   </div>
-                  <!-- 展开/收起 二级评论（与时间、点赞同行） -->
                   <button
                     v-if="comment.replies && comment.replies.length > 0"
                     @click="toggleReplies(comment, idx)"
@@ -413,11 +387,9 @@ onUnmounted(() => {
                   </button>
                 </div>
 
-                <!-- Expanded Replies -->
                 <Transition name="reply-collapse">
                   <div v-if="comment.replies && comment.replies.length > 0 && isRepliesExpanded(comment, idx)" class="mt-2 pl-3 border-l-2 border-gray-100 dark:border-zinc-800 space-y-2 overflow-hidden">
                   <div v-for="(reply, rIdx) in comment.replies" :key="reply.id || rIdx" class="flex gap-2 text-sm">
-                    <!-- Reply Avatar -->
                     <div class="shrink-0 w-6 h-6 rounded-full overflow-hidden bg-gray-200 dark:bg-zinc-700 flex items-center justify-center">
                       <img
                         v-if="reply.avatar"
@@ -431,7 +403,6 @@ onUnmounted(() => {
                         {{ reply.nickName?.charAt(0) || '?' }}
                       </span>
                     </div>
-                    <!-- Reply Body -->
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-1.5 mb-0.5">
                         <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ reply.nickName }}</span>
@@ -452,7 +423,6 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Load More -->
             <div v-if="loadingMore" class="flex items-center justify-center py-4">
               <Loader2 class="h-4 w-4 text-[#EC4141] animate-spin" :stroke-width="2.2" />
               <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">加载更多...</span>
@@ -498,7 +468,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* 二级评论展开/收起过渡 */
 .reply-collapse-enter-active {
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;

@@ -105,7 +105,6 @@ describe('useCustomThemeModal', () => {
       },
     });
 
-    // 模拟顶栏皮肤快捷键：保存原始主题并切换到 custom
     skinModalOriginalTheme.value = { ...settingsStore.theme };
     const modal = scope!.run(() => useCustomThemeModal())!;
     modal.preview.value.blur = 42;

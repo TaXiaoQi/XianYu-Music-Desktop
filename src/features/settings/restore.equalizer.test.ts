@@ -1,9 +1,3 @@
-/**
- * Tests for restorePersistedAppSettings with equalizer / currentPresetId.
- *
- * Verifies that the restore path correctly merges persisted equalizer settings
- * including the currentPresetId field.
- */
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
@@ -56,7 +50,6 @@ describe('settings restore: equalizer currentPresetId round-trip', () => {
           enabled: false,
           preamp: 0,
           gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-          // currentPresetId intentionally omitted (legacy data)
         },
       },
     };
@@ -67,7 +60,6 @@ describe('settings restore: equalizer currentPresetId round-trip', () => {
       () => persisted as AppSettings,
     );
 
-    // currentPresetId should be null or undefined — no crash
     expect(settingsStore.settings.audio.equalizer.currentPresetId ?? null).toBeNull();
   });
 

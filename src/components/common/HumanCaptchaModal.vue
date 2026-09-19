@@ -65,7 +65,10 @@ function loadProviderScript(): Promise<void> {
     script.defer = true;
     script.dataset.humanCaptchaProvider = provider;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('captcha script load failed'));
+    script.onerror = () => {
+      script.remove();
+      reject(new Error('captcha script load failed'));
+    };
     document.head.appendChild(script);
   });
 }

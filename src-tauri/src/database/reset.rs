@@ -8,7 +8,6 @@ pub async fn clear_all_app_data(
     db_state: State<'_, DbState>,
     confirm: bool,
 ) -> Result<(), String> {
-    // 破坏性操作：要求前端显式确认（UI 弹窗确认后传 true），防止被误调或注入绕过
     if !confirm {
         return Err("请先确认后再执行清空操作".to_string());
     }
@@ -46,7 +45,6 @@ pub async fn clear_all_app_data(
             fs::remove_dir_all(&cover_dir).map_err(|e| e.to_string())?;
         }
 
-        // 清理文件系统存储的歌单数据（大歌单超过 localStorage 配额时使用）
         let state_dir = app_dir.join("state");
         if state_dir.exists() {
             fs::remove_dir_all(&state_dir).map_err(|e| e.to_string())?;

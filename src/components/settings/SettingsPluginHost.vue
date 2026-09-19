@@ -81,7 +81,6 @@ watch(timeoutPluginPath, (path) => {
   if (!path) return;
   currentTimeoutPath.value = path;
 
-  // 记忆操作逻辑：若此前已勾选记忆且选择为跳过/禁用，后续超时插件全自动禁用跳过，不再弹窗打扰
   if (rememberTimeoutAction.value === 'skip') {
     store.disablePluginPath(path);
     store.timeoutPluginPath = '';
@@ -224,7 +223,6 @@ onMounted(() => {
 
 <template>
   <div class="settings-content space-y-6">
-    <!-- 机架链路（已安装插件式容器 + 拖拽排序 + 扫描入口） -->
     <section class="space-y-3">
       <div class="flex items-center justify-between gap-2">
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
@@ -260,7 +258,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 正在扫描提示条 -->
       <div
         v-if="isScanning"
         class="flex items-center gap-2 rounded-lg border border-[#EC4141]/20 bg-[#EC4141]/5 px-3 py-2 text-[11px] font-medium text-[#EC4141] dark:border-white/5 dark:bg-[#EC4141]/10"
@@ -272,7 +269,6 @@ onMounted(() => {
         </span>
       </div>
 
-      <!-- 搜索框 -->
       <div v-if="rackConfig.slots.length > 0" class="relative">
         <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 dark:text-white/35" />
         <input
@@ -292,7 +288,6 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- 槽位列表 -->
       <div
         ref="listRef"
         class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10"
@@ -321,7 +316,6 @@ onMounted(() => {
               :title="t('pluginHost.dblClickHint')"
               @dblclick="handleSlotDblClick(slot)"
             >
-              <!-- 拖拽手柄 -->
               <div
                 class="rack-drag-handle touch-none select-none"
                 :class="draggingEnabled
@@ -378,7 +372,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 恢复已移除 -->
       <div
         v-if="dismissedCount > 0"
         class="flex items-center justify-between gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 dark:border-gray-800/40 dark:bg-black/10"
@@ -419,7 +412,6 @@ onMounted(() => {
       @cancel="showRemoveDirConfirm = false"
     />
 
-    <!-- 插件扫描超时/卡死确认弹窗 -->
     <ConfirmModal
       :visible="showTimeoutModal"
       :title="t('pluginHost.timeoutTitle')"
@@ -437,7 +429,6 @@ onMounted(() => {
       </label>
     </ConfirmModal>
 
-    <!-- 自定义扫描目录弹窗（窄纵向列表） -->
     <Teleport to="body">
       <Transition name="modal-pop">
         <div
@@ -445,7 +436,6 @@ onMounted(() => {
           class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
         >
           <div class="modal-content flex max-h-[calc(100vh-4rem)] w-full max-w-[360px] flex-col overflow-hidden">
-            <!-- 顶栏 -->
             <div class="flex shrink-0 items-center justify-between border-b border-gray-200/70 px-5 py-4 dark:border-white/10">
               <div class="flex min-w-0 items-center gap-2">
                 <FolderOpen class="h-4 w-4 shrink-0 text-[#EC4141]" />
@@ -465,7 +455,6 @@ onMounted(() => {
               </button>
             </div>
 
-            <!-- 主体 -->
             <div class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
               <p class="text-xs leading-relaxed text-gray-500 dark:text-white/45">{{ t('pluginHost.scanDirsHint') }}</p>
 
@@ -537,12 +526,10 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* 停用槽位弱化，让启用项在链路中更醒目 */
 .rack-slot-card--disabled {
   opacity: 0.6;
 }
 
-/* 拖拽手柄 */
 .rack-drag-handle {
   display: flex;
   align-items: center;
@@ -564,7 +551,6 @@ onMounted(() => {
   background: rgba(236, 65, 65, 0.06);
 }
 
-/* FLIP 排序动画 */
 .rack-sort-move {
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;

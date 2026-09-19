@@ -1,15 +1,3 @@
-/**
- * Tests for playerStorage queueSongMeta I/O.
- *
- * queueSongMeta 用于持久化播放队列/歌单中在线歌（lx://）的完整 Song 元数据，
- * 使非收藏在线歌重启后能从队列还原（含 duration），不再整首丢失。
- *
- * Covers:
- *   - writePlayerState 写入 + readQueueSongMeta 读回往返
- *   - duration 等关键字段保留
- *   - 非法数据过滤
- *   - 空/缺失时返回空对象
- */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

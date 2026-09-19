@@ -1,4 +1,3 @@
-/** QQ 音乐平台评论（musicu.fcg GetHotCommentList），含 songmid→songid 解析。 */
 import { httpJson, PAGE_SIZE } from './platformCommentShared';
 import type { PlatformComment, PlatformCommentResult } from './platformCommentShared';
 
@@ -21,7 +20,6 @@ function mapTxComment(raw: any): PlatformComment {
   };
 }
 
-/** songmid → 数字 songid（与 Baka QQ 插件 getMusicInfoForComment 同链路） */
 export async function resolveTxSongId(mediaItem: any): Promise<string | null> {
   const rawId = mediaItem?.id;
   const idStr = rawId != null ? String(rawId) : '';

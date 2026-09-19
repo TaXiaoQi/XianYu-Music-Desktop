@@ -19,7 +19,7 @@ describe('topBarItems layout normalization and visibility', () => {
   });
 
   it('updates topBar layout when toggling visibility to false', () => {
-    const initial = DEFAULT_TOPBAR_LAYOUT; // left: ['back'], right: ['theme', 'colorScheme', 'settings', 'account'], hidden: ['announcement']
+    const initial = DEFAULT_TOPBAR_LAYOUT;
     const updated = setTopBarItemVisibility(initial, 'theme', false);
 
     expect(updated.hidden).toContain('theme');

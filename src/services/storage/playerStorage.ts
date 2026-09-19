@@ -160,10 +160,6 @@ export const playerStorage = {
     });
   },
 
-  /**
-   * 异步读取歌单：优先从文件系统读取（支持大数据），回退到 localStorage（兼容旧数据）。
-   * 导入大歌单（9000+首）后 localStorage 会超限，必须用文件存储。
-   */
   async readPlaylistsAsync(key = playerStorageKeys.playlists): Promise<Playlist[]> {
     const filterPlaylists = (parsed: unknown): Playlist[] => {
       if (!Array.isArray(parsed)) return [];
@@ -174,32 +170,22 @@ export const playerStorage = {
       });
     };
 
-    // 优先从文件系统读取
     const fileData = await fileStore.getJson<unknown>(key);
     if (fileData !== null) {
       return filterPlaylists(fileData);
     }
-    // 回退到 localStorage（兼容未迁移的旧数据）
     return filterPlaylists(localStore.getJson<unknown>(key));
   },
 
-  /**
-   * 异步写入歌单到文件系统，同时尝试写入 localStorage（向后兼容，超限时清理旧数据释放空间）。
-   */
   async writePlaylistsAsync(playlists: Playlist[], key = playerStorageKeys.playlists): Promise<void> {
-    // 优先写入文件系统（主存储，无大小限制）
     await fileStore.setJson(key, playlists);
-    // 尝试同步写入 localStorage（向后兼容旧版本），超限时移除旧数据释放空间
     try {
       localStore.setJson(key, playlists);
     } catch {
-      // localStorage 配额超限，文件存储已保证数据安全
-      // 移除 localStorage 中的旧歌单数据，释放空间给其他 localStorage 写入
       localStore.remove(key);
     }
   },
 
-  // 均衡器预设管理
   readEqualizerPresets(): EqualizerPreset[] {
     const parsed = localStore.getJson<unknown>(playerStorageKeys.equalizerPresets);
     if (!Array.isArray(parsed)) {
@@ -211,7 +197,6 @@ export const playerStorage = {
       
       const preset = item as Record<string, unknown>;
       
-      // 完整校验所有必需字段
       return (
         typeof preset.id === 'string' &&
         preset.id.length > 0 &&
@@ -230,7 +215,6 @@ export const playerStorage = {
     });
   },
   
-  /** 读取在线收藏歌曲的元信息（path → Song） */
   readFavoriteSongMeta(): Record<string, Song> {
     const parsed = localStore.getJson<unknown>(playerStorageKeys.favoriteSongMeta);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -246,7 +230,6 @@ export const playerStorage = {
     return result;
   },
 
-  /** 读取在线最近播放歌曲的元信息（path → Song） */
   readRecentSongMeta(): Record<string, Song> {
     const parsed = localStore.getJson<unknown>(playerStorageKeys.recentSongMeta);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -262,7 +245,6 @@ export const playerStorage = {
     return result;
   },
 
-  /** 读取收藏的歌单/专辑条目（整张收藏） */
   readFavoriteCollections(): FavoriteCollectionEntry[] {
     const parsed = localStore.getJson<unknown>(playerStorageKeys.favoriteCollections);
     if (!Array.isArray(parsed)) {
@@ -278,16 +260,10 @@ export const playerStorage = {
     );
   },
 
-  /** 读取持久化的在线最近播放条目（含 playedAt，毫秒） */
   readRecentOnlineHistory(): HistoryItem[] {
     return this.readHistory(playerStorageKeys.recentOnlineHistory);
   },
 
-  /**
-   * 读取播放队列/歌单中在线歌曲的元信息（path → Song）。
-   * 队列/歌单持久化只存 path，在线歌（lx://）不在本地库中，需靠这份元数据在启动时
-   * 还原完整 Song（含 duration），否则非收藏在线歌重启后会从队列中整首丢失。
-   */
   readQueueSongMeta(): Record<string, Song> {
     const parsed = localStore.getJson<unknown>(playerStorageKeys.queueSongMeta);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -336,7 +312,6 @@ export const playerStorage = {
     localStore.setJson(playerStorageKeys.recentSongMeta, options.recentSongMeta);
     localStore.setJson(playerStorageKeys.recentOnlineHistory, options.recentOnlineHistory);
     localStore.setJson(playerStorageKeys.queueSongMeta, options.queueSongMeta);
-    // 歌单数据通过 writePlaylistsAsync 异步写入文件系统，避免 localStorage 超限
     localStore.setJson(playerStorageKeys.settings, options.settings);
     localStore.setJson(options.queuePathKey, options.playQueuePaths);
     localStore.setJson(playerStorageKeys.artistCustomOrder, options.artistCustomOrder);

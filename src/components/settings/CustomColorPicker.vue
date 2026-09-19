@@ -91,7 +91,6 @@ const hsv = ref({ h: 0, s: 100, v: 100 });
 const rgb = ref({ r: 236, g: 65, b: 65 });
 const isDraggingSatVal = ref(false);
 
-// 依据 props.modelValue 初始化
 watch(() => props.modelValue, (val) => {
   if (isDraggingSatVal.value) return;
   const newRgb = hexToRgb(val);
@@ -99,19 +98,16 @@ watch(() => props.modelValue, (val) => {
   hsv.value = rgbToHsv(newRgb.r, newRgb.g, newRgb.b);
 }, { immediate: true });
 
-// 色相纯色背景
 const huePureBg = computed(() => {
   const { r, g, b } = hsvToRgb(hsv.value.h, 100, 100);
   return `rgb(${r}, ${g}, ${b})`;
 });
 
-// 指示光标位置
 const cursorStyle = computed(() => ({
   left: `${hsv.value.s}%`,
   top: `${100 - hsv.value.v}%`,
 }));
 
-// 更新并触发回调
 function updateFromHsv(h: number, s: number, v: number) {
   hsv.value = { h, s, v };
   const newRgb = hsvToRgb(h, s, v);
@@ -254,19 +250,15 @@ onUnmounted(() => {
         @click.stop
         @mousedown.stop
       >
-        <!-- 1. 二维 2D HSV 饱和度/明度选择面板（外层大圆角 rounded-xl） -->
         <div
           ref="satValBoxRef"
           class="relative w-full h-44 rounded-xl cursor-crosshair overflow-hidden touch-none"
           :style="{ backgroundColor: huePureBg }"
           @pointerdown="handleSatValPointerDown"
         >
-          <!-- 白色到透明渐变 (左到右) -->
           <div class="absolute inset-0 bg-gradient-to-r from-white to-transparent"></div>
-          <!-- 黑色到透明渐变 (下到上) -->
           <div class="absolute inset-0 bg-gradient-to-t from-black to-transparent"></div>
           
-          <!-- 选色光标指示环（带白色边框与阴影） -->
           <div
             class="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full border-2 border-white shadow-md pointer-events-none transition-transform duration-75"
             :style="cursorStyle"
@@ -275,9 +267,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 2. 中间控制行：吸管 + 颜色预览球 + 彩虹色相 Hue 滑块 -->
         <div class="mt-3 flex items-center gap-3 px-1">
-          <!-- 吸管工具按键 -->
           <button
             type="button"
             class="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
@@ -287,7 +277,6 @@ onUnmounted(() => {
             <Pipette class="h-4 w-4" />
           </button>
 
-          <!-- 挂载点（给不支持 EyeDropper 的浏览器回退使用原生色盘吸管） -->
           <input
             ref="nativeColorInputRef"
             :value="modelValue"
@@ -296,13 +285,11 @@ onUnmounted(() => {
             @input="emit('update:modelValue', ($event.target as HTMLInputElement).value.toUpperCase())"
           />
 
-          <!-- 颜色预览图圆球 -->
           <div
             class="w-6 h-6 rounded-full border border-black/10 dark:border-white/20 shadow-sm shrink-0"
             :style="{ backgroundColor: modelValue }"
           ></div>
 
-          <!-- 彩虹色相 (Hue) 渐变滑块 -->
           <div class="relative flex-1 h-3 flex items-center">
             <input
               :value="hsv.h"
@@ -316,7 +303,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 3. 底部 R / G / B 数字输入区 -->
         <div class="mt-3 grid grid-cols-3 gap-2 px-1 text-center">
           <div class="flex flex-col gap-1">
             <input
@@ -360,7 +346,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 面板底色与模糊造型 */
 .picker-pop-panel {
   background: rgba(255, 255, 255, 0.92);
   border-color: rgba(0, 0, 0, 0.08);
@@ -372,7 +357,6 @@ onUnmounted(() => {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* 进退场弹性缩放与渐变动画 */
 .picker-pop-enter-active,
 .picker-pop-leave-active {
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
@@ -385,7 +369,6 @@ onUnmounted(() => {
   transform: scale(0.9) translateY(8px);
 }
 
-/* 彩虹色相滑块自定义 */
 .hue-slider {
   width: 100%;
   height: 8px;

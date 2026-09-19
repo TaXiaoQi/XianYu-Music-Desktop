@@ -8,7 +8,6 @@ use std::time::Duration;
 use tauri::Manager;
 use tokio::io::AsyncWriteExt;
 
-/// 展开 reqwest 错误链，便于前端区分 timeout / DNS / connection / proxy 等原因。
 fn format_reqwest_error(err: reqwest::Error) -> String {
     let mut parts = Vec::new();
     parts.push(err.to_string());
@@ -36,10 +35,6 @@ pub struct PluginHttpBinaryResponse {
     pub body_base64: String,
 }
 
-/// 校验插件 HTTP 请求 URL：仅允许 http/https，并阻止 SSRF 目标
-/// （环回 / 内网 / 链路本地 / 保留地址，以及 localhost 等内网域名）。
-/// 插件引擎本应访问公网音乐平台 API，此校验作为纵深防御，
-/// 防止被注入的前端脚本或恶意插件探测内网资源。
 fn validate_plugin_http_url(url: &str) -> Result<(), String> {
     let parsed = reqwest::Url::parse(url).map_err(|e| format!("URL 格式非法: {e}"))?;
     let scheme = parsed.scheme();
@@ -70,10 +65,7 @@ fn validate_plugin_http_url(url: &str) -> Result<(), String> {
                     || v4.is_multicast()
             }
             std::net::IpAddr::V6(v6) => {
-                v6.is_loopback()
-                    || v6.is_unique_local()
-                    || v6.is_unspecified()
-                    || v6.is_multicast()
+                v6.is_loopback() || v6.is_unique_local() || v6.is_unspecified() || v6.is_multicast()
             }
         };
         if blocked {
@@ -83,8 +75,6 @@ fn validate_plugin_http_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 插件 HTTP 重定向策略：每个跳转目标都复用 `validate_plugin_http_url` 做 host 级校验，
-/// 拒绝重定向到内网/回环/保留地址；`redirect_limit == 0` 时不跟随。
 fn plugin_ssrf_redirect_policy(redirect_limit: usize) -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() > redirect_limit {
@@ -98,7 +88,6 @@ fn plugin_ssrf_redirect_policy(redirect_limit: usize) -> reqwest::redirect::Poli
     })
 }
 
-/// 异步 HTTP 请求 —— 使用 reqwest 异步客户端，不阻塞主线程
 #[tauri::command]
 pub async fn plugin_http_request(
     method: String,
@@ -152,7 +141,6 @@ pub async fn plugin_http_request(
             response_headers.insert(key.as_str().to_string(), value.to_string());
         }
     }
-    // 流式读取响应体，限制最大 50MB
     const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
     let body = {
         let mut buf = Vec::with_capacity(4096);
@@ -179,7 +167,6 @@ pub async fn plugin_http_request(
     })
 }
 
-/// 异步二进制 HTTP 请求 —— 返回 base64 编码的 body，用于获取二进制歌词数据（如酷我 newlyric）
 #[tauri::command]
 pub async fn plugin_http_request_binary(
     method: String,
@@ -227,7 +214,7 @@ pub async fn plugin_http_request_binary(
             response_headers.insert(key.as_str().to_string(), value.to_string());
         }
     }
-    const MAX_BODY_SIZE: usize = 50 * 1024 * 1024; // 50MB
+    const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
     let body_base64 = {
         let mut buf = Vec::with_capacity(4096);
         loop {
@@ -253,11 +240,8 @@ pub async fn plugin_http_request_binary(
     })
 }
 
-/// 读取本地插件/备份文件内容
-/// 支持 .js / .json / .txt / .m3u / .m3u8 格式
 #[tauri::command]
 pub fn read_plugin_file(path: String) -> Result<String, String> {
-    // 路径安全校验：拒绝目录遍历攻击
     let validated = path_validator::validate_path(&path, None)
         .map_err(|e| format!("路径校验失败: {} (路径: {})", e, path))?;
     let path_obj = validated.as_path();
@@ -271,26 +255,30 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
         .unwrap_or_default()
         .to_ascii_lowercase();
     if !matches!(ext.as_str(), "js" | "json" | "txt" | "m3u" | "m3u8") {
-        return Err(format!("不支持的文件类型: .{} (仅支持 .js/.json/.txt/.m3u/.m3u8)", ext));
+        return Err(format!(
+            "不支持的文件类型: .{} (仅支持 .js/.json/.txt/.m3u/.m3u8)",
+            ext
+        ));
     }
 
-    let metadata = fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
-    // JSON 备份文件可能包含封面 data URI 和歌词，允许更大体积（50MB）；
-    // 其他文本文件（JS/TXT/M3U）保持 5MB 上限
+    let metadata =
+        fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
     let max_size = if ext == "json" {
         50 * 1024 * 1024
     } else {
         5 * 1024 * 1024
     };
     if metadata.len() > max_size {
-        return Err(format!("文件过大: {} MB (上限 {} MB)", metadata.len() / 1024 / 1024, max_size / 1024 / 1024));
+        return Err(format!(
+            "文件过大: {} MB (上限 {} MB)",
+            metadata.len() / 1024 / 1024,
+            max_size / 1024 / 1024
+        ));
     }
 
     fs::read_to_string(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))
 }
 
-/// 将插件脚本保存到 app_data_dir/plugins/{id}.js，返回保存后的完整路径。
-/// 插件安装时复制一份到应用数据目录，避免原始文件被移动/删除后插件失效。
 #[tauri::command]
 pub async fn save_plugin_script(
     app_handle: tauri::AppHandle,
@@ -317,8 +305,6 @@ pub async fn save_plugin_script(
     Ok(file_path.to_string_lossy().to_string())
 }
 
-/// 读取本地文件的二进制内容（base64 编码返回）
-/// 支持 .json / .zip / .lxmc 格式，用于备份导入的压缩包支持
 #[tauri::command]
 pub fn read_file_bytes(path: String) -> Result<String, String> {
     use base64::{engine::general_purpose, Engine as _};
@@ -336,21 +322,27 @@ pub fn read_file_bytes(path: String) -> Result<String, String> {
         .unwrap_or_default()
         .to_ascii_lowercase();
     if !matches!(ext.as_str(), "json" | "zip" | "lxmc") {
-        return Err(format!("不支持的文件类型: .{} (仅支持 .json/.zip/.lxmc)", ext));
+        return Err(format!(
+            "不支持的文件类型: .{} (仅支持 .json/.zip/.lxmc)",
+            ext
+        ));
     }
 
-    let metadata = fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
+    let metadata =
+        fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
     let max_size = 50 * 1024 * 1024;
     if metadata.len() > max_size {
-        return Err(format!("文件过大: {} MB (上限 {} MB)", metadata.len() / 1024 / 1024, max_size / 1024 / 1024));
+        return Err(format!(
+            "文件过大: {} MB (上限 {} MB)",
+            metadata.len() / 1024 / 1024,
+            max_size / 1024 / 1024
+        ));
     }
 
     let bytes = fs::read(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))?;
     Ok(general_purpose::STANDARD.encode(&bytes))
 }
 
-/// 读取本地图片文件为 base64（分享本地歌曲封面上传用）。
-/// 返回 { mime, base64 }，mime 由图片字节内容判定，不依赖扩展名。
 #[tauri::command]
 pub fn read_image_base64(path: String) -> Result<serde_json::Value, String> {
     use base64::{engine::general_purpose, Engine as _};
@@ -362,10 +354,15 @@ pub fn read_image_base64(path: String) -> Result<serde_json::Value, String> {
         return Err(format!("文件不存在: {}", path));
     }
 
-    let metadata = fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
+    let metadata =
+        fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
     let max_size = 5 * 1024 * 1024;
     if metadata.len() > max_size {
-        return Err(format!("文件过大: {} MB (上限 {} MB)", metadata.len() / 1024 / 1024, max_size / 1024 / 1024));
+        return Err(format!(
+            "文件过大: {} MB (上限 {} MB)",
+            metadata.len() / 1024 / 1024,
+            max_size / 1024 / 1024
+        ));
     }
 
     let bytes = fs::read(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))?;
@@ -384,17 +381,14 @@ pub fn read_image_base64(path: String) -> Result<serde_json::Value, String> {
     }))
 }
 
-/// 代理图片请求 —— 自动添加 Referer 头，解决 B站等 CDN 403 问题
 #[tauri::command]
 pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {
-    // SSRF 防护：图片代理仅允许公网 http/https 目标
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|e| format!("图片链接校验失败: {e}"))?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
-        // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -402,7 +396,6 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         .map_err(|e| e.to_string())?;
 
     let mut req = client.get(&url);
-    // 各 CDN 图片服务器防盗链所需的 Referer 头
     let ref_url = referer.unwrap_or_else(|| {
         if url.contains("hdslb.com") || url.contains("bilivideo.com") {
             "https://www.bilibili.com".to_string()
@@ -438,14 +431,11 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
 
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
 
-    // 网络读取上限（远超封面预期，防止恶意超大响应拖垮内存）
     const MAX_NETWORK_BYTES: usize = 20 * 1024 * 1024;
     if bytes.len() > MAX_NETWORK_BYTES {
         return Err("Image too large".to_string());
     }
 
-    // 返回前保留上限：过大图片直接透传会生成数十 MB 的 data: URL，拖跨渲染进程。
-    // 超过上限时用 image 解码缩小再编码成小体积 JPEG，保证内存与内存封容量可控。
     use base64::{engine::general_purpose, Engine as _};
 
     const MAX_DATA_BYTES: usize = 5 * 1024 * 1024;
@@ -453,11 +443,9 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         let Ok(img) = image::load_from_memory(&bytes) else {
             return Err("Image too large".to_string());
         };
-        // 限制最长边，保证封面缩略图体积足够小（原图过大时才缩放）
         const MAX_EDGE: u32 = 800;
         let img = shrink_to_fit(img, MAX_EDGE);
         let rgba = img.to_rgba8();
-        // 尽量保留 alpha（透明 PNG 封面），否则回退 JPEG 保证稳定返回
         let mut png = Vec::new();
         if image::codecs::png::PngEncoder::new(&mut png)
             .write_image(
@@ -491,12 +479,10 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         return Err("Image too large".to_string());
     }
 
-    // 转为 data URL
     let b64 = general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{};base64,{}", content_type, b64))
 }
 
-/// 等比缩小到指定最长边（不足或非图片尺寸则原样返回）
 fn shrink_to_fit(img: image::DynamicImage, max_edge: u32) -> image::DynamicImage {
     let (w, h) = img.dimensions();
     let largest = w.max(h);
@@ -504,25 +490,25 @@ fn shrink_to_fit(img: image::DynamicImage, max_edge: u32) -> image::DynamicImage
         return img;
     }
     if w >= h {
-        img.resize(max_edge, (h * max_edge) / w, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            max_edge,
+            (h * max_edge) / w,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else {
-        img.resize((w * max_edge) / h, max_edge, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            (w * max_edge) / h,
+            max_edge,
+            image::imageops::FilterType::Lanczos3,
+        )
     }
 }
 
-/// 异步下载音频到临时文件，返回本地文件路径
-/// 用于 B站 m4s 等需要特殊 headers 的音频流。
-///
-/// 手动跟随 302 重定向：reqwest 默认在同一主机重定向时保留 Cookie 等敏感头，
-/// 但跨主机重定向会剥离 Cookie/Authorization 防泄露。B站 CDN 常把取流地址 302
-/// 到镜像主机（如 xy*.mcdn.bilivideo.cn），一旦 Cookie/Referer 被剥离，CDN 就按
-/// 匿名处理并返回 3-4 秒预览片段。这里禁用自动重定向，每一跳都重新注入完整 headers。
 #[tauri::command]
 pub async fn download_audio_to_temp(
     url: String,
     headers: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
-    // SSRF 防护：音频源仅允许公网 http/https 目标
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|e| e.to_string())?;
@@ -559,10 +545,16 @@ pub async fn download_audio_to_temp(
                 .and_then(|v| v.to_str().ok())
                 .map(|v| v.to_string());
             let Some(next_url) = location else {
-                return Err(format!("Redirect without Location: HTTP {}", response.status()));
+                return Err(format!(
+                    "Redirect without Location: HTTP {}",
+                    response.status()
+                ));
             };
             if next_url.trim().is_empty() {
-                return Err(format!("Empty redirect Location from HTTP {}", response.status()));
+                return Err(format!(
+                    "Empty redirect Location from HTTP {}",
+                    response.status()
+                ));
             }
             current_url = if next_url.starts_with("http://") || next_url.starts_with("https://") {
                 next_url
@@ -572,7 +564,6 @@ pub async fn download_audio_to_temp(
                     .map(|u| u.to_string())
                     .unwrap_or(next_url)
             };
-            // SSRF 防护：重定向后的跳转目标也需通过校验
             ssrf::validate_outbound_url(&current_url)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -591,7 +582,6 @@ pub async fn download_audio_to_temp(
         return Err("Empty response".to_string());
     }
 
-    // 写入临时文件
     let temp_dir = std::env::temp_dir();
     let file_name = format!(
         "xy_music_{}.m4s",
@@ -608,7 +598,6 @@ pub async fn download_audio_to_temp(
 
 const MAX_BACKGROUND_VIDEO_BYTES: u64 = 512 * 1024 * 1024;
 
-/// 将插件解析得到的视频流式写入应用缓存，供 WebView 通过 asset 协议播放。
 #[tauri::command]
 pub async fn download_video_to_cache(
     app: tauri::AppHandle,
@@ -619,14 +608,12 @@ pub async fn download_video_to_cache(
         return Err("Unsupported video URL".to_string());
     }
 
-    // SSRF 防护：视频源仅允许公网 http/https 目标
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|error| error.to_string())?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
-        // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .gzip(true)
@@ -700,7 +687,6 @@ pub async fn download_video_to_cache(
     Ok(cache_path.to_string_lossy().to_string())
 }
 
-/// 仅允许清理本功能在应用缓存中创建的视频文件。
 #[tauri::command]
 pub async fn remove_cached_background_video(
     app: tauri::AppHandle,
@@ -711,11 +697,9 @@ pub async fn remove_cached_background_video(
         .app_cache_dir()
         .map_err(|error| error.to_string())?
         .join("video-background");
-    // canonicalize 解析符号链接，防目录名/链接逃逸
     let canonical_cache = cache_dir.canonicalize().unwrap_or(cache_dir);
     let candidate = match std::path::PathBuf::from(&path).canonicalize() {
         Ok(c) => c,
-        // 不存在或无法解析，视为已删除
         Err(_) => return Ok(()),
     };
     let file_name = candidate

@@ -21,8 +21,6 @@ describe('footer layout visual editor helpers', () => {
     });
 
     expect(layout.hidden).toEqual([]);
-    // 旧布局未包含 mv、share：不在任何容器，默认进入折叠收纳菜单
-    // 歌词页专属项（可视化/进度条/页面样式/固定）默认也留在折叠菜单
     expect(computeCollapsedItems(layout)).toEqual(['mv', 'share', 'visualizer', 'progress', 'pageStyle', 'pin']);
   });
 
@@ -43,8 +41,6 @@ describe('footer layout visual editor helpers', () => {
     const hidden = setFooterItemVisibility(DEFAULT_FOOTER_LAYOUT, 'equalizer', false);
     const slots = getFooterPreviewSlotItems(hidden);
 
-    // 隐藏 equalizer 时，equalizer 留在 right-0 槽位但被标记为 hidden（因此 visible 为 null）；
-    // 其余可见项保持相对顺序靠右紧凑，playlist 作为默认第 5 项占据 right-4。
     expect(slots['right-0']).toBeNull();
     expect(slots['right-1']).toBe('quality');
     expect(slots['right-2']).toBe('comment');
@@ -66,8 +62,6 @@ describe('footer layout visual editor helpers', () => {
     const moved = moveFooterItemToPreviewSlot(hidden, 'playlist', 'right-0');
     const slots = getFooterPreviewSlotItems(moved);
 
-    // playlist 占据 right-0；equalizer 被置换到原 playlist 的 right-4 槽位（hidden → visible 为 null）；
-    // comment 仍在 right-2，不与 hidden 项的空槽位重叠。
     expect(slots['right-0']).toBe('playlist');
     expect(slots['right-1']).toBe('quality');
     expect(slots['right-2']).toBe('comment');
@@ -91,7 +85,6 @@ describe('unified drag helpers (bar ⇄ more tools)', () => {
     const slots = getFooterPreviewSlotItems(next);
 
     expect(slots['right-0']).toBe('visualizer');
-    // 原 right-0（quality）被推到收纳区
     expect(computeCollapsedItems(next)).toContain('quality');
     expect(next.hidden).not.toContain('visualizer');
   });

@@ -191,8 +191,6 @@ export function convertLyricsToAmlLines(
   });
 
   return validLines.map((line, lineIndex) => {
-    // When word-by-word effect is disabled, treat each line as a single word
-    // so the entire line highlights at once instead of word-by-word.
     const effectiveWords = enableWordEffect ? line.words : undefined;
     const renderLine = {
       startMs: toMs(line.time),

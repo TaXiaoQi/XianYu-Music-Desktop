@@ -12,7 +12,6 @@ const emit = defineEmits(['close']);
 
 const isClosing = ref(false);
 
-/** 兼容缺少协议头的链接（如 "xianyumusic.cn"），自动补全为 https://，确保能正常在外部浏览器打开 */
 function normalizeExternalUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return '';
@@ -37,7 +36,7 @@ const handleClose = () => {
   setTimeout(() => {
     emit('close');
     isClosing.value = false;
-  }, 200); // 时长匹配退出动画
+  }, 200);
 };
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -57,19 +56,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
       class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
       :class="{ 'pointer-events-none': isClosing }"
     >
-      <!-- 背景盖板 -->
       <div
         class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
         :class="isClosing ? 'opacity-0' : 'opacity-100'"
         @click="handleClose"
       ></div>
 
-      <!-- 弹窗卡片：窄宽、毛玻璃、居中淡入淡出 -->
       <div
         class="ack-modal-card relative mx-auto w-full max-w-sm overflow-hidden rounded-2xl border border-white/40 shadow-2xl transition-all duration-300 dark:border-white/10"
         :class="isClosing ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 translate-y-0'"
       >
-        <!-- 标题栏 -->
         <div class="flex items-center justify-between px-6 pt-5 pb-3">
           <h3 class="text-lg font-bold leading-6 text-gray-900 dark:text-white">致谢名单</h3>
           <button
@@ -86,7 +82,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           </button>
         </div>
 
-        <!-- 名单区 -->
         <div class="px-6 pb-6">
           <p class="mb-4 text-center text-xs leading-relaxed text-gray-400 dark:text-white/40">
             感谢以下项目创意或功能的贡献者，排名不分先后
@@ -125,7 +120,6 @@ html.dark .ack-modal-card,
   background: rgba(17, 24, 39, 0.92);
 }
 
-/* 名字胶囊：点击可打开对应主页，橙色选中态轻量、符合应用风格 */
 .ack-chip {
   display: inline-flex;
   align-items: center;

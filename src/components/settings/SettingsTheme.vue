@@ -214,7 +214,6 @@ const commitAccentColor = (event: Event) => {
 };
 
 const openCustomSkin = () => {
-  // 保存当前主题，取消时恢复配色方案与窗口材质
   skinModalOriginalTheme.value = {
     ...theme.value,
     customBackground: { ...theme.value.customBackground },
@@ -267,7 +266,7 @@ function updateCoverMenuPosition() {
   const viewportPadding = 16;
   const gap = 8;
   const menuWidth = Math.max(rect.width, 200);
-  const menuHeight = 160; // 3 选项 + padding，足够
+  const menuHeight = 160;
 
   let left = rect.right - menuWidth;
   left = Math.min(left, window.innerWidth - viewportPadding - menuWidth);
@@ -751,7 +750,6 @@ onUnmounted(() => {
               ></span>
             </button>
 
-            <!-- 具备大圆角（rounded-2xl）与平滑打开/关闭动画（picker-pop）的 2D 调色盘面板 -->
             <CustomColorPicker
               :model-value="theme.accentColor"
               :is-open="isCustomColorPickerOpen"
@@ -886,7 +884,6 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- 开关样式设置 -->
     <section class="space-y-3">
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
@@ -941,13 +938,10 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- 侧边栏管理（并入外观） -->
     <SettingsSidebar />
 
-    <!-- 顶部栏布局（并入外观，修改即时生效） -->
     <SettingsTopBarLayout />
 
-    <!-- 底部栏布局（并入外观，修改即时生效） -->
     <SettingsFooterLayout />
   </div>
 </template>

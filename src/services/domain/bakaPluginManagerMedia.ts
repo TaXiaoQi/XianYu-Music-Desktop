@@ -1,14 +1,3 @@
-/**
- * Baka 插件引擎 · 媒体操作 Mixin。
- *
- * 承接 Baka 插件的：播放 URL 获取（getMediaSource，含 new→legacy 音质回退、
- * 酷狗/网易云外链预检、QQ 试听链拒绝）、歌词获取（getLyric）、评论获取
- * （getMusicComments）、封面获取（getCover）与详情页 URL（getMusicDetailPageUrl）。
- *
- * 依赖 BakaPluginCore（状态字段 `_mediaSourceCache`/`_mediaSourcePending`、
- * `_ensureInstance`）与 bakaPluginManagerBase 的叶子工具；供 bakaPluginManagerCatalog
- * 继续继承，最终由 bakaPluginManager 门面组合并导出单例。
- */
 import type {
   PluginSource,
   PluginSearchResult,
@@ -62,25 +51,9 @@ import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/medi
 import { pluginApi } from '../tauri/pluginApi';
 import { isQqTrialMediaUrl } from './qqHostSearchFallback';
 
-/**
- * Baka 插件媒体操作（混入 BakaPluginCore）。
- * 共享状态字段与 `_ensureInstance` 由基类提供，本类只关注媒体数据的取流与解析。
- */
 export class BakaPluginMedia extends BakaPluginCore {
   // ==================== 播放 URL 获取（核心方法）====================
 
-  /**
-   * 获取 Baka 插件播放 URL
-   *
-   * 与 MusicFree 插件完全分离，使用 12 档原生音质键值。
-   * 内置 newToLegacyQualityMap 回退：新键失败时自动回退到旧键。
-   *
-   * @param source 插件源
-   * @param item 搜索结果项
-   * @param quality 目标音质
-   * @param fallbackBehavior 回退行为
-   * @param availableQualities 可用音质列表
-   */
   async getMediaSource(
     source: PluginSource,
     item: PluginSearchResult,
@@ -169,7 +142,6 @@ export class BakaPluginMedia extends BakaPluginCore {
 
     const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
 
-    // 构建音质尝试列表：始终使用 12 档原生键值
     const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
     const declaredAvailableQualities = normalizeSupportedQualities(inst.supportedQualities);
     const effectiveAvailableQualities = availableQualities?.length ? availableQualities : declaredAvailableQualities;
@@ -180,9 +152,6 @@ export class BakaPluginMedia extends BakaPluginCore {
         tryPairs.push({ pluginQ: qualityKeyToPluginString(q), qualityKey: q });
       }
     } else if (isQualityKey(quality)) {
-      // 插件未声明 supportedQualities（Baka 等自回落插件）时不再全档展开逐级请求：
-      // 每档展开意味着一次起播要串行发 N 次 track_v2 网络请求，极其缓慢。改为只请求
-      // 目标档，并按回退方向补一个相邻档，具体回落交由插件内部 actualQuality 报告。
       if (fallbackBehavior === 'pause') {
         tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
       } else {
@@ -210,23 +179,17 @@ export class BakaPluginMedia extends BakaPluginCore {
     const attemptedPluginQualities = new Set<string>();
     const isKugou = isKugouLikeSource(source, musicItem);
     const isNetease = isNeteaseLikeSource(source, musicItem);
-    // 网易云外链预检结果记忆：各档位常返回同一 outer/url，避免重复探测同一 URL
     const neteaseOuterUrlProbes = new Map<string, { playable: boolean; reason?: string }>();
     const shouldAcceptMediaResult = async (candidate: any, pairIdx: number, qualityLabel: string): Promise<boolean> => {
       const candidateRawUrl = typeof candidate?.url === 'string' ? candidate.url : '';
       if (!candidateRawUrl) return false;
 
       const candidateUrl = isKugou ? cleanKugouPluginUrl(candidateRawUrl) : sanitizeMediaUrl(candidateRawUrl);
-      // QQ 60 秒试听链（RS02 前缀）不是可用播放源：免费公共中转（vkeys.cn 等）对
-      // 游客恒返试听且各音质档同一文件，若照常返回用户只能听到 60 秒还误以为歌曲就这么短。
-      // 拒绝并继续尝试其余档位，全档失败时由起播失败行为（跳过/停止）与 toast 透出原因。
       if (!isKugou && isQqTrialMediaUrl(candidateUrl)) {
         lastError = new Error('该音源仅能获取 60 秒试听');
         log(`[getMediaSource] quality=${qualityLabel} 返回 QQ 试听链(RS02)，拒绝并继续: ${candidateUrl.substring(0, 80)}`);
         return false;
       }
-      // 网易云官方外链：版权受限歌 302 到 404 HTML 页（各档同一 URL），
-      // 预检拒绝后音质回退继续，全档失败时透出"该音源无法提供此歌曲"
       if (isNetease && candidateUrl && isNeteaseOuterUrl(candidateUrl)) {
         let probe = neteaseOuterUrlProbes.get(candidateUrl);
         if (!probe) {
@@ -283,8 +246,6 @@ export class BakaPluginMedia extends BakaPluginCore {
           break;
         }
 
-        // 新键无结果，尝试旧键回退（对齐 BakaMusic newToLegacyQualityMap）。
-        // 当用户选择"暂停/不回退"时，不再尝试旧键，避免绕过设置继续刷请求。
         const legacyQ = fallbackBehavior === 'pause' ? undefined : newToLegacyQualityMap[q];
         if (!result?.url && legacyQ && legacyQ !== q) {
           if (attemptedPluginQualities.has(legacyQ)) {
@@ -356,11 +317,9 @@ export class BakaPluginMedia extends BakaPluginCore {
 
     const rawUrl = typeof result.url === 'string' ? result.url : '';
 
-    // 酷狗插件专用 URL 清洗：白名单策略，比通用方法更激进
     let url: string;
     if (isKugou) {
       url = cleanKugouPluginUrl(rawUrl);
-      // 如果专用方法失败，回退到通用方法
       if (!url || !/^https?:\/\//.test(url)) {
         console.warn('[BakaPluginManager] 酷狗专用清洗失败，回退到通用 sanitizeMediaUrl');
         url = sanitizeMediaUrl(rawUrl);
@@ -369,7 +328,6 @@ export class BakaPluginMedia extends BakaPluginCore {
       url = sanitizeMediaUrl(rawUrl);
     }
 
-    // 通用兜底：如果清洗后仍不以 http 开头，用 indexOf 强制提取
     if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
       const idx1 = rawUrl.indexOf('https://');
       const idx2 = rawUrl.indexOf('http://');
@@ -442,18 +400,6 @@ export class BakaPluginMedia extends BakaPluginCore {
 
   // ==================== 歌词获取 ====================
 
-  /**
-   * 获取歌词（支持所有 Baka 歌词格式）
-   *
-   * Baka 插件 getLyric 返回 ILyricSource 对象，可能包含：
-   *   - rawLrc / lrc / lyric: 标准歌词文本
-   *   - translation / tlyric: 翻译歌词
-   *   - romanization: 罗马音歌词
-   *   - format: 歌词格式标识
-   *   - yrc / qrc / lxlyric / eslrc: 逐字歌词
-   *
-   * 使用 Baka/MF 专用构建器构建 lyricsRaw 文本（优先级：yrc > qrc > eslrc > lxlyric > lyric）
-   */
   async getLyric(
     source: PluginSource,
     item: PluginSearchResult,
@@ -481,7 +427,6 @@ export class BakaPluginMedia extends BakaPluginCore {
         return null;
       }
 
-      // 兼容多种字段名
       const rawLrc = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
       const ttml = lrcSource.ttml || '';
       const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
@@ -491,7 +436,6 @@ export class BakaPluginMedia extends BakaPluginCore {
       const qrc = lrcSource.qrc || '';
       const eslrc = lrcSource.eslrc || '';
 
-      // [诊断] 输出完整的歌词数据信息，帮助定位逐字歌词缺失问题
       log(`[getLyric] ${source.name} 原始返回字段: keys=[${Object.keys(lrcSource).join(',')}], format=${lrcSource.format ?? '(none)'}, rawLrcLen=${rawLrc.length}, ttmlLen=${ttml.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}`);
       if (rawLrc) log(`[getLyric] rawLrc 预览: ${rawLrc.substring(0, 200)}`);
       if (ttml) log(`[getLyric] ttml 预览: ${ttml.substring(0, 200)}`);
@@ -500,7 +444,6 @@ export class BakaPluginMedia extends BakaPluginCore {
       if (qrc) log(`[getLyric] qrc 预览: ${qrc.substring(0, 200)}`);
       if (eslrc) log(`[getLyric] eslrc 预览: ${eslrc.substring(0, 200)}`);
 
-      // 检测歌词格式
       let format: BakaLyricFormat | undefined;
       if (lrcSource.format) {
         format = lrcSource.format as BakaLyricFormat;
@@ -543,14 +486,6 @@ export class BakaPluginMedia extends BakaPluginCore {
 
   // ==================== 评论获取 ====================
 
-  /**
-   * 获取歌曲评论（对齐 BakaMusic getMusicComments）
-   *
-   * @param source 插件源
-   * @param item 搜索结果项
-   * @param page 页码（从 1 开始）
-   * @returns 评论列表
-   */
   async getMusicComments(
     source: PluginSource,
     item: PluginSearchResult,
@@ -576,7 +511,6 @@ export class BakaPluginMedia extends BakaPluginCore {
 
       if (!result) return null;
 
-      // 兼容多种返回格式
       const comments: BakaComment[] = Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : []);
       const isEnd = result.isEnd ?? (comments.length === 0);
 
@@ -594,8 +528,6 @@ export class BakaPluginMedia extends BakaPluginCore {
     const inst = await this._ensureInstance(source);
     if (!inst) return null;
 
-    // 网易云检测与专辑接口兜底（与 pluginEngine.pluginGetCover 的 tryNeteaseAlbumCover 一致）
-    // 网易云搜索只回超大整数 pic 而无 picUrl/pic_str 时，getMusicInfo 也常拿不到封面，走专辑接口最稳
     const rawItem = item.rawData || item;
     const neteaseSource =
       (source.sources && source.sources.includes('wy')) ||
@@ -618,7 +550,6 @@ export class BakaPluginMedia extends BakaPluginCore {
           singer: item.artist,
           albumName: item.album,
         });
-        // 升级 https：avoid http 封面被 WebView2 混合内容拦截、或被前端 needsProxy 误判走后端代理而失败
         return (cover && String(cover).replace(/^http:\/\//i, 'https://')) || null;
       } catch {
         return null;
@@ -631,7 +562,6 @@ export class BakaPluginMedia extends BakaPluginCore {
           ? resetMediaItem(item.rawData, source.name)
           : resetMediaItem(item, source.name);
         const result = await inst.getMusicInfo(musicItem);
-        // getMusicInfo 返回的时长补全到 item（搜索结果常缺 duration）
         if (result && !item.duration) {
           const dur = extractDurationMs(result);
           if (dur) item.duration = dur;
@@ -639,7 +569,6 @@ export class BakaPluginMedia extends BakaPluginCore {
         const coverUrl = extractCoverUrl(result);
         if (coverUrl) return coverUrl;
       }
-      // getMusicInfo 无封面时，网易云走专辑接口兜底（song/detail 常被限流）
       const albumCover = await tryNeteaseAlbumCover();
       if (albumCover) return albumCover;
       return item.coverUrl || null;
@@ -652,9 +581,6 @@ export class BakaPluginMedia extends BakaPluginCore {
 
   // ==================== 获取歌曲详情页 URL ====================
 
-  /**
-   * 获取歌曲分享/详情页 URL（对齐 BakaMusic getMusicDetailPageUrl）
-   */
   async getMusicDetailPageUrl(source: PluginSource, item: PluginSearchResult): Promise<string | null> {
     const inst = await this._ensureInstance(source);
     if (!inst) return null;

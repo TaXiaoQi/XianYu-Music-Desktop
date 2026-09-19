@@ -23,7 +23,6 @@ import TopBarControlIcon from './TopBarControlIcon.vue';
 const router = useRouter();
 const route = useRoute();
 
-// 听歌识曲面板（UI 已就绪，识别逻辑后面实现）
 const showRecognition = ref(false);
 const toggleRecognition = () => {
   showRecognition.value = !showRecognition.value;
@@ -37,7 +36,7 @@ const uiStore = useUiStore();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
 const authStore = useAuthStore();
 const navigationStore = useNavigationStore();
-const rotation = ref(0); // For settings icon animation
+const rotation = ref(0);
 const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath);
 const lastNonAuthRoute = ref(route.path === '/auth' ? '/' : route.fullPath);
 const isSettingsRoute = computed(() => route.path === '/settings');
@@ -79,7 +78,6 @@ const hotSearchLoading = ref(false);
 let hotSearchLoadedAt = 0;
 const HOT_SEARCH_CACHE_MS = 5 * 60 * 1000;
 
-// 逐条渐进展示：面板保持完整形态，内容一条条浮现，避免等云端返回后整体跳动
 const revealedCount = ref(0);
 let revealTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -90,8 +88,6 @@ const clearRevealTimer = () => {
   }
 };
 
-// 重置计数并让列表逐条出现（条数少也逐条，保证每次都有进入动画）
-// 首条做一点延迟，避免逐条下滑与面板整体淡入重叠、抢走"淡进淡出"的视觉
 const REVEAL_START_DELAY_MS = 140;
 const startReveal = (count: number) => {
   clearRevealTimer();
@@ -111,13 +107,11 @@ const visibleHistoryList = computed(() =>
   navigationStore.searchHistory.slice(0, revealedCount.value),
 );
 
-// 切换 Tab：重新逐条出现当前 Tab 的内容
 const switchSearchTab = (tab: 'hot' | 'history') => {
   searchTab.value = tab;
   startReveal(tab === 'hot' ? hotSearchList.value.length : navigationStore.searchHistory.length);
 };
 
-// 搜索记录变化时（当前为记录 Tab）重新逐条出现
 watch(
   () => navigationStore.searchHistory.length,
   (count) => {
@@ -129,13 +123,10 @@ const loadHotSearch = async () => {
   if (hotSearchLoading.value) return;
   const now = Date.now();
   if (hotSearchList.value.length && now - hotSearchLoadedAt < HOT_SEARCH_CACHE_MS) {
-    // 缓存命中：直接复用数据，在热搜 Tab 下逐条浮现
     if (searchTab.value === 'hot') startReveal(hotSearchList.value.length);
     return;
   }
   hotSearchLoading.value = true;
-  // 仅在热搜 Tab 激活时重置逐条动画；历史 Tab 的动画由 handleSearchFocus/switchSearchTab 管理，
-  // 这里清掉会把刚启动的历史记录逐条浮现打断（revealedCount 卡在 0 → 面板空白）
   if (searchTab.value === 'hot') {
     clearRevealTimer();
     revealedCount.value = 0;
@@ -161,7 +152,6 @@ const handleSearchEnter = () => {
 
 const handleSearchFocus = () => {
   showHistory.value = true;
-  // 每次重新打开面板都逐条出现当前 Tab 内容；热搜由 loadHotSearch 就绪后触发
   if (searchTab.value === 'history') startReveal(navigationStore.searchHistory.length);
   void loadHotSearch();
 };
@@ -169,7 +159,6 @@ const handleSearchFocus = () => {
 let searchBlurTimer: ReturnType<typeof setTimeout> | null = null;
 
 const handleSearchBlur = () => {
-  // 延迟关闭，以便点击历史项时能先触发
   searchBlurTimer = setTimeout(() => { showHistory.value = false; searchBlurTimer = null; }, 200);
 };
 
@@ -201,12 +190,10 @@ const toggleSettingsPage = () => {
 };
 
 const openColorScheme = () => {
-  // 保存当前主题，取消时恢复配色方案与窗口材质
   skinModalOriginalTheme.value = {
     ...theme.value,
     customBackground: { ...theme.value.customBackground },
   };
-  // 切换到自定义皮肤并直接打开自定义配色弹窗
   setThemeMode('custom');
   uiStore.showCustomSkinModal = true;
 };
@@ -220,7 +207,6 @@ const openAccountPage = () => {
   }
 };
 
-// 给 TopBarControlItem 提供渲染上下文
 provide('topBarContext', {
   isDarkTheme,
   goBack,
@@ -243,7 +229,6 @@ provide('topBarContext', {
 
 const minimize = () => { void appWindow.minimize(); };
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
-// 系统全屏（沉浸模式）进行中或已激活时禁用最大化按钮，避免与全屏窗口状态冲突
 const isMaximizeDisabled = computed(
   () => isImmersiveFullscreen.value || fullscreenAnimState.value !== null,
 );
@@ -260,7 +245,6 @@ const closeWindow = async () => {
 };
 
 onMounted(() => {
-  // 启动时尝试恢复登录态（非阻塞）
   if (!authStore.initialized) {
     void authStore.restoreSession();
   }
@@ -306,7 +290,6 @@ onUnmounted(() => {
 
       <div class="w-px h-5 bg-black/10 dark:bg-white/15 mx-2 shrink-0"></div>
 
-      <!-- 听歌识曲（随搜索框固定） -->
       <button
         @click.stop="toggleRecognition"
         class="text-gray-500 dark:text-gray-400 hover:text-[#EC4141] ml-1 shrink-0 cursor-pointer transition-colors"
@@ -316,10 +299,8 @@ onUnmounted(() => {
         <TopBarControlIcon item-key="recognize" class="h-5 w-5" />
       </button>
 
-      <!-- 搜索历史下拉（热搜 / 记录 双 Tab） -->
       <Transition name="search-history-fade">
         <div v-if="showHistory" @mousedown.prevent class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 h-72 overflow-y-auto overflow-x-hidden">
-          <!-- 顶部 Tab 切换：热搜左 / 记录右 -->
           <div class="px-3 pt-2 pb-1.5 border-b border-black/5 dark:border-white/5 flex items-center gap-1 sticky top-0 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl">
             <button
               @click="switchSearchTab('hot')"
@@ -333,7 +314,6 @@ onUnmounted(() => {
             >{{ t('topbar.history') }}</button>
           </div>
 
-          <!-- 热搜页 -->
           <div v-if="searchTab === 'hot'" class="py-1">
             <div class="px-3 py-1.5 flex items-center text-xs text-black/40 dark:text-white/40 font-medium tracking-wide">
               <Flame class="h-3.5 w-3.5 mr-1.5 text-[#EC4141]" />
@@ -361,7 +341,6 @@ onUnmounted(() => {
             </TransitionGroup>
           </div>
 
-          <!-- 记录页 -->
           <div v-else class="py-1">
             <div class="px-3 py-1.5 flex items-center justify-between">
               <div class="flex items-center text-xs text-black/50 dark:text-white/50 font-medium tracking-wide">

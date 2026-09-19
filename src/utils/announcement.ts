@@ -11,10 +11,7 @@ export interface Announcement {
   date?: string;
   actionUrl?: string;
   actionText?: string;
-  // 可选附加图片（例如反馈处理完成的图片），在内容下方以缩略图展示
   images?: string[];
-  // 内容版本标识（后端 updated_at）。后台编辑公告会刷新此字段，
-  // 使本地「已读」指纹失效，从而让所有用户重新看到更新后的公告。
   updatedAt?: string;
 }
 
@@ -30,7 +27,6 @@ export async function fetchAnnouncement(): Promise<Announcement | null> {
     { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
   );
   if (!data || !data.id || !data.title || !data.content) {
-    // 服务端正常响应但无有效公告（data 为空对象/缺少必要字段）
     return null;
   }
 
@@ -60,10 +56,6 @@ export async function confirmAnnouncement(ann: Announcement): Promise<void> {
   );
 }
 
-/**
- * 生成公告的「已读指纹」：id + updated_at。
- * 后台编辑公告后 updated_at 改变 → 指纹改变 → 视为新公告重新弹出。
- */
 function announcementFingerprint(ann: Announcement): string {
   return `${ann.id}_${ann.updatedAt ?? ''}`;
 }

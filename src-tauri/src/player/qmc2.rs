@@ -1,20 +1,9 @@
-//! QMC1/QMC2 audio decryption module.
-//!
-//! Supports:
-//! - QMC1: fixed-key XOR cipher (no ekey needed)
-//! - QMC2 Map: scrambled-key XOR cipher (ekey-derived key ≤ 300 bytes)
-//! - QMC2 RC4: modified RC4 stream cipher (ekey-derived key > 300 bytes)
-//!
-//! Based on the algorithm from jixunmoe/qmc2-rust, bczhc/qmc-decrypt,
-//! and ownlight6/qmc-decoder.
-
 use base64::Engine;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 // ============================================================
-// TC-TEA (Tencent modified TEA, CBC mode, 16 rounds)
 // ============================================================
 
 const TEA_DELTA: u32 = 0x9E3779B9;
@@ -22,7 +11,6 @@ const TEA_ROUNDS: u32 = 16;
 const SALT_LEN: usize = 2;
 const ZERO_LEN: usize = 7;
 
-/// TEA ECB decryption for a single 8-byte block (big-endian).
 fn tea_decrypt_ecb(input: &[u8], key: &[u8; 16]) -> [u8; 8] {
     let mut y = u32::from_be_bytes([input[0], input[1], input[2], input[3]]);
     let mut z = u32::from_be_bytes([input[4], input[5], input[6], input[7]]);
@@ -48,40 +36,33 @@ fn tea_decrypt_ecb(input: &[u8], key: &[u8; 16]) -> [u8; 8] {
     out
 }
 
-/// TC-TEA CBC decryption with QQ Music's padding format.
-/// Format: PadLen(1) + Padding(0-7) + Salt(2) + Body(var) + Zero(7)
-/// Returns the Body (decrypted key) on success.
 fn tc_tea_decrypt(ciphertext: &[u8], key: &[u8; 16]) -> Option<Vec<u8>> {
     if ciphertext.len() % 8 != 0 || ciphertext.len() < 16 {
         return None;
     }
 
-    // Decrypt first block to get padding length
     let mut dest = tea_decrypt_ecb(&ciphertext[..8], key);
     let pad_len = (dest[0] & 0x07) as usize;
 
-    // Calculate body length: total - 1(padlen) - pad_len - salt(2) - zero(7)
     let body_len = ciphertext.len() - 1 - pad_len - SALT_LEN - ZERO_LEN;
     if body_len <= 0 || body_len > ciphertext.len() {
         return None;
     }
 
     let mut result = Vec::with_capacity(body_len);
-    let mut iv_prev = [0u8; 8]; // initial IV is zero
+    let mut iv_prev = [0u8; 8];
     let mut iv_cur = [0u8; 8];
     iv_cur.copy_from_slice(&ciphertext[..8]);
 
-    let mut dest_i = 1 + pad_len; // skip PadLen + Padding
+    let mut dest_i = 1 + pad_len;
     let mut buf_pos = 8usize;
 
-    // Skip salt
     let mut salt_remaining = SALT_LEN;
     while salt_remaining > 0 {
         if dest_i < 8 {
             dest_i += 1;
             salt_remaining -= 1;
         } else {
-            // Decrypt next block
             iv_prev = iv_cur;
             if buf_pos + 8 > ciphertext.len() {
                 return None;
@@ -96,7 +77,6 @@ fn tc_tea_decrypt(ciphertext: &[u8], key: &[u8; 16]) -> Option<Vec<u8>> {
         }
     }
 
-    // Extract body
     let mut body_remaining = body_len;
     while body_remaining > 0 {
         if dest_i < 8 {
@@ -118,12 +98,11 @@ fn tc_tea_decrypt(ciphertext: &[u8], key: &[u8; 16]) -> Option<Vec<u8>> {
         }
     }
 
-    // Verify zero padding
     let mut zero_remaining = ZERO_LEN;
     while zero_remaining > 0 {
         if dest_i < 8 {
             if dest[dest_i] ^ iv_prev[dest_i] != 0 {
-                return None; // Zero check failed
+                return None;
             }
             dest_i += 1;
             zero_remaining -= 1;
@@ -146,14 +125,12 @@ fn tc_tea_decrypt(ciphertext: &[u8], key: &[u8; 16]) -> Option<Vec<u8>> {
 }
 
 // ============================================================
-// Ekey parsing
 // ============================================================
 
 const QMC2_ENCV2_PREFIX: &[u8] = b"QQMusic EncV2,Key:";
 const QMC2_ENCV2_STAGE1_KEY: &[u8] = b"386ZJY!@#*$%^&)(";
 const QMC2_ENCV2_STAGE2_KEY: &[u8] = b"**#!(#$%&^a1cZ,T";
 
-/// Generate a simple key from a seed value (used in TEA key derivation).
 fn simple_make_key(seed: u8, size: usize) -> Vec<u8> {
     let mut result = vec![0u8; size];
     for (i, byte) in result.iter_mut().enumerate() {
@@ -163,7 +140,6 @@ fn simple_make_key(seed: u8, size: usize) -> Vec<u8> {
     result
 }
 
-/// Derive the 16-byte TEA key from the ekey header (first 8 bytes).
 fn derive_tea_key(ekey_header: &[u8]) -> [u8; 16] {
     let simple_key_buf = simple_make_key(106, 8);
     let mut tea_key = [0u8; 16];
@@ -174,7 +150,6 @@ fn derive_tea_key(ekey_header: &[u8]) -> [u8; 16] {
     tea_key
 }
 
-/// Parse a base64-encoded ekey and derive the raw decryption key.
 fn parse_ekey(ekey: &str) -> Result<Vec<u8>, String> {
     let ekey_trimmed = ekey.trim_matches(char::from(0));
     let ekey_decoded = base64::engine::general_purpose::STANDARD
@@ -185,7 +160,6 @@ fn parse_ekey(ekey: &str) -> Result<Vec<u8>, String> {
         return Err("ekey is empty".to_string());
     }
 
-    // Check for EncV2 prefix
     let ekey_decoded = if ekey_decoded.starts_with(QMC2_ENCV2_PREFIX) {
         let encv2_blob = &ekey_decoded[QMC2_ENCV2_PREFIX.len()..];
         let stage1_key: &[u8; 16] = QMC2_ENCV2_STAGE1_KEY
@@ -221,13 +195,11 @@ fn parse_ekey(ekey: &str) -> Result<Vec<u8>, String> {
         result.extend_from_slice(&decrypted_body);
         Ok(result)
     } else {
-        // TC-TEA failed — likely a raw key from the API, use directly
         Ok(ekey_decoded)
     }
 }
 
 // ============================================================
-// QMC2 Map cipher (key length ≤ 300)
 // ============================================================
 
 struct Qmc2MapCrypto {
@@ -236,9 +208,7 @@ struct Qmc2MapCrypto {
 
 impl Qmc2MapCrypto {
     fn new(key: &[u8]) -> Self {
-        Self {
-            key: key.to_vec(),
-        }
+        Self { key: key.to_vec() }
     }
 
     #[inline]
@@ -267,7 +237,6 @@ impl Qmc2MapCrypto {
 }
 
 // ============================================================
-// QMC2 RC4 cipher (key length > 300)
 // ============================================================
 
 const FIRST_SEGMENT_SIZE: usize = 0x80;
@@ -350,8 +319,7 @@ impl Qmc2Rc4Crypto {
     fn encode_other_segment(&self, offset: usize, buf: &mut [u8]) {
         let seg_id = offset / OTHER_SEGMENT_SIZE;
         let seg_id_small = seg_id & 0x1FF;
-        let mut discard_count =
-            self.calc_segment_key(seg_id, self.rc4_key[seg_id_small]) & 0x1FF;
+        let mut discard_count = self.calc_segment_key(seg_id, self.rc4_key[seg_id_small]) & 0x1FF;
         discard_count += offset % OTHER_SEGMENT_SIZE;
         let n = self.rc4_key.len();
         let mut s = self.s.clone();
@@ -401,15 +369,13 @@ impl Qmc2Rc4Crypto {
 }
 
 // ============================================================
-// QMC1 cipher (fixed-key XOR, no ekey needed)
 // ============================================================
 
 const QMC1_KEY_TABLE: [u8; 64] = [
-    0xc3, 0x4a, 0xd6, 0xca, 0x90, 0x67, 0xf7, 0x52, 0xd8, 0xa1, 0x66, 0x62, 0x9f, 0x5b, 0x09,
-    0x00, 0xc3, 0x5e, 0x95, 0x23, 0x9f, 0x13, 0x11, 0x7e, 0xd8, 0x92, 0x3f, 0xbc, 0x90, 0xbb,
-    0x74, 0x0e, 0xc3, 0x47, 0x74, 0x3d, 0x90, 0xaa, 0x3f, 0x51, 0xd8, 0xf4, 0x11, 0x84, 0x9f,
-    0xde, 0x95, 0x1d, 0xc3, 0xc6, 0x09, 0xd5, 0x9f, 0xfa, 0x66, 0xf9, 0xd8, 0xf0, 0xf7, 0xa0,
-    0x90, 0xa1, 0xd6, 0xf3,
+    0xc3, 0x4a, 0xd6, 0xca, 0x90, 0x67, 0xf7, 0x52, 0xd8, 0xa1, 0x66, 0x62, 0x9f, 0x5b, 0x09, 0x00,
+    0xc3, 0x5e, 0x95, 0x23, 0x9f, 0x13, 0x11, 0x7e, 0xd8, 0x92, 0x3f, 0xbc, 0x90, 0xbb, 0x74, 0x0e,
+    0xc3, 0x47, 0x74, 0x3d, 0x90, 0xaa, 0x3f, 0x51, 0xd8, 0xf4, 0x11, 0x84, 0x9f, 0xde, 0x95, 0x1d,
+    0xc3, 0xc6, 0x09, 0xd5, 0x9f, 0xfa, 0x66, 0xf9, 0xd8, 0xf0, 0xf7, 0xa0, 0x90, 0xa1, 0xd6, 0xf3,
 ];
 
 #[inline]
@@ -423,8 +389,6 @@ fn qmc1_get_mask(offset: usize) -> u8 {
     QMC1_KEY_TABLE[index]
 }
 
-/// QMC1 in-place decryption (no ekey needed).
-#[allow(dead_code)]
 pub fn qmc1_decrypt(data: &mut [u8]) {
     for (i, byte) in data.iter_mut().enumerate() {
         *byte ^= qmc1_get_mask(i);
@@ -432,7 +396,6 @@ pub fn qmc1_decrypt(data: &mut [u8]) {
 }
 
 // ============================================================
-// Unified QMC crypto
 // ============================================================
 
 #[allow(dead_code)]
@@ -447,7 +410,6 @@ pub struct QmcCrypto {
 }
 
 impl QmcCrypto {
-    /// Create from a base64-encoded ekey (QMC2).
     pub fn from_ekey(ekey: &str) -> Result<Self, String> {
         let key = parse_ekey(ekey)?;
         if key.len() > 300 {
@@ -461,7 +423,6 @@ impl QmcCrypto {
         }
     }
 
-    /// Create QMC1 crypto (no ekey).
     #[allow(dead_code)]
     pub fn qmc1() -> Self {
         Self {
@@ -469,7 +430,6 @@ impl QmcCrypto {
         }
     }
 
-    /// Decrypt a buffer at the given file offset.
     pub fn decrypt(&self, offset: usize, buf: &mut [u8]) {
         match &self.inner {
             QmcCryptoInner::Map(c) => c.decrypt(offset, buf),
@@ -484,10 +444,8 @@ impl QmcCrypto {
 }
 
 // ============================================================
-// QmcDecryptReader: Read + Seek wrapper with on-the-fly decryption
 // ============================================================
 
-/// Wraps a Read+Seek reader and decrypts QMC-encrypted audio on the fly.
 pub struct QmcDecryptReader<R> {
     inner: R,
     crypto: QmcCrypto,
@@ -524,16 +482,8 @@ impl<R: Read + Seek> Seek for QmcDecryptReader<R> {
 }
 
 // ============================================================
-// Local-file QMC detection (for encrypted local library files)
 // ============================================================
 
-/// 本地加密文件的解密器探测。
-///
-/// 判定顺序：
-/// 1. 文件头已是有效音频 → 非加密，返回 `None`（直接播放）。
-/// 2. 尾部含 QTag / V1 footer 的 ekey → QMC2（Map/RC4）。
-/// 3. 头 16 字节经 QMC1 固定密钥解密后变回有效音频头 → QMC1。
-/// 4. 均不命中 → 无法确定密钥，返回 `None`（交给解码器自然失败）。
 pub fn detect_qmc_crypto(path: &Path) -> Option<QmcCrypto> {
     let mut file = File::open(path).ok()?;
 
@@ -545,14 +495,12 @@ pub fn detect_qmc_crypto(path: &Path) -> Option<QmcCrypto> {
         return None;
     }
 
-    // QMC2：尾部 footer 里可能内嵌 ekey（QTag / V1）
     if let Some(ekey) = extract_ekey_from_file_tail(&mut file) {
         if let Ok(crypto) = QmcCrypto::from_ekey(&ekey) {
             return Some(crypto);
         }
     }
 
-    // QMC1：固定密钥无需 ekey，验证解密后头能还原为有效音频再做
     let mut probe = header;
     qmc1_decrypt(&mut probe);
     if is_valid_audio_header(&probe) {
@@ -562,47 +510,40 @@ pub fn detect_qmc_crypto(path: &Path) -> Option<QmcCrypto> {
     None
 }
 
-/// 读取文件尾部最多 4KB 并尝试从中提取 QMC2 footer ekey。
 fn extract_ekey_from_file_tail(file: &mut File) -> Option<String> {
     use std::io::Seek;
     let file_size = file.seek(SeekFrom::End(0)).ok()?;
     let tail_size = file_size.min(4096) as usize;
-    file.seek(SeekFrom::Start(file_size - tail_size as u64)).ok()?;
+    file.seek(SeekFrom::Start(file_size - tail_size as u64))
+        .ok()?;
     let mut tail = vec![0u8; tail_size];
     file.read_exact(&mut tail).ok()?;
     extract_ekey_from_footer(&tail)
 }
 
 // ============================================================
-// QTag / V1 footer detection (for extracting ekey from file)
 // ============================================================
 
-/// Check if a downloaded file has a QTag or V1 footer with an embedded ekey.
-/// Returns the extracted base64-encoded ekey if found.
 #[allow(dead_code)]
 pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
     if data.len() < 8 {
         return None;
     }
 
-    // QTag format: ...ekey_bytes...,"songId","size"QTag
-    // The last 4 bytes might not be directly "QTag" — check various positions
     let tail = &data[data.len().saturating_sub(1024)..];
 
-    // Look for "QTag" marker
     if let Some(pos) = find_subslice(tail, b"QTag") {
         let tag_start = data.len() - tail.len() + pos;
         if tag_start >= 4 {
-            // Read the 4 bytes before QTag as little-endian key size
-            let key_size =
-                u32::from_le_bytes([data[tag_start - 4], data[tag_start - 3], data[tag_start - 2], data[tag_start - 1]]) as usize;
-            // The ekey is before the size field, as a comma-separated value
-            // Find the ekey by looking backwards from the size field
+            let key_size = u32::from_le_bytes([
+                data[tag_start - 4],
+                data[tag_start - 3],
+                data[tag_start - 2],
+                data[tag_start - 1],
+            ]) as usize;
             let ekey_start = tag_start.saturating_sub(4 + key_size);
             if ekey_start < tag_start - 4 {
                 let ekey_bytes = &data[ekey_start..tag_start - 4];
-                // The ekey might be part of a CSV-like format: ekey,songId,sizeQTag
-                // Try to extract just the ekey portion
                 if let Some(csv_end) = find_subslice(ekey_bytes, b",") {
                     return Some(String::from_utf8_lossy(&ekey_bytes[..csv_end]).to_string());
                 }
@@ -611,15 +552,15 @@ pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
         }
     }
 
-    // V1 format: last 4 bytes = key size (LE), key bytes before that
     let last_4 = &data[data.len() - 4..];
     let key_size = u32::from_le_bytes([last_4[0], last_4[1], last_4[2], last_4[3]]) as usize;
-    // Sanity check: key size should be reasonable (32-1024 bytes for base64 ekey)
     if key_size >= 32 && key_size <= 2048 && data.len() >= 4 + key_size {
         let ekey_bytes = &data[data.len() - 4 - key_size..data.len() - 4];
         let ekey_str = String::from_utf8_lossy(ekey_bytes).to_string();
-        // Verify it looks like base64
-        if ekey_str.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\0') {
+        if ekey_str
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\0')
+        {
             return Some(ekey_str.trim_matches(char::from(0)).to_string());
         }
     }
@@ -627,24 +568,10 @@ pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
     None
 }
 
-#[allow(dead_code)]
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Check if file header looks like QMC-encrypted content (not a valid audio format).
-#[allow(dead_code)]
-pub fn looks_like_qmc_encrypted(header: &[u8]) -> bool {
-    if header.len() < 4 {
-        return false;
-    }
-    // If it doesn't match any known audio format, it might be QMC1-encrypted
-    !is_valid_audio_header(header)
-}
-
-#[allow(dead_code)]
 fn is_valid_audio_header(bytes: &[u8]) -> bool {
     if bytes.len() < 4 {
         return false;
@@ -689,7 +616,10 @@ mod tests {
         let tea_key = derive_tea_key(&ekey_header);
         assert_eq!(
             tea_key,
-            [0x69, 0xf1, 0x56, 0xf2, 0x46, 0xf3, 0x38, 0xf4, 0x2b, 0xf5, 0x20, 0xf6, 0x15, 0xf7, 0x0b, 0xf8]
+            [
+                0x69, 0xf1, 0x56, 0xf2, 0x46, 0xf3, 0x38, 0xf4, 0x2b, 0xf5, 0x20, 0xf6, 0x15, 0xf7,
+                0x0b, 0xf8
+            ]
         );
     }
 
@@ -711,14 +641,19 @@ mod tests {
 
     #[test]
     fn test_qmc2_map_scramble() {
-        let key = [0x41u8, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
-                   0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50];
+        let key = [
+            0x41u8, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E,
+            0x4F, 0x50,
+        ];
         let crypto = Qmc2MapCrypto::new(&key);
         let mut data = [0u8; 16];
         crypto.decrypt(0, &mut data);
         assert_eq!(
             data,
-            [0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49, 0xC1, 0x8A, 0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49, 0xC1, 0x8A]
+            [
+                0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49, 0xC1, 0x8A, 0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49,
+                0xC1, 0x8A
+            ]
         );
     }
 

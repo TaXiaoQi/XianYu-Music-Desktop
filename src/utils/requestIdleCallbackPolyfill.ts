@@ -1,12 +1,3 @@
-/**
- * requestIdleCallback / cancelIdleCallback polyfill
- *
- * 项目中多处使用 requestIdleCallback 在空闲时段执行后台任务（封面预加载、
- * 库刷新等）。WebView2 (Chromium) 原生支持此 API，但为防止非标准环境
- * 或旧版 WebView 静默跳过任务，提供 setTimeout 降级实现。
- *
- * 降级行为：立即在事件循环下一轮执行回调，IdleDeadline.timeRemaining() 固定返回 50ms。
- */
 
 interface IdleDeadline {
   didTimeout: boolean;

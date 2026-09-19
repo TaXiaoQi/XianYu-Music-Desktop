@@ -1,9 +1,3 @@
-/**
- * 部分插件（如 Baka 系 QQ 音乐）在请求体中硬编码 guid/wid 设备标识，
- * 所有用户共享同一身份，上游按设备维度限流时表现为搜索间歇性空结果。
- * 加载时把这类硬编码标识替换为每次加载唯一的随机值。
- * 签名由插件基于替换后的同一对象计算，不受影响。
- */
 export function randomizePinnedDeviceIdentity(script: string): string {
   if (!script) return script;
   let mutated = false;

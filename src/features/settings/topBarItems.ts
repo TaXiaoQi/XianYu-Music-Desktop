@@ -4,49 +4,33 @@ import type {
   TopBarLayoutSettings,
 } from '../../types';
 
-/** 顶部栏可展示的自定义控件总数上限（超出部分自动进入隐藏；搜索框固定居中补齐剩余空间） */
 export const TOPBAR_MAX_VISIBLE_CONTROLS = 5;
 
-/** 所有可编排容器（用于设置面板遍历） */
 export const TOPBAR_CONTAINERS: TopBarContainerKey[] = ['left', 'right'];
 
-/** 固定控件：搜索框始终居中；设置始终显示但可调整位置（均不可关闭） */
 export const TOPBAR_FIXED_ITEMS: TopBarItemKey[] = ['search', 'settings'];
 
-/** 默认顶部栏布局（恢复默认时使用；与当前布局一致） */
 export const DEFAULT_TOPBAR_LAYOUT: TopBarLayoutSettings = {
   left: ['back'],
   right: ['theme', 'colorScheme', 'settings', 'account'],
   hidden: ['announcement'],
 };
 
-/** 容器显示信息 */
 export const TOPBAR_CONTAINER_LABELS: Record<TopBarContainerKey, { label: string; hint: string }> = {
   left: { label: '左侧容器', hint: '紧邻窗口左边缘' },
   right: { label: '右侧容器', hint: '紧邻设置与窗口控制' },
 };
 
-/** 移动目标（包括收纳菜单） */
 export type TopBarMoveTarget = TopBarContainerKey | 'collapsed';
 
 export interface TopBarItemMeta {
   key: TopBarItemKey;
   label: string;
   description: string;
-  /** 固定不可关闭（设置/搜索框），开关会禁用 */
   fixed: boolean;
-  /** 图标名（设置面板展示用，运行时由 TitleBar 内联渲染） */
   icon: 'back' | 'search' | 'mic' | 'moon' | 'bell' | 'settings' | 'user' | 'palette';
 }
 
-/**
- * 顶部栏可配置控件元数据。
- * - search 固定居中，不参与编排但展示在列表中。
- * - settings 固定不可关闭，但可在 left/right 之间调整位置。
- * - 其余控件可自由开关与摆放。
- * 窗口控制（迷你窗/最小化/最大化/关闭）为固定区域，不属于自定义池。
- * 注意：听歌识曲为搜索框内固定内容，随搜索框移动，不在此自定义池中。
- */
 export const TOPBAR_ITEMS: TopBarItemMeta[] = [
   { key: 'back',           label: '后退',     description: '返回上一个页面', icon: 'back',      fixed: false },
   { key: 'search',         label: '搜索框',   description: '全局搜索（始终居中）', icon: 'search', fixed: true },
@@ -57,12 +41,10 @@ export const TOPBAR_ITEMS: TopBarItemMeta[] = [
   { key: 'colorScheme',    label: '配色方案', description: '外观配色方案快速入口', icon: 'palette', fixed: false },
 ];
 
-/** 参与编排的控件（不含固定居中的搜索框） */
 export const TOPBAR_CONTROL_KEYS: TopBarItemKey[] = TOPBAR_ITEMS
   .filter(item => item.key !== 'search')
   .map(item => item.key);
 
-/** 设置面板展示的控件（含固定项，用于显示开关） */
 export const TOPBAR_DISPLAY_KEYS: TopBarItemKey[] = TOPBAR_ITEMS.map(item => item.key);
 
 export const getTopBarItemMeta = (key: TopBarItemKey): TopBarItemMeta | undefined =>
@@ -70,23 +52,12 @@ export const getTopBarItemMeta = (key: TopBarItemKey): TopBarItemMeta | undefine
 
 const CONTROL_KEY_SET = new Set<TopBarItemKey>(TOPBAR_CONTROL_KEYS);
 
-/** 固定不可关闭的控件集合 */
 const FIXED_KEY_SET = new Set<TopBarItemKey>(TOPBAR_FIXED_ITEMS);
 
-/** 参与编排且可隐藏的控件（排除 search 与 settings） */
 const HIDEABLE_KEY_SET = new Set<TopBarItemKey>(
   TOPBAR_CONTROL_KEYS.filter(key => key !== 'settings'),
 );
 
-/**
- * 将任意输入归一化为合法的顶部栏布局：
- * - 剔除非法 key、去重
- * - search 固定居中，始终不作为 left/right/hidden 成员
- * - settings 固定不可关闭，缺失时强制补回右侧
- * - 可隐藏项（recognize/theme/announcement/account/colorScheme）可进入 hidden
- * - 可见控件总数不超过 TOPBAR_MAX_VISIBLE_CONTROLS，超出部分自动进入 hidden
- * - 缺失的 key 按默认容器优先补齐，容器全满则进入 hidden
- */
 export const normalizeTopBarLayout = (value: unknown): TopBarLayoutSettings => {
   const base = typeof value === 'object' && value !== null ? value as Partial<TopBarLayoutSettings> : {};
   const seen = new Set<TopBarItemKey>();
@@ -117,13 +88,11 @@ export const normalizeTopBarLayout = (value: unknown): TopBarLayoutSettings => {
   let left = cleanList(base.left);
   let right = cleanList(base.right);
 
-  // settings 固定不可关闭：若未出现在任何容器且未在 hidden，强制补回右侧
   if (!seen.has('settings') && !hiddenSet.has('settings')) {
     seen.add('settings');
     right.push('settings');
   }
 
-  // 补齐缺失项（除 search 外）：优先回到默认容器，容器全满则进入 hidden
   for (const key of TOPBAR_CONTROL_KEYS) {
     if (seen.has(key) || hiddenSet.has(key)) continue;
     const total = left.length + right.length;
@@ -139,7 +108,6 @@ export const normalizeTopBarLayout = (value: unknown): TopBarLayoutSettings => {
     seen.add(key);
   }
 
-  // 可见总数超限时，把多出的项移入 hidden（优先溢出右侧末尾，其次左侧末尾）
   const overflow = () => {
     const total = left.length + right.length;
     while (total > TOPBAR_MAX_VISIBLE_CONTROLS) {
@@ -157,14 +125,12 @@ export const normalizeTopBarLayout = (value: unknown): TopBarLayoutSettings => {
   };
 };
 
-/** 计算收纳控件：未分配到任何容器的可隐藏项（固定项除外） */
 export const computeTopBarCollapsedItems = (layout: TopBarLayoutSettings): TopBarItemKey[] => {
   const assigned = new Set<TopBarItemKey>([...layout.left, ...layout.right]);
   const hidden = new Set(layout.hidden);
   return TOPBAR_CONTROL_KEYS.filter(key => key !== 'settings' && (hidden.has(key) || !assigned.has(key)));
 };
 
-/** 查找控件当前所在的容器（不在任何容器则返回 'collapsed'） */
 export const findTopBarItemContainer = (
   layout: TopBarLayoutSettings,
   key: TopBarItemKey,
@@ -174,12 +140,6 @@ export const findTopBarItemContainer = (
   return 'collapsed';
 };
 
-/**
- * 将控件移动到目标容器（或收入折叠）。
- * - 移动到 collapsed：从所有容器移除（settings 除外，固定不可关闭）
- * - 移动到 left/right：若可见总数已达上限则返回 null
- * 返回 null 表示目标已满，调用方应给出提示。
- */
 export const moveTopBarItemTo = (
   layout: TopBarLayoutSettings,
   key: TopBarItemKey,
@@ -205,7 +165,6 @@ export const moveTopBarItemTo = (
   return normalizeTopBarLayout(next);
 };
 
-/** 可视化预览槽位：左侧 up-to-5、右侧 up-to-5（可见总数由 normalize 约束为 5） */
 export type TopBarPreviewSlot =
   | 'left-0' | 'left-1' | 'left-2' | 'left-3' | 'left-4'
   | 'right-0' | 'right-1' | 'right-2' | 'right-3' | 'right-4';
@@ -243,7 +202,6 @@ const layoutFromPreviewSlots = (
   hidden,
 });
 
-/** 在可视化预览的两个槽位之间交换控件。 */
 export const moveTopBarItemToPreviewSlot = (
   value: TopBarLayoutSettings,
   key: TopBarItemKey,
@@ -260,7 +218,6 @@ export const moveTopBarItemToPreviewSlot = (
   return layoutFromPreviewSlots(slots, layout.hidden.filter(item => item !== key));
 };
 
-/** 切换控件显示状态；重新开启时优先回到默认位置，否则放入第一个空槽位。 */
 export const setTopBarItemVisibility = (
   value: TopBarLayoutSettings,
   key: TopBarItemKey,
@@ -280,7 +237,6 @@ export const setTopBarItemVisibility = (
     return normalizeTopBarLayout({ ...layout, hidden });
   }
 
-  // 优先放回默认位置
   const defaultLeftIndex = DEFAULT_TOPBAR_LAYOUT.left.indexOf(key);
   if (defaultLeftIndex >= 0) {
     const left = [...layout.left];

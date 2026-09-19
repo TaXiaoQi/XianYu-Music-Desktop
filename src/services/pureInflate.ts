@@ -1,11 +1,3 @@
-/**
- * 纯 JS DEFLATE 解码器 —— 基于 RFC 1951 的紧凑 inflate 实现
- *
- * 提供同步解压能力，浏览器 DecompressionStream 仅支持异步，
- * 无法满足插件中 zlib.inflateSync / pako.inflate 等同步调用需求。
- *
- * 支持格式自动检测：zlib (0x78...) / gzip (0x1f 0x8b) / raw DEFLATE
- */
 
 import { Buffer } from 'buffer';
 
@@ -78,7 +70,6 @@ function decodeHuffmanSymbol(reader: BitReader, table: HuffmanTable): number {
   throw new Error('DEFLATE: 无效 Huffman 编码');
 }
 
-// 预构建固定 Huffman 表（RFC 1951 §3.2.6）
 const FIXED_LIT_LENGTHS = new Uint8Array(288);
 for (let i = 0; i < 144; i++) FIXED_LIT_LENGTHS[i] = 8;
 for (let i = 144; i < 256; i++) FIXED_LIT_LENGTHS[i] = 9;
@@ -113,7 +104,6 @@ function inflateBlock(
 
 // ==================== 公开 API ====================
 
-/** 解压 raw DEFLATE 数据（RFC 1951） */
 export function inflateRawSync(data: Uint8Array): Uint8Array {
   if (!data || data.length === 0) return new Uint8Array(0);
   const reader = new BitReader(data);
@@ -125,16 +115,13 @@ export function inflateRawSync(data: Uint8Array): Uint8Array {
     const btype = reader.readBits(2);
 
     if (btype === 0) {
-      // Stored block
       reader.alignToByte();
       const len = reader.data[reader.bytePos] | (reader.data[reader.bytePos + 1] << 8);
-      reader.bytePos += 4; // 跳过 LEN + NLEN
+      reader.bytePos += 4;
       for (let i = 0; i < len; i++) output.push(reader.data[reader.bytePos++]);
     } else if (btype === 1) {
-      // Fixed Huffman
       inflateBlock(output, reader, FIXED_LIT_TABLE, FIXED_DIST_TABLE);
     } else if (btype === 2) {
-      // Dynamic Huffman
       const hlit = reader.readBits(5) + 257;
       const hdist = reader.readBits(5) + 1;
       const hclen = reader.readBits(4) + 4;
@@ -173,16 +160,14 @@ export function inflateRawSync(data: Uint8Array): Uint8Array {
   return new Uint8Array(output);
 }
 
-/** 解压 zlib 格式数据（2 字节头 + DEFLATE + 4 字节校验） */
 export function inflateZlibSync(data: Uint8Array): Uint8Array {
   if (data.length < 6) throw new Error('zlib: 数据过短');
   if ((data[0] & 0x0f) !== 8) throw new Error('zlib: 不支持的压缩方法');
   let offset = 2;
-  if (data[1] & 0x20) offset += 4; // FDICT
+  if (data[1] & 0x20) offset += 4;
   return inflateRawSync(data.subarray(offset, data.length - 4));
 }
 
-/** 解压 gzip 格式数据 */
 export function gunzipSync(data: Uint8Array): Uint8Array {
   if (data.length < 18 || data[0] !== 0x1f || data[1] !== 0x8b) throw new Error('gzip: 无效头部');
   if (data[2] !== 8) throw new Error('gzip: 不支持的压缩方法');
@@ -195,7 +180,6 @@ export function gunzipSync(data: Uint8Array): Uint8Array {
   return inflateRawSync(data.subarray(offset, data.length - 8));
 }
 
-/** 自动检测格式（zlib / gzip / raw deflate）并解压 */
 export function inflateAutoSync(data: Uint8Array): Uint8Array {
   if (data.length >= 2) {
     if (data[0] === 0x1f && data[1] === 0x8b) return gunzipSync(data);
@@ -204,7 +188,6 @@ export function inflateAutoSync(data: Uint8Array): Uint8Array {
   return inflateRawSync(data);
 }
 
-/** 将各种输入类型转为 Uint8Array */
 export function toUint8Array(data: any): Uint8Array {
   if (data instanceof Uint8Array) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);

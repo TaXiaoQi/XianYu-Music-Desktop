@@ -38,7 +38,6 @@ const releaseCanvasBuffer = () => {
     context.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  // 将尺寸归零，主动释放 canvas 的 GPU/位图后备缓冲区。
   canvas.width = 0;
   canvas.height = 0;
 };
@@ -165,7 +164,6 @@ const fetchSamples = async () => {
   if (!shouldFetchSamples()) return;
 
   try {
-    // 所有音频（本地 + 在线流式缓存）统一走 Rust 后端采样
     const nextLevels = await playbackApi.getAudioVisualizerSamples();
     if (nextLevels.length > 0) {
       levels.value = nextLevels.slice(0, BAR_COUNT);
@@ -193,7 +191,6 @@ const syncFetchTimer = () => {
 
 watch(() => [props.active, props.isPlaying, isMainWindowLowPower.value] as const, syncFetchTimer);
 
-// 最小化/隐藏或退出详情页时清空 canvas 并释放 GPU 后备缓冲区，恢复时重新绘制
 watch(() => [props.active, isMainWindowLowPower.value] as const, ([active, lowPower]) => {
   if (!active || lowPower) {
     resetLevels();

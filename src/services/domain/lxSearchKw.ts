@@ -10,20 +10,11 @@ import {
   type LxSearchResultItem,
 } from './lxMusicSdkBase';
 
-/**
- * LX 平台搜索层 · KW (酷我)。
- * 仅依赖 lxMusicSdkBase，作为叶子模块被 lxSearchPlatform 门面 re-export。
- */
 
 // ==================== KW (酷我) Search ====================
 
 const KW_MINFO_REGEX = /level:(\w+),bitrate:(\d+),format:(\w+),size:([\w.]+)/;
 
-/**
- * 酷我搜索结果的封面字段在不同响应/版本中位置不一，尝试多个字段拼封面。
- * 完整 URL 直接归一化，相对 short 路径用 buildKuwoAlbumCoverUrl。
- * 全部缺失返回 null，由 catalogSearch 阶段对 artist/album 异步补封面。
- */
 function kwSearchCover(info: any): string | null {
   const candidates = ['web_albumpic_short', 'web_album_pic', 'album_pic', 'albumpic_short', 'albumpic', 'pic'];
   for (const key of candidates) {
@@ -79,8 +70,6 @@ function kwHandleResult(rawData: any[]): LxSearchResultItem[] | null {
     }
     types.reverse();
     const interval = parseInt(info.DURATION);
-    // 搜索结果图片字段在同一响应/版本中位置不一，用 kwSearchCover 尝试多个字段；
-    // 全部缺失则留空，由 lxCatalogSearch 阶段对 artist/album 异步补封面
     const imgFromSearch = kwSearchCover(info);
     result.push({
       name: decodeName(info.SONGNAME),

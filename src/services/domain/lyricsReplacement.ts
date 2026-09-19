@@ -59,7 +59,6 @@ export interface LyricsSearchSourceGroup {
   candidates: LyricsSearchCandidate[];
   status: LyricsSearchSourceStatus;
   reason: string;
-  /** MusicFree 由插件搜索；LX 插件本身无搜索协议，歌曲目录由应用搜索。 */
   searchProvider: 'plugin' | 'app-catalog';
 }
 
@@ -263,7 +262,6 @@ export const createDefaultLyricsSearchQuery = (song: Song) =>
     .filter(Boolean)
     .join(' ');
 
-/** 按“插件 → 音源 → 候选歌词”搜索；明确不支持歌词流程的插件不会出现在结果中。 */
 export async function searchLyricsFromAllPlugins(query: string): Promise<LyricsPluginGroup[]> {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return [];
@@ -323,9 +321,6 @@ export async function getLyricsForCandidate(candidate: LyricsSearchCandidate): P
 export const isRuntimeOnlyLyricsSong = (song: Song) =>
   song.source_type === 'remote' || ONLINE_PATH_RE.test(song.path);
 
-/**
- * 应用歌词到当前歌曲。本地歌曲写回原歌词存储位置；在线歌曲更新运行时歌曲元数据。
- */
 export async function applyLyricsReplacement(song: Song, lyricsRaw: string): Promise<'saved' | 'runtime'> {
   const normalizedLyrics = lyricsRaw.replace(/^\uFEFF/, '').trim();
   if (!normalizedLyrics) throw new Error('歌词内容为空');
@@ -348,7 +343,6 @@ export async function applyLyricsReplacement(song: Song, lyricsRaw: string): Pro
   }
 
   const libraryStore = useLibraryStore();
-  // 同步写入当前闭包持有的歌曲对象，防止已在途的在线歌词请求晚到后覆盖手动选择。
   song.lyrics_raw = normalizedLyrics;
   libraryStore.patchSongMeta(song.path, { lyrics_raw: normalizedLyrics });
   playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: normalizedLyrics });

@@ -39,7 +39,6 @@ export const createPlayerUiShell = ({
   const { canonicalSongs, sourceSongs } = storeToRefs(libraryStore);
   const { favoritePaths } = storeToRefs(collectionsStore);
 
-  // [DLNA 投屏] 投屏中音量控制电视端，否则控制本地引擎
   const applyVolume = async (volume: number) => {
     if (dlnaCast.isCasting) {
       await dlnaCast.castSetVolume(volume);

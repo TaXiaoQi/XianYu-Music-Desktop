@@ -23,9 +23,6 @@ const props = withDefaults(defineProps<{
   overlayZClass: 'z-[200]',
 });
 
-// Propagate overlay z-index to SettingHint tooltips so they appear above
-// high-z-index containers like the onboarding modal (z-[9998]).
-// overlayZClass format: "z-[200]" → hint z-index = 300; "z-[10000]" → 10100
 const overlayZMatch = props.overlayZClass.match(/z-\[(\d+)\]/);
 if (overlayZMatch) {
   provide(SETTING_HINT_Z_INDEX, parseInt(overlayZMatch[1], 10) + 100);
@@ -34,13 +31,10 @@ if (overlayZMatch) {
 const { showToast, showProgressToast } = useToast();
 const { settings, patchSettings } = useSettings();
 
-// 密码可见性状态
 const pwdVisible = reactive<Record<string, boolean>>({});
 
-// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
 const pwdFocused = reactive<Record<string, boolean>>({});
 
-// 插件设置快捷访问
 const pluginSettings = computed(() => settings.value.plugins);
 function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVersionCheck') {
   patchSettings({
@@ -48,19 +42,14 @@ function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVers
   });
 }
 
-// 启动时加载已启用的插件
 onMounted(async () => {
   await loadPlugins(pluginSettings.value.lazyLoad);
   plugins.value = getStoredPlugins();
-  // 异步加载用户变量徽标（不阻塞页面渲染）
   void refreshUserVarBadges();
-  // 异步加载 Baka 插件徽标
   void refreshBakaBadges();
-  // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
   setupDragDropListeners();
 });
 
-// 插件列表变更时刷新用户变量徽标
 watch(pluginsVersion, () => {
   void refreshUserVarBadges();
   void refreshBakaBadges();
@@ -73,7 +62,6 @@ onUnmounted(() => {
   stopDragging();
 });
 
-// UI 状态
 const searchQuery = ref('');
 const showSubscriptionPanel = ref(false);
 const showInstallFromUrlDialog = ref(false);
@@ -81,27 +69,22 @@ const showInstallFromFilePanel = ref(false);
 const isDragOverDropZone = ref(false);
 const installUrl = ref('');
 
-// Tauri 拖放事件取消监听函数
 let unlistenDragDrop: UnlistenFn | null = null;
 let unlistenDragOver: UnlistenFn | null = null;
 let unlistenDragLeave: UnlistenFn | null = null;
 
-/** 插件列表（从 localStorage 读取） */
 const plugins = ref<PluginSource[]>(getStoredPlugins());
-/** 订阅列表（持久化到 localStorage，重启后保留） */
 const subscriptions = ref<PluginSubscription[]>(getSubscriptions());
 const showAddSubscriptionInput = ref(false);
 const newSubscriptionUrl = ref('');
 
 const isPluginBusy = ref(false);
 
-/** 插件排序：完全按用户自定义的 sortOrder 排列，不强制按格式分组 */
 function sortPlugins(list: PluginSource[]): PluginSource[] {
   return [...list].sort((a, b) => {
     const sa = a.sortOrder ?? 0;
     const sb = b.sortOrder ?? 0;
     if (sa !== sb) return sa - sb;
-    // sortOrder 相同时保持原始顺序（兼容旧数据）
     return list.indexOf(a) - list.indexOf(b);
   });
 }
@@ -117,8 +100,6 @@ const filteredPlugins = computed(() => {
   );
 });
 
-// 缓存有用户变量定义的插件 ID 集合（用于卡片上显示徽标）
-// 异步加载：懒加载模式下插件未初始化时需要触发加载才能获取 userVariables 定义
 const pluginsWithUserVars = ref<Set<string>>(new Set());
 let badgeRefreshInProgress = false;
 
@@ -132,7 +113,6 @@ async function refreshUserVarBadges() {
   }
 }
 
-// 缓存 Baka 系列插件 ID 集合（用于卡片格式标签显示 BakaMusic 而非 MusicFree）
 const pluginsBakaIds = ref<Set<string>>(new Set());
 let bakaRefreshInProgress = false;
 
@@ -158,8 +138,6 @@ async function refreshBakaBadges() {
 }
 
 // ==================== 拖拽排序（基于 pointer 事件）====================
-// 不用 HTML5 drag & drop：Tauri 的 WebView2 默认接管拖放（dragDropEnabled），
-// 会导致页面内原生 DnD 失效，因此这里用 pointer 事件自行实现。
 const draggingIndex = ref<number | null>(null);
 const listRef = ref<HTMLElement | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -170,13 +148,11 @@ const resolveTargetIndex = (clientY: number, currentIndex: number): number | nul
   return resolveDragTargetIndex(listRef.value, '[data-plugin-row]', clientY, currentIndex);
 };
 
-/** 在已排序列表中移动插件（仅内存操作，拖拽结束后持久化） */
 const movePluginItem = (from: number, to: number) => {
   if (from < 0 || from >= filteredPlugins.value.length || to < 0 || to >= filteredPlugins.value.length || from === to) return;
   const sorted = [...filteredPlugins.value];
   const [moved] = sorted.splice(from, 1);
   sorted.splice(to, 0, moved);
-  // 更新内存中的 sortOrder，触发 filteredPlugins 重新排序
   sorted.forEach((p, i) => {
     const plugin = plugins.value.find(item => item.id === p.id);
     if (plugin) plugin.sortOrder = i;
@@ -191,11 +167,9 @@ const updateDraggedItemPosition = (clientY: number) => {
   if (target === null || target === currentIndex) return;
 
   movePluginItem(currentIndex, target);
-  // 实时重排后，被拖拽项已移动到新位置
   draggingIndex.value = target;
 };
 
-/** 指针靠近滚动区域边缘时，持续滚动并同步更新拖拽位置 */
 const runAutoScroll = () => {
   autoScrollFrame = null;
   if (draggingIndex.value === null) return;
@@ -231,7 +205,6 @@ const handlePointerMove = (event: PointerEvent) => {
 };
 
 const stopDragging = () => {
-  // 拖拽结束时持久化到 localStorage
   if (draggingIndex.value !== null) {
     const finalOrder = sortPlugins(plugins.value).map(p => p.id);
     reorderPlugins(finalOrder);
@@ -249,9 +222,7 @@ const stopDragging = () => {
 };
 
 const startDragging = (index: number, event: PointerEvent) => {
-  // 搜索模式下禁止拖拽
   if (searchQuery.value.trim()) return;
-  // 只响应主键/触摸
   if (event.button !== 0) return;
   event.preventDefault();
 
@@ -269,7 +240,6 @@ const pluginStatsLabel = computed(() => {
   return `共 ${total} 个插件，已启用 ${enabled} 个`;
 });
 
-/** 是否所有插件都已启用（用于决定"全部启用/全部禁用"按钮文案） */
 const allPluginsEnabled = computed(() => {
   return plugins.value.length > 0 && plugins.value.every((p) => p.enabled);
 });
@@ -297,7 +267,6 @@ async function handleToggleAllPlugins() {
   }
 }
 
-/** 根据插件格式返回对应颜色类名（Baka 系列插件用独立蓝色配色） */
 function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
   if (format === 'lx') {
     return {
@@ -326,7 +295,6 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
       label: 'MusicFree',
     };
   }
-  // unknown / fallback
   return {
     iconBg: 'bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12',
     iconText: 'text-[#EC4141]',
@@ -342,7 +310,6 @@ function refreshPluginList() {
 
 // ==================== 从本地文件安装 ====================
 
-/** 注册 Tauri 窗口级拖放事件监听 */
 async function setupDragDropListeners() {
   unlistenDragOver = await listen('tauri://drag-over', () => {
     if (showInstallFromFilePanel.value) {
@@ -359,7 +326,6 @@ async function setupDragDropListeners() {
     if (!showInstallFromFilePanel.value) return;
 
     const paths = event.payload?.paths ?? [];
-    // 筛选 .js 和 .json 文件
     const pluginFiles = paths.filter((p) => {
       const lower = p.toLowerCase();
       return lower.endsWith('.js') || lower.endsWith('.json');
@@ -372,7 +338,6 @@ async function setupDragDropListeners() {
       return;
     }
 
-    // 多文件批量导入：进度 toast 展示处理进度（单个成败由各自安装流程提示）
     const progress = showProgressToast(`正在导入插件文件 (0/${pluginFiles.length})`);
     for (let i = 0; i < pluginFiles.length; i++) {
       const fileName = pluginFiles[i].split(/[\\/]/).pop() || pluginFiles[i];
@@ -386,7 +351,6 @@ async function setupDragDropListeners() {
   });
 }
 
-/** 从文件路径安装插件（供拖放和文件选择共用） */
 async function installFromFilePath(filePath: string) {
   try {
     isPluginBusy.value = true;
@@ -425,7 +389,6 @@ async function handleInstallFromFile() {
 
 // ==================== 从网络 URL 安装 ====================
 
-/** 校验插件安装 URL：仅允许公网 http/https 协议，拦截内网及环回地址 */
 function validatePluginUrl(urlStr: string): boolean {
   try {
     const parsed = new URL(urlStr);
@@ -466,7 +429,6 @@ async function handleInstallFromUrl() {
 
   isPluginBusy.value = true;
   try {
-    // 先尝试浏览器 fetch（Tauri WebView 不受部分 CORS 限制）
     let content = '';
     try {
       const resp = await fetch(url, {
@@ -476,7 +438,6 @@ async function handleInstallFromUrl() {
       if (resp.ok) content = await resp.text();
     } catch { /* ignore, try Tauri backend */ }
 
-    // 回退到 Tauri 后端代理
     if (!content) {
       content = await pluginApi.fetchPluginUrl(url);
     }
@@ -486,8 +447,6 @@ async function handleInstallFromUrl() {
       return;
     }
 
-    // [批量导入] 检测是否为多插件 JSON 格式
-    // MusicFree 插件集合: { "plugins": [{ "name": "...", "url": "...", "version": "..." }] }
     const trimmed = content.trim();
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
       try {
@@ -502,7 +461,6 @@ async function handleInstallFromUrl() {
       } catch { /* 不是有效 JSON，当作普通脚本处理 */ }
     }
 
-    // 单个插件导入
     await installPluginFromScript(content, url);
     installUrl.value = '';
     showInstallFromUrlDialog.value = false;
@@ -513,7 +471,6 @@ async function handleInstallFromUrl() {
   }
 }
 
-/** 批量导入多插件 JSON 中的所有插件 */
 async function importMultiplePlugins(pluginList: Array<{ name?: string; url: string; version?: string }>) {
   const items = pluginList.filter(p => p?.url);
   if (items.length === 0) return;
@@ -530,7 +487,6 @@ async function importMultiplePlugins(pluginList: Array<{ name?: string; url: str
       ((i + 1) / items.length) * 100,
     );
     try {
-      // 下载单个插件脚本
       let script = '';
       try {
         const resp = await fetch(item.url, { headers: { 'Accept': '*/*' } });
@@ -574,7 +530,6 @@ async function importMultiplePlugins(pluginList: Array<{ name?: string; url: str
 
 // ==================== 核心安装逻辑 ====================
 
-/** 简单版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同 */
 function compareVer(a: string, b: string): number {
   const pa = (a || '0').split(/[.-]/).filter(Boolean);
   const pb = (b || '0').split(/[.-]/).filter(Boolean);
@@ -588,20 +543,17 @@ function compareVer(a: string, b: string): number {
 }
 
 async function installPluginFromScript(script: string, filePath: string) {
-  // 使用 pluginEngine 的 loadPluginFromScript，自动检测格式（LX 或 MusicFree）
   const source = await loadPluginFromScript(script, filePath);
   if (!source) {
     showToast('插件加载失败', 'error');
     return;
   }
 
-  // 本地文件安装：保存一份副本到数据目录，避免原文件被移动/删除后插件失效
   const savedPath = await persistPluginScriptToDataDir(source, script);
   if (savedPath) {
     source.filePath = savedPath;
   }
 
-  // 版本校验：检查是否已存在同名插件且版本更高或相同
   if (!pluginSettings.value.skipVersionCheck) {
     const existing = getStoredPlugins().find(p => p.name === source.name);
     if (existing) {
@@ -632,7 +584,6 @@ async function installPluginFromScript(script: string, filePath: string) {
 
 const showUninstallAllConfirm = ref(false);
 
-// 已同步插件的删除范围三选一（仅删本地 / 删除全部 / 仅保留本地）
 const showPluginDeleteScope = ref(false);
 const pluginDeleteScopeIds = ref<string[]>([]);
 const pluginScopeCanDeleteCloud = computed(() =>
@@ -641,7 +592,6 @@ const pluginScopeCanDeleteCloud = computed(() =>
 
 function handleUninstallAll() {
   if (plugins.value.length === 0) return;
-  // 已登录且存在云端副本的插件：弹删除范围三选一
   if (getCiyuanxiId() && plugins.value.some(p => isPluginSynced(p.id))) {
     pluginDeleteScopeIds.value = plugins.value.map(p => p.id);
     showPluginDeleteScope.value = true;
@@ -659,12 +609,10 @@ function confirmUninstallAll() {
   showToast('已卸载全部插件', 'success');
 }
 
-// 单个插件卸载二次确认
 const showUninstallPluginConfirm = ref(false);
 const pendingUninstallPlugin = ref<PluginSource | null>(null);
 
 function handleUninstallPlugin(plugin: PluginSource) {
-  // 已登录且该插件存在云端副本：弹删除范围三选一
   if (getCiyuanxiId() && isPluginSynced(plugin.id)) {
     pluginDeleteScopeIds.value = [plugin.id];
     showPluginDeleteScope.value = true;
@@ -689,11 +637,9 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
   showPluginDeleteScope.value = false;
   pluginDeleteScopeIds.value = [];
   if (ids.length === 0) return;
-  // 仅「已同步」的插件有云端副本，云端操作只针对这一部分
   const syncedIds = ids.filter(id => getSyncedPluginIds().has(id));
 
   if (scope === 'cloud') {
-    // 仅保留本地：删云端 + 上传墓碑防复活，本机不动
     if (syncedIds.length > 0) {
       const ok = await deleteCloudPlugins(syncedIds);
       if (!ok) {
@@ -707,7 +653,6 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
   }
 
   if (scope === 'all') {
-    // 删除全部：先删云端（失败仅提示，不中断本地删除），再删本地
     if (syncedIds.length > 0) {
       const ok = await deleteCloudPlugins(syncedIds);
       if (!ok) showToast('云端删除失败，其他设备可能仍会同步到该插件', 'error');
@@ -720,7 +665,6 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
     return;
   }
 
-  // local：仅删本地，写入下载墓碑防止同步回流（云端保留）
   for (const id of ids) {
     removePluginSource(id);
   }
@@ -739,13 +683,11 @@ async function handleTogglePlugin(plugin: PluginSource) {
   }
 }
 
-// 更新检查结果缓存
 const updateCheckResults = ref<Map<string, PluginUpdateCheckResult>>(new Map());
 const checkingUpdates = ref(false);
 const updatingPluginId = ref<string | null>(null);
 
 async function handleUpdatePlugin(plugin: PluginSource) {
-  // 如果已有缓存结果且确认有更新，直接执行更新
   const cached = updateCheckResults.value.get(plugin.id);
   if (cached?.hasUpdate && cached.newScript) {
     updatingPluginId.value = plugin.id;
@@ -766,7 +708,6 @@ async function handleUpdatePlugin(plugin: PluginSource) {
     return;
   }
 
-  // 否则先检查更新
   updatingPluginId.value = plugin.id;
   try {
     const result = await checkPluginUpdate(plugin);
@@ -808,10 +749,8 @@ async function handleCheckAllUpdates() {
   }
 }
 
-// 打开订阅设置
 function toggleSubscriptionPanel() {
   const willOpen = !showSubscriptionPanel.value;
-  // 互斥：打开一个面板时关闭其他
   if (willOpen) {
     showInstallFromUrlDialog.value = false;
     showInstallFromFilePanel.value = false;
@@ -819,7 +758,6 @@ function toggleSubscriptionPanel() {
   showSubscriptionPanel.value = willOpen;
 }
 
-// 切换网络安装输入面板
 function toggleInstallFromUrlDialog() {
   const willOpen = !showInstallFromUrlDialog.value;
   if (willOpen) {
@@ -829,7 +767,6 @@ function toggleInstallFromUrlDialog() {
   showInstallFromUrlDialog.value = willOpen;
 }
 
-// 切换本地安装面板
 function toggleInstallFromFilePanel() {
   const willOpen = !showInstallFromFilePanel.value;
   if (willOpen) {
@@ -840,13 +777,11 @@ function toggleInstallFromFilePanel() {
   isDragOverDropZone.value = false;
 }
 
-// 添加订阅源
 function handleAddSubscription() {
   showAddSubscriptionInput.value = !showAddSubscriptionInput.value;
   newSubscriptionUrl.value = '';
 }
 
-// 确认添加订阅
 function confirmAddSubscription() {
   const url = newSubscriptionUrl.value.trim();
   if (!url) {
@@ -854,13 +789,11 @@ function confirmAddSubscription() {
     return;
   }
 
-  // URL 校验：必须公网 http(s) 且以 .js/.json 结尾（禁止内网地址）
   if (!validatePluginUrl(url) || !isValidSubscriptionUrl(url)) {
     showToast('订阅链接需为公网 http/https 链接且以 .js 或 .json 结尾', 'error');
     return;
   }
 
-  // 调用 service 持久化（内部含去重校验）
   const sub = addSubscription({ name: '', url });
   if (!sub) {
     showToast('该订阅已存在或 URL 无效', 'error');
@@ -872,7 +805,6 @@ function confirmAddSubscription() {
   showToast(`已添加订阅: ${sub.name}`, 'success');
 }
 
-// 从单个订阅安装
 async function handleInstallFromSubscription(sub: PluginSubscription) {
   if (isPluginBusy.value) return;
   isPluginBusy.value = true;
@@ -888,7 +820,6 @@ async function handleInstallFromSubscription(sub: PluginSubscription) {
         );
       },
     });
-    // 更新该订阅的同步状态
     updateSubscription(sub.id, {
       lastSyncAt: Date.now(),
       lastSyncStatus: result.failCount === 0 ? 'success' : (result.successCount > 0 ? 'partial' : 'failed'),
@@ -913,7 +844,6 @@ async function handleInstallFromSubscription(sub: PluginSubscription) {
   }
 }
 
-// 一键更新全部订阅
 const syncingAll = ref(false);
 async function handleSyncAllSubscriptions() {
   if (syncingAll.value || isPluginBusy.value) return;
@@ -967,7 +897,6 @@ function cancelEditSubName() {
   editingSubId.value = null;
 }
 
-/** 相对时间格式化（用于显示"上次同步"） */
 function formatRelativeTime(ts: number | undefined): string {
   if (!ts) return '';
   const diff = Date.now() - ts;
@@ -978,7 +907,6 @@ function formatRelativeTime(ts: number | undefined): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// 移除订阅源（二次确认）
 const showRemoveSubscriptionConfirm = ref(false);
 const pendingRemoveSubscription = ref<PluginSubscription | null>(null);
 
@@ -1008,10 +936,8 @@ const loadingUserVars = ref(false);
 
 async function openPluginDetail(plugin: PluginSource) {
   detailPlugin.value = plugin;
-  // 先用已缓存的定义快速渲染（可能为空，懒加载模式下尚未加载）
   detailUserVariables.value = getPluginUserVariables(plugin.id);
   detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
-  // 对未设置值的变量填充默认值，并迁移旧键（修复前 name 优先导致存入显示名的问题）
   migrateOldVarKeys(detailUserVariables.value, detailUserVarValues.value);
   for (const v of detailUserVariables.value) {
     if (!(v.name in detailUserVarValues.value) && v.defaultValue !== undefined) {
@@ -1019,8 +945,6 @@ async function openPluginDetail(plugin: PluginSource) {
     }
   }
 
-  // 缓存未命中时异步加载插件以获取完整 userVariables 定义
-  // 典型场景：QQ音乐L2 等插件首次打开详情时需触发加载才能显示密钥输入框
   if (detailUserVariables.value.length === 0 && plugin.format !== 'lx') {
     loadingUserVars.value = true;
     try {
@@ -1043,18 +967,10 @@ async function openPluginDetail(plugin: PluginSource) {
   }
 }
 
-/**
- * 迁移旧的用户变量键名。
- *
- * 修复前 normalizePluginUserVariables 使用 v.name ?? v.key，Baka 插件的值
- * 被存入了显示名（如 "API密钥"）而非变量键（如 "SOURCE_API_KEY"）。
- * 修复后使用 v.key ?? v.name，此处将旧键的值迁移到正确键名。
- */
 function migrateOldVarKeys(vars: PluginUserVariable[], values: Record<string, string>) {
   let migrated = false;
   for (const v of vars) {
-    if (v.name in values) continue; // 正确键已有值，无需迁移
-    // 检查 title、label 等旧键名是否有值
+    if (v.name in values) continue;
     const oldKeys = [v.title, v.placeholder, v.description].filter((k): k is string => !!k && k !== v.name);
     for (const oldKey of oldKeys) {
       if (oldKey in values && values[oldKey]) {
@@ -1066,7 +982,6 @@ function migrateOldVarKeys(vars: PluginUserVariable[], values: Record<string, st
     }
   }
   if (migrated) {
-    // 持久化迁移结果
     if (detailPlugin.value) {
       setPluginUserVariableValues(detailPlugin.value.id, values);
     }
@@ -1095,7 +1010,6 @@ async function saveUserVariables() {
   savingUserVars.value = true;
   try {
     setPluginUserVariableValues(detailPlugin.value.id, { ...detailUserVarValues.value });
-    // 清除缓存的插件实例，下次使用时会重新加载并读取新的用户变量值
     reloadPluginInstance(detailPlugin.value.id);
     showToast('已保存用户变量，开始生效', 'success');
     closePluginDetail();
@@ -1109,7 +1023,6 @@ async function saveUserVariables() {
 
 <template>
   <div class="w-full space-y-8">
-    <!-- 顶部操作栏 -->
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
@@ -1117,7 +1030,6 @@ async function saveUserVariables() {
       </h2>
 
       <div class="flex flex-col gap-3 rounded-xl">
-        <!-- 描述 -->
         <div class="flex items-center justify-between gap-4 p-4">
           <div class="space-y-1 min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">通过插件扩展音乐源</div>
@@ -1126,7 +1038,6 @@ async function saveUserVariables() {
           <SettingHint severity="warning" text="支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容；请仅使用信任的来源。" />
         </div>
 
-        <!-- 操作按钮组 -->
         <div class="p-4 flex items-center gap-2 settings-plugin-toolbar">
           <button
             type="button"
@@ -1170,7 +1081,6 @@ async function saveUserVariables() {
           </button>
         </div>
 
-        <!-- 本地安装拖放面板（展开） -->
         <transition name="settings-pop-panel">
           <div v-if="showInstallFromFilePanel" class="px-4 pb-4">
             <div class="settings-plugin-inline-panel">
@@ -1200,7 +1110,6 @@ async function saveUserVariables() {
           </div>
         </transition>
 
-        <!-- 从 URL 安装的输入行（展开） -->
         <transition name="settings-pop-panel">
           <div v-if="showInstallFromUrlDialog" class="px-4 pb-4">
             <div class="settings-plugin-inline-panel">
@@ -1236,7 +1145,6 @@ async function saveUserVariables() {
           </div>
         </transition>
 
-        <!-- 订阅面板（展开） -->
         <transition name="settings-pop-panel">
           <div v-if="showSubscriptionPanel" class="px-4 pb-4">
             <div class="settings-plugin-inline-panel">
@@ -1265,7 +1173,6 @@ async function saveUserVariables() {
                 </div>
               </div>
 
-              <!-- 添加订阅输入行 -->
               <transition name="settings-pop-panel">
                 <div v-if="showAddSubscriptionInput" class="mb-3">
                   <div class="flex items-center gap-3">
@@ -1298,7 +1205,6 @@ async function saveUserVariables() {
                   class="flex items-center gap-3 p-2.5 rounded-lg bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
                 >
                   <div class="min-w-0 flex-1">
-                    <!-- 名称：非编辑态可点击编辑，编辑态显示 input -->
                     <input
                       v-if="editingSubId === sub.id"
                       v-model="editingSubName"
@@ -1317,7 +1223,6 @@ async function saveUserVariables() {
                       {{ sub.name || sub.url }}
                     </div>
                     <div class="text-xs text-gray-500 dark:text-white/50 truncate">{{ sub.url }}</div>
-                    <!-- 上次同步状态 -->
                     <div
                       v-if="sub.lastSyncAt"
                       class="flex items-center gap-1.5 mt-0.5 text-[11px] truncate"
@@ -1361,14 +1266,12 @@ async function saveUserVariables() {
       </div>
     </section>
 
-    <!-- 插件设置 -->
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         插件设置
       </h2>
       <div class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-        <!-- 启动时自动更新插件 -->
         <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <RefreshCw class="h-4 w-4 text-gray-400 shrink-0" />
@@ -1384,7 +1287,6 @@ async function saveUserVariables() {
             ></button>
           </div>
         </div>
-        <!-- 插件懒加载 -->
         <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <Puzzle class="h-4 w-4 text-gray-400 shrink-0" />
@@ -1400,7 +1302,6 @@ async function saveUserVariables() {
             ></button>
           </div>
         </div>
-        <!-- 安装时不校验版本 -->
         <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <FileCode2 class="h-4 w-4 text-gray-400 shrink-0" />
@@ -1419,7 +1320,6 @@ async function saveUserVariables() {
       </div>
     </section>
 
-    <!-- 插件列表 -->
     <section class="space-y-3">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
@@ -1452,7 +1352,6 @@ async function saveUserVariables() {
         </div>
       </div>
 
-      <!-- 搜索栏 -->
       <div class="relative">
         <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 dark:text-white/40" />
         <input
@@ -1463,7 +1362,6 @@ async function saveUserVariables() {
         />
       </div>
 
-      <!-- 空状态 -->
       <div
         v-if="plugins.length === 0"
         class="flex flex-col items-center justify-center py-12 text-center"
@@ -1477,7 +1375,6 @@ async function saveUserVariables() {
         </div>
       </div>
 
-      <!-- 无搜索结果 -->
       <div
         v-else-if="filteredPlugins.length === 0"
         class="flex flex-col items-center justify-center py-8 text-center"
@@ -1485,7 +1382,6 @@ async function saveUserVariables() {
         <div class="text-sm text-gray-500 dark:text-white/60">未找到匹配的插件</div>
       </div>
 
-      <!-- 插件卡片容器 -->
       <div
         v-else
         ref="listRef"
@@ -1501,7 +1397,6 @@ async function saveUserVariables() {
             'settings-plugin-card--dragging': draggingIndex === index,
           }"
         >
-          <!-- 拖拽手柄 -->
           <div
             class="plugin-drag-handle touch-none select-none"
             :class="{
@@ -1514,7 +1409,6 @@ async function saveUserVariables() {
             <GripVertical class="h-5 w-5" />
           </div>
 
-          <!-- 左侧：图标 + 信息 -->
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <div
               class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -1556,7 +1450,6 @@ async function saveUserVariables() {
             </div>
           </div>
 
-          <!-- 右侧：操作 -->
           <div class="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
@@ -1601,7 +1494,6 @@ async function saveUserVariables() {
       </div>
     </section>
 
-    <!-- 卸载全部确认弹窗 -->
     <Teleport to="body">
       <Transition name="plugin-detail">
         <div
@@ -1657,7 +1549,6 @@ async function saveUserVariables() {
       </Transition>
     </Teleport>
 
-    <!-- 卸载单个插件确认弹窗 -->
     <Teleport to="body">
       <Transition name="plugin-detail">
         <div
@@ -1713,7 +1604,6 @@ async function saveUserVariables() {
       </Transition>
     </Teleport>
 
-    <!-- 已同步插件删除范围选择弹窗 -->
     <SyncDeleteScopeModal
       v-model:visible="showPluginDeleteScope"
       title="该插件已同步到云端"
@@ -1724,7 +1614,6 @@ async function saveUserVariables() {
       @scope="confirmPluginDeleteScope"
     />
 
-    <!-- 移除订阅确认弹窗 -->
     <Teleport to="body">
       <Transition name="plugin-detail">
         <div
@@ -1780,7 +1669,6 @@ async function saveUserVariables() {
       </Transition>
     </Teleport>
 
-    <!-- 插件详情弹窗 -->
     <Teleport to="body">
       <Transition name="plugin-detail">
         <div
@@ -1789,7 +1677,6 @@ async function saveUserVariables() {
           :class="overlayZClass"
         >
           <div class="plugin-detail-card">
-            <!-- 头部 -->
             <div class="plugin-detail-header">
               <div class="flex items-center gap-3 min-w-0">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12 flex items-center justify-center shrink-0 text-[#EC4141]">
@@ -1812,7 +1699,6 @@ async function saveUserVariables() {
               </button>
             </div>
 
-            <!-- 信息列表 -->
             <div class="plugin-detail-body">
               <div class="plugin-detail-row">
                 <span class="plugin-detail-label">版本</span>
@@ -1851,14 +1737,12 @@ async function saveUserVariables() {
               </div>
             </div>
 
-            <!-- 用户变量区域 -->
             <div v-if="detailUserVariables.length > 0 || loadingUserVars" class="plugin-detail-user-vars">
               <div class="plugin-detail-user-vars-header">
                 <KeyRound class="h-4 w-4 text-[#EC4141] shrink-0" />
                 <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">用户变量</span>
                 <span class="text-xs text-gray-400 dark:text-white/40">插件运行所需的自定义参数</span>
               </div>
-              <!-- 加载中提示（懒加载模式下首次打开详情时触发插件加载） -->
               <div v-if="loadingUserVars" class="flex items-center gap-2 py-3 px-1">
                 <RefreshCw class="h-3.5 w-3.5 animate-spin text-gray-400" />
                 <span class="text-xs text-gray-400 dark:text-white/40">正在加载插件用户变量...</span>
@@ -1875,7 +1759,6 @@ async function saveUserVariables() {
                     <span v-if="v.required" class="text-[#EC4141]">*</span>
                   </label>
                   <p v-if="v.description" class="plugin-detail-var-desc">{{ v.description }}</p>
-                  <!-- select 类型 -->
                   <select
                     v-if="v.type === 'select'"
                     v-model="detailUserVarValues[v.name]"
@@ -1884,7 +1767,6 @@ async function saveUserVariables() {
                     <option value="" disabled>{{ v.placeholder || '请选择' }}</option>
                     <option v-for="opt in v.options" :key="opt" :value="opt">{{ opt }}</option>
                   </select>
-                  <!-- password 类型 -->
                   <div v-else-if="v.type === 'password'" class="relative" @focusin="pwdFocused[v.name] = true" @focusout="pwdFocused[v.name] = false; pwdVisible[v.name] = false">
                     <input
                       :type="pwdVisible[v.name] ? 'text' : 'password'"
@@ -1905,7 +1787,6 @@ async function saveUserVariables() {
                       <Eye v-else class="h-4 w-4" />
                     </button>
                   </div>
-                  <!-- text 类型（默认） -->
                   <input
                     v-else
                     type="text"
@@ -1987,7 +1868,6 @@ async function saveUserVariables() {
   background: rgba(236, 65, 65, 0.18);
 }
 
-/* 工具栏：确保所有按钮在同一行，卸载全部靠右 */
 .settings-plugin-toolbar {
   flex-wrap: nowrap;
 }
@@ -2071,7 +1951,6 @@ async function saveUserVariables() {
   color: rgb(220 38 38);
 }
 
-/* 更新进行中：禁用并保留图标颜色 */
 .settings-plugin-icon-button--updating {
   cursor: progress;
   opacity: 0.7;
@@ -2083,7 +1962,6 @@ async function saveUserVariables() {
   transform: none;
 }
 
-/* 有可用更新：醒目高亮，提示用户点击执行更新 */
 .settings-plugin-icon-button--update-available {
   background: rgba(236, 65, 65, 0.12);
   color: #ec4141;
@@ -2111,7 +1989,6 @@ async function saveUserVariables() {
   box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.08);
 }
 
-/* 订阅名称内联编辑输入框：更紧凑，铺满名称列 */
 .settings-plugin-input--inline {
   width: 100%;
   min-height: 28px;
@@ -2212,7 +2089,6 @@ async function saveUserVariables() {
   background: rgba(255, 255, 255, 0.4);
 }
 
-/* 拖拽手柄 */
 .plugin-drag-handle {
   display: flex;
   align-items: center;
@@ -2240,12 +2116,10 @@ async function saveUserVariables() {
   cursor: not-allowed;
 }
 
-/* 拖拽中的卡片 */
 .settings-plugin-card--dragging {
   background: rgba(236, 65, 65, 0.06);
 }
 
-/* FLIP 排序动画 */
 .plugin-sort-move {
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
@@ -2312,7 +2186,6 @@ async function saveUserVariables() {
   max-height: 400px;
 }
 
-/* 导入歌单按钮 */
 .settings-plugin-import-btn {
   display: inline-flex;
   align-items: center;
@@ -2349,7 +2222,6 @@ async function saveUserVariables() {
   }
 }
 
-/* 插件详情弹窗 */
 .plugin-detail-card {
   width: min(92vw, 460px);
   background: #ffffff;
@@ -2440,7 +2312,6 @@ async function saveUserVariables() {
   background: rgba(236, 65, 65, 0.12);
 }
 
-/* 用户变量区域 */
 .plugin-detail-user-vars {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   padding: 16px 20px;
@@ -2584,7 +2455,6 @@ async function saveUserVariables() {
   cursor: not-allowed;
 }
 
-/* 弹窗过渡动画 */
 .plugin-detail-enter-active,
 .plugin-detail-leave-active {
   transition: opacity 0.2s ease;

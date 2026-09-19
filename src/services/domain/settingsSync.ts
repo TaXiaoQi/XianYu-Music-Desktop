@@ -1,14 +1,3 @@
-/**
- * 设置云端同步服务
- *
- * 封装后端 `api/index.php` 的设置同步接口，提供本地设置与云端之间的
- * 双向同步能力。所有请求复用 authService 的签名机制（MD5）。
- *
- * 后端接口一览（action=xxx）：
- * - settings_sync_upload：上传本地设置到云端文件存储
- * - settings_sync_download：下载云端设置到本地
- * - settings_sync_status：查询同步状态
- */
 
 import type { AppSettings } from '../../types';
 import { signedRequest } from '../auth/authService';
@@ -16,10 +5,6 @@ import { getCiyuanxiId } from './playlistSync';
 
 // ==================== 设置比较 ====================
 
-/**
- * 深拷贝并返回稳定 JSON 字符串（键排序）
- * 用于比较两个设置对象是否一致
- */
 function stableStringify(obj: unknown): string {
   return JSON.stringify(obj, (_key, value) => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -33,28 +18,16 @@ function stableStringify(obj: unknown): string {
   });
 }
 
-/**
- * 归一化设置对象，用于比较时排除设备相关和运行时字段
- *
- * 排除的字段：
- * - download.downloadPath：设备相关本地路径
- * - organizeRoot：设备相关路径
- * - upload：同步偏好（每台设备可能不同）
- * - autoSync 运行时状态：delayedCount / lastSyncAttemptAt / lastSyncSuccessAt / nextSyncAt
- */
 export function normalizeSettingsForComparison(settings: AppSettings): Record<string, unknown> {
   const cloned = JSON.parse(JSON.stringify(settings)) as Record<string, unknown>;
 
-  // 排除设备相关字段
   if (cloned.download && typeof cloned.download === 'object') {
     (cloned.download as Record<string, unknown>).downloadPath = '';
   }
   (cloned as Record<string, unknown>).organizeRoot = '';
 
-  // 排除 upload 同步偏好
   delete (cloned as Record<string, unknown>).upload;
 
-  // 排除 autoSync 运行时状态
   if (cloned.autoSync && typeof cloned.autoSync === 'object') {
     const autoSync = cloned.autoSync as Record<string, unknown>;
     delete autoSync.delayedCount;
@@ -66,16 +39,12 @@ export function normalizeSettingsForComparison(settings: AppSettings): Record<st
   return cloned;
 }
 
-/**
- * 比较本地设置与云端设置是否一致（排除设备相关和运行时字段）
- */
 export function areSettingsEqual(local: AppSettings, cloud: AppSettings): boolean {
   const normalizedLocal = normalizeSettingsForComparison(local);
   const normalizedCloud = normalizeSettingsForComparison(cloud);
   return stableStringify(normalizedLocal) === stableStringify(normalizedCloud);
 }
 
-/** 日志前缀 */
 const LOG = '[SettingsSync]';
 
 function logSync(_msg: string, ..._args: unknown[]) {
@@ -85,7 +54,6 @@ function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
 
-/** 云端下载的完整数据 */
 export interface SettingsSyncDownloadData {
   version: number;
   uploaded_at: string;
@@ -93,7 +61,6 @@ export interface SettingsSyncDownloadData {
   settings: AppSettings;
 }
 
-/** 同步结果 */
 export interface SettingsSyncResult {
   uploaded: boolean;
   downloaded: boolean;
@@ -102,9 +69,6 @@ export interface SettingsSyncResult {
 
 // ==================== 上传 ====================
 
-/**
- * 上传本地设置到云端
- */
 export async function uploadSettings(settings: AppSettings): Promise<SettingsSyncResult> {
   const result: SettingsSyncResult = {
     uploaded: false,
@@ -122,10 +86,8 @@ export async function uploadSettings(settings: AppSettings): Promise<SettingsSyn
   logSync('uploadSettings: 开始上传本地设置');
 
   try {
-    // 移除不需要同步的敏感/设备相关字段
     const settingsToUpload: AppSettings = {
       ...settings,
-      // downloadPath 是设备相关的本地路径，不同设备无意义，但保留其他下载设置
       download: {
         ...settings.download,
         downloadPath: '',
@@ -154,10 +116,6 @@ export async function uploadSettings(settings: AppSettings): Promise<SettingsSyn
 
 // ==================== 下载 ====================
 
-/**
- * 从云端下载设置
- * 返回下载的设置数据，调用方负责合并到本地
- */
 export async function downloadSettings(): Promise<{ settings: AppSettings | null; uploadedAt: string | null; result: SettingsSyncResult }> {
   const result: SettingsSyncResult = {
     uploaded: false,

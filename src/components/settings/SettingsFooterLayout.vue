@@ -40,7 +40,6 @@ const RIGHT_SLOTS: FooterPreviewSlot[] = ['right-0', 'right-1', 'right-2', 'righ
 
 const getItemLabel = (key: FooterItemKey | null) => key ? getFooterItemMeta(key)?.label ?? key : '';
 
-// 预览区直接复用真实底部栏控件组件；这里提供一套轻量 mock 上下文，只用于渲染外观。
 const previewCurrentSong = ref<any>({
   title: 'I\'m leaving home',
   name: 'I\'m leaving home',
@@ -103,29 +102,23 @@ provide('footerContext', {
   volumeBarRef: previewElementRef,
   startDrag: () => {},
   toggleMute: () => {},
-  // 音效/音量锁定态（Bit-perfect / DSD 直出 / 插件机架）
   isAudioControlLocked: ref(false),
   audioLockTooltip: ref(''),
   isEffectLocked: ref(false),
   effectLockTooltip: ref(''),
   showEqPanel: ref(false),
   toggleEqPanel: () => {},
-  // 播放队列
   showPlaylist: ref(false),
   togglePlaylist: () => {},
-  // 评论区
   isPluginSong: ref(true),
   showComment: ref(false),
   toggleComment: () => {},
-  // MV（预览始终禁用，仅展示外观）
   mvSupport: () => false,
   mvActive: ref(false),
   mvLoading: ref(false),
   toggleMv: async () => {},
   isMvVideoDownloading: ref(false),
-  // 分享弹窗（预览为动作 no-op，仅展示外观）
   openShareDialog: () => {},
-  // 歌词页工具（歌词页专属，预览主页态下始终禁用仅展示外观）
   isVisualizerEnabled: ref(false),
   toggleVisualizer: () => {},
   isProgressHidden: ref(false),
@@ -153,7 +146,6 @@ interface PreviewDragState {
 }
 
 const dragState = ref<PreviewDragState | null>(null);
-/** 拖拽进行中：抑制收纳弹窗的点击外部自动关闭，便于把底栏控件直接拖入收纳 */
 const isDragActive = ref(false);
 
 const resolveDropTarget = (clientX: number, clientY: number) => {
@@ -229,7 +221,6 @@ const applyItemDrop = (state: PreviewDragState) => {
 
   if (source.type === 'bar') {
     if (state.targetSlot && state.targetSlot !== source.slot) {
-      // 底栏→底栏不同槽位：交换，两者都留在底栏
       next = moveFooterItemToPreviewSlot(layout.value, key, state.targetSlot);
     } else if (state.collapse) {
       next = dropFooterItemToPalette(layout.value, key, -1);
@@ -238,10 +229,8 @@ const applyItemDrop = (state: PreviewDragState) => {
     }
   } else {
     if (state.targetSlot) {
-      // 收纳→底栏槽位：放入槽位，原占用者退回收纳
       next = dropFooterItemToSlot(layout.value, key, state.targetSlot);
     } else if (state.paletteIndex !== null && state.paletteIndex !== source.index) {
-      // 收纳→收纳：重排
       next = dropFooterItemToPalette(layout.value, key, state.paletteIndex);
     }
   }
@@ -277,7 +266,6 @@ const restoreDefault = () => {
 };
 
 // --- 更多工具弹出：参考真实底栏，「^」按钮上方向上浮出竖向堆叠的图标圆圈 ---
-// 预览容器带 overflow-hidden，需经 Teleport 浮出到 body 以免被裁剪；视觉与真实底栏一致。
 const showMoreTools = ref(false);
 const moreWrapRef = ref<HTMLElement | null>(null);
 const morePopupElRef = ref<HTMLElement | null>(null);
@@ -287,7 +275,6 @@ const toggleMoreTools = () => {
   showMoreTools.value = !showMoreTools.value;
   if (showMoreTools.value && moreWrapRef.value) {
     const r = moreWrapRef.value.getBoundingClientRect();
-    // 与真实底栏一致的浮出间距：按钮上方 28px，右边缘对齐触发按钮
     morePopupStyle.value = {
       bottom: `${window.innerHeight - r.top + 28}px`,
       right: `${window.innerWidth - r.right}px`,
@@ -509,7 +496,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 更多工具弹出：Teleport 到 body 避免被预览容器 overflow-hidden 裁剪；样式与真实底栏一致 -->
     <Teleport to="body">
       <transition name="more-tools">
         <div
@@ -580,12 +566,6 @@ onUnmounted(() => {
 }
 
 .footer-player-preview {
-  /* 行 flex：
-     右侧整块 flex:0 0 auto 永远贴右且完整（右侧 5 槽 +「更多」始终可操作）；
-     中间播放三大键 margin:0 auto —— 宽度富余时在左块与右块之间居中，
-     右侧空间不足时自动边距归零、三大键左移贴拢左块给右侧让位；
-     左侧 flex:0 1 auto，歌名是唯一可压缩项（min-w-0 flex-1）先行截断让位；
-     overflow:hidden 兜底：极窄时裁右缘，绝不盖住歌名/中间。 */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -652,7 +632,6 @@ onUnmounted(() => {
   place-items: center;
   cursor: grab;
   touch-action: none;
-  /* 控件（如音质按钮 w-9=36px）钳制进 32px 槽位，避免撑大右侧区导致越界；仅预览层生效 */
   overflow: hidden;
 }
 
@@ -674,7 +653,6 @@ onUnmounted(() => {
   background: rgba(236, 65, 65, 0.1);
 }
 
-/* 「更多」作为收纳落点：拖到底栏控件进入收纳时高亮 */
 .footer-preview-more--collapse-target {
   color: #ec4141;
   background: rgba(236, 65, 65, 0.18);
@@ -682,9 +660,7 @@ onUnmounted(() => {
   transform: scale(1.12);
 }
 
-/* 更多工具弹出：竖向堆叠的图标圆圈（与真实底栏一致），fixed 定位于按钮上方 */
 .footer-more-popup {
-  /* bottom / right 由 morePopupStyle 内联样式提供 */
 }
 
 .footer-more-item {
@@ -694,8 +670,6 @@ onUnmounted(() => {
   user-select: none;
 }
 
-/* 弹窗内控件仅作外观预览与拖拽排序：让内部按钮/下拉不吞指针事件，指针命中外层以触发拖拽
-   （否则 disabled 按钮不产生 pointerdown，收藏/下载等也会挡在拖拽命中之外） */
 .footer-more-item :deep(button),
 .footer-more-item :deep(select) {
   pointer-events: none;
@@ -718,7 +692,6 @@ onUnmounted(() => {
   background: rgba(236, 65, 65, 0.1);
 }
 
-/* 与真实底栏一致的上浮动画：弹性曲线，translateY + scale */
 .more-tools-enter-active,
 .more-tools-leave-active {
   transition: opacity 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -810,8 +783,6 @@ onUnmounted(() => {
 
 .footer-visibility-switch--on .footer-visibility-switch-thumb { transform: translateX(17px); }
 
-/* 大窗口下恢复宽松的间距/封面/槽位，避免窄窗适配让预览显得过于局促。
-   基础布局已按最小窗（含右侧 5 控件 +「更多」）收紧，此处仅加宽可视宽容度。 */
 @media (min-width: 1200px) {
   .footer-player-preview {
     gap: 12px;

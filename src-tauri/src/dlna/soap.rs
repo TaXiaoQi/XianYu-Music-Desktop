@@ -1,6 +1,3 @@
-//! SOAP 1.1（UPnP 控制协议层；双端同步一份代码，勿在本端私自改动）。
-
-/// 构造 SOAP 1.1 请求 envelope。
 pub fn envelope(service: &str, action: &str, inner_args: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="utf-8"?>
@@ -8,7 +5,6 @@ pub fn envelope(service: &str, action: &str, inner_args: &str) -> String {
     )
 }
 
-/// 作为控制点（DMC）向渲染器发起 SOAP 调用，返回响应 body 文本。
 pub async fn soap_call(
     client: &reqwest::Client,
     control_url: &str,
@@ -38,14 +34,11 @@ pub async fn soap_call(
     Ok(text)
 }
 
-/// 从 XML 中提取 `<tag ...>text</tag>` 的文本（首个匹配；不解析嵌套）。
 pub fn extract_tag(xml: &str, tag: &str) -> Option<String> {
     let open = format!("<{tag}");
     let start = xml.to_ascii_lowercase().find(&open.to_ascii_lowercase())?;
-    // 跳过属性直到 '>'。
     let gt = xml[start..].find('>')? + start;
     if xml.as_bytes().get(gt - 1) == Some(&b'/') {
-        // 自闭合 <tag/> → 空值。
         return Some(String::new());
     }
     let close = format!("</{}>", tag);
@@ -54,7 +47,6 @@ pub fn extract_tag(xml: &str, tag: &str) -> Option<String> {
     Some(xml[gt + 1..end].to_string())
 }
 
-/// 服务端：从 SOAPACTION 头解析动作名（兼容大小写与引号差异）。
 pub fn parse_action_header(value: Option<&str>) -> Option<String> {
     let v = value?.trim().trim_matches('"');
     let action = v.rsplit('#').next()?.trim().to_string();
@@ -65,12 +57,10 @@ pub fn parse_action_header(value: Option<&str>) -> Option<String> {
     }
 }
 
-/// 服务端：从 SOAP body 提取指定参数文本。
 pub fn arg(xml: &str, name: &str) -> String {
     extract_tag(xml, name).unwrap_or_default()
 }
 
-/// 秒数 → UPnP 时间格式 H:MM:SS(.f)。
 pub fn format_upnp_time(secs: f64) -> String {
     let total = secs.max(0.0).round() as u64;
     let h = total / 3600;
@@ -79,7 +69,6 @@ pub fn format_upnp_time(secs: f64) -> String {
     format!("{h}:{m:02}:{s:02}")
 }
 
-/// UPnP 时间格式（H:MM:SS / H:MM:SS.f）→ 秒。
 pub fn parse_upnp_time(s: &str) -> Option<f64> {
     let s = s.trim();
     if s.is_empty() || s == "NOT_IMPLEMENTED" {
@@ -95,7 +84,6 @@ pub fn parse_upnp_time(s: &str) -> Option<f64> {
     Some(h * 3600.0 + m * 60.0 + sec)
 }
 
-/// XML 文本转义（DIDL-Lite / desc.xml 用）。
 pub fn xml_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -111,7 +99,6 @@ pub fn xml_escape(s: &str) -> String {
     out
 }
 
-/// 逆向转义（解析控制点送来的 DIDL-Lite 元数据用）。
 pub fn xml_unescape(s: &str) -> String {
     s.replace("&lt;", "<")
         .replace("&gt;", ">")
@@ -136,7 +123,10 @@ mod tests {
     #[test]
     fn extract_tag_handles_attrs_and_case() {
         let xml = r#"<root><TrackDuration a="1">0:03:21</TrackDuration><missing/></root>"#;
-        assert_eq!(extract_tag(xml, "TrackDuration").as_deref(), Some("0:03:21"));
+        assert_eq!(
+            extract_tag(xml, "TrackDuration").as_deref(),
+            Some("0:03:21")
+        );
         assert_eq!(extract_tag(xml, "missing").as_deref(), Some(""));
         assert_eq!(extract_tag(xml, "nope"), None);
     }

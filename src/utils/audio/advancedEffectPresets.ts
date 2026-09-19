@@ -15,12 +15,12 @@ export const advancedEqPresets = [
 export interface AlgorithmicReverbPreset {
   name: string
   label: string
-  duration: number   // 混响尾音长度（秒）
-  decay: number      // 衰减幂（越大衰减越快）
+  duration: number
+  decay: number
   type: 'hall' | 'room' | 'plate' | 'spring' | 'tunnel' | 'valley' | 'metal'
-  preDelay: number   // 预延迟（秒）
-  dry: number        // 干声百分比（0~100），作为增益条默认值
-  wet: number        // 湿声百分比（0~100），作为增益条默认值
+  preDelay: number
+  dry: number
+  wet: number
   description: string
 }
 

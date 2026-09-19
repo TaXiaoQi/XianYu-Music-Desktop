@@ -20,19 +20,12 @@ const props = defineProps<{
   totalSongCount?: number;
   activeTab: ArtistTabId;
   songs?: any[];
-  /** 只读模式：禁用头像编辑、管理按钮、tab 拖拽 */
   readOnly?: boolean;
-  /** 存在可展示的歌手简介：readOnly（在线详情）时据此决定是否显示"详情" tab，无简介接口的插件默认不显示 */
   hasArtistDetail?: boolean;
-  /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
-  /** 歌手简介（展示在简介框中） */
   description?: string;
-  /** 歌手原始数据（description 为空时回退 artistDesc/intro/desc 等字段） */
   rawData?: any;
-  /** 自定义 tab 名称（覆盖默认的 歌曲/专辑/歌手详情） */
   tabNameOverrides?: Partial<Record<ArtistTabId, string>>;
-  /** 歌曲列表滚动容器（用于滚动缩小封面效果） */
   scrollContainerRef?: HTMLElement | null;
 }>();
 
@@ -56,7 +49,6 @@ const tabs = ref(getOrderedArtistTabs());
 const draggedTabId = ref<ArtistTabId | null>(null);
 const suppressClick = ref<boolean>(false);
 
-// readOnly 模式默认过滤详情 tab，有可展示简介时保留（在线详情页：无对应 API 的插件 no details）
 const visibleTabs = computed(() => {
   if (props.readOnly) {
     return props.hasArtistDetail ? tabs.value : tabs.value.filter(t => t.id !== 'details');
@@ -77,7 +69,7 @@ let pressTimer: number | null = null;
 
 const onPointerDown = (tabId: ArtistTabId, event: PointerEvent) => {
   if (event.button !== 0) return;
-  if (props.readOnly) return; // readOnly 模式禁用拖拽
+  if (props.readOnly) return;
   
   draggedTabId.value = tabId;
   startX.value = event.clientX;
@@ -85,10 +77,8 @@ const onPointerDown = (tabId: ArtistTabId, event: PointerEvent) => {
   isDragging.value = false;
   targetInsertIndex.value = null;
   
-  // 阻止默认机制避免触屏手势干扰
   event.preventDefault();
   
-  // 300ms 定时长按判定
   pressTimer = window.setTimeout(() => {
     isDragging.value = true;
     suppressClick.value = true;
@@ -108,7 +98,6 @@ const onPointerMove = (event: PointerEvent) => {
   const distanceX = Math.abs(clientX - startX.value);
   const distanceY = Math.abs(clientY - startY.value);
   
-  // 长按触发前如果移动位移超过了 6px，取消长按判定，退回普通状态
   if (!isDragging.value && (distanceX > 6 || distanceY > 6)) {
     if (pressTimer !== null) {
       clearTimeout(pressTimer);
@@ -137,7 +126,6 @@ const onPointerMove = (event: PointerEvent) => {
       const index = tabs.value.findIndex(t => t.id === hoveredTabId);
       
       if (index !== -1) {
-        // 根据 clientX 是否超过元素宽度的中点来动态确定插入在该元素左侧还是右侧
         if (clientX < rect.left + rect.width / 2) {
           targetInsertIndex.value = index;
         } else {
@@ -170,7 +158,6 @@ const onPointerUp = () => {
     if (sourceIndex !== -1 && sourceIndex !== insertIndex) {
       const [movedTab] = tabs.value.splice(sourceIndex, 1);
       
-      // 插入点在被拖拽元素右侧时的微调修正
       if (insertIndex > sourceIndex) {
         insertIndex--;
       }
@@ -197,7 +184,6 @@ const currentArtist = computed(() => {
   return libraryStore.artistCatalog.find(item => item.name === props.artistName);
 });
 
-// 在线封面（readOnly）显示 URL：B站等防盗链封面经后端代理成 data:URL，代理完成回填刷新
 const displayedOverrideCover = ref('');
 watch(() => props.coverUrlOverride, (url) => {
   if (!url) {
@@ -210,7 +196,6 @@ watch(() => props.coverUrlOverride, (url) => {
 }, { immediate: true });
 
 const displayedCover = computed(() => {
-  // readOnly 模式优先使用在线封面 URL
   if (props.readOnly && props.coverUrlOverride) {
     return displayedOverrideCover.value;
   }
@@ -220,7 +205,6 @@ const displayedCover = computed(() => {
   return coverUrl.value;
 });
 
-/** 歌手简介：优先使用显式传入的 description，缺失时从原始数据回退常见简介字段 */
 const displayDescription = computed(() => {
   const explicit = (props.description || '').trim();
   if (explicit) return explicit;
@@ -266,7 +250,6 @@ const triggerAvatarSave = async (imagePath: string, writeToTags: boolean) => {
       writeToTags,
     );
 
-    // Update store to trigger reactivity
     const updatedCatalog = libraryStore.artistCatalog.map(item => {
       if (item.id === result.artistId) {
         return { ...item, avatarPath: result.avatarPath };
@@ -490,18 +473,12 @@ const handlePlayAll = () => {
 const scrollContainer = computed(() => props.scrollContainerRef ?? null);
 const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 144);
 
-/** 封面尺寸：144px → 44px */
 const coverSize = computed(() => `${144 - 100 * scrollProgress.value}px`);
-/** 右侧信息列高度：144px → 64px */
 const columnHeight = computed(() => `${144 - 80 * scrollProgress.value}px`);
-/** 标题字号：32px → 16px（同步压缩行高避免占位过高） */
 const titleSize = computed(() => `${32 - 16 * scrollProgress.value}px`);
 const titleLineHeight = computed(() => `${40 - 20 * scrollProgress.value}px`);
-/** 标题下边距：16px → 4px */
 const titleMarginBottom = computed(() => `${16 - 12 * scrollProgress.value}px`);
-/** 按钮上边距：8px → 0 */
 const buttonsMarginTop = computed(() => `${8 - 8 * scrollProgress.value}px`);
-/** 简介在收缩早期淡出并收起（初始高度取大值避免长简介被裁剪） */
 const descriptionOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 2));
 const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 - scrollProgress.value * 2))}px`);
 </script>
@@ -509,7 +486,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
 <template>
   <div class="px-8 shrink-0 select-none flex flex-col pt-6 pb-0 h-auto justify-start border-b border-black/5 dark:border-white/5 relative z-20 w-full bg-transparent">
     
-    <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between mb-4 animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
         <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
@@ -528,9 +504,7 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
       </div>
     </div>
 
-    <!-- 正常模式: 歌手详情展示区 -->
     <div v-else class="flex items-center gap-6 h-auto mt-2 mb-6">
-      <!-- 封面图 (圆形) -->
       <div 
         @click="!readOnly ? handleAvatarClick : undefined"
         :style="{ width: coverSize, height: coverSize }"
@@ -543,7 +517,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
           {{ artistName.charAt(0).toUpperCase() }}
         </div>
         
-        <!-- Progress Overlay Mask -->
         <div v-if="writeProgress && !writeProgress.done" class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center text-white z-10 p-2 text-center select-none animate-in fade-in duration-200">
           <svg class="animate-spin h-5 w-5 mb-1.5 text-white" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -553,7 +526,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
           <span class="text-[10px] opacity-80 mt-0.5 tabular-nums">{{ writeProgress.current }}/{{ writeProgress.total }}</span>
         </div>
         
-        <!-- Hover Overlay Mask -->
         <div 
           v-else-if="!readOnly"
           class="absolute inset-0 bg-black/50 opacity-0 flex flex-col items-center justify-center text-white transition-opacity duration-300 gap-1.5"
@@ -566,16 +538,13 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
         </div>
       </div>
       
-      <!-- 文本信息与操作 -->
       <div :style="{ height: columnHeight }" class="flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0">
-        <!-- 歌手名字 -->
         <div :style="{ marginBottom: titleMarginBottom }">
           <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight">
             {{ artistName }}
           </h1>
         </div>
 
-        <!-- 操作按钮组 -->
         <div class="flex items-center gap-3" :style="{ marginTop: buttonsMarginTop }">
            <button 
              @click="handlePlayAll" 
@@ -587,7 +556,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
              播放全部
            </button>
            
-           <!-- 批量操作 -->
            <button 
              v-if="!readOnly"
              @click="emit('update:isBatchMode', true)" 
@@ -603,7 +571,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
       </div>
     </div>
 
-    <!-- 歌手简介展示框（readOnly 且有详情 tab 时，简介已独立成"详情"页，此处不再重复展示） -->
     <div
       v-if="displayDescription && !(readOnly && hasArtistDetail)"
       class="mb-5 px-1 -mt-1 overflow-hidden"
@@ -614,7 +581,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
       </div>
     </div>
 
-    <!-- 标签页导航 (Tabs) -->
     <TransitionGroup 
       name="tabs-list" 
       tag="div" 
@@ -625,7 +591,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
         :key="tab.id"
         class="relative flex items-center shrink-0"
       >
-        <!-- 插入指示线 (左侧) -->
         <div 
           v-if="isDragging && targetInsertIndex === index" 
           class="absolute left-[-16px] w-[3px] h-5 bg-[#EC4141] rounded-full animate-pulse transition-all z-20 pointer-events-none"
@@ -650,7 +615,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
           ></div>
         </button>
 
-        <!-- 插入指示线 (右侧，仅针对最后一个元素的右侧插入) -->
         <div 
           v-if="isDragging && targetInsertIndex === visibleTabs.length && index === visibleTabs.length - 1" 
           class="absolute right-[-16px] w-[3px] h-5 bg-[#EC4141] rounded-full animate-pulse transition-all z-20 pointer-events-none"
@@ -658,7 +622,6 @@ const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 -
       </div>
     </TransitionGroup>
 
-    <!-- Custom Three-Choice Modal for Avatar Upload with Write-back -->
     <Teleport to="body">
       <div v-if="showWriteBackDialog" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none" @click.self="showWriteBackDialog = false">
         <div class="bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-[360px] overflow-hidden animate-in fade-in zoom-in-95 duration-200">

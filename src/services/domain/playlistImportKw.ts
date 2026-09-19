@@ -10,10 +10,6 @@ import {
   type WyTrackMetaPatch,
 } from './playlistImportBase';
 
-/**
- * 酷我（小枸）歌单详情与曲目元数据导入。
- * 仅依赖 playlistImportBase，作为叶子模块被 playlistImport 门面消费。
- */
 
 async function getListDetailKw(rawId: string): Promise<PlaylistImportResult> {
   const id = getKwListId(rawId);
@@ -80,16 +76,6 @@ function parseKwSong(item: any): PluginSearchResult | null {
   });
 }
 
-/**
- * 酷我批量索引：优先一次拉全整页时长，未命中再逐首兜底。
- *
- * 时迁酱系酷我插件的 getMusicSheetInfo（nplserver）与 getArtistWorks（r.s artist2music）
- * 映射时丢弃了接口条目自带的 duration，且歌单/歌手页 item 不带时长。
- * 两个源接口本身稳定开放（无风控），条目自带 id/musicrid + duration（秒）：
- * - 歌单：nplserver pl.svc op=getlistinfo，一次 rn=1000 拉全
- * - 歌手：search.kuwo.cn/r.s stype=artist2music，rn=100 翻页（上限 5 页）
- * www.kuwo.cn/api musicInfo 已被风控（"The request is illegal!"），仅作最后兜底。
- */
 async function buildKwSheetIndex(sheetId: string): Promise<Map<string, number>> {
   const index = new Map<string, number>();
   if (!/^\d+$/.test(sheetId)) return index;
@@ -143,7 +129,6 @@ export async function fetchKwTrackMetaByIds(
   opts?: {
     sheetId?: string;
     artistId?: string;
-    /** 增量回调：批量索引/逐首兜底每个阶段就绪即回调，调用方立即落盘，无需等慢速兜底全部跑完 */
     onPatches?: (patches: ReadonlyMap<string, WyTrackMetaPatch>) => void;
   },
 ): Promise<Map<string, WyTrackMetaPatch>> {
@@ -151,7 +136,6 @@ export async function fetchKwTrackMetaByIds(
   const validItems = items.filter(item => /^\d+$/.test(item.id));
   if (validItems.length === 0) return patches;
 
-  // 批量索引优先：歌单页/歌手页一次拉全（快且不受 musicInfo 风控影响）
   const batchIndex = new Map<string, number>();
   if (opts?.sheetId) {
     for (const [rid, ms] of await buildKwSheetIndex(opts.sheetId)) batchIndex.set(rid, ms);
@@ -163,7 +147,6 @@ export async function fetchKwTrackMetaByIds(
     const ms = batchIndex.get(item.id);
     if (ms) patches.set(item.id, { coverUrl: '', durationMs: ms });
   }
-  // 批量命中立即通知落盘（不等下方逐首兜底）
   opts?.onPatches?.(patches);
 
   const CONCURRENCY = 3;
@@ -192,8 +175,6 @@ export async function fetchKwTrackMetaByIds(
     }
   };
 
-  // 逐首 musicInfo 只处理批量索引未命中的零星条目（全命中时立即返回，不等慢队列）。
-  // www 域被风控时每首都要等超时，若全量跑会拖住整个补全的落盘时间
   const leftover = validItems.filter(item => !patches.get(item.id)?.durationMs).slice(0, 40);
   let cursor = 0;
   const worker = async () => {
@@ -208,8 +189,6 @@ export async function fetchKwTrackMetaByIds(
   );
   if (leftover.length > 0) opts?.onPatches?.(patches);
 
-  // musicInfo 仍缺时长时回退：r.s 开放接口按歌名搜索（返回 Python 风格单引号 JSON），
-  // rid 全局唯一，精确匹配 MUSICRID 后取 DURATION（秒）。限量防刷，小并发缩短串行尾巴
   const missing = validItems.filter(item => {
     const p = patches.get(item.id);
     return !p || !p.durationMs;

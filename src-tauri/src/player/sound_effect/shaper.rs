@@ -1,8 +1,3 @@
-//! 波形整形机架（阶段 3）。
-//!
-//! 失真（软/硬）/ 谐波激励器 / 次谐波低音增强 / 比特粉碎 / Lo-Fi 低保真。
-//! 全部为单声道逐采样处理（不依赖 L/R 配对），按帧内每个声道独立运算。
-
 use super::dsp::{Biquad, SmoothedValue};
 use super::SoundEffectSettings;
 
@@ -13,11 +8,8 @@ pub struct ShaperRack {
     wet_subbass: SmoothedValue,
     wet_bitcrush: SmoothedValue,
     wet_lofi: SmoothedValue,
-    // 激励器：高通 + 饱和
     exc_hp: Vec<Biquad>,
-    // 次低音：低通 + 饱和
     sub_lp: Vec<Biquad>,
-    // Lo-Fi 采样率保持
     lofi_ratio: f32,
     lofi_counter: f32,
     lofi_held: Vec<f32>,
@@ -99,26 +91,22 @@ impl ShaperRack {
         let ch = channels as usize;
         let sr = self.sample_rate;
 
-        // 失真
         let w = self.wet_distortion.tick();
         if w > 0.001 {
             let amount = (s.distortion.amount / 100.0).clamp(0.0, 1.0);
-            let drive = 1.0 + amount * 9.0; // 1x ~ 10x 驱动
-            let makeup = 1.0 / (1.0 + amount * 2.0); // 输出补偿
+            let drive = 1.0 + amount * 9.0;
+            let makeup = 1.0 / (1.0 + amount * 2.0);
             for i in 0..ch.min(frame.len()) {
                 let x = frame[i] * drive;
                 let shaped = if s.distortion.distortion_type == super::DistortionType::Hard {
-                    // 硬失真：硬限幅
                     x.clamp(-1.0, 1.0)
                 } else {
-                    // 软失真：tanh
                     x.tanh()
                 };
                 frame[i] = frame[i] * (1.0 - w) + shaped * makeup * w;
             }
         }
 
-        // 谐波激励器：高通 → 软饱和 → 混回
         let w = self.wet_exciter.tick();
         if w > 0.001 {
             let amount = (s.exciter.amount / 100.0).clamp(0.0, 1.0);
@@ -132,7 +120,6 @@ impl ShaperRack {
             }
         }
 
-        // 次谐波低音增强：低通 → 软饱和（增加低频谐波，听感更厚）
         let w = self.wet_subbass.tick();
         if w > 0.001 {
             let amount = (s.sub_bass.amount / 100.0).clamp(0.0, 1.0);
@@ -146,7 +133,6 @@ impl ShaperRack {
             }
         }
 
-        // 比特粉碎
         let w = self.wet_bitcrush.tick();
         if w > 0.001 {
             let bits = s.bitcrush.bits.clamp(2.0, 16.0);
@@ -157,20 +143,17 @@ impl ShaperRack {
             }
         }
 
-        // Lo-Fi：采样率保持 + 比特深度 + 噪声
         let w = self.wet_lofi.tick();
         if w > 0.001 {
             let bits = s.lo_fi.bit_depth.clamp(4.0, 16.0);
             let levels = (2.0_f32).powf(bits - 1.0);
             let noise_amt = (s.lo_fi.noise / 100.0).clamp(0.0, 1.0) * 0.05;
             let ratio = self.lofi_ratio.max(1.0);
-            // 采样率保持：每 ratio 个采样更新一次 held 值
             self.lofi_counter += 1.0;
             let update = self.lofi_counter >= ratio;
             if update {
                 self.lofi_counter -= ratio;
             }
-            // 简易噪声（线性同余）
             let noise = pseudo_noise();
             for i in 0..ch.min(frame.len()) {
                 if i < self.lofi_held.len() {
@@ -187,7 +170,6 @@ impl ShaperRack {
     }
 }
 
-/// 极简伪随机噪声（0..1），避免引入 rand 依赖
 fn pseudo_noise() -> f32 {
     use std::cell::Cell;
     thread_local! {

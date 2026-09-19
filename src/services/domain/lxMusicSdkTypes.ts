@@ -1,10 +1,6 @@
-/**
- * LX 协议 SDK · 类型与常量（叶子，无依赖）。
- */
 
 export type LxSourceId = 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
 
-/** Source name mapping */
 export const LX_SOURCE_NAMES: Record<LxSourceId, string> = {
   kw: '小蜗音乐',
   kg: '小枸音乐',

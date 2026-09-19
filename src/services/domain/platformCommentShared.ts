@@ -1,8 +1,3 @@
-/**
- * 宿主直连平台评论 · 共享类型与工具。
- *
- * 平台识别、通用 HTTP JSON 请求、MusicFree 条目解包，供各平台评论子模块复用。
- */
 import { pluginHttpRequest } from '../tauri/pluginApi';
 import type { PluginSearchResult, PluginSource } from '../../types';
 
@@ -35,7 +30,6 @@ const PLATFORM_PATTERNS: Array<[CommentPlatform, RegExp]> = [
   ['qishui', /汽水|qishui/i],
 ];
 
-/** 判断歌曲所属的评论平台（按插件名/平台字段匹配，顺序决定优先级） */
 export function detectCommentPlatform(
   source: PluginSource | null | undefined,
   platformText?: string | null,
@@ -48,11 +42,6 @@ export function detectCommentPlatform(
   return null;
 }
 
-/**
- * 提取评论接口所需的 MusicFree 原始歌曲条目。
- * 正常传入的 rawData 即 MusicFree 条目；若调用方仍传入搜索阶段的
- * PluginSearchResult 包装（pluginId+rawData 同时存在），再解一层内嵌。
- */
 export function extractMediaItem(item: PluginSearchResult): any {
   const inner = (item as any)?.rawData;
   if (inner?.pluginId && inner?.rawData) return inner.rawData;

@@ -3,8 +3,6 @@ import { createPinia, setActivePinia } from 'pinia';
 
 import type { OnlineDetailContext, OnlineDetailStateCache } from './store';
 
-// node 环境无 localStorage，真实路由的 onboarding 门会拦截一切导航；
-// openDetail 依赖 router.currentRoute 区分"详情流内下钻"与"一级/外部进入"，这里用可控行路由替身
 const { routeState, pushMock, replaceMock } = vi.hoisted(() => {
   const routeState = { path: '/' };
   const pushMock = vi.fn(async (to: any) => {
@@ -55,7 +53,6 @@ const makeState = (tag: string): OnlineDetailStateCache => ({
   scrollTop: 300,
 });
 
-/** 模拟"已处于详情流"的路由状态 */
 async function enterDetailRoute() {
   await pushMock({ path: '/online-detail' });
 }
@@ -116,13 +113,11 @@ describe('onlineDetail store 帧栈模型', () => {
   describe('详情流导航（openDetail/popDetail）', () => {
     it('从一级/外部页面进入：清空帧栈开启全新详情流，导航令牌递增', async () => {
       const store = useOnlineDetailStore();
-      // 先制造一个旧详情流
       await enterDetailRoute();
       store.openDetail(makeArtistContext({ title: '旧歌手' }));
       store.openDetail(makeAlbumContext({ title: '旧专辑' }));
       expect(store.detailStack.length).toBe(1);
 
-      // 离开详情流后再次进入：帧栈清空
       routeState.path = '/';
       const d = store.openDetail(makeArtistContext({ title: '新歌手' }));
       expect(d).toBeGreaterThan(0);
@@ -173,7 +168,6 @@ describe('onlineDetail store 帧栈模型', () => {
       const stateA = makeState('A');
       store.openDetail(makeAlbumContext({ title: '专辑A' }), stateA);
 
-      // 当前帧是专辑，栈顶是携带状态快照的歌手帧
       expect(store.currentDetail?.context.type).toBe('album');
       expect(store.canPopDetail()).toBe(true);
 
@@ -186,7 +180,6 @@ describe('onlineDetail store 帧栈模型', () => {
       const store = useOnlineDetailStore();
       store.openDetail(makeArtistContext({ title: '歌手A' }));
       await enterDetailRoute();
-      // 外部入口（弹窗）下钻：openOnlineDetail 未携带状态
       store.openDetail(makeAlbumContext({ title: '专辑A' }));
 
       const stateA = makeState('A');
@@ -199,26 +192,20 @@ describe('onlineDetail store 帧栈模型', () => {
 
     it('嵌套导航下 state 与对应帧绑定，不与其他帧错位', async () => {
       const store = useOnlineDetailStore();
-      // 歌手A → 专辑A（携带歌手A状态）
       store.openDetail(makeArtistContext({ title: '歌手A' }));
       await enterDetailRoute();
       const stateA = makeState('A');
       store.openDetail(makeAlbumContext({ title: '专辑A' }), stateA);
-      // 专辑A → 查看歌手 → 歌手B（携带专辑A状态）
       const stateAlbumA = makeState('albumA');
       store.openDetail(makeArtistContext({ title: '歌手B' }), stateAlbumA);
-      // 歌手B → 专辑B（携带歌手B状态）
       const stateB = makeState('B');
       store.openDetail(makeAlbumContext({ title: '专辑B' }), stateB);
       expect(store.detailStack).toHaveLength(3);
 
-      // 返回歌手B：恢复的是歌手B的状态
       expect(store.popDetail()?.state).toEqual(stateB);
-      // 返回专辑A：恢复专辑A的状态
       const albumFrame = store.popDetail();
       expect(albumFrame?.context.title).toBe('专辑A');
       expect(albumFrame?.state).toEqual(stateAlbumA);
-      // 返回歌手A：恢复歌手A的状态
       expect(store.popDetail()?.state).toEqual(stateA);
     });
   });
@@ -267,7 +254,6 @@ describe('onlineDetail store 帧栈模型', () => {
       const frame = store.popDetail();
       expect(frame?.context.type).toBe('artist');
       expect(frame?.state).toEqual(stateA);
-      // 返回该帧时用其原始令牌 replace 回 URL
       expect(frame?.d).toBe(dArtist);
       expect(store.currentDetail?.context.title).toBe('歌手A');
     });
@@ -287,7 +273,6 @@ describe('onlineDetail store 帧栈模型', () => {
       expect(store.currentDetail).toBeNull();
       expect(store.detailStack).toHaveLength(0);
       expect(store.canPopDetail()).toBe(false);
-      // 一级页面缓存保留，由调用方按去向决定是否清理
       expect(store.topListsCache).not.toBeNull();
       expect(store.searchPageCache).not.toBeNull();
     });

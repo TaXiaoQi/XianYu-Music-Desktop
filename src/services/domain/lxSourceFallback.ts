@@ -1,13 +1,3 @@
-/**
- * 落雪音源自动换源服务
- *
- * 当 lx:// 歌曲在某个音源起播失败时，由 Rust 后端在其余落雪平台搜索同名同歌手的歌曲，
- * 构造新的 Song 对象返回，供 playerPlayback 递归调用 playSong 重试。
- *
- * [项4 源回退集中] 搜索与匹配由 Rust 后端完成（find_alternative_lx_source，
- * 自带 5 分钟搜索缓存），直链解析由前端插件编排层 lxUrlResolver.ts 按其
- * 缓存与回退策略完成。
- */
 
 import type { Song } from '../../types';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
@@ -17,10 +7,6 @@ import { parseIntervalToSeconds } from '../../utils/remoteSong';
 import { pluginApi } from '../tauri/pluginApi';
 import type { AlternativeSourceResultContract } from '../tauri/contracts';
 
-/**
- * 将 Rust 返回的换源结果转换为 Song 对象
- * 参考 Search.vue handlePlaySong 的构造方式
- */
 function buildSongFromRustResult(result: AlternativeSourceResultContract): Song {
   const songDuration = parseIntervalToSeconds(result.interval);
   const artistNames = result.singer
@@ -45,7 +31,6 @@ function buildSongFromRustResult(result: AlternativeSourceResultContract): Song 
     remote_source_id: `lx://${result.source}/${result.songmid}`,
   } as any;
 
-  // 挂载 LX 解析所需元信息（与 Search.vue 一致）
   (song as any)._hash = result.hash;
   (song as any)._types = result.lxTypes;
   (song as any)._copyrightId = result.copyrightId;
@@ -55,11 +40,7 @@ function buildSongFromRustResult(result: AlternativeSourceResultContract): Song 
   return song;
 }
 
-/**
- * 缓存换源结果（供 playerPlayback 解析 URL 和歌词时使用）
- */
 function cacheLxItemFromRustResult(result: AlternativeSourceResultContract): void {
-  // 构造 LxSearchResultItem 兼容格式供 cacheLxSong / cacheLxSongInfo 使用
   const songDuration = parseIntervalToSeconds(result.interval);
   cacheLxSong({
     name: result.name,
@@ -100,22 +81,10 @@ function cacheLxItemFromRustResult(result: AlternativeSourceResultContract): voi
   });
 }
 
-/**
- * 查找替代落雪音源
- *
- * [项4 源回退集中 · 双端通用] 搜索与匹配由 Rust 后端完成（带搜索结果缓存），
- * 直链解析由插件编排层（resolveLxUrl）按缓存与回退策略进行。
- * 前端只上报失败源集合。
- *
- * @param song 失败的原歌曲
- * @param failedSources 已失败的音源集合（包含当前音源）
- * @returns 新的 Song 对象，或 null（未找到匹配）
- */
 export async function findAlternativeLxSource(
   song: Song,
   failedSources: Set<string>,
 ): Promise<Song | null> {
-  // 提取歌手名用于搜索关键词
   const artistStr = song.effective_artist_names?.length
     ? song.effective_artist_names.join('、')
     : song.artist || '';
@@ -130,7 +99,6 @@ export async function findAlternativeLxSource(
 
     if (!result) return null;
 
-    // 缓存搜索结果（供后续 URL 解析和歌词获取使用）
     cacheLxItemFromRustResult(result);
 
     return buildSongFromRustResult(result);
@@ -140,9 +108,6 @@ export async function findAlternativeLxSource(
   }
 }
 
-/**
- * 获取音源的显示名称（供 toast 提示使用）
- */
 export function getLxSourceDisplayName(source: string): string {
   return LX_SOURCE_NAMES[source as LxSourceId] ?? '在线';
 }

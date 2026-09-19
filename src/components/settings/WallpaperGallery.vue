@@ -59,37 +59,30 @@ const handleClose = () => {
   }, 220);
 };
 
-// 当前标签：browse 浏览壁纸中心 / mine 我的上传 / downloads 我的下载
 const activeTab = ref<WallpaperTab>('browse');
 
-// 登录态
 const auth = getStoredAuth();
 const isLoggedIn = computed(() => !!auth && !!auth.user?.ciyuanxi_id);
 const currentUser = computed(() => auth?.user);
 
-// 我的上传
 const myWallpapers = ref<MyWallpaper[]>([]);
 const myLoading = ref(false);
 const myError = ref('');
 
-// 我的下载
 const downloadedWallpapers = ref<DownloadedWallpaper[]>([]);
 const selectedDownloadIds = ref<number[]>([]);
 const deletingDownloads = ref(false);
 const showBatchOps = ref(false);
 
-/** 判断某个本地壁纸是否正在被使用 */
 const isCurrentWallpaper = (localPath: string) => {
   return !!props.currentPath && props.currentPath === localPath;
 };
 
-/** 判断某个在线壁纸（通过 id）是否已被下载且正在使用 */
 const isWallpaperInUse = (id: number) => {
   const record = downloadedRecord(id);
   return !!record && isCurrentWallpaper(record.localPath);
 };
 
-// 上传相关
 const showUploadModal = ref(false);
 const isUploadClosing = ref(false);
 const uploadForm = ref({ title: '', description: '', category: '' });
@@ -136,8 +129,6 @@ const fetchMyWallpapers = async () => {
       ciyuanxi_id: currentUser.value.ciyuanxi_id,
       platform: 'desktop',
     });
-    // 与 fetchWallpapers 一致，对 API 返回字段做容错映射，
-    // 兼容 camelCase / snake_case 以及 pending 状态下缺少 thumbnailUrl 的情况
     myWallpapers.value = Array.isArray(data) ? data.map((w: Record<string, unknown>) => ({
       id: Number(w.id || 0),
       title: String(w.title || ''),
@@ -234,7 +225,6 @@ const onFileChange = (e: Event) => {
     return;
   }
   const file = input.files[0];
-  // 校验类型
   if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
     uploadError.value = '只支持 JPG / PNG / WEBP / GIF 格式';
     input.value = '';
@@ -242,7 +232,6 @@ const onFileChange = (e: Event) => {
     clearUploadPreview();
     return;
   }
-  // 校验大小（30MB）
   if (file.size > 30 * 1024 * 1024) {
     uploadError.value = '图片过大，请选择 30MB 以内的图片'
     input.value = ''
@@ -255,7 +244,6 @@ const onFileChange = (e: Event) => {
   uploadPreview.value = URL.createObjectURL(file);
 };
 
-/** 使用 Canvas 压缩图片为 data URL（JPEG），最大宽度 1920，质量 0.85 */
 const compressImageToDataUrl = (file: File, maxWidth = 1920, quality = 0.85): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -310,7 +298,6 @@ const doUpload = async () => {
   uploading.value = true;
   uploadError.value = '';
   try {
-    // Canvas 压缩为 base64（传输用 0.80 质量，服务端会再次压缩到质量 82 存储）
     const imageData = await compressImageToDataUrl(uploadFile.value, 1920, 0.80);
     await signedRequest(
       'upload_wallpaper',
@@ -333,7 +320,6 @@ const doUpload = async () => {
       clearUploadPreview();
       uploadCloseTimer = null;
     }, 150);
-    // 切到「我的上传」并刷新
     activeTab.value = 'mine';
     await fetchMyWallpapers();
   } catch (err) {
@@ -447,7 +433,6 @@ onBeforeUnmount(() => {
         class="wallpaper-card flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
         :class="{ 'is-closing': isClosing }"
       >
-        <!-- 头部 -->
         <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3">
           <div class="flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#EC4141]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -465,7 +450,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <!-- 标签栏 + 右侧操作 -->
         <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-2">
           <div class="flex gap-1">
             <button
@@ -489,7 +473,6 @@ onBeforeUnmount(() => {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             上传壁纸
           </button>
-          <!-- 批量管理（仅"我的下载"标签显示） -->
           <div v-if="activeTab === 'downloads' && downloadedWallpapers.length > 0" class="relative">
             <button
               @click="showBatchOps = !showBatchOps"
@@ -502,9 +485,7 @@ onBeforeUnmount(() => {
               <span>批量管理</span>
               <span v-if="selectedDownloadIds.length" class="rounded-full bg-[#EC4141] px-1.5 text-[10px] text-white">{{ selectedDownloadIds.length }}</span>
             </button>
-            <!-- 点击外部关闭 dropdown -->
             <div v-if="showBatchOps" class="fixed inset-0 z-[19]" @click="showBatchOps = false"></div>
-            <!-- 展开的操作面板 -->
             <div
               v-if="showBatchOps"
               class="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-xl border border-white/15 bg-neutral-900/95 py-1 shadow-2xl backdrop-blur-md"
@@ -536,7 +517,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 未登录提示（我的上传） -->
         <div v-if="activeTab === 'mine' && !isLoggedIn" class="min-h-0 flex-1 flex flex-col items-center justify-center py-20 text-white/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="mb-3 h-10 w-10 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -544,7 +524,6 @@ onBeforeUnmount(() => {
           <p class="text-sm">请先登录账号后再上传壁纸</p>
         </div>
 
-        <!-- 内容区 -->
         <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
           <!-- ====== 浏览：加载中 ====== -->
           <div v-if="activeTab === 'browse' && isLoading" class="flex flex-col items-center justify-center py-20 text-white/40">
@@ -646,11 +625,9 @@ onBeforeUnmount(() => {
               <div class="aspect-[3/2] w-full overflow-hidden">
                 <img :src="wp.thumbnailUrl || wp.imageUrl" :alt="wp.title" loading="eager" class="h-full w-full object-cover" :class="wp.status === 'rejected' || wp.status === 'disabled' ? 'opacity-50 grayscale' : ''" />
               </div>
-              <!-- 状态徽标 -->
               <div class="absolute left-2 top-2">
                 <span :class="['rounded-full px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm', statusMeta(wp.status).cls]">{{ statusMeta(wp.status).text }}</span>
               </div>
-              <!-- 正在使用 徽标 -->
               <div v-if="isWallpaperInUse(wp.id)" class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
                 正在使用
@@ -693,12 +670,10 @@ onBeforeUnmount(() => {
                   class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
                   :class="selectedDownloadIds.includes(item.id) ? 'border-[#EC4141]/70 shadow-[0_0_15px_rgba(236,65,65,0.2)]' : isCurrentWallpaper(item.localPath) ? 'border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'border-white/10 hover:border-[#EC4141]/50'"
                 >
-                  <!-- 正在使用 徽标 -->
                   <div v-if="isCurrentWallpaper(item.localPath)" class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
                     正在使用
                   </div>
-                  <!-- 批量选择 checkbox（仅展开批量管理时显示） -->
                   <button
                     v-if="showBatchOps"
                     @click.stop="toggleDownloadSelection(item.id)"
@@ -729,13 +704,11 @@ onBeforeUnmount(() => {
             </template>
           </div>
 
-          <!-- 下载错误提示 -->
           <div v-if="downloadError" class="mt-4 rounded-lg border border-[#EC4141]/30 bg-[#EC4141]/10 px-4 py-2 text-xs text-[#ff8a8a]">
             下载失败：{{ downloadError }}
           </div>
         </div>
 
-        <!-- 底部说明 -->
         <div class="shrink-0 border-t border-white/10 px-5 py-2 text-center text-[11px] text-white/30">
           <template v-if="activeTab === 'browse'">点击「下载并使用」将保存到本地，已下载壁纸会直接复用，避免重复下载</template>
           <template v-else-if="activeTab === 'mine'">用户上传的壁纸需经管理员审核通过后才会展示在壁纸中心</template>
@@ -743,7 +716,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- 上传弹窗 -->
       <div
         v-if="showUploadModal"
         class="upload-overlay fixed inset-0 z-[10002] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
@@ -822,7 +794,6 @@ onBeforeUnmount(() => {
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* 离开动画（is-closing 类驱动） */
 .wallpaper-overlay.is-closing {
   opacity: 0;
 }
@@ -854,7 +825,6 @@ onBeforeUnmount(() => {
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* 离开动画（is-closing 类驱动） */
 .upload-overlay.is-closing {
   opacity: 0;
 }

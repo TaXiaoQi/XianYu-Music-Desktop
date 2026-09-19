@@ -60,7 +60,6 @@ const getRetainedFullCoverPaths = (path: string) => {
     retainedPaths.push(candidatePath);
   };
 
-  // Temp queue items will be played before the regular queue.
   pushUniquePath(tempQueue.value[0]?.path);
 
   const queue = playQueue.value;
@@ -108,8 +107,6 @@ watch([currentSongPath, () => props.isExpanded], async ([path, isExpanded]) => {
   try {
     const fullCoverUrl = await fullCoverLoad;
     if (requestId !== fullCoverRequestId || path !== currentSongPath.value || !props.isExpanded) return;
-    // [在线歌曲] loadFullCover 对 plugin:// 返回空（后端无法读取本地封面），
-    // 不能清空 currentCoverFull，否则会覆盖 immediateCover 路径已设置的代理封面。
     if (fullCoverUrl) {
       currentCoverFull.value = fullCoverUrl;
     }
@@ -175,7 +172,6 @@ const handleCoverClick = (event: MouseEvent) => {
 <template>
   <div class="pointer-events-none">
     
-    <!-- Album Art -->
     <div
       ref="detailCoverRef"
       class="absolute aspect-square transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] z-[70] will-change-transform"
@@ -191,7 +187,6 @@ const handleCoverClick = (event: MouseEvent) => {
       }"
       @click="handleCoverClick"
     >
-      <!-- Main Cover Container -->
       <div class="w-full h-full rounded-[inherit] overflow-hidden relative isolate z-20">
         <img v-if="displayedLocalCoverUrl" :key="`thumb:${currentSongPath}:${displayedLocalCoverUrl}`" :src="displayedLocalCoverUrl" @error="onLocalCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-[transform,filter,opacity] duration-[240ms] ease-out z-10" :class="props.isExpanded ? (fullCoverLoading ? 'scale-[1.03] blur-[10px] brightness-90' : 'scale-100 blur-0 brightness-100') : 'scale-125 blur-0 brightness-100'" draggable="false" decoding="async" referrerpolicy="no-referrer" />
         <img v-if="currentBigCoverUrl" :key="`big:${currentSongPath}:${currentBigCoverUrl}`" :src="currentBigCoverUrl" @load="onBigCoverLoad" @error="onBigCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-opacity duration-[240ms] ease-out z-20" :class="[props.isExpanded ? 'scale-100' : 'scale-125', bigCoverLoaded ? 'opacity-100' : 'opacity-0']" draggable="false" decoding="async" referrerpolicy="no-referrer" />
@@ -200,14 +195,11 @@ const handleCoverClick = (event: MouseEvent) => {
         </div>
       </div>
 
-      <!-- Glass Table Reflection Layer -->
       <transition name="reflection-reveal" appear>
         <div v-if="props.isExpanded" class="absolute top-[calc(100%+2px)] left-0 w-full h-[65%] pointer-events-none z-10 reflection-wrapper rounded-[inherit] overflow-hidden">
-          <!-- 清晰层：中间清晰，四周淡出 -->
           <div class="absolute inset-0 reflection-glass reflection-glass--sharp rounded-[inherit] overflow-hidden">
             <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" referrerpolicy="no-referrer" />
           </div>
-          <!-- 模糊层：只在四周边缘显示，让边缘虚化 -->
           <div class="absolute inset-0 reflection-glass reflection-glass--blur rounded-[inherit] overflow-hidden">
             <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" referrerpolicy="no-referrer" />
           </div>
@@ -222,15 +214,11 @@ const handleCoverClick = (event: MouseEvent) => {
 .reflection-wrapper {
   perspective: 1500px;
   transform-origin: top;
-  /* rotateX(50deg) 让倒影铺在桌面上 */
-  /* skewX(-15deg) 让它变成平行四边形 */
-  /* scale(1.1) 补偿旋转带来的视觉缩小，确保边缘对齐 */
   transform: rotateX(40deg) skewX(-18deg) scale(1.01);
   opacity: 0.2;
 }
 
 .reflection-glass {
-  /* 上下方向的淡出（垂直渐变），两层共用 */
   -webkit-mask-image: linear-gradient(
     to bottom,
     black 0%,
@@ -245,7 +233,6 @@ const handleCoverClick = (event: MouseEvent) => {
   );
 }
 
-/* 清晰层：中间清晰，靠近左右/底部边缘时淡出，把边缘让给模糊层 */
 .reflection-glass--sharp {
   -webkit-mask-image:
     linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
@@ -257,7 +244,6 @@ const handleCoverClick = (event: MouseEvent) => {
   mask-composite: intersect;
 }
 
-/* 模糊层：整层模糊，用径向 mask 挖空中心，只在四周边缘可见，形成边缘虚化 */
 .reflection-glass--blur {
   filter: blur(4px);
   -webkit-mask-image:

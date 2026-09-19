@@ -53,7 +53,6 @@ fn find_window_recursive(
         return std::ptr::null_mut();
     }
 
-    // 检查当前窗口的类名是否匹配（无分配高速比对）
     let mut class_name = [0u16; 256];
     let len = unsafe {
         windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW(
@@ -74,7 +73,6 @@ fn find_window_recursive(
         return std::ptr::null_mut();
     }
 
-    // 遍历子窗口
     let mut child = unsafe {
         windows_sys::Win32::UI::WindowsAndMessaging::GetWindow(
             hwnd,
@@ -120,13 +118,11 @@ pub fn setup_taskbar_window(app: tauri::AppHandle) -> OwnerBindingState {
                 if let RawWindowHandle::Win32(win32) = handle.as_raw() {
                     let hwnd = win32.hwnd.get() as HWND;
 
-                    // 1. 设置 WS_EX_NOACTIVATE 扩展样式以尽量避免抢占焦点
                     unsafe {
                         let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
                         SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_NOACTIVATE as i32);
                     }
 
-                    // 2. 绑定 Owner 到 Shell_TrayWnd（主任务栏）
                     let shell_tray_class: Vec<u16> = "Shell_TrayWnd\0".encode_utf16().collect();
                     let hwnd_taskbar =
                         unsafe { FindWindowW(shell_tray_class.as_ptr(), std::ptr::null()) };
@@ -183,7 +179,6 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
             .get_webview_window(TASKBAR_PLAYER_WINDOW_LABEL)
             .ok_or_else(|| "Taskbar player window not found".to_string())?;
 
-        // 1. 查找当前主系统任务栏句柄
         let shell_tray_class: Vec<u16> = "Shell_TrayWnd\0".encode_utf16().collect();
         let current_hwnd_taskbar =
             unsafe { FindWindowW(shell_tray_class.as_ptr(), std::ptr::null()) };
@@ -196,7 +191,6 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
         let mut hwnd_changed = false;
         let mut owner_binding = OwnerBindingState::AlreadyBound;
 
-        // 检测到 Explorer 重建时（HWND 变化），自愈重绑
         if last_hwnd != current_hwnd_taskbar as isize {
             hwnd_changed = true;
             if let Ok(handle) = window.as_ref().window().window_handle() {
@@ -231,7 +225,6 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
             }
         }
 
-        // 2. 提取任务栏物理矩形坐标
         let mut abd = APPBARDATA {
             cbSize: std::mem::size_of::<APPBARDATA>() as u32,
             hWnd: current_hwnd_taskbar,
@@ -255,13 +248,11 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
         if got_taskbar {
             taskbar_rect = abd.rc;
         } else {
-            // SHAppBarMessage 失败时的 GetWindowRect 物理兜底
             unsafe {
                 GetWindowRect(current_hwnd_taskbar, &mut taskbar_rect);
             }
         }
 
-        // 3. 递归安全深度查找托盘通知区域，限制在 3 层内，最多遍历 64 个节点
         let tray_class_utf16: Vec<u16> = "TrayNotifyWnd".encode_utf16().collect();
         let mut node_count = 0;
         let hwnd_tray = find_window_recursive(
@@ -292,7 +283,6 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
                 bottom: tray_rect.bottom,
             })
         } else {
-            // 静默返回 None 作为正常无托盘/重建中的兜底分支，不刷 warning 日志
             None
         };
 
@@ -322,13 +312,6 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
     }
 }
 
-// ── Z-order 守护：防止任务栏点击遮盖播控窗口 ──────────────────────────────────
-//
-// 原理：注册三路 WinEventHook，监听与 TopMostGuard 完全相同的事件集。
-// 当任意"前台窗口切换"或"Shell 类窗口焦点/菜单"事件发生时，立即将播控窗口
-// 重新置顶（SetWindowPos HWND_TOPMOST），从而在用户感知帧内完成补救。
-// 该 hook 使用 WINEVENT_OUTOFCONTEXT，由专用守护线程的消息循环驱动，
-// 不注入目标进程，安全可靠。
 #[cfg(target_os = "windows")]
 mod zorder_guard {
     use std::sync::atomic::{AtomicIsize, AtomicU64, Ordering};
@@ -345,25 +328,12 @@ mod zorder_guard {
         WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP,
     };
 
-    /// 播控窗口 HWND（跨线程原子存储）
     pub static PLAYER_HWND: AtomicIsize = AtomicIsize::new(0);
     static REFRESH_TOKEN: AtomicU64 = AtomicU64::new(0);
 
-    /// 守护线程控制消息
     const WM_INSTALL: u32 = WM_APP + 0x200;
     const WM_UNINSTALL: u32 = WM_APP + 0x201;
 
-    // ── 监听与 TopMostGuard 完全相同的三类事件 ─────────────────────────────────
-    //
-    // EVENT_OBJECT_LOCATIONCHANGE（0x800B）在纯 Z-order 变化（窗口只改变层级，
-    // 不改变位置/大小）时【不会】触发，因此不能用于捕捉任务栏被置顶的场景。
-    //
-    // 正确做法：
-    //   • EVENT_SYSTEM_FOREGROUND (0x0003)：任意窗口成为前台窗口时触发。
-    //     点击任务栏空白区域会让 Shell_TrayWnd 成为前台，此事件必然触发。
-    //   • EVENT_OBJECT_FOCUS     (0x8005)：焦点转移到 Shell 类窗口时触发。
-    //     捕捉 NotifyIconOverflowWindow（显示/隐藏图标箭头弹出框）等场景。
-    //   • EVENT_SYSTEM_MENUSTART (0x0004)：开始菜单或系统菜单弹出时触发。
     const EVENT_SYSTEM_FOREGROUND: u32 = 0x0003;
     const EVENT_SYSTEM_MENUSTART: u32 = 0x0004;
     const EVENT_OBJECT_FOCUS: u32 = 0x8005;
@@ -374,7 +344,6 @@ mod zorder_guard {
 
     static GUARD_THREAD: OnceLock<GuardThread> = OnceLock::new();
 
-    /// 获取窗口的根祖先（最顶层父窗口）
     fn root_window(hwnd: HWND) -> HWND {
         if hwnd.is_null() {
             return hwnd;
@@ -389,7 +358,6 @@ mod zorder_guard {
         }
     }
 
-    /// 判断是否为 Shell 类窗口（任务栏、通知区域、溢出窗口等）
     fn is_shell_window(hwnd: HWND) -> bool {
         if hwnd.is_null() {
             return false;
@@ -454,11 +422,6 @@ mod zorder_guard {
         });
     }
 
-    /// WinEventHook 回调（与 TopMostGuard 逻辑对称，但守护目标是播控窗口）
-    ///
-    /// • EVENT_SYSTEM_FOREGROUND：任意窗口变为前台时重新置顶播控窗口
-    /// • EVENT_OBJECT_FOCUS / EVENT_SYSTEM_MENUSTART：仅当事件源是 Shell 类
-    ///   窗口时响应（避免对普通应用的焦点切换产生不必要的 SetWindowPos 调用）
     unsafe extern "system" fn hook_proc(
         _hook: HWINEVENTHOOK,
         event: u32,
@@ -473,16 +436,13 @@ mod zorder_guard {
             return;
         }
 
-        // 事件源根窗口是播控窗口自身时跳过，避免自触发
         let source_root = root_window(hwnd);
         if !source_root.is_null() && source_root == player {
             return;
         }
 
         let should_refresh = match event {
-            // 任意前台切换都需要重置，因为新前台窗口可能是 TOPMOST
             EVENT_SYSTEM_FOREGROUND => true,
-            // 焦点/菜单事件仅在 Shell 类窗口上响应
             EVENT_OBJECT_FOCUS | EVENT_SYSTEM_MENUSTART => is_shell_window(source_root),
             _ => false,
         };
@@ -492,7 +452,6 @@ mod zorder_guard {
         }
     }
 
-    /// 惰性启动守护线程（进程生命周期内仅初始化一次）
     fn guard_thread() -> &'static GuardThread {
         GUARD_THREAD.get_or_init(|| {
             let (tx, rx) = mpsc::channel::<u32>();
@@ -500,15 +459,13 @@ mod zorder_guard {
             std::thread::spawn(move || unsafe {
                 let tid = GetCurrentThreadId();
 
-                // 先强制创建消息队列，再通知主线程，防止 PostThreadMessageW 发到空队列
                 let mut msg: MSG = std::mem::zeroed();
                 PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_NOREMOVE);
                 let _ = tx.send(tid);
 
-                // 同时维护三个 hook 句柄，对应三类事件
-                let mut hook_fg: HWINEVENTHOOK = std::ptr::null_mut(); // EVENT_SYSTEM_FOREGROUND
-                let mut hook_focus: HWINEVENTHOOK = std::ptr::null_mut(); // EVENT_OBJECT_FOCUS
-                let mut hook_menu: HWINEVENTHOOK = std::ptr::null_mut(); // EVENT_SYSTEM_MENUSTART
+                let mut hook_fg: HWINEVENTHOOK = std::ptr::null_mut();
+                let mut hook_focus: HWINEVENTHOOK = std::ptr::null_mut();
+                let mut hook_menu: HWINEVENTHOOK = std::ptr::null_mut();
 
                 let install_hook = |event: u32| -> HWINEVENTHOOK {
                     SetWinEventHook(
@@ -516,8 +473,8 @@ mod zorder_guard {
                         event,
                         std::ptr::null_mut(),
                         Some(hook_proc),
-                        0, // 所有进程
-                        0, // 所有线程
+                        0,
+                        0,
                         WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
                     )
                 };
@@ -536,7 +493,6 @@ mod zorder_guard {
 
                     match msg.message {
                         WM_INSTALL => {
-                            // 先卸载旧 hook，防止重复安装
                             unhook(&mut hook_fg);
                             unhook(&mut hook_focus);
                             unhook(&mut hook_menu);
@@ -558,18 +514,19 @@ mod zorder_guard {
                     }
                 }
 
-                // 线程异常退出时确保所有 hook 被清理
                 unhook(&mut hook_fg);
                 unhook(&mut hook_focus);
                 unhook(&mut hook_menu);
             });
 
-            let thread_id = rx.recv().expect("taskbar zorder guard thread init failed");
+            let thread_id = rx.recv().unwrap_or_else(|_| {
+                eprintln!("[taskbar] 任务栏置顶守护线程初始化失败，功能降级");
+                0
+            });
             GuardThread { thread_id }
         })
     }
 
-    /// 安装 Z-order 守护：记录播控窗口 HWND 并启动 WinEventHook
     pub fn install(player_hwnd: isize) {
         PLAYER_HWND.store(player_hwnd, Ordering::Relaxed);
         schedule_player_topmost_refresh(player_hwnd as HWND);
@@ -579,24 +536,20 @@ mod zorder_guard {
         }
     }
 
-    /// 主动刷新播控窗口层级，不重复安装 hook。
     pub fn refresh(player_hwnd: isize) {
         schedule_player_topmost_refresh(player_hwnd as HWND);
     }
 
-    /// 卸载 Z-order 守护：移除 WinEventHook 并清空 HWND
     pub fn uninstall() {
         if let Some(t) = GUARD_THREAD.get() {
             unsafe {
                 PostThreadMessageW(t.thread_id, WM_UNINSTALL, 0, 0);
             }
         } else {
-            // 守护线程尚未初始化时，直接清空 HWND 即可
             PLAYER_HWND.store(0, Ordering::Relaxed);
         }
     }
 
-    /// 向守护线程发送 WM_QUIT 使其退出消息循环，释放线程
     pub fn shutdown() {
         if let Some(t) = GUARD_THREAD.get() {
             unsafe {
@@ -606,8 +559,6 @@ mod zorder_guard {
     }
 }
 
-/// 安装任务栏 Z-order 守护。
-/// 播控窗口显示后调用，传入播控窗口句柄以监听其是否被任务栏遮盖。
 #[tauri::command]
 pub fn install_taskbar_zorder_guard(app: tauri::AppHandle) -> bool {
     #[cfg(target_os = "windows")]
@@ -632,7 +583,6 @@ pub fn install_taskbar_zorder_guard(app: tauri::AppHandle) -> bool {
     }
 }
 
-/// 主动刷新任务栏播控窗口 Z-order。
 #[tauri::command]
 pub fn refresh_taskbar_window_topmost(app: tauri::AppHandle) -> bool {
     #[cfg(target_os = "windows")]
@@ -657,8 +607,6 @@ pub fn refresh_taskbar_window_topmost(app: tauri::AppHandle) -> bool {
     }
 }
 
-/// 卸载任务栏 Z-order 守护。
-/// 播控窗口隐藏或销毁前调用，防止回调访问已失效的 HWND。
 #[tauri::command]
 pub fn uninstall_taskbar_zorder_guard() {
     #[cfg(target_os = "windows")]
@@ -667,7 +615,6 @@ pub fn uninstall_taskbar_zorder_guard() {
     }
 }
 
-/// 关闭任务栏 Z-order 守护线程（WM_QUIT），用于应用退出时释放线程。
 pub fn shutdown_taskbar_zorder_guard() {
     #[cfg(target_os = "windows")]
     {

@@ -1,13 +1,3 @@
-/**
- * 兜底模块服务端同步：拉取 → ed25519 验签 → 写入缓存（下次使用生效）。
- *
- * 复用账号 API 的签名通道（signedRequest，与 get_latest_version 同级公开端点），
- * 启动时拉取一次，之后每 30 分钟轮询；所有失败静默（保留本地缓存）。
- *
- * 安全模型：服务器私钥对 (moduleKey|version|code) 签名，客户端内嵌公钥验签通过才允许执行。
- * 无法仅依赖 HTTPS + 自算 digest（digest 与代码同源下发，不具防篡改作用），
- * 故以 Rust `verify_fallback_module_signature` 的验签结果作为唯一准入依据。
- */
 import { signedRequest } from '../auth/authService';
 import { tauriInvoke } from '../tauri/invoke';
 import { applyServerFallbackModules, sanitizeFallbackModuleCache } from './registry';
@@ -18,7 +8,6 @@ const SYNC_INTERVAL_MS = 30 * 60 * 1000;
 let _timerId: number | null = null;
 let _syncing = false;
 
-/** RUST：对 (moduleKey|version|code) 做 ed25519 验签，签名有效返回 true */
 const verifyModuleSignature = async (item: ServerFallbackModule): Promise<boolean> => {
   try {
     const ok = await tauriInvoke('verify_fallback_module_signature', {
@@ -55,7 +44,6 @@ const normalizeModule = (raw: unknown): ServerFallbackModule | null => {
   };
 };
 
-/** 单次同步。失败静默返回 false，由调用方决定重试节奏 */
 export const syncFallbackModules = async (): Promise<boolean> => {
   if (_syncing) return false;
   _syncing = true;
@@ -69,8 +57,6 @@ export const syncFallbackModules = async (): Promise<boolean> => {
     for (const raw of rawList) {
       const item = normalizeModule(raw);
       if (!item) continue;
-      // 安全准入：ed25519 验签通过才允许执行；验签失败/缺签名的模块直接丢弃，
-      // 防止被改动的代码进入缓存（digest 与代码同源下发，不具防篡改作用，故不再依赖它）。
       const verified = await verifyModuleSignature(item);
       if (!verified) {
         console.warn(`[FallbackModule] 模块 ${item.moduleKey} v${item.version} 签名校验失败，已丢弃（回退内置实现）`);
@@ -82,7 +68,6 @@ export const syncFallbackModules = async (): Promise<boolean> => {
     return true;
   } catch (error) {
     console.warn('[FallbackModule] 拉取兜底模块失败（保留本地缓存）:', error);
-    // 同步失败继续沿用本地缓存，此时必须清洗缓存：清掉被篡改/无签名的条目，防止赖着执行
     await sanitizeFallbackModuleCache();
     return false;
   } finally {
@@ -90,7 +75,6 @@ export const syncFallbackModules = async (): Promise<boolean> => {
   }
 };
 
-/** 启动同步调度：先清洗本地缓存防篡改，再立即拉取一次 + 定时轮询。仅主窗口调用 */
 export const initFallbackModuleSync = (): void => {
   if (_timerId !== null) return;
   void (async () => {

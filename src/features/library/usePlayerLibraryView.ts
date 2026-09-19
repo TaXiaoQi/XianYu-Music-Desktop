@@ -128,7 +128,6 @@ export function usePlayerLibraryView() {
     resolveSongByPath,
     searchQuery,
     sourceSongs,
-    // Compatibility aliases for existing callers.
     displaySongList: currentViewSongs,
     folderTree: libraryHierarchy,
     librarySongs: canonicalSongs,

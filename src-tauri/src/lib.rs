@@ -35,74 +35,71 @@ use app_runtime::{
     consume_pending_deep_links, consume_pending_open_paths, exit_app, handle_single_instance,
     open_devtools, setup_app, update_native_tray_menu,
 };
+use audio_convert::{convert_audio, detect_ffmpeg};
+use audio_trim::{probe_audio_duration, trim_audio};
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
-use skin_image::import_skin_image;
 use database::clear_all_app_data;
-use foreground_window::get_foreground_fullscreen_state;
-use install_language::{get_install_language, set_install_language};
-use music::{
-    add_library_folder, authed_request, batch_move_music_files,
-    clear_auth_credentials, clear_cover_cache, clear_lx_all_cache, clear_lx_url_cache,
-    clear_song_background,
-    create_folder, delete_folder, delete_music_file, extract_palette, fetch_lyric_from_source,
-    find_alternative_lx_source, get_auth_api_secret, get_auth_base_url, get_auth_credentials,
-    get_folder_children, get_folder_first_song, get_library_album_catalog, get_library_artist_catalog,
-    get_library_folders, get_library_hierarchy, get_library_song_paths_by_album,
-    get_library_song_paths_by_artist, get_library_song_paths_for_all_view,
-    get_library_song_paths_for_folder_view, get_library_songs_by_paths, get_library_songs_cached,
-    get_lx_cover, get_song_background, get_song_cover,
-    get_song_cover_thumbnail, get_song_detail, get_song_lyrics, get_song_lyrics_for_edit,
-    get_song_lyrics_payload, is_directory, move_file_to_folder, move_music_file, parse_audio_files,
-    parse_lyrics_text, parse_music_folder, read_lyrics_file, remove_library_folder,
-    save_artist_avatar, save_auth_credentials, save_song_background, save_song_info,
-    save_song_lyrics, scan_folder_as_playlists, scan_library, scan_music_folder,
-    search_library_songs, set_auth_api_secret, set_auth_base_url, show_in_folder,
-};
-use player::{
-    clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_device_formats,
-    get_audio_visualizer_samples, get_current_output_device, get_output_devices,
-    get_playback_duration, get_playback_progress,
-    get_playback_ready, get_playback_session, get_playback_start_failed,
-    get_playback_start_failed_reason, get_playback_start_failed_info, get_stream_cache_info,
-    get_track_loudness_info, is_stream_cached, load_playback_session, pause_audio, play_audio,
-    prefetch_audio_head,
-    plugin_host_close_editor, plugin_host_editor_states, plugin_host_get_parameter_values,
-    plugin_host_get_plugin_parameters, plugin_host_get_plugin_presets, plugin_host_get_rack,
-    plugin_host_load_preset, plugin_host_open_editor, plugin_host_scan_plugins,
-    plugin_host_set_parameter, plugin_host_set_rack, plugin_host_take_process_error,
-    resume_audio, save_playback_session, seek_audio, set_audio_output_mode, set_equalizer_settings,
-    set_output_device, set_playback_speed, set_sound_effect_settings, set_stream_cache_max_size,
-    set_stream_cache_dir, get_stream_cache_dir,
-    set_volume, stop_audio, update_loudness_settings,
-    update_playback_metadata, update_playback_position,
-};
-use plugins::{
-    download_audio_to_temp, download_video_to_cache, plugin_http_request,
-    plugin_http_request_binary, proxy_image, read_file_bytes, read_image_base64,
-    read_plugin_file, remove_cached_background_video, save_plugin_script,
-};
-use host_crypto::{
-    host_kugou_request_key, host_kugou_sign, host_linuxapi_encrypt, host_migu_sign,
-    host_sha256_hex, host_weapi_encrypt, host_zzc_sign,
-};
-use fallback_verify::verify_fallback_module_signature;
 use dlna::commands::{
     dlna_cast_get_state, dlna_cast_pause, dlna_cast_play, dlna_cast_seek, dlna_cast_set_uri,
     dlna_cast_set_volume, dlna_cast_stop, dlna_disable_renderer, dlna_enable_renderer,
     dlna_renderer_status, dlna_search_devices, dlna_update_media_token,
 };
+use fallback_verify::verify_fallback_module_signature;
+use foreground_window::get_foreground_fullscreen_state;
+use host_crypto::{
+    host_kugou_request_key, host_kugou_sign, host_linuxapi_encrypt, host_migu_sign,
+    host_sha256_hex, host_weapi_encrypt, host_zzc_sign,
+};
+use install_language::{get_install_language, set_install_language};
+use music::{
+    add_library_folder, authed_request, batch_move_music_files, clear_auth_credentials,
+    clear_cover_cache, clear_song_background, create_folder, delete_folder, delete_music_file,
+    extract_palette, fetch_lyric_from_source, find_alternative_lx_source, get_auth_api_secret,
+    get_auth_base_url, get_auth_credentials, get_folder_children, get_folder_first_song,
+    get_library_album_catalog, get_library_artist_catalog, get_library_folders,
+    get_library_hierarchy, get_library_song_paths_by_album, get_library_song_paths_by_artist,
+    get_library_song_paths_for_all_view, get_library_song_paths_for_folder_view,
+    get_library_songs_cached, get_lx_cover, get_song_background, get_song_cover,
+    get_song_cover_thumbnail, get_song_detail, get_song_lyrics_for_edit, get_song_lyrics_payload,
+    is_directory, move_file_to_folder, move_music_file, parse_audio_files, parse_lyrics_text,
+    parse_music_folder, read_lyrics_file, remove_library_folder, save_artist_avatar,
+    save_auth_credentials, save_song_background, save_song_info, save_song_lyrics,
+    scan_folder_as_playlists, scan_library, scan_music_folder, search_library_songs,
+    set_auth_api_secret, set_auth_base_url, show_in_folder,
+};
+use player::{
+    clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_device_formats,
+    get_audio_visualizer_samples, get_current_output_device, get_output_devices,
+    get_playback_duration, get_playback_progress, get_playback_ready, get_playback_session,
+    get_playback_start_failed, get_playback_start_failed_info, get_playback_start_failed_reason,
+    get_stream_cache_dir, get_stream_cache_info, get_track_loudness_info, is_stream_cached,
+    load_playback_session, pause_audio, play_audio, plugin_host_close_editor,
+    plugin_host_editor_states, plugin_host_get_parameter_values, plugin_host_get_plugin_parameters,
+    plugin_host_get_plugin_presets, plugin_host_get_rack, plugin_host_load_preset,
+    plugin_host_open_editor, plugin_host_scan_plugins, plugin_host_set_parameter,
+    plugin_host_set_rack, plugin_host_take_process_error, prefetch_audio_head, resume_audio,
+    save_playback_session, seek_audio, set_audio_output_mode, set_equalizer_settings,
+    set_output_device, set_sound_effect_settings, set_stream_cache_dir, set_stream_cache_max_size,
+    set_volume, stop_audio, update_loudness_settings, update_playback_metadata,
+    update_playback_position,
+};
 use plugin_host::commands::{
     plugin_engine_call, plugin_engine_cookie_header_for_domain, plugin_engine_destroy,
-    plugin_engine_destroy_all, plugin_engine_load_lx, plugin_engine_load_musicfree,
-    plugin_engine_store_import, plugin_engine_store_snapshot,
+    plugin_engine_load_lx, plugin_engine_load_musicfree, plugin_engine_store_import,
+};
+use plugins::{
+    download_audio_to_temp, download_video_to_cache, plugin_http_request,
+    plugin_http_request_binary, proxy_image, read_file_bytes, read_image_base64, read_plugin_file,
+    remove_cached_background_video, save_plugin_script,
 };
 use power::set_prevent_sleep;
-use recognize::{cancel_recognize_system_audio, recognize_system_audio, recognize_with_pcm};
+use recognize::{cancel_recognize_system_audio, recognize_system_audio};
 use remote::{
     add_remote_source, clear_remote_cache, get_remote_cache_usage, get_remote_sources,
     list_remote_directory, precache_remote_song, remove_remote_source, sync_remote_source,
     test_remote_source, update_remote_source,
 };
+use skin_image::import_skin_image;
 use statistics::{
     add_to_history, clear_listen_stats, clear_recent_history, export_listen_snapshot,
     export_statistics_file, get_behavior_stats, get_favorite_album_catalog,
@@ -120,25 +117,22 @@ use taskbar::{
     setup_taskbar_window, shutdown_taskbar_zorder_guard, uninstall_taskbar_zorder_guard,
 };
 use tauri::Manager;
-use audio_convert::{convert_audio, detect_ffmpeg};
-use audio_trim::{probe_audio_duration, trim_audio};
 use toolbox::{
-    apply_rename, build_download_basename, check_update_by_rust, decrypt_qmc_file, download_online_song,
-    download_update_file, download_wallpaper, delete_wallpaper_file, is_store_build,
-    fetch_image_bytes, file_exists, finalize_download_extras, open_external_program,
-    preview_rename, probe_url_size, read_download_history, read_state_json, refresh_folder_songs,
-    resolve_download_path, resolve_download_full_path, run_installer, save_download_bytes,
-    save_download_lyrics, set_gpu_acceleration, should_disable_gpu_for_startup, write_download_history,
-    write_state_json,
-    write_text_file,
+    apply_rename, build_download_basename, check_update_by_rust, decrypt_qmc_file,
+    delete_wallpaper_file, download_online_song, download_update_file, download_wallpaper,
+    fetch_image_bytes, file_exists, finalize_download_extras, is_store_build,
+    open_external_program, preview_rename, probe_url_size, read_download_history, read_state_json,
+    refresh_folder_songs, register_download_directory, register_external_program,
+    resolve_download_full_path, resolve_download_path, run_installer, save_bytes_via_dialog,
+    save_text_via_dialog, set_gpu_acceleration, should_disable_gpu_for_startup,
+    write_download_history, write_state_json,
 };
 
 #[cfg(target_os = "windows")]
 use toolbox::append_webview2_browser_arg;
 use window_boundary::set_mini_boundary_enabled;
 use window_fullscreen::{
-    refresh_immersive_fullscreen, save_window_placement, set_immersive_fullscreen,
-    set_taskbar_fullscreen_flag, smart_toggle_maximize,
+    refresh_immersive_fullscreen, set_immersive_fullscreen, smart_toggle_maximize,
 };
 use window_material::{get_window_material_capabilities, refresh_window_material_active_state};
 use window_theme::set_dark_mode_for_window;
@@ -146,12 +140,9 @@ use window_z_order::{
     refresh_current_window_topmost, shutdown_topmost_guard, start_topmost_guard, stop_topmost_guard,
 };
 
-/// 优雅退出：先向后台守护线程发送 WM_QUIT 使其退出消息循环，
-/// 再调用 app.exit(0) 触发 Tauri 事件循环退出（让 cargo tauri dev 能正常清理 Vite）。
 pub fn graceful_shutdown(app: &tauri::AppHandle) {
     shutdown_topmost_guard();
     shutdown_taskbar_zorder_guard();
-    // 退出前清理 WebView2 缓存，避免卸载时 RmDir /r 逐个删除数百个小文件导致卡顿
     crate::webview_settings::clear_webview_cache(app);
     app.exit(0);
 }
@@ -161,10 +152,6 @@ pub fn graceful_shutdown(app: &tauri::AppHandle) {
 pub fn run() {
     #[cfg(target_os = "windows")]
     {
-        // 注册 AppUserModelID，使 Win11 SMTC（系统媒体传输控件）能正确显示应用名称，
-        // 而非"未知应用"。必须在创建窗口之前调用。
-        // SAFETY: SetCurrentProcessExplicitAppUserModelID 是线程安全的 Win32 API，
-        // 仅设置当前进程的 AppUserModelID 字符串，无副作用。
         unsafe {
             use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
             let app_id: Vec<u16> = "com.xymusic.desktop\0".encode_utf16().collect();
@@ -172,10 +159,6 @@ pub fn run() {
         }
     }
 
-    // GPU 加速开关（共用 gpu_config.json）：必须在窗口创建前生效。
-    // Windows 走 WebView2 附加参数禁用 GPU；Linux 设 WebKitGTK 环境变量回退
-    // 软件合成（部分 NVIDIA/混合显卡驱动下 DMABUF 渲染会出现黑屏/花屏）；
-    // macOS WKWebView 由系统统一管理 GPU，无进程级禁用开关，跳过。
     if should_disable_gpu_for_startup() {
         #[cfg(target_os = "windows")]
         append_webview2_browser_arg("--disable-gpu");
@@ -230,7 +213,6 @@ pub fn run() {
             set_auth_api_secret,
             get_auth_api_secret,
             clear_cover_cache,
-            get_song_lyrics,
             read_lyrics_file,
             parse_lyrics_text,
             get_song_lyrics_payload,
@@ -264,7 +246,6 @@ pub fn run() {
             resume_audio,
             seek_audio,
             set_volume,
-            set_playback_speed,
             get_playback_progress,
             get_playback_duration,
             get_playback_ready,
@@ -310,7 +291,6 @@ pub fn run() {
             add_library_folder,
             remove_library_folder,
             get_library_songs_cached,
-            get_library_songs_by_paths,
             search_library_songs,
             get_library_artist_catalog,
             get_library_album_catalog,
@@ -363,13 +343,13 @@ pub fn run() {
             get_format_distribution,
             clear_all_app_data,
             open_external_program,
+            register_external_program,
+            register_download_directory,
             file_exists,
             refresh_folder_songs,
             set_mini_boundary_enabled,
             set_immersive_fullscreen,
             refresh_immersive_fullscreen,
-            save_window_placement,
-            set_taskbar_fullscreen_flag,
             smart_toggle_maximize,
             get_window_material_capabilities,
             refresh_window_material_active_state,
@@ -384,10 +364,8 @@ pub fn run() {
             plugin_engine_load_lx,
             plugin_engine_call,
             plugin_engine_destroy,
-            plugin_engine_destroy_all,
             plugin_engine_store_import,
             plugin_engine_cookie_header_for_domain,
-            plugin_engine_store_snapshot,
             host_zzc_sign,
             host_kugou_sign,
             host_kugou_request_key,
@@ -407,7 +385,6 @@ pub fn run() {
             remove_cached_background_video,
             recognize_system_audio,
             cancel_recognize_system_audio,
-            recognize_with_pcm,
             consume_pending_open_paths,
             consume_pending_deep_links,
             get_system_fonts,
@@ -432,9 +409,8 @@ pub fn run() {
             probe_url_size,
             read_download_history,
             write_download_history,
-            save_download_bytes,
-            save_download_lyrics,
-            write_text_file,
+            save_text_via_dialog,
+            save_bytes_via_dialog,
             fetch_image_bytes,
             resolve_download_path,
             resolve_download_full_path,
@@ -447,9 +423,7 @@ pub fn run() {
             open_devtools,
             fetch_lyric_from_source,
             get_lx_cover,
-            clear_lx_url_cache,
             find_alternative_lx_source,
-            clear_lx_all_cache,
             save_playback_session,
             load_playback_session,
             get_playback_session,
@@ -461,10 +435,6 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // macOS：Finder/「打开方式」把文件交给应用走 Apple Events（odoc），
-            // Tauri 以 RunEvent::Opened 抛出（该变体仅 macos/ios/android 存在，
-            // Windows/Linux 编译期无此变体）；Windows/Linux 的文件经 argv，
-            // 由 setup_app / handle_single_instance 处理，不经过这里。
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = event {
                 crate::app_runtime::handle_opened_urls(app_handle, urls);

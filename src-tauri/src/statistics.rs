@@ -10,10 +10,8 @@ use tauri::State;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // =====================================================
-// 辅助函数
 // =====================================================
 
-/// 判断是否为无效的专辑/歌手名（用于统计时排除）
 fn is_invalid_name(name: &str) -> bool {
     let normalized = name.trim().to_lowercase();
     normalized.is_empty()
@@ -25,7 +23,6 @@ fn is_invalid_name(name: &str) -> bool {
         || normalized == "unknown artist"
 }
 
-/// 判断是否为 Hi-Res (24bit + >=48kHz)
 fn is_hires(bit_depth: Option<i64>, sample_rate: i64) -> bool {
     bit_depth.unwrap_or(0) >= 24 && sample_rate >= 48000
 }
@@ -119,7 +116,7 @@ pub struct PortableStatisticsExport {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatisticsExportOptions {
-    pub file_path: String,
+    pub default_file_name: String,
     pub include_recent_plays: bool,
 }
 
@@ -655,32 +652,28 @@ fn record_aggregate_play(
 }
 
 // =====================================================
-// 曲库统计
 // =====================================================
 
-/// 曲库统计结果（简化版）
 #[derive(Serialize)]
 pub struct LibraryStats {
     pub total_songs: i64,
-    pub total_duration: i64,   // 秒
-    pub total_file_size: i64,  // 字节
-    pub album_count: i64,      // 专辑数（排除空/未知）
-    pub artist_count: i64,     // 歌手数（排除空/未知）
-    pub lossless_count: i64,   // 无损数量
-    pub hires_count: i64,      // Hi-Res 数量 (24bit + >=48k)
-    pub this_month_added: i64, // 本月首次入库数量
+    pub total_duration: i64,
+    pub total_file_size: i64,
+    pub album_count: i64,
+    pub artist_count: i64,
+    pub lossless_count: i64,
+    pub hires_count: i64,
+    pub this_month_added: i64,
 }
 
-/// 音质分布统计
 #[derive(Serialize)]
 pub struct QualityDistribution {
-    pub hires: i64,         // Hi-Res (24bit + >=48kHz 无损)
-    pub super_quality: i64, // SQ (普通无损)
-    pub high_quality: i64,  // HQ (有损 >= 256kbps)
-    pub other: i64,         // 其他
+    pub hires: i64,
+    pub super_quality: i64,
+    pub high_quality: i64,
+    pub other: i64,
 }
 
-/// 文件格式分布统计
 #[derive(Serialize)]
 pub struct FormatDistribution {
     pub flac: i64,
@@ -693,7 +686,6 @@ pub struct FormatDistribution {
     pub other: i64,
 }
 
-/// 获取文件格式分布统计
 #[tauri::command]
 pub fn get_format_distribution(db: State<DbState>) -> Result<FormatDistribution, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -746,7 +738,6 @@ pub fn get_format_distribution(db: State<DbState>) -> Result<FormatDistribution,
     })
 }
 
-/// 获取音质分布统计
 #[tauri::command]
 pub fn get_quality_distribution(db: State<DbState>) -> Result<QualityDistribution, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -796,12 +787,10 @@ pub fn get_quality_distribution(db: State<DbState>) -> Result<QualityDistributio
     })
 }
 
-/// 获取曲库统计（全库，无 scope/time_range 参数）
 #[tauri::command]
 pub fn get_library_stats(db: State<DbState>) -> Result<LibraryStats, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
-    // 基础统计
     let (total_songs, total_duration, total_file_size): (i64, i64, i64) = conn
         .query_row(
             "SELECT COUNT(*), COALESCE(SUM(duration), 0), COALESCE(SUM(file_size), 0) FROM songs",
@@ -810,7 +799,6 @@ pub fn get_library_stats(db: State<DbState>) -> Result<LibraryStats, String> {
         )
         .map_err(|e| e.to_string())?;
 
-    // 专辑数（排除空/未知）- 在 Rust 端过滤
     let album_count: i64 = {
         let mut stmt = conn
             .prepare("SELECT DISTINCT album FROM songs WHERE album IS NOT NULL AND album != ''")
@@ -824,7 +812,6 @@ pub fn get_library_stats(db: State<DbState>) -> Result<LibraryStats, String> {
         albums.len() as i64
     };
 
-    // 歌手数（排除空/未知）
     let artist_count: i64 = {
         let mut stmt = conn
             .prepare("SELECT DISTINCT artist FROM songs WHERE artist IS NOT NULL AND artist != ''")
@@ -838,7 +825,6 @@ pub fn get_library_stats(db: State<DbState>) -> Result<LibraryStats, String> {
         artists.len() as i64
     };
 
-    // 无损数量 + Hi-Res 数量
     let (lossless_count, hires_count): (i64, i64) = {
         let mut stmt = conn
             .prepare("SELECT format, codec, bit_depth, sample_rate FROM songs")
@@ -867,13 +853,11 @@ pub fn get_library_stats(db: State<DbState>) -> Result<LibraryStats, String> {
         (lossless, hires)
     };
 
-    // 本月首次入库数量
     let this_month_added: i64 = {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        // 简化：30天内入库
         let month_start = now - 30 * 24 * 60 * 60;
         conn.query_row(
             "SELECT COUNT(*) FROM songs WHERE added_at >= ?1",
@@ -896,10 +880,8 @@ pub fn get_library_stats(db: State<DbState>) -> Result<LibraryStats, String> {
 }
 
 // =====================================================
-// 播放历史与行为统计
 // =====================================================
 
-/// 时间范围（用于行为统计）
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum TimeRange {
@@ -1310,9 +1292,6 @@ fn rebuild_statistics_aggregates(conn: &rusqlite::Connection) -> Result<(), Stri
     clear_aggregate_statistics(conn)?;
 
     {
-        // 使用 LEFT JOIN 以包含在线歌曲（song_id 为 NULL 的记录）
-        // 对于在线歌曲，s.title/s.artist/s.album 等字段为 NULL，
-        // resolve_song_identity 会用 song_path 作为 fallback 提取标题
         let mut stmt = conn
             .prepare(
                 "SELECT ph.song_path, s.title, s.artist, s.album, s.duration, s.track_number, ph.played_at, ph.played_seconds, ph.event
@@ -1791,6 +1770,7 @@ pub fn get_recent_history(
 
 #[tauri::command]
 pub fn export_statistics_file(
+    app_handle: tauri::AppHandle,
     db: State<DbState>,
     options: StatisticsExportOptions,
 ) -> Result<StatisticsExportResult, String> {
@@ -1820,12 +1800,19 @@ pub fn export_statistics_file(
     };
 
     let content = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
-    let file_path = crate::security::path_validator::validate_path(&options.file_path, None)
-        .map_err(|e| e.to_string())?;
-    fs::write(&file_path, content).map_err(|e| e.to_string())?;
+    let dest = crate::toolbox::pick_save_path(
+        &app_handle,
+        &options.default_file_name,
+        Some(&crate::toolbox::SaveDialogFilter {
+            name: "统计备份文件".to_string(),
+            extensions: vec!["json".to_string()],
+        }),
+    )?
+    .ok_or("已取消导出")?;
+    fs::write(&dest, content).map_err(|e| e.to_string())?;
 
     Ok(StatisticsExportResult {
-        file_path: file_path.display().to_string(),
+        file_path: dest.display().to_string(),
         export_id,
         exported_at,
     })
@@ -2377,28 +2364,22 @@ pub fn clear_recent_history(db: State<DbState>) -> Result<(), String> {
     Ok(())
 }
 
-/// 重置所有本地听歌统计数据（包括播放历史、聚合统计等），从零开始
 #[tauri::command]
 pub fn reset_local_statistics(db: State<DbState>) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    // 清空所有播放历史
     conn.execute("DELETE FROM play_history", [])
         .map_err(|e| e.to_string())?;
-    // 清空聚合统计
     clear_aggregate_statistics(&conn)?;
     Ok(())
 }
 
-/// 记录一次播放事件（通过 song_path 查找 song_id）
 #[tauri::command]
 pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(), String> {
     let mut conn = db.conn.lock().map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    // 规范化路径，确保与数据库中的路径格式一致
     let normalized_path = normalize_path(&payload.song_path);
 
-    // 通过 path 查找 song_id（本地歌曲在 songs 表中可找到，在线歌曲找不到）
     let song_id: Option<i64> = tx
         .query_row(
             "SELECT id FROM songs WHERE path = ?1",
@@ -2414,7 +2395,6 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
 
     let played_seconds = (payload.listened_ms.max(0) / 1000).max(0);
 
-    // 定时刷写只累计时长；同一次实际播放仅保留一条 event='play' 记录。
     let count_as_play = payload.count_as_play.unwrap_or(true);
     let history_event = if count_as_play { "play" } else { "play_time" };
     tx.execute(
@@ -2423,7 +2403,6 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
     )
     .map_err(|e| e.to_string())?;
 
-    // 无论歌曲是否在本地曲库中，都记录聚合统计（全局统计、歌曲统计、每日/每小时统计等）
     let identity = resolve_song_identity(
         &payload.title,
         &payload.artist,
@@ -2446,7 +2425,6 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
     tx.commit().map_err(|e| e.to_string())
 }
 
-/// 行为统计结果
 #[derive(Serialize)]
 pub struct BehaviorStats {
     pub total_plays: i64,
@@ -2478,7 +2456,6 @@ pub struct TopAlbum {
     pub play_count: i64,
 }
 
-/// 获取行为统计（全库，JOIN songs 表过滤有效歌曲）
 #[tauri::command]
 pub fn get_behavior_stats(
     db: State<DbState>,
@@ -2490,16 +2467,13 @@ pub fn get_behavior_stats(
         return aggregate_behavior_stats(&conn);
     }
 
-    // 构建时间条件
     let time_condition = match time_range.to_timestamp_from() {
         Some(from) => format!("AND ph.played_at >= {}", from),
         None => String::new(),
     };
 
-    // 只统计 song_id 非空且在 songs 表中存在的记录
     let base_join = "FROM play_history ph INNER JOIN songs s ON ph.song_id = s.id";
 
-    // 指标 A1: 播放次数
     let sql_plays = format!(
         "SELECT COUNT(*) {} WHERE ph.event = 'play' AND ph.song_id IS NOT NULL {}",
         base_join, time_condition
@@ -2508,7 +2482,6 @@ pub fn get_behavior_stats(
         .query_row(&sql_plays, [], |row| row.get(0))
         .unwrap_or(0);
 
-    // 指标 A2: 播放总时长
     let sql_duration = format!(
         "SELECT COALESCE(SUM(ph.played_seconds), 0) {} WHERE ph.event IN ('play', 'play_time') AND ph.song_id IS NOT NULL {}",
         base_join, time_condition
@@ -2517,7 +2490,6 @@ pub fn get_behavior_stats(
         .query_row(&sql_duration, [], |row| row.get(0))
         .unwrap_or(0);
 
-    // 指标 B1: Top 5 歌曲 (按次数)
     let sql_top_plays = format!(
         "SELECT s.path, COUNT(*) as cnt 
          {} 
@@ -2545,7 +2517,6 @@ pub fn get_behavior_stats(
         }
     }
 
-    // 指标 B2: Top 5 歌曲 (按时长)
     let sql_top_duration = format!(
         "SELECT s.path, COALESCE(SUM(ph.played_seconds), 0) as duration 
          {} 
@@ -2573,7 +2544,6 @@ pub fn get_behavior_stats(
         }
     }
 
-    // 指标 C: 小时分布
     let sql_hours = format!(
         "SELECT CAST(strftime('%H', ph.played_at, 'unixepoch', 'localtime') AS INTEGER) as hour, 
                 COUNT(*) as cnt 
@@ -2595,7 +2565,6 @@ pub fn get_behavior_stats(
         }
     }
 
-    // 指标 D1: Top 5 歌手
     let sql_top_artists = format!(
         "SELECT TRIM(s.artist) as artist, COUNT(*) as cnt 
          {} 
@@ -2624,7 +2593,6 @@ pub fn get_behavior_stats(
         }
     }
 
-    // 指标 D2: Top 5 专辑
     let sql_top_albums = format!(
         "SELECT TRIM(s.album) as album, COUNT(*) as cnt 
          {} 
@@ -2653,11 +2621,8 @@ pub fn get_behavior_stats(
         }
     }
 
-    // 指标 E: 最近 7 天播放趋势 (Timeline)
-    // 即使 time_range 不是 7Days，我们也始终返回最近 7 天的趋势供 UI 显示
     let mut recent_activity: Vec<i64> = vec![0; 7];
     {
-        // 算出 7 天前的零点时间戳 (简化处理，按 24h 倒推)
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -2665,8 +2630,6 @@ pub fn get_behavior_stats(
         let day_seconds = 24 * 60 * 60;
         let start_time = now - 7 * day_seconds;
 
-        // 查询最近 7 天的每一天的播放时长
-        // Output: day_offset (0-6), total_duration
         let sql_activity = format!(
             "SELECT CAST((ph.played_at - {}) / {} AS INTEGER) as day_offset, 
                     COALESCE(SUM(ph.played_seconds), 0) as duration 
@@ -2702,23 +2665,17 @@ pub fn get_behavior_stats(
     })
 }
 
-/// 听歌时长（按周期），用于排行榜上报
 #[derive(Serialize)]
 pub struct ListenDurations {
-    /// 今日听歌时长（秒）
     pub daily: i64,
-    /// 最近 7 天听歌时长（秒）
     pub weekly: i64,
-    /// 累计听歌时长（秒）
     pub total: i64,
 }
 
-/// 获取三个周期的听歌时长（日/周/总），用于排行榜分周期上报
 #[tauri::command]
 pub fn get_listen_durations(db: State<DbState>) -> Result<ListenDurations, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
-    // 今日：从 daily_stats 表取今天的 play_time_ms
     let daily_ms: i64 = conn
         .query_row(
             "SELECT COALESCE(play_time_ms, 0) FROM daily_stats
@@ -2728,7 +2685,6 @@ pub fn get_listen_durations(db: State<DbState>) -> Result<ListenDurations, Strin
         )
         .unwrap_or(0);
 
-    // 最近 7 天：从 daily_stats 表取最近 7 天（含今天）的 play_time_ms 总和
     let weekly_ms: i64 = conn
         .query_row(
             "SELECT COALESCE(SUM(play_time_ms), 0) FROM daily_stats
@@ -2738,7 +2694,6 @@ pub fn get_listen_durations(db: State<DbState>) -> Result<ListenDurations, Strin
         )
         .unwrap_or(0);
 
-    // 累计：从 global_stats 表取 total_play_time_ms
     let total_ms: i64 = conn
         .query_row(
             "SELECT COALESCE(total_play_time_ms, 0) FROM global_stats WHERE id = 1",
@@ -2754,23 +2709,16 @@ pub fn get_listen_durations(db: State<DbState>) -> Result<ListenDurations, Strin
     })
 }
 
-/// 云端总时长合并到本地的结果
 #[derive(Serialize)]
 pub struct CloudMergeResult {
-    /// 合并后本地累计总听歌时长（秒）
     pub total_duration: i64,
-    /// 是否因云端总时长更长而被抬高（本地被云端覆盖）
     pub merged: bool,
 }
 
-/// 将云端累计总听歌时长合并进本地：取本地与云端较大值。
-/// 服务端 report_listen_stats 已用 GREATEST 做最大值合并并返回 server_total_duration，
-/// 这里把该值并回本地 global_stats，实现「云端长覆盖本地」；「本地长覆盖云端」由服务端 GREATEST 完成。
 fn apply_cloud_listen_duration(
     conn: &rusqlite::Connection,
     total_seconds: i64,
 ) -> Result<CloudMergeResult, String> {
-    // 确保统计行存在，否则 UPDATE 落空、云端值会丢失
     let _ = conn.execute(
         "INSERT INTO global_stats (id, total_play_count, total_play_time_ms) VALUES (1, 0, 0) \
          ON CONFLICT(id) DO NOTHING",
@@ -2798,7 +2746,6 @@ fn apply_cloud_listen_duration(
     })
 }
 
-/// 将云端累计总听歌时长合并进本地的 Tauri 命令
 #[tauri::command]
 pub fn merge_cloud_listen_duration(
     db: State<DbState>,
@@ -2809,10 +2756,8 @@ pub fn merge_cloud_listen_duration(
 }
 
 // =====================================================
-// 听歌时长跨端快照同步
 // =====================================================
 
-/// 快照中 global 段（与移动端序列化键名一致，snake_case）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenSnapshotGlobal {
     pub total_play_count: i64,
@@ -2823,7 +2768,6 @@ pub struct ListenSnapshotGlobal {
     pub last_played_at: Option<String>,
 }
 
-/// 快照中 daily 段（与移动端序列化键名一致）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenSnapshotDaily {
     pub date: String,
@@ -2833,7 +2777,6 @@ pub struct ListenSnapshotDaily {
     pub unique_artists: i64,
 }
 
-/// 完整听歌时长快照
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenSnapshot {
     pub global: ListenSnapshotGlobal,
@@ -2841,14 +2784,12 @@ pub struct ListenSnapshot {
     pub daily: Vec<ListenSnapshotDaily>,
 }
 
-/// 合并快照后的返回结果
 #[derive(Serialize)]
 pub struct ListenSnapshotMergeResult {
     pub total_play_time_ms: i64,
     pub total_play_count: i64,
 }
 
-/// 读取本地 global_stats 行（不存在时按 0 处理）
 fn read_local_global(conn: &rusqlite::Connection) -> Result<ListenSnapshotGlobal, String> {
     let row = conn.query_row(
         "SELECT total_play_count, total_play_time_ms, first_played_at, last_played_at
@@ -2871,7 +2812,6 @@ fn read_local_global(conn: &rusqlite::Connection) -> Result<ListenSnapshotGlobal
     }))
 }
 
-/// 导出本地听歌时长快照为 JSON 字符串（结构/键名与移动端完全一致）
 #[tauri::command]
 pub fn export_listen_snapshot(db: State<DbState>) -> Result<String, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -2905,10 +2845,6 @@ pub fn export_listen_snapshot(db: State<DbState>) -> Result<String, String> {
     serde_json::to_string(&snapshot).map_err(|e| e.to_string())
 }
 
-/// 将云端快照合并进本地。
-/// mode == "add"：global 取两值之和；每日期 play_count/play_time_ms 相加，unique_songs/unique_artists 取 MAX。
-/// mode == "max"：global 与 daily 各字段均取 MAX。
-/// 返回合并后本地 total_play_time_ms / total_play_count。
 #[tauri::command]
 pub fn merge_listen_snapshot(
     db: State<DbState>,
@@ -2918,12 +2854,11 @@ pub fn merge_listen_snapshot(
     let snapshot: ListenSnapshot =
         serde_json::from_str(&snapshot_json).map_err(|e| format!("快照解析失败: {e}"))?;
 
-    // 用事务保证合并原子性
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    conn.execute("BEGIN IMMEDIATE", []).map_err(|e| e.to_string())?;
+    conn.execute("BEGIN IMMEDIATE", [])
+        .map_err(|e| e.to_string())?;
 
     let result = (|| -> Result<ListenSnapshotMergeResult, String> {
-        // 确保统计行存在
         conn.execute(
             "INSERT INTO global_stats (id, total_play_count, total_play_time_ms) VALUES (1, 0, 0) \
              ON CONFLICT(id) DO NOTHING",
@@ -2941,19 +2876,27 @@ pub fn merge_listen_snapshot(
             new_count = local_global.total_play_count + snapshot.global.total_play_count;
             new_total_ms = local_global.total_play_time_ms + snapshot.global.total_play_time_ms;
         } else {
-            new_count = local_global.total_play_count.max(snapshot.global.total_play_count);
-            new_total_ms =
-                local_global.total_play_time_ms.max(snapshot.global.total_play_time_ms);
+            new_count = local_global
+                .total_play_count
+                .max(snapshot.global.total_play_count);
+            new_total_ms = local_global
+                .total_play_time_ms
+                .max(snapshot.global.total_play_time_ms);
         }
 
-        // first_played_at / last_played_at：取更早/更晚的时间
-        new_first = match (&local_global.first_played_at, &snapshot.global.first_played_at) {
+        new_first = match (
+            &local_global.first_played_at,
+            &snapshot.global.first_played_at,
+        ) {
             (Some(a), Some(b)) => Some(if a <= b { a.clone() } else { b.clone() }),
             (Some(a), None) => Some(a.clone()),
             (None, Some(b)) => Some(b.clone()),
             (None, None) => None,
         };
-        new_last = match (&local_global.last_played_at, &snapshot.global.last_played_at) {
+        new_last = match (
+            &local_global.last_played_at,
+            &snapshot.global.last_played_at,
+        ) {
             (Some(a), Some(b)) => Some(if a >= b { a.clone() } else { b.clone() }),
             (Some(a), None) => Some(a.clone()),
             (None, Some(b)) => Some(b.clone()),
@@ -2971,7 +2914,6 @@ pub fn merge_listen_snapshot(
         )
         .map_err(|e| e.to_string())?;
 
-        // 逐日合并 daily_stats
         for day in &snapshot.daily {
             let existing = conn.query_row(
                 "SELECT play_count, play_time_ms, unique_songs, unique_artists
@@ -3046,7 +2988,6 @@ pub fn merge_listen_snapshot(
     result
 }
 
-/// 清零本地听歌时长统计（管理端处分后由服务端指示调用）
 #[tauri::command]
 pub fn clear_listen_stats(db: State<DbState>) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -3114,22 +3055,18 @@ mod playback_count_tests {
         let conn = rusqlite::Connection::open_in_memory().expect("open in-memory database");
         crate::database::ensure_base_schema(&conn).expect("create schema");
 
-        // 空表：云端值直接落地
         let r1 = apply_cloud_listen_duration(&conn, 3600).expect("merge initial");
         assert!(r1.merged);
         assert_eq!(r1.total_duration, 3600);
 
-        // 云端更大：本地被覆盖（抬高）
         let r2 = apply_cloud_listen_duration(&conn, 7200).expect("cloud longer");
         assert!(r2.merged);
         assert_eq!(r2.total_duration, 7200);
 
-        // 云端更小：保留本地较大值，不覆盖
         let r3 = apply_cloud_listen_duration(&conn, 100).expect("cloud shorter");
         assert!(!r3.merged);
         assert_eq!(r3.total_duration, 7200);
 
-        // 负数按 0 处理，不降低本地
         let r4 = apply_cloud_listen_duration(&conn, -5).expect("negative cloud");
         assert!(!r4.merged);
         assert_eq!(r4.total_duration, 7200);

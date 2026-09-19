@@ -15,16 +15,10 @@ const TABS_NAME_MAP: Record<ArtistTabId, string> = {
   details: '歌手详情',
 };
 
-/**
- * 类型守卫函数，用来校验未知变量是否为合法的 ArtistTabId
- */
 export function isArtistTabId(value: unknown): value is ArtistTabId {
   return value === 'songs' || value === 'albums' || value === 'details';
 }
 
-/**
- * 严格清洗和去重、补全 Tab 顺序列表，防止本地缓存垃圾数据损坏 UI
- */
 export function sanitizeTabsOrder(rawOrder: unknown): ArtistTabId[] {
   if (!Array.isArray(rawOrder)) {
     return [...DEFAULT_ARTIST_TABS];
@@ -35,9 +29,6 @@ export function sanitizeTabsOrder(rawOrder: unknown): ArtistTabId[] {
   return [...dedupedSavedIds, ...missingIds];
 }
 
-/**
- * 从 localStorage 安全读取经过清洗和补全的 Tab 顺序
- */
 export function getSavedTabsOrder(): ArtistTabId[] {
   try {
     const raw = localStorage.getItem(ARTIST_TABS_STORAGE_KEY);
@@ -48,17 +39,11 @@ export function getSavedTabsOrder(): ArtistTabId[] {
   }
 }
 
-/**
- * 获取默认的首位 Tab ID，用于初次进入歌手详情时做首屏展示
- */
 export function getDefaultArtistTab(): ArtistTabId {
   const order = getSavedTabsOrder();
   return order[0] || 'songs';
 }
 
-/**
- * 根据最新的排布顺序，装配并获取带有翻译和完整信息的 Tab 列表数据
- */
 export function getOrderedArtistTabs(): ArtistTabItem[] {
   const order = getSavedTabsOrder();
   return order.map(id => ({
@@ -67,9 +52,6 @@ export function getOrderedArtistTabs(): ArtistTabItem[] {
   }));
 }
 
-/**
- * 将 Tab 顺序经过清洗后，防崩溃写入 localStorage
- */
 export function saveTabsOrder(order: ArtistTabId[]): void {
   try {
     localStorage.setItem(

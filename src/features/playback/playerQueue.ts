@@ -163,7 +163,6 @@ export const createPlayerQueue = ({
 
     shuffleKnownPaths = validPaths;
 
-    // 一轮全部播放后重新洗牌；排除当前歌曲，避免跨轮立即重复。
     if (shuffleRemaining.length === 0 && paths.some(path => path !== currentPath)) {
       shuffleCyclePlayed.clear();
       if (currentPath) {
@@ -182,7 +181,6 @@ export const createPlayerQueue = ({
       const nextPath = shuffleRemaining.shift();
       const nextSong = findSongByPath(nextPath, list);
       if (nextSong && nextSong.path !== currentSong.value?.path) {
-        // 先占用本轮名额，避免快速连续点击“下一首”时重复抽到同一首。
         shuffleCyclePlayed.add(nextSong.path);
         return nextSong;
       }
@@ -276,10 +274,6 @@ export const createPlayerQueue = ({
     tempQueue.value = tempQueue.value.filter(item => item.path !== song.path);
   };
 
-  /**
-   * 在合并视图（下一首播放在前、播放队列在后）上重排队列。
-   * 重排后按原「下一首播放」数量切回两个队列，保持「先播下一首、再播主队列」语义。
-   */
   const reorderQueue = (oldIndex: number, newIndex: number) => {
     const merged = [...tempQueue.value, ...playQueue.value];
     if (oldIndex < 0 || oldIndex >= merged.length) return;

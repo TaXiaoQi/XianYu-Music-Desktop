@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
-import { open, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { FileDown, FileUp, Loader2, Trash2, UploadCloud, X } from 'lucide-vue-next';
 
@@ -42,9 +42,7 @@ const collectionsStore = useCollectionsStore();
 const libraryStore = useLibraryStore();
 const showDeleteConfirmation = ref(false);
 
-// ─── DLNA 渲染器（接收端） ───
 const dlnaCast = useDlnaCastStore();
-// 开关变化 → 按设置幂等启停渲染器（名称变更时同样幂等重建）
 watch(
   () => settings.value.dlnaRendererEnabled,
   () => { void dlnaCast.applyRendererSetting(); },
@@ -53,7 +51,6 @@ const onRendererNameChanged = () => {
   if (dlnaCast.rendererRunning) void dlnaCast.applyRendererSetting();
 };
 
-// 使用本地 ref 存储 entryCount，避免模板直接依赖 entries 响应式源
 const entryCount = ref(entries.value.length);
 watch(
   () => entries.value.length,
@@ -65,13 +62,11 @@ const backupImportResult = ref<PreparedPluginBackupImport | null>(null);
 const createdPlaylistCount = ref(0);
 const showBackupImportResult = ref(false);
 
-// 应用备份导出/导入状态
 const exportingAppBackup = ref(false);
 const importingAppBackup = ref(false);
 const appBackupResult = ref<AppBackupImportResult | null>(null);
 const showAppBackupResult = ref(false);
 
-// 备份导入弹窗（支持拖放 .json / .zip）
 const showImportModal = ref(false);
 const importMode = ref<'app' | 'plugin'>('app');
 const isDragOver = ref(false);
@@ -95,12 +90,6 @@ const handleExportAppBackup = async (selection: ExportSelection) => {
   showExportDialog.value = false;
 
   try {
-    const filePath = await saveDialog({
-      defaultPath: `xianyu-backup-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: '应用备份文件', extensions: ['json'] }],
-    });
-    if (!filePath) return;
-
     exportingAppBackup.value = true;
 
     const { json, summary } = await exportAppBackup(collectionsStore.playlists, {
@@ -115,7 +104,11 @@ const handleExportAppBackup = async (selection: ExportSelection) => {
       resolveSongsByPaths: libraryStore.resolveSongsByPaths,
     });
 
-    await debugApi.writeLogExport(filePath, json);
+    const savedPath = await debugApi.writeLogExport(
+      `xianyu-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      json,
+    );
+    if (savedPath === null) return;
 
     const parts: string[] = [];
     if (summary.playlistCount > 0) parts.push(`${summary.playlistCount} 个歌单`);
@@ -147,7 +140,6 @@ function openImportModal(mode: 'app' | 'plugin') {
   showImportModal.value = true;
   isDragOver.value = false;
   importModalBusy.value = false;
-  // 拦截全局拖放，避免 useExternalPathBridge 把备份文件当音乐文件处理
   modalDragInterceptActive.value = true;
 }
 
@@ -331,7 +323,6 @@ onUnmounted(() => {
       </p>
     </section>
 
-    <!-- DLNA 渲染器（接收端） -->
     <section class="space-y-3">
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
@@ -433,7 +424,6 @@ onUnmounted(() => {
       @confirm="handleExportAppBackup"
     />
 
-    <!-- 备份导入弹窗（拖放 .json / .zip） -->
     <Teleport to="body">
       <transition name="modal-fade">
         <div v-if="showImportModal" class="import-modal-overlay" @click.self="closeImportModal">
@@ -467,7 +457,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 弹窗淡入淡出 */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.2s ease;
@@ -477,7 +466,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* ─── 备份导入弹窗 ─── */
 .import-modal-overlay {
   position: fixed;
   inset: 0;

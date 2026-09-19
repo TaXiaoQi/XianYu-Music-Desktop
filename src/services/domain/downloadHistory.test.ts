@@ -1,8 +1,3 @@
-/**
- * downloadHistory 单测
- *
- * 覆盖：记录读写、同一首歌覆盖、失效记录自动清理、损坏数据容错。
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../tauri/invoke', () => ({
@@ -21,7 +16,6 @@ import {
   type DownloadRecord,
 } from './downloadHistory';
 
-/** 模拟磁盘上的 download_history.json 内容 */
 let diskContent = '{}';
 
 const makeRecord = (overrides: Partial<DownloadRecord> = {}): DownloadRecord => ({
@@ -33,7 +27,6 @@ const makeRecord = (overrides: Partial<DownloadRecord> = {}): DownloadRecord => 
   ...overrides,
 });
 
-/** 默认桩：read 返回 diskContent，write 更新 diskContent，file_exists 返回 true */
 function stubInvoke(fileExists = true) {
   (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
     if (cmd === 'read_download_history') return diskContent;
@@ -103,7 +96,6 @@ describe('recordDownload', () => {
       filePath: record.filePath,
       quality: '320k',
     });
-    // 已落盘
     expect(JSON.parse(diskContent)['lx://kg/song123']).toBeTruthy();
   });
 
@@ -131,12 +123,10 @@ describe('checkDownloadExists', () => {
     stubInvoke(true);
     await recordDownload(makeRecord());
 
-    // 文件被用户删除
     stubInvoke(false);
     const found = await checkDownloadExists('lx://kg/song123');
 
     expect(found).toBeNull();
-    // 失效记录已被清理并落盘
     expect(JSON.parse(diskContent)).toEqual({});
     expect(getDownloadRecord('lx://kg/song123')).toBeNull();
   });

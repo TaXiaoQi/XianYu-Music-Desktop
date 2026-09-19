@@ -25,19 +25,15 @@ const codeLoading = ref(false);
 const countdown = ref(0);
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
-// 密码可见性状态
 const pwdVisible = reactive<Record<string, boolean>>({});
 
-// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
 const pwdFocused = reactive<Record<string, boolean>>({});
 
-// 人机验证
 const captchaOpen = ref(false);
 const captchaTitle = ref('');
 const captchaDescription = ref('');
 let captchaResolver: ((payload: HumanCaptchaPayload | null) => void) | null = null;
 
-// 二级确认
 const confirmVisible = ref(false);
 const confirmTitle = ref('');
 const confirmDesc = ref('');
@@ -169,14 +165,11 @@ async function handleDelete() {
     return;
   }
 
-  // 并行：弹出二级确认弹窗的同时立即发起预验证（密码+验证码），
-  // 用户阅读确认提示期间验证已在进行，点击确认后无需重复等待。
   let preVerifyError: Error | null = null;
   const preVerifyPromise = preVerifyDeleteAccount(verifyCode, pwd)
     .then(() => { /* 预验证通过 */ })
     .catch((err: unknown) => {
       preVerifyError = err instanceof Error ? err : new Error(String(err));
-      // 预验证失败时若弹窗仍开着，主动关闭并提示
       if (confirmVisible.value) {
         const tip = preVerifyError.message;
         resolveConfirm(false);
@@ -191,15 +184,12 @@ async function handleDelete() {
   });
   if (!confirmed) return;
 
-  // 用户已确认，等待预验证结果
   loading.value = true;
   try {
     await preVerifyPromise;
     if (preVerifyError) {
-      // 预验证已失败（错误提示已在 catch 中显示），直接退出
       return;
     }
-    // 预验证通过，执行实际注销
     const result = await deleteAccount(verifyCode, pwd);
     await showConfirm({
       title: '账号已注销',
@@ -294,7 +284,6 @@ async function handleDelete() {
       </div>
     </transition>
 
-    <!-- 人机验证 -->
     <HumanCaptchaModal
       :open="captchaOpen"
       :title="captchaTitle"
@@ -303,7 +292,6 @@ async function handleDelete() {
       @cancel="handleCaptchaCancel"
     />
 
-    <!-- 二级确认 / 结果提示 -->
     <ConfirmModal
       :visible="confirmVisible"
       :title="confirmTitle"

@@ -237,7 +237,6 @@ export function createDesktopLyricsWindowOptions({
     focus: false,
     focusable: true,
     minimizable: false,
-    // 禁用最大化能力，避免拖动到屏幕顶端时触发 Windows Aero Snap 自动最大化。
     maximizable: false,
     center: !hasStoredBounds,
   };
@@ -484,13 +483,10 @@ export function useDesktopLyricsWindowBridge() {
         break;
       case 'toggle-favorite':
         if (currentSong.value) toggleFavorite(currentSong.value);
-        // 收藏状态不在 watch 同步列表里（isFavorite 是按歌曲查询的函数），
-        // 切换后主动回推一次状态，让桌面歌词面板的红心立即点亮/熄灭。
         await nextTick();
         await emitStateToDesktopLyrics(true);
         break;
       case 'open-settings': {
-        // 桌面歌词面板的设置按钮：唤起主窗口并直达「桌面歌词」设置页。
         uiStore.mainWindowUiSleepRequested = false;
         await router.push('/settings?tab=desktopLyrics');
         await mainWindow.show();
@@ -633,7 +629,6 @@ export function useDesktopLyricsWindowBridge() {
     await destroyDesktopLyricsWindow();
   });
 
-  // 窗口最小化/隐藏时暂停 400ms 同步循环，恢复后自动重启
   watch(isMainWindowLowPower, (lowPower) => {
     if (lowPower) {
       stopSyncLoop();
@@ -645,7 +640,6 @@ export function useDesktopLyricsWindowBridge() {
   watch(
     currentTime,
     (time) => {
-      // [性能优化] 桌面歌词未开启时跳过每帧的时钟采样，避免 60fps 无意义的函数调用
       if (!showDesktopLyrics.value) return;
       playbackClockTracker.markPlaybackTimeSample(time);
     },
@@ -724,7 +718,5 @@ export function useDesktopLyricsWindowBridge() {
         logDesktopLyricsBridgeError('sync flags for', error);
       });
     },
-    // [性能优化] 去掉 deep:true：所有源都是 ref/getter 返回原始值或新数组引用，
-    // 不需要深度遍历。deep:true 会在歌词加载时遍历 parsedLyrics 的所有歌词行对象。
   );
 }

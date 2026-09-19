@@ -34,19 +34,16 @@ const updateViewportArea = () => {
 
 const thumbCoverUrl = computed(() => {
   if (!(props.active ?? true)) return '';
-  // 缩略图加载失败时回退到全尺寸封面（在线歌曲可能只有 currentCoverFull 有值）
   if (coverImgFailed.value && currentCoverFull.value) {
     return currentCoverFull.value;
   }
   return currentCover.value || currentCoverFull.value || '';
 });
 
-// 封面 URL 变化时重置加载失败状态，让 <img> 重新尝试加载
 watch([currentCover, currentCoverFull], () => {
   coverImgFailed.value = false;
 });
 
-/** 单曲独立背景图路径（从数据库读取，每首歌可不同） */
 const songBgPath = ref<string | null>(null);
 
 let fetchSeq = 0;
@@ -70,7 +67,6 @@ async function fetchSongBackground(path: string | null) {
 
 watch(currentSongPath, (path) => fetchSongBackground(path), { immediate: true });
 
-/** 自定义背景图 URL：优先使用单曲背景，其次全局自定义背景 */
 const customBgUrl = computed(() => {
   const path = songBgPath.value || lyricsSettings.customBackgroundImage;
   if (!path) return '';
@@ -79,14 +75,11 @@ const customBgUrl = computed(() => {
     : convertFileSrc(path);
 });
 
-/** 背景模糊程度（0-100）：0% 时完全清晰，100% 时完全模糊 */
 const backgroundBlurPx = computed(() => {
   const percent = lyricsSettings.backgroundBlur;
-  // 0% → 0px（清晰），100% → 52px（完全模糊）
   return (percent / 100) * 52;
 });
 
-/** 封面背景的 filter 样式：模糊程度跟随用户设置 */
 const coverFilterStyle = computed(() => {
   const blur = backgroundBlurPx.value;
   if (blur === 0) return 'brightness(0.78) saturate(1.42) contrast(1.16)';
@@ -100,35 +93,22 @@ const showBackgroundVideo = computed(() => (
   && !videoPlaybackFailed.value
 ));
 
-/**
- * 音频实际播放倍速（音效链 Rust 侧变速，50~200%）。
- * 视频必须以相同倍速播放，否则与音频进度持续漂移、被反复硬拉回。
- */
 const audioPlaybackRate = computed(() => {
   const percent = soundEffectStore.playbackRate;
   const rate = typeof percent === 'number' && percent > 0 ? percent / 100 : 1;
   return Math.min(2.5, Math.max(0.25, rate));
 });
 
-/**
- * MV 自动音画对齐偏移（秒）：正值画面提前、负值画面延后。
- * 播放时间轴对齐（syncBackgroundVideo）只能保证"视频进度条 = 音频进度条"，
- * MV 片头/剪辑与音频内容的固有错位由该偏移补偿（mvAutoSync 互相关分析得出）。
- */
 const syncBackgroundVideo = (force = false) => {
   const video = videoRef.value;
   if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
-  // 环形取模：偏移后 target 可能为负或超过 duration，取最近一圈的位置
   const rawTarget = Math.max(0, currentTime.value) + mvSyncOffsetSec.value;
   const target = ((rawTarget % video.duration) + video.duration) % video.duration;
-  // 视频循环播放：换圈瞬间 target 与 currentTime 分居 0 和 duration 两端，
-  // 用环形距离避免把接缝误判成大偏差而回跳
   let drift = target - video.currentTime;
   if (Math.abs(drift) > video.duration / 2) {
     drift += drift > 0 ? -video.duration : video.duration;
   }
   if (force || Math.abs(drift) > 0.6) {
-    // 大偏差（拖动进度条、缓冲停滞）：直接对齐并恢复基础倍速
     video.playbackRate = audioPlaybackRate.value;
     video.currentTime = target;
     return;
@@ -137,7 +117,6 @@ const syncBackgroundVideo = (force = false) => {
     if (Math.abs(drift) > 0.05) video.currentTime = target;
     return;
   }
-  // 小偏差（<0.12s）视为同步；中等偏差用 ±8% 内的微调倍速平滑追赶，避免可见跳帧
   const nudge = Math.abs(drift) <= 0.12
     ? 0
     : Math.max(-0.08, Math.min(0.08, drift * 0.5));
@@ -166,12 +145,10 @@ watch(backgroundVideoUrl, async () => {
 });
 watch([isPlaying, () => props.active, showBackgroundVideo], updateVideoPlayback);
 watch(currentTime, () => syncBackgroundVideo(false));
-// 音频变速调整时同步视频倍速（纠偏微调会在下一帧进度同步中自动恢复）
 watch(audioPlaybackRate, (rate) => {
   const video = videoRef.value;
   if (video) video.playbackRate = rate;
 });
-// 自动对齐分析完成（偏移变化）时立即重对齐（暂停中 currentTime 不跳动，需显式触发）
 watch(mvSyncOffsetSec, () => syncBackgroundVideo(true));
 
 const handleVideoLoaded = () => {
@@ -221,7 +198,6 @@ onUnmounted(() => {
       ></video>
     </div>
 
-    <!-- 自定义背景图（用户上传）：覆盖默认封面背景 -->
     <div v-else-if="customBgUrl" class="absolute inset-0 overflow-hidden z-[1]">
       <img
         :src="customBgUrl"
@@ -232,7 +208,6 @@ onUnmounted(() => {
       />
     </div>
 
-    <!-- 默认封面背景（无自定义背景图时显示） -->
     <div v-else-if="thumbCoverUrl" class="absolute inset-0 overflow-hidden z-[1]">
       <img
         :key="`bg-cover:${currentSongPath}:${thumbCoverUrl}`"

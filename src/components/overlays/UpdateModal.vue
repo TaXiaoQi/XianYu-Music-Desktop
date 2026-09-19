@@ -153,7 +153,6 @@ const formatSpeed = (speed: number) => {
 }
 </style>
 
-<!-- 深色模式使用非 scoped style 块，原因同 SettingsConflictDialog -->
 <style>
 /* ==================== 主弹窗 ==================== */
 .update-card {

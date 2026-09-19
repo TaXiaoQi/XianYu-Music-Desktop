@@ -38,20 +38,25 @@ fn delete_password_from_keyring(source_id: &str) {
 }
 
 fn attach_keyring_password(mut source: RemoteSourceCredentials) -> RemoteSourceCredentials {
-    if source.password.is_none() {
+    if source.password.as_ref().map_or(true, |p| p.is_empty()) {
         source.password = read_password_from_keyring(&source.id);
     }
     source
 }
 
 fn migrate_db_password_to_keyring(conn: &rusqlite::Connection, source: &RemoteSourceCredentials) {
-    let Some(password) = source.password.as_deref() else {
+    let Some(password) = source.password.as_deref().filter(|p| !p.is_empty()) else {
         return;
     };
     if write_password_to_keyring_verified(&source.id, password) {
         let _ = conn.execute(
-            "UPDATE remote_sources SET password = NULL WHERE id = ?1",
+            "UPDATE remote_sources SET password = '' WHERE id = ?1",
             params![&source.id],
+        );
+    } else {
+        eprintln!(
+            "远程音乐库 {} 的密码仍以明文存于数据库，迁移到系统凭据管理器失败，将继续使用旧值",
+            source.id
         );
     }
 }
@@ -197,7 +202,9 @@ pub(crate) fn save_source(
     let created_at = existing.map(|source| source.created_at).unwrap_or(now);
     let db_password = match password.as_deref() {
         Some(password) if write_password_to_keyring_verified(&id, password) => None,
-        Some(password) => Some(password.to_string()),
+        Some(_) => {
+            return Err("系统凭据管理器不可用，无法安全保存密码".to_string());
+        }
         None => None,
     };
 

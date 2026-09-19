@@ -1,19 +1,3 @@
-/**
- * Tauri 命令契约一致性校验
- *
- * 后端命令注册与两端声明存在三份"事实来源"，漏注册/错登记只会运行期才暴露：
- *   1. lib.rs 的 invoke_handler(generate_handler![...])   —— 实际注册的命令
- *   2. src-tauri/permissions/app-commands.toml            —— ACL 允许清单（allow-app-commands）
- *   3. services/tauri/contracts.ts 的 TauriCommandMap     —— 前端强类型桥契约
- *
- * 约定：
- *   - 注册集 == 允许集：新增命令只注册不加入 ACL 会运行期报
- *     "not allowed. Command not found"；只加 ACL 不注册是死权限。
- *   - 契约集 ⊆ 注册集 ∩ 允许集：前端只能调用真实存在且被允许的命令，
- *     避免契约指向不存在的命令（无法被编译器捕获的串行化漂移）。
- *   - 注册集 ⊇ 契约集 之外的命令（有注册无契约）仅提示，不视为错误——
- *     部分命令可能确实不被前端直调。
- */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -24,7 +8,6 @@ const PROJECT_ROOT = process.cwd();
 const read = (relative: string) =>
   readFileSync(resolve(PROJECT_ROOT, relative), 'utf8');
 
-/** 解析 lib.rs 中 generate_handler![...] 内登记的命令名集合。 */
 function extractRegisteredCommands(source: string): Set<string> {
   const block = source.match(/generate_handler!\s*\[\s*([\s\S]*?)\s*\]/);
   if (!block) return new Set();
@@ -32,7 +15,6 @@ function extractRegisteredCommands(source: string): Set<string> {
   return new Set(commands);
 }
 
-/** 解析 app-commands.toml 中 allow-app-commands 权限块允许的命令集合。 */
 function extractAllowedCommands(source: string): Set<string> {
   const blocks = source.split('[[permission]]');
   for (const block of blocks) {
@@ -45,7 +27,6 @@ function extractAllowedCommands(source: string): Set<string> {
   return new Set();
 }
 
-/** 解析 contracts.ts 中 TauriCommandMap 接口的顶层属性（命令）名集合。 */
 function extractContractCommands(source: string): Set<string> {
   const head = source.indexOf('interface TauriCommandMap {');
   if (head === -1) return new Set();
@@ -106,9 +87,7 @@ describe('Tauri 命令契约一致性', () => {
     const withoutContract = sortList(
       new Set([...registered].filter((name) => !contracted.has(name))),
     );
-    // 该用例只做信息提示，不阻断；有值请在 contracts.ts 补齐契约或确认确无前端调用
     if (withoutContract.length > 0) {
-      // eslint-disable-next-line no-console
       console.info('[无契约命令，请确认是否有前端调用并补契约]:', withoutContract.join(', '));
     }
   });

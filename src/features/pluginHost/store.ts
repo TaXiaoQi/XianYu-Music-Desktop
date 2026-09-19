@@ -1,14 +1,3 @@
-/**
- * VST3/CLAP 原生插件宿主 store
- *
- * 职责（与音效 store 同构的持久化体系）：
- * - 机架配置的唯一前端数据源：启动时从本地恢复并推送 Rust 共享机架，
- *   之后任一变更（防抖）同步 set_rack + 持久化；
- * - 实时参数：setSlotParameter 走 plugin_host_set_parameter 参数队列
- *   （下一个 process 块生效），同时回写本地配置保证重启后一致；
- * - 编辑器窗口状态：监听 plugin-host-editor-closed 事件维护打开键集合；
- * - 音频线程错误：轮询 take_process_error 并 toast 透出（仅在有活动槽位时轮询）。
- */
 
 import { defineStore } from 'pinia';
 import { computed, reactive, ref, watch } from 'vue';
@@ -78,7 +67,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
   const currentScanningPath = ref<string>('');
   const timeoutPluginPath = ref<string>('');
 
-  // 从本地恢复上一次成功扫描的插件列表
   try {
     const saved = localStore.getJson<PluginHostScanEntry[]>('plugin_host_scanned_plugins');
     if (Array.isArray(saved) && saved.length > 0) {
@@ -175,7 +163,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     console.warn('[pluginHostStore] 恢复机架配置失败（使用默认值）:', err);
   }
   restored = true;
-  // 保持"扫描结果即机架"的一致性：把已扫描插件并入机架（默认停用），已移除的不再出现
   mergeScannedIntoRack();
   if (rackConfig.slots.length > 0 || rackConfig.masterEnabled) {
     setRack({ ...rackConfig, slots: rackConfig.slots.map(s => ({ ...s, params: { ...s.params } })) })
@@ -249,7 +236,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     openEditorKeys.value = next;
   }).catch(() => {});
 
-  /** 恢复当前后端编辑器状态（设置页挂载时调用）。 */
   const refreshEditors = async () => {
     try {
       const states = await editorStates();
@@ -282,7 +268,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     const path = event.payload;
     currentScanningPath.value = path;
     resetScanTimer();
-    // 如果单个插件处理时间超过 4000ms，触发超时弹窗询问
     scanTimeoutTimer = setTimeout(() => {
       if (isScanning.value && currentScanningPath.value === path) {
         timeoutPluginPath.value = path;
@@ -297,7 +282,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     currentScanningPath.value = '';
     timeoutPluginPath.value = '';
 
-    // 如果是强制全新重扫，则清空；否则在现有记忆的基础上增量扫描
     if (options?.forceFullRescan) {
       scannedPlugins.value = [];
     }
@@ -318,7 +302,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     }
   };
 
-  /** 把扫描到的插件自动并入机架（默认停用）；已在机架或已移除的不重复添加。 */
   function mergeScannedIntoRack() {
     let changed = false;
     for (const entry of scannedPlugins.value) {
@@ -339,7 +322,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     return changed;
   }
 
-  /** 恢复所有已移除插件（清空移除记录并重新并入机架）。 */
   const restoreDismissed = () => {
     if (dismissedRackKeys.value.size === 0) return;
     dismissedRackKeys.value.clear();
@@ -391,7 +373,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     rackConfig.slots[index].enabled = !rackConfig.slots[index].enabled;
   };
 
-  /** 移动槽位顺序（direction: -1 向上 / 1 向下）。 */
   const moveSlot = (format: string, uniqueId: string, direction: -1 | 1) => {
     const index = findSlotIndex(format, uniqueId);
     const target = index + direction;
@@ -400,7 +381,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     rackConfig.slots.splice(target, 0, slot);
   };
 
-  /** 拖拽排序：把 from 索引的槽位移动到 to 索引。 */
   const reorderSlot = (from: number, to: number) => {
     const count = rackConfig.slots.length;
     if (from < 0 || to < 0 || from >= count || to >= count || from === to) return;
@@ -408,10 +388,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     rackConfig.slots.splice(to, 0, slot);
   };
 
-  /**
-   * 实时设置单个参数：本地配置回写（持久 + 防抖 set_rack 兜底）+
-   * plugin_host_set_parameter 参数队列（下一个 process 块生效）。
-   */
   const setSlotParameter = async (
     format: string,
     uniqueId: string,
@@ -429,7 +405,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     }
   };
 
-  /** 参数值被后端（预设加载/编辑器）改动后的批量回写（不触发逐参数实时队列）。 */
   const applySlotParams = (
     format: string,
     uniqueId: string,
@@ -445,7 +420,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
   // ===== 编辑器操作 =====
   const openSlotEditor = async (format: string, uniqueId: string, title: string) => {
     try {
-      // 立即刷新并把机架配置输入 Rust 共享机架，避免防抖延迟导致打开编辑器时后端找不到槽位/产生死锁
       await syncRackNow();
       await openEditor(format, uniqueId, title);
       const next = new Set(openEditorKeys.value);
@@ -472,7 +446,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     openEditorKeys.value.has(slotKey(format, uniqueId));
 
   return {
-    // 状态
     rackConfig,
     scannedPlugins,
     isScanning,
@@ -483,25 +456,20 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     currentScanningPath,
     timeoutPluginPath,
     disabledPluginPaths,
-    // 扫描 & 禁用黑名单
     scan,
     disablePluginPath,
     mergeScannedIntoRack,
     restoreDismissed,
-    // 自定义目录
     addExtraDir,
     removeExtraDir,
-    // 机架
     setMasterEnabled,
     syncRackNow,
     removeSlot,
     toggleSlot,
     moveSlot,
     reorderSlot,
-    // 参数
     setSlotParameter,
     applySlotParams,
-    // 编辑器
     openSlotEditor,
     closeSlotEditor,
     isEditorOpen,

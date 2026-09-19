@@ -1,11 +1,7 @@
-/**
- * 每日推荐 · 当日缓存（同一天免重算，换一批递增批次）。
- */
 
 import { mulberry32 } from './dailyRecommendCore';
 import type { DailyRecommendAlgorithm, DailyRecommendItem } from './dailyRecommendTypes';
 
-/** 本地缓存键 */
 const CACHE_KEY = 'xy.dailyRecommend.v1';
 
 interface DailyRecommendCache {
@@ -13,7 +9,6 @@ interface DailyRecommendCache {
   date: string;
   batch: number;
   algorithm: DailyRecommendAlgorithm;
-  /** 洗牌前的候选池（换一批从中重新洗牌取样） */
   candidates: DailyRecommendItem[];
 }
 
@@ -44,7 +39,6 @@ export function localDateKey(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
-/** 从候选池按批次种子洗牌并截取目标数量 */
 export function pickBatchItems(
   candidates: DailyRecommendItem[],
   algorithm: DailyRecommendAlgorithm,
@@ -60,7 +54,6 @@ export function pickBatchItems(
   return pool.slice(0, Math.max(1, algorithm.target_count || 30));
 }
 
-/** 退出登录/切换账号时清理每日推荐缓存 */
 export function clearDailyRecommendCache(): void {
   try {
     localStorage.removeItem(CACHE_KEY);

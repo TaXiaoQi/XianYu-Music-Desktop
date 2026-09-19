@@ -96,13 +96,11 @@ describe('useNicknameChangeNotification', () => {
     await checkNicknameChangeNotification();
     await closeNicknameChangeNotification();
 
-    // 确认接口
     expect(signedRequestMock).toHaveBeenLastCalledWith(
       'confirm_nickname_change_notice',
       { id: 7, ciyuanxi_id: '2784213157' },
       expect.any(Object),
     );
-    // 本地昵称同步 + 持久化
     expect(saveAuthMock).toHaveBeenCalledWith({
       token: 't',
       user: expect.objectContaining({ nickname: 'NewNick' }),

@@ -1,13 +1,9 @@
-/**
- * 使用统计 · 设备标识与设备信息（叶子，无依赖）。
- */
 
 import { APP_VERSION } from '../../../version';
 import { tauriInvoke } from '../tauri/invoke';
 
 const DEVICE_ID_KEY = 'xy.device.id';
 
-/** 生成 RFC4122 v4 UUID */
 function generateUuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -24,7 +20,6 @@ function generateUuid(): string {
   return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
 }
 
-/** 获取（或首次生成并持久化）稳定的设备标识 */
 export function getDeviceId(): string {
   try {
     let id = localStorage.getItem(DEVICE_ID_KEY);
@@ -38,13 +33,6 @@ export function getDeviceId(): string {
   }
 }
 
-/**
- * 用操作系统/硬件级机器标识覆盖本地缓存的设备 ID（启动时调用一次）。
- * 数据源为 Rust 侧硬件指纹（SMBIOS 系统UUID/整机/主板/机箱序列号的 SHA-256，
- * 重装系统不变、仅换主板才变；全空时回退 MachineGuid）。
- * 老版本存的是本地随机 UUID（卸载即丢），此处一次性覆盖。
- * 任何失败（非 Tauri 环境/读取异常）静默保留现有 ID。
- */
 export async function syncStableDeviceId(): Promise<void> {
   try {
     const machineGuid = await tauriInvoke('get_machine_id');
@@ -57,7 +45,6 @@ export async function syncStableDeviceId(): Promise<void> {
   }
 }
 
-/** 从 navigator.userAgent 解析操作系统版本（优先以 Rust enrichSystemInfo 的结果为准） */
 function parseOsVersion(): string {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
   const m = ua.match(/Windows NT (\d+\.\d+)/);
@@ -90,11 +77,8 @@ export interface DeviceInfo {
   app_version: string;
   os_version: string;
   device_model: string;
-  /** 厂商，如 Dell Inc.；Rust 读 BIOS 失败时回退 'Windows' */
   device_brand: string;
-  /** 系统架构，如 x64 */
   architecture: string;
-  /** 计算机名，便于在多台机器间定位具体设备 */
   machine_name: string;
 }
 
@@ -120,14 +104,10 @@ function getArch(): string {
   return /WOW64|Win64|x64|x86_64|aarch64|arm64/.test(ua) ? 'x64' : 'x86';
 }
 
-/**
- * 异步向 Rust 采集真实厂商/型号/OS 版本/计算机名，合并进设备信息缓存。
- * fire-and-forget：在任何纯前端/非 Tauri 环境失败时静默忽略，不阻塞启动。
- */
 export async function enrichSystemInfo(): Promise<void> {
   try {
     const info = await tauriInvoke('get_system_info');
-    if (!cachedDeviceInfo) getDeviceInfo(); // 确保缓存存在
+    if (!cachedDeviceInfo) getDeviceInfo();
     if (cachedDeviceInfo) {
       cachedDeviceInfo = {
         ...cachedDeviceInfo,

@@ -10,10 +10,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // =========================================================================
-// 1. ReplayGain 标签提取与高容错解析器
 // =========================================================================
 
-/// 提取 ReplayGain 的分贝值，支持 "dB" 后缀、大小写、空格过滤
 fn parse_gain_db(raw: &str) -> Option<f32> {
     let cleaned = raw
         .to_lowercase()
@@ -23,21 +21,17 @@ fn parse_gain_db(raw: &str) -> Option<f32> {
     cleaned.trim().parse::<f32>().ok()
 }
 
-/// 提取 ReplayGain 的 Peak 值
 fn parse_peak(raw: &str) -> Option<f32> {
     let cleaned = raw.replace(" ", "");
     cleaned.trim().parse::<f32>().ok()
 }
 
-/// 解析音频内置的 ReplayGain 标签
 pub fn extract_replaygain_from_path(path: &Path) -> Option<(f32, Option<f32>)> {
     let tagged_file = crate::music::tags::read_tagged_file_from_path(path).ok()?;
     let mut track_gain: Option<f32> = None;
     let mut track_peak: Option<f32> = None;
 
-    // 优先读取 ID3v2/Vorbis 标签中所有可用的 Tag
     for tag in tagged_file.tags() {
-        // 1. 尝试 Lofty 的内置内置 ItemKey
         if let Some(gain_str) = tag.get_string(&ItemKey::ReplayGainTrackGain) {
             if let Some(parsed) = parse_gain_db(gain_str) {
                 track_gain = Some(parsed);
@@ -49,7 +43,6 @@ pub fn extract_replaygain_from_path(path: &Path) -> Option<(f32, Option<f32>)> {
             }
         }
 
-        // 2. 备用：大小写不敏感遍历所有未知 Tag 项
         for item in tag.items() {
             let text_val = match item.value() {
                 lofty::tag::ItemValue::Text(s) => Some(s.clone()),
@@ -91,7 +84,6 @@ pub fn extract_replaygain_from_path(path: &Path) -> Option<(f32, Option<f32>)> {
 }
 
 // =========================================================================
-// 2. GainRamp 渐变状态机 (全链路无爆音保证)
 // =========================================================================
 
 #[derive(Clone)]
@@ -135,14 +127,11 @@ impl GainRamp {
         }
     }
 
-    /// 在每一个 Frame 级调用一次，更新并返回当前 Frame 内所有声道共同使用的 Fixed Gain
     #[inline]
     pub fn next_frame_gain(&mut self) -> f32 {
         let target = f32::from_bits(self.target_gain.load(Ordering::Relaxed));
 
-        // 连续指令状态机抗震逻辑：检测到目标偏离上一次的稳态目标
         if (target - self.last_target_gain).abs() > 0.00001 {
-            // 重置状态机，以实际 current_gain 作为新的线性渐变起点
             self.old_gain = self.current_gain;
             self.last_target_gain = target;
             self.current_frame = 0;
@@ -156,7 +145,6 @@ impl GainRamp {
                 self.current_gain = target;
                 self.is_ramping = false;
             } else {
-                // 线性插值，平滑音量过渡，消除咔哒声
                 self.current_gain = self.old_gain + (target - self.old_gain) * progress;
             }
         }
@@ -166,7 +154,6 @@ impl GainRamp {
 }
 
 // =========================================================================
-// 3. VolumeNormalizer 过滤器 (共享模式 Source 深度实现)
 // =========================================================================
 
 pub struct VolumeNormalizer<I> {
@@ -208,7 +195,6 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let sample = self.inner.next()?;
 
-        // 保证在同一个 Frame 的所有声道均使用相同的 Gain，稳定声像
         if self.current_channel == 0 {
             self.current_frame_gain = self.ramp.next_frame_gain();
         }
@@ -248,14 +234,12 @@ where
 
     #[inline]
     fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        // 跳转后重置声道计数器，防止声道边界错位
         self.current_channel = 0;
         self.inner.try_seek(pos)
     }
 }
 
 // =========================================================================
-// 4. SQLite 缓存读写服务
 // =========================================================================
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -283,7 +267,6 @@ pub struct LoudnessRecord {
     pub error_message: Option<String>,
 }
 
-/// 从 SQLite 查询特定歌曲的音量缓存记录
 pub fn get_song_loudness_record(
     conn: &Connection,
     song_id: i64,
@@ -329,7 +312,6 @@ pub fn get_song_loudness_record(
     Ok(record)
 }
 
-/// 将客观提取指标写入或更新到数据库中
 pub fn upsert_song_loudness_record(
     conn: &Connection,
     record: &LoudnessRecord,
@@ -389,7 +371,6 @@ pub fn upsert_song_loudness_record(
     Ok(())
 }
 
-/// 快速将一首歌标记为待扫描意图 `'pending'` 写入数据库
 pub fn create_pending_loudness_record(
     conn: &Connection,
     song_id: i64,
@@ -415,10 +396,8 @@ pub fn create_pending_loudness_record(
 }
 
 // =========================================================================
-// 5. ReplayGain 音量增益与防削波动态计算
 // =========================================================================
 
-/// 为播放引擎动态计算实际需应用的 Linear Gain 倍数
 pub fn calculate_playback_gain(
     record: &LoudnessRecord,
     gain_offset_db: f32,
@@ -427,26 +406,21 @@ pub fn calculate_playback_gain(
     let mut gain_db = 0.0;
     let mut has_lufs_reference = false;
 
-    // 1. 如果有客观分析的 loudness_lufs，优先计算
     if let Some(lufs) = record.loudness_lufs {
         gain_db = (-18.0 + gain_offset_db) - lufs as f32;
         has_lufs_reference = true;
-    }
-    // 2. 否则，使用 ReplayGain 标签计算，并叠加用户设置的整体 dB 偏移。
-    else if let Some(tag_gain) = record.tag_track_gain_db {
+    } else if let Some(tag_gain) = record.tag_track_gain_db {
         gain_db = tag_gain as f32 + gain_offset_db;
         has_lufs_reference = true;
     }
 
     if !has_lufs_reference {
-        return 1.0; // 降级策略：原始音量播放
+        return 1.0;
     }
 
     let mut linear_gain = 10.0_f32.powf(gain_db / 20.0);
 
-    // 3. 破音保护逻辑 (Clipping Prevention)
     if prevent_clipping {
-        // 读取 Peak 指标
         let peak = record.sample_peak.or(record.tag_track_peak);
 
         match peak {
@@ -458,9 +432,8 @@ pub fn calculate_playback_gain(
                 }
             }
             None => {
-                // 降级兜底防削波：开启了防削波且缺失 peak 时，不应用任何正增益，增益上限直接压平在 0 dB
                 if gain_db > 0.0 {
-                    linear_gain = 1.0; // 限制增益最高为 0 dB (即线性系数 1.0，只减不增)
+                    linear_gain = 1.0;
                 }
             }
         }
@@ -469,7 +442,6 @@ pub fn calculate_playback_gain(
     linear_gain
 }
 
-/// 尝试在一首歌起播时提取标签，有标签则应用并存入 SQLite，无标签则只做 pending 意图标记
 pub fn process_song_on_play(
     conn: &Connection,
     song_id: i64,
@@ -485,15 +457,12 @@ pub fn process_song_on_play(
         .map_err(|e| e.to_string())?
         .as_secs() as i64;
 
-    // 1. 先查数据库
     if let Ok(Some(cached)) = get_song_loudness_record(conn, song_id) {
-        // 如果文件未发生改变，直接使用
         if cached.file_size == file_size && cached.file_modified_at == file_modified_at {
             return Ok(cached);
         }
     }
 
-    // 2. 文件是新添加或发生变化，快速仅提取内置标签 (容错耗时低)
     if let Some((tag_gain, tag_peak)) = extract_replaygain_from_path(path) {
         let estimated_lufs = -18.0 - tag_gain;
         let record = LoudnessRecord {
@@ -514,7 +483,7 @@ pub fn process_song_on_play(
             scan_source: "tag_replaygain".to_string(),
             analyzer_name: None,
             analyzer_version: 1,
-            scan_status: "scanned".to_string(), // scanned + tag_replaygain = 标签成功就绪
+            scan_status: "scanned".to_string(),
             scanned_at: Some(
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -528,7 +497,6 @@ pub fn process_song_on_play(
         return Ok(record);
     }
 
-    // 3. 完全没有内置标签，标记待扫意图 'pending'，播放以 1.0 (原始) 播放
     create_pending_loudness_record(conn, song_id, song_path, file_size, file_modified_at)?;
 
     let pending_record = LoudnessRecord {

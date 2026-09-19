@@ -1,13 +1,3 @@
-/**
- * Baka 插件引擎 · 目录/搜索操作 Mixin。
- *
- * 承接 Baka 插件的：搜索（音乐/歌手/专辑/歌单）、专辑/歌单/歌手详情
- * （getAlbumInfo/getMusicSheetInfo/getArtistWorks，含落雪式重试与搜索兜底）、
- * B 站专用取数路径、榜单（getTopLists/getTopListDetail）、推荐歌单与导入。
- *
- * 依赖 BakaPluginMedia（继承自 BakaPluginCore，提供 `_ensureInstance` 与媒体层）
- * 与 bakaPluginManagerBase 的叶子工具；最终由 bakaPluginManager 门面组合并导出单例。
- */
 import type {
   PluginSource,
   PluginSearchResult,
@@ -31,16 +21,9 @@ import {
   toPluginSearchResult,
 } from './pluginResultMappers';
 
-/**
- * Baka 插件目录/搜索操作（混入 BakaPluginMedia）。
- * 只做取数与结果映射编排，媒体取流不在此层。
- */
 export class BakaPluginCatalog extends BakaPluginMedia {
   // ==================== 搜索 ====================
 
-  /**
-   * 搜索音乐（Baka 插件可能未声明 'music' 但实际支持）
-   */
   async searchMusic(
     source: PluginSource,
     keyword: string,
@@ -66,7 +49,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     }
   }
 
-  /** 搜索歌手 */
   async searchArtists(
     source: PluginSource,
     keyword: string,
@@ -103,7 +85,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     }
   }
 
-  /** 搜索专辑 */
   async searchAlbums(
     source: PluginSource,
     keyword: string,
@@ -139,7 +120,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     }
   }
 
-  /** 搜索歌单 */
   async searchPlaylists(
     source: PluginSource,
     keyword: string,
@@ -176,13 +156,11 @@ export class BakaPluginCatalog extends BakaPluginMedia {
 
   // ==================== 专辑/歌单/歌手详情 ====================
 
-  /** 获取专辑歌曲 */
   async getAlbumSongs(source: PluginSource, albumItem: any, page: number = 1): Promise<PluginSearchResult[]> {
     const inst = await this._ensureInstance(source);
     if (!inst) return [];
 
     try {
-      // 优先使用 getAlbumInfo，落雪式增量退避反复尝试成功路径
       if (typeof inst.getAlbumInfo === 'function') {
         const getAlbumInfo = inst.getAlbumInfo;
         const albumLabel = `[${source.name}] getAlbumInfo album="${albumItem?.title || albumItem?.name || albumItem?.album || ''}"`;
@@ -204,7 +182,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
           });
         }
       }
-      // 回退到搜索
       if (page === 1) {
         const albumName = albumItem.title || albumItem.name || albumItem.album || '';
         if (albumName) {
@@ -219,14 +196,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     }
   }
 
-  /** 获取歌单详情（含分页结束标志，供导入等全量拉取场景判断是否还有下一页） */
   async getPlaylistDetail(source: PluginSource, sheetItem: any, page: number = 1): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
     const inst = await this._ensureInstance(source);
     if (!inst) return { list: [] };
 
-    // 榜单条目走轻量的 getTopListDetail：
-    // 1) 避免 getMusicSheetInfo 的音质检测/封面补全/重试开销（榜单打开慢的根因）
-    // 2) getTopListDetail 返回的歌曲带完整 duration 字段（QQ/网易云/酷我等榜单时长缺失的根因）
     if (sheetItem?._isTopList) {
       const list = await this.getTopListDetail(source, sheetItem, page);
       return { list, isEnd: list.length === 0 };
@@ -264,7 +237,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       };
     }
 
-    // 回退到搜索
     if (page === 1) {
       const sheetName = sheetItem.title || sheetItem.name || '';
       if (sheetName) {
@@ -275,9 +247,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     return { list: [], isEnd: true };
   }
 
-  /** B站专用：专辑与歌单详情统一走同一取数路径。
-   *  不走 getPlaylistDetail/getAlbumSongs 的通用重试编排，B站歌单/收藏集多以 getAlbumInfo 取到歌曲，
-   *  getAlbumInfo 空时回退 getMusicSheetInfo，再空才搜索兜底。 */
   async getBilibiliDetail(source: PluginSource, item: any, page: number = 1): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
     const inst = await this._ensureInstance(source);
     if (!inst) return { list: [] };
@@ -320,7 +289,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       }
     }
 
-    // 兜底：按标题搜索
     if (page === 1) {
       const name = item.title || item.name || item.album || '';
       if (name) {
@@ -331,11 +299,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     return { list: [], isEnd: true };
   }
 
-  /** B站专用：歌手作品（UP 主空间投稿列表）。
-   *  空间接口 /x/space/wbi/arc/search 受风控，无登录态时稳定返回"风控校验失败"→空列表，
-   *  失败是确定性的：通用重试编排（6 次 + 退避约 12s）只会让歌手页长时间转圈。
-   *  这里单次尝试；音乐列表为空时立即回退按歌手名搜索，专辑列表为空则保持为空
-   *  （不能拿歌曲搜索结果顶替，否则会显示成假专辑）。 */
   async getBilibiliArtistWorks(
     source: PluginSource,
     artistItem: any,
@@ -372,7 +335,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     return [];
   }
 
-  /** 获取歌手作品 */
   async getArtistWorks(source: PluginSource, artistItem: any, page: number = 1, type: string = 'music'): Promise<PluginSearchResult[]> {
     const inst = await this._ensureInstance(source);
     if (!inst) return [];
@@ -399,7 +361,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
           });
         }
       }
-      // 回退到搜索
       if (page === 1) {
         const artistName = artistItem.name || artistItem.artist || '';
         if (artistName) {
@@ -414,7 +375,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     }
   }
 
-  /** 获取歌手详情 */
   async getArtistInfo(source: PluginSource, artistItem: any): Promise<any | null> {
     const inst = await this._ensureInstance(source);
     if (!inst) return null;
@@ -429,7 +389,6 @@ export class BakaPluginCatalog extends BakaPluginMedia {
 
   // ==================== 榜单 ====================
 
-  /** 获取 Baka 插件榜单列表，并展平为榜单条目（rawData 带 _isTopList 标记） */
   async getTopLists(source: PluginSource): Promise<PluginPlaylistSearchResult[]> {
     const inst = await this._ensureInstance(source);
     if (!inst) return [];

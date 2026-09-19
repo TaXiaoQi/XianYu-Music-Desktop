@@ -48,20 +48,25 @@ fn read_tagged_file_from_path_with_cover_mode(
 ) -> lofty::error::Result<TaggedFile> {
     let options = ParseOptions::new().read_cover_art(read_cover_art);
 
-    // QMC 加密文件（mflac/mgg/qmc0 等）需要先解密再解析标签，
-    // 否则 lofty 拿到的是密文，无法识别格式和读取元数据。
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let lower = ext.to_ascii_lowercase();
         let is_qmc = matches!(
             lower.as_str(),
-            "mgg" | "mgg0" | "mggl" | "mflac" | "mflac0" | "qmc0" | "qmc2" | "qmc3"
-                | "qmcflac" | "qmcogg"
+            "mgg"
+                | "mgg0"
+                | "mggl"
+                | "mflac"
+                | "mflac0"
+                | "qmc0"
+                | "qmc2"
+                | "qmc3"
+                | "qmcflac"
+                | "qmcogg"
         );
         if is_qmc {
             if let Some(tagged) = read_qmc_tagged_file(path, options) {
                 return Ok(tagged);
             }
-            // 解密失败时回落到直接读（仍可能成功读出部分标签）
         }
     }
 
@@ -87,8 +92,6 @@ fn read_tagged_file_from_path_with_cover_mode(
     }
 }
 
-/// 将 QMC 加密文件解密后交给 lofty 读取标签。
-/// 先尝试流式解密读取器（内存效率高），失败时回落整体解密到内存缓冲。
 fn read_qmc_tagged_file(path: &Path, options: ParseOptions) -> Option<TaggedFile> {
     use crate::player::qmc2::{detect_qmc_crypto, QmcDecryptReader};
 
@@ -96,7 +99,6 @@ fn read_qmc_tagged_file(path: &Path, options: ParseOptions) -> Option<TaggedFile
     let file = File::open(path).ok()?;
     let reader = QmcDecryptReader::new(file, crypto);
 
-    // 推断解密后实际格式（qmcflac→flac、mgg→ogg、qmc0→mp3 等）
     let inner_ext = qmc_inner_extension(path);
     let mut probe = if let Some(ext) = inner_ext {
         let mut p = Probe::new(reader);
@@ -112,7 +114,6 @@ fn read_qmc_tagged_file(path: &Path, options: ParseOptions) -> Option<TaggedFile
     probe.read().ok()
 }
 
-/// 根据 QMC 扩展名推断解密后的内部音频格式扩展名。
 fn qmc_inner_extension(path: &Path) -> Option<&'static str> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match ext.as_str() {
@@ -123,7 +124,6 @@ fn qmc_inner_extension(path: &Path) -> Option<&'static str> {
     })
 }
 
-/// 将扩展名映射为 lofty FileType（仅支持 QMC 解密后的常见格式）。
 fn lofty_file_type_from_ext(ext: &str) -> Result<FileType, ()> {
     Ok(match ext {
         "flac" => FileType::Flac,
@@ -315,19 +315,12 @@ where
     None
 }
 
-/// 检测并修复被错误按 Latin-1 解码的 CJK 歌词。
-///
-/// 部分工具写入 ID3v2 USLT 帧时声明 ISO-8859-1，但内容实际为 GBK/Big5 等，
-/// lofty 会按 Latin-1 解码产生乱码。Latin-1 解码是可逆的（0x80-0xFF → U+0080-U+00FF），
-/// 还原字节后按 CJK 编码重解码，仅当重解码结果包含更多 CJK 字符时采用。
 fn fix_latin1_mojibake(text: &str) -> String {
     let latin1_count = text
         .chars()
         .filter(|c| matches!(*c as u32, 0x80..=0xFF))
         .count();
     let non_ascii_count = text.chars().filter(|c| !c.is_ascii()).count();
-    // 真正的乱码：非 ASCII 内容几乎全部落在 Latin-1 区（CJK 字节被按 Latin-1 解码）。
-    // 若非 ASCII 内容中 Latin-1 占比不足一半（如合法法文 éàç 之外的 CJK），不视为乱码。
     if latin1_count == 0 || non_ascii_count == 0 || latin1_count * 2 < non_ascii_count {
         return text.to_string();
     }
@@ -345,12 +338,13 @@ fn fix_latin1_mojibake(text: &str) -> String {
         .collect();
 
     let redecoded = super::files::decode_lyrics_file_bytes(&bytes);
-    // 重解码出现替换字符说明字节并非源编码的合法序列（如合法法文 éàç 被误当 CJK 解码），
-    // 此时不应视为乱码修复。
     if redecoded.contains('\u{FFFD}') {
         return text.to_string();
     }
-    let cjk_before = text.chars().filter(|c| super::files::is_cjk_char(*c)).count();
+    let cjk_before = text
+        .chars()
+        .filter(|c| super::files::is_cjk_char(*c))
+        .count();
     let cjk_after = redecoded
         .chars()
         .filter(|c| super::files::is_cjk_char(*c))
@@ -1093,10 +1087,6 @@ fn seems_like_lyrics_text(text: &str) -> bool {
     contains_lrc_timestamp(text) || text.lines().filter(|line| !line.trim().is_empty()).count() >= 2
 }
 
-/// 元数据嵌入请求：将歌曲元数据写入音频文件 tag。
-///
-/// 所有字段均为可选，仅写入提供的非空字段。
-/// `cover_data` 为封面二进制数据，`cover_mime` 标识 MIME 类型（默认 image/jpeg）。
 #[derive(serde::Deserialize, Default, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbedMetadataRequest {
@@ -1133,15 +1123,10 @@ fn guess_tag_type_from_path(path: &Path) -> TagType {
     }
 }
 
-/// 将元数据写入音频文件的 tag（ID3v2/Vorbis Comment/MP4 Atom 等）。
-///
-/// 仅写入请求中提供的非空字段；已有的其他字段保持不变。
-/// 若文件无现有 tag，则按扩展名推断 tag 类型后创建。
 pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), String> {
     use lofty::config::WriteOptions;
     use lofty::tag::TagExt;
 
-    // 防路径穿越/符号链接逃逸：目标必须是合法文件路径（拒绝 .. 与越权链）
     let validated = crate::security::path_validator::validate_path(&request.file_path, None)?;
     let path = validated.as_path();
     if !path.exists() {
@@ -1151,7 +1136,6 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
     let mut tagged_file =
         read_tagged_file_from_path(path).map_err(|e| format!("读取音频文件失败: {e}"))?;
 
-    // 若文件无现有 tag，按扩展名推断 tag 类型后创建
     if tagged_file.primary_tag().is_none() {
         let tag_type = guess_tag_type_from_path(path);
         tagged_file.insert_tag(Tag::new(tag_type));
@@ -1161,7 +1145,6 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
         .primary_tag_mut()
         .ok_or_else(|| "无法获取或创建标签".to_string())?;
 
-    // 文本字段：仅写入非空值
     if let Some(ref title) = request.title {
         if !title.trim().is_empty() {
             tag.set_title(title.clone());
@@ -1192,14 +1175,12 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
         tag.set_disk(disc);
     }
 
-    // 歌词：写入 Lyrics ItemKey
     if let Some(ref lyrics) = request.lyrics {
         if !lyrics.trim().is_empty() {
             tag.insert_text(ItemKey::Lyrics, lyrics.clone());
         }
     }
 
-    // 封面：写入 Picture
     if let Some(ref cover_data) = request.cover_data {
         if !cover_data.is_empty() {
             let mime_str = request.cover_mime.as_deref().unwrap_or("image/jpeg");
@@ -1217,13 +1198,11 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
                 None,
                 cover_data.clone(),
             );
-            // 先移除已有的前置封面，避免重复堆积
             tag.remove_picture_type(PictureType::CoverFront);
             tag.push_picture(picture);
         }
     }
 
-    // 保存 tag 到文件
     tag.save_to_path(path, WriteOptions::default())
         .map_err(|e| format!("保存标签失败: {e}"))?;
 
@@ -1407,12 +1386,8 @@ mod tests {
 
     #[test]
     fn fixes_latin1_mojibake_lyrics() {
-        // 模拟 GBK 字节被按 Latin-1 解码后的乱码文本（如 ID3v2 USLT 帧声明 ISO-8859-1）
         let (gbk, _, _) = encoding_rs::GBK.encode("[00:01.00]中文歌词");
-        let mojibake: String = gbk
-            .iter()
-            .map(|byte| *byte as char)
-            .collect();
+        let mojibake: String = gbk.iter().map(|byte| *byte as char).collect();
 
         let fixed = fix_latin1_mojibake(&mojibake);
         assert_eq!(fixed, "[00:01.00]中文歌词");

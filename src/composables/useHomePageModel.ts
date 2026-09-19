@@ -96,8 +96,6 @@ export function useHomePageModel() {
 
   const isPlaylistView = computed(() => currentViewMode.value === 'playlist');
   const localSongPaths = computed(() => currentViewSongPaths.value);
-  // 歌单详情页走 SongTable 的 path + resolver 惰性模式，避免进入页面即 materialize 全量 Song[]。
-  // 非歌单视图保持原有数组模式，避免影响本地/专辑/歌手等已有交互。
   const localSongList = computed(() => isPlaylistView.value ? [] : displaySongList.value);
   const getActionSongList = () => displaySongList.value;
   const selectedAlbumSong = computed(() => localSongList.value[0] || null);

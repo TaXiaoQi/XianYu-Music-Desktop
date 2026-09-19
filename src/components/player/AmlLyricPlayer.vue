@@ -65,9 +65,6 @@ function stopSeekBurst() {
   }
 }
 
-// 暂停态下点击歌词跳转时，AML 弹簧动画需要连续帧才能收敛到新目标。
-// 正常播放时由 animationLoop 驱动；暂停时 animationLoop 已停止，
-// 因此在 syncSeekLayout 后启动一个短暂的动画爆发（约 20 帧 ≈ 320ms）让弹簧落位。
 function runSeekBurst() {
   stopSeekBurst();
   let remaining = 20;
@@ -93,7 +90,6 @@ function runSeekBurst() {
 function startAnimationLoop() {
   stopAnimationLoop();
 
-  // 窗口最小化/隐藏/迷你模式时暂停 rAF 循环，避免不可见状态下持续写入 DOM transform
   if (props.disabled || !props.playing || isMainWindowLowPower.value) {
     return;
   }
@@ -149,10 +145,6 @@ function attachPlayer(nextPlayer: PatchedLyricPlayer) {
   applyPlayerProps();
   player.setLyricLines(props.lyricLines, Math.trunc(props.currentTime));
   player.setCurrentTime(Math.trunc(props.currentTime));
-  // [修复防御]: 歌词行有横向 posX 弹簧，装载首帧 AMLL 自身会先把未收敛的
-  // translate(posX,posY) 写进 DOM，短暂出现「对唱式左右分开」，随后弹簧归 0 才恢复。
-  // 这里在挂载当帧同步落位（calcLayout(true)+update(0)+DOM writeback），
-  // 让首帧即带纯 translateY 的 transform，抑制开头的横向入场张开。
   player.recoverLayout('attach-sync');
 }
 
@@ -181,10 +173,6 @@ function queueRecovery(reason: string) {
     lastTime = time;
 
     player.recoverLayout(`${reason}:${attempts}`);
-    // recoverLayout 内部的 update(0) 不推进弹簧（delta=0），
-    // 暂停态下 animationLoop 已停止，弹簧目标无法收敛到正确位置，
-    // 歌词行会停在初始位置（posY=0）全部挤在一起。
-    // 用真实时间差 delta 调用 update 推进弹簧收敛。
     if (delta > 0) {
       player.update(delta);
     }
@@ -208,8 +196,6 @@ function syncSeekLayout(timeMs: number, lineIndex?: number) {
   if (!player) return;
 
   syncAmlLyricSeekLayout(player, timeMs, lineIndex);
-  // 暂停态下 animationLoop 已停止，弹簧动画无法自动收敛到新目标。
-  // 启动短暂的动画爆发让歌词行位移/缩放/模糊落位到点击的行。
   if (!props.playing) {
     runSeekBurst();
   }
@@ -223,32 +209,23 @@ onMounted(() => {
   const wrapper = wrapperRef.value;
   if (!wrapper) return;
 
-  // [修复防御]: 低性能模式禁用歌词 blur filter，避免集显每帧 N 行 blur 触发软件渲染
   const nextPlayer = new PatchedLyricPlayer();
   nextPlayer.disableBlurFilter = isLowPerformance.value;
   attachPlayer(nextPlayer);
   startAnimationLoop();
   queueRecovery('mounted');
-  // 暂停态下 animationLoop 已停止，挂载后的初始布局弹簧无法收敛，
-  // 歌词会停在未落位的位置（屏幕外或不可见）。启动动画爆发让初始布局落位。
   if (!props.playing) {
     runSeekBurst();
   }
 
   resizeObserver = new ResizeObserver(() => {
     queueRecovery('resize');
-    // 暂停态下 animationLoop 已停止，resize 后 calcLayout 重设的弹簧目标无法收敛。
-    // 启动动画爆发让弹簧落位到新布局（与 wheel handler 处理方式一致）。
     if (!props.playing) {
       runSeekBurst();
     }
   });
   resizeObserver.observe(wrapper);
 
-  // 暂停态下滚轮滚动歌词：AMLL core 的 wheel handler 只调用 calcLayout 设置弹簧目标，
-  // 不调用 update()。播放时 animationLoop 驱动弹簧收敛；暂停时 loop 已停止，
-  // 弹簧无法落位。此处监听 wheel 事件（冒泡阶段，在 AMLL core handler 之后触发），
-  // 暂停时启动动画爆发让弹簧收敛到新滚动位置。
   wheelHandler = () => {
     if (props.disabled || isMainWindowLowPower.value) return;
     if (!props.playing) {
@@ -303,7 +280,6 @@ watch(() => props.playing, (playing) => {
   }
 });
 
-// 窗口最小化时暂停 rAF，恢复时重新启动
 watch(isMainWindowLowPower, (lowPower) => {
   if (lowPower) {
     stopAnimationLoop();
@@ -360,15 +336,9 @@ watch(() => props.lyricLines, (value) => {
   if (!player) return;
 
   player.setLyricLines(value, Math.trunc(props.currentTime));
-  // [修复] setLyricLines 内部会强制 setCurrentTime(0, force=true)，把热行重置回首行。
-  // 若当前播放进度恰好未变化，currentTime watcher 不会再次触发，导致歌词永远停在首行。
-  // 这里在歌词重设后立即用真实进度强制重算热行/滚动位置，恢复正确的当前行。
   player.setCurrentTime(Math.trunc(props.currentTime), true);
-  // 与 attachPlayer 同理：换歌装载歌词时同步落位一次，抑制开头横向弹簧张开。
   player.recoverLayout('lyrics-sync');
   queueRecovery('lyrics');
-  // 暂停态下 animationLoop 已停止，calcLayout 设置的弹簧目标无法收敛。
-  // 启动动画爆发让歌词行位移/缩放/模糊落位到正确位置，否则歌词加载后不可见。
   if (!props.playing) {
     runSeekBurst();
   }

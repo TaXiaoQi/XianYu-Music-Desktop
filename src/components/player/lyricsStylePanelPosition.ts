@@ -18,9 +18,6 @@ export function getLyricsStylePanelPosition(
     Math.max(1, viewportWidth - safeMargin * 2),
   );
 
-  // Use the cover-visible layout as the canonical viewport anchor. The lyrics
-  // container expands and moves left when the cover is hidden, so positioning
-  // relative to that container would otherwise move the panel as well.
   const coverColumnWidth = Math.max(300, viewportWidth * 0.4);
   const coverModeLyricsLeft = 32 + coverColumnWidth + 8;
   const preferredViewportLeft = coverModeLyricsLeft - defaultMarginRight - renderedPanelWidth;

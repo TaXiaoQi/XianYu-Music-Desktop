@@ -1,15 +1,3 @@
-//! 显式路径插件扫描。
-//!
-//! 不使用 truce-rack 的 `default_vst3_paths()` / `default_clap_paths()`：
-//! 它们在 Windows 上读 `HOME` 环境变量拼接用户级路径，而 Windows 标准变量
-//! 是 `USERPROFILE`（本机 `HOME` 未设置），默认 `scan()` 会漏掉整个用户级
-//! 目录（报告 §5.4）。此处显式枚举四条标准路径：
-//!
-//! - 用户级 VST3：`%LOCALAPPDATA%\Programs\Common\VST3`
-//! - 用户级 CLAP：`%LOCALAPPDATA%\Programs\Common\CLAP`
-//! - 系统级 VST3：`%CommonProgramFiles%\VST3`
-//! - 系统级 CLAP：`%CommonProgramFiles%\CLAP`
-
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -20,13 +8,10 @@ use truce_rack::core::plugin::Plugin;
 use truce_rack::core::scanner::PluginScanner;
 use truce_rack::vst3::Vst3Scanner;
 
-/// 扫描结果条目（Tauri 序列化 DTO；PluginInfo 本体含 PathBuf/枚举，统一转字符串）。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginScanEntry {
-    /// "vst3" | "clap"
     pub format: String,
-    /// 格式内稳定 ID（加载实例的 key）
     pub unique_id: String,
     pub name: String,
     pub vendor: String,
@@ -64,7 +49,6 @@ fn category_label(category: truce_rack::core::info::PluginCategory) -> &'static 
     }
 }
 
-/// 标准插件目录（用户级 + 系统级，可能因环境变量缺失而缺失）。
 pub fn standard_scan_directories() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
@@ -91,13 +75,11 @@ pub fn standard_scan_directories() -> Vec<PathBuf> {
     dirs
 }
 
-/// 扫描全部标准目录，聚合 VST3 + CLAP 结果。
-#[allow(dead_code)] // 供 source.rs 的真实插件冒烟测试（#[ignore]）使用
+#[allow(dead_code)]
 pub fn scan_all_directories() -> Vec<PluginScanEntry> {
     scan_directories_with_extra(&[], &[], None)
 }
 
-/// 标准目录 + 自定义目录合并扫描，支持跳过禁用列表与实时上报条目。
 pub fn scan_directories_with_extra(
     extra: &[std::path::PathBuf],
     disabled_paths: &[String],
@@ -161,7 +143,6 @@ fn scan_dir_plugin_infos_recursive(
     let is_vst3 = name.ends_with(".vst3");
     let is_clap = name.ends_with(".clap");
 
-    // 避开 UAD 硬件框架与 Waves 虚拟壳（无需直连 LoadLibrary，防止 C++ 段错误杀死宿主）
     let name_lower = name.to_lowercase();
     if name.eq_ignore_ascii_case("Universal Audio.vst3") || name_lower.contains("waveshell") {
         return Vec::new();
@@ -183,15 +164,15 @@ fn scan_dir_plugin_infos_recursive(
     let mut out = Vec::new();
     for entry in entries.flatten() {
         let child = entry.path();
-        out.extend(scan_dir_plugin_infos_recursive(&child, disabled_set, on_current));
+        out.extend(scan_dir_plugin_infos_recursive(
+            &child,
+            disabled_set,
+            on_current,
+        ));
     }
     out
 }
 
-/// 按格式 + unique_id 加载一个插件实例（dlopen + 工厂实例化）。
-///
-/// 返回 trait 对象供机架统一处理；错误向上传播由调用方决定
-/// 降级策略（起播时跳过该槽位并上报，见 source.rs）。
 pub fn load_instance(
     format: &str,
     unique_id: &str,
@@ -252,7 +233,6 @@ mod tests {
     #[test]
     fn standard_directories_cover_user_and_system() {
         let dirs = standard_scan_directories();
-        // 至少能从 LOCALAPPDATA 构出用户级两条
         assert!(dirs.len() >= 2);
         let joined: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
         assert!(joined.iter().any(|d| d.ends_with("VST3")));
@@ -261,7 +241,6 @@ mod tests {
 
     #[test]
     fn load_instance_rejects_unknown_format_as_clap_path() {
-        // 无法加载不存在的插件：错误信息应包含格式名
         let err = load_instance("vst3", "nonexistent", "C:/does/not/exist.vst3");
         let Err(msg) = err else {
             panic!("加载不存在的插件应失败");

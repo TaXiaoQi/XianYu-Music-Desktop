@@ -1,5 +1,3 @@
-// music/covers.rs - 封面缓存与缩略图生成
-
 use super::tags::{find_embedded_picture, read_tagged_file_from_path};
 use super::types::{FullCoverImageConcurrencyLimit, ThumbnailImageConcurrencyLimit};
 use super::utils::normalize_path;
@@ -16,7 +14,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 use tauri::{AppHandle, Manager, State};
 
-const COVER_CACHE_MAX_SIZE_BYTES: u64 = 4 * 1024 * 1024 * 1024; // 4 GB
+const COVER_CACHE_MAX_SIZE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const THUMBNAIL_EDGE_PX: u32 = 150;
 const FULL_COVER_EDGE_PX: u32 = 800;
 const FULL_COVER_CACHE_VERSION: &str = "v3";
@@ -104,18 +102,14 @@ fn remove_cache_dir_contents(cache_dir: &Path) -> Result<(), String> {
 pub fn clear_cover_cache(app: AppHandle) -> Result<(), String> {
     let cache_dir = get_cover_cache_dir(&app);
     remove_cache_dir_contents(&cache_dir)?;
-    // 清缓存同时释放无图负缓存（对齐移动端），允许立即重试提取
     clear_no_cover_negative_cache();
     Ok(())
 }
 
 // ==================== 无图负缓存（对齐移动端 covers.rs） ====================
-// 无内嵌封面的文件每次扫描/展示都会重读标签（FFI + 解码 + 写盘），TTL 过后才允许重试，
-// 以便用户补写封面后能回流。
-const NO_COVER_NEGATIVE_TTL_SECS: u64 = 3600; // 1 小时
+const NO_COVER_NEGATIVE_TTL_SECS: u64 = 3600;
 const NO_COVER_NEGATIVE_CAP: usize = 100_000;
 
-/// 路径（规范化主键）→ 最近一次封面提取失败的 Unix 秒。
 fn no_cover_negative_cache() -> &'static Mutex<HashMap<String, u64>> {
     static CACHE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -128,18 +122,15 @@ fn cover_now_unix_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// 记录该路径最近一次封面提取失败的 Unix 秒（幂等刷新 TTL）。
 fn mark_no_cover(key: &str, at_secs: u64) {
     if let Ok(mut map) = no_cover_negative_cache().lock() {
         map.insert(key.to_string(), at_secs);
-        // 容量保护：进程内常驻且只在此处增长，超过上限时整体清空重建
         if map.len() > NO_COVER_NEGATIVE_CAP {
             map.clear();
         }
     }
 }
 
-/// 是否命中无图负缓存（TTL 窗口内跳过重试）。
 fn is_no_cover_cached(key: &str, now_secs: u64) -> bool {
     no_cover_negative_cache()
         .lock()
@@ -151,7 +142,6 @@ fn is_no_cover_cached(key: &str, now_secs: u64) -> bool {
         .unwrap_or(false)
 }
 
-/// 清空无图负缓存（用户主动重扫/清缓存时释放记忆，允许立即可重试提取）。
 pub fn clear_no_cover_negative_cache() {
     if let Ok(mut map) = no_cover_negative_cache().lock() {
         map.clear();
@@ -360,7 +350,6 @@ pub fn get_or_create_thumbnail(path: &Path, app: &AppHandle) -> Option<String> {
         return Some(existing);
     }
 
-    // 无图负缓存：TTL 内提取失败过的路径直接回落默认图，不再重读文件
     let now = cover_now_unix_secs();
     let path_key = normalize_path(&path.to_string_lossy());
     if is_no_cover_cached(&path_key, now) {
@@ -405,7 +394,6 @@ pub fn get_or_create_full_cover(path: &Path, app: &AppHandle) -> Option<String> 
         return Some(existing);
     }
 
-    // 无图负缓存：TTL 内提取失败过的路径直接回落默认图，不再重读文件
     let now = cover_now_unix_secs();
     let path_key = normalize_path(&path.to_string_lossy());
     if is_no_cover_cached(&path_key, now) {
@@ -438,9 +426,6 @@ pub fn get_or_create_full_cover(path: &Path, app: &AppHandle) -> Option<String> 
                     }
                 }
 
-                // Clamp display covers to a high-quality edge length so the
-                // now-playing detail view stays sharp without decoding the
-                // original multi-thousand-pixel artwork into memory.
                 let display_img = if should_resize {
                     img.resize(
                         FULL_COVER_EDGE_PX,

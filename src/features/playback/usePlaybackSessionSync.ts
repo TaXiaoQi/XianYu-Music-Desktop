@@ -1,27 +1,3 @@
-/**
- * 播放会话同步 composable
- *
- * 将播放状态（队列、当前歌曲、进度、模式、音量）同步到 Rust 后端，
- * 由 Rust 负责持久化（SQLite）和多窗口共享。
- *
- * 架构定位（务实组合，非纯单一事实源）：
- * - 运行时播放编排权威在前端（playerPlayback.ts / playbackCore）
- * - 持久化与多窗口共享权威在 Rust（session.rs）
- * - 前端通过 savePlaybackSession 写入，副窗口通过事件 + getPlaybackSession 读取
- *
- * 广播分频道：
- * - `playback:session-changed`：轻量载荷（不含 queueSongMeta），每次切歌/模式变更广播
- * - `playback:queue-meta-changed`：仅 queueSongMeta，仅在元数据变化时广播
- * - 副窗口若需要 queueSongMeta，需额外监听 `playback:queue-meta-changed` 事件
- *
- * 主窗口：watch 状态变化 → 调用 sessionApi.savePlaybackSession（防抖）
- *         进度变化 → 调用 sessionApi.updatePlaybackPosition（节流）
- *         退出/定时 → 调用 sessionApi.flushPlaybackSession
- *
- * 副窗口：启动时调用 sessionApi.getPlaybackSession 获取初始状态（含完整 queueSongMeta）
- *         监听 playback:session-changed 事件获取轻量实时更新
- *         监听 playback:queue-meta-changed 事件获取 queueSongMeta 变更
- */
 
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -34,7 +10,6 @@ import { usePlaybackStore } from './store';
 import { useLibraryStore } from '../library/store';
 import { useCollectionsStore } from '../collections/store';
 
-/** 判断当前窗口是否为主窗口（主窗口负责写入，副窗口只读） */
 const isMainWindow = (): boolean => {
   try {
     return getCurrentWindow().label === 'main';
@@ -43,7 +18,6 @@ const isMainWindow = (): boolean => {
   }
 };
 
-/** 收集队列/歌单中所有在线歌的完整 Song 元数据（用于重启后还原） */
 const collectQueueSongMeta = (
   playQueuePaths: string[],
   sourceSongPaths: string[],
@@ -61,12 +35,6 @@ const collectQueueSongMeta = (
   return meta;
 };
 
-/**
- * 初始化主窗口的播放会话同步
- *
- * 在 playerLifecycle 的 restore 完成后调用。
- * 设置 watchers 将播放状态变更同步到 Rust。
- */
 export function usePlaybackSessionSync() {
   const playbackStore = usePlaybackStore();
   const libraryStore = useLibraryStore();
@@ -87,7 +55,6 @@ export function usePlaybackSessionSync() {
   let positionUpdateTimer: ReturnType<typeof setTimeout> | null = null;
   let unlistenSessionChanged: (() => void) | null = null;
 
-  /** 收集当前播放会话数据 */
   const collectSessionData = (): PlaybackSessionData => {
     return buildSessionData({
       currentSongPath: currentSongPath.value,
@@ -108,7 +75,6 @@ export function usePlaybackSessionSync() {
     });
   };
 
-  /** 防抖保存完整会话状态到 Rust */
   const scheduleSessionSave = () => {
     if (sessionSaveTimer) {
       clearTimeout(sessionSaveTimer);
@@ -122,7 +88,6 @@ export function usePlaybackSessionSync() {
     }, 300);
   };
 
-  /** 节流更新播放进度到 Rust（不写 SQLite，仅内存 + 防抖持久化） */
   const schedulePositionUpdate = () => {
     if (positionUpdateTimer) return;
     positionUpdateTimer = setTimeout(() => {
@@ -135,7 +100,6 @@ export function usePlaybackSessionSync() {
     }, 2000);
   };
 
-  /** 强制持久化（退出时调用） */
   const flushSession = (): Promise<void> => {
     if (sessionSaveTimer) {
       clearTimeout(sessionSaveTimer);
@@ -150,9 +114,7 @@ export function usePlaybackSessionSync() {
     });
   };
 
-  /** 主窗口：设置 watchers 将状态变更同步到 Rust */
   const setupMainWindowSync = () => {
-    // 队列/歌单/当前歌曲/模式/音量/音质变更 → 防抖保存完整会话
     const sessionWatchSources: WatchSource[] = [
       currentSongPath,
       playQueuePaths,
@@ -165,21 +127,18 @@ export function usePlaybackSessionSync() {
       scheduleSessionSave();
     });
 
-    // 进度变更 → 节流更新位置（不触发完整会话保存）
     watch(currentTime, () => {
       if (isPlaying.value) {
         schedulePositionUpdate();
       }
     });
 
-    // 播放/暂停状态变更 → 立即更新位置（包含 isPlaying 状态）
     watch(isPlaying, () => {
       sessionApi
         .updatePlaybackPosition(currentTime.value, isPlaying.value)
         .catch(() => {});
     });
 
-    // 退出时强制持久化
     const beforeUnload = () => {
       void flushSession();
     };
@@ -192,15 +151,9 @@ export function usePlaybackSessionSync() {
     };
   };
 
-  /**
-   * 副窗口：监听 playback:session-changed 事件
-   *
-   * 返回的 applySessionData 函数可用于将事件数据应用到本地 store。
-   */
   const setupSecondaryWindowSync = async (
     onSessionChanged: (data: PlaybackSessionChangedPayload) => void,
   ) => {
-    // 启动时从 Rust 获取当前状态
     try {
       const data = await sessionApi.getPlaybackSession();
       if (data) {
@@ -210,7 +163,6 @@ export function usePlaybackSessionSync() {
       console.warn('[SessionSync] getPlaybackSession failed:', err);
     }
 
-    // 监听后续变更
     unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
       'playback:session-changed',
       (event) => {
@@ -223,7 +175,6 @@ export function usePlaybackSessionSync() {
     if (isMainWindow()) {
       return setupMainWindowSync();
     }
-    // 副窗口的同步由各自的 window bridge composable 调用 setupSecondaryWindowSync
     return () => {
       unlistenSessionChanged?.();
     };

@@ -1,10 +1,3 @@
-/**
- * LX/落雪歌词专用构建器。
- *
- * LX 返回的逐字歌词格式与普通插件歌词不完全一致，尤其酷我歌词可能经历过
- * Rust 后端 kw_parse_lxlyric 预处理：带行时间戳，但逐字标签是相对行首的
- * <offset,duration>，offset 可能为负数。这里单独处理，避免被通用歌词构建逻辑误判。
- */
 
 const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d+:\d{2}(?:\.\d+)?)](.*)$/;
 const ENHANCED_TIMESTAMP_PATTERN = /<\d+:\d{2}(?:\.\d+)?>/;
@@ -49,8 +42,6 @@ function msToTimestamp(ms: number): string {
 function buildEnhancedBody(body: string, entries: WordTimeEntry[]): string {
   if (entries.length === 0) return '';
 
-  // LX/KG 常见格式：<offset,duration>字；酷我原始 lyricx 常见格式：字<offset,duration>。
-  // Enhanced LRC 要求每行正文必须以 <绝对时间> 开头，否则后端会按普通 LRC 解析，逐字会丢失。
   const firstEntry = entries[0];
   const hasTextBeforeFirstMarker = body.slice(0, firstEntry.index).trim().length > 0;
   let convertedBody = '';
@@ -129,9 +120,6 @@ function buildWordTimeCandidate(
     let wordEndMs: number;
 
     if (mode === 'kuwo') {
-      // 酷我 <a,b> 解码结果是"相对行首"的时间（首字 a+b=0 → 相对0）。
-      // 必须加上该行行首时间，否则后续行（行首非0）的逐字时间戳会远小于
-      // 实际播放时间，播放器判定所有字已"过去"，整行高亮成逐行。
       wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2))) + (lineStartMs ?? 0);
       wordEndMs = Math.abs(Math.floor((a - b) / (kuwoOffset2 * 2))) + wordStartMs;
     } else {
@@ -220,11 +208,6 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
     }
   }
 
-  // 酷我格式是文件级格式，不是逐行格式。逐行判断会导致 b 值全为正数的行
-  // 被误判为标准格式，用错误公式计算产生负数/错乱时间戳，该行逐字被丢弃
-  // （表现为"只有第一行有逐字"甚至整段无逐字）。
-  // 判定：有 [kuwo:xxx] 标签，或全文存在绝对值较大的负 <a,b>（酷我编码值，
-  // 标准格式的同步偏移通常只是 -几毫秒的小值）。
   const isKuwoSource = hasKuwoTag || (function checkKuwoValues() {
     const checkRe = /<(-?\d+),(-?\d+)(?:,-?\d+)?>/g;
     for (const l of lines) {
@@ -241,11 +224,9 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
     const line = rawLine.trim();
     if (!line || kuwoTagPattern.test(line)) continue;
 
-    // 过滤纯双斜杠/占位符号行（如 "[00:15.20]//" 或 "//"），避免构建出孤立的斜杠歌词
     const bodyTextOnly = line.replace(LRC_LINE_TIMESTAMP_PATTERN, '$2').trim();
     if (/^\s*[\/\\_\-—–]+\s*$/.test(bodyTextOnly)) continue;
 
-    // 如果已经是 Enhanced LRC，直接保留。
     wordTimePattern.lastIndex = 0;
     if (ENHANCED_TIMESTAMP_PATTERN.test(line) && !wordTimePattern.test(line)) {
       result.push(line);
@@ -302,8 +283,6 @@ export interface LxLyricsPayload {
   eslrc?: string | null;
 }
 
-// LX 原生逐字标记：<offset,duration>（可能带负值，酷我格式），offset/duration 是毫秒数字。
-// 区别于 Enhanced LRC 的绝对时间戳 <mm:ss.ms>（含冒号）。
 const LX_WORD_TIME_MARKER_PATTERN = /<(-?\d+),(-?\d+)(?:,-?\d+)?>/;
 
 function containsLxWordTimeMarkers(text: string): boolean {
@@ -317,8 +296,6 @@ export function buildLxLyricsRaw(payload: LxLyricsPayload): string {
   const eslrc = payload.eslrc?.trim();
   const lxlyric = payload.lxlyric?.trim();
 
-  // 优先保留平台原生逐字格式，交给后端 AMLL 解析器处理。
-  // 只有没有 yrc/qrc/eslrc 时，才把 LX 专用 lxlyric 转成 Enhanced LRC。
   if (yrc) {
     parts.push(yrc);
   } else if (qrc) {
@@ -327,18 +304,11 @@ export function buildLxLyricsRaw(payload: LxLyricsPayload): string {
     parts.push(eslrc);
   } else if (lxlyric) {
     const enhancedLrc = convertLxLyricToEnhancedLrc(lxlyric);
-    // 若 lxlyric 无法按 <offset,duration> 转换（例如内容实为 yrc 风格
-    // `[ms,ms](start,dur,0)字` 标记），仍把原文交给 AMLL 尝试按 yrc 解析，
-    // 避免逐字内容被静默丢弃、回退成普通 LRC。
     if (enhancedLrc) parts.push(enhancedLrc);
     else parts.push(lxlyric);
   } else {
     const lyric = payload.lyric?.trim();
     if (lyric) {
-      // 有些 LX 插件把逐字歌词直接放在 lyric 字段里（LX 原生 <offset,duration>
-      // 标记），而非独立的 lxlyric/yrc 字段。若原样保留，后端 AMLL 解析器认不出
-      // <数字,数字> 标记（它只认绝对时间戳 <mm:ss.ms> 或 yrc 的 [ms,ms](...)），
-      // 逐字会静默丢失、回退成普通 LRC。因此检测到该标记时转成 Enhanced LRC。
       if (containsLxWordTimeMarkers(lyric)) {
         const enhancedLrc = convertLxLyricToEnhancedLrc(lyric);
         if (enhancedLrc) parts.push(enhancedLrc);

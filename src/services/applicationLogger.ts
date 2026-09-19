@@ -71,9 +71,7 @@ export const filterLogEntriesForRetention = (
   _retentionDays: number,
   _now = Date.now(),
 ) => {
-  // 只保留最近 200 条日志，错误日志只保留最近 10 条，超过从最远的开始清除
   let result = source.slice(-MAX_LOG_ENTRIES);
-  // 在保留的条目中，错误日志只保留最近 10 条
   const errorEntries = result.filter(e => e.level === 'error');
   if (errorEntries.length > MAX_ERROR_LOG_ENTRIES) {
     const oldestErrorIdsToRemove = new Set(

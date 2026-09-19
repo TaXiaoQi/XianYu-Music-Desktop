@@ -7,10 +7,6 @@ export interface OnboardingStorage {
   getItem(key: string): string | null;
 }
 
-/**
- * 首次启动时显示引导；当前键或旧版键明确记录为 true 时视为已完成。
- * storage 不可用（SSR、测试或隐私环境）时按首次启动处理。
- */
 export const resolveInitialOnboardingVisibility = (
   storage: OnboardingStorage | null,
 ): boolean => {

@@ -19,7 +19,6 @@ use wasapi::{
 const EXCLUSIVE_PERIOD_HNS: i64 = 200_000;
 const EXCLUSIVE_BUFFER_MULTIPLIER: i64 = 4;
 
-/// DoP 1.0 容器：24-bit 整型，低字节 = DSD 数据，中间字节 = 0，高字节 = 0x05/0xFA 交替。
 const DOP_STORE_BITS: usize = 24;
 const DOP_VALID_BITS: usize = 24;
 
@@ -41,9 +40,7 @@ pub(crate) struct ExclusivePlayRequest {
     pub equalizer_handle: Arc<EqualizerHandle>,
     pub sound_effect_handle: Arc<SoundEffectHandle>,
     pub user_volume: Arc<AtomicU32>,
-    /// DSD 原生 DoP 直通开关（.dsf/.dff + WASAPI 独占生效），false 时走常规 PCM 解码
     pub dsd_native_passthrough: bool,
-    /// Bit-perfect 输出：跳过响度归一化/EQ/音效/主音量等全部 DSP，仅保留解码 + 安全限幅
     pub bit_perfect: bool,
 }
 
@@ -59,7 +56,7 @@ impl WasapiExclusivePlayback {
     pub(crate) fn start(request: ExclusivePlayRequest) -> Result<Self, OutputError> {
         let (command_tx, command_rx) = channel::<ExclusiveCommand>();
         let (init_tx, init_rx) = sync_channel::<Result<String, String>>(1);
-        let (result_tx, result_rx) = channel::<Result<(), String>>(); // 独占模式的退出消息类型
+        let (result_tx, result_rx) = channel::<Result<(), String>>();
 
         let join_handle = thread::spawn(move || {
             let result = run_exclusive_playback(request, command_rx, init_tx);
@@ -189,7 +186,6 @@ impl ExclusiveSource {
         let decoder = Decoder::new(reader).map_err(|error| error.to_string())?;
         let sample_rate = decoder.sample_rate();
         let channels = decoder.channels();
-        // DSD 已降采样为 PCM，其逻辑位深是 32f，不参与整数直出
         let lower = path.to_lowercase();
         let preferred_depth = if lower.ends_with(".dsf") || lower.ends_with(".dff") {
             None
@@ -209,24 +205,27 @@ impl ExclusiveSource {
         let decoded = decoder.convert_samples::<f32>().skip_duration(start_time);
 
         let (source, normalizer_handle) = if bit_perfect {
-            // Bit-perfect: 跳过响度归一化/EQ/音效/主音量，仅保留解码 + 安全限幅
             let clip_source = crate::player::equalizer::ClipGuardSource::new(decoded);
             let dummy_handle =
                 crate::player::loudness::GainRamp::new(1.0, sample_rate, 100).get_handle();
-            (Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>, dummy_handle)
+            (
+                Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>,
+                dummy_handle,
+            )
         } else {
-            // 常规管线: Decoder -> VolumeNormalizer -> Equalizer -> SoundEffect -> PluginHost -> UserVolumeSource -> ClipGuardSource
             let (normalized, normalizer_handle) =
                 crate::player::loudness::VolumeNormalizer::new(decoded, volume_balance_gain, 100);
             let eq_source = crate::player::equalizer::Equalizer::new(normalized, equalizer_handle);
             let se_source =
                 crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
-            // VST3/CLAP 插件机架（空机架硬旁路零开销）；bit-perfect 分支不走此处
             let plugin_source = crate::player::plugin_host::wrap(se_source);
             let vol_source =
                 crate::player::equalizer::UserVolumeSource::new(plugin_source, user_volume);
             let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
-            (Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>, normalizer_handle)
+            (
+                Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>,
+                normalizer_handle,
+            )
         };
 
         Ok((
@@ -277,8 +276,6 @@ impl ExclusiveSource {
                     }
                 };
 
-                // 音量平衡（VolumeNormalizer）已被移至管线最前端，
-                // 在这里我们无需再做任何额外乘以 volume_balance_gain 的操作，直接将样本安全写入 WASAPI
                 push_sample_bytes(output, sample, sample_format);
             }
         }
@@ -323,7 +320,6 @@ fn exclusive_format_candidates() -> [(usize, usize, SampleType, ExclusiveSampleF
 
 type ExclusiveCandidate = (usize, usize, SampleType, ExclusiveSampleFormat);
 
-/// bit-perfect：优先按源位深尝试整数直出；fallback 到通用 Float32 优先列表。
 fn negotiate_exclusive_format(
     audio_client: &wasapi::AudioClient,
     sample_rate: u32,
@@ -348,9 +344,7 @@ fn negotiate_exclusive_format(
         &exclusive_format_candidates(),
     )
     .ok_or_else(|| {
-        format!(
-            "Unsupported WASAPI exclusive format: {sample_rate} Hz, {channels} channels"
-        )
+        format!("Unsupported WASAPI exclusive format: {sample_rate} Hz, {channels} channels")
     })
 }
 
@@ -370,7 +364,8 @@ fn try_exclusive_candidates(
             None,
         );
 
-        if let Ok(wave_format) = audio_client.is_supported_exclusive_with_quirks(&requested_format) {
+        if let Ok(wave_format) = audio_client.is_supported_exclusive_with_quirks(&requested_format)
+        {
             return Some(ExclusiveOutputFormat {
                 bytes_per_frame: wave_format.get_blockalign() as usize,
                 wave_format,
@@ -401,8 +396,6 @@ fn candidates_for_depth(depth: u8) -> Vec<ExclusiveCandidate> {
     }
 }
 
-/// 探测无损容器的原生位深（FLAC/WAV/AIFF）。mp3/aac/m4a/ogg 等有损默认按 16-bit；
-/// 返回 None 时走通用 Float32 优先输出。m4a(ALAC) 的 esds 嵌套解析未内置，会走默认路径。
 fn probe_source_bit_depth(path: &str) -> Option<u8> {
     use std::io::Read;
     let mut file = File::open(path).ok()?;
@@ -413,7 +406,6 @@ fn probe_source_bit_depth(path: &str) -> Option<u8> {
         return None;
     }
 
-    // FLAC: "fLaC"，STREAMINFO 的 bits-per-sample 位于字节 12..18 的第 23..27 位
     if head.starts_with(b"fLaC") {
         if head.len() < 18 {
             return None;
@@ -426,7 +418,6 @@ fn probe_source_bit_depth(path: &str) -> Option<u8> {
         return Some(bits);
     }
 
-    // WAVE: RIFF....WAVE，扫 fmt 子块取每样本位数
     if head.starts_with(b"RIFF") && &head[8..12] == b"WAVE" {
         let mut off = 12usize;
         while off + 8 <= head.len() {
@@ -438,14 +429,14 @@ fn probe_source_bit_depth(path: &str) -> Option<u8> {
                 }
                 return None;
             }
-            let size = u32::from_le_bytes([head[off + 4], head[off + 5], head[off + 6], head[off + 7]])
-                as usize;
+            let size =
+                u32::from_le_bytes([head[off + 4], head[off + 5], head[off + 6], head[off + 7]])
+                    as usize;
             off += 8 + size + (size & 1);
         }
         return None;
     }
 
-    // AIFF: FORM....AIFF，COMM 块的 sampleSize（每样本位数）
     if head.starts_with(b"FORM") && &head[8..12] == b"AIFF" {
         let mut off = 12usize;
         while off + 8 <= head.len() {
@@ -457,8 +448,9 @@ fn probe_source_bit_depth(path: &str) -> Option<u8> {
                 }
                 return None;
             }
-            let size = u32::from_be_bytes([head[off + 4], head[off + 5], head[off + 6], head[off + 7]])
-                as usize;
+            let size =
+                u32::from_be_bytes([head[off + 4], head[off + 5], head[off + 6], head[off + 7]])
+                    as usize;
             off += 8 + size + (size & 1);
         }
         return None;
@@ -467,13 +459,6 @@ fn probe_source_bit_depth(path: &str) -> Option<u8> {
     None
 }
 
-/// 尝试对未压缩 DSF/DFF 走 DSD 原生 DoP 直出（WASAPI 独占、24-bit 整型、位真）。
-///
-/// 返回 `Ok(true)` 表示已接管并完成播放（调用方应直接返回）；`Ok(false)` 表示
-/// 本文件不是 DSF/DFF / DST 压缩 / 设备不支持所需 DoP 采样率，调用方应回退到常规 PCM 路径。
-///
-/// DoP 是位真直出：绕过音量平衡、EQ 与音效管线，按 DoP PCM 率做计时与进度结算
-/// （每 DoP 帧 = 每通道 8 个 DSD bit，帧率 = DSD 率 / 8）。
 fn attempt_dop_playback(
     request: &ExclusivePlayRequest,
     command_rx: &Receiver<ExclusiveCommand>,
@@ -485,7 +470,7 @@ fn attempt_dop_playback(
     }
     let info = match parse_dsd_info(&request.path) {
         Ok(info) if !info.is_dst => info,
-        _ => return Ok(false), // 非 DSF/DFF / DST 压缩 / 损坏 → 回退 PCM
+        _ => return Ok(false),
     };
     let dop_rate = match dop_pcm_rate(info.dsd_rate) {
         Some(rate) => rate,
@@ -497,7 +482,9 @@ fn attempt_dop_playback(
         let collection = enumerator
             .get_device_collection(&Direction::Render)
             .map_err(|e| e.to_string())?;
-        collection.get_device_with_name(name).map_err(|e| e.to_string())?
+        collection
+            .get_device_with_name(name)
+            .map_err(|e| e.to_string())?
     } else {
         enumerator
             .get_default_device(&Direction::Render)
@@ -506,7 +493,6 @@ fn attempt_dop_playback(
     let active_device_name = device.get_friendlyname().map_err(|e| e.to_string())?;
     let mut audio_client = device.get_iaudioclient().map_err(|e| e.to_string())?;
 
-    // 协商 24-bit 整型 @ DoP PCM 率的独占格式（DoP 1.0 容器）
     let requested = WaveFormat::new(
         DOP_STORE_BITS,
         DOP_VALID_BITS,
@@ -517,7 +503,7 @@ fn attempt_dop_playback(
     );
     let wave_format = match audio_client.is_supported_exclusive_with_quirks(&requested) {
         Ok(fmt) => fmt,
-        Err(_) => return Ok(false), // 设备不支持该 DoP 采样率 → 回退 PCM
+        Err(_) => return Ok(false),
     };
     let bytes_per_frame = wave_format.get_blockalign() as usize;
     let period_hns = audio_client
@@ -530,24 +516,32 @@ fn attempt_dop_playback(
     audio_client
         .initialize_client(&wave_format, &Direction::Render, &mode)
         .map_err(|e| e.to_string())?;
-    let render_client = audio_client.get_audiorenderclient().map_err(|e| e.to_string())?;
+    let render_client = audio_client
+        .get_audiorenderclient()
+        .map_err(|e| e.to_string())?;
     let buffer_size = audio_client.get_buffer_size().map_err(|e| e.to_string())? as usize;
 
     let mut source = DopStreamSource::open(&request.path, &info)?;
     let skip_frames = (request.start_time.as_secs_f64() * dop_rate as f64).round() as u64;
     let actual_start_frame = source.seek_to_frame(skip_frames)?;
 
-    // 进度结算按 DoP PCM 率：全局位置 = samples_played / (rate × channels)
-    request.progress.sample_rate.store(dop_rate, Ordering::Relaxed);
-    request.progress.channels.store(info.channels as u32, Ordering::Relaxed);
+    request
+        .progress
+        .sample_rate
+        .store(dop_rate, Ordering::Relaxed);
+    request
+        .progress
+        .channels
+        .store(info.channels as u32, Ordering::Relaxed);
     request
         .progress
         .samples_played
         .store(actual_start_frame * info.channels as u64, Ordering::Relaxed);
     request.progress.visualizer.reset();
 
-    let mut write_buffer =
-        Vec::with_capacity(buffer_size.saturating_mul(bytes_per_frame) + info.channels as usize * 3);
+    let mut write_buffer = Vec::with_capacity(
+        buffer_size.saturating_mul(bytes_per_frame) + info.channels as usize * 3,
+    );
     initial_dop_fill(&mut source, &render_client, buffer_size, &mut write_buffer)?;
 
     if request.is_playing {
@@ -559,7 +553,10 @@ fn attempt_dop_playback(
     loop {
         while let Ok(command) = command_rx.try_recv() {
             match command {
-                ExclusiveCommand::Seek { time, is_playing: next_playing } => {
+                ExclusiveCommand::Seek {
+                    time,
+                    is_playing: next_playing,
+                } => {
                     if is_playing {
                         let _ = audio_client.stop_stream();
                     }
@@ -581,7 +578,6 @@ fn attempt_dop_playback(
                     let _ = audio_client.reset_stream();
                     return Ok(true);
                 }
-                // DSD 位真直出：音量平衡 / EQ / 音效均绕过，不产生实际影响，忽略。
                 ExclusiveCommand::SetVolumeBalance { .. } => {}
                 ExclusiveCommand::SetEqualizerSettings { .. } => {}
                 ExclusiveCommand::SetSoundEffectSettings { .. } => {}
@@ -623,7 +619,6 @@ fn attempt_dop_playback(
     }
 }
 
-/// 起播/seek 时首写一次 buffer_size 帧，确保独占流事件驱动前罐内有数据。
 fn initial_dop_fill(
     source: &mut DopStreamSource,
     render_client: &wasapi::AudioRenderClient,
@@ -649,12 +644,10 @@ fn run_exclusive_playback(
         .ok()
         .map_err(|error| format!("COM initialization failed: {error}"))?;
 
-    // 初始化主音量原子浮点数快照
     request
         .user_volume
         .store(request.volume.to_bits(), Ordering::Relaxed);
 
-    // DSD(.dsf/.dff) 原生 DoP 直出；关闭直通或不满足条件时回退到常规 PCM 路径
     if request.dsd_native_passthrough && attempt_dop_playback(&request, &command_rx, &init_tx)? {
         return Ok(());
     }
@@ -742,13 +735,7 @@ fn run_exclusive_playback(
                     time,
                     is_playing: next_playing,
                 } => {
-                    if is_playing {
-                        let _ = audio_client.stop_stream();
-                    }
-                    audio_client
-                        .reset_stream()
-                        .map_err(|error| error.to_string())?;
-                    source = ExclusiveSource::open(
+                    let opened = ExclusiveSource::open(
                         &request.path,
                         time,
                         request.progress.clone(),
@@ -757,22 +744,35 @@ fn run_exclusive_playback(
                         request.sound_effect_handle.clone(),
                         request.user_volume.clone(),
                         request.bit_perfect,
-                    )?
-                    .0;
-                    let _ = source.read_frames_into(
-                        buffer_size,
-                        exclusive_format.sample_format,
-                        &mut write_buffer,
                     );
-                    render_client
-                        .write_to_device(buffer_size, &write_buffer, None)
-                        .map_err(|error| error.to_string())?;
-                    if next_playing {
-                        audio_client
-                            .start_stream()
-                            .map_err(|error| error.to_string())?;
+                    match opened {
+                        Ok((next_source, _)) => {
+                            if is_playing {
+                                let _ = audio_client.stop_stream();
+                            }
+                            audio_client
+                                .reset_stream()
+                                .map_err(|error| error.to_string())?;
+                            source = next_source;
+                            let _ = source.read_frames_into(
+                                buffer_size,
+                                exclusive_format.sample_format,
+                                &mut write_buffer,
+                            );
+                            render_client
+                                .write_to_device(buffer_size, &write_buffer, None)
+                                .map_err(|error| error.to_string())?;
+                            if next_playing {
+                                audio_client
+                                    .start_stream()
+                                    .map_err(|error| error.to_string())?;
+                            }
+                            is_playing = next_playing;
+                        }
+                        Err(e) => {
+                            eprintln!("[wasapi_exclusive] seek 打开新音源失败，保留当前播放: {e}");
+                        }
                     }
-                    is_playing = next_playing;
                 }
                 ExclusiveCommand::Stop => {
                     let _ = audio_client.stop_stream();

@@ -11,7 +11,6 @@ import {
 
 describe('neteasePicIdToUrl', () => {
   it('matches known CDN path from song detail API', () => {
-    // 与 music.163.com/api/song/detail 返回的 album.picUrl 路径段一致
     expect(encryptNeteasePicId('109951168912558470')).toBe('iAwVf8ag_45csIUuh1wSZg==');
     expect(neteasePicIdToUrl('109951168912558470')).toBe(
       'https://p1.music.126.net/iAwVf8ag_45csIUuh1wSZg==/109951168912558470.jpg',
@@ -24,7 +23,6 @@ describe('neteasePicIdToUrl', () => {
     expect(neteasePicIdToUrl(0)).toBe('');
     expect(neteasePicIdToUrl('0')).toBe('');
     expect(neteasePicIdToUrl('')).toBe('');
-    // 超过 MAX_SAFE_INTEGER 的 number 已丢精度，拒绝拼 URL
     expect(isReliableNeteasePicId(109951163038292176)).toBe(false);
     expect(neteasePicIdToUrl(109951163038292176)).toBe('');
   });
@@ -39,7 +37,6 @@ describe('extractNeteasePicId', () => {
     })).toBe('109951163038292176');
     expect(extractNeteasePicId({ picId: 0 })).toBe(null);
     expect(extractNeteasePicId(null)).toBe(null);
-    // 安全整数 number 仍可用
     expect(extractNeteasePicId({ picId: 123456 })).toBe(123456);
   });
 });

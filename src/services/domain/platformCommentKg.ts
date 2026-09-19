@@ -1,14 +1,11 @@
-/** 酷狗平台评论（两步：hash→res_id 后走签名排行接口）。 */
 import { hostKugouRequestKey, hostKugouSign } from '../tauri/hostCryptoApi';
 import { httpJson, PAGE_SIZE } from './platformCommentShared';
 import type { PlatformComment, PlatformCommentResult } from './platformCommentShared';
 
-/** 酷狗评论接口签名：参数按字典序排序后加盐 MD5（与 Baka 插件 signatureParams 一致，Rust host_crypto 计算） */
 function kugouSignature(params: string): Promise<string> {
   return hostKugouSign(params, 'android');
 }
 
-/** 酷狗 hash → mixsongid（res_id），评论接口的必选参数 */
 async function resolveKgMixsongId(hash: string): Promise<string | null> {
   const body = JSON.stringify({
     area_code: '1',

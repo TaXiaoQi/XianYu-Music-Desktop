@@ -1,13 +1,3 @@
-/**
- * 插件引擎 · 共享底座（叶子模块）。
- *
- * 汇聚各插件引擎子模块共用的：常量、类型、日志/响应式版本号、HTTP 适配器
- * （tauriAdapter/proxyAxios + Cookie 模拟）、质量键工具、用户变量规范化与
- * 静态提取、插件实例缓存全局（pluginInstances 等）与基础插件存储读取。
- *
- * 仅依赖外部工具模块（axios/pluginApi/pluginSandboxManager 等），
- * 不依赖 domain 下其它插件引擎子模块，作为叶子被它们共同引用。
- */
 import axios from 'axios';
 import qs from 'qs';
 import { ref } from 'vue';
@@ -27,7 +17,6 @@ export const PLUGIN_SOURCES_KEY = 'xianyu_plugin_sources_v4';
 export const PLUGIN_SOURCES_KEY_LEGACY = 'xianyu_plugin_sources_v3';
 export const MAX_PLUGIN_SIZE = 2 * 1024 * 1024;
 
-// 内置插件定义：已取消所有内置插件，此映射保留为空用于清理旧版本遗留的内置插件条目
 export const BUILTIN_PLUGINS: Record<string, string> = {};
 
 // ==================== 日志 ====================
@@ -43,8 +32,6 @@ export function log(msg: string) {
 }
 
 // ==================== 插件状态版本号 ====================
-// 响应式版本号：每次插件列表变更（增删/排序/开关/更新）后自增，
-// 供 Search 等页面 watch 以第一时间刷新本地缓存的插件派生数据。
 export const pluginsVersion = ref(0);
 
 export function bumpPluginsVersion() {
@@ -53,10 +40,8 @@ export function bumpPluginsVersion() {
 
 // ==================== 沙箱隔离配置 ====================
 
-// 沙箱模式开关：启用后插件代码在 Web Worker 中隔离执行
 export const USE_SANDBOX = true;
 
-// 记录在沙箱中运行的插件 ID 集合
 export const _sandboxedPlugins = new Set<string>();
 
 // ==================== Cookie 管理（模拟 Electron session.cookies）====================
@@ -112,9 +97,6 @@ async function tauriAdapter(config: any): Promise<any> {
     }
 
     if (config.params) {
-      // [修复] 插件内部可能将 RegExp.match() 的结果（数组）直接作为 params 值传入，
-      // qs.stringify 会把数组序列化为 key[0]=&key[1]= 格式，导致服务端解析失败。
-      // 这里把数组值取第一个元素，模拟 axios 默认 paramsSerializer 对单值数组的行为。
       const cleanParams: Record<string, any> = {};
       for (const [key, value] of Object.entries(config.params)) {
         cleanParams[key] = Array.isArray(value) ? value[0] : value;
@@ -135,7 +117,6 @@ async function tauriAdapter(config: any): Promise<any> {
     let body: string | undefined;
     if (config.data !== undefined && config.data !== null) {
       body = typeof config.data === 'string' ? config.data : JSON.stringify(config.data);
-      // [修复防御]: body 经过上赋值后仍可能被 TS 推断为 undefined，需显式校验避免后续 .length 抛错
       if (body && body.length > 256 * 1024) {
         log(`[proxyAxios] 请求体过大 ${body.length} bytes，截断`);
         body = body.substring(0, 256 * 1024);
@@ -145,12 +126,10 @@ async function tauriAdapter(config: any): Promise<any> {
       }
     }
 
-    // [修复防御]: 确保 URL 有效
     if (!url || !url.startsWith('http')) {
       throw new Error(`Invalid URL: ${url || '(empty)'}`);
     }
 
-    // [修复] 自动注入 Cookie（模拟 Electron session.cookies 自动携带）
     const cookieStr = getCookiesForUrl(url);
     if (cookieStr && !headers['Cookie'] && !headers['cookie']) {
       headers['Cookie'] = cookieStr;
@@ -160,7 +139,6 @@ async function tauriAdapter(config: any): Promise<any> {
     const response = await pluginApi.pluginHttpRequest(method, url, headers, body);
     log(`[tauriAdapter] 响应: status=${response.status}, bodyLen=${response.body?.length ?? 0}, bodyPreview=${response.body?.substring(0, 200) ?? ''}`);
 
-    // [修复] 自动捕获 Set-Cookie（模拟 Electron session.cookies 自动捕获）
     if (response.headers) {
       captureCookiesFromResponse(url, response.headers);
     }
@@ -190,7 +168,6 @@ async function tauriAdapter(config: any): Promise<any> {
     return axiosResponse;
   } catch (e: any) {
     if (e?.response) throw e;
-    // [修复防御]: Tauri v2 错误可能是字符串或对象，不一定是 Error 实例
     const errMsg = e?.message || (typeof e === 'string' ? e : JSON.stringify(e)?.substring(0, 200)) || 'Tauri backend request failed';
     log(`[proxyAxios] 请求失败: ${errMsg}, url=${config.url?.substring(0, 80)}`);
     const error: any = new Error(errMsg);
@@ -201,12 +178,10 @@ async function tauriAdapter(config: any): Promise<any> {
 
 // ==================== MusicFree 包注入（与 plugin.ts 第15~46行完全一致）====================
 
-// Tauri 环境下 axios 无法直接发跨域请求，需要通过 tauriAdapter 代理到 Rust 后端
 export const proxyAxios = axios.create({
   adapter: tauriAdapter as any,
 });
 
-// 与 MusicFree plugin.ts 第15行一致：axios.defaults.timeout = 15000
 proxyAxios.defaults.timeout = 15000;
 
 const _originalCreate = proxyAxios.create.bind(proxyAxios);
@@ -278,7 +253,6 @@ export function buildNativePluginQualityPairs(
       seen.add(pluginQ);
       pairs.push({ pluginQ, qualityKey });
     }
-    // 部分 MusicFree QQ 插件把无损档称作 super，而不是 lossless/flac。
     if (QUALITY_META[qualityKey].isLossless && !seen.has('super')) {
       seen.add('super');
       pairs.push({ pluginQ: 'super', qualityKey });
@@ -316,44 +290,23 @@ export function buildNativePluginQualityPairs(
   return pairs;
 }
 
-// B站插件标识：其专辑/歌单详情走统一的 getBilibiliDetail 专用路径
 export function isBilibiliSource(source: PluginSource): boolean {
   return source.name === 'bilibili' || String(source.id || '').includes('bilibili');
 }
 
 // ==================== 用户变量（类型 + 规范化 + 静态提取） ====================
 
-/** 用户变量定义（与 MusicFree IPlugin.IUserVariable 一致） */
 export interface PluginUserVariable {
-  /** 变量名，即 env.getUserVariables() 返回对象的 key */
   name: string;
-  /** 显示标题 */
   title?: string;
-  /** 变量类型: text/password/select */
   type?: 'text' | 'password' | 'select';
-  /** 默认值 */
   defaultValue?: string;
-  /** 选项列表（type=select 时使用） */
   options?: string[];
-  /** 描述/提示文本 */
   description?: string;
-  /** 输入框 placeholder */
   placeholder?: string;
-  /** 是否为必填项 */
   required?: boolean;
 }
 
-/**
- * 兼容 MusicFree 与 Baka/Toskysun 插件的用户变量定义。
- *
- * MF 常用 name/title/defaultValue，Baka 插件可能使用 key/id、label、default、desc 等别名。
- * 统一规范化后，设置页按 name 保存，Worker 里的 env.getUserVariables()/env.userVariables
- * 就能拿到插件期望的 key。
- *
- * [修复] Baka 插件常用 key 作为变量键、name 作为显示名。
- * 优先使用 key（Baka 约定），其次 name（MF 约定），最后 id。
- * 同时将 name 字段作为 title 的回退（Baka 的 name 实为显示名）。
- */
 export function normalizePluginUserVariables(raw: unknown): PluginUserVariable[] {
   const list = Array.isArray(raw)
     ? raw
@@ -369,8 +322,6 @@ export function normalizePluginUserVariables(raw: unknown): PluginUserVariable[]
     .map((item): PluginUserVariable | null => {
       if (!item || typeof item !== 'object') return null;
       const v = item as Record<string, any>;
-      // [修复] 优先使用 key（Baka 约定：key 是变量键，name 是显示名），
-      // 其次 name（MF 约定：name 本身就是变量键），最后 id
       const name = String(v.key ?? v.name ?? v.id ?? '').trim();
       if (!name) return null;
 
@@ -397,7 +348,6 @@ export function normalizePluginUserVariables(raw: unknown): PluginUserVariable[]
         .filter(Boolean);
 
       const defaultValue = v.defaultValue ?? v.default ?? v.value;
-      // [修复] 当 key 被用作变量键时，name 实为显示名，应作为 title 回退
       const titleFromName = (typeof v.name === 'string' && v.name !== name) ? v.name : undefined;
       return {
         name,
@@ -514,10 +464,9 @@ export function extractPluginUserVariablesFromScript(script: string): PluginUser
 export interface PluginInstance {
   source: PluginSource;
   instance: IPluginInstance;
-  script: string; // 存储插件源码用于错误诊断
+  script: string;
 }
 
-/** 与 MusicFree IPlugin.IPluginDefine 一致（扩展 Baka 插件方法） */
 export interface IPluginInstance {
   platform: string;
   version?: string;
@@ -530,9 +479,7 @@ export interface IPluginInstance {
   userVariables?: PluginUserVariable[];
   cacheControl?: string;
   primaryKey?: string[];
-  /** 提示文本（与 MusicFree IPlugin.IPluginDefine.hints 一致） */
   hints?: Record<string, string[]>;
-  /** Baka 系列特有：12 档音质声明 */
   supportedQualities?: string[];
   search?: (query: string, page: number, type: string) => Promise<any>;
   getMediaSource?: (musicItem: any, quality: string) => Promise<any>;
@@ -548,15 +495,11 @@ export interface IPluginInstance {
   getMusicSheetInfo?: (sheetItem: any, page: number) => Promise<any>;
   getRecommendSheetTags?: () => Promise<any>;
   getRecommendSheetsByTag?: (tagItem: any, page: number) => Promise<any>;
-  /** Baka 扩展：获取歌手详情 */
   getArtistInfo?: (artistItem: any) => Promise<any>;
-  /** Baka 扩展：获取歌曲评论 */
   getMusicComments?: (musicItem: any, page?: number) => Promise<any>;
-  /** Baka 扩展：获取歌曲详情页 URL */
   getMusicDetailPageUrl?: (musicItem: any) => Promise<any>;
 }
 
-// [修复防御]: 挂载到 window 防止 Vite HMR 重置缓存，导致每次搜索都重新加载插件
 const _globalThis = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {} as any);
 if (!_globalThis.__pluginInstances) {
   _globalThis.__pluginInstances = new Map<string, PluginInstance>();
@@ -568,9 +511,6 @@ if (!_globalThis.__pluginInstanceErrors) {
 }
 export const pluginInstanceErrors: Map<string, string> = _globalThis.__pluginInstanceErrors;
 
-// [用户变量定义缓存] 独立于完整插件实例缓存，用于在懒加载模式下
-// 不初始化完整插件即可获取 userVariables 定义（如 QQ音乐L2 的密钥配置）。
-// key = pluginId (SHA-256 hash), value = userVariables 数组
 if (!_globalThis.__userVarDefsCache) {
   _globalThis.__userVarDefsCache = new Map<string, PluginUserVariable[]>();
 }
@@ -590,13 +530,6 @@ export function getNormalizedCachedUserVariables(pluginId: string): PluginUserVa
 
 // ==================== 沙箱代理实例 ====================
 
-/**
- * 创建沙箱代理实例
- *
- * 当插件在沙箱（Web Worker）中加载时，主线程无法直接持有插件实例。
- * 此函数创建一个代理对象，将所有方法调用通过 RPC 转发到 Worker。
- * 代理对象的接口与 IPluginInstance 完全一致，现有代码无需修改。
- */
 export function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
   const allMethodNames = [
     'search', 'getMediaSource', 'getMvSource', 'getMusicInfo', 'getLyric',
@@ -606,12 +539,9 @@ export function createSandboxProxy(pluginId: string, metadata: any): IPluginInst
     'getArtistInfo', 'getMusicComments', 'getMusicDetailPageUrl',
   ];
 
-  // Worker 返回的 _availableMethods 包含插件实例实际实现的方法名列表
-  // 只为这些方法创建代理函数，未实现的方法不创建函数桩
-  // 这样 typeof proxy.someMethod === 'function' 能正确反映插件是否实现了该方法
   const availableMethods: string[] = Array.isArray(metadata._availableMethods)
     ? metadata._availableMethods
-    : allMethodNames; // 回退：元数据无 _availableMethods 时全部代理（向后兼容）
+    : allMethodNames;
 
   const proxy: any = {
     platform: metadata.platform,
@@ -640,10 +570,8 @@ export function createSandboxProxy(pluginId: string, metadata: any): IPluginInst
 
 // ==================== 用户变量值存取（纯 localStorage 读写，供沙箱 Provider 与外部使用） ====================
 
-// 每个插件的用户变量值独立存储，key 格式: xianyu_plugin_user_vars_<pluginId>
 export const userVarKey = (pluginId: string) => `xianyu_plugin_user_vars_${pluginId}`;
 
-/** 读取指定插件的用户变量值 */
 export function getPluginUserVariableValues(pluginId: string): Record<string, string> {
   try {
     const storageKey = userVarKey(pluginId);
@@ -663,7 +591,6 @@ export function getPluginUserVariableValues(pluginId: string): Record<string, st
 
 // ==================== 插件存储读取（纯 localStorage 读写，作为叶子被存储/用户变量等子模块复用） ====================
 
-// 所有插件（内置 + 用户导入）都持久化到 localStorage，跨重启保留。
 export function readPluginsFromLocalStorage(): PluginSource[] {
   try {
     const raw = localStorage.getItem(PLUGIN_SOURCES_KEY);

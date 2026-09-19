@@ -8,12 +8,6 @@ import StatisticsPage from '../statistics/StatisticsPage.vue';
 import DailyRecommend from '../../views/DailyRecommend.vue';
 import TopLists from '../../views/TopLists.vue';
 
-// SongTable 与歌手/专辑详情头处于同一组 v-if / v-else 的 <Transition> 分支，
-// 且 SongTable 内部是虚拟滚动（:key="song.path" 的 keyed diff）。它们必须与
-// 父级（HomeContentPanel，已被 HomeViewPane 静态加载）同步挂载——若其中任一懒
-// 加载 chunk 在过渡进行中迟到挂载，会与 out-in 取消/重挂中的路由树并发 patch，
-// 卸载虚拟列表行时读到 el.parentNode 为 null 崩溃（正式协议加载有时延，dev 无）。
-// MasterPanel / 发现区 TAB 等非同一竞争分支，仍保持懒加载控制分包体积。
 import AlbumDetailHeader from '../headers/AlbumDetailHeader.vue';
 import ArtistDetailHeader from '../headers/ArtistDetailHeader.vue';
 import SongTable from '../song-list/SongTable.vue';
@@ -83,7 +77,6 @@ watch(localSongTableRef, value => {
   props.setSongTableRef?.(value);
 }, { immediate: true });
 
-/** 歌曲列表滚动容器：驱动歌手/专辑详情头部的滚动缩小封面效果 */
 const songTableScrollContainer = computed(() => localSongTableRef.value?.containerRef ?? null);
 
 onBeforeUnmount(() => {
@@ -100,12 +93,10 @@ const handleTableDragStart = (...args: any[]) => {
 
 const router = useRouter();
 
-/** 发现区（统计 / 每日推荐 / 音源榜单）：首页顶部 TAB 切换的三种内容视图 */
 const isDiscoverMode = computed(() =>
   ['statistics', 'dailyRecommend', 'topLists'].includes(props.localViewMode),
 );
 
-/** TAB 切换：走路由 query，由 useHomeRouteSync 双向同步回 currentViewMode */
 const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
   if (props.localViewMode === tab) return;
   void router.replace({
@@ -153,17 +144,8 @@ const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
         @batchMove="$emit('batchMove')"
       />
 
-      <!-- 发现区：顶部 TAB（统计 / 每日推荐 / 音源榜单）。
-           KeepAlive 缓存三个视图：切 TAB 仅 deactivate/activate，不重新挂载，
-           列表状态与滚动位置保留，避免每次切换都出现加载动画像"整页刷新" -->
       <div v-if="isDiscoverMode" data-test="discover-container" class="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <HomeDiscoverTabs :active-mode="localViewMode" @change="handleDiscoverTabChange" />
-        <!-- 发现区 TAB 用 KeepAlive 缓存三视图（切 TAB 仅 deactivate/activate，
-             保留列表状态与滚动位置）。绝不能再用 <transition mode="out-in"> 包住
-             KeepAlive：out-in 离场时会把 KeepAlive 缓存子树移到隐藏容器（deactivate），
-             同时 leave 又在删节点，双重重删导致 remove(el.parentNode) 读到 null 崩溃
-             （正式构建启动即命中，dev 内存加载恰好不触发）。KeepAlive 必须单独存在，
-             不包裹在任何 Vue 过渡状态机里。 -->
           <KeepAlive>
             <StatisticsPage v-if="localViewMode === 'statistics'" key="statistics" class="flex-1 min-h-0" />
             <DailyRecommend v-else-if="localViewMode === 'dailyRecommend'" key="dailyRecommend" class="flex-1 min-h-0" />
@@ -171,13 +153,6 @@ const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
           </KeepAlive>
       </div>
 
-      <!-- 虚拟滚动 SongTable 不能再放进 <Transition>：它的行是 keyed v-for Fragment，
-           补丁时 patchBlockChildren→patch→processFragment→patchKeyedChildren 卸载行节点。
-           若 SongTable 由外层 <transition mode="out-in"> 持有（其 enter/leave 会临时重排、
-           甚至把已置 null 的行 el 送入 hostRemove），加载/扫描异步更新它的虚拟列表时，
-           卸载 phase 会读到 el.parentNode 为 null 崩溃（正式构建时序触发，dev 恰好不触发）。
-           故 SongTable 永远渲染为普通条件分支，不参与任何 Vue 过渡状态机；
-           仅歌手的两个从属子视图（专辑/详情）可用 tab-slide 过渡，它们是非虚拟列表轻量内容。 -->
       <SongTable
         v-if="!isDiscoverMode && !(localViewMode === 'artist' && (artistActiveTab === 'albums' || artistActiveTab === 'details'))"
         ref="localSongTableRef"

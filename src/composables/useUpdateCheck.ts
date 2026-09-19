@@ -12,19 +12,12 @@ import { updateApi } from '../services/tauri/updateApi';
 import { appApi } from '../services/tauri/appApi';
 import { aboutConfig } from '../utils/aboutConfig';
 
-// 模块级单例状态，保证全局共享同一份更新检查状态
 const updateVisible = ref(false);
 const latestUpdate = ref<ServerUpdateInfo | null>(null);
 const isCheckingUpdate = ref(false);
 
-/**
- * 下载地址是否匹配当前桌面平台的安装包格式。
- * 服务端渠道未配置当前平台安装包时（如 Linux/mac 端拿到 .msi），
- * 引导用户前往官网下载页。
- */
 function installerMatchesPlatform(url: string): boolean {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-  // macOS：只在出现 .dmg/.app 包时才允许应用内更新（".appimage" 不匹配 ".app" 边界）
   if (/Macintosh|Mac OS X/.test(ua)) {
     return /\.(dmg|app)(?:[?#]|$)/i.test(url);
   }
@@ -34,7 +27,6 @@ function installerMatchesPlatform(url: string): boolean {
   return /\.(msi|exe)(?:[?#]|$)/i.test(url);
 }
 
-// 下载安装状态
 export interface DownloadProgressData {
   progress: number;
   downloaded: number;
@@ -44,21 +36,12 @@ export interface DownloadProgressData {
 const isDownloading = ref(false);
 const downloadProgress = ref<DownloadProgressData>({ progress: 0, downloaded: 0, total: 0, speed: 0 });
 
-// 调试模拟标志：simulateUpdate 设置后，downloadAndInstall 走模拟下载流程
 const isSimulatedUpdate = ref(false);
 let simulateTimer: ReturnType<typeof setInterval> | null = null;
 
 export function useUpdateCheck() {
   const { showToast } = useToast();
 
-  /**
-   * 启动时自动检查（应用启动调用）
-   * 只要后台版本高于本地版本就弹出，每次启动都检查、每次都弹
-   * 无数据/请求失败时静默，不打扰用户
-   * 开发构建（vite dev / tauri dev）跳过更新检测，避免本地 beta 版本被
-   * 稳定版迭代误判成「有新版本」而反复打扰
-   * Microsoft Store 版（带 MSIX 包身份）同样跳过：商店政策禁止绕过商店自更新
-   */
   const checkUpdateOnStartup = async () => {
     if (import.meta.env.DEV) return;
     if (await updateApi.isStoreBuild()) return;
@@ -66,7 +49,7 @@ export function useUpdateCheck() {
     isCheckingUpdate.value = true;
     try {
       const server = await fetchServerUpdate();
-      if (!server) return; // 未启用/请求失败，静默
+      if (!server) return;
       const cmp = compareVersions(server.version, APP_VERSION);
       if (cmp > 0) {
         latestUpdate.value = server;
@@ -77,16 +60,11 @@ export function useUpdateCheck() {
     }
   };
 
-  /**
-   * 手动检查（关于页「检查更新」按钮调用）
-   * 强制比对；无更新时 toast「已是最新版本」
-   */
   const checkUpdateManual = async () => {
     if (import.meta.env.DEV) {
       showToast('开发环境不检查更新', 'info');
       return;
     }
-    // 商店版不提供应用内自更新，明示用户走商店渠道
     if (await updateApi.isStoreBuild()) {
       showToast('商店版请通过 Microsoft Store 更新', 'info');
       return;
@@ -113,7 +91,6 @@ export function useUpdateCheck() {
     }
   };
 
-  /** 关闭弹窗（「稍后」仅当次关闭，下次启动仍会重新检查并弹出） */
   const closeUpdate = () => {
     if (simulateTimer) {
       clearInterval(simulateTimer);
@@ -124,7 +101,6 @@ export function useUpdateCheck() {
     updateVisible.value = false;
   };
 
-  /** 调试用：使用模拟数据直接弹出更新弹窗，不做真实网络请求 */
   const simulateUpdate = () => {
     isSimulatedUpdate.value = true;
     latestUpdate.value = {
@@ -136,30 +112,24 @@ export function useUpdateCheck() {
     updateVisible.value = true;
   };
 
-  /** 打开下载链接（备用：浏览器打开） */
   const openDownload = async () => {
     if (latestUpdate.value?.downloadUrl) {
       await openUrl(latestUpdate.value.downloadUrl);
     }
   };
 
-  /**
-   * 调试用：模拟下载进度动画
-   * 在约 5 秒内从 0% 递增到 100%，带有随机速度波动
-   */
   const simulateDownload = () => {
     if (isDownloading.value) return;
     isDownloading.value = true;
-    const totalBytes = 48.3 * 1024 * 1024; // 模拟 48.3MB 安装包
+    const totalBytes = 48.3 * 1024 * 1024;
     downloadProgress.value = { progress: 0, downloaded: 0, total: totalBytes, speed: 0 };
 
     const intervalMs = 60;
-    const totalSteps = 80; // 约 4.8 秒完成
+    const totalSteps = 80;
     let step = 0;
 
     simulateTimer = setInterval(() => {
       step++;
-      // 非线性进度：前段快、后段稍慢，模拟真实网络波动
       const baseRatio = step / totalSteps;
       const easedRatio = baseRatio < 0.8
         ? baseRatio * 1.15
@@ -167,7 +137,6 @@ export function useUpdateCheck() {
       const ratio = Math.min(1, easedRatio);
 
       const downloaded = Math.round(totalBytes * ratio);
-      // 随机速度波动：3~8 MB/s
       const speed = (3 + Math.random() * 5) * 1024 * 1024;
       const progress = ratio * 100;
 
@@ -184,7 +153,6 @@ export function useUpdateCheck() {
           total: totalBytes,
           speed: 0,
         };
-        // 短暂展示 100% 后关闭弹窗
         setTimeout(() => {
           isDownloading.value = false;
           isSimulatedUpdate.value = false;
@@ -195,18 +163,7 @@ export function useUpdateCheck() {
     }, intervalMs);
   };
 
-  /**
-   * 应用内下载更新并自动安装
-   * 1. 监听下载进度事件
-   * 2. 调用 download_update_file 下载安装包
-   * 3. 调用 run_installer 启动 MSI 安装程序
-   * 4. 调用 exit_app 退出应用，安装程序接管
-   * 用户数据存储在 app_data_dir（%APPDATA%），MSI 覆盖安装目录不影响数据
-   *
-   * 调试模式下（isSimulatedUpdate）走 simulateDownload 模拟流程，不执行真实下载
-   */
   const downloadAndInstall = async () => {
-    // 调试模拟模式：仅模拟下载进度动画，不执行真实下载安装
     if (isSimulatedUpdate.value) {
       simulateDownload();
       return;
@@ -216,8 +173,6 @@ export function useUpdateCheck() {
       showToast('下载地址不可用', 'error');
       return;
     }
-    // 服务端该渠道没有当前平台的安装包（如 Linux 端拿到 .msi）：
-    // 不做应用内下载安装，引导用户前往官网下载页获取对应平台的包
     if (!installerMatchesPlatform(latestUpdate.value.downloadUrl)) {
       showToast('当前平台安装包暂未发布，请前往官网下载', 'info');
       const site = aboutConfig.value.officialSiteUrl;
@@ -234,18 +189,14 @@ export function useUpdateCheck() {
 
     let unlisten: UnlistenFn | null = null;
     try {
-      // 监听下载进度
       unlisten = await listen<DownloadProgressData>('update-download-progress', (event) => {
         downloadProgress.value = event.payload;
       });
 
-      // 下载安装包到 Downloads 目录
       const path = await updateApi.downloadUpdateFile(latestUpdate.value!.downloadUrl);
 
-      // 启动 MSI 安装程序（非阻塞）
       await updateApi.runInstaller(path);
 
-      // 等待安装程序初始化后退出应用
       await new Promise((resolve) => setTimeout(resolve, 500));
       await appApi.exitApp();
     } catch (error) {

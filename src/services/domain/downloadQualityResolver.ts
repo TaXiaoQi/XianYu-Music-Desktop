@@ -1,13 +1,3 @@
-/**
- * 在线下载服务 · 音质解析层。
- *
- * 汇聚在线直链解析的上下文准备与逐档位解析：统一直链结构、定位插件、
- * 解析候选音质列表、逐档解析直链（含 Baka/旧 MF 键映射与无损降级校验）、
- * 按回退策略命中实际档位。多档并发探测收敛到叶子 downloadQualityProbe。
- *
- * 同时导出被 downloadExecutor（下载编排）复用的上下文/解析函数，
- * 避免执行层重复实现直链获取逻辑。
- */
 import type {
   DownloadQuality,
   DownloadQualityFallbackBehavior,
@@ -51,7 +41,6 @@ import {
   extFromUrl,
 } from './downloadFormat';
 
-/** 统一在线音频直链解析结果：播放和下载共用同一套单档解析逻辑 */
 export interface ResolvedOnlineQualityUrl {
   quality: QualityKey;
   url: string;
@@ -62,7 +51,6 @@ export interface ResolvedOnlineQualityUrl {
   cek?: string;
 }
 
-/** 解析出的候选音源直链上下文（供逐档位下载回退使用） */
 export interface ResolveDownloadContext {
   matchedPlugin: any;
   lxSource: string;
@@ -70,10 +58,6 @@ export interface ResolveDownloadContext {
   candidates: LxQuality[];
 }
 
-/**
- * 准备解析上下文：定位插件、构造 songInfo、按目标音质生成候选档位列表。
- * 真正的直链解析交给 resolveLxAudioForQuality 逐档位进行，以便下载失败时回退。
- */
 export async function prepareResolveContext(
   song: Song,
   quality: DownloadQuality,
@@ -101,16 +85,6 @@ export async function prepareResolveContext(
   };
 }
 
-/**
- * 解析单个落雪档位的真实音源直链；无有效链接返回 null。
- *
- * 额外校验：部分 lx 插件对没有对应版权的歌曲会「静默降级」，例如请求 flac/flac24bit
- * 时直接返回一个 .mp3 直链。若不校验，就会把降级后的 mp3 用 .flac 扩展名保存，
- * 表现为「下载无损却比高品还小」。这里通过 URL 扩展名识别降级并跳过该档位。
- *
- * 音质上报采用插件实际报告的档位（type 字段），而非请求档位：
- * 插件可能把 320k 请求降级为 128k，若不采用其报告档位，底部栏会显示一个高于实际播放的音质。
- */
 export async function resolveLxAudioForQuality(
   ctx: ResolveDownloadContext,
   q: LxQuality,
@@ -131,21 +105,13 @@ export async function resolveLxAudioForQuality(
   return { quality: resolveActualQuality(reportedQuality, url), url };
 }
 
-/** plugin:// 协议的解析上下文 */
 export interface PluginResolveContext {
   pluginSource: any;
   pluginSearchResult: any;
   candidates: LxQuality[];
-  /** 插件 musicItem 已预解析的 qualities 字段（若插件在搜索阶段返回了多音质直链） */
   preQualities?: Record<string, { url?: string; size?: number | string }>;
 }
 
-/**
- * 准备 plugin:// 协议的解析上下文：定位 MusicFree 插件、提取预解析的多音质信息。
- *
- * 与 LX 不同，MusicFree 插件搜索结果不强制带 `_types`/多音质元信息，
- * 但部分插件会在 `rawData.qualities` 字段预填各音质直链，此函数会尝试提取以省去探测请求。
- */
 export async function preparePluginResolveContext(
   song: Song,
   quality: DownloadQuality,
@@ -160,28 +126,17 @@ export async function preparePluginResolveContext(
   const plugins = getStoredPlugins();
   let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled) ?? null;
   if (!pluginSource) {
-    // 悬空 pluginId（插件 id = 文件内容 sha256，插件更新/重装后 id 必变）：
-    // 按平台在已装同格式插件中重匹配并回写歌单/收藏记录，
-    // 避免「插件一更新，备份导入的歌单全部失效，只能删除重导」。
     pluginSource = healDanglingPluginId(song, plugins);
     if (!pluginSource) {
       throw new Error('该歌曲对应的插件未启用或已被移除');
     }
   }
 
-  // 存量导入的 musicItem 可能仍携带来源 App 的临时代理直链（如 BakaMusic 备份
-  // 的 share.*.cn/url/...）：该链接会过期/被限流，且 BakaMusic 自身播放从不复用
-  // musicItem.url，总是经 getMediaSource 按歌曲 id 重新解析。解析入口剥离该字段，
-  // 强制插件重新解析，保护存量导入（对齐 BakaMusic 播放语义，移动端同此修复）。
   const musicItem = pluginSearchResult.rawData;
   if (musicItem && typeof musicItem.url === 'string' && musicItem.url.startsWith('http')) {
     delete musicItem.url;
   }
 
-  // 部分插件在搜索阶段已填充 qualities 字段。
-  // Baka 原生键：{ '320k': {url}, flac: {url}, ... }
-  // Baka/MF 兼容键：{ low: {url}, standard: {url}, high: {url}, super: {url} }
-  // 旧 MF 键：{ standard: {url}, high: {url}, lossless: {url} }
   const preQualities = pluginSearchResult.rawData?.qualities ?? undefined;
 
   return {
@@ -192,11 +147,6 @@ export async function preparePluginResolveContext(
   };
 }
 
-/**
- * 解析 plugin:// 协议下单个档位的真实音源直链。
- * 优先用预解析的 qualities 字段（无网络开销），否则调用插件的 getMediaSource。
- * 同样检测 lossless 被降级为 mp3 的情况并跳过该档位。
- */
 export async function resolvePluginAudioForQuality(
   ctx: PluginResolveContext,
   q: LxQuality,
@@ -207,9 +157,6 @@ export async function resolvePluginAudioForQuality(
   const bakaLegacyQuality = qualityKeyToBakaLegacyQuality(q);
   const mfLegacyQuality = qualityKeyToMfQuality(q);
 
-  // 1) 优先使用预解析的 qualities 字段（仅对非 Baka 插件）：
-  //    内部 12 档 → Baka 插件原生键（mgg→96k）→ Baka 旧兼容键 → MF 旧 lossless 键
-  //    Baka 插件跳过此优化：预解析 qualities 不含 ekey/cek，加密音源必须走 getMediaSource 获取密钥
   const isBaka = await isBakaPlugin(ctx.pluginSource);
   if (!isBaka) {
     const preKeys = Array.from(new Set([
@@ -230,8 +177,6 @@ export async function resolvePluginAudioForQuality(
     }
   }
 
-  // 2) 调用插件 getMediaSource 获取直链（含 ekey/cek/headers 等加密音源信息）
-  //    Baka 插件使用独立的 12 档音质方法，原版 MF 使用三档映射
   const musicInfo = isBaka
     ? await pluginGetBakaMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q)
     : await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
@@ -245,7 +190,6 @@ export async function resolvePluginAudioForQuality(
   let coverThumbPath = musicInfo?.coverUrl;
   if (includePlaybackExtras && !ctx.pluginSearchResult?.cover_thumb_path && !coverThumbPath) {
     try {
-      // 超时保护：封面获取不应阻塞播放起播，3 秒内未返回则放弃
       const coverTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
       coverThumbPath = await Promise.race([
         pluginGetCover(ctx.pluginSource, ctx.pluginSearchResult),
@@ -254,10 +198,6 @@ export async function resolvePluginAudioForQuality(
     } catch { /* ignore cover error */ }
   }
 
-  // 使用插件返回的实际音质（actualQuality），而非请求档位 q。
-  // Baka 插件（QQ音乐/网易云等）在请求 flac 时可能仅能提供 320k，
-  // 插件会在 actualQuality 中报告真实音质；若插件未报告则回退到请求档位。
-  // resolveActualQuality 作为最终安全网：即使插件声称无损但 URL 扩展名为有损格式，也会修正。
   const reportedQuality = musicInfo?.actualQuality ?? q;
   const effectiveQuality = resolveActualQuality(reportedQuality, url);
 
@@ -272,7 +212,6 @@ export async function resolvePluginAudioForQuality(
   };
 }
 
-/** 使用下载链路解析在线音频直链，并按播放回退策略返回实际命中的档位 */
 export async function resolveOnlineQualityUrl(
   song: Song,
   requestedQuality: QualityKey,
@@ -294,8 +233,6 @@ export async function resolveOnlineQualityUrl(
   for (const q of candidates) {
     const preResolved = sanitizeMediaUrl(preResolvedUrls?.[q]);
     if (preResolved && /^https?:/.test(preResolved) && !isDegradedLossless(q, preResolved)) {
-      // 命中预解析 URL 时，若需要播放附加信息且歌曲缺封面，补获封面。
-      // 否则预解析路径跳过了 getMediaSource，封面永远拿不到，导致播放详情页无封面/背景。
       let coverThumbPath: string | undefined;
       if (options?.includePlaybackExtras && isPlugin && !song.cover_thumb_path) {
         const pluginCtx = ctx as PluginResolveContext;
@@ -323,9 +260,6 @@ export async function resolveOnlineQualityUrl(
     if (resolved?.url) return resolved;
   }
 
-  // [QQ/网易云插件原生适配] 不再借用 LX 音源兜底：插件自身的 getMediaSource
-  // 解析失败（试听链/外链不可用等）时如实失败并透出插件错误，由起播失败行为
-  // （跳过/停止）与 toast 处理，避免音质与音源来源不一致。
 
   return null;
 }

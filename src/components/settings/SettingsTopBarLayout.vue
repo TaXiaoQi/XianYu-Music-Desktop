@@ -29,7 +29,6 @@ const layout = computed(() => normalizeTopBarLayout(topBarLayout.value));
 const previewSlots = computed(() => getTopBarPreviewSlotItems(layout.value));
 const collapsedPreviewItems = computed(() => computeTopBarCollapsedItems(layout.value));
 
-// 预览区直接复用真实顶部栏控件组件；这里提供一套轻量 mock 上下文，只用于渲染外观。
 provide('topBarContext', {
   isDarkTheme: ref(false),
   goBack: () => {},
@@ -53,7 +52,6 @@ provide('topBarContext', {
 const getItemLabel = (key: TopBarItemKey | null) => key ? getTopBarItemMeta(key)?.label ?? key : '';
 const isItemVisible = (key: TopBarItemKey) => !layout.value.hidden.includes(key);
 const isItemFixed = (key: TopBarItemKey) => getTopBarItemMeta(key)?.fixed ?? false;
-// 控件显示列表仅展示可开关项；固定项（设置/搜索框）不可关闭，不在此展示。
 const displayItems = TOPBAR_ITEMS.filter(item => !item.fixed);
 
 interface TopBarDragState {

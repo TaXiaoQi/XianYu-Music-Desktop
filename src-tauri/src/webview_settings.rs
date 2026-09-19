@@ -1,8 +1,3 @@
-/// Disable WebView2 browser accelerator keys (F5, Ctrl+F, Ctrl+P, etc.)
-/// at the native WebView2 level by setting AreBrowserAcceleratorKeysEnabled to false.
-///
-/// This prevents the browser's built-in shortcuts from being invoked,
-/// rather than intercepting the key events after they fire.
 #[cfg(target_os = "windows")]
 pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
@@ -33,12 +28,6 @@ pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "windows"))]
 pub fn disable_browser_accelerator_keys(_window: &tauri::WebviewWindow) {}
 
-/// 应用退出时清理 WebView2 缓存目录（EBWebView）。
-///
-/// 只删除可再生的缓存数据（HTTP 缓存、代码缓存、着色器缓存、组件缓存等），
-/// 保留 Local Storage / Session Storage / IndexedDB / Preferences 等用户数据。
-/// 目的：让 $LOCALAPPDATA 目录在卸载时只剩少量文件，避免 NSIS RmDir /r
-/// 逐个删除数百个小文件导致卸载卡顿。
 #[cfg(target_os = "windows")]
 pub fn clear_webview_cache(app: &tauri::AppHandle) {
     use std::fs;

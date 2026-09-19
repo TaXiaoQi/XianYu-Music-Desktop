@@ -1,11 +1,6 @@
 import type { AuthUser } from './authTypes';
 
-/**
- * 账号认证服务 · 共享映射/格式化（叶子）。
- * mapUser / getAuthErrorMessage 等纯函数，被 authAccount / authProfile 复用。
- */
 
-/** 将登录接口返回的 data 映射为前端统一的 AuthUser */
 export function mapUser(data: Record<string, unknown>): AuthUser {
   const raw = data as Partial<{
     user_id: string | number;

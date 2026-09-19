@@ -10,7 +10,6 @@ describe('toTraditional', () => {
   });
 
   it('uses Taiwan-specific vocabulary', () => {
-    // "程序" → 台湾用词 "程式"，"信息" → "資訊"
     expect(toTraditional('程序')).toBe('程式');
     expect(toTraditional('信息')).toBe('資訊');
   });

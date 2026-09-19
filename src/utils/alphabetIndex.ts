@@ -59,7 +59,6 @@ export const normalizeTitleForSort = (title: string | null | undefined): string 
       }
     }
   }
-  // 替换所有中间残留的包裹符号，转为干净的空格分隔，避免排序干扰
   clean = clean.replace(/[《》【】[\]()（）「」『』]/g, ' ').replace(/\s+/g, ' ').trim();
   return clean.toLowerCase();
 };
@@ -70,7 +69,6 @@ export const getAlphabetIndexKey = (
   const clean = normalizeTitleForIndex(title);
   if (!clean) return '#';
 
-  // 使用 Array.from 保证对 4 字节的 Emoji、生僻汉字等进行 Unicode 安全截取，防止代理对截断
   const firstChar = Array.from(clean)[0];
   if (!firstChar) return '#';
 
@@ -122,7 +120,6 @@ export const compareByAlphabetIndex = (left: string, right: string) => {
     return orderDiff;
   }
 
-  // 配置 numeric: true 精确兼顾含有数字标题的自然排序排列
   return getAlphabetSortKey(left).localeCompare(getAlphabetSortKey(right), 'en', {
     numeric: true,
     sensitivity: 'base',
@@ -135,8 +132,6 @@ export const sortItemsByAlphabetIndex = <T>(
 ): T[] => {
   if (!items || items.length === 0) return [];
   
-  // 1. 预计算每个 item 的 key，每首歌仅在排序触发时处理一次
-  //    getTitle 返回空字符串时（如 song 查找失败）该项会被排到末尾，不会崩溃
   const keyedItems = items.map((item, index) => {
     const title = getTitle(item) || '';
     return {
@@ -147,15 +142,12 @@ export const sortItemsByAlphabetIndex = <T>(
     };
   });
 
-  // 2. 稳定排序逻辑比较
   keyedItems.sort((a, b) => {
-    // 组顺序 (0 -> A-Z -> #)
     if (a.indexKey !== b.indexKey) {
       const orderA = INDEX_ORDER.get(a.indexKey) ?? 999;
       const orderB = INDEX_ORDER.get(b.indexKey) ?? 999;
       return orderA - orderB;
     }
-    // 配置 numeric: true 精确兼顾含有数字标题的自然排序排列
     const cmp = a.sortKey.localeCompare(b.sortKey, 'en', {
       numeric: true,
       sensitivity: 'base',

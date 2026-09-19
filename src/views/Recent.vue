@@ -23,7 +23,6 @@
       </section>
     </div>
 
-    <!-- 弹窗组件 -->
     <DragGhost />
 
     <SongContextMenu
@@ -89,10 +88,8 @@ const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const songTableRef = ref<any>(null);
 
-// 初始化拖拽逻辑
 const { handleTableDragStart } = useSongDrag(localSongList, isBatchMode, selectedPaths, songTableRef);
 
-// 弹窗状态
 const showConfirm = ref(false);
 const confirmMessage = ref('');
 const confirmAction = ref<() => void>(() => {});
@@ -110,7 +107,6 @@ const {
 
 // ========== 业务逻辑处理 ==========
 
-// 播放全部
 const handlePlayAll = () => {
   if (localSongList.value.length > 0) {
     const firstSong = localSongList.value[0];
@@ -133,7 +129,6 @@ const executeConfirmAction = async () => {
   showConfirm.value = false;
 };
 
-// 清空历史
 const handleClearHistory = () => {
   confirmMessage.value = "确定要清空所有播放记录吗？";
   confirmAction.value = async () => {
@@ -148,7 +143,6 @@ const openAddToPlaylistSelection = () => {
   openAddToPlaylistDialog(songPaths);
 };
 
-// 右键菜单由 useSongContextActions 提供（支持在线歌曲已下载/未下载的菜单区分）
 
 
 // ========== 路由监听 ==========

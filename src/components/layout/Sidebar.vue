@@ -199,17 +199,11 @@ const confirmCreatePlaylist = (name: string) => {
 const libraryStore = useLibraryStore();
 const { showToast } = useToast();
 
-/**
- * 将导入的搜索结果转换为 Song 对象
- * 使用 lx:// 协议作为 path（与 YinDongMusic 一致），由 playerPlayback 的 lx:// 处理器解析真实播放 URL
- * 同时将 rawData 缓存到 lxSongCache，确保切歌/队列播放时仍能获取完整元信息
- */
 function importResultToSongs(result: PlaylistImportResult): Song[] {
   return result.songs.map((item) => {
     const artistNames = item.artist
       ? item.artist.split(/[、,/&]/).filter(Boolean).map((s) => s.trim())
       : ['未知歌手'];
-    // 使用 lx://sourceKey/songId 协议，与 YinDongMusic 的 platformTrackToSong 一致
     const sourceKey = item.pluginId || 'wy';
     const path = `lx://${sourceKey}/${item.id}`;
     return {
@@ -237,11 +231,9 @@ const confirmImportPlaylist = (payload: { result: PlaylistImportResult; rename?:
   const { result, rename } = payload;
   if (result.songs.length === 0) return;
 
-  // 将搜索结果转换为 Song 对象
   const songs = importResultToSongs(result);
   const songPaths = songs.map((s) => s.path);
 
-  // 缓存 LX 歌曲元信息，播放时 lxPluginGetMusicUrl 需要 hash/strMediaMid 等字段
   for (const song of songs) {
     const raw = song.rawData as any;
     if (raw && raw.source && raw.songmid) {
@@ -264,14 +256,10 @@ const confirmImportPlaylist = (payload: { result: PlaylistImportResult; rename?:
     }
   }
 
-  // 保存在线歌曲元信息到 libraryStore.songPool
   for (const song of songs) {
     libraryStore.setExtraSong(song);
   }
 
-  // 创建歌单（使用用户指定的名称或原始歌单名称）
-  // 第三个参数传入完整 Song 对象，缓存在 playlist.songs 中，
-  // 确保重启后仍能显示歌曲（在线歌曲不在本地库中）
   const playlistName = rename || result.info.name || '导入的歌单';
   const playlistId = createPlaylist(playlistName, songPaths, songs);
 
@@ -302,12 +290,9 @@ const confirmLocalFolderImport = (payload: { name: string; songs: Song[] }) => {
 const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
   if (playlists.length === 0) return;
 
-  // 椒盐音乐 / M3U 导出的路径来自导出设备，在当前机器上不存在。
-  // 用文件名、标题+歌手在本地库中匹配，将 path 替换为本地路径。
   const { playlists: matchedPlaylists, matchedCount, unmatchedCount } =
     matchSongsToLocalLibrary(playlists, libraryStore.canonicalSongs);
 
-  // 本地库路径集合：匹配成功的歌曲已在本地库中，无需写入 songPool
   const localPathSet = new Set(
     libraryStore.canonicalSongs.map(s => s.path.toLowerCase()),
   );
@@ -321,7 +306,6 @@ const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
     if (!playlistName || pl.songs.length === 0) continue;
 
     const songPaths = pl.songs.map((song) => song.path);
-    // 仅未匹配的歌曲需要写入 songPool（匹配成功的已在本地库中）
     for (const song of pl.songs) {
       if (!localPathSet.has(song.path.toLowerCase())) {
         allExtraSongs.push(song);
@@ -357,8 +341,6 @@ const confirmOnlineBackupImport = (prepared: PreparedPluginBackupImport) => {
 
   let createdCount = 0;
 
-  // 批量收集所有需要写入 songPool 的歌曲，避免逐首调用 setExtraSong
-  // 触发 N 次 songCatalogVersion 自增和 songLookup 重算
   const allExtraSongs: Song[] = [];
 
   for (const playlist of prepared.playlists) {
@@ -420,7 +402,6 @@ const handleOpenAccountView = () => {
   void openAuth();
 };
 
-/** 侧边栏项点击分发：侧边栏顺序可自定义，故统一用 key 派发到对应 handler */
 const sidebarSelectHandlers: Record<SidebarItemKey, () => void> = {
   localMusic: handleOpenAllView,
   artists: handleOpenArtistsView,
@@ -446,7 +427,6 @@ const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
 const { isEnglish } = useI18n();
 const STORAGE_KEY_MAIN_SIDEBAR_WIDTH = 'main_sidebar_width';
 
-// 英文词条（如 Recently Played、Plugin Manager）较长，英文模式限制最小宽度为 210px，避免文字被压缩或折行
 const minSidebarWidth = computed(() => (isEnglish.value ? 210 : 180));
 const defaultSidebarWidth = computed(() => (isEnglish.value ? 210 : 192));
 const MAX_SIDEBAR_WIDTH = 360;
@@ -466,7 +446,6 @@ const loadInitialSidebarWidth = (): number => {
 
 const sidebarWidth = ref(loadInitialSidebarWidth());
 
-// 监听语言切换：英文模式下侧边栏宽度至少为 210px
 watch(minSidebarWidth, (newMin) => {
   if (sidebarWidth.value < newMin) {
     sidebarWidth.value = newMin;
@@ -608,7 +587,6 @@ onBeforeUnmount(() => {
       @import-backup-online="confirmOnlineBackupImport"
     />
 
-    <!-- 一级侧边栏宽度可拖拽手柄 -->
     <div
       class="group absolute -right-1 top-0 bottom-0 z-20 w-2 cursor-col-resize touch-none flex items-center justify-center"
       title="按住拖拽调整侧边栏宽度，双击恢复默认"

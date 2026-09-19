@@ -1,14 +1,8 @@
-//! 共享 DSP 原语：Biquad / OnePole / AllPass / DelayLine / 平滑值 / 包络跟随器 / LFO / DC 阻断。
-//!
-//! 全部为无锁、单线程（音频线程）使用的设计。系数计算与状态分离，便于在参数变更时
-//! 仅重算系数而保留状态（避免 click）。所有滤波器对 NaN/Inf 输出做硬保护，退化直通。
-
 #![allow(dead_code)]
 
 use std::f32::consts::PI;
 
 // =========================================================================
-// Biquad（TDF2，多声道独立状态）
 // =========================================================================
 
 #[derive(Clone, Default)]
@@ -17,8 +11,6 @@ pub struct BiquadState {
     s2: f32,
 }
 
-/// 通用二阶 IIR 滤波器（Transposed Direct Form II）。
-/// 支持 lowpass/highpass/bandpass/peaking/lowshelf/highshelf/notch/allpass。
 pub struct Biquad {
     pub b0: f32,
     pub b1: f32,
@@ -26,7 +18,6 @@ pub struct Biquad {
     pub a1: f32,
     pub a2: f32,
     pub states: Vec<BiquadState>,
-    /// 系数是否为纯直通（增益≈0 的 peaking 等），直通时跳过运算
     pub passthrough: bool,
 }
 
@@ -48,7 +39,6 @@ impl Biquad {
         freq.clamp(10.0, nyq * 0.95)
     }
 
-    /// Peaking EQ（参考 RBJ Audio EQ Cookbook）
     pub fn set_peaking(&mut self, freq: f32, sample_rate: f32, gain_db: f32, q: f32) {
         if gain_db.abs() < 0.05 {
             self.set_passthrough();
@@ -73,7 +63,6 @@ impl Biquad {
         );
     }
 
-    /// Lowpass
     pub fn set_lowpass(&mut self, freq: f32, sample_rate: f32, q: f32) {
         let f = Self::clamp_freq(freq, sample_rate);
         let w0 = 2.0 * PI * f / sample_rate;
@@ -93,7 +82,6 @@ impl Biquad {
         );
     }
 
-    /// Highpass
     pub fn set_highpass(&mut self, freq: f32, sample_rate: f32, q: f32) {
         let f = Self::clamp_freq(freq, sample_rate);
         let w0 = 2.0 * PI * f / sample_rate;
@@ -113,7 +101,6 @@ impl Biquad {
         );
     }
 
-    /// Low shelf
     pub fn set_lowshelf(&mut self, freq: f32, sample_rate: f32, gain_db: f32, q: f32) {
         if gain_db.abs() < 0.05 {
             self.set_passthrough();
@@ -135,7 +122,6 @@ impl Biquad {
         self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0);
     }
 
-    /// High shelf
     pub fn set_highshelf(&mut self, freq: f32, sample_rate: f32, gain_db: f32, q: f32) {
         if gain_db.abs() < 0.05 {
             self.set_passthrough();
@@ -157,7 +143,6 @@ impl Biquad {
         self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0);
     }
 
-    /// Notch
     pub fn set_notch(&mut self, freq: f32, sample_rate: f32, q: f32) {
         let f = Self::clamp_freq(freq, sample_rate);
         let w0 = 2.0 * PI * f / sample_rate;
@@ -177,7 +162,6 @@ impl Biquad {
         );
     }
 
-    /// Allpass（用于相位器/镶边）
     pub fn set_allpass(&mut self, freq: f32, sample_rate: f32, q: f32) {
         let f = Self::clamp_freq(freq, sample_rate);
         let w0 = 2.0 * PI * f / sample_rate;
@@ -248,7 +232,6 @@ impl Biquad {
 }
 
 // =========================================================================
-// OnePole（一阶低通/高通，用于包络跟随、空气吸收低通）
 // =========================================================================
 
 pub struct OnePole {
@@ -259,7 +242,6 @@ pub struct OnePole {
 }
 
 impl OnePole {
-    /// 低通，cutoff Hz
     pub fn lowpass(cutoff: f32, sample_rate: f32) -> Self {
         let cutoff = cutoff.clamp(10.0, sample_rate * 0.45);
         let b1 = (-2.0 * PI * cutoff / sample_rate).exp();
@@ -271,7 +253,6 @@ impl OnePole {
         }
     }
 
-    /// 高通，cutoff Hz
     pub fn highpass(cutoff: f32, sample_rate: f32) -> Self {
         let cutoff = cutoff.clamp(10.0, sample_rate * 0.45);
         let b1 = (-2.0 * PI * cutoff / sample_rate).exp();
@@ -306,7 +287,6 @@ impl OnePole {
 }
 
 // =========================================================================
-// DC Blocker（一阶高通 @ ~20Hz，去除直流偏移）
 // =========================================================================
 
 pub struct DcBlocker {
@@ -340,12 +320,11 @@ impl DcBlocker {
 }
 
 // =========================================================================
-// DelayLine（线性插值读，用于镶边/相位/延迟/混响）
 // =========================================================================
 
 pub struct DelayLine {
     pub buffer: Vec<f32>,
-    pub mask: usize, // buffer.len() - 1（要求 2 的幂）
+    pub mask: usize,
     pub write_pos: usize,
 }
 
@@ -379,7 +358,6 @@ impl DelayLine {
         self.write_pos = (self.write_pos + 1) & self.mask;
     }
 
-    /// 线性插值读取，delay 为采样数（可小数）
     #[inline]
     pub fn read(&self, delay: f32) -> f32 {
         let delay_pos = self.write_pos as f32 - delay - 1.0;
@@ -395,7 +373,6 @@ impl DelayLine {
 }
 
 // =========================================================================
-// AllPass（带增益的 Schroeder 全通，用于混响/相位）
 // =========================================================================
 
 pub struct AllPass {
@@ -419,8 +396,6 @@ impl AllPass {
         self.delay.resize(size);
     }
 
-    /// 整数延迟全通（Schroeder）：y = -g*x + delay_in + g*delay_out
-    /// 此处用整数长度延迟（size-1）
     #[inline]
     pub fn process_int(&mut self, sample: f32, len: usize) -> f32 {
         let delayed = self.delay.read(len as f32);
@@ -431,13 +406,12 @@ impl AllPass {
 }
 
 // =========================================================================
-// SmoothedValue（指数平滑，参数变更无 click）
 // =========================================================================
 
 pub struct SmoothedValue {
     pub current: f32,
     pub target: f32,
-    pub coeff: f32, // 越接近 1 越慢
+    pub coeff: f32,
 }
 
 impl SmoothedValue {
@@ -449,7 +423,6 @@ impl SmoothedValue {
         }
     }
 
-    /// 设置时间常数（秒）
     pub fn set_time_constant(&mut self, seconds: f32, sample_rate: f32) {
         let seconds = seconds.max(0.0005);
         self.coeff = (-1.0 / (seconds * sample_rate)).exp();
@@ -476,7 +449,6 @@ impl SmoothedValue {
 }
 
 // =========================================================================
-// EnvelopeFollower（峰值检测，attack/release 秒）
 // =========================================================================
 
 pub struct EnvelopeFollower {
@@ -519,7 +491,6 @@ impl EnvelopeFollower {
 }
 
 // =========================================================================
-// LFO（低频振荡器，正弦/三角）
 // =========================================================================
 
 pub struct Lfo {
@@ -551,7 +522,6 @@ impl Lfo {
 
     #[inline]
     pub fn tick_tri(&mut self) -> f32 {
-        // 0..2PI → -1..1 三角
         let p = self.phase / (2.0 * PI);
         let v = if p < 0.5 {
             4.0 * p - 1.0
@@ -570,31 +540,25 @@ impl Lfo {
     }
 }
 
-/// dB → 线性增益
 #[inline]
 pub fn db_to_gain(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
 
-/// 线性 → dB
 #[inline]
 pub fn gain_to_db(gain: f32) -> f32 {
     20.0 * gain.max(1e-10).log10()
 }
 
-/// 软限幅：|x| < 0.95 透传（无失真），≥ 0.95 渐进饱和到 1.0
-/// 旧版 tanh(x) 对 0.7~0.9 的正常信号也产生可闻谐波失真 → 刺声
-/// 新版用指数饱和：C1 连续（值和导数在阈值处连续，无 click）
 #[inline]
 pub fn soft_clip(x: f32) -> f32 {
     const THRESHOLD: f32 = 0.95;
     let ax = x.abs();
     if ax <= THRESHOLD {
-        x // 正常信号透传，零失真
+        x
     } else {
         let excess = ax - THRESHOLD;
-        let headroom = 1.0 - THRESHOLD; // 0.05
-                                        // 指数饱和：excess=0 → 0，excess→∞ → headroom
+        let headroom = 1.0 - THRESHOLD;
         let saturation = headroom * (1.0 - (-excess / headroom).exp());
         x.signum() * (THRESHOLD + saturation).min(1.0)
     }
@@ -633,7 +597,6 @@ mod tests {
     #[test]
     fn test_dc_blocker() {
         let mut dc = DcBlocker::new(44100.0);
-        // 恒定直流应被滤除
         let mut last = 1.0;
         for _ in 0..5000 {
             last = dc.process(0.8);
@@ -643,7 +606,6 @@ mod tests {
 
     #[test]
     fn test_soft_clip_transparent_below_threshold() {
-        // |x| < 0.95 应透传（无失真）
         for x in [0.0f32, 0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 0.94, -0.5, -0.9] {
             let out = soft_clip(x);
             assert!(
@@ -657,7 +619,6 @@ mod tests {
 
     #[test]
     fn test_soft_clip_limits_above_threshold() {
-        // |x| > 0.95 应限制到 ≤ 1.0
         for x in [0.96f32, 1.0, 1.5, 2.0, 5.0, -1.0, -2.0] {
             let out = soft_clip(x);
             assert!(
@@ -671,7 +632,6 @@ mod tests {
 
     #[test]
     fn test_soft_clip_continuous_at_threshold() {
-        // 在阈值 0.95 处应连续（无 click）
         let below = soft_clip(0.949);
         let at = soft_clip(0.95);
         let above = soft_clip(0.951);

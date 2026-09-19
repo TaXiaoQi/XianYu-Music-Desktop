@@ -15,18 +15,14 @@ const FFMPEG_PATH_KEY = 'toolbox_ffmpeg_path';
 
 const ffmpeg = ref<FfmpegDetection | null>(null);
 const checking = ref(true);
-/** 手动指定的 ffmpeg.exe 路径（与文件转换共用同一持久化 key） */
 const ffmpegPath = ref<string>(localStorage.getItem(FFMPEG_PATH_KEY) || '');
 
 const inputPath = ref('');
 const inputName = ref('');
-/** 音频总时长（秒），探测后填充 */
 const totalDuration = ref(0);
 const probing = ref(false);
-/** 裁剪区间（秒）：起点与终点 */
 const startSecs = ref(0);
 const endSecs = ref(0);
-/** 输出目录；空 = 与原文件同目录 */
 const outputDir = ref('');
 const trimming = ref(false);
 const result = ref<TrimAudioResult | null>(null);
@@ -57,15 +53,12 @@ let unlistenLog: (() => void) | null = null;
 const roundedDuration = computed(() =>
   totalDuration.value > 0 ? Math.max(totalDuration.value, 0.1) : 1,
 );
-/** 起点百分比（0-100），用于高亮滑动条选区 */
 const startPct = computed(() => (startSecs.value / roundedDuration.value) * 100);
-/** 选区宽度百分比 */
 const spanPct = computed(() =>
   Math.max(0, ((endSecs.value - startSecs.value) / roundedDuration.value) * 100),
 );
 const selectedSecs = computed(() => Math.max(0, endSecs.value - startSecs.value));
 
-/** 成品试听地址：裁剪成功后把本地输出文件转成可被 <audio> 播放的 asset URL */
 const resultAudioUrl = computed(() => {
   if (result.value?.success && result.value.output_path) {
     return convertFileSrc(result.value.output_path);
@@ -73,7 +66,6 @@ const resultAudioUrl = computed(() => {
   return '';
 });
 
-/** 选区试听（裁剪前）：用原文件按起止区间播放，借助媒体片段 #t=start,end */
 const previewAudio = ref<HTMLAudioElement | null>(null);
 const previewPlaying = ref(false);
 const previewSrc = computed(() => {
@@ -167,7 +159,6 @@ const getPathLeaf = (path: string) => {
   return segs.length ? segs[segs.length - 1] : path;
 };
 
-/** 选择单个音频文件并探测时长 */
 const pickInput = async () => {
   stopPreview();
   try {
@@ -281,7 +272,6 @@ onUnmounted(() => {
 
 <template>
   <div class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <!-- 检测中 -->
     <div v-if="checking" class="toolbox-panel toolbox-panel--muted flex items-center gap-3 text-sm text-gray-500 dark:text-white/45">
       <svg class="h-5 w-5 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -290,7 +280,6 @@ onUnmounted(() => {
       <span>正在检测 ffmpeg...</span>
     </div>
 
-    <!-- 未检测到 ffmpeg：引导下载 -->
     <div v-else-if="!ffmpeg?.available" class="toolbox-panel p-6">
       <div class="flex items-start gap-4">
         <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300">
@@ -323,10 +312,8 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 已就绪：裁剪界面 -->
     <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(420px,3fr)]">
       <div class="space-y-6">
-        <!-- 状态条 -->
         <div class="flex items-center justify-between gap-3">
           <span class="inline-flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-300">
             <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
@@ -337,7 +324,6 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- 1. 选择音频文件 -->
         <section class="toolbox-item p-4">
           <div class="flex items-center justify-between gap-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">① 选择音频文件（单个）</div>
@@ -351,7 +337,6 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <!-- 2. 裁剪区间 -->
         <section class="toolbox-item p-4">
           <div class="flex items-center justify-between gap-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">② 拖动滑块选择裁剪区间</div>
@@ -392,13 +377,11 @@ onUnmounted(() => {
 
           <div v-else class="mt-4">
             <div class="trim-range">
-              <!-- 底座轨道 + 选中高亮 -->
               <div class="trim-range-track"></div>
               <div
                 class="trim-range-selection"
                 :style="{ left: `${startPct}%`, width: `${spanPct}%` }"
               ></div>
-              <!-- 起点滑块（上层）与终点滑块（下层） -->
               <input
                 class="trim-range-input trim-range-input--top"
                 type="range"
@@ -429,7 +412,6 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <!-- 3. 输出目录 -->
         <section class="toolbox-item p-4">
           <div class="flex items-center justify-between gap-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">③ 输出目录</div>
@@ -453,7 +435,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 右侧：实时日志 + 结果 -->
       <aside class="xl:sticky xl:top-0 xl:self-start space-y-6">
         <section class="space-y-3">
           <div class="flex items-center justify-between gap-3">
@@ -510,7 +491,6 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 成品试听 -->
             <audio
               v-if="resultAudioUrl"
               :src="resultAudioUrl"

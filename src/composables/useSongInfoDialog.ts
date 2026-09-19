@@ -16,7 +16,6 @@ export function useSongInfoDialog() {
 
   const closeSongInfo = () => {
     isSongInfoVisible.value = false;
-    // 延迟清理对象以保持关闭动画过渡的平滑性
     setTimeout(() => {
       currentSongInfo.value = null;
       songInfoInitialAction.value = 'default';

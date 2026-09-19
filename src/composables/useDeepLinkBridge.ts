@@ -19,10 +19,8 @@ type SongLinkParams = {
   duration: number;
 };
 
-/** 有效落雪音源 key（与移动端 kOnlineSources / 分享数据契约 source 同构） */
 const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
 
-/** 音源 key → 展示名（分享预览弹窗「来源」列） */
 const LX_SOURCE_NAMES: Record<string, string> = {
   kw: '酷我音乐',
   kg: '酷狗音乐',
@@ -54,7 +52,6 @@ function parseSongLink(raw: string): SongLinkParams {
   }
 }
 
-/** 将 Lx 搜索结果项转换为 Song（与 Search.vue 的 lxResultToSong 同构） */
 function lxResultToSong(item: LxSearchResultItem): Song {
   const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
   const songDuration = parseIntervalToSeconds(item.interval);
@@ -88,7 +85,6 @@ function lxResultToSong(item: LxSearchResultItem): Song {
   } as any;
 }
 
-/** 将插件搜索结果转换为 Song（与 Search.vue 的 mfResultToSong 同构，保证 playSong 可解析） */
 function pluginResultToSong(item: PluginSearchResult): Song {
   const artistNames = item.artist
     ? item.artist.split(/[、,/&]/).filter(Boolean).map((s) => s.trim())
@@ -115,7 +111,6 @@ function pluginResultToSong(item: PluginSearchResult): Song {
   } as any;
 }
 
-/** 与移动端 _bestMatch 同构的最佳匹配打分：歌名精确/包含 + 歌手包含 */
 function bestMatchIndex(
   items: { title: string; artist: string }[],
   name: string,
@@ -141,12 +136,9 @@ function bestMatchIndex(
   return best;
 }
 
-/** 按名称或 id 匹配本地已安装插件（深链 source 携带插件名或插件 id） */
 function findPluginSource(source: string): PluginSource | null {
   if (!source) return null;
   const plugins = getStoredPlugins();
-  // 插件 id/名/声明平台（sources，如 kw）均可命中：新格式深链携带平台 key
-  // （跨设备稳定），旧链接可能携带插件 sha256 id。
   return (
     plugins.find(
       (p) =>
@@ -157,11 +149,6 @@ function findPluginSource(source: string): PluginSource | null {
   );
 }
 
-/**
- * 在本地曲库按「标题|歌手」（±5s 时长容差）匹配分享歌曲，命中返回本地 Song。
- * 匹配规则与 usePlaylistSync.resolveLocalPath / 移动端 deep_link_handler 保持一致：
- * 唯一命中直接采用；多候选时用时长消歧（±5s）。
- */
 function tryLocalMatch(name: string, artist: string, durationSec: number): Song | null {
   const normMeta = (s: string) => (s || '').trim().toLowerCase();
   const key = `${normMeta(name)}|${normMeta(artist)}`;
@@ -188,10 +175,6 @@ function tryLocalMatch(name: string, artist: string, durationSec: number): Song 
   return best ?? candidates[0];
 }
 
-/**
- * 解析分享歌曲为可播放 Song：本地曲库匹配（标题|歌手 ±5s）→ 分享音源插件搜索
- * → lx 音源搜索（无效来源回退 kw）。解析成功与否返回 Song 或 null，不触发播放。
- */
 async function resolveShareSong(
   name: string,
   artist: string,
@@ -201,8 +184,6 @@ async function resolveShareSong(
   if (localSong) return localSong;
   const keyword = artist.trim() ? `${name} ${artist}`.trim() : name.trim();
 
-  // 插件优先：分享来源命中本地插件（id/名/平台）→ 直接用该插件搜索，命中率
-  // 最高（歌曲本就来自该插件平台）；插件无结果/未安装再走 lx 音源兜底。
   if (source && source !== 'local') {
     const plugin = findPluginSource(source);
     if (plugin) {
@@ -222,7 +203,6 @@ async function resolveShareSong(
     }
   }
 
-  // lx 音源（或插件未安装/搜索失败时回退）
   const lxSource: LxSourceId =
     source && VALID_LX_SOURCES.has(source) ? (source as LxSourceId) : 'kw';
   const result = await lxSearch(lxSource, keyword, 1);
@@ -259,7 +239,6 @@ async function playShareLinkSong(
   }
 }
 
-/** 添加到「下一首播放」（不打断当前播放），解析失败则提示无结果 */
 async function playShareLinkNext(
   name: string,
   artist: string,
@@ -281,10 +260,6 @@ async function playShareLinkNext(
   }
 }
 
-/**
- * 分享歌曲「本地无」时的在线定位：先遍历所有已安装音源插件搜索，任一命中即返回。
- * 全部插件都无结果或无插件时回退 lx（kw）搜索。返回可播放 Song 或 null（表示在线也没有）。
- */
 async function searchShareSongOnline(name: string, artist: string): Promise<Song | null> {
   const keyword = artist.trim() ? `${name} ${artist}`.trim() : name.trim();
   const plugins = getStoredPlugins();
@@ -316,12 +291,6 @@ async function searchShareSongOnline(name: string, artist: string): Promise<Song
   return lxResultToSong(result.list[idx] ?? first);
 }
 
-/**
- * 按分享携带的 source 标签判定本地能否播放该音源：
- * - specified：存在能处理该 source 的已装插件（插件名/id 匹配，或插件声明的 sources 含该 source）
- * - any：本地存在任意已装插件（可作为其他可用源）
- * 无任何已装插件时 specified=false 且 any=false。
- */
 function resolveShareSourceAbility(source: string): { specified: boolean; any: boolean } {
   const plugins = getStoredPlugins();
   if (plugins.length === 0) return { specified: false, any: false };
@@ -341,10 +310,8 @@ async function handleSongLink(raw: string) {
   if (!name.trim()) return;
   const { playSong, playNext } = usePlaybackController();
 
-  // 来源感知：优先在本地曲库匹配（命中直接播放本地文件）
   const localSong = tryLocalMatch(name, artist, duration);
 
-  // 本地命中 → 现有「本地方案」：播放 / 下一首播放 / 取消
   if (localSong) {
     const action = await showShareLinkDialog({
       name,
@@ -366,8 +333,6 @@ async function handleSongLink(raw: string) {
     return;
   }
 
-  // 本地音乐分享（source 为 local 或空）且本地库没有 → 在线预判：
-  // 在线可播放 → 「取消 + 本地无音源，前往在线播放」；在线也没有 → 「取消 + 前往导入音源」
   if (source === 'local' || !source) {
     const onlineSong = await searchShareSongOnline(name, artist);
     if (onlineSong) {
@@ -402,16 +367,13 @@ async function handleSongLink(raw: string) {
     return;
   }
 
-  // 在线音源/插件来源分享：按 source 标签判断本地是否能播该音源，三态展示
   const ability = resolveShareSourceAbility(source);
-  // 来源展示名：lx 平台 key → 平台名；插件 sha256（旧链接）→ 已装插件名。
   const sourceName =
     (source && LX_SOURCE_NAMES[source]) ||
     findPluginSource(source)?.name ||
     source ||
     '在线搜索';
 
-  // A：本地有能播该 source 的插件 → 原样「播放 / 下一首播放 / 取消」
   if (ability.specified) {
     const action = await showShareLinkDialog({
       name,
@@ -433,7 +395,6 @@ async function handleSongLink(raw: string) {
     return;
   }
 
-  // B：无对应标签音源但本地有其他音源插件 → 「取消 / 无指定音源，前往在线播放」（用其他可用源在线播放）
   if (ability.any) {
     const { showToast } = useToast();
     const action = await showShareLinkDialog({
@@ -460,7 +421,6 @@ async function handleSongLink(raw: string) {
     return;
   }
 
-  // C：本地完全没有音源插件 → 「取消 / 前往导入音源」
   const action = await showShareLinkDialog({
     name,
     artist,
@@ -483,13 +443,6 @@ async function consumePendingDeepLinks() {
   }
 }
 
-/**
- * xianyu:// 深链桥：分享落地页点「在弦予音乐中打开」后由 Rust 侧把深链入队，
- * 这里监听 app:deep-link 事件并消费。收到后先弹分享预览窗（封面/歌名/歌手/来源 +
- * 播放/取消），点「播放」才播放：优先本地曲库匹配（标题|歌手 ±5s），未命中按
- * 分享音源（kw/wy/kg/tx/mg）搜索，无效来源回退 kw（与移动端一致）。
- * 冷启动（App 被协议直接拉起）时在挂载阶段主动消费一次。
- */
 export function useDeepLinkBridge() {
   let unlisten: (() => void) | null = null;
 

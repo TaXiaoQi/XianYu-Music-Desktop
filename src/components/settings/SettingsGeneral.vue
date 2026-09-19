@@ -28,7 +28,6 @@ const appLanguage = computed({
   set: (value: AppLanguage) => {
     if (settings.value.language === value) return;
     patchSettings({ language: value });
-    // 常规设置由播放器生命周期防抖保存；语言切换必须立即落盘，避免退出或旧版刷新逻辑造成回滚。
     playerStorage.writeSettings(settings.value);
   },
 });
@@ -227,10 +226,8 @@ const handleClearAllData = async () => {
 };
 
 onMounted(() => {
-  // 同步在线播放缓存上限到后端并读取当前用量
   void playbackApi.setStreamCacheMaxSize(settings.value.audio.streamCacheSizeMB * 1024 * 1024)
     .then(refreshStreamCacheInfo);
-  // 同步自定义缓存目录到后端
   if (settings.value.audio.streamCacheDir) {
     void playbackApi.setStreamCacheDir(settings.value.audio.streamCacheDir);
   }
@@ -240,7 +237,6 @@ onMounted(() => {
 <template>
   <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
 
-    <!-- Language -->
     <section class="relative z-20 space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -314,7 +310,6 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Startup & Behavior -->
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
@@ -441,7 +436,6 @@ onMounted(() => {
         {{ t('general.storage') }}
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <!-- 播放缓存上限 -->
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.cacheLimit') }}</div>
@@ -464,7 +458,6 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 缓存目录 -->
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">缓存目录</div>
@@ -490,7 +483,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 清理在线播放缓存 -->        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+                <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
               {{ t('general.clearCache') }}
@@ -599,7 +592,6 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.45);
 }
 
-/* 播放缓存上限数字输入框（复用短音频输入框样式） */
 .stream-cache-input-wrap {
   display: inline-flex;
   align-items: center;

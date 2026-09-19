@@ -1,14 +1,3 @@
-/**
- * Supplementary edge-case tests for equalizer preset management.
- *
- * Covers gaps not addressed by the main test suite:
- *   - Store initialization with localStorage (presets loaded)
- *   - localStorage write verification on CRUD operations
- *   - Rapid concurrent operations and race conditions
- *   - commitSettings component-path preservation of currentPresetId
- *   - mergeAudioSettings boundary value combinations
- *   - Edge cases: empty name, null/undefined handling
- */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
@@ -27,7 +16,6 @@ import type {
 import { playerStorageKeys } from '../../services/storage/playerStorage';
 
 // ---------------------------------------------------------------------------
-// Helper: create a localStorage mock with storage map
 // ---------------------------------------------------------------------------
 
 function createStorageMock() {
@@ -43,7 +31,6 @@ function createStorageMock() {
 }
 
 // ---------------------------------------------------------------------------
-// Store initialization WITH localStorage present
 // ---------------------------------------------------------------------------
 
 describe('Store initialization with localStorage available', () => {
@@ -96,7 +83,6 @@ describe('Store initialization with localStorage available', () => {
 });
 
 // ---------------------------------------------------------------------------
-// localStorage write verification on CRUD operations
 // ---------------------------------------------------------------------------
 
 describe('CRUD operations write to localStorage', () => {
@@ -178,7 +164,6 @@ describe('CRUD operations write to localStorage', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Rapid / concurrent operations
 // ---------------------------------------------------------------------------
 
 describe('Rapid concurrent operations', () => {
@@ -189,7 +174,6 @@ describe('Rapid concurrent operations', () => {
   it('handles rapid save → delete → save cycles', () => {
     const store = useSettingsStore();
 
-    // Rapidly save and delete
     const toDelete = store.saveEqualizerPreset('Temp');
     store.deleteEqualizerPreset(toDelete.id);
     const final = store.saveEqualizerPreset('Final');
@@ -217,13 +201,11 @@ describe('Rapid concurrent operations', () => {
 
     store.settings.audio.equalizer.gains = Array(10).fill(1);
     const p1 = store.saveEqualizerPreset('P1');
-    // Small wait to guarantee unique Date.now() timestamp
     await new Promise(r => setTimeout(r, 2));
 
     store.settings.audio.equalizer.gains = Array(10).fill(5);
     const p2 = store.saveEqualizerPreset('P2');
 
-    // Verify IDs are different
     expect(p1.id).not.toBe(p2.id);
 
     store.settings.audio.equalizer.enabled = false;
@@ -249,14 +231,11 @@ describe('Rapid concurrent operations', () => {
     }
     expect(store.userPresets).toHaveLength(25);
 
-    // Delete every other preset (by stored ID, not index)
     for (let i = 0; i < 25; i += 2) {
       store.deleteEqualizerPreset(presets[i]);
     }
-    // 13 deleted, 12 remaining
     expect(store.userPresets).toHaveLength(12);
 
-    // Verify remaining presets have odd-index names
     const remainingNames = store.userPresets.map(p => p.name);
     for (let i = 1; i < 25; i += 2) {
       expect(remainingNames).toContain(`Rapid ${i}`);
@@ -265,7 +244,6 @@ describe('Rapid concurrent operations', () => {
 });
 
 // ---------------------------------------------------------------------------
-// mergeAudioSettings: boundary value combinations
 // ---------------------------------------------------------------------------
 
 describe('mergeAudioSettings: boundary value combinations', () => {
@@ -304,7 +282,6 @@ describe('mergeAudioSettings: boundary value combinations', () => {
     const merged = mergeAudioSettings(base, {
       equalizer: { currentPresetId: 'new_only' } as unknown as EqualizerSettings,
     });
-    // Only currentPresetId should change
     expect(merged.equalizer.enabled).toBe(true);
     expect(merged.equalizer.preamp).toBe(-3);
     expect(merged.equalizer.gains).toEqual(Array(10).fill(1));
@@ -313,11 +290,9 @@ describe('mergeAudioSettings: boundary value combinations', () => {
 
   it('handles empty object equalizer patch', () => {
     const base = mkBase({ currentPresetId: 'survive' });
-    // Passing an empty object still has 'currentPresetId' check via `in` operator
     const merged = mergeAudioSettings(base, {
       equalizer: {} as unknown as EqualizerSettings,
     });
-    // Since 'currentPresetId' is NOT in the empty object, it should be preserved
     expect(merged.equalizer.currentPresetId).toBe('survive');
   });
 
@@ -331,14 +306,12 @@ describe('mergeAudioSettings: boundary value combinations', () => {
   });
 
   it('distinguishes between explicit null and absent currentPresetId', () => {
-    // Explicit null → should set to null
     const baseWith = mkBase({ currentPresetId: 'should_be_cleared' });
     const mergedExplicit = mergeAudioSettings(baseWith, {
       equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
     });
     expect(mergedExplicit.equalizer.currentPresetId).toBeNull();
 
-    // Absent → should preserve
     const baseKeep = mkBase({ currentPresetId: 'should_keep' });
     const mergedAbsent = mergeAudioSettings(baseKeep, {
       equalizer: {} as unknown as EqualizerSettings,
@@ -367,14 +340,12 @@ describe('mergeAudioSettings: boundary value combinations', () => {
     });
 
     expect(merged.audio.equalizer.currentPresetId).toBeNull();
-    // Other fields preserved
     expect(merged.audio.equalizer.enabled).toBe(true);
     expect(merged.audio.equalizer.preamp).toBe(-1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Edge cases: null/undefined/empty name handling
 // ---------------------------------------------------------------------------
 
 describe('Edge cases: null, undefined, and empty values', () => {
@@ -401,11 +372,9 @@ describe('Edge cases: null, undefined, and empty values', () => {
     store.saveEqualizerPreset('Real');
     const before = { ...store.settings.audio.equalizer };
 
-    // Empty string
     store.loadEqualizerPreset('');
     expect(store.settings.audio.equalizer).toEqual(before);
 
-    // Non-existent
     store.loadEqualizerPreset('non_existent');
     expect(store.settings.audio.equalizer).toEqual(before);
   });
@@ -427,25 +396,21 @@ describe('Edge cases: null, undefined, and empty values', () => {
   it('gains arrays remain 10 elements after all operations', () => {
     const store = useSettingsStore();
 
-    // Save multiple presets
     for (let i = 0; i < 3; i++) {
       store.settings.audio.equalizer.gains = Array(10).fill(i);
       const p = store.saveEqualizerPreset(`P${i}`);
       expect(p.gains).toHaveLength(10);
     }
 
-    // Update
     const first = store.userPresets[0];
     store.updateEqualizerPreset(first.id, 'Updated');
     expect(store.userPresets[0].gains).toHaveLength(10);
 
-    // Load
     store.loadEqualizerPreset(store.userPresets[1].id);
     expect(store.settings.audio.equalizer.gains).toHaveLength(10);
   });
 
   it('default equalizer gains array has correct length', () => {
-    // Build inline to avoid test-parallelism contamination of shared defaults
     const freshDefaults = {
       outputMode: 'shared' as const,
       volumeBalance: { enabled: false, gainOffsetDb: 0, preventClipping: true },
@@ -465,7 +430,6 @@ describe('Edge cases: null, undefined, and empty values', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Component-level commitSettings path: currentPresetId survival
 // ---------------------------------------------------------------------------
 
 describe('Component commitSettings path: currentPresetId survival', () => {
@@ -473,13 +437,6 @@ describe('Component commitSettings path: currentPresetId survival', () => {
     setActivePinia(createPinia());
   });
 
-  /**
-   * Simulates the component-level commitSettings logic:
-   *   const mergedEq = { ...currentEq, ...patch };
-   *   settingsStore.patchSettings({
-   *     audio: { ...settings.value.audio, equalizer: mergedEq }
-   *   });
-   */
   function simulateCommitSettings(
     store: ReturnType<typeof useSettingsStore>,
     patch: Partial<EqualizerSettings>,
@@ -499,7 +456,6 @@ describe('Component commitSettings path: currentPresetId survival', () => {
     const store = useSettingsStore();
     store.settings.audio.equalizer.currentPresetId = 'component_preset';
 
-    // Simulate finishEditing — only passes preamp and gains
     simulateCommitSettings(store, {
       preamp: -2.0,
       gains: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
@@ -513,7 +469,6 @@ describe('Component commitSettings path: currentPresetId survival', () => {
     const store = useSettingsStore();
     store.settings.audio.equalizer.currentPresetId = 'will_be_cleared';
 
-    // Simulate handleReset — passes currentPresetId: null
     simulateCommitSettings(store, {
       preamp: 0,
       gains: Array(10).fill(0),
@@ -528,7 +483,6 @@ describe('Component commitSettings path: currentPresetId survival', () => {
     store.settings.audio.equalizer.enabled = true;
     store.settings.audio.equalizer.currentPresetId = 'with_enabled';
 
-    // Patch only preamp — enabled and currentPresetId should survive
     simulateCommitSettings(store, { preamp: +2.0 });
 
     expect(store.settings.audio.equalizer.enabled).toBe(true);
@@ -537,18 +491,13 @@ describe('Component commitSettings path: currentPresetId survival', () => {
 });
 
 // ---------------------------------------------------------------------------
-// EqualizerSettings currentPresetId is optional / nullability
 // ---------------------------------------------------------------------------
 
 describe('EqualizerSettings currentPresetId optionality', () => {
   it('can be set and cleared through store operations', () => {
-    // NOTE: initial currentPresetId may be contaminated by parallel test runs
-    // because defaultAudioSettings is a module-level shared constant.
-    // We test the set/clear semantics instead of relying on initial value.
     setActivePinia(createPinia());
     const store = useSettingsStore();
 
-    // Clear first to ensure known state
     store.patchSettings({
       audio: {
         equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
@@ -556,11 +505,9 @@ describe('EqualizerSettings currentPresetId optionality', () => {
     });
     expect(store.settings.audio.equalizer.currentPresetId).toBeNull();
 
-    // Set via store operation
     const preset = store.saveEqualizerPreset('Any');
     expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
 
-    // Clear via patchSettings
     store.patchSettings({
       audio: {
         equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
@@ -570,8 +517,6 @@ describe('EqualizerSettings currentPresetId optionality', () => {
   });
 
   it('TypeScript type allows undefined, null, or string for currentPresetId', () => {
-    // Compile-time type check — runtime behavior verified by other tests.
-    // We verify that our test values are valid.
     const values: Array<{ currentPresetId?: string | null }> = [
       { currentPresetId: undefined },
       { currentPresetId: null },

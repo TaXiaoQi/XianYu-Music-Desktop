@@ -1,15 +1,3 @@
-//! 宿主侧平台签名/加密（前端原 crypto-js 与纯 JS MD5 实现的 Rust 替代）
-//!
-//! 覆盖音乐平台接口所需的签名算法：
-//!   - QQ 音乐 zzcSign（SHA1 + 索引选取 + XOR 混淆 + Base64）
-//!   - 酷狗参数签名（MD5，web/android 两种盐）
-//!   - 咪咕搜索签名（MD5）
-//!   - 网易云 linuxapi（AES-128-ECB PKCS7 → hex 大写）
-//!   - 网易云 weapi（AES-CBC 双重加密 + RSA 模幂）
-//!   - 通用 MD5/SHA256（插件脚本哈希等）
-//!
-//! 网络请求本身仍走 plugin_http_request 后端代理，本模块只负责签名计算。
-
 use aes::cipher::{block_padding::Pkcs7, BlockEncrypt, BlockEncryptMut, KeyInit, KeyIvInit};
 use base64::Engine as _;
 use num_bigint::BigUint;
@@ -31,7 +19,6 @@ pub fn zzc_sign(text: &str) -> String {
     let hash = hex::encode(Sha1::digest(text.as_bytes()));
     let bytes = hash.as_bytes();
 
-    // SHA1 hex 为 40 字符，JS 端 hash[40] 越界得 undefined，join 时被跳过
     let part1: String = TX_PART_1_INDEXES
         .iter()
         .filter_map(|&i| bytes.get(i).map(|&b| b as char))
@@ -60,8 +47,6 @@ pub fn zzc_sign(text: &str) -> String {
 const KG_SALT_ANDROID: &str = "OIlwieks28dk2k092lksi2UIkp";
 const KG_SALT_WEB: &str = "NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt";
 
-/// `md5(salt + sort(params.split('&')).join('') + body + salt)`
-/// platform: "web" 用 web 盐，其余用 android 盐；body 传空串时与酷狗评论签名等价
 pub fn kugou_sign(params: &str, platform: &str, body: &str) -> String {
     let salt = if platform == "web" {
         KG_SALT_WEB
@@ -136,7 +121,6 @@ fn rsa_modpow_128(data: &[u8; 16]) -> String {
     format!("{:0256x}", result)
 }
 
-/// 固定密钥版本（测试对照用）
 pub fn weapi_encrypt_with_key(payload: &str, key_bytes: &[u8; 16]) -> (String, String) {
     let first = aes_cbc_b64(payload.as_bytes(), WEAPI_PRESET_KEY);
     let params = aes_cbc_b64(first.as_bytes(), key_bytes);
@@ -207,7 +191,10 @@ pub fn host_linuxapi_encrypt(payload: String) -> String {
 #[tauri::command]
 pub fn host_weapi_encrypt(payload: String) -> WeapiResult {
     let (params, enc_sec_key) = weapi_encrypt(&payload);
-    WeapiResult { params, enc_sec_key }
+    WeapiResult {
+        params,
+        enc_sec_key,
+    }
 }
 
 #[tauri::command]
@@ -301,7 +288,6 @@ mod tests {
         assert!(!params.is_empty());
         assert_eq!(enc_sec_key.len(), 256);
         assert!(enc_sec_key.chars().all(|c| c.is_ascii_hexdigit()));
-        // 随机密钥必须落在 BASE62 字母表内
         let key = random_weapi_key();
         assert!(key.iter().all(|b| BASE62.contains(b)));
     }

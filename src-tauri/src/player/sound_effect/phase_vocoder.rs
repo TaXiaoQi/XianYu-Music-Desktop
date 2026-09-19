@@ -1,42 +1,16 @@
-//! 流式相位声码器（Phase Vocoder）实时时间拉伸 —— 替代 WSOLA 的高质量路径。
-//!
-//! 为什么换掉 WSOLA：WSOLA 靠时域波形相似度拼接，窗沿处相似度搜索会系统性
-//! 偏向瞬态，产生节奏抖动与"金属感/相位含糊"（尤其变调时 stretch 大、听感失真）。
-//! 相位声码器在频域按 bins 传播相位，频率精度由 FFT 保证，配合两条关键增强：
-//! - **峰值相位锁定**（Laroche & Dolson, 1999）：每个 bin 的相位锁定到其所属
-//!   频谱峰，保持峰内各分量的原始相位关系，大幅抑制"相位涣散"（phasiness）。
-//! - **瞬态相位重置**：帧能量突增（鼓点冲击）时跳过相位传播、直接取分析相位，
-//!   减少打击乐拖影。
-//!
-//! 语义与 Wsola 完全一致：`stretch > 1` 加速（输出更短），`< 1` 减速（输出更长）。
-//! 接口（push_input / produce / emittable_frames / pop_output / flush / is_drained）
-//! 与 Wsola 逐一对齐，可无缝替换。
-//!
-//! 参数：FFT 长度 N=2048（46ms@44.1k，频率分辨率 ~21.5Hz），合成 hop = N/4
-//! （75% 交叠，Hann² 恒和 1.5 归一）。分析 hop = Hs·stretch（随 stretch 浮动，
-//! 用浮点位置累计、逐帧取整，长期平均 stretch 无偏差）。
-//!
-//! 立体声：两声道独立传播相位（标准做法；峰/瞬态各自检测，代价小）。
-
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use std::collections::VecDeque;
 use std::f64::consts::TAU;
 use std::sync::Arc;
 
-/// FFT 长度（帧）。2048 在音乐素材上是频率分辨率/瞬态保真/延迟的良好折中。
 const FFT_SIZE: usize = 2048;
-/// 合成 hop = FFT_SIZE/4（75% 交叠，Hann 分析×合成窗满足恒和）。
 const HOP_OUT: usize = FFT_SIZE / 4;
-/// Hann² 恒和（75% 交叠周期 Hann）→ 归一化因子。
 const COLA_NORM: f32 = 1.5;
-/// 瞬态判定：帧 RMS 超过上一帧的该倍数 → 相位重置帧。
 const TRANSIENT_RATIO: f32 = 2.2;
-/// stretch 防护范围（与 Wsola/重采样一致）。
 const STRETCH_MIN: f32 = 0.25;
 const STRETCH_MAX: f32 = 4.0;
 
-/// 主相位包裹到 (-π, π]。
 #[inline]
 fn princ(x: f64) -> f64 {
     x - TAU * (x / TAU).round()
@@ -55,7 +29,6 @@ pub struct PhaseVocoder {
     window: Vec<f32>,
     fft_fwd: Arc<dyn rustfft::Fft<f32>>,
     fft_inv: Arc<dyn rustfft::Fft<f32>>,
-    /// 每声道相位状态：[ch][bin]（f64 累计，避免长序列漂移）
     prev_phase: Vec<Vec<f64>>,
     synth_phase: Vec<Vec<f64>>,
     prev_rms: Vec<f32>,
@@ -68,7 +41,6 @@ pub struct PhaseVocoder {
 
     output: VecDeque<f32>,
     out_base: usize,
-    /// 已完成 OLA 标记的绝对帧数（不含）
     marked_abs: usize,
     flushed: bool,
 }
@@ -171,7 +143,6 @@ impl PhaseVocoder {
         self.input[local * self.channels + c]
     }
 
-    /// 释放早于当前分析窗起点的输入。
     fn trim_input(&mut self, keep_from: usize) {
         if keep_from <= self.in_base {
             return;
@@ -182,7 +153,6 @@ impl PhaseVocoder {
         self.in_base += to_drop;
     }
 
-    /// 是否有 `frames` 帧处于安全输出区（后续 OLA 不会再触碰）。
     pub fn emittable_frames(&self) -> usize {
         if !self.active {
             return self.output.len() / self.channels;
@@ -194,7 +164,6 @@ impl PhaseVocoder {
         total.saturating_sub(self.n - self.hs)
     }
 
-    /// 弹出至多 `out.len()` 个样本。返回实际弹出数。
     pub fn pop_output(&mut self, out: &mut [f32]) -> usize {
         let n = out.len().min(self.output.len());
         for i in 0..n {
@@ -207,7 +176,6 @@ impl PhaseVocoder {
         n
     }
 
-    /// 推进一个 STFT 帧。输入不足时返回 false。
     pub fn produce(&mut self) -> bool {
         if !self.active {
             return false;
@@ -226,9 +194,8 @@ impl PhaseVocoder {
 
         let ha = self.ha;
         let hs = self.hs as f64;
-        let synth_write = self.marked_abs; // 本帧 OLA 起点（绝对帧）
+        let synth_write = self.marked_abs;
 
-        // 输出队列补零至覆盖 [synth_write, synth_write + n)
         let need_total_frames = synth_write + n;
         let cur_frames = self.out_base + self.output.len() / ch;
         if need_total_frames > cur_frames {
@@ -262,13 +229,11 @@ impl PhaseVocoder {
             }
 
             let first = !self.started;
-            let transient = !first
-                && self.prev_rms[c] > 1e-6
-                && rms > self.prev_rms[c] * TRANSIENT_RATIO;
+            let transient =
+                !first && self.prev_rms[c] > 1e-6 && rms > self.prev_rms[c] * TRANSIENT_RATIO;
             self.prev_rms[c] = rms;
 
             if first || transient {
-                // 首帧 / 瞬态帧：直接采用分析相位（identity lock）
                 self.synth_phase[c][..self.nbins].copy_from_slice(&phases);
             } else {
                 // ---- 相位传播：ψt[k] = ψ(t-1)[k] + ω[k]·hs + Δφ·(hs/ha) ----
@@ -280,7 +245,6 @@ impl PhaseVocoder {
                 }
 
                 // ---- 峰值相位锁定（Laroche & Dolson）----
-                // 1) 找局部极大峰
                 let mut peaks: Vec<usize> = Vec::new();
                 for k in 1..self.nbins - 1 {
                     if mags[k] > mags[k - 1] && mags[k] >= mags[k + 1] {
@@ -288,7 +252,6 @@ impl PhaseVocoder {
                     }
                 }
                 if !peaks.is_empty() {
-                    // 2) 相邻峰之间以幅度谷底划分区域
                     let mut region_ends: Vec<usize> = Vec::with_capacity(peaks.len());
                     for w in 0..peaks.len() - 1 {
                         let (a, b) = (peaks[w], peaks[w + 1]);
@@ -304,13 +267,12 @@ impl PhaseVocoder {
                     }
                     region_ends.push(self.nbins - 1);
 
-                    // 3) 区域内 bins 锁定到峰：ψ[b] = ψ[p] + princ(φ[b] − φ[p])
                     let mut lo = 0usize;
                     for (w, &p) in peaks.iter().enumerate() {
                         let hi = region_ends[w];
                         for b in lo..=hi {
-                            self.synth_phase[c][b] = self.synth_phase[c][p]
-                                + princ(phases[b] - phases[p]);
+                            self.synth_phase[c][b] =
+                                self.synth_phase[c][p] + princ(phases[b] - phases[p]);
                         }
                         lo = hi + 1;
                     }
@@ -349,7 +311,6 @@ impl PhaseVocoder {
         true
     }
 
-    /// 输入已尽：产出剩余可产出的帧并释放输出保护。
     pub fn flush(&mut self) {
         if !self.active || self.flushed {
             return;
@@ -433,19 +394,15 @@ mod tests {
         assert!(pv.output.iter().all(|v| v.is_finite()));
     }
 
-    /// 频率保持精度：时间拉伸后的正弦应保持原频率（±0.5%）。
-    /// 相位声码器相对 WSOLA 的核心优势：频率由相位传播精确锁定。
     #[test]
     fn test_tone_frequency_accuracy() {
         let mut pv = PhaseVocoder::new();
         pv.prepare(44100.0, 2);
-        // +3 半音变调的补偿 stretch
         pv.set_stretch(1.0 / 2.0f32.powf(3.0 / 12.0));
         feed(&mut pv);
 
         let sr = 44100.0_f32;
         let frames = pv.output.len() / 2;
-        // 跳过开头 0.3s（含 OLA 建立过程），对后半段做过零计数
         let begin = (0.3 * sr) as usize;
         let mut crossings = 0usize;
         let mut prev = pv.output[begin * 2];

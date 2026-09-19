@@ -27,7 +27,7 @@ const appWindow = getCurrentWindow();
 const currentSong = ref<Song | null>(null);
 const localCoverUrl = ref('');
 const isPlaying = ref(false);
-const isDarkTheme = ref(true); // 任务栏播控默认采用高质感暗色毛玻璃设计，适配大多数用户底色
+const isDarkTheme = ref(true);
 const isVisible = ref(false);
 const isDragging = ref(false);
 let dragSafetyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -207,7 +207,6 @@ onMounted(async () => {
 
   void refreshTaskbarWindowTopmost();
 
-  // 1. 监听状态更新
   unlistenState = await listen<TaskbarPlayerStatePayload>(TASKBAR_PLAYER_STATE_EVENT, (event) => {
     currentSong.value = event.payload.currentSong;
     localCoverUrl.value = event.payload.coverUrl;
@@ -219,7 +218,6 @@ onMounted(async () => {
     });
   });
 
-  // 2. 监听可见性
   unlistenVisibility = await listen<{ visible: boolean }>(TASKBAR_PLAYER_VISIBILITY_EVENT, (event) => {
     isVisible.value = event.payload.visible;
     if (event.payload.visible) {
@@ -227,10 +225,8 @@ onMounted(async () => {
     }
   });
 
-  // 3. 监听位置移动：拖动结束时由 pointerup 保存位置，这里只保留窗口生命周期清理句柄
   unlistenMoved = await appWindow.onMoved(() => {});
 
-  // 从 Rust 会话获取初始核心播放状态（主窗口 emitTo 到达前的即时数据）
   try {
     const session = await sessionApi.getPlaybackSession();
     if (session && session.currentSongPath) {
@@ -239,12 +235,10 @@ onMounted(async () => {
       if (songMeta) {
         currentSong.value = songMeta;
       }
-      // 缓存 queueSongMeta 供后续 session-changed 事件使用
       cachedQueueMeta = session.queueSongMeta ?? {};
     }
   } catch { /* ignore - emitTo will provide full state */ }
 
-  // 监听 Rust 会话变更（主窗口不可用时的后备同步路径）
   unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
     'playback:session-changed',
     (event) => {
@@ -259,7 +253,6 @@ onMounted(async () => {
     },
   );
 
-  // 监听 queueSongMeta 变更（仅在元数据变化时发射）
   unlistenQueueMetaChanged = await listen<PlaybackQueueMetaChangedPayload>(
     'playback:queue-meta-changed',
     (event) => {
@@ -267,7 +260,6 @@ onMounted(async () => {
     },
   );
 
-  // 4. 发送 Ready 握手并请求一次最新状态
   void emitTo('main', 'taskbar-player:ready');
   void emitTo('main', 'taskbar-player:request-state');
 });
@@ -296,7 +288,6 @@ onUnmounted(() => {
         : 'border-transparent shadow-none hover:bg-[#121214]/65 hover:border-white/5 hover:shadow-2xl hover:backdrop-blur-md'
     ]"
   >
-    <!-- 极简白色竖条拉手（采用外层 22px 宽的隐形热区, 并在悬停时 group 联动触发内层竖条呼吸显隐与高亮） -->
     <div 
       class="group w-[22px] h-[34px] -ml-1.5 mr-1 shrink-0 flex items-center justify-center cursor-move"
       title="按住拖拽调整播控条位置"
@@ -308,9 +299,7 @@ onUnmounted(() => {
       ></div>
     </div>
 
-    <!-- 左侧：封面与歌曲信息 -->
     <div class="flex items-center gap-2.5 min-w-0 flex-1 mr-4 pointer-events-none">
-      <!-- 封面 -->
       <div 
         class="group/cover w-8 h-8 rounded-lg overflow-hidden shrink-0 bg-white/5 border border-white/5 flex items-center justify-center text-white/40 relative cursor-pointer pointer-events-auto"
         @mousedown.stop.prevent
@@ -339,7 +328,6 @@ onUnmounted(() => {
           <circle cx="18" cy="16" r="3"></circle>
         </svg>
 
-        <!-- 精美、轻量对角双向箭头覆盖层 -->
         <div 
           class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 group-hover/cover:opacity-100 transition-opacity duration-200 ease-out"
         >
@@ -360,9 +348,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 文字信息（歌名/歌手） -->
       <div class="flex flex-col min-w-0 leading-tight">
-        <!-- 歌曲标题（带跑马灯逻辑） -->
         <div 
           ref="titleWrapperElement" 
           class="text-xs text-white/95 font-semibold truncate max-w-[110px] w-full overflow-hidden relative"
@@ -376,16 +362,13 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 歌手名 -->
         <div class="text-[10px] text-white/50 truncate max-w-[110px] w-full">
           {{ currentSong ? currentSong.artist : '享受音乐时光' }}
         </div>
       </div>
     </div>
 
-    <!-- 右侧：上一首、播放/暂停、下一首控制 -->
     <div class="flex items-center gap-2.5 shrink-0 z-20 mr-3">
-      <!-- 上一首 -->
       <button 
         @click.stop="sendAction('prev-song')" 
         class="text-white/60 hover:text-white transition-colors duration-200 active:scale-90"
@@ -396,7 +379,6 @@ onUnmounted(() => {
         </svg>
       </button>
 
-      <!-- 播放/暂停（经典汽水胶囊药丸宽圆角背景） -->
       <button 
         @click.stop="sendAction('toggle-play')" 
         class="w-11 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-200 active:scale-95 border border-white/5"
@@ -410,7 +392,6 @@ onUnmounted(() => {
         </svg>
       </button>
 
-      <!-- 下一首 -->
       <button 
         @click.stop="sendAction('next-song')" 
         class="text-white/60 hover:text-white transition-colors duration-200 active:scale-90"
@@ -422,13 +403,11 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- 右上角 x 退出按钮外层隐形大热区（28px x 28px，完美契合 40px 高度容器的右上角，保证优秀的盲操防滑体验） -->
     <div 
       class="group/exit absolute top-0 right-0 w-7 h-7 flex items-center justify-center cursor-pointer z-30"
       @click.stop="sendAction('close')"
       title="退出播控"
     >
-      <!-- 内层精致小巧的 x 按钮 -->
       <div 
         class="w-4 h-4 rounded-full flex items-center justify-center text-white/30 bg-white/5 opacity-0 group-hover/exit:opacity-100 hover:!text-white/90 hover:!bg-white/15 transition-all duration-300 active:scale-90"
       >
@@ -462,7 +441,6 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* 强制窗口背景绝对透明，彻底去除圆角外多余的拐角黑色边缘 */
 html, body, #app {
   background: transparent !important;
   background-color: transparent !important;

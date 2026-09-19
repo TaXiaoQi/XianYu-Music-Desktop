@@ -58,11 +58,9 @@ pub fn scan_single_directory_internal(
         .as_ref()
         .map(|a| crate::music::covers::get_cover_cache_dir(a));
 
-    // 按歌曲规范化路径进行稳定排序，保证入库及头像更新时序的唯一性
     scan_diff.to_add.sort_by(|a, b| a.path.cmp(&b.path));
     scan_diff.to_update.sort_by(|a, b| a.path.cmp(&b.path));
 
-    // 缓存写盘并在结束后无条件释放字节内存
     for song in scan_diff
         .to_add
         .iter_mut()
