@@ -38,6 +38,11 @@ export class BakaPluginCore {
   // ==================== 插件检测 ====================
 
   async isBakaPlugin(source: PluginSource): Promise<boolean> {
+    if (source.format === 'anime') {
+      this._bakaPluginCache.set(source.id, false);
+      return false;
+    }
+
     const author = (source.author || '').toLowerCase();
 
     if (author.includes('toskysun')) {

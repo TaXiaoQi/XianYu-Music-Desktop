@@ -149,6 +149,11 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
           updateUrl = extractMusicFreeSrcUrl(script) || undefined;
         }
       }
+    } else if (source.format === 'anime') {
+      // anime 插件的分发地址即订阅条目 URL（meta.update 同源），直接以 filePath 作为更新源
+      if (source.filePath.startsWith('http')) {
+        updateUrl = source.filePath;
+      }
     } else if (source.format === 'lx') {
       if (source.filePath.startsWith('http')) {
         updateUrl = source.filePath;
@@ -193,7 +198,8 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     }
 
     let newVersion = '';
-    if (source.format === 'musicfree') {
+    if (source.format === 'musicfree' || source.format === 'anime') {
+      // anime 的 meta.version 同样命中 `version: "x.y.z"` 提取规则
       newVersion = extractMusicFreeVersion(newScript) || '';
     } else if (source.format === 'lx') {
       const info = parseLxScriptInfo(newScript);

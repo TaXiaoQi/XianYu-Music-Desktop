@@ -265,7 +265,9 @@ export function extractOnlySupportedQuality(errMsg: string): QualityKey | undefi
 }
 
 export function isFatalMediaSourceError(errMsg: string): boolean {
-  return /解密\s*playauth\s*失败|decrypt\s*playauth\s*failed|playauth/i.test(errMsg);
+  // 401/鉴权失效（API密钥、卡密）为源级错误，逐档重试无意义，与 playauth 同级处理
+  // 关键词与三端统一鉴权集一致（playauth 为本模块特有的源级错误）
+  return /解密\s*playauth\s*失败|decrypt\s*playauth\s*failed|playauth|API密钥|API\s*key|api[_\s-]?secret|卡密|\b40[13]\b|鉴权失效已临时熔断/i.test(errMsg);
 }
 
 export function isKugouLikeSource(source: PluginSource, mediaItem: any): boolean {

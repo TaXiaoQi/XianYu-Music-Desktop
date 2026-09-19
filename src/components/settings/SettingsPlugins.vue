@@ -277,6 +277,15 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
       label: '落雪',
     };
   }
+  if (format === 'anime') {
+    return {
+      iconBg: 'bg-gradient-to-br from-purple-500/12 to-fuchsia-400/12',
+      iconText: 'text-purple-600 dark:text-purple-400',
+      toggle: 'bg-purple-500',
+      tagBg: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 dark:bg-purple-500/15',
+      label: 'anime',
+    };
+  }
   if (format === 'musicfree') {
     if (isBaka) {
       return {
@@ -1685,7 +1694,7 @@ async function saveUserVariables() {
                 <div class="min-w-0">
                   <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{{ detailPlugin.name }}</div>
                   <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">
-                    {{ detailPlugin.format === 'lx' ? '落雪格式' : 'MusicFree 格式' }}
+                    {{ detailPlugin.format === 'lx' ? '落雪格式' : detailPlugin.format === 'anime' ? 'anime 格式' : 'MusicFree 格式' }}
                   </div>
                 </div>
               </div>

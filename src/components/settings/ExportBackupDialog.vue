@@ -9,6 +9,8 @@ export interface ExportSelection {
   playlists: boolean;
   plugins: boolean;
   favorites: boolean;
+  encrypted: boolean;
+  password: string;
 }
 
 const props = defineProps<{
@@ -25,15 +27,28 @@ const selection = ref<ExportSelection>({
   playlists: true,
   plugins: true,
   favorites: true,
+  encrypted: false,
+  password: '',
 });
+
+const passwordConfirm = ref('');
 
 watch(
   () => props.visible,
   (visible) => {
     if (visible) {
-      selection.value = { settings: true, playlists: true, plugins: true, favorites: true };
+      selection.value = { settings: true, playlists: true, plugins: true, favorites: true, encrypted: false, password: '' };
+      passwordConfirm.value = '';
     }
   },
+);
+
+const passwordMismatch = computed(
+  () => selection.value.encrypted && passwordConfirm.value.length > 0 && passwordConfirm.value !== selection.value.password,
+);
+
+const canExport = computed(
+  () => !selection.value.encrypted || (selection.value.password.length > 0 && !passwordMismatch.value),
 );
 
 const categoryItems = computed(() => [
@@ -94,13 +109,54 @@ function close() {
                 <div class="export-desc-sub">{{ item.desc }}</div>
               </div>
             </div>
+
+            <div
+              class="export-row"
+              :class="{ 'is-selected': selection.encrypted }"
+              @click="selection.encrypted = !selection.encrypted"
+            >
+              <span class="export-check" :class="{ 'is-checked': selection.encrypted }">
+                <svg v-if="selection.encrypted" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              </span>
+              <div class="export-label-block">
+                <div class="export-label">加密备份</div>
+                <div class="export-desc-sub">使用密码加密整个备份文件（含插件用户变量），导入时需输入相同密码</div>
+              </div>
+            </div>
+
+            <div v-if="selection.encrypted" class="export-passwords" @click.stop>
+              <input
+                v-model="selection.password"
+                type="password"
+                class="export-input"
+                placeholder="设置备份密码"
+                autocomplete="new-password"
+              />
+              <input
+                v-model="passwordConfirm"
+                type="password"
+                class="export-input"
+                :class="{ 'is-invalid': passwordMismatch }"
+                placeholder="再次输入密码"
+                autocomplete="new-password"
+              />
+              <div v-if="passwordMismatch" class="export-input-error">两次输入的密码不一致</div>
+            </div>
           </div>
 
           <div class="export-actions">
             <button type="button" class="export-btn export-btn--ghost" @click="close">
               取消
             </button>
-            <button type="button" class="export-btn export-btn--primary" @click="confirmExport">
+            <button
+              type="button"
+              class="export-btn export-btn--primary"
+              :disabled="!canExport"
+              :style="!canExport ? 'opacity:0.45;cursor:not-allowed' : ''"
+              @click="canExport && confirmExport()"
+            >
               导出
             </button>
           </div>
@@ -113,6 +169,9 @@ function close() {
 <style scoped>
 .export-card {
   width: min(92vw, 420px);
+  max-height: min(86vh, 720px);
+  display: flex;
+  flex-direction: column;
   background: rgba(255, 255, 255, 0.8);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -143,6 +202,13 @@ function close() {
   margin: 0 0 8px;
 }
 
+/* 弹窗限高时头部与按钮固定，仅列表滚动 */
+.export-icon,
+.export-title,
+.export-subtitle {
+  flex-shrink: 0;
+}
+
 .export-desc {
   font-size: 0.82rem;
   line-height: 1.55;
@@ -157,6 +223,10 @@ function close() {
   gap: 8px;
   margin-bottom: 20px;
   text-align: left;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .export-row {
@@ -203,6 +273,41 @@ function close() {
   min-width: 0;
 }
 
+/* ==================== 加密密码输入 ==================== */
+.export-passwords {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px 2px;
+}
+
+.export-input {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  color: #1f2937;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.export-input:focus {
+  border-color: rgba(236, 65, 65, 0.55);
+  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.12);
+}
+
+.export-input.is-invalid {
+  border-color: rgba(236, 65, 65, 0.7);
+}
+
+.export-input-error {
+  font-size: 0.72rem;
+  color: #EC4141;
+  text-align: left;
+}
+
 .export-label {
   font-size: 0.85rem;
   font-weight: 600;
@@ -224,6 +329,7 @@ function close() {
   padding: 12px 22px;
   background: rgba(249, 250, 251, 0.5);
   border-radius: 0 0 16px 16px;
+  flex-shrink: 0;
 }
 
 .export-btn {
@@ -328,6 +434,17 @@ html.dark .export-check.is-checked {
 
 html.dark .export-label {
   color: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .export-input {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.94);
+}
+
+html.dark .export-input:focus {
+  border-color: rgba(255, 139, 139, 0.6);
+  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.18);
 }
 
 html.dark .export-desc-sub {

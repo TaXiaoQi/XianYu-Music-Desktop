@@ -1,6 +1,6 @@
 
 import type { Song, AppSettings, LibrarySong } from '../../types';
-import { getStoredPlugins, addPluginSource, loadPluginFromScript, persistPluginScriptToDataDir, pluginsVersion } from './pluginEngine';
+import { getStoredPlugins, addPluginSource, loadPluginFromScript, persistPluginScriptToDataDir, pluginsVersion, setPluginUserVariableValues } from './pluginEngine';
 import { playerStorage } from '../storage/playerStorage';
 import { classifySong } from './appBackupTypes';
 import type { AppBackup, AppBackupImportResult, AppBackupSummary } from './appBackupTypes';
@@ -111,6 +111,11 @@ export async function importAppBackup(
             enabled: entry.source.enabled,
             sortOrder: entry.source.sortOrder,
           });
+          // 恢复备份中的用户变量值（跨端迁移卡密等配置）
+          const userVars = entry.userVariables;
+          if (userVars && Object.keys(userVars).length > 0) {
+            setPluginUserVariableValues(loaded.id, { ...userVars });
+          }
           importedPlugins++;
         } else {
           errors.push(`插件 "${entry.source.name}" 加载失败`);
