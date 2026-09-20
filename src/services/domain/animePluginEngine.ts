@@ -19,8 +19,6 @@ import { hostSha256Hex } from '../tauri/hostCryptoApi';
 // 并从 instance.meta 提取元信息），调用走统一入口 call(action, params)，
 // 由本模块在主线程解包信封并暴露 musicfree 兼容方法（search/getMediaSource/getLyric）。
 
-const ANIME_FORMAT_TAG = 'animemusic/1';
-
 export function isAnimePluginScript(script: string): boolean {
   return /["']animemusic\/1["']/.test(script);
 }
@@ -158,6 +156,10 @@ export function createAnimeInstance(pluginId: string, metadata: any) {
       let line: any = null;
       let word: any = null;
 
+      const wordHasTiming = (lrc: unknown): boolean => (
+        typeof lrc === 'string' && /<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(lrc)
+      );
+
       // 1) 逐行+逐字一次拿
       const bothEnv = await animeCall(pluginId, 'lyricBoth', base, 15000).catch(() => null);
       if (bothEnv?.ok) {
@@ -165,8 +167,14 @@ export function createAnimeInstance(pluginId: string, metadata: any) {
         word = bothEnv.word || null;
       }
 
-      // 2) 降级逐字
-      if (!line && !word) {
+      // 2) lyricBoth 部分成功（line 有、word 缺/逐行）时单独补次 lyricWord 争取逐字
+      if (line?.lrc && !wordHasTiming(word?.lrc)) {
+        const wordEnv = await animeCall(pluginId, 'lyricWord', base, 15000).catch(() => null);
+        if (wordEnv?.ok && wordHasTiming(wordEnv.lrc)) word = wordEnv;
+      }
+
+      // 3) 双空降级逐字（用逐字当逐行兜底）
+      if (!line?.lrc && !word?.lrc) {
         const wordEnv = await animeCall(pluginId, 'lyricWord', base, 15000).catch(() => null);
         if (wordEnv?.ok) {
           word = wordEnv;
@@ -178,13 +186,13 @@ export function createAnimeInstance(pluginId: string, metadata: any) {
         }
       }
 
-      // 3) 降级逐行
+      // 4) 降级逐行
       if (!line?.lrc) {
         const lineEnv = await animeCall(pluginId, 'lyric', base, 15000).catch(() => null);
         if (lineEnv?.ok) line = lineEnv;
       }
 
-      if (!line?.lrc) {
+      if (!line?.lrc && !word?.lrc) {
         log(`[anime] ${pluginLabel} getLyric 失败: ${envelopeErrorText(bothEnv)}`);
         return null;
       }
