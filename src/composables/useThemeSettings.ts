@@ -68,8 +68,11 @@ export function useThemeSettings() {
   const settingsStore = useSettingsStore();
   const { settings, theme } = storeToRefs(settingsStore);
 
-  const isCustomTheme = computed(() => theme.value.mode === 'custom');
-  const isDarkTheme = computed(() => resolveThemeDarkMode(theme.value));
+  const isCustomTheme = computed(() => theme.value?.mode === 'custom');
+  const isDarkTheme = computed(() => {
+    if (!theme.value) return false;
+    return resolveThemeDarkMode(theme.value);
+  });
 
   const replaceTheme = (nextTheme: ThemeSettings) => {
     if (nextTheme.mode === 'system') {
@@ -101,6 +104,7 @@ export function useThemeSettings() {
 
   const toggleThemeMode = () => {
     const currentTheme = theme.value;
+    if (!currentTheme) return;
     if (currentTheme.mode === 'custom' && currentTheme.customBackground.imagePath) {
       const foregroundStyle = normalizeForegroundStyle(currentTheme.customBackground.foregroundStyle);
       patchTheme({

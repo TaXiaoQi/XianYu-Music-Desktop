@@ -147,6 +147,93 @@ const loadVideoMetadata = (src: string) => new Promise<{ width: number; height: 
   video.src = src;
 });
 
+const onVideoLoadedMetadata = () => {
+  const video = videoRef.value;
+  if (!video) return;
+  if (reduceDynamicEffects.value) {
+    video.pause();
+  } else if (video.paused) {
+    video.play().catch(() => {});
+  }
+};
+
+const onVideoError = () => {
+  videoLoadFailed.value = true;
+  const video = videoRef.value;
+  if (video) video.pause();
+};
+
+const isMicaWindowMaterial = computed(() => activeWindowMaterial.value === 'mica');
+const reduceDynamicEffects = computed(() => showPlayerDetail.value || isMainWindowLowPower.value || isLowPerformance.value);
+const flowFallbackPalette = ['hsl(220, 28%, 34%)', 'hsl(196, 58%, 56%)', 'hsl(340, 52%, 58%)', 'hsl(42, 72%, 60%)'];
+const FLOW_SCENE_TRANSITION_MS = 1180;
+
+interface FlowLayerSnapshot {
+  id: number;
+  signature: string;
+  state: 'entering' | 'current' | 'previous';
+  shellClass: string;
+  colors: string[];
+  baseStyle: {
+    opacity: number;
+    background: string;
+  };
+  blobOpacity: number;
+  noiseOpacity: number;
+  overlayClass: string;
+  overlayStyle: {
+    opacity: number;
+  };
+  motionStyle: Record<string, string>;
+  reduceDynamicEffects: boolean;
+}
+
+const activeBackgroundInfo = computed(() => {
+  const currentTheme = theme.value;
+  if (!currentTheme) return null;
+
+  if (currentTheme.mode === 'custom' && currentTheme.customBackground.imagePath) {
+    const imagePath = currentTheme.customBackground.imagePath;
+    const isVideo = currentTheme.customBackground.mediaType === 'video' || /\.mp4$/i.test(imagePath);
+    return {
+      src: imagePath,
+      mediaType: isVideo ? 'video' as const : 'image' as const,
+      blur: currentTheme.customBackground.blur,
+      opacity: currentTheme.customBackground.opacity,
+      maskColor: currentTheme.customBackground.maskColor,
+      maskAlpha: currentTheme.customBackground.maskAlpha,
+      scale: currentTheme.customBackground.scale,
+      translateX: currentTheme.customBackground.translateX,
+      translateY: currentTheme.customBackground.translateY,
+      isDynamic: false,
+      type: 'custom' as const,
+    };
+  }
+
+  if (currentTheme.dynamicBgType === 'flow') {
+    return {
+      src: currentCover.value,
+      blur: 60,
+      opacity: 0.9,
+      isDynamic: true,
+      type: 'flow' as const,
+    };
+  }
+
+  if (currentTheme.dynamicBgType === 'blur') {
+    return {
+      src: currentCoverFull.value || currentCover.value,
+      blur: 32,
+      opacity: 0.75,
+      scale: 1.25,
+      isDynamic: false,
+      type: 'blur' as const,
+    };
+  }
+
+  return null;
+});
+
 watch(
   [() => activeBackgroundInfo.value?.type, () => activeBackgroundInfo.value?.mediaType, () => activeBackgroundInfo.value?.src],
   async ([backgroundType, mediaType, src], _oldValue, onCleanup) => {
@@ -205,92 +292,6 @@ watch(
   },
   { immediate: true },
 );
-
-const onVideoLoadedMetadata = () => {
-  const video = videoRef.value;
-  if (!video) return;
-  if (reduceDynamicEffects.value) {
-    video.pause();
-  } else if (video.paused) {
-    video.play().catch(() => {});
-  }
-};
-
-const onVideoError = () => {
-  videoLoadFailed.value = true;
-  const video = videoRef.value;
-  if (video) video.pause();
-};
-
-const isMicaWindowMaterial = computed(() => activeWindowMaterial.value === 'mica');
-const reduceDynamicEffects = computed(() => showPlayerDetail.value || isMainWindowLowPower.value || isLowPerformance.value);
-const flowFallbackPalette = ['hsl(220, 28%, 34%)', 'hsl(196, 58%, 56%)', 'hsl(340, 52%, 58%)', 'hsl(42, 72%, 60%)'];
-const FLOW_SCENE_TRANSITION_MS = 1180;
-
-interface FlowLayerSnapshot {
-  id: number;
-  signature: string;
-  state: 'entering' | 'current' | 'previous';
-  shellClass: string;
-  colors: string[];
-  baseStyle: {
-    opacity: number;
-    background: string;
-  };
-  blobOpacity: number;
-  noiseOpacity: number;
-  overlayClass: string;
-  overlayStyle: {
-    opacity: number;
-  };
-  motionStyle: Record<string, string>;
-  reduceDynamicEffects: boolean;
-}
-
-const activeBackgroundInfo = computed(() => {
-  const currentTheme = theme.value;
-
-  if (currentTheme.mode === 'custom' && currentTheme.customBackground.imagePath) {
-    const imagePath = currentTheme.customBackground.imagePath;
-    const isVideo = currentTheme.customBackground.mediaType === 'video' || /\.mp4$/i.test(imagePath);
-    return {
-      src: imagePath,
-      mediaType: isVideo ? 'video' as const : 'image' as const,
-      blur: currentTheme.customBackground.blur,
-      opacity: currentTheme.customBackground.opacity,
-      maskColor: currentTheme.customBackground.maskColor,
-      maskAlpha: currentTheme.customBackground.maskAlpha,
-      scale: currentTheme.customBackground.scale,
-      translateX: currentTheme.customBackground.translateX,
-      translateY: currentTheme.customBackground.translateY,
-      isDynamic: false,
-      type: 'custom' as const,
-    };
-  }
-
-  if (currentTheme.dynamicBgType === 'flow') {
-    return {
-      src: currentCover.value,
-      blur: 60,
-      opacity: 0.9,
-      isDynamic: true,
-      type: 'flow' as const,
-    };
-  }
-
-  if (currentTheme.dynamicBgType === 'blur') {
-    return {
-      src: currentCoverFull.value || currentCover.value,
-      blur: 32,
-      opacity: 0.75,
-      scale: 1.25,
-      isDynamic: false,
-      type: 'blur' as const,
-    };
-  }
-
-  return null;
-});
 
 const bgImageSrc = computed(() => {
   if (!activeBackgroundInfo.value?.src) return '';
@@ -686,7 +687,7 @@ const customBgTransform = computed(() => {
     data-global-background
     class="fixed inset-0 z-0 overflow-hidden pointer-events-none transition-colors duration-500"
     :class="[
-      theme.mode === 'custom'
+      theme?.mode === 'custom'
         ? 'bg-black'
         : hasWindowMaterial
           ? 'bg-transparent'
@@ -802,27 +803,27 @@ const customBgTransform = computed(() => {
           }"
         >
           <video
-            v-if="activeBackgroundInfo.mediaType === 'video'"
-            ref="videoRef"
-            :src="bgImageSrc"
-            muted
-            loop
-            playsinline
-            autoplay
-            preload="auto"
-            @loadedmetadata="onVideoLoadedMetadata"
-            @error="onVideoError"
-            class="absolute block max-w-none max-h-none select-none pointer-events-none"
-            :class="{ 'global-background-video-hidden': videoLoadFailed }"
-            :style="{
-              width: '100%',
-              height: '100%',
-              transform: `translate3d(${customBgTransform.tx}px, ${customBgTransform.ty}px, 0) scale(${customBgTransform.scale})`,
-              transformOrigin: 'center center',
-              filter: `blur(${activeBackgroundInfo.blur}px)`,
-              opacity: activeBackgroundInfo.opacity ?? 1.0,
-            }"
-          ></video>
+          v-if="activeBackgroundInfo.mediaType === 'video'"
+          ref="videoRef"
+          :src="bgImageSrc"
+          muted
+          loop
+          playsinline
+          autoplay
+          preload="auto"
+          @loadedmetadata="onVideoLoadedMetadata"
+          @error="onVideoError"
+          class="absolute block max-w-none max-h-none select-none pointer-events-none"
+          :class="{ 'global-background-video-hidden': videoLoadFailed }"
+          :style="{
+            width: '50%',
+            height: '50%',
+            transform: `translate3d(${customBgTransform.tx / 2}px, ${customBgTransform.ty / 2}px, 0) scale(${customBgTransform.scale * 2})`,
+            transformOrigin: 'center center',
+            filter: activeBackgroundInfo.blur ? `blur(${activeBackgroundInfo.blur / 2}px)` : 'none',
+            opacity: activeBackgroundInfo.opacity ?? 1.0,
+          }"
+        ></video>
           <img
             v-else
             :src="bgImageSrc"
