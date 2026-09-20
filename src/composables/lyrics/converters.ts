@@ -224,14 +224,19 @@ export function convertLyricsToAmlLines(
       : Math.max(parsedEndTime, nextStartTime);
     const endTime = Math.max(startTime + MIN_AML_LINE_DURATION_MS, lineBoundaryEndTime);
 
-    const sourceWords = effectiveWords ?? [];
+    const sourceWords = effectiveWords
+      // AMLL 渐变动画要求词时间在行范围内且单调：先按 start 排序，
+      // 再在下方构建时把 start/end clamp 到 [startTime, endTime]
+      ? [...effectiveWords].sort((a, b) => toMs(a.start) - toMs(b.start))
+      : [];
     const canUsePerWordRomaji = showRomaji
       && sourceWords.length > 0
       && sourceWords
         .filter(wordRequiresRomaji)
         .every((word) => Boolean((word.romaji || '').trim()));
     const convertedWords = sourceWords.map((word, wordIndex) => {
-      const wordStart = toMs(word.start);
+      // 词 start 须落在行内且预留 20ms 词长，否则 AMLL offsets 非单调报错
+      const wordStart = Math.max(startTime, Math.min(endTime - 20, toMs(word.start)));
       const nextWordStart = sourceWords[wordIndex + 1]?.start;
       const rawWordEnd = nextWordStart !== undefined
         ? toMs(nextWordStart)
@@ -264,11 +269,18 @@ export function convertLyricsToAmlLines(
       translatedLyric: renderLine.translation?.[0]?.text || '',
       romanLyric: showRomaji && !hasTimedRomaji ? (renderLine.roman?.[0]?.text || '') : '',
       romajiWords: showRomaji && line.romajiWords
-        ? line.romajiWords.map((word) => ({
-          text: word.text,
-          startTime: toMs(word.start),
-          endTime: toMs(word.end),
-        }))
+        ? [...line.romajiWords]
+          .sort((a, b) => toMs(a.start) - toMs(b.start))
+          .map((word) => {
+            // 与主词一致：start/end 都 clamp 到行内并保证 end > start，防 AMLL offsets 非单调
+            const wordStart = Math.max(startTime, Math.min(endTime - 20, toMs(word.start)));
+            const rawEnd = toMs(word.end > word.start ? word.end : word.start + 200);
+            return {
+              text: word.text,
+              startTime: wordStart,
+              endTime: Math.max(wordStart + 20, Math.min(endTime, rawEnd)),
+            };
+          })
         : undefined,
       startTime,
       endTime,

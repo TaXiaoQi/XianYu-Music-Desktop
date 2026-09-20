@@ -105,6 +105,31 @@ describe('enhanced lrc parser', async () => {
     expect(parsed?.endTime).toBe(36991);
   });
 
+  it('offsets lrc-a2 relative word times back to the line start', () => {
+    // anime lrc-a2 相对逐字：词时间为行首偏移，需加回行起点
+    const parsed = parseEnhancedLrcLine('[00:23.59]<00:00.16>塞<00:00.21>纳<00:00.32>畔');
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.startTime).toBe(23590);
+    expect(parsed?.words.map((word) => ({
+      text: word.word,
+      start: word.startTime,
+    }))).toEqual([
+      { text: '塞', start: 23590 + 160 },
+      { text: '纳', start: 23590 + 210 },
+      { text: '畔', start: 23590 + 320 },
+    ]);
+  });
+
+  it('keeps the trailing word after the last enhanced timestamp (kw style)', () => {
+    // kw/wy 逐字：末 marker 之后仍带末词文本，不补收会整行丢末字
+    const parsed = parseEnhancedLrcLine('[00:23.59]<00:23.75>塞<00:23.80>纳<00:24.61>啡');
+
+    expect(parsed).not.toBeNull();
+    const words = parsed?.words ?? [];
+    expect(words[words.length - 1]).toMatchObject({ word: '啡', startTime: 24610 });
+  });
+
   it('supports spaces and punctuation inside enhanced word text', () => {
     const parsed = parseEnhancedLrcLine(`[00:19.960]<00:19.960>Composer:<00:21.292> Yang<00:22.624>${'\uFF1A'}<00:23.956> OK<00:25.288>!<00:26.620>`);
 

@@ -4363,6 +4363,22 @@ mod tests {
     };
 
     #[test]
+    fn plugin_lrc_with_inline_angle_words_produces_display_words() {
+        // am 等插件把逐字统一转成 lrc 返回：词级尖括号时间戳内嵌在 lyric 文本里
+        let payload = build_structured_lyrics_payload(
+            ["[00:23.59]<00:23.75>塞<00:23.80>纳<00:24.61>啡", "[00:30.00]第二句"]
+                .join("\n"),
+        );
+
+        let first = payload.display_lines.first().expect("应有解析行");
+        let words = first.words.as_deref().unwrap_or_default();
+        assert!(
+            words.len() >= 3,
+            "内嵌词级尖括号的行应产出逐字 words，实际 words={words:?} line={first:?}"
+        );
+    }
+
+    #[test]
     fn credit_variant_lines_at_head_are_not_duet() {
         let payload = build_structured_lyrics_payload(
             [

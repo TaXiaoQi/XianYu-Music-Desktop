@@ -137,10 +137,20 @@ impl HttpBridge {
         crate::security::ssrf::validate_outbound_url(url)
             .await
             .map_err(|e| e.to_string())?;
+        // fake-ip 目标（代理接管 DNS 但本应用被分应用排除、未走其隧道）会连接黑洞，
+        // 缩短等待并在失败时给出针对性提示
+        let fake_ip_target = url
+            .parse::<reqwest::Url>()
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_string()))
+            .map(|h| crate::security::ssrf::host_is_fake_ip_target(&h))
+            .unwrap_or(false);
 
         let mut request = client.request(method, url);
         if timeout_ms > 0 {
             request = request.timeout(Duration::from_millis(timeout_ms));
+        } else if fake_ip_target {
+            request = request.timeout(Duration::from_secs(8));
         } else {
             request = request.timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
         }
@@ -167,7 +177,15 @@ impl HttpBridge {
             }
         }
 
-        let mut response = request.send().await.map_err(format_request_error)?;
+        let mut response = match request.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                if fake_ip_target {
+                    return Err("连接失败：该域名被本机代理以 fake-ip 方式接管，但当前应用未走代理隧道（可能被分应用排除）。请在代理软件中将本应用加入代理名单，或将该域名设为直连/加入 fake-ip-filter".to_string());
+                }
+                return Err(format_request_error(e));
+            }
+        };
         let status = response.status().as_u16();
         let final_url = response.url().to_string();
 

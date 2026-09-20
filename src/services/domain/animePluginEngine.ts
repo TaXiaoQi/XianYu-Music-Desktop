@@ -189,11 +189,17 @@ export function createAnimeInstance(pluginId: string, metadata: any) {
         return null;
       }
 
+      // 逐字内容按词级时间戳判定（与三端 host_shim 同规则）：
+      // kw/wy 服务端返回的逐字 Enhanced LRC 常把 format 标成 lrc 而非 lrc-a2，
+      // 不能信任插件自述；word 逐字失败回退逐行时（fallback）lrc 无尖括号，
+      // 检测不通过自动落回逐行 lyric，避免把纯文本误当逐字
+      const wordLrc = word?.lrc ? String(word.lrc) : '';
+      const hasWordTiming = /<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(wordLrc);
       return {
         lyric: String(line.lrc || ''),
         tlyric: String(line.translation || ''),
         rlyric: String(line.romanization || ''),
-        lxlyric: word && word.word && word.lrc ? String(word.lrc) : '',
+        lxlyric: wordLrc && hasWordTiming ? wordLrc : '',
       };
     },
   };
