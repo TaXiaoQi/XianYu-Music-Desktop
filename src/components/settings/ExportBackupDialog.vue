@@ -2,13 +2,14 @@
 import { computed, ref, watch } from 'vue';
 import { UploadCloud } from 'lucide-vue-next';
 
-export type ExportCategory = 'settings' | 'playlists' | 'plugins' | 'favorites';
+export type ExportCategory = 'settings' | 'playlists' | 'plugins' | 'favorites' | 'recent';
 
 export interface ExportSelection {
   settings: boolean;
   playlists: boolean;
   plugins: boolean;
   favorites: boolean;
+  recent: boolean;
   encrypted: boolean;
   password: string;
 }
@@ -27,6 +28,7 @@ const selection = ref<ExportSelection>({
   playlists: true,
   plugins: true,
   favorites: true,
+  recent: true,
   encrypted: false,
   password: '',
 });
@@ -37,7 +39,7 @@ watch(
   () => props.visible,
   (visible) => {
     if (visible) {
-      selection.value = { settings: true, playlists: true, plugins: true, favorites: true, encrypted: false, password: '' };
+      selection.value = { settings: true, playlists: true, plugins: true, favorites: true, recent: true, encrypted: false, password: '' };
       passwordConfirm.value = '';
     }
   },
@@ -56,6 +58,7 @@ const categoryItems = computed(() => [
   { key: 'playlists' as const, label: '歌单', desc: '本地创建与编辑的歌单（自动区分本地/在线/混合）' },
   { key: 'plugins' as const, label: '插件', desc: '已安装的插件脚本与配置' },
   { key: 'favorites' as const, label: '收藏', desc: '收藏的本地与在线歌曲' },
+  { key: 'recent' as const, label: '最近播放', desc: '最近播放的历史记录' },
 ]);
 
 function toggleCategory(key: ExportCategory) {

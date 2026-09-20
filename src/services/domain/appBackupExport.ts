@@ -6,6 +6,7 @@ import {
   classifyPlaylist,
   classifySong,
 } from './appBackupTypes';
+import { historyApi } from '../tauri/historyApi';
 import type {
   AppBackup,
   AppBackupData,
@@ -13,8 +14,16 @@ import type {
   AppBackupSummary,
   BackupPlaylistEntry,
   BackupPluginEntry,
+  BackupRecentHistoryEntry,
 } from './appBackupTypes';
-import { APP_BACKUP_SCHEMA, APP_BACKUP_VERSION } from './appBackupTypes';
+import {
+  APP_BACKUP_SCHEMA,
+  APP_BACKUP_VERSION,
+  BACKUP_PLATFORM_DESKTOP,
+  BACKUP_PLATFORM_MOBILE,
+  BACKUP_PLATFORM_WATCH,
+  BACKUP_DESKTOP_SETTING_SLOT,
+} from './appBackupTypes';
 
 function log(_msg: string) {
 }
@@ -42,6 +51,7 @@ export async function exportAppBackup(
     includePlugins?: boolean;
     includeSettings?: boolean;
     includeFavorites?: boolean;
+    includeRecent?: boolean;
     favorites?: { paths: string[]; songMeta: Record<string, Song> };
     resolveSongsByPaths?: (paths: string[], fallbackSongs?: Song[]) => Song[];
     /** 提供则对备份整体加密（口令派生密钥） */
@@ -53,6 +63,7 @@ export async function exportAppBackup(
     includePlugins = true,
     includeSettings = true,
     includeFavorites = true,
+    includeRecent = true,
     favorites,
     resolveSongsByPaths,
     encryptionPassword,
@@ -122,17 +133,49 @@ export async function exportAppBackup(
     settings = playerStorage.readSettings<AppSettings>();
   }
 
+  const backupRecent: BackupRecentHistoryEntry[] = [];
+  if (includeRecent) {
+    try {
+      const history = await historyApi.getRecentHistory(200);
+      const meta = favorites?.songMeta ?? {};
+      for (const h of history) {
+        if (!h.songPath) continue;
+        let song: Song | undefined;
+        try {
+          song = meta[h.songPath] ?? resolveSongsByPaths?.([h.songPath])[0];
+        } catch {
+          song = undefined;
+        }
+        backupRecent.push({
+          path: h.songPath,
+          // 桌面端返回毫秒，备份统一为秒，跨端一致。
+          playedAt: Math.round(h.playedAt / 1000),
+          song,
+        });
+      }
+    } catch (e) {
+      log(`读取最近播放失败: ${e}`);
+    }
+  }
+
   const data: AppBackupData = {
     playlists: backupPlaylists,
     favorites: backupFavorites,
     plugins: backupPlugins,
-    settings,
+    recentHistory: backupRecent,
+    // 设置按端分槽：本端只写自己的槽位，其余端留空位，导入互不影响。
+    settings: {
+      [BACKUP_PLATFORM_MOBILE]: null,
+      [BACKUP_DESKTOP_SETTING_SLOT]: settings,
+      [BACKUP_PLATFORM_WATCH]: null,
+    },
   };
 
   const backup: AppBackup = {
     schema: APP_BACKUP_SCHEMA,
     version: APP_BACKUP_VERSION,
     createdAt: new Date().toISOString(),
+    platform: BACKUP_PLATFORM_DESKTOP,
     data,
   };
 
@@ -152,6 +195,7 @@ export async function exportAppBackup(
     favoriteCount: backupFavorites.length,
     pluginCount: backupPlugins.length,
     hasSettings: !!settings,
+    recentCount: backupRecent.length,
     encrypted: !!encryptionPassword,
   };
 
