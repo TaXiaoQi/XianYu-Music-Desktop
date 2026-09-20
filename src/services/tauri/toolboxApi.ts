@@ -8,8 +8,8 @@ export const toolboxApi = {
     tauriInvoke('apply_rename', { operations }),
   setGpuAcceleration: (enabled: boolean) =>
     tauriInvoke('set_gpu_acceleration', { enabled }),
-  downloadWallpaper: (url: string, filename: string) =>
-    tauriInvoke('download_wallpaper', { url, filename }),
+  downloadWallpaper: (url: string, filename: string, protectedPath?: string) =>
+    tauriInvoke('download_wallpaper', { url, filename, protectedPath }),
   deleteWallpaperFile: (localPath: string) =>
     tauriInvoke('delete_wallpaper_file', { localPath }),
 };

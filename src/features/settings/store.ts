@@ -115,6 +115,7 @@ export const defaultThemeSettings: ThemeSettings = {
   blur: 20,
   customBackground: {
     imagePath: '',
+    mediaType: 'image',
     blur: 20,
     opacity: 1,
     maskColor: '#000000',

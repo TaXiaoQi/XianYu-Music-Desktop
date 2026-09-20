@@ -255,6 +255,7 @@ export interface ThemeSettings {
   blur: number;
   customBackground: {
     imagePath: string;
+    mediaType?: 'image' | 'video';
     blur: number;
     opacity: number;
     maskColor: string;
