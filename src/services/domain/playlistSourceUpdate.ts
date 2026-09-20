@@ -7,7 +7,8 @@ const PLATFORM_SOURCES = new Set(['wy', 'tx', 'kw', 'kg']);
 
 /**
  * 歌单搜索结果 → 歌曲。
- * 与侧边栏导入逻辑保持一致（path = lx://{pluginId}/{id}），
+ * path = lx://{真实音源}/{songmid}，保证 lx 播放链路能按真实音源命中插件、
+ * 并按 songmid 取到完整 musicInfo。导入、更新、收藏夹三处共用，
  * 保证更新时拉取的源端歌曲 path 与导入时一致，可用于对比。
  */
 export function importResultToSongs(songs: PluginSearchResult[]): Song[] {
@@ -15,8 +16,12 @@ export function importResultToSongs(songs: PluginSearchResult[]): Song[] {
     const artistNames = item.artist
       ? item.artist.split(/[、,/&]/).filter(Boolean).map((s) => s.trim())
       : ['未知歌手'];
-    const sourceKey = item.pluginId || 'wy';
-    const path = `lx://${sourceKey}/${item.id}`;
+    const raw = item.rawData as Record<string, any> | undefined;
+    // lx 歌单详情条目带真实音源与 songmid（如 kw/kg/tx/wy），
+    // lx:// 链路把第一段当音源 key，必须用真实 source 而非插件 pluginId。
+    const sourceKey = raw?.source || item.pluginId || 'wy';
+    const songmid = raw?.songmid || item.id || item.platformId || '';
+    const path = `lx://${sourceKey}/${songmid}`;
     return {
       name: item.title,
       title: item.title,
@@ -34,6 +39,14 @@ export function importResultToSongs(songs: PluginSearchResult[]): Song[] {
       source_type: 'remote' as const,
       remote_source_id: path,
       rawData: item.rawData ?? item,
+      // 补齐 lx 播放链路的 _ 前缀回退字段（resolveLxCachedInfo / buildLxSongInfo 依赖）
+      _hash: raw?.hash,
+      _types: raw?._types ?? raw?.types,
+      _copyrightId: raw?.copyrightId,
+      _strMediaMid: raw?.strMediaMid,
+      _albumId: raw?.albumId,
+      _albumMid: raw?.albumMid,
+      _songId: raw?.songId,
     } as Song;
   });
 }
