@@ -123,14 +123,28 @@ export function parseEnhancedLrcLine(line: string): AmlLyricLine | null {
   const leadingText = body.slice(0, markers[0].index ?? 0);
   if (leadingText.trim().length > 0) return null;
 
+  // lrc-a2（anime 等源）的词内尖括号时间可能是相对行首的偏移（如 <00:00.16>），
+  // 误当绝对时间会把整行词时间塌缩到歌曲开头，导致歌词整体错位。
+  // 与 Rust 端同规则：词时间远小于行起点时按相对偏移加回行起点。
+  const markerTimes = markers.map((marker) => parseTimestampToMs(marker[1]));
+  if (markerTimes.some((time) => time === null)) return null;
+  const times = markerTimes as number[];
+  const firstWordTime = times[0];
+  const lastWordTime = times[times.length - 1];
+  const relativeOffset =
+    lineStartTime > 0 &&
+    (firstWordTime <= 10 ||
+      (firstWordTime + 500 < lineStartTime && lastWordTime < lineStartTime + 500))
+      ? lineStartTime
+      : 0;
+
   const words: AmlLyricWord[] = [];
   let explicitEndTime: number | null = null;
 
   for (let index = 0; index < markers.length; index += 1) {
     const currentMarker = markers[index];
     const nextMarker = markers[index + 1];
-    const currentStart = parseTimestampToMs(currentMarker[1]);
-    if (currentStart === null) return null;
+    const currentStart = times[index] + relativeOffset;
 
     const currentMarkerEnd = (currentMarker.index ?? 0) + currentMarker[0].length;
     const nextMarkerIndex = nextMarker?.index ?? body.length;
@@ -150,8 +164,7 @@ export function parseEnhancedLrcLine(line: string): AmlLyricLine | null {
       continue;
     }
 
-    const nextStart = parseTimestampToMs(nextMarker[1]);
-    if (nextStart === null) return null;
+    const nextStart = times[index + 1] + relativeOffset;
     if (nextStart < currentStart) {
       if (text.length === 0 && currentStart - nextStart <= ENHANCED_EMPTY_BACKWARD_TOLERANCE_MS) {
         continue;

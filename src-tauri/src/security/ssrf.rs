@@ -2,6 +2,7 @@ use reqwest::dns::{Name, Resolve, Resolving};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 fn pinned_ips() -> &'static Mutex<HashMap<String, Vec<IpAddr>>> {
     static M: OnceLock<Mutex<HashMap<String, Vec<IpAddr>>>> = OnceLock::new();
@@ -20,6 +21,94 @@ fn pinned_anchor(host: &str) -> Option<Vec<IpAddr>> {
         .ok()?
         .get(&host.to_ascii_lowercase())
         .cloned()
+}
+
+/// 判定 IP 是否为代理 fake-ip 保留段（198.18.0.0/15）。
+fn is_fake_ipv4(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            o[0] == 198 && (o[1] == 18 || o[1] == 19)
+        }
+        IpAddr::V6(_) => false,
+    }
+}
+
+/// 判定 host 的钉住解析结果是否全部落在 fake-ip 保留段（198.18.0.0/15）。
+///
+/// 该段常见于代理软件 fake-ip 模式：本应用流量若被代理分应用排除（不走 TUN），
+/// 直连这些地址必然黑洞直至超时。用于在 HTTP 层快速失败并给出针对性提示，
+/// 正常走 TUN 的场景（fake-ip 连接被代理接管）不受影响，仍照常请求。
+pub fn host_is_fake_ip_target(host: &str) -> bool {
+    match pinned_anchor(host) {
+        Some(ips) if !ips.is_empty() => ips.iter().all(is_fake_ipv4),
+        _ => false,
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct DohAnswerRecord {
+    #[serde(rename = "type")]
+    _type: i64,
+    data: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DohResponse {
+    #[serde(default, rename = "Answer")]
+    answer: Vec<DohAnswerRecord>,
+}
+
+/// 用公共 DNS 的 DoH JSON API（IP 直连，不依赖系统 DNS）解析域名真实 A 记录。
+///
+/// 用于 fake-ip 环境：系统 DNS 被代理接管返回 198.18.0.0/15 假地址，而本应用
+/// 又被代理分应用排除（直连假地址黑洞）时，绕过系统 DNS 拿到真实 IP 直连。
+/// 结果已过滤内网/保留段（SSRF 防线不放松）。
+pub async fn resolve_real_ips_via_doh(host: &str) -> Result<Vec<IpAddr>, String> {
+    static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
+    let client = CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(4))
+                .no_proxy()
+                .build()
+                .ok()
+        })
+        .clone()
+        .ok_or_else(|| "DoH 客户端初始化失败".to_string())?;
+
+    let endpoints = [
+        format!("https://223.5.5.5/resolve?name={host}&type=A"),
+        format!("https://120.53.53.53/dns-query?name={host}&type=A"),
+    ];
+    for ep in endpoints {
+        let ok = async {
+            let resp = client
+                .get(&ep)
+                .header("accept", "application/dns-json")
+                .send()
+                .await
+                .ok()?;
+            let text = resp.text().await.ok()?;
+            let parsed: DohResponse = serde_json::from_str(&text).ok()?;
+            let ips: Vec<IpAddr> = parsed
+                .answer
+                .iter()
+                .filter(|a| a._type == 1)
+                .filter_map(|a| a.data.parse::<IpAddr>().ok())
+                .filter(|ip| !forbidden_ip(*ip) && !is_fake_ipv4(ip))
+                .collect();
+            if ips.is_empty() {
+                None
+            } else {
+                Some(ips)
+            }
+        };
+        if let Some(ips) = ok.await {
+            return Ok(ips);
+        }
+    }
+    Err(format!("DoH 解析失败: {host}"))
 }
 
 pub async fn resolve_allowed_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, String> {
@@ -194,7 +283,14 @@ pub async fn validate_outbound_url(url: &str) -> Result<reqwest::Url, String> {
     let port = parsed.port().unwrap_or(default_port);
 
     if host.parse::<IpAddr>().is_err() {
-        let ips = resolve_allowed_ips(&host, port).await?;
+        let mut ips = resolve_allowed_ips(&host, port).await?;
+        // fake-ip 环境（系统 DNS 被代理接管返回 198.18.0.0/15 且本应用未走其隧道时
+        // 直连黑洞）：用 DoH 独立解析真实 IP 替换钉住值，TLS/SNI 仍按域名、SSRF 过滤保留
+        if ips.iter().all(is_fake_ipv4) {
+            if let Ok(real) = resolve_real_ips_via_doh(&host).await {
+                ips = real;
+            }
+        }
         record_pinned_ips(&host, ips);
     }
     Ok(parsed)
@@ -217,6 +313,24 @@ pub fn ssrf_redirect_policy() -> reqwest::redirect::Policy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn outbound_connectivity_u_y_qq_com() {
+        // 真实连通性测试：验证 validate_outbound_url + reqwest 请求 QQ 接口全链路
+        let url = validate_outbound_url("https://u.y.qq.com/cgi-bin/musicu.fcg")
+            .await
+            .expect("validate_outbound_url 应通过");
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("client 构建失败");
+        let resp = client
+            .get(url)
+            .send()
+            .await
+            .expect("QQ 接口请求应成功（网络层连通）");
+        assert!(resp.status().is_success(), "状态码异常: {}", resp.status());
+    }
 
     #[test]
     fn forbidden_ipv4_covers_private_loopback_linklocal() {

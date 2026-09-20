@@ -356,7 +356,11 @@ export class BakaPluginMedia extends BakaPluginCore {
     const lyric = result.lyric || result.rawLrc || result.lrc || '';
     const ttml = result.ttml || '';
     const tlyric = result.tlyric || result.translation || '';
-    const lxlyric = result.lxlyric || '';
+    // am 等插件作者统一把逐字/逐行都转成 lrc 返回：词级尖括号时间戳直接嵌在
+    // lyric 里，无独立 lxlyric 字段。与移动端 fallback 语义对齐：
+    // lxlyric 为空且 lyric 含词级时间戳时，lyric 即逐字内容
+    const lxlyric = result.lxlyric
+      || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(lyric) ? lyric : '');
     const yrc = result.yrc || '';
     const qrc = result.qrc || '';
     const eslrc = result.eslrc || '';
@@ -431,7 +435,9 @@ export class BakaPluginMedia extends BakaPluginCore {
       const ttml = lrcSource.ttml || '';
       const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
       const romanization = lrcSource.romanization || lrcSource.rlyric || '';
-      const lxlyric = lrcSource.lxlyric || '';
+      // 同 getMediaSource：lxlyric 为空且 lyric 内嵌词级时间戳时，lyric 即逐字内容
+      const lxlyric = lrcSource.lxlyric
+        || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(rawLrc) ? rawLrc : '');
       const yrc = lrcSource.yrc || '';
       const qrc = lrcSource.qrc || '';
       const eslrc = lrcSource.eslrc || '';

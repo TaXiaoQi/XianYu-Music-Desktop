@@ -442,7 +442,9 @@ export async function pluginGetLyric(
     const ttml = lrcSource.ttml || '';
     const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
     const romanization = lrcSource.romanization || lrcSource.rlyric || '';
-    const lxlyric = lrcSource.lxlyric || '';
+    // 同 bakaPluginManagerMedia：lxlyric 为空且 lyric 内嵌词级时间戳时，lyric 即逐字内容
+    const lxlyric = lrcSource.lxlyric
+      || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(rawLrc) ? rawLrc : '');
     const yrc = lrcSource.yrc || '';
     const qrc = lrcSource.qrc || '';
     const eslrc = lrcSource.eslrc || '';
