@@ -146,6 +146,8 @@ const handleSearchEnter = () => {
   const query = searchQuery.value.trim();
   if (!query) return;
   navigationStore.addSearchHistory(query);
+  // searchQuery 可能未变化（失败页同关键词回车重搜）导致 watch 不触发，显式刷新一次搜索
+  navigationStore.requestSearch();
   showHistory.value = false;
   void router.push('/search');
 };
