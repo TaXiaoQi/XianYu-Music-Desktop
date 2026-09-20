@@ -30,6 +30,29 @@ export function useCustomThemeModal() {
         } catch {
           preview.value.imagePath = selected;
         }
+        preview.value.mediaType = 'image';
+      }
+    } catch {
+      // Ignore dialog cancellation.
+    }
+  };
+
+  const handleSelectVideo = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov'] }],
+      });
+
+      if (selected && typeof selected === 'string') {
+        try {
+          preview.value.imagePath = await tauriInvoke('import_skin_image', {
+            sourcePath: selected,
+          });
+        } catch {
+          preview.value.imagePath = selected;
+        }
+        preview.value.mediaType = 'video';
       }
     } catch {
       // Ignore dialog cancellation.
@@ -60,6 +83,7 @@ export function useCustomThemeModal() {
   return {
     preview,
     handleSelectImage,
+    handleSelectVideo,
     handleCancel,
     handleSave,
   };

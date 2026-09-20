@@ -28,7 +28,10 @@ fn normalize_skin_image_extension(source: &Path) -> Result<&'static str, String>
         Some("webp") => Ok("webp"),
         Some("bmp") => Ok("bmp"),
         Some("gif") => Ok("gif"),
-        _ => Err("Only png, jpg, webp, bmp, gif images are supported".to_string()),
+        Some("mp4") => Ok("mp4"),
+        Some("webm") => Ok("webm"),
+        Some("mov") => Ok("mov"),
+        _ => Err("Only png, jpg, webp, bmp, gif images and mp4/webm/mov videos are supported".to_string()),
     }
 }
 
