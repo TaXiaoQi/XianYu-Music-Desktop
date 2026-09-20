@@ -68,6 +68,33 @@ const loadImageMetadata = (src: string) => new Promise<{ width: number; height: 
   img.src = src;
 });
 
+const loadVideoMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  video.muted = true;
+  video.playsInline = true;
+
+  const cleanup = () => {
+    video.onloadedmetadata = null;
+    video.onerror = null;
+    video.src = '';
+  };
+
+  video.onloadedmetadata = () => {
+    const metadata = {
+      width: video.videoWidth,
+      height: video.videoHeight,
+    };
+    cleanup();
+    resolve(metadata);
+  };
+  video.onerror = () => {
+    cleanup();
+    reject(new Error('视频加载失败'));
+  };
+  video.src = src;
+});
+
 // --- 背景物理与视口几何管理 ---
 const containerRef = ref<HTMLDivElement | null>(null);
 const isDragging = ref(false);
@@ -340,14 +367,17 @@ const handleSelectNewImage = async () => {
 // --- 壁纸中心：从在线壁纸库下载并应用 ---
 const showWallpaperGallery = ref(false);
 
-const handleWallpaperSelect = async (localPath: string) => {
+const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'video') => {
   preview.value.imagePath = localPath;
+  preview.value.mediaType = mediaType === 'video' ? 'video' : 'image';
   preview.value.scale = 1.0;
   preview.value.translateX = 0;
   preview.value.translateY = 0;
 
   try {
-    const metadata = await loadImageMetadata(convertFileSrc(localPath));
+    const metadata = mediaType === 'video'
+      ? await loadVideoMetadata(convertFileSrc(localPath))
+      : await loadImageMetadata(convertFileSrc(localPath));
     if (isUnmounted) return;
 
     imageNaturalWidth.value = metadata.width;
@@ -443,7 +473,26 @@ const handleWallpaperSelect = async (localPath: string) => {
                       transform: 'translate(-50%, -50%)',
                     }"
                   >
+                    <video
+                      v-if="preview.mediaType === 'video'"
+                      :src="convertFileSrc(preview.imagePath)"
+                      muted
+                      loop
+                      playsinline
+                      autoplay
+                      preload="metadata"
+                      class="absolute block max-w-none max-h-none select-none pointer-events-none"
+                      :style="{
+                        width: '100%',
+                        height: '100%',
+                        transform: `translate3d(${(preview.translateX || 0) * viewportWidth}px, ${(preview.translateY || 0) * viewportHeight}px, 0) scale(${renderScale})`,
+                        transformOrigin: 'center center',
+                        filter: `blur(${preview.blur}px)`,
+                        opacity: preview.opacity ?? 1.0,
+                      }"
+                    ></video>
                     <img
+                      v-else
                       :src="convertFileSrc(preview.imagePath)"
                       class="absolute block max-w-none max-h-none select-none pointer-events-none"
                       :style="{

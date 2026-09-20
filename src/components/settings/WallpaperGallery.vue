@@ -9,7 +9,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'select', localPath: string): void;
+  (e: 'select', localPath: string, mediaType: MediaType): void;
 }>();
 
 interface Wallpaper {
@@ -18,6 +18,9 @@ interface Wallpaper {
   description: string;
   imageUrl: string;
   thumbnailUrl: string;
+  videoUrl?: string;
+  videoSha256?: string;
+  mediaType?: string;
   category: string;
   uploaderId?: string;
   uploaderNickname?: string;
@@ -34,6 +37,9 @@ interface DownloadedWallpaper extends Wallpaper {
   localPath: string;
   downloadedAt: string;
 }
+
+type MediaType = 'image' | 'video';
+const resolveMediaType = (v?: string): MediaType => (v === 'video' ? 'video' : 'image');
 
 type WallpaperTab = 'browse' | 'mine' | 'downloads';
 
@@ -109,6 +115,9 @@ const fetchWallpapers = async () => {
       description: String(w.description || ''),
       imageUrl: String(w.imageUrl ?? w.image_url ?? w.image ?? ''),
       thumbnailUrl: String(w.thumbnailUrl ?? w.thumbnail_url ?? w.imageUrl ?? w.image_url ?? w.image ?? ''),
+      videoUrl: String(w.videoUrl ?? w.video_url ?? ''),
+      videoSha256: String(w.videoSha256 ?? w.video_sha256 ?? ''),
+      mediaType: String(w.mediaType ?? w.media_type ?? ''),
       category: String(w.category || ''),
       uploaderId: String(w.uploaderId ?? w.uploader_id ?? w.ciyuanxi_id ?? w.uploader ?? ''),
       uploaderNickname: String(w.uploaderNickname ?? w.uploaded_by_nickname ?? w.nickname ?? ''),
@@ -135,6 +144,9 @@ const fetchMyWallpapers = async () => {
       description: String(w.description || ''),
       imageUrl: String(w.imageUrl ?? w.image_url ?? w.image ?? ''),
       thumbnailUrl: String(w.thumbnailUrl ?? w.thumbnail_url ?? w.imageUrl ?? w.image_url ?? w.image ?? ''),
+      videoUrl: String(w.videoUrl ?? w.video_url ?? ''),
+      videoSha256: String(w.videoSha256 ?? w.video_sha256 ?? ''),
+      mediaType: String(w.mediaType ?? w.media_type ?? ''),
       category: String(w.category || ''),
       status: String(w.status || 'pending'),
       reviewedAt: w.reviewedAt ?? w.reviewed_at ?? null,
@@ -180,6 +192,9 @@ const uploaderLabel = (wallpaper: Wallpaper) => {
   if (id) return `@${id}`;
   return '管理员';
 };
+
+const isVideo = (wallpaper: Wallpaper): boolean =>
+  resolveMediaType(wallpaper.mediaType || (wallpaper.videoUrl ? 'video' : 'image')) === 'video';
 
 const switchTab = (tab: WallpaperTab) => {
   activeTab.value = tab;
@@ -344,22 +359,30 @@ const downloadAndUse = async (wallpaper: Wallpaper) => {
   downloadingId.value = wallpaper.id;
   downloadError.value = '';
   try {
-    let localPath = downloadedRecord(wallpaper.id)?.localPath || '';
+    const mediaType = resolveMediaType(wallpaper.mediaType || (wallpaper.videoUrl ? 'video' : 'image'));
+    const isVideo = mediaType === 'video';
+    // 文件名含 sha8：服务端 hash 变化自动产生新文件，命中即复用免下载
+    const sha8 = isVideo && wallpaper.videoSha256 ? wallpaper.videoSha256.slice(0, 8) : '';
+    const targetName = `wallpaper_${wallpaper.id}${sha8 ? `_${sha8}` : ''}.${isVideo ? 'mp4' : 'jpg'}`;
+    const record = downloadedRecord(wallpaper.id);
+    const reuse = record && record.localPath && (record.localPath.split(/[\\/]/).pop() === targetName);
+    let localPath = reuse ? record!.localPath : '';
     if (!localPath) {
-      const filename = `wallpaper_${wallpaper.id}.jpg`;
-      localPath = await toolboxApi.downloadWallpaper(wallpaper.imageUrl, filename);
-      const record: DownloadedWallpaper = {
+      const sourceUrl = isVideo ? (wallpaper.videoUrl || wallpaper.imageUrl) : wallpaper.imageUrl;
+      localPath = await toolboxApi.downloadWallpaper(sourceUrl, targetName, props.currentPath || undefined);
+      const fresh: DownloadedWallpaper = {
         ...wallpaper,
+        mediaType,
         localPath,
         downloadedAt: new Date().toISOString(),
       };
       downloadedWallpapers.value = [
-        record,
+        fresh,
         ...downloadedWallpapers.value.filter(item => item.id !== wallpaper.id),
       ];
       persistDownloadedWallpapers();
     }
-    emit('select', localPath);
+    emit('select', localPath, resolveMediaType(downloadedRecord(wallpaper.id)?.mediaType || mediaType));
     handleClose();
   } catch (err) {
     downloadError.value = err instanceof Error ? err.message : String(err);
@@ -401,7 +424,7 @@ const deleteSelectedDownloads = async () => {
 };
 
 const useDownloadedWallpaper = (item: DownloadedWallpaper) => {
-  emit('select', item.localPath);
+  emit('select', item.localPath, resolveMediaType(item.mediaType));
   handleClose();
 };
 
@@ -569,6 +592,10 @@ onBeforeUnmount(() => {
               <div v-else-if="isDownloaded(wallpaper.id)" class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
                 已下载
               </div>
+              <div v-if="isVideo(wallpaper)" class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                视频
+              </div>
               <div v-if="downloadingId === wallpaper.id" class="absolute inset-0 flex items-center justify-center bg-black/50">
                 <svg class="h-6 w-6 animate-spin text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -684,6 +711,10 @@ onBeforeUnmount(() => {
                   </button>
                   <div class="aspect-[3/2] w-full overflow-hidden">
                     <img :src="item.thumbnailUrl || item.imageUrl" :alt="item.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                  </div>
+                  <div v-if="isVideo(item)" class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    视频
                   </div>
                   <div class="p-2.5">
                     <h3 class="truncate text-sm font-semibold">{{ item.title }}</h3>

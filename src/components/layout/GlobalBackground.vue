@@ -113,6 +113,115 @@ watch(
 );
 
 const hasWindowMaterial = computed(() => activeWindowMaterial.value !== 'none');
+
+// --- 视频背景物理尺寸与播放控制 ---
+const videoNaturalWidth = ref(0);
+const videoNaturalHeight = ref(0);
+const videoRef = ref<HTMLVideoElement | null>(null);
+const videoLoadFailed = ref(false);
+
+const loadVideoMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  video.muted = true;
+  video.playsInline = true;
+
+  const cleanup = () => {
+    video.onloadedmetadata = null;
+    video.onerror = null;
+    video.src = '';
+  };
+
+  video.onloadedmetadata = () => {
+    const metadata = {
+      width: video.videoWidth,
+      height: video.videoHeight,
+    };
+    cleanup();
+    resolve(metadata);
+  };
+  video.onerror = () => {
+    cleanup();
+    reject(new Error('视频加载失败'));
+  };
+  video.src = src;
+});
+
+watch(
+  [() => activeBackgroundInfo.value?.type, () => activeBackgroundInfo.value?.mediaType, () => activeBackgroundInfo.value?.src],
+  async ([backgroundType, mediaType, src], _oldValue, onCleanup) => {
+    let isCancelled = false;
+    onCleanup(() => {
+      isCancelled = true;
+    });
+
+    if (backgroundType !== 'custom' || mediaType !== 'video' || !src) {
+      videoNaturalWidth.value = 0;
+      videoNaturalHeight.value = 0;
+      videoLoadFailed.value = false;
+      return;
+    }
+
+    const videoSrc = src.startsWith('http') || src.startsWith('data:') ? src : convertFileSrc(src);
+    videoLoadFailed.value = false;
+    try {
+      const metadata = await loadVideoMetadata(videoSrc);
+      if (isCancelled) return;
+      videoNaturalWidth.value = metadata.width;
+      videoNaturalHeight.value = metadata.height;
+      if (metadata.width && metadata.height) {
+        patchTheme({
+          customBackground: {
+            ...theme.value.customBackground,
+            imageWidth: metadata.width,
+            imageHeight: metadata.height,
+          },
+        });
+      }
+    } catch {
+      if (isCancelled) return;
+      videoLoadFailed.value = true;
+      videoNaturalWidth.value = 0;
+      videoNaturalHeight.value = 0;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  [() => activeBackgroundInfo.value?.type, () => activeBackgroundInfo.value?.mediaType, reduceDynamicEffects],
+  ([backgroundType, mediaType, reduced]) => {
+    const video = videoRef.value;
+    if (!video) return;
+    if (backgroundType !== 'custom' || mediaType !== 'video') {
+      video.pause();
+      return;
+    }
+    if (reduced) {
+      video.pause();
+    } else if (video.paused) {
+      video.play().catch(() => {});
+    }
+  },
+  { immediate: true },
+);
+
+const onVideoLoadedMetadata = () => {
+  const video = videoRef.value;
+  if (!video) return;
+  if (reduceDynamicEffects.value) {
+    video.pause();
+  } else if (video.paused) {
+    video.play().catch(() => {});
+  }
+};
+
+const onVideoError = () => {
+  videoLoadFailed.value = true;
+  const video = videoRef.value;
+  if (video) video.pause();
+};
+
 const isMicaWindowMaterial = computed(() => activeWindowMaterial.value === 'mica');
 const reduceDynamicEffects = computed(() => showPlayerDetail.value || isMainWindowLowPower.value || isLowPerformance.value);
 const flowFallbackPalette = ['hsl(220, 28%, 34%)', 'hsl(196, 58%, 56%)', 'hsl(340, 52%, 58%)', 'hsl(42, 72%, 60%)'];
@@ -142,8 +251,11 @@ const activeBackgroundInfo = computed(() => {
   const currentTheme = theme.value;
 
   if (currentTheme.mode === 'custom' && currentTheme.customBackground.imagePath) {
+    const imagePath = currentTheme.customBackground.imagePath;
+    const isVideo = currentTheme.customBackground.mediaType === 'video' || /\.mp4$/i.test(imagePath);
     return {
-      src: currentTheme.customBackground.imagePath,
+      src: imagePath,
+      mediaType: isVideo ? 'video' as const : 'image' as const,
       blur: currentTheme.customBackground.blur,
       opacity: currentTheme.customBackground.opacity,
       maskColor: currentTheme.customBackground.maskColor,
@@ -544,12 +656,10 @@ const materialScrimStyle = computed(() => {
 
 const customBgGeometry = computed(() => {
   if (activeBackgroundInfo.value?.type !== 'custom') return null;
-  return calculateCoverGeometry(
-    containerWidth.value,
-    containerHeight.value,
-    imageNaturalWidth.value,
-    imageNaturalHeight.value
-  );
+  const isVideo = activeBackgroundInfo.value.mediaType === 'video';
+  const natW = isVideo ? videoNaturalWidth.value : imageNaturalWidth.value;
+  const natH = isVideo ? videoNaturalHeight.value : imageNaturalHeight.value;
+  return calculateCoverGeometry(containerWidth.value, containerHeight.value, natW, natH);
 });
 
 const customBgTransform = computed(() => {
@@ -691,7 +801,30 @@ const customBgTransform = computed(() => {
             transform: 'translate(-50%, -50%)',
           }"
         >
+          <video
+            v-if="activeBackgroundInfo.mediaType === 'video'"
+            ref="videoRef"
+            :src="bgImageSrc"
+            muted
+            loop
+            playsinline
+            autoplay
+            preload="auto"
+            @loadedmetadata="onVideoLoadedMetadata"
+            @error="onVideoError"
+            class="absolute block max-w-none max-h-none select-none pointer-events-none"
+            :class="{ 'global-background-video-hidden': videoLoadFailed }"
+            :style="{
+              width: '100%',
+              height: '100%',
+              transform: `translate3d(${customBgTransform.tx}px, ${customBgTransform.ty}px, 0) scale(${customBgTransform.scale})`,
+              transformOrigin: 'center center',
+              filter: `blur(${activeBackgroundInfo.blur}px)`,
+              opacity: activeBackgroundInfo.opacity ?? 1.0,
+            }"
+          ></video>
           <img
+            v-else
             :src="bgImageSrc"
             class="absolute block max-w-none max-h-none select-none pointer-events-none transition-all duration-700"
             :style="{
@@ -795,5 +928,9 @@ const customBgTransform = computed(() => {
   animation-play-state: paused !important;
   transition: none !important;
   will-change: auto !important;
+}
+
+.global-background-video-hidden {
+  display: none !important;
 }
 </style>

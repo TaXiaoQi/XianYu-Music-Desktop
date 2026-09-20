@@ -736,7 +736,7 @@ pub fn set_gpu_acceleration(app_handle: tauri::AppHandle, enabled: bool) -> Resu
     Ok(())
 }
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 #[tauri::command]
 pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String, String> {
@@ -1786,6 +1786,7 @@ pub async fn download_wallpaper(
     app_handle: tauri::AppHandle,
     url: String,
     filename: String,
+    protected_path: Option<String>,
 ) -> Result<String, String> {
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
@@ -1849,8 +1850,51 @@ pub async fn download_wallpaper(
             .await
             .map_err(|e| format!("写入文件失败: {e}"))?;
     }
+    drop(file);
+
+    evict_wallpaper_cache(&wallpaper_dir, &dest_path, protected_path.as_deref()).await;
 
     Ok(dest_path.to_string_lossy().to_string())
+}
+
+const WALLPAPER_CACHE_LIMIT: u64 = 300 * 1024 * 1024;
+
+async fn evict_wallpaper_cache(
+    dir: &std::path::Path,
+    fresh: &std::path::Path,
+    protected: Option<&str>,
+) {
+    let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
+        return;
+    };
+    let mut files = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let Ok(meta) = entry.metadata().await else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        files.push((
+            entry.path(),
+            meta.len(),
+            meta.modified().unwrap_or(SystemTime::now()),
+        ));
+    }
+    let mut total: u64 = files.iter().map(|f| f.1).sum();
+    if total <= WALLPAPER_CACHE_LIMIT {
+        return;
+    }
+    files.sort_by_key(|f| f.2);
+    for (path, size, _) in files {
+        if path == fresh || Some(path.to_string_lossy().as_ref()) == protected {
+            continue;
+        }
+        if tokio::fs::remove_file(&path).await.is_ok() {
+            total = total.saturating_sub(size);
+            if total <= WALLPAPER_CACHE_LIMIT {
+                break;
+            }
+        }
+    }
 }
 
 #[tauri::command]
