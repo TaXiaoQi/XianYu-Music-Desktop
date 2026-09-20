@@ -68,4 +68,18 @@ describe.skipIf(!hasFixture)('preparePluginBackupImport: real LX .lxmc backup', 
       expect(['wy', 'tx', 'kw', 'kg', 'mg']).toContain(key);
     }
   });
+
+  it('uses the unprefixed songmid (meta.songId) in the lx:// path', () => {
+    const result = readImport();
+    const badPrefixes: string[] = [];
+    for (const playlist of result.playlists) {
+      for (const song of playlist.songs) {
+        const m = song.path.match(/^lx:\/\/(wy|tx|kw|kg|mg)\/(.+)$/);
+        if (!m) continue;
+        const [, source, songmid] = m;
+        if (songmid.startsWith(`${source}_`)) badPrefixes.push(song.path);
+      }
+    }
+    expect(badPrefixes).toEqual([]);
+  });
 });
