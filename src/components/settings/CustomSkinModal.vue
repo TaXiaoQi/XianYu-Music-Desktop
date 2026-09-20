@@ -10,6 +10,7 @@ const emit = defineEmits(['close']);
 const {
   preview,
   handleSelectImage,
+  handleSelectVideo,
   handleCancel: discardThemeDraft,
   handleSave: applyThemeDraft,
 } = useCustomThemeModal();
@@ -347,7 +348,9 @@ const handleSelectNewImage = async () => {
     preview.value.translateY = 0;
 
     try {
-      const metadata = await loadImageMetadata(convertFileSrc(newImagePath));
+      const metadata = preview.value.mediaType === 'video'
+        ? await loadVideoMetadata(convertFileSrc(newImagePath))
+        : await loadImageMetadata(convertFileSrc(newImagePath));
       if (isUnmounted) return;
 
       imageNaturalWidth.value = metadata.width;
@@ -355,7 +358,35 @@ const handleSelectNewImage = async () => {
       preview.value.imageWidth = metadata.width;
       preview.value.imageHeight = metadata.height;
     } catch (err) {
-      console.error('Failed to load image size metadata', err);
+      console.error('Failed to load media size metadata', err);
+      imageNaturalWidth.value = 0;
+      imageNaturalHeight.value = 0;
+      preview.value.imageWidth = 0;
+      preview.value.imageHeight = 0;
+    }
+  }
+};
+
+const handleSelectNewVideo = async () => {
+  const oldImagePath = preview.value.imagePath;
+  await handleSelectVideo();
+  const newImagePath = preview.value.imagePath;
+
+  if (newImagePath && newImagePath !== oldImagePath) {
+    preview.value.scale = 1.0;
+    preview.value.translateX = 0;
+    preview.value.translateY = 0;
+
+    try {
+      const metadata = await loadVideoMetadata(convertFileSrc(newImagePath));
+      if (isUnmounted) return;
+
+      imageNaturalWidth.value = metadata.width;
+      imageNaturalHeight.value = metadata.height;
+      preview.value.imageWidth = metadata.width;
+      preview.value.imageHeight = metadata.height;
+    } catch (err) {
+      console.error('Failed to load video size metadata', err);
       imageNaturalWidth.value = 0;
       imageNaturalHeight.value = 0;
       preview.value.imageWidth = 0;
@@ -415,6 +446,15 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
                 <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
               </svg>
               <span>选择本地图片</span>
+            </button>
+            <button
+              @click="handleSelectNewVideo"
+              class="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm10.5 5.5a1 1 0 00-1.5-.87l-4 2.31a1 1 0 000 1.73l4 2.31a1 1 0 001.5-.87V8.5z" clip-rule="evenodd" />
+              </svg>
+              <span>选择本地视频</span>
             </button>
             <button
               @click="showWallpaperGallery = true"
