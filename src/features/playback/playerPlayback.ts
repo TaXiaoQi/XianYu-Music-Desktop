@@ -933,6 +933,103 @@ const dlnaCast = useDlnaCastStore();
       playbackStore.sessionQualityOverride = null;
     }
 
+    // 歌词链独立于音源解析并行发起（而非等音频 resolve 后再跑），在线歌词往往比音频多
+    // 次后端往返（am lyricBoth/lyricWord），串行会进一步拉大「歌词晚到」的差距。
+    // 必须定义在音源解析分支之外——音源解析失败时歌词链路仍需独立可用。
+    const wordTimestampPattern = /<\d{1,3}:\d{2}/;
+    const coreLyricsFetch = async () => {
+      const existingLyricsRaw = song.lyrics_raw?.trim() || '';
+      const canUpgradeToWordLyrics = !!existingLyricsRaw && !wordTimestampPattern.test(existingLyricsRaw);
+
+      // lx:// 旧版歌词升级链路
+      if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
+        clearOnlineLyricsUnavailable(song.path);
+        void fetchLxSongLyricsRaw(song)
+          .then((lyricsRaw) => {
+            if (!lyricsRaw) {
+              console.warn('[Lyrics] LX 歌词获取返回空:', song.path);
+              if (requestId === playRequestId && currentSong.value?.path === song.path) {
+                markOnlineLyricsUnavailable(song.path);
+              }
+              return;
+            }
+            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+              return;
+            }
+
+            song.lyrics_raw = lyricsRaw;
+            libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
+            playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
+            currentSong.value = {...currentSong.value, lyrics_raw: lyricsRaw};
+            void loadLyrics(lyricsRaw);
+          })
+          .catch(error => {
+            console.warn('[Lyrics] LX 在线歌词获取失败:', error);
+            if (requestId === playRequestId && currentSong.value?.path === song.path) {
+              markOnlineLyricsUnavailable(song.path);
+            }
+          });
+        return;
+      }
+
+      // plugin:// 歌词链：同 getMediaSource 链，旧数据为逐行而新数据含词级尖括号时升级覆盖
+      if (song.path.startsWith('plugin://') && (!existingLyricsRaw || canUpgradeToWordLyrics)) {
+        clearOnlineLyricsUnavailable(song.path);
+        const pluginSearchResult = song.rawData;
+        if (pluginSearchResult?.pluginId) {
+          void (async () => {
+            try {
+              const plugins = getStoredPlugins();
+              const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+              if (!pluginSource) {
+                console.warn('[Lyrics] plugin:// 未找到启用的插件:', pluginSearchResult.pluginId);
+                if (requestId === playRequestId && currentSong.value?.path === song.path) {
+                  markOnlineLyricsUnavailable(song.path);
+                }
+                return;
+              }
+              const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
+              if (!lyricData?.lyricsRaw) {
+                console.warn('[Lyrics] plugin:// 歌词获取为空:', pluginSource.name);
+                if (requestId === playRequestId && currentSong.value?.path === song.path) {
+                  markOnlineLyricsUnavailable(song.path);
+                }
+                return;
+              }
+              if (
+                requestId !== playRequestId
+                || currentSong.value?.path !== song.path
+              ) {
+                return;
+              }
+              // 写入时刻实时读当前值（而非链路启动时的快照）：getLyric 可能比
+              // getMediaSource 副产物晚到数秒，快照会误判为空、用逐行覆盖先到的逐字。
+              // 仅首次写入，或当前为逐行而新数据含词级尖括号（升级）时覆盖
+              const currentLyricsRaw = song.lyrics_raw?.trim() || '';
+              const shouldWriteLyrics = !currentLyricsRaw
+                || (!wordTimestampPattern.test(currentLyricsRaw) && wordTimestampPattern.test(lyricData.lyricsRaw));
+              if (shouldWriteLyrics) {
+                song.lyrics_raw = lyricData.lyricsRaw;
+                libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
+                playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw });
+                currentSong.value = {...currentSong.value, lyrics_raw: lyricData.lyricsRaw};
+                void loadLyrics(lyricData.lyricsRaw);
+              }
+            } catch (error) {
+              console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
+              if (requestId === playRequestId && currentSong.value?.path === song.path) {
+                markOnlineLyricsUnavailable(song.path);
+              }
+            }
+          })();
+        } else {
+          markOnlineLyricsUnavailable(song.path);
+        }
+      }
+    };
+    // 与音频解析并行发起，不等音频 resolve
+    void coreLyricsFetch();
+
     const onlineAudioPreparationPromise = (async () => {
       let preparedAudioFilePath = audioFilePath;
       let preparedUsingDownloadedAudioFile = false;
@@ -1146,13 +1243,6 @@ const dlnaCast = useDlnaCastStore();
     const startOffsetMs = cueStartOffset
       + Math.round((resumeTime - (activePreviewClip?.start ?? 0)) * 1000);
 
-    // 旧版本持久化的逐行歌词需要支持升级：已有数据不含词级尖括号时仍允许重跑
-    // 插件 getLyric，新数据含词级时间戳则覆盖为逐字；新数据也是逐行时保留旧数据。
-    // 必须定义在音源解析分支之外——音源解析失败时歌词链路仍需独立可用
-    const existingLyricsRaw = song.lyrics_raw?.trim() || '';
-    const wordTimestampPattern = /<\d{1,3}:\d{2}/;
-    const canUpgradeToWordLyrics = !!existingLyricsRaw && !wordTimestampPattern.test(existingLyricsRaw);
-
     try {
       const preparedOnlineAudio = await onlineAudioPreparationPromise;
       if (requestId !== playRequestId) return;
@@ -1230,89 +1320,6 @@ const dlnaCast = useDlnaCastStore();
 
     if (requestId !== playRequestId) return;
 
-    if (!usingDownloadedAudioFile && song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
-      clearOnlineLyricsUnavailable(song.path);
-      void fetchLxSongLyricsRaw(song)
-        .then((lyricsRaw) => {
-          if (!lyricsRaw) {
-            console.warn('[Lyrics] LX 歌词获取返回空:', song.path);
-            if (requestId === playRequestId && currentSong.value?.path === song.path) {
-              markOnlineLyricsUnavailable(song.path);
-            }
-            return;
-          }
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-            return;
-          }
-
-          song.lyrics_raw = lyricsRaw;
-          libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
-          playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
-          currentSong.value = {...currentSong.value, lyrics_raw: lyricsRaw};
-          void loadLyrics(lyricsRaw);
-        })
-        .catch(error => {
-          console.warn('[Lyrics] LX 在线歌词获取失败:', error);
-          if (requestId === playRequestId && currentSong.value?.path === song.path) {
-            markOnlineLyricsUnavailable(song.path);
-          }
-        });
-    }
-
-    // 同 getMediaSource 链：旧数据为逐行而新数据含词级尖括号时升级覆盖
-    if (!usingDownloadedAudioFile && song.path.startsWith('plugin://') && (!existingLyricsRaw || canUpgradeToWordLyrics)) {
-      clearOnlineLyricsUnavailable(song.path);
-      const pluginSearchResult = song.rawData;
-      if (pluginSearchResult?.pluginId) {
-        void (async () => {
-          try {
-            const plugins = getStoredPlugins();
-            const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-            if (!pluginSource) {
-              console.warn('[Lyrics] plugin:// 未找到启用的插件:', pluginSearchResult.pluginId);
-              if (requestId === playRequestId && currentSong.value?.path === song.path) {
-                markOnlineLyricsUnavailable(song.path);
-              }
-              return;
-            }
-            const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
-            if (!lyricData?.lyricsRaw) {
-              console.warn('[Lyrics] plugin:// 歌词获取为空:', pluginSource.name);
-              if (requestId === playRequestId && currentSong.value?.path === song.path) {
-                markOnlineLyricsUnavailable(song.path);
-              }
-              return;
-            }
-            if (
-              requestId !== playRequestId
-              || currentSong.value?.path !== song.path
-            ) {
-              return;
-            }
-            // 写入时刻实时读当前值（而非链路启动时的快照）：getLyric 可能比
-            // getMediaSource 副产物晚到数秒，快照会误判为空、用逐行覆盖先到的逐字。
-            // 仅首次写入，或当前为逐行而新数据含词级尖括号（升级）时覆盖
-            const currentLyricsRaw = song.lyrics_raw?.trim() || '';
-            const shouldWriteLyrics = !currentLyricsRaw
-              || (!wordTimestampPattern.test(currentLyricsRaw) && wordTimestampPattern.test(lyricData.lyricsRaw));
-            if (shouldWriteLyrics) {
-              song.lyrics_raw = lyricData.lyricsRaw;
-              libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
-              playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw });
-              currentSong.value = {...currentSong.value, lyrics_raw: lyricData.lyricsRaw};
-              void loadLyrics(lyricData.lyricsRaw);
-            }
-          } catch (error) {
-            console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
-            if (requestId === playRequestId && currentSong.value?.path === song.path) {
-              markOnlineLyricsUnavailable(song.path);
-            }
-          }
-        })();
-      } else {
-        markOnlineLyricsUnavailable(song.path);
-      }
-    }
       const flyPromise = consumeFlyCoverPromise();
 
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
