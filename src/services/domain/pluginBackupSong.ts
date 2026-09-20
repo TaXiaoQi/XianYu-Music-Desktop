@@ -334,10 +334,14 @@ export function createLxSong(
   plugin: PluginSource,
   platform: PlatformDescriptor & { lxSource: LxSearchResultItem['source'] },
 ): Song {
-  const id = String(rawSong.songmid ?? rawSong.mid ?? rawSong.id ?? rawSong.hash ?? '').trim();
-  const durationSeconds = parseDurationSeconds(rawSong.duration ?? rawSong.interval ?? rawSong.dt);
-  const qualityEntries = rawSong.qualities && typeof rawSong.qualities === 'object'
-    ? Object.entries(rawSong.qualities)
+  const meta: any = rawSong?.meta && typeof rawSong.meta === 'object' ? rawSong.meta : {};
+  const rawId = String(rawSong.songmid ?? rawSong.mid ?? meta.songId ?? meta.songid ?? rawSong.id ?? rawSong.hash ?? meta.hash ?? '').trim();
+  const lxPrefix = `${platform.lxSource}_`;
+  const id = rawId.startsWith(lxPrefix) ? rawId.slice(lxPrefix.length) : rawId;
+  const durationSeconds = parseDurationSeconds(rawSong.duration ?? rawSong.interval ?? rawSong.dt ?? meta.interval);
+  const qualitySource = rawSong.qualities ?? meta.qualitys;
+  const qualityEntries = qualitySource && typeof qualitySource === 'object'
+    ? Object.entries(qualitySource)
     : [];
   const types = qualityEntries.map(([type, value]: [string, any]) => ({
     type,
@@ -352,18 +356,18 @@ export function createLxSong(
     name: extractTitle(rawSong),
     singer: extractArtist(rawSong),
     albumName: extractAlbum(rawSong),
-    albumId: rawSong.albumId ?? rawSong.album_id ?? rawSong.albumid ?? '',
+    albumId: String(meta.albumId ?? rawSong.albumId ?? rawSong.album_id ?? rawSong.albumid ?? ''),
     songmid: id,
     source: platform.lxSource,
     interval: typeof rawSong.interval === 'string' ? rawSong.interval : formatInterval(durationSeconds),
-    img: String(rawSong.artwork ?? rawSong.coverUrl ?? rawSong.img ?? '') || null,
+    img: String(meta.picUrl ?? rawSong.artwork ?? rawSong.coverUrl ?? rawSong.img ?? '') || null,
     types,
     _types: qualityMap,
-    hash: rawSong.hash ?? rawSong['320hash'],
-    strMediaMid: rawSong.strMediaMid ?? rawSong.songmid ?? rawSong.mid,
-    songId: Number(rawSong.songId ?? rawSong.songid) || undefined,
-    albumMid: rawSong.albumMid ?? rawSong.albummid,
-    copyrightId: rawSong.copyrightId,
+    hash: meta.hash ?? rawSong.hash ?? rawSong['320hash'],
+    strMediaMid: String(meta.strMediaMid ?? rawSong.strMediaMid ?? rawSong.songmid ?? rawSong.mid ?? id),
+    songId: Number(meta.songId ?? meta.songid ?? rawSong.songId ?? rawSong.songid) || undefined,
+    albumMid: meta.albumMid ?? rawSong.albumMid ?? rawSong.albummid,
+    copyrightId: meta.copyrightId ?? rawSong.copyrightId,
   };
   const path = `lx://${platform.lxSource}/${encodeURIComponent(id)}`;
   return buildBaseSong(rawSong, path, plugin, lxItem);
