@@ -110,7 +110,7 @@ pub fn setup_taskbar_window(app: tauri::AppHandle) -> OwnerBindingState {
         use windows_sys::Win32::Foundation::{GetLastError, SetLastError, HWND};
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             FindWindowW, GetWindowLongW, SetWindowLongPtrW, SetWindowLongW, GWLP_HWNDPARENT,
-            GWL_EXSTYLE, WS_EX_NOACTIVATE,
+            GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
         };
 
         if let Some(window) = app.get_webview_window(TASKBAR_PLAYER_WINDOW_LABEL) {
@@ -119,39 +119,48 @@ pub fn setup_taskbar_window(app: tauri::AppHandle) -> OwnerBindingState {
                     let hwnd = win32.hwnd.get() as HWND;
 
                     unsafe {
-                        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-                        SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_NOACTIVATE as i32);
-                    }
+                        // 先设 owner（GWLP_HWNDPARENT 修改会触发系统重新枚举窗口的
+                        // 任务栏归属，若放最后会让 toolwindow 残留一个不可激活的
+                        // 任务栏按钮）；随后再补工具窗口样式，保证最终无任务栏按钮
+                        let shell_tray_class: Vec<u16> =
+                            "Shell_TrayWnd\0".encode_utf16().collect();
+                        let hwnd_taskbar =
+                            FindWindowW(shell_tray_class.as_ptr(), std::ptr::null());
 
-                    let shell_tray_class: Vec<u16> = "Shell_TrayWnd\0".encode_utf16().collect();
-                    let hwnd_taskbar =
-                        unsafe { FindWindowW(shell_tray_class.as_ptr(), std::ptr::null()) };
-
-                    if !hwnd_taskbar.is_null() {
-                        let mut bound_success = false;
-                        unsafe {
+                        if !hwnd_taskbar.is_null() {
                             SetLastError(0);
-                            let prev =
-                                SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, hwnd_taskbar as isize);
+                            let prev = SetWindowLongPtrW(
+                                hwnd,
+                                GWLP_HWNDPARENT,
+                                hwnd_taskbar as isize,
+                            );
                             if prev == 0 {
                                 let err = GetLastError();
                                 if err == 0 {
-                                    bound_success = true;
+                                    LAST_TASKBAR_HWND.store(
+                                        hwnd_taskbar as isize,
+                                        Ordering::SeqCst,
+                                    );
                                 }
                             } else {
-                                bound_success = true;
+                                LAST_TASKBAR_HWND
+                                    .store(hwnd_taskbar as isize, Ordering::SeqCst);
                             }
                         }
 
-                        if bound_success {
-                            LAST_TASKBAR_HWND.store(hwnd_taskbar as isize, Ordering::SeqCst);
-                            return OwnerBindingState::Bound;
-                        } else {
-                            return OwnerBindingState::Failed;
-                        }
-                    } else {
-                        return OwnerBindingState::Failed;
+                        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+                        SetWindowLongW(
+                            hwnd,
+                            GWL_EXSTYLE,
+                            ex_style | WS_EX_TOOLWINDOW as i32 | WS_EX_NOACTIVATE as i32,
+                        );
                     }
+
+                    let last = LAST_TASKBAR_HWND.load(Ordering::SeqCst);
+                    if last != 0 {
+                        return OwnerBindingState::Bound;
+                    }
+                    return OwnerBindingState::Failed;
                 }
             }
         }
@@ -172,7 +181,8 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
         use windows_sys::Win32::Foundation::{GetLastError, SetLastError, HWND, RECT};
         use windows_sys::Win32::UI::Shell::{SHAppBarMessage, ABM_GETTASKBARPOS, APPBARDATA};
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            FindWindowW, GetWindowRect, SetWindowLongPtrW, GWLP_HWNDPARENT,
+            FindWindowW, GetWindowLongW, GetWindowRect, SetWindowLongPtrW, SetWindowLongW,
+            GWL_EXSTYLE, GWLP_HWNDPARENT, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
         };
 
         let window = app
@@ -209,6 +219,15 @@ pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeo
                         } else {
                             bound_success = true;
                         }
+
+                        // owner 重绑会触发任务栏归属重新枚举，紧跟着补工具窗口样式，
+                        // 避免残留一个不可激活的任务栏按钮
+                        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+                        SetWindowLongW(
+                            hwnd,
+                            GWL_EXSTYLE,
+                            ex_style | WS_EX_TOOLWINDOW as i32 | WS_EX_NOACTIVATE as i32,
+                        );
                     }
 
                     if bound_success {
