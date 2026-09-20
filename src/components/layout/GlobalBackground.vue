@@ -816,10 +816,12 @@ const customBgTransform = computed(() => {
           class="absolute block max-w-none max-h-none select-none pointer-events-none"
           :class="{ 'global-background-video-hidden': videoLoadFailed }"
           :style="{
+            left: '25%',
+            top: '25%',
             width: '50%',
             height: '50%',
-            transform: `translate3d(${customBgTransform.tx / 2}px, ${customBgTransform.ty / 2}px, 0) scale(${customBgTransform.scale * 2})`,
             transformOrigin: 'center center',
+            transform: `translate3d(${customBgTransform.tx}px, ${customBgTransform.ty}px, 0) scale(${customBgTransform.scale}) scale(2)`,
             filter: activeBackgroundInfo.blur ? `blur(${activeBackgroundInfo.blur / 2}px)` : 'none',
             opacity: activeBackgroundInfo.opacity ?? 1.0,
           }"
