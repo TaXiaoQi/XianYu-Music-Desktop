@@ -97,7 +97,7 @@ const allSuccess = computed(() =>
                 <span>本地 {{ summary.localSongs }} 首</span>
                 <span>在线 {{ summary.onlineSongs }} 首</span>
                 <span>收藏 {{ summary.favoriteCount }} 首</span>
-                <span v-if="summary.recentCount > 0">最近播放 {{ summary.recentCount }} 条</span>
+                <span v-if="(summary.recentCount ?? 0) > 0">最近播放 {{ summary.recentCount }} 条</span>
               </div>
             </section>
 

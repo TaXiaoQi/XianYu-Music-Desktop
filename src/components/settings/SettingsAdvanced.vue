@@ -122,7 +122,7 @@ const handleExportAppBackup = async (selection: ExportSelection) => {
     if (summary.playlistCount > 0) parts.push(`${summary.playlistCount} 个歌单`);
     if (summary.favoriteCount > 0) parts.push(`收藏 ${summary.favoriteCount} 首`);
     if (summary.pluginCount > 0) parts.push(`${summary.pluginCount} 个插件`);
-    if (summary.recentCount > 0) parts.push(`最近播放 ${summary.recentCount} 条`);
+    if ((summary.recentCount ?? 0) > 0) parts.push(`最近播放 ${summary.recentCount} 条`);
     if (parts.length === 0) parts.push('无数据');
     if (summary.hasSettings) parts.push('设置');
     if (summary.encrypted) parts.push('已加密');
@@ -194,7 +194,7 @@ async function runAppBackupImport(backup: Parameters<typeof importAppBackup>[0])
   if (result.importedPlaylists > 0) parts.push(`${result.importedPlaylists} 个歌单`);
   if (result.importedFavorites > 0) parts.push(`收藏 ${result.importedFavorites} 首`);
   if (result.importedPlugins > 0) parts.push(`${result.importedPlugins} 个插件`);
-  if (result.importedRecent > 0) parts.push(`最近播放 ${result.importedRecent} 条`);
+  if ((result.importedRecent ?? 0) > 0) parts.push(`最近播放 ${result.importedRecent} 条`);
   if (result.settingsApplied) parts.push('设置');
   if (parts.length > 0) {
     showToast(`已导入 ${parts.join('、')}`, 'success');
