@@ -279,7 +279,7 @@ const collectionsStore = useCollectionsStore();
 const playbackStore = usePlaybackStore();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { showToast } = useToast();
-const { searchQuery } = storeToRefs(navigationStore);
+const { searchQuery, searchRequestId } = storeToRefs(navigationStore);
 const { artistList, albumList } = useLibraryBrowse();
 const { playlists } = storeToRefs(collectionsStore);
 
@@ -1254,6 +1254,13 @@ watch(searchQuery, (newVal) => {
   searchDebounceTimer = setTimeout(() => {
     performSearch();
   }, 400);
+});
+
+// 显式重搜信号（如失败页同关键词回车重搜）：立即执行，无需 debounce
+watch(searchRequestId, () => {
+  if (!searchQuery.value.trim()) return;
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  performSearch();
 });
 
 watch(selectedSourceId, () => {

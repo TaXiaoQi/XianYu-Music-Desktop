@@ -31,6 +31,9 @@ export const useNavigationStore = defineStore('navigation', () => {
   const currentViewMode = ref<NavigationViewMode>('all');
   const filterCondition = ref('');
   const searchQuery = ref('');
+  // 显式重搜信号：searchQuery 值未变化（如失败页同关键词回车重搜）时，watch(searchQuery) 不触发，
+  // 靠递增此计数强制 Search 页重新执行一次 performSearch。
+  const searchRequestId = ref(0);
   const localMusicTab = ref<'default' | 'artist' | 'album'>('default');
   const currentArtistFilter = ref('');
   const currentAlbumFilter = ref('');
@@ -42,6 +45,10 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   const setSearch = (query: string) => {
     searchQuery.value = query;
+  };
+
+  const requestSearch = () => {
+    searchRequestId.value += 1;
   };
 
   const addSearchHistory = (query: string) => {
@@ -69,6 +76,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     currentViewMode,
     filterCondition,
     searchQuery,
+    searchRequestId,
     localMusicTab,
     currentArtistFilter,
     currentAlbumFilter,
@@ -77,6 +85,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     activeRootPath,
     searchHistory,
     setSearch,
+    requestSearch,
     addSearchHistory,
     removeSearchHistory,
     clearSearchHistory,
