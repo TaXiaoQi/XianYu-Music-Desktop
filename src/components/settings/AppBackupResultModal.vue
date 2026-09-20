@@ -92,11 +92,12 @@ const allSuccess = computed(() =>
                   <div class="mt-0.5 text-xs text-gray-500 dark:text-white/40">混合歌单</div>
                 </div>
               </div>
-              <div class="flex items-center gap-4 rounded-xl bg-black/[0.018] px-4 py-2 text-xs text-gray-500 dark:bg-white/[0.025] dark:text-white/40">
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-black/[0.018] px-4 py-2 text-xs text-gray-500 dark:bg-white/[0.025] dark:text-white/40">
                 <span>共 {{ summary.totalSongs }} 首歌曲</span>
                 <span>本地 {{ summary.localSongs }} 首</span>
                 <span>在线 {{ summary.onlineSongs }} 首</span>
                 <span>收藏 {{ summary.favoriteCount }} 首</span>
+                <span v-if="summary.recentCount > 0">最近播放 {{ summary.recentCount }} 条</span>
               </div>
             </section>
 

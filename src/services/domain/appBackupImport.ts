@@ -3,8 +3,9 @@ import type { Song, AppSettings, LibrarySong } from '../../types';
 import { getStoredPlugins, addPluginSource, loadPluginFromScript, persistPluginScriptToDataDir, pluginsVersion, setPluginUserVariableValues } from './pluginEngine';
 import { playerStorage } from '../storage/playerStorage';
 import { classifySong } from './appBackupTypes';
+import { historyApi } from '../tauri/historyApi';
 import type { AppBackup, AppBackupImportResult, AppBackupSummary } from './appBackupTypes';
-import { APP_BACKUP_SCHEMA } from './appBackupTypes';
+import { APP_BACKUP_SCHEMA, BACKUP_DESKTOP_SETTING_SLOT } from './appBackupTypes';
 
 function log(_msg: string) {
 }
@@ -29,7 +30,7 @@ export function parseAppBackup(jsonContent: string): AppBackup {
 }
 
 function getBackupSummary(backup: AppBackup): AppBackupSummary {
-  const { playlists, favorites, plugins, settings } = backup.data;
+  const { playlists, favorites, plugins, recentHistory, settings } = backup.data;
   let totalSongs = 0;
   let localSongs = 0;
   let onlineSongs = 0;
@@ -52,8 +53,20 @@ function getBackupSummary(backup: AppBackup): AppBackupSummary {
     onlineSongs,
     favoriteCount: favorites?.length ?? 0,
     pluginCount: plugins.length,
-    hasSettings: !!settings,
+    hasSettings: getSelfSettings(settings) !== null,
+    recentCount: recentHistory?.length ?? 0,
   };
+}
+
+/**
+ * 取出写给「本端」的 settings 槽位。v2 起设置按端分槽；旧 v1 备份的 settings
+ * 是扁平对象（无端概念），视为旧结构、不导入设置（提示可见但跳过写入），
+ * 与移动端行为保持一致，避免把其他端设置写成桌面设置。
+ */
+function getSelfSettings(settings: AppBackup['data']['settings']): AppSettings | null {
+  if (!settings || typeof settings !== 'object') return null;
+  const slot = settings[BACKUP_DESKTOP_SETTING_SLOT];
+  return slot && typeof slot === 'object' ? (slot as AppSettings) : null;
 }
 
 export async function importAppBackup(
@@ -71,13 +84,14 @@ export async function importAppBackup(
     patchSettings: (patch: Partial<AppSettings>) => void;
     replaceSettings: (settings: AppSettings) => void;
   },
-  options: { includePlaylists?: boolean; includeFavorites?: boolean; includePlugins?: boolean; includeSettings?: boolean } = {},
+  options: { includePlaylists?: boolean; includeFavorites?: boolean; includePlugins?: boolean; includeSettings?: boolean; includeRecent?: boolean } = {},
 ): Promise<AppBackupImportResult> {
   const {
     includePlaylists = true,
     includeFavorites = true,
     includePlugins = true,
     includeSettings = true,
+    includeRecent = true,
   } = options;
 
   const summary = getBackupSummary(backup);
@@ -87,6 +101,7 @@ export async function importAppBackup(
   let importedPlugins = 0;
   let skippedPlugins = 0;
   let settingsApplied = false;
+  let importedRecent = 0;
 
   if (includePlugins && backup.data.plugins.length > 0) {
     const existingPlugins = getStoredPlugins();
@@ -166,13 +181,40 @@ export async function importAppBackup(
     importedFavorites = savedPaths.length;
   }
 
-  if (includeSettings && backup.data.settings) {
+  if (includeSettings) {
+    const selfSettings = getSelfSettings(backup.data.settings);
+    if (selfSettings) {
+      try {
+        settingsStore.replaceSettings(selfSettings);
+        playerStorage.writeSettings(selfSettings);
+        settingsApplied = true;
+      } catch (e: any) {
+        errors.push(`设置导入失败: ${e?.message || e}`);
+      }
+    }
+  }
+
+  if (includeRecent && backup.data.recentHistory && backup.data.recentHistory.length > 0) {
     try {
-      settingsStore.replaceSettings(backup.data.settings);
-      playerStorage.writeSettings(backup.data.settings);
-      settingsApplied = true;
+      // 与现有历史按 path 合并（保留较新的时间戳），再整体写入，保持相对顺序。
+      const existing = await historyApi.getRecentHistory(5000);
+      const merged: Record<string, number> = {};
+      for (const e of existing) {
+        if (e.songPath) merged[e.songPath] = Math.max(merged[e.songPath] ?? 0, e.playedAt);
+      }
+      for (const e of backup.data.recentHistory) {
+        if (!e.path) continue;
+        const playedAtMs = Math.round(e.playedAt * 1000);
+        merged[e.path] = Math.max(merged[e.path] ?? 0, playedAtMs);
+      }
+      const entries = Object.entries(merged).map(([songPath, playedAt]) => ({
+        songPath,
+        playedAt,
+      }));
+      await historyApi.importRecentHistory(entries);
+      importedRecent = backup.data.recentHistory.length;
     } catch (e: any) {
-      errors.push(`设置导入失败: ${e?.message || e}`);
+      errors.push(`最近播放导入失败: ${e?.message || e}`);
     }
   }
 
@@ -183,6 +225,7 @@ export async function importAppBackup(
     importedPlugins,
     skippedPlugins,
     settingsApplied,
+    importedRecent,
     errors,
   };
 }
