@@ -435,12 +435,19 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
         class="skin-card flex max-h-[calc(100vh-2rem)] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
         :class="{ 'is-closing': isClosing }"
       >
-        <div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
-          <div class="flex items-center gap-3">
+        <div class="border-b border-white/10 px-6 py-4">
+          <div class="flex items-center justify-between">
             <span class="text-base font-bold">自定义皮肤</span>
+            <button @click="handleCancel" class="text-white/50 transition hover:text-white">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          <div class="mt-3 flex gap-3">
             <button
               @click="handleSelectNewImage"
-              class="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer"
+              class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
@@ -449,7 +456,7 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
             </button>
             <button
               @click="handleSelectNewVideo"
-              class="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer"
+              class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm10.5 5.5a1 1 0 00-1.5-.87l-4 2.31a1 1 0 000 1.73l4 2.31a1 1 0 001.5-.87V8.5z" clip-rule="evenodd" />
@@ -458,7 +465,7 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
             </button>
             <button
               @click="showWallpaperGallery = true"
-              class="flex items-center gap-1.5 rounded-full border border-[#EC4141]/30 bg-[#EC4141]/10 px-3 py-1 text-xs font-semibold text-[#ff8a8a] backdrop-blur-md transition hover:bg-[#EC4141]/20 active:scale-95 shadow-sm cursor-pointer"
+              class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-[#EC4141]/30 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-semibold text-[#ff8a8a] backdrop-blur-md transition hover:bg-[#EC4141]/20 active:scale-95 shadow-sm cursor-pointer"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -468,11 +475,6 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
               <span>壁纸中心</span>
             </button>
           </div>
-          <button @click="handleCancel" class="text-white/50 transition hover:text-white">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-            </svg>
-          </button>
         </div>
 
         <div class="flex-1 overflow-y-auto">
