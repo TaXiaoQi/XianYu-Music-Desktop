@@ -6,6 +6,7 @@ mod database;
 pub(crate) mod dlna;
 pub mod error;
 mod fallback_verify;
+mod ffmpeg_bin;
 mod foreground_window;
 mod host_crypto;
 mod install_language;
