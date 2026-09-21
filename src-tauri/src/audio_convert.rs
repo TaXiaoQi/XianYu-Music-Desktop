@@ -31,9 +31,7 @@ pub struct ConvertAudioResult {
 
 #[tauri::command]
 pub async fn detect_ffmpeg(ffmpeg_path: Option<String>) -> FfmpegDetection {
-    let program = ffmpeg_path
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "ffmpeg".to_string());
+    let program = crate::ffmpeg_bin::resolve_ffmpeg(ffmpeg_path.as_deref());
     let output = match tokio::process::Command::new(&program)
         .arg("-version")
         .output()
@@ -140,9 +138,7 @@ pub async fn convert_audio(
     if !out_dir.is_dir() {
         return Err(format!("输出目录不存在：{}", out_dir.to_string_lossy()));
     }
-    let program = ffmpeg_path
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "ffmpeg".to_string());
+    let program = crate::ffmpeg_bin::resolve_ffmpeg(ffmpeg_path.as_deref());
 
     let (ext, encode_args) = format_profile(&target_format);
     let template = out_name.unwrap_or_default();

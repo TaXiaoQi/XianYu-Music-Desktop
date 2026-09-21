@@ -41,6 +41,9 @@
     "targets": [
       "nsis"
     ],
+    "externalBin": [
+      "bin/ffmpeg"
+    ],
     "copyright": "Copyright © 2026 XY-Music-Desktop Team",
     "shortDescription": "A beautiful local music player powered by Tauri.",
     "license": "AGPL-3.0-only",

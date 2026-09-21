@@ -33,9 +33,7 @@ pub async fn probe_audio_duration(
     input_path: String,
     ffmpeg_path: Option<String>,
 ) -> Result<f64, String> {
-    let program = ffmpeg_path
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "ffmpeg".to_string());
+    let program = crate::ffmpeg_bin::resolve_ffmpeg(ffmpeg_path.as_deref());
 
     let output = tokio::process::Command::new(&program)
         .arg("-i")
@@ -77,9 +75,7 @@ pub async fn trim_audio(
     }
     let clip_duration = end_secs - start_secs;
 
-    let program = ffmpeg_path
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "ffmpeg".to_string());
+    let program = crate::ffmpeg_bin::resolve_ffmpeg(ffmpeg_path.as_deref());
 
     let stem = in_path
         .file_stem()

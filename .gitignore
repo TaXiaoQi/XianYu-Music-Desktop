@@ -19,8 +19,7 @@ src-tauri/target/
 # （注意必须用 /* 配合否定规则，写成 src-tauri/gen/ 会导致 git 不再进入目录、例外失效）
 src-tauri/gen/*
 !src-tauri/gen/windows
-# 以前版本的构建输出（以防万一）
-src-tauri/bin/
+# src-tauri/bin/ 的内置 ffmpeg sidecar 产物需入库（参考移动端 jniLibs 预编译做法），他人无需重编即可打包
 
 # --- 🔧 IDE 与 编辑器配置 ---
 .vscode/
@@ -50,9 +49,15 @@ pnpm-debug.log*
 *.log
 image.png
 
-# --- 🛠️ 本地开发脚本 ---
+# --- 🔧 本地开发脚本 ---
 scripts/bump-version.js
 src-tauri/examples/*_probe.rs
+
+# --- 🎛️ 内置 ffmpeg 构建工作区（产物不入库，脚本在 scripts/ffmpeg/）---
+scripts/ffmpeg/src/
+scripts/ffmpeg/build/
+scripts/ffmpeg/out/
+scripts/ffmpeg/toolchain/
 
 # --- 🧪 本地测试输出日志（cargo test 重定向产物）---
 /test*.txt
