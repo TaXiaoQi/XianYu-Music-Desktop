@@ -94,6 +94,14 @@ npm run dev          # 仅浏览器调试前端
 
 ### 构建各平台安装包
 
+- **内置 ffmpeg sidecar**：仓库已附带 Windows 版产物（`src-tauri/bin/ffmpeg-x86_64-pc-windows-msvc.exe`，约 4.7MB 精简版 audio-only ffmpeg），正常 Windows 打包无需额外步骤。仅当产物缺失或需要重编时运行（自动引导便携 MSYS2 与工具链，全程约 20-40 分钟）：
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts\ffmpeg\build-audio-ffmpeg.ps1    # 产物自动落到 src-tauri/bin/，-Force 强制重编
+```
+
+- `tauri build` 对 `externalBin`（内置 ffmpeg）强校验，`src-tauri/bin/ffmpeg-<target-triple>` 缺失会直接报错；当前流水线产物为 Windows x64，mac / linux 侧产物待补
+
 ```bash
 npm run tauri build              # Windows 官网版（.msi / .exe）
 npm run tauri:build:store:msix   # Windows 微软商店版（MSIX，与官网版互不影响）
