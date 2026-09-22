@@ -345,9 +345,15 @@ struct StreamCacheManager {
 impl StreamCacheManager {
     fn evict_if_needed(&mut self) {
         while self.current_size > self.max_size_bytes && !self.entries.is_empty() {
+            // 只淘汰下载已结束（完成或失败）的条目：正在下载的文件被写入线程持有，
+            // 删除会导致已下载字节作废、Windows 上文件残留，且其 size 尚未记账。
             let oldest_key = self
                 .entries
                 .iter()
+                .filter(|(_, entry)| {
+                    entry.download_complete.load(Ordering::Relaxed)
+                        || entry.download_failed.load(Ordering::Relaxed)
+                })
                 .min_by_key(|(_, entry)| entry.last_accessed)
                 .map(|(k, _)| k.clone());
 
@@ -1200,6 +1206,7 @@ fn download_thread(
         }
         if let Ok(mut mgr) = cache().lock() {
             mgr.update_size(hash, bytes_written);
+            mgr.evict_if_needed();
         }
     };
 
@@ -1493,8 +1500,11 @@ fn download_thread(
 
     download_complete.store(true, Ordering::Relaxed);
 
+    // 更新缓存大小，并在完成后立即触发淘汰：否则多首歌下载完成而
+    // 没有新下载启动时，current_size 会持续超出用户设置的上限。
     if let Ok(mut mgr) = cache().lock() {
         mgr.update_size(hash, bytes_written);
+        mgr.evict_if_needed();
     }
 }
 
