@@ -239,6 +239,8 @@ export interface ThemeSettings {
   accentColor: string;
   playerDetailCoverBehavior: 'show' | 'hide' | 'remember';
   lastPlayerDetailCoverVisible: boolean;
+  /** 播放详情页皮肤：classic=经典方形封面，vinyl=黑胶唱片（UI 移植自 mozarta-nexus/music-web-player） */
+  playerDetailStyle: 'classic' | 'vinyl';
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;

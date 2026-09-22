@@ -33,6 +33,11 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailCoverShow: 'Always Show Cover',
   playerDetailCoverHide: 'Always Hide Cover',
   playerDetailCoverRemember: 'Remember Last Choice',
+  playerDetailStyleTitle: 'Now Playing Page Style',
+  playerDetailStyleHint: 'Choose the layout skin of the Now Playing page',
+  playerDetailStyleLabel: 'Page style',
+  playerDetailStyleClassic: 'Classic',
+  playerDetailStyleVinyl: 'Vinyl Record',
   dynamicTitle: 'Dynamic Background',
   dynamicHint: 'Changes with the album cover',
   dynamicOff: 'Off',
@@ -78,6 +83,11 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailCoverShow: '始终展示封面',
   playerDetailCoverHide: '始终隐藏封面',
   playerDetailCoverRemember: '跟随上次选择',
+  playerDetailStyleTitle: '播放详情页样式',
+  playerDetailStyleHint: '选择播放详情页的外观皮肤',
+  playerDetailStyleLabel: '页面样式',
+  playerDetailStyleClassic: '经典',
+  playerDetailStyleVinyl: '黑胶唱片',
   dynamicTitle: '动态背景',
   dynamicHint: '跟随封面变化',
   dynamicOff: '关闭',
@@ -205,6 +215,8 @@ const {
   setUseGlassSwitch,
   setShowLeaderboard,
   setPlayerDetailCoverBehavior,
+  playerDetailStyle,
+  setPlayerDetailStyle,
 } = useSettingsThemeControls();
 
 const commitAccentColor = (event: Event) => {
@@ -295,20 +307,89 @@ function handleCoverSelect(value: 'show' | 'hide' | 'remember') {
   closeCoverMenu();
 }
 
+// ---- 播放详情页样式选择（复用封面下拉的自定义弹窗模式） ----
+const STYLE_OPTIONS = computed<Array<{ value: 'classic' | 'vinyl'; label: string }>>(() => [
+  { value: 'classic', label: TEXT.value.playerDetailStyleClassic },
+  { value: 'vinyl', label: TEXT.value.playerDetailStyleVinyl },
+]);
+
+const selectedStyleOption = computed(() =>
+  STYLE_OPTIONS.value.find((option) => option.value === playerDetailStyle.value),
+);
+
+const styleTriggerRef = ref<HTMLElement | null>(null);
+const styleMenuRef = ref<HTMLElement | null>(null);
+const isStyleMenuOpen = ref(false);
+const styleMenuStyle = ref<Record<string, string>>({});
+
+async function toggleStyleMenu() {
+  isStyleMenuOpen.value = !isStyleMenuOpen.value;
+  if (isStyleMenuOpen.value) {
+    await nextTick();
+    updateStyleMenuPosition();
+  }
+}
+
+function closeStyleMenu() {
+  isStyleMenuOpen.value = false;
+}
+
+function updateStyleMenuPosition() {
+  const trigger = styleTriggerRef.value;
+  if (!trigger) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const viewportPadding = 16;
+  const gap = 8;
+  const menuWidth = Math.max(rect.width, 200);
+  const menuHeight = 120;
+
+  let left = rect.right - menuWidth;
+  left = Math.min(left, window.innerWidth - viewportPadding - menuWidth);
+  left = Math.max(viewportPadding, left);
+
+  const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+  const shouldOpenUpward = availableBelow < menuHeight && rect.top - viewportPadding > menuHeight;
+
+  styleMenuStyle.value = shouldOpenUpward
+    ? {
+        position: 'fixed',
+        left: `${Math.round(left)}px`,
+        bottom: `${Math.round(window.innerHeight - rect.top + gap)}px`,
+        width: `${Math.round(menuWidth)}px`,
+      }
+    : {
+        position: 'fixed',
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(rect.bottom + gap)}px`,
+        width: `${Math.round(menuWidth)}px`,
+      };
+}
+
+function handleStyleSelect(value: 'classic' | 'vinyl') {
+  setPlayerDetailStyle(value);
+  closeStyleMenu();
+}
+
 function handlePointerDownOutside(event: MouseEvent) {
   const target = event.target as Node | null;
   if (!target) return;
   if (coverTriggerRef.value?.contains(target)) return;
   if (coverMenuRef.value?.contains(target)) return;
   closeCoverMenu();
+  if (styleTriggerRef.value?.contains(target)) return;
+  if (styleMenuRef.value?.contains(target)) return;
+  closeStyleMenu();
 }
 
 function handleCoverEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeStyleMenu();
   if (event.key === 'Escape') closeCoverMenu();
 }
 
 function handleCoverViewportChange() {
   if (isCoverMenuOpen.value) updateCoverMenuPosition();
+  if (isStyleMenuOpen.value) updateStyleMenuPosition();
 }
 
 onMounted(() => {
@@ -831,6 +912,59 @@ onUnmounted(() => {
                 >
                   <span>{{ option.label }}</span>
                   <Check v-if="playerDetailCoverBehavior === option.value" class="h-4 w-4 shrink-0" />
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </Teleport>
+      </label>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.playerDetailStyleTitle }}
+        </span>
+        <SettingHint :text="TEXT.playerDetailStyleHint" />
+      </h2>
+
+      <label class="relative flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
+        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {{ TEXT.playerDetailStyleLabel }}
+        </span>
+        <button
+          ref="styleTriggerRef"
+          type="button"
+          class="cover-select-trigger flex h-9 w-52 shrink-0 items-center justify-between gap-2 rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-700 transition hover:bg-white/70 focus:border-[#EC4141]/50 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/[0.15]"
+          :class="isStyleMenuOpen ? 'cover-select-trigger--open' : ''"
+          @click="toggleStyleMenu"
+        >
+          <span class="truncate">{{ selectedStyleOption?.label }}</span>
+          <ChevronDown class="h-4 w-4 shrink-0 text-gray-400 transition-transform dark:text-gray-500" :class="isStyleMenuOpen ? 'rotate-180' : ''" aria-hidden="true" />
+        </button>
+
+        <Teleport to="body">
+          <Transition name="cover-select-menu">
+            <div
+              v-if="isStyleMenuOpen"
+              ref="styleMenuRef"
+              class="cover-select-menu"
+              :style="styleMenuStyle"
+              @click.stop
+              @mousedown.stop
+            >
+              <div class="cover-select-list">
+                <button
+                  v-for="option in STYLE_OPTIONS"
+                  :key="option.value"
+                  type="button"
+                  class="cover-select-option"
+                  :class="playerDetailStyle === option.value ? 'cover-select-option--active' : ''"
+                  @click="handleStyleSelect(option.value)"
+                >
+                  <span>{{ option.label }}</span>
+                  <Check v-if="playerDetailStyle === option.value" class="h-4 w-4 shrink-0" />
                 </button>
               </div>
             </div>

@@ -90,6 +90,17 @@ describe('settings store', () => {
     expect(settingsStore.theme.playerDetailCoverBehavior).toBe('hide');
   });
 
+  it('stores the player detail style with normalization', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailStyle).toBe('classic');
+    settingsStore.patchTheme({ playerDetailStyle: 'vinyl' });
+    expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
+
+    settingsStore.patchTheme({ playerDetailStyle: 'invalid' as 'classic' });
+    expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
+  });
+
   it('replaces theme through the settings domain instead of mutating ui state', () => {
     const settingsStore = useSettingsStore();
 
