@@ -7,6 +7,7 @@ const {
   pluginGetVideoSourceMock,
   removeCachedBackgroundVideoMock,
   analyzeMvAudioSyncMock,
+  analyzeMvAudioSyncLocalMock,
 } = vi.hoisted(() => ({
   downloadVideoToCacheMock: vi.fn(),
   getStoredPluginsMock: vi.fn(),
@@ -14,6 +15,7 @@ const {
   pluginGetVideoSourceMock: vi.fn(),
   removeCachedBackgroundVideoMock: vi.fn(),
   analyzeMvAudioSyncMock: vi.fn(),
+  analyzeMvAudioSyncLocalMock: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -35,11 +37,15 @@ vi.mock('../services/tauri/pluginApi', () => ({
 
 vi.mock('../services/domain/mvAutoSync', () => ({
   analyzeMvAudioSync: analyzeMvAudioSyncMock,
+  analyzeMvAudioSyncLocal: analyzeMvAudioSyncLocalMock,
 }));
 
 const playbackUrlMock = vi.hoisted(() => ({ value: null as string | null }));
 vi.mock('../features/playback/store', () => ({
-  usePlaybackStore: () => ({ currentPlayingAudioUrl: playbackUrlMock.value }),
+  usePlaybackStore: () => ({
+    currentPlayingAudioUrl: playbackUrlMock.value,
+    currentTime: 0,
+  }),
 }));
 
 import type { Song } from '../types';
@@ -110,6 +116,8 @@ describe('Bilibili player-detail video background', () => {
     });
     downloadVideoToCacheMock.mockResolvedValue('C:\\cache\\video-background\\xy_music_video_test.mp4');
     removeCachedBackgroundVideoMock.mockResolvedValue(undefined);
+    analyzeMvAudioSyncMock.mockResolvedValue(null);
+    analyzeMvAudioSyncLocalMock.mockResolvedValue(null);
   });
 
   it('only exposes the feature for Bilibili plugin tracks', () => {
@@ -121,51 +129,56 @@ describe('Bilibili player-detail video background', () => {
     }))).toBe(false);
   });
 
-  it('非 B 站 MV 加载后自动分析音画偏移并应用', async () => {
+  it('非 B 站 MV 加载后局部匹配音画偏移并接管音频', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
     playbackUrlMock.value = 'https://isure.stream.qqmusic.qq.com/M800.mp3?vkey=abc';
-    analyzeMvAudioSyncMock.mockResolvedValue({ offsetSec: 2.5, confidence: 0.81 });
+    analyzeMvAudioSyncLocalMock.mockResolvedValue({ offsetSec: 2.5, confidence: 0.81 });
     const song = makeKugouSong({ path: 'plugin://kg-plugin/mv-sync-a' });
 
     await expect(background.start(song)).resolves.toBe(true);
 
-    expect(analyzeMvAudioSyncMock).toHaveBeenCalledWith(
+    expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledWith(
       expect.stringContaining('asset://'),
       playbackUrlMock.value,
+      0,
       undefined,
     );
+    expect(analyzeMvAudioSyncMock).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(background.syncOffsetSec.value).toBe(2.5));
+    await vi.waitFor(() => expect(background.audioTakenOver.value).toBe(true));
 
     await background.stop();
     expect(background.syncOffsetSec.value).toBe(0);
+    expect(background.audioTakenOver.value).toBe(false);
   });
 
-  it('B 站歌曲跳过自动对齐（音画同源）', async () => {
+  it('B 站歌曲局部匹配不可信时保持 0 偏移且不接管', async () => {
     playbackUrlMock.value = 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s';
-    analyzeMvAudioSyncMock.mockResolvedValue({ offsetSec: 3, confidence: 0.9 });
+    analyzeMvAudioSyncLocalMock.mockResolvedValue(null);
 
     await expect(background.start(makeSong())).resolves.toBe(true);
 
+    expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalled();
     expect(analyzeMvAudioSyncMock).not.toHaveBeenCalled();
     expect(background.syncOffsetSec.value).toBe(0);
+    expect(background.audioTakenOver.value).toBe(false);
     await background.stop();
   });
 
   it('分析不可信时保持 0 偏移并缓存结果，切画质不重复分析', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
     playbackUrlMock.value = 'https://track.example.com/song.flac';
-    analyzeMvAudioSyncMock.mockResolvedValue(null);
     const song = makeKugouSong({ path: 'plugin://kg-plugin/mv-sync-b' });
 
     await expect(background.start(song)).resolves.toBe(true);
-    await vi.waitFor(() => expect(analyzeMvAudioSyncMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledTimes(1));
     expect(background.syncOffsetSec.value).toBe(0);
 
     pluginGetVideoSourceMock.mockResolvedValue({ url: 'https://mv.example.com/1080p.mp4' });
     downloadVideoToCacheMock.mockResolvedValue('C:\\cache\\video-background\\xy_music_video_1080p.mp4');
     await expect(background.setQuality('1080P')).resolves.toBe(true);
     await vi.waitFor(() => expect(background.videoUrl.value).toContain('1080p'));
-    expect(analyzeMvAudioSyncMock).toHaveBeenCalledTimes(1);
+    expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledTimes(1);
 
     await background.stop();
   });

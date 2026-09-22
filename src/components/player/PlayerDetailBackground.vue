@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePlayer } from '../../features/playback';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
+import { usePlaybackStore } from '../../features/playback/store';
+import { playbackApi } from '../../services/tauri/playbackApi';
 import { lyricsSettings } from '../../composables/lyrics';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useBilibiliVideoBackground } from '../../composables/useBilibiliVideoBackground';
@@ -17,11 +19,103 @@ const {
   active: videoBackgroundActive,
   videoUrl: backgroundVideoUrl,
   syncOffsetSec: mvSyncOffsetSec,
+  audioTakenOver: mvAudioTakenOver,
 } = useBilibiliVideoBackground();
 const soundEffectStore = useSoundEffectStore();
+const playbackStore = usePlaybackStore();
 const videoRef = ref<HTMLVideoElement | null>(null);
 const videoPlaybackFailed = ref(false);
 const coverImgFailed = ref(false);
+
+// --- MV 音频接管：把音频交给 MV 自带音轨（交叉淡入淡出） ---
+const mvTargetVolume = () =>
+  Math.min(1, Math.max(0, Number(playbackStore.volume) / 100 || 0));
+
+let videoFadeRaf = 0;
+let backendFadeRaf = 0;
+
+function fadeVideoTo(target: number, durMs = 400): Promise<void> {
+  const video = videoRef.value;
+  if (!video) return Promise.resolve();
+  const from = video.volume;
+  return new Promise((resolve) => {
+    if (videoFadeRaf) cancelAnimationFrame(videoFadeRaf);
+    if (Math.abs(from - target) < 0.004 || durMs <= 0) {
+      video.volume = target;
+      resolve();
+      return;
+    }
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / durMs);
+      video.volume = from + (target - from) * p;
+      if (p < 1) videoFadeRaf = requestAnimationFrame(step);
+      else { videoFadeRaf = 0; resolve(); }
+    };
+    videoFadeRaf = requestAnimationFrame(step);
+  });
+}
+
+function fadeBackendVolume(from: number, target: number, durMs = 400): Promise<void> {
+  return new Promise((resolve) => {
+    if (backendFadeRaf) cancelAnimationFrame(backendFadeRaf);
+    if (Math.abs(from - target) < 0.004 || durMs <= 0) {
+      void playbackApi.setVolume(target);
+      resolve();
+      return;
+    }
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / durMs);
+      void playbackApi.setVolume(from + (target - from) * p);
+      if (p < 1) backendFadeRaf = requestAnimationFrame(step);
+      else { backendFadeRaf = 0; resolve(); }
+    };
+    backendFadeRaf = requestAnimationFrame(step);
+  });
+}
+
+// 接管：取消视频静音，同时 MV 音频渐入、歌曲音频渐出（二者同源同曲，交叉过渡体感无缝）。
+async function engageMvAudioTakeover() {
+  const video = videoRef.value;
+  if (!video) return;
+  if (video.muted === false) return; // 已接管，幂等
+  const userVol = mvTargetVolume();
+  video.muted = false;
+  video.volume = 0;
+  await Promise.all([
+    fadeBackendVolume(userVol, 0, 400),
+    fadeVideoTo(userVol, 400),
+  ]);
+}
+
+// 还原：淡出 MV 音频，恢复歌曲音频通道。
+async function releaseMvAudioTakeover() {
+  const video = videoRef.value;
+  if (video && video.muted === false) {
+    await fadeVideoTo(0, 250);
+    video.muted = true;
+    video.volume = 0;
+  }
+  await fadeBackendVolume(0, mvTargetVolume(), 250);
+}
+
+// 接管状态切换 → 触发交叉淡入淡出。
+watch(mvAudioTakenOver, (on) => {
+  if (on) void engageMvAudioTakeover();
+  else void releaseMvAudioTakeover();
+});
+
+// 接管中用户调音量 → 同步 MV 音轨（歌曲通道已被静音）。
+watch(
+  () => playbackStore.volume,
+  () => {
+    const video = videoRef.value;
+    if (mvAudioTakenOver.value && video && video.muted === false) {
+      video.volume = mvTargetVolume();
+    }
+  },
+);
 
 const viewportArea = ref(
   typeof window !== 'undefined' ? window.innerWidth * window.innerHeight : 0
@@ -154,10 +248,18 @@ watch(mvSyncOffsetSec, () => syncBackgroundVideo(true));
 const handleVideoLoaded = () => {
   syncBackgroundVideo(true);
   updateVideoPlayback();
+  // 若在视频就绪前就已判定接管，补齐音量与静音态。
+  if (mvAudioTakenOver.value && videoRef.value) {
+    const video = videoRef.value;
+    video.muted = false;
+    video.volume = mvTargetVolume();
+  }
 };
 
 const handleVideoError = () => {
   videoPlaybackFailed.value = true;
+  // 视频出错导致 MV 无声时，还原歌曲音频，避免静音失声。
+  if (mvAudioTakenOver.value) mvAudioTakenOver.value = false;
 };
 
 onMounted(() => {
@@ -167,6 +269,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateViewportArea);
+  if (mvAudioTakenOver.value) mvAudioTakenOver.value = false;
+  void playbackApi.setVolume(mvTargetVolume());
 });
 </script>
 

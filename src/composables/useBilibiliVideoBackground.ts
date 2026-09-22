@@ -8,7 +8,10 @@ import {
   type PluginVideoSource,
 } from '../services/domain/pluginEngine';
 import { pluginApi } from '../services/tauri/pluginApi';
-import { analyzeMvAudioSync } from '../services/domain/mvAutoSync';
+import {
+  analyzeMvAudioSync,
+  analyzeMvAudioSyncLocal,
+} from '../services/domain/mvAutoSync';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettings } from '../features/settings/useSettings';
 import type { PluginSearchResult, Song } from '../types';
@@ -22,6 +25,8 @@ const availableQualities = ref<PluginVideoQuality[]>([]);
 const activeQuality = ref('');
 const syncOffsetSec = ref(0);
 const syncOffsetCache = new Map<string, number>();
+// 音频是否已交给 MV 自带音轨（true 时组件会取消视频静音并把歌曲音量淡出）。
+const audioTakenOver = ref(false);
 let requestVersion = 0;
 let activeSong: Song | null = null;
 
@@ -406,11 +411,12 @@ async function resolveMvVideoSource(song: Song, quality: string): Promise<{
   return { videoSource: resolved, headers };
 }
 
-async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: number): Promise<void> {
-  if (isBili) return;
+async function runSyncAnalysis(song: Song, isBili: boolean, requestId: number): Promise<void> {
+  // 已有可信偏移（历史匹配缓存）→ 直接接管音频，无需重复分析。
   const cached = syncOffsetCache.get(song.path);
   if (cached !== undefined) {
     syncOffsetSec.value = cached;
+    audioTakenOver.value = true;
     return;
   }
   let audioUrl: string | null = null;
@@ -422,15 +428,29 @@ async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: numbe
   if (!audioUrl || !/^https?:\/\//i.test(audioUrl)) return;
 
   try {
-    const estimate = await analyzeMvAudioSync(videoUrl.value, audioUrl, song.remote_headers);
+    const songPosSec = usePlaybackStore().currentTime || 0;
+    // 局部滑动匹配：以当前播放位置为锚，容忍 MV 片头/花絮导致的对齐错位。
+    let estimate = await analyzeMvAudioSyncLocal(
+      videoUrl.value,
+      audioUrl,
+      songPosSec,
+      song.remote_headers,
+    );
+    // 局部匹配失败时，非 B 站源回退到经典全局互相关（兼容旧行为）。
+    if (!estimate && !isBili) {
+      estimate = await analyzeMvAudioSync(videoUrl.value, audioUrl, song.remote_headers);
+    }
     if (requestId !== requestVersion || sourceSongPath.value !== song.path) return;
     if (estimate) {
       syncOffsetSec.value = estimate.offsetSec;
       syncOffsetCache.set(song.path, estimate.offsetSec);
+      // 可信对齐命中 → 整首歌改用 MV 自带音轨。
+      audioTakenOver.value = true;
     } else {
       syncOffsetSec.value = 0;
       syncOffsetCache.set(song.path, 0);
-      console.warn(`[MV自动对齐] ${song.name}: 未得出可信偏移，保持 0（本次不校正内容错位）`);
+      audioTakenOver.value = false;
+      console.warn(`[MV自动对齐] ${song.name}: 未得出可信偏移，保持 0（本次不校正内容错位，也不接管音频）`);
     }
   } catch (e) {
     console.warn('[MV自动对齐] 分析失败，保持 0 偏移:', e);
@@ -452,6 +472,7 @@ export function useBilibiliVideoBackground() {
     availableQualities.value = [];
     activeQuality.value = '';
     syncOffsetSec.value = 0;
+    audioTakenOver.value = false;
     lastResolvedSource.value = null;
     activeSong = null;
     await removeCachedFile(previousPath);
@@ -466,6 +487,8 @@ export function useBilibiliVideoBackground() {
 
     const previousPath = cachedVideoPath.value;
     const requestId = ++requestVersion;
+    // 开关/切歌/切画质重开时，若已接管音频先还原歌曲通道。
+    if (audioTakenOver.value) audioTakenOver.value = false;
     videoUrl.value = '';
     cachedVideoPath.value = '';
     sourceSongPath.value = song.path;
@@ -534,7 +557,7 @@ export function useBilibiliVideoBackground() {
         : [{ key: videoSource.videoQuality || targetQuality }]);
     activeQuality.value = videoSource.videoQuality || targetQuality;
     syncOffsetSec.value = syncOffsetCache.get(song.path) ?? 0;
-    void runAutoSyncAnalysis(song, isBili, requestId);
+    void runSyncAnalysis(song, isBili, requestId);
     return true;
   };
 
@@ -582,6 +605,7 @@ export function useBilibiliVideoBackground() {
     activeQuality,
     lastResolvedSource,
     syncOffsetSec,
+    audioTakenOver,
     start,
     stop,
     toggle,
