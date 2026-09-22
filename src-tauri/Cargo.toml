@@ -137,3 +137,6 @@ opt-level = 3
 [profile.release]
 # 去掉 release exe 中的符号表，减小体积（不影响运行时功能，仅 release 崩溃回溯无符号名）
 strip = "symbols"
+# 跨 crate 优化 + 单编译单元：体积再省约 10-20%，编译时间变长（构建速度换体积）
+lto = "thin"
+codegen-units = 1
