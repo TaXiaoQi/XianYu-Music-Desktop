@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { storeToRefs } from 'pinia';
-import { useCoverCache } from '../../composables/useCoverCache';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { usePlaybackStore } from '../../features/playback/store';
+import { useDetailCover } from '../../composables/useDetailCover';
 
 const props = defineProps<{
   isExpanded?: boolean;
@@ -14,126 +12,30 @@ const emit = defineEmits<{
   (e: 'toggle-cover'): void;
 }>();
 
+const { isPlaying, dominantColors } = usePlaybackController();
+const isExpandedRef = computed(() => Boolean(props.isExpanded));
+
 const {
-  currentSong, currentCover, currentCoverPath, currentCoverFull, isPlaying, dominantColors
-} = usePlaybackController();
-const { getFullCoverUrl, loadFullCover, preloadFullCovers, retainFullCoverPaths } = useCoverCache();
-const playbackStore = usePlaybackStore();
-const { playQueue, tempQueue } = storeToRefs(playbackStore);
+  currentSongPath,
+  displayedLocalCoverUrl,
+  currentBigCoverUrl,
+  showCoverPlaceholder,
+  fullCoverLoading,
+  bigCoverLoaded,
+  onBigCoverLoad,
+  onBigCoverError,
+  onLocalCoverError,
+} = useDetailCover({ isExpanded: isExpandedRef });
 
-const currentSongPath = computed(() => currentSong.value?.path ?? '');
-
-const localCoverUrl = ref('');
-const localCoverLoadFailed = ref(false);
-const bigCoverLoaded = ref(false);
-const fullCoverLoading = ref(false);
 const reflectionCoverUrl = ref('');
-let fullCoverRequestId = 0;
-const currentLocalCoverUrl = computed(() => {
-  if (props.isExpanded && currentCoverPath.value !== currentSongPath.value) {
-    return '';
-  }
 
-  return localCoverUrl.value;
-});
-const currentBigCoverUrl = computed(() => (
-  props.isExpanded && currentCoverFull.value && currentCoverFull.value !== currentLocalCoverUrl.value
-    ? currentCoverFull.value
-    : ''
-));
-const displayedLocalCoverUrl = computed(() => (
-  localCoverLoadFailed.value ? '' : currentLocalCoverUrl.value
-));
-const showCoverPlaceholder = computed(() => !displayedLocalCoverUrl.value && !bigCoverLoaded.value);
-
-const getRetainedFullCoverPaths = (path: string) => {
-  if (!path) {
-    return [];
-  }
-
-  const retainedPaths: string[] = [path];
-  const pushUniquePath = (candidatePath: string | undefined) => {
-    if (!candidatePath || retainedPaths.includes(candidatePath)) {
-      return;
-    }
-
-    retainedPaths.push(candidatePath);
-  };
-
-  pushUniquePath(tempQueue.value[0]?.path);
-
-  const queue = playQueue.value;
-  const currentIndex = queue.findIndex(song => song.path === path);
-  if (currentIndex >= 0 && queue.length > 1) {
-    pushUniquePath(queue[(currentIndex - 1 + queue.length) % queue.length]?.path);
-    pushUniquePath(queue[(currentIndex + 1) % queue.length]?.path);
-  }
-
-  return retainedPaths.slice(0, 4);
-};
-
-watch(currentCover, (cover) => {
-  localCoverUrl.value = cover || '';
-}, { immediate: true });
-
-watch([currentSongPath, currentLocalCoverUrl], () => {
-  localCoverLoadFailed.value = false;
-}, { immediate: true });
-
-watch([currentSongPath, () => props.isExpanded], async ([path, isExpanded]) => {
-  const cachedFullCoverUrl = path ? getFullCoverUrl(path) : '';
-  bigCoverLoaded.value = Boolean(cachedFullCoverUrl);
-  fullCoverLoading.value = false;
-
-  if (!path || !isExpanded) {
-    fullCoverRequestId += 1;
-    return;
-  }
-
-  const retainedPaths = getRetainedFullCoverPaths(path);
-  retainFullCoverPaths(retainedPaths);
-
-  if (cachedFullCoverUrl) {
-    currentCoverFull.value = cachedFullCoverUrl;
-    preloadFullCovers(retainedPaths.filter(candidatePath => candidatePath !== path));
-    return;
-  }
-
-  const requestId = ++fullCoverRequestId;
-  const fullCoverLoad = loadFullCover(path);
-  fullCoverLoading.value = true;
-  preloadFullCovers(retainedPaths.filter(candidatePath => candidatePath !== path));
-
-  try {
-    const fullCoverUrl = await fullCoverLoad;
-    if (requestId !== fullCoverRequestId || path !== currentSongPath.value || !props.isExpanded) return;
-    if (fullCoverUrl) {
-      currentCoverFull.value = fullCoverUrl;
-    }
-    fullCoverLoading.value = false;
-  } catch {
-    if (requestId !== fullCoverRequestId || path !== currentSongPath.value || !props.isExpanded) return;
-    fullCoverLoading.value = false;
-  }
-}, { immediate: true });
-
-watch(() => props.isExpanded, (isExpanded) => {
-  if (isExpanded) {
-    return;
-  }
-
-  bigCoverLoaded.value = false;
-  fullCoverLoading.value = false;
-  reflectionCoverUrl.value = '';
-});
-
-watch([currentSongPath, displayedLocalCoverUrl, () => props.isExpanded], ([path, localUrl, isExpanded]) => {
+watch([currentSongPath, displayedLocalCoverUrl, isExpandedRef], ([path, localUrl, expanded]) => {
   if (!path) {
     reflectionCoverUrl.value = '';
     return;
   }
 
-  if (!isExpanded) {
+  if (!expanded) {
     reflectionCoverUrl.value = '';
     return;
   }
@@ -146,20 +48,6 @@ watch([currentSongPath, displayedLocalCoverUrl, () => props.isExpanded], ([path,
   reflectionCoverUrl.value = nextReflectionUrl;
 }, { immediate: true });
 
-const onBigCoverLoad = () => {
-  bigCoverLoaded.value = true;
-  fullCoverLoading.value = false;
-};
-
-const onBigCoverError = () => {
-  bigCoverLoaded.value = false;
-  fullCoverLoading.value = false;
-};
-
-const onLocalCoverError = () => {
-  localCoverLoadFailed.value = true;
-};
-
 const detailCoverRef = ref<HTMLElement | null>(null);
 defineExpose({ detailCoverRef });
 
@@ -171,7 +59,7 @@ const handleCoverClick = (event: MouseEvent) => {
 
 <template>
   <div class="pointer-events-none">
-    
+
     <div
       ref="detailCoverRef"
       class="absolute aspect-square transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] z-[70] will-change-transform"

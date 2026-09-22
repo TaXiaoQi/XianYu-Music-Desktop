@@ -19,6 +19,7 @@ import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
 const LyricsView = defineAsyncComponent(() => import('./LyricsView.vue'));
 const PlayerDetailBackground = defineAsyncComponent(() => import('./PlayerDetailBackground.vue'));
 const PlayerDetailLeft = defineAsyncComponent(() => import('./PlayerDetailLeft.vue'));
+const PlayerDetailVinyl = defineAsyncComponent(() => import('./PlayerDetailVinyl.vue'));
 const QueueList = defineAsyncComponent(() => import('./QueueList.vue'));
 const PlayerDetailContextMenu = defineAsyncComponent(() => import('../overlays/PlayerDetailContextMenu.vue'));
 const LyricsReplacementModal = defineAsyncComponent(() => import('../overlays/LyricsReplacementModal.vue'));
@@ -380,6 +381,11 @@ const metaInfo = computed(() => {
   ].filter((item): item is { label: string; value: string } => Boolean(item?.value));
 });
 
+// 播放详情页皮肤：黑胶唱片（电影模式/背景视频优先级更高，视频模式下不启用黑胶）
+const useVinylSkin = computed(() =>
+  settings.value.theme.playerDetailStyle === 'vinyl' && !isMovieMode.value,
+);
+
 const contextMenuVisible = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
@@ -579,7 +585,13 @@ const toggleVideoBackground = async () => {
       </div>
 
       <PlayerDetailLeft
-        v-if="shouldRenderCover || shouldRenderHeavyContent"
+        v-if="!useVinylSkin && (shouldRenderCover || shouldRenderHeavyContent)"
+        :isExpanded="showPlayerDetail"
+        :coverHidden="coverHidden"
+        @toggle-cover="handleToggleCover"
+      />
+      <PlayerDetailVinyl
+        v-else-if="useVinylSkin && (shouldRenderCover || shouldRenderHeavyContent)"
         :isExpanded="showPlayerDetail"
         :coverHidden="coverHidden"
         @toggle-cover="handleToggleCover"

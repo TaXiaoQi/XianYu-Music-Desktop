@@ -63,6 +63,12 @@ export function useSettingsThemeControls() {
       patchTheme({ playerDetailCoverBehavior: value });
     },
   });
+  const playerDetailStyle = computed({
+    get: () => theme.value.playerDetailStyle,
+    set: (value: 'classic' | 'vinyl') => {
+      patchTheme({ playerDetailStyle: value });
+    },
+  });
 
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
@@ -221,6 +227,10 @@ export function useSettingsThemeControls() {
     playerDetailCoverBehavior.value = value;
   };
 
+  const setPlayerDetailStyle = (value: 'classic' | 'vinyl') => {
+    playerDetailStyle.value = value;
+  };
+
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -239,6 +249,7 @@ export function useSettingsThemeControls() {
     useGlassSwitch,
     showLeaderboard,
     playerDetailCoverBehavior,
+    playerDetailStyle,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -266,5 +277,6 @@ export function useSettingsThemeControls() {
     setUseCustomTrayMenu,
     setShowLeaderboard,
     setPlayerDetailCoverBehavior,
+    setPlayerDetailStyle,
   };
 }
