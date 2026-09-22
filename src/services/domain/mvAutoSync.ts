@@ -5,6 +5,10 @@ const ENVELOPE_WINDOW = 1024;
 const MAX_LAG_SEC = 15;
 const MAX_ANALYSIS_SEC = 110;
 const MIN_CONFIDENCE = 0.2;
+// 局部滑动匹配（容忍 MV 片头/花絮）参数，对齐移动端 Rust 实现
+const LOCAL_MIN_CONFIDENCE = 0.5;
+const LOCAL_DEFAULT_WINDOW_SEC = 15;
+const LOCAL_MIN_OVERLAP_FRAMES = 48;
 
 export interface MvSyncEstimate {
   offsetSec: number;
@@ -115,6 +119,51 @@ export function isTrustworthyEstimate(estimate: MvSyncEstimate | null): estimate
   return Number.isFinite(estimate.offsetSec);
 }
 
+/**
+ * 局部滑动匹配：取歌曲在 [songPosSec, songPosSec+windowSec] 的一小段窗，在整个 MV
+ * 包络上逐帧滑窗求 Pearson 相关，返回最佳对齐。比全局互相关对「MV 加了片头/花絮」
+ * 更鲁棒——只要这段歌在 MV 里出现过就能对准，不会像全局那样被整段不匹配的开头带偏。
+ *
+ * 语义与全局一致：`offsetSec = mvPosSec - songPosSecActual`，即 `videoPos = audioPos + offset`。
+ */
+export function estimateEnvelopeLagLocal(
+  mvEnvelope: Float32Array,
+  songEnvelope: Float32Array,
+  songPosSec: number,
+  windowSec = LOCAL_DEFAULT_WINDOW_SEC,
+): MvSyncEstimate | null {
+  const hopSec = ENVELOPE_HOP / ANALYSIS_SAMPLE_RATE;
+  const winFrames = Math.max(LOCAL_MIN_OVERLAP_FRAMES, Math.round(windowSec / hopSec));
+  if (songEnvelope.length <= winFrames || mvEnvelope.length < winFrames) return null;
+
+  const songStartFrame = Math.max(0, Math.round(songPosSec / hopSec));
+  const songStart = Math.min(songStartFrame, songEnvelope.length - winFrames);
+  const songWin = zNormalize(songEnvelope.subarray(songStart, songStart + winFrames));
+
+  let bestStart = 0;
+  let bestScore = -Infinity;
+  let hasFinite = false;
+  for (let start = 0; start <= mvEnvelope.length - winFrames; start += 1) {
+    const slice = zNormalize(mvEnvelope.subarray(start, start + winFrames));
+    let dot = 0;
+    for (let i = 0; i < winFrames; i += 1) dot += songWin[i] * slice[i];
+    const score = dot / winFrames;
+    if (Number.isFinite(score) && score > bestScore) {
+      bestScore = score;
+      bestStart = start;
+      hasFinite = true;
+    }
+  }
+  if (!hasFinite) return null;
+  return { offsetSec: bestStart * hopSec - songStart * hopSec, confidence: bestScore };
+}
+
+/** 局部匹配是否可信：置信度达标即可，不限制偏移大小——片头造成的偏移可远超全局 ±15s。 */
+export function isTrustworthyEstimateLocal(estimate: MvSyncEstimate | null): estimate is MvSyncEstimate {
+  if (!estimate) return false;
+  return Number.isFinite(estimate.offsetSec) && estimate.confidence >= LOCAL_MIN_CONFIDENCE;
+}
+
 export async function decodeAnalysisSamples(bytes: ArrayBuffer): Promise<Float32Array | null> {
   const AudioCtx: typeof OfflineAudioContext | undefined =
     (globalThis as any).OfflineAudioContext ?? (globalThis as any).webkitOfflineAudioContext;
@@ -175,6 +224,53 @@ export async function analyzeMvAudioSync(
 
     const estimate = estimateEnvelopeLag(mvEnvelope, songEnvelope);
     return isTrustworthyEstimate(estimate) ? estimate : null;
+  } finally {
+    if (audioCachePath) {
+      void pluginApi.removeCachedBackgroundVideo(audioCachePath).catch(() => {});
+    }
+  }
+}
+
+/**
+ * 局部频谱对齐：以歌曲当前位置 [songPosSec] 为锚下载歌曲音频 + 读取 MV 缓存，
+ * 在整个 MV 上滑窗匹配。用于 MV 开启时对齐并接管音频（容忍片头/花絮）。
+ * 返回失败或低置信度时返回 null。
+ */
+export async function analyzeMvAudioSyncLocal(
+  mvAssetUrl: string,
+  audioHttpUrl: string,
+  songPosSec: number,
+  audioHeaders?: Record<string, string> | null,
+  windowSec = LOCAL_DEFAULT_WINDOW_SEC,
+): Promise<MvSyncEstimate | null> {
+  const { pluginApi } = await import('../tauri/pluginApi');
+  const { convertFileSrc } = await import('@tauri-apps/api/core');
+
+  let audioCachePath = '';
+  try {
+    audioCachePath = await pluginApi.downloadVideoToCache(
+      audioHttpUrl,
+      audioHeaders ?? undefined,
+    );
+    const [mvBytes, songBytes] = await Promise.all([
+      fetch(mvAssetUrl).then(response => {
+        if (!response.ok) throw new Error(`MV cache fetch HTTP ${response.status}`);
+        return response.arrayBuffer();
+      }),
+      fetch(convertFileSrc(audioCachePath)).then(response => {
+        if (!response.ok) throw new Error(`audio fetch HTTP ${response.status}`);
+        return response.arrayBuffer();
+      }),
+    ]);
+
+    const [mvEnvelope, songEnvelope] = await Promise.all([
+      envelopeFromBytes(mvBytes),
+      envelopeFromBytes(songBytes),
+    ]);
+    if (!mvEnvelope || !songEnvelope) return null;
+
+    const estimate = estimateEnvelopeLagLocal(mvEnvelope, songEnvelope, songPosSec, windowSec);
+    return isTrustworthyEstimateLocal(estimate) ? estimate : null;
   } finally {
     if (audioCachePath) {
       void pluginApi.removeCachedBackgroundVideo(audioCachePath).catch(() => {});
