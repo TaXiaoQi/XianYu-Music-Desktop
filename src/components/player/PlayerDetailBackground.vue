@@ -20,6 +20,9 @@ const {
   videoUrl: backgroundVideoUrl,
   syncOffsetSec: mvSyncOffsetSec,
   audioTakenOver: mvAudioTakenOver,
+  notifyPlayable: mvNotifyPlayable,
+  notifyVideoError: mvNotifyVideoError,
+  reportBuffered: mvReportBuffered,
 } = useBilibiliVideoBackground();
 const soundEffectStore = useSoundEffectStore();
 const playbackStore = usePlaybackStore();
@@ -258,9 +261,19 @@ const handleVideoLoaded = () => {
 
 const handleVideoError = () => {
   videoPlaybackFailed.value = true;
+  mvNotifyVideoError();
   // 视频出错导致 MV 无声时，还原歌曲音频，避免静音失声。
   if (mvAudioTakenOver.value) mvAudioTakenOver.value = false;
 };
+
+// 流式缓冲进度：相对当前播放位置的可播秒数（供底栏 title 显示）。
+const handleVideoProgress = () => {
+  const video = videoRef.value;
+  if (!video || !video.buffered.length) return;
+  mvReportBuffered(video.buffered.end(video.buffered.length - 1) - video.currentTime);
+};
+
+const handleVideoCanPlay = () => mvNotifyPlayable();
 
 onMounted(() => {
   window.addEventListener('resize', updateViewportArea);
@@ -298,6 +311,8 @@ onUnmounted(() => {
         playsinline
         preload="auto"
         @loadedmetadata="handleVideoLoaded"
+        @progress="handleVideoProgress"
+        @canplay="handleVideoCanPlay"
         @error="handleVideoError"
       ></video>
     </div>

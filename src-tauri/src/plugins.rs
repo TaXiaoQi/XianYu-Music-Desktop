@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tokio::io::AsyncWriteExt;
 
 fn format_reqwest_error(err: reqwest::Error) -> String {
@@ -658,6 +658,15 @@ pub async fn download_video_to_cache(
         .map_err(|error| error.to_string())?;
 
     let mut written = 0_u64;
+    // 总长度已知时向前端推送下载进度（百分比变化才发，避免事件风暴）。
+    let total = response.content_length();
+    let mut last_percent = 0_u64;
+    if total.is_some_and(|size| size > 0) {
+        let _ = app.emit(
+            "mv-download-progress",
+            serde_json::json!({ "url": url.as_str(), "percent": 0 }),
+        );
+    }
     let download_result: Result<(), String> = async {
         while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
             written = written.saturating_add(chunk.len() as u64);
@@ -667,6 +676,18 @@ pub async fn download_video_to_cache(
             file.write_all(&chunk)
                 .await
                 .map_err(|error| error.to_string())?;
+            if let Some(total) = total {
+                if total > 0 {
+                    let percent = written * 100 / total;
+                    if percent != last_percent {
+                        last_percent = percent;
+                        let _ = app.emit(
+                            "mv-download-progress",
+                            serde_json::json!({ "url": url.as_str(), "percent": percent }),
+                        );
+                    }
+                }
+            }
         }
         file.flush().await.map_err(|error| error.to_string())?;
         Ok(())

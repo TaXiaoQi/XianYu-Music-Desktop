@@ -1257,6 +1257,11 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: void;
   };
+  // ============ MV 流式代理（进在线播放流缓存池） ============
+  mv_proxy_url: {
+    payload: { url: string; headers?: Record<string, string> | null };
+    response: string;
+  };
   // ============ VST3/CLAP 原生插件宿主 ============
   plugin_host_scan_plugins: { payload: { dirs: string[]; disabledPaths?: string[] }; response: PluginHostScanEntry[] };
   plugin_host_get_rack: { payload: undefined; response: PluginHostRackConfig };

@@ -117,6 +117,7 @@ provide('footerContext', {
   mvActive: ref(false),
   mvLoading: ref(false),
   mvPhase: ref(''),
+  mvBufferedSec: ref(-1),
   toggleMv: async () => {},
   isMvVideoDownloading: ref(false),
   openShareDialog: () => {},

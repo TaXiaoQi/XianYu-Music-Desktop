@@ -493,12 +493,38 @@ fn url_hash(url: &str) -> String {
     hex::encode(&hasher.finalize()[..16])
 }
 
+/// 统一的流缓存 key（清洗 + hash），供 MV 代理等外部模块对齐注册表。
+pub fn stream_cache_key(url: &str) -> String {
+    url_hash(&sanitize_stream_url(url))
+}
+
+/// MV 等视频流缓存入口：跳过音频头部校验（webm/flv/m4s 非音频魔数），
+/// probe 也接受 video/* Content-Type。ekey/cek 一律无。
+pub fn start_streaming_download_video(
+    url: &str,
+    headers: Option<&std::collections::HashMap<String, String>>,
+    user_agent: Option<&str>,
+) -> Result<StreamingTempFileState, String> {
+    start_streaming_download_inner(url, headers, user_agent, None, None, true)
+}
+
 pub fn start_streaming_download(
     url: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
     ekey: Option<&str>,
     cek: Option<&str>,
+) -> Result<StreamingTempFileState, String> {
+    start_streaming_download_inner(url, headers, user_agent, ekey, cek, false)
+}
+
+fn start_streaming_download_inner(
+    url: &str,
+    headers: Option<&std::collections::HashMap<String, String>>,
+    user_agent: Option<&str>,
+    ekey: Option<&str>,
+    cek: Option<&str>,
+    allow_video: bool,
 ) -> Result<StreamingTempFileState, String> {
     let cleaned_url = sanitize_stream_url(url);
     let url = cleaned_url.as_str();
@@ -631,6 +657,7 @@ pub fn start_streaming_download(
                 dl_error,
                 dl_cenc_metadata,
                 dl_cenc_streaming,
+                allow_video,
             );
         }))
         .is_err();
@@ -1085,6 +1112,14 @@ fn is_audio_content_type(content_type: &str) -> bool {
         || ct.contains("x-mpegurl")
 }
 
+/// 视频（MV）流缓存放宽：video/* 视为有效媒体内容。
+fn is_media_content_type(content_type: &str, allow_video: bool) -> bool {
+    if allow_video && content_type.trim().to_lowercase().starts_with("video/") {
+        return true;
+    }
+    is_audio_content_type(content_type)
+}
+
 fn registrable_audio_domain(url: &str) -> Option<String> {
     let rest = url.split_once("://")?.1;
     let host = rest.split('/').next()?.split(':').next()?;
@@ -1110,6 +1145,7 @@ fn send_audio_request(
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
     range_start: Option<u64>,
+    allow_video: bool,
 ) -> Result<(reqwest::blocking::Response, String), String> {
     let with_range = |builder: reqwest::blocking::RequestBuilder| {
         if let Some(start) = range_start {
@@ -1149,7 +1185,7 @@ fn send_audio_request(
                                 .and_then(|v| v.to_str().ok())
                                 .unwrap_or("")
                                 .to_lowercase();
-                            if is_audio_content_type(&ct) {
+                            if is_media_content_type(&ct, allow_video) {
                                 return Ok((r, https_url));
                             }
                         }
@@ -1193,6 +1229,7 @@ fn download_thread(
     download_error: Arc<std::sync::Mutex<Option<String>>>,
     cenc_metadata: Arc<std::sync::Mutex<Option<crate::player::cenc::CencMetadata>>>,
     cenc_streaming: Arc<AtomicBool>,
+    allow_video: bool,
 ) {
     let fail_download = |reason: &str, bytes_written: u64| {
         eprintln!(
@@ -1238,6 +1275,7 @@ fn download_thread(
         headers,
         user_agent,
         (resume_from > 0).then_some(resume_from),
+        allow_video,
     ) {
         Ok((r, _)) => r,
         Err(e) => {
@@ -1275,7 +1313,7 @@ fn download_thread(
                     }
                 }
             }
-            match send_audio_request(&client, &real_url, headers, user_agent, None) {
+            match send_audio_request(&client, &real_url, headers, user_agent, None, allow_video) {
                 Ok((retry_resp, _)) if retry_resp.status().is_success() => {
                     let retry_ct = retry_resp
                         .headers()
@@ -1291,7 +1329,7 @@ fn download_thread(
                     {
                         let retry_body: String = retry_resp.text().unwrap_or_default();
                         if let Some((real_url2, _)) = extract_audio_info_from_text(&retry_body) {
-                            match send_audio_request(&client, &real_url2, headers, user_agent, None)
+                            match send_audio_request(&client, &real_url2, headers, user_agent, None, allow_video)
                             {
                                 Ok((resp2, _)) if resp2.status().is_success() => {
                                     let ct2 = resp2
@@ -1466,7 +1504,9 @@ fn download_thread(
     }
 
     let has_ekey = ekey.lock().map(|e| e.is_some()).unwrap_or(false);
-    if !has_ekey {
+    // 视频流（MV）跳过音频魔数校验：webm(EBML)/flv/m4s 均非音频头，
+    // 非媒体错误页已由 Content-Type 检查拦截。
+    if !has_ekey && !allow_video {
         if let Ok(mut verify_file) = File::open(&path) {
             let mut header = [0u8; 16];
             let header_len = verify_file.read(&mut header).unwrap_or(0);
@@ -1557,6 +1597,94 @@ pub fn clear_all() {
             mgr.current_size = 0;
         }
     }
+}
+
+/// MV 代理用：查询某 URL 的流缓存状态（与歌曲同池，key 需用 stream_cache_key 对齐）。
+pub struct MvCacheStatus {
+    pub exists: bool,
+    pub complete: bool,
+    pub failed: bool,
+    pub downloaded: u64,
+    /// 仅 complete 时为文件总大小，否则 0。
+    pub total: u64,
+}
+
+pub fn mv_cache_status(url: &str) -> MvCacheStatus {
+    let hash = stream_cache_key(url);
+    let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(entry) = mgr.entries.get(&hash) {
+        let complete = entry.download_complete.load(Ordering::Relaxed)
+            && !entry.download_failed.load(Ordering::Relaxed);
+        return MvCacheStatus {
+            exists: true,
+            complete,
+            failed: entry.download_failed.load(Ordering::Relaxed),
+            downloaded: entry.downloaded_bytes.load(Ordering::Relaxed),
+            total: if complete { entry.size } else { 0 },
+        };
+    }
+    MvCacheStatus {
+        exists: false,
+        complete: false,
+        failed: false,
+        downloaded: 0,
+        total: 0,
+    }
+}
+
+/// MV 代理用：读取已下载前缀内的 [offset, offset+len) 数据。
+/// 未缓冲到 / 条目已被淘汰时返回 Err（代理侧回退 upstream）。
+pub fn cache_read_range(url: &str, offset: u64, max_len: usize) -> Result<Vec<u8>, String> {
+    if max_len == 0 {
+        return Ok(Vec::new());
+    }
+    let hash = stream_cache_key(url);
+    let (path, readable) = {
+        let mut mgr = cache().lock().map_err(|e| e.to_string())?;
+        let entry = mgr.entries.get_mut(&hash).ok_or("缓存不存在")?;
+        if entry.download_failed.load(Ordering::Relaxed) {
+            return Err("缓存下载失败".to_string());
+        }
+        let downloaded = entry.downloaded_bytes.load(Ordering::Relaxed);
+        if offset >= downloaded {
+            return Err("读取范围超出已缓冲数据".to_string());
+        }
+        entry.last_accessed = SystemTime::now();
+        (entry.path.clone(), downloaded - offset)
+    };
+    let want = (max_len as u64).min(readable) as usize;
+    let mut file = File::open(&path).map_err(|e| format!("打开缓存文件失败: {}", e))?;
+    use std::io::Read as _;
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|e| format!("定位缓存文件失败: {}", e))?;
+    let mut buf = vec![0u8; want];
+    file.read_exact(&mut buf)
+        .map_err(|e| format!("读取缓存数据失败: {}", e))?;
+    Ok(buf)
+}
+
+/// MV 代理用：缓存已完整下载时打开文件供流式伺服（同时刷新 LRU 访问时间）。
+pub struct CompletedCacheFile {
+    pub file: File,
+    pub size: u64,
+}
+
+pub fn open_completed_cache(url: &str) -> Result<CompletedCacheFile, String> {
+    let hash = stream_cache_key(url);
+    let (path, size) = {
+        let mut mgr = cache().lock().map_err(|e| e.to_string())?;
+        let entry = mgr.entries.get_mut(&hash).ok_or("缓存不存在")?;
+        if !entry.download_complete.load(Ordering::Relaxed)
+            || entry.download_failed.load(Ordering::Relaxed)
+            || entry.size == 0
+        {
+            return Err("缓存未下载完成".to_string());
+        }
+        entry.last_accessed = SystemTime::now();
+        (entry.path.clone(), entry.size)
+    };
+    let file = File::open(&path).map_err(|e| format!("打开缓存文件失败: {}", e))?;
+    Ok(CompletedCacheFile { file, size })
 }
 
 #[cfg(test)]

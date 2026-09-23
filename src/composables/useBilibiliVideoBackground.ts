@@ -1,5 +1,4 @@
 import { computed, ref } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
 
 import {
   getStoredPlugins,
@@ -17,11 +16,12 @@ import { useSettings } from '../features/settings/useSettings';
 import type { PluginSearchResult, Song } from '../types';
 
 const videoUrl = ref('');
-const cachedVideoPath = ref('');
 const sourceSongPath = ref('');
 const loading = ref(false);
-// 加载阶段：'resolve'=解析地址，'download'=下载视频（与移动端 phase 对齐）。
-const phase = ref<'' | 'resolve' | 'download'>('');
+// 加载阶段：'resolve'=解析地址，'stream'=流式缓冲中（video 可播时置 ''，与移动端 phase 对齐）。
+const phase = ref<'' | 'resolve' | 'stream'>('');
+// 流式缓冲进度（video 元素 buffered 相对当前播放位置的秒数）；-1 = 未知。
+const bufferedSec = ref(-1);
 const error = ref('');
 const availableQualities = ref<PluginVideoQuality[]>([]);
 const activeQuality = ref('');
@@ -469,11 +469,6 @@ function withBilibiliHeaders(
   return merged;
 }
 
-async function removeCachedFile(path: string) {
-  if (!path) return;
-  await pluginApi.removeCachedBackgroundVideo(path).catch(() => {});
-}
-
 async function resolveMvVideoSource(song: Song, quality: string): Promise<{
   videoSource: PluginVideoSource;
   headers: Record<string, string> | undefined;
@@ -559,20 +554,19 @@ export function useBilibiliVideoBackground() {
 
   const stop = async () => {
     requestVersion += 1;
-    const previousPath = cachedVideoPath.value;
     videoUrl.value = '';
-    cachedVideoPath.value = '';
     sourceSongPath.value = '';
     loading.value = false;
     error.value = '';
     phase.value = '';
+    bufferedSec.value = -1;
     availableQualities.value = [];
     activeQuality.value = '';
     syncOffsetSec.value = 0;
     audioTakenOver.value = false;
     lastResolvedSource.value = null;
     activeSong = null;
-    await removeCachedFile(previousPath);
+    // 缓存交由 Rust 流缓存池统一管理（LRU 上限/清理），不删除——重开秒缓冲。
   };
 
   const start = async (song: Song, quality?: string) => {
@@ -582,17 +576,15 @@ export function useBilibiliVideoBackground() {
     }
     const targetQuality = quality?.trim() || preferredMvQuality();
 
-    const previousPath = cachedVideoPath.value;
     const requestId = ++requestVersion;
     // 开关/切歌/切画质重开时，若已接管音频先还原歌曲通道。
     if (audioTakenOver.value) audioTakenOver.value = false;
     videoUrl.value = '';
-    cachedVideoPath.value = '';
     sourceSongPath.value = song.path;
     loading.value = true;
     phase.value = 'resolve';
+    bufferedSec.value = -1;
     error.value = '';
-    void removeCachedFile(previousPath);
 
     activeSong = song;
 
@@ -613,36 +605,33 @@ export function useBilibiliVideoBackground() {
     }
     if (requestId !== requestVersion) return false;
 
-    phase.value = 'download';
+    // 流式：注册到 Rust 流缓存池并取本地代理 URL（候选逐个回退）。
     const candidates = [videoSource.url, ...(videoSource.backupUrls || [])];
-    let downloadedPath = '';
-    let lastDownloadError: unknown = null;
+    let proxyUrl = '';
+    let lastStreamError: unknown = null;
     for (const candidate of candidates) {
       try {
-        downloadedPath = await pluginApi.downloadVideoToCache(candidate, headers);
-        if (downloadedPath) break;
-      } catch (downloadError) {
-        lastDownloadError = downloadError;
+        proxyUrl = await pluginApi.mvProxyUrl(candidate, headers);
+        if (proxyUrl) break;
+      } catch (streamError) {
+        lastStreamError = streamError;
       }
     }
 
-    if (requestId !== requestVersion) {
-      await removeCachedFile(downloadedPath);
-      return false;
-    }
-    if (!downloadedPath) {
+    if (requestId !== requestVersion) return false;
+    if (!proxyUrl) {
       loading.value = false;
       phase.value = '';
+      bufferedSec.value = -1;
       sourceSongPath.value = '';
-      const message = lastDownloadError instanceof Error ? lastDownloadError.message : String(lastDownloadError || '');
+      const message = lastStreamError instanceof Error ? lastStreamError.message : String(lastStreamError || '');
       error.value = message ? shortMvError(message) : '';
       throw new Error(message ? `MV 加载失败：${shortMvError(message)}` : 'MV 加载失败');
     }
 
-    cachedVideoPath.value = downloadedPath;
-    videoUrl.value = convertFileSrc(downloadedPath);
-    loading.value = false;
-    phase.value = '';
+    // video 元素可播后由 notifyPlayable() 置 loading=false / phase=''。
+    videoUrl.value = proxyUrl;
+    phase.value = 'stream';
     lastResolvedSource.value = {
       url: videoSource.url,
       headers,
@@ -661,6 +650,27 @@ export function useBilibiliVideoBackground() {
     syncOffsetSec.value = syncOffsetCache.get(song.path) ?? 0;
     void runSyncAnalysis(song, isBili, requestId);
     return true;
+  };
+
+  // video 元素可播：缓冲阶段结束，解除 loading。
+  const notifyPlayable = () => {
+    if (phase.value !== 'stream') return;
+    loading.value = false;
+    phase.value = '';
+    bufferedSec.value = 0;
+  };
+
+  // video 元素 error：解除 loading，避免 title 卡在「缓冲中」。
+  const notifyVideoError = () => {
+    if (!phase.value) return;
+    loading.value = false;
+    phase.value = '';
+    bufferedSec.value = -1;
+  };
+
+  // video 元素 @progress：上报相对当前播放位置的可播秒数。
+  const reportBuffered = (sec: number) => {
+    bufferedSec.value = Number.isFinite(sec) ? Math.max(0, Math.round(sec)) : -1;
   };
 
   const setQuality = async (qualityKey: string) => {
@@ -701,6 +711,7 @@ export function useBilibiliVideoBackground() {
     requested,
     loading,
     phase,
+    bufferedSec,
     error,
     videoUrl,
     sourceSongPath,
@@ -714,5 +725,8 @@ export function useBilibiliVideoBackground() {
     toggle,
     setQuality,
     resolveDownloadSource,
+    notifyPlayable,
+    notifyVideoError,
+    reportBuffered,
   };
 }

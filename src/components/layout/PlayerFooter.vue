@@ -353,6 +353,8 @@ const wrapToggleComment = () => {
 const videoBackground = useBilibiliVideoBackground();
 const mvActive = videoBackground.requested;
 const mvLoading = videoBackground.loading;
+const mvPhase = videoBackground.phase;
+const mvBufferedSec = videoBackground.bufferedSec;
 const mvVideoActive = videoBackground.active;
 const mvSupport = supportsMusicVideo;
 const { showToast } = useToast();
@@ -1155,7 +1157,8 @@ provide('footerContext', {
   mvSupport,
   mvActive,
   mvLoading,
-  mvPhase: videoBackground.phase,
+  mvPhase,
+  mvBufferedSec,
   toggleMv,
   isMvVideoDownloading,
   openShareDialog,
