@@ -6,11 +6,38 @@
  * - 几何完全由下方 TONEARM_PARAMS 参数化（1 unit = 0.001 × 唱片边长），
  *   数值来自可视化调参面板实调结果（面板已移除，如需再调可临时恢复）。
  */
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   isPlaying: boolean;
-}>();
+  /** 当前歌曲标识：变化时播放一次抬针→落针动画（切歌动作） */
+  songKey?: string;
+}>(), {
+  songKey: '',
+});
+
+/** 切歌动作中的抬针状态 */
+const isLifting = ref(false);
+let liftTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(() => props.songKey, (next, prev) => {
+  // 首次挂载不算切歌
+  if (!prev || next === prev) return;
+
+  isLifting.value = true;
+  if (liftTimer) clearTimeout(liftTimer);
+  liftTimer = setTimeout(() => {
+    isLifting.value = false;
+    liftTimer = null;
+  }, 760);
+});
+
+onBeforeUnmount(() => {
+  if (liftTimer) {
+    clearTimeout(liftTimer);
+    liftTimer = null;
+  }
+});
 
 // 实调固化的几何参数（坐标系：viewBox 400×460，容器 40%×46%，1 unit = 0.001S）
 const TONEARM_PARAMS = {
@@ -66,6 +93,11 @@ const headLeft = pct(params.tipX, VIEW_W);
 const headTop = pct(params.tipY, VIEW_H);
 
 const transformOrigin = `${pivotLeft} ${pivotTop}`;
+
+/** 抬针 = 暂停态或切歌动作中 */
+const rotationDeg = computed(() => (
+  isLifting.value || !props.isPlaying ? params.upDeg : params.downDeg
+));
 </script>
 
 <template>
@@ -79,7 +111,7 @@ const transformOrigin = `${pivotLeft} ${pivotTop}`;
         width: '40%',
         height: '46%',
         transformOrigin,
-        transform: `rotate(${isPlaying ? params.downDeg : params.upDeg}deg)`,
+        transform: `rotate(${rotationDeg}deg)`,
       }"
     >
       <!-- 枢轴圆钮（多层金属 + 高光点） -->
