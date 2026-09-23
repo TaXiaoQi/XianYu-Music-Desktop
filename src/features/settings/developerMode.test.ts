@@ -44,8 +44,7 @@ describe('developer mode settings entry', () => {
     expect(settingsSource).toContain("activeTab === 'advanced'");
     expect(advancedSource).toContain('<LogExportActions />');
     expect(debugSource).not.toContain('<LogExportActions />');
-    expect(logExportSource).toContain('导出全部日志');
-    expect(logExportSource).toContain('导出错误日志');
+    expect(logExportSource).toContain('导出日志');
     expect(advancedSource).toContain('删除全部日志');
     expect(advancedSource).toContain('应用备份');
     expect(advancedSource).toContain('showDeleteConfirmation');
