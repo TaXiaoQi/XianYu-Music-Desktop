@@ -67,6 +67,7 @@ const ctx = inject<{
   mvSupport: (song: Song | null | undefined) => boolean;
   mvActive: Ref<boolean>;
   mvLoading: Ref<boolean>;
+  mvPhase: Ref<'' | 'resolve' | 'download'>;
   toggleMv: () => Promise<void>;
   isMvVideoDownloading: Ref<boolean>;
   openShareDialog: () => void;
@@ -130,6 +131,7 @@ const {
   mvSupport,
   mvActive,
   mvLoading,
+  mvPhase,
   toggleMv,
   isMvVideoDownloading,
   openShareDialog,
@@ -583,7 +585,7 @@ watch(
       :class="mvActive || mvLoading
         ? 'text-[#EC4141] bg-[#EC4141]/10'
         : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-      :title="mvActive ? '关闭 MV' : (mvLoading ? 'MV 加载中…' : '开启 MV')"
+      :title="mvActive ? '关闭 MV' : (mvLoading ? (mvPhase === 'download' ? 'MV 下载中…' : 'MV 解析中…') : '开启 MV')"
     >
       <FooterControlIcon item-key="mv" :class="mvLoading ? 'h-4 w-4 animate-pulse' : 'h-4 w-4'" />
     </button>

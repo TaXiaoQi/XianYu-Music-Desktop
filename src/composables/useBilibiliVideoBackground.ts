@@ -20,6 +20,8 @@ const videoUrl = ref('');
 const cachedVideoPath = ref('');
 const sourceSongPath = ref('');
 const loading = ref(false);
+// 加载阶段：'resolve'=解析地址，'download'=下载视频（与移动端 phase 对齐）。
+const phase = ref<'' | 'resolve' | 'download'>('');
 const error = ref('');
 const availableQualities = ref<PluginVideoQuality[]>([]);
 const activeQuality = ref('');
@@ -76,6 +78,22 @@ function isMusicVideoSong(song: Song | null | undefined): boolean {
   return !!song.plugin_id || !!nestedValue(song.rawData, 'pluginId');
 }
 
+/// 把初始化/下载异常压成一句短原因（与移动端 _shortMvError 一致）。
+export function shortMvError(raw: string): string {
+  const s = raw.toLowerCase();
+  if (s.includes('timeout') || raw.includes('超时')) return '网络超时';
+  if (s.includes('403') || s.includes('forbidden')) return '链接无权限（403）';
+  if (s.includes('404') || s.includes('not found')) return '链接已失效（404）';
+  if (s.includes('network') || s.includes('socket') || raw.includes('连接')) {
+    return '网络连接失败';
+  }
+  if (s.includes('codec') || s.includes('format') || s.includes('decoder')) {
+    return '画面格式不支持';
+  }
+  const t = raw.trim();
+  return t.length > 24 ? `${t.slice(0, 24)}…` : t;
+}
+
 function mergedPluginHeaders(videoSource: PluginVideoSource): Record<string, string> | undefined {
   const headers = { ...(videoSource.headers || {}) };
   if (videoSource.userAgent && !Object.keys(headers).some(key => key.toLowerCase() === 'user-agent')) {
@@ -84,13 +102,69 @@ function mergedPluginHeaders(videoSource: PluginVideoSource): Record<string, str
   return Object.keys(headers).length ? headers : undefined;
 }
 
+/// 歌曲的 MV 可用性探测缓存（pluginId|path → 是否真能解析出 MV）。
+/// 插件机制下有无 MV 只有解析那一刻才知道；起播后静默探测一次，
+/// 结果决定 MV 入口显隐（会话级，刷新后清空重探）。
+const mvProbeResults = new Map<string, boolean>();
+const mvProbeVersion = ref(0);
+
+function mvProbeKey(song: Song): string {
+  const pluginId = song.plugin_id || String(nestedValue(song.rawData, 'pluginId') || '');
+  if (!pluginId) return '';
+  return `${pluginId}|${song.path}`;
+}
+
+/// 起播后静默探测：这首歌的插件是否真能解析出 MV。
+/// 「插件明确无结果」写 false；网络/鉴权等异常不写缓存（下次重探），
+/// 避免瞬时故障造成假阴性把有 MV 的歌错误隐藏。
+export async function probeMvFor(song: Song): Promise<void> {
+  const key = mvProbeKey(song);
+  if (!key || mvProbeResults.has(key)) return;
+  try {
+    const { videoSource } = await resolveMvVideoSource(song, preferredMvQuality());
+    mvProbeResults.set(key, !!videoSource?.url);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e || '');
+    if (msg.includes('均无结果') || msg.includes('无 MV') || msg.includes('不支持')) {
+      mvProbeResults.set(key, false);
+    }
+  }
+  mvProbeVersion.value++;
+}
+
+/// 队列批量探测：逐个错开，避让音质预探测带宽。
+export async function probeQueueMvs(songs: (Song | null | undefined)[]): Promise<void> {
+  let first = true;
+  for (const s of songs) {
+    if (!s) continue;
+    const key = mvProbeKey(s);
+    if (!key || mvProbeResults.has(key)) continue;
+    if (!first) await new Promise(r => setTimeout(r, 900));
+    first = false;
+    await probeMvFor(s);
+  }
+}
+
 export function supportsMusicVideo(song: Song | null | undefined): boolean {
   if (!isMusicVideoSong(song)) return false;
-  if (isBilibiliPluginSong(song)) return true;
-  const source = getStoredPlugins().find(
-    plugin => plugin.id === (song!.plugin_id || String(nestedValue(song!.rawData, 'pluginId') || '')),
-  );
-  return !!source && source.format !== 'lx';
+  // 只认真实解析结论：探测确认可解析才显示入口。
+  // 未探测到结果的歌先不显示（起播批次探测完成后有 MV 的会自动出现），
+  // 避免任何静态字段猜测造成「有 MV 的不显示、显示的没有 MV」。
+  const key = mvProbeKey(song!);
+  if (!key) return false;
+  void mvProbeVersion.value; // 建立响应依赖：探测完成后入口自动刷新
+  return mvProbeResults.get(key) === true;
+}
+
+/// 探测结论三态：true/false=已探测，undefined=尚未探测。
+/// MV 开启中切歌用这个判断：只有「明确无 MV」才停 MV，未探测的交给
+/// start 内部解析自行验证，避免探测未完成时误停正在播放的 MV。
+export function mvProbeVerdict(song: Song | null | undefined): boolean | undefined {
+  if (!isMusicVideoSong(song)) return false;
+  const key = mvProbeKey(song!);
+  if (!key) return false;
+  void mvProbeVersion.value;
+  return mvProbeResults.get(key);
 }
 
 function nestedValue(value: unknown, key: string): unknown {
@@ -469,6 +543,7 @@ export function useBilibiliVideoBackground() {
     sourceSongPath.value = '';
     loading.value = false;
     error.value = '';
+    phase.value = '';
     availableQualities.value = [];
     activeQuality.value = '';
     syncOffsetSec.value = 0;
@@ -493,6 +568,7 @@ export function useBilibiliVideoBackground() {
     cachedVideoPath.value = '';
     sourceSongPath.value = song.path;
     loading.value = true;
+    phase.value = 'resolve';
     error.value = '';
     void removeCachedFile(previousPath);
 
@@ -505,15 +581,17 @@ export function useBilibiliVideoBackground() {
     } catch (resolutionError) {
       if (requestId === requestVersion) {
         loading.value = false;
+        phase.value = '';
         sourceSongPath.value = '';
         error.value = resolutionError instanceof Error
-          ? resolutionError.message
+          ? shortMvError(resolutionError.message)
           : String(resolutionError);
       }
       throw resolutionError;
     }
     if (requestId !== requestVersion) return false;
 
+    phase.value = 'download';
     const candidates = [videoSource.url, ...(videoSource.backupUrls || [])];
     let downloadedPath = '';
     let lastDownloadError: unknown = null;
@@ -532,15 +610,17 @@ export function useBilibiliVideoBackground() {
     }
     if (!downloadedPath) {
       loading.value = false;
+      phase.value = '';
       sourceSongPath.value = '';
       const message = lastDownloadError instanceof Error ? lastDownloadError.message : String(lastDownloadError || '');
-      error.value = message;
-      throw new Error(message ? `MV 加载失败：${message}` : 'MV 加载失败');
+      error.value = message ? shortMvError(message) : '';
+      throw new Error(message ? `MV 加载失败：${shortMvError(message)}` : 'MV 加载失败');
     }
 
     cachedVideoPath.value = downloadedPath;
     videoUrl.value = convertFileSrc(downloadedPath);
     loading.value = false;
+    phase.value = '';
     lastResolvedSource.value = {
       url: videoSource.url,
       headers,
@@ -598,6 +678,7 @@ export function useBilibiliVideoBackground() {
     active,
     requested,
     loading,
+    phase,
     error,
     videoUrl,
     sourceSongPath,

@@ -24,7 +24,7 @@ import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useRenderingPower } from '../../composables/renderingPower';
-import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
+import { useBilibiliVideoBackground, supportsMusicVideo, probeMvFor, probeQueueMvs, mvProbeVerdict } from '../../composables/useBilibiliVideoBackground';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSettingsStore } from '../../features/settings/store';
@@ -457,9 +457,24 @@ watch(
       void videoBackground.stop();
       return;
     }
+    // 起播/切歌后静默探测当前歌与队列后续 4 首的 MV 可用性
+    // （真实解析结论决定 MV 入口显隐，与移动端一致）。
+    const cur = currentSong.value;
+    if (cur) {
+      void probeMvFor(cur);
+      const q = playbackStore.playQueue || [];
+      const idx = q.findIndex((s: Song) => s.path === cur.path);
+      if (idx >= 0 && q.length > 1 && playMode.value !== 1) {
+        const upcoming: Song[] = [];
+        for (let k = 1; k <= 4; k++) upcoming.push(q[(idx + k) % q.length]);
+        void probeQueueMvs(upcoming);
+      }
+    }
     if (!videoBackground.requested.value) return;
     const song = currentSong.value!;
-    if (!supportsMusicVideo(song)) {
+    // MV 开启中切歌：只有「探测明确无 MV」才停；未探测的交给 start 内部
+    // 解析自行验证，避免探测未完成时误停正在播放的 MV。
+    if (mvProbeVerdict(song) === false) {
       void videoBackground.stop();
       return;
     }
@@ -1140,6 +1155,7 @@ provide('footerContext', {
   mvSupport,
   mvActive,
   mvLoading,
+  mvPhase: videoBackground.phase,
   toggleMv,
   isMvVideoDownloading,
   openShareDialog,
