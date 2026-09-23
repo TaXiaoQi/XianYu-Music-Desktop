@@ -89,7 +89,6 @@ const handleCoverClick = (event: MouseEvent) => {
         />
         <VinylTonearm
           :is-playing="isPlaying"
-          :accent="accentColor"
         />
       </template>
       <!-- 收起态（底栏小封面）保持普通缩略图 -->
