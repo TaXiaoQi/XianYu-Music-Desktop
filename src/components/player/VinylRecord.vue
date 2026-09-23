@@ -82,6 +82,8 @@ onBeforeUnmount(() => {
       <div class="vinyl-sheen absolute inset-0 rounded-full" />
       <!-- 第二层细密沟槽 -->
       <div class="vinyl-grooves absolute inset-0 rounded-full" />
+      <!-- 第三层宽距深沟（增强沟槽立体感） -->
+      <div class="vinyl-grooves-deep absolute inset-0 rounded-full" />
 
       <!-- 中心标签（专辑封面） -->
       <div class="vinyl-label absolute left-1/2 top-1/2 overflow-hidden rounded-full">
@@ -102,11 +104,20 @@ onBeforeUnmount(() => {
         </div>
         <!-- 封面光泽 -->
         <div class="vinyl-label-sheen absolute inset-0 rounded-full" />
+        <!-- 标签外圈压痕（环境光遮蔽） -->
+        <div class="vinyl-label-ao absolute inset-0 rounded-full" />
       </div>
 
       <!-- 中心孔 -->
       <div class="vinyl-spindle absolute left-1/2 top-1/2 rounded-full" />
     </div>
+
+    <!-- 固定光源各向异性反光（不随唱片旋转，沟槽转动时产生真实流动光泽） -->
+    <div class="vinyl-light-sweep pointer-events-none absolute inset-0 rounded-full" />
+    <!-- 边缘轮辉（rim light）：外圈细亮环 + 主题色环境反射 -->
+    <div class="vinyl-rim-light pointer-events-none absolute inset-0 rounded-full" />
+    <!-- 环境色反射（左上冷调 / 右下暖调） -->
+    <div class="vinyl-ambient pointer-events-none absolute inset-0 rounded-full" />
 
     <!-- 顶部高光（固定不旋转） -->
     <div class="vinyl-top-highlight pointer-events-none absolute inset-0 rounded-full" />
@@ -165,6 +176,17 @@ onBeforeUnmount(() => {
   );
 }
 
+/* 第三层宽距深沟：偶发粗沟槽，增强盘面立体层次 */
+.vinyl-grooves-deep {
+  background: repeating-radial-gradient(circle at 50% 50%,
+    transparent 0px,
+    transparent 22px,
+    rgba(0, 0, 0, 0.32) 23px,
+    rgba(255, 255, 255, 0.03) 23.6px,
+    transparent 24.5px
+  );
+}
+
 .vinyl-label {
   width: 52%;
   height: 52%;
@@ -174,6 +196,14 @@ onBeforeUnmount(() => {
     0 0 0 4px v-bind('props.accent + "55"'),
     0 0 30px v-bind('props.accent + "66"'),
     inset 0 0 20px rgba(0, 0, 0, 0.4);
+}
+
+/* 标签外圈压痕：内圈环境光遮蔽 + 顶部受光 */
+.vinyl-label-ao {
+  box-shadow:
+    inset 0 0 0 3px rgba(0, 0, 0, 0.35),
+    inset 0 10px 18px rgba(255, 255, 255, 0.12),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.3);
 }
 
 .vinyl-label-sheen {
@@ -204,6 +234,39 @@ onBeforeUnmount(() => {
     transparent 70%,
     rgba(255, 255, 255, 0.03) 100%
   );
+  mix-blend-mode: screen;
+}
+
+/* 固定光源各向异性反光：两道楔形亮带斜跨盘面（沟槽转动时呈现流动光泽） */
+.vinyl-light-sweep {
+  background: conic-gradient(
+    from 315deg at 50% 50%,
+    transparent 0deg,
+    rgba(255, 255, 255, 0.09) 14deg,
+    rgba(255, 255, 255, 0.02) 30deg,
+    transparent 46deg,
+    transparent 158deg,
+    rgba(255, 255, 255, 0.06) 172deg,
+    rgba(255, 255, 255, 0.015) 190deg,
+    transparent 206deg,
+    transparent 360deg
+  );
+  mix-blend-mode: screen;
+}
+
+/* 边缘轮辉：外圈细亮环 + 主题色氛围边光 */
+.vinyl-rim-light {
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.22),
+    inset 0 0 12px rgba(255, 255, 255, 0.06),
+    0 0 24px v-bind('props.accent + "30"');
+}
+
+/* 环境色反射：左上冷调 / 右下主题色暖调 */
+.vinyl-ambient {
+  background:
+    radial-gradient(circle at 18% 14%, rgba(160, 190, 255, 0.08) 0%, transparent 42%),
+    radial-gradient(circle at 84% 88%, v-bind('props.accent + "14"') 0%, transparent 40%);
   mix-blend-mode: screen;
 }
 </style>
