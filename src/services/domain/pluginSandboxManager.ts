@@ -191,8 +191,23 @@ function toCloneableArgs(args: any[]): any[] {
 // ==================== 插件鉴权失效熔断 ====================
 const _authBannedUntil = new Map<string, number>();
 const _authFailStreak = new Map<string, number>();
-const AUTH_BAN_TTL_MS = 5 * 60 * 1000;
-const AUTH_BAN_THRESHOLD = 2;
+const AUTH_BAN_TTL_BASE_MS = 30 * 1000;
+const AUTH_BAN_TTL_MAX_MS = 5 * 60 * 1000;
+const AUTH_BAN_THRESHOLD = 5;
+
+// 指数退避：30s → 1m → 2m → … → 5m 封顶。偶发鉴权抖动快速恢复，
+// 持续失效时逐级拉长挡连环刷（与移动端 _banTtlFor 一致）。
+function authBanTtlMs(streak: number): number {
+  const doublings = Math.min(Math.max(streak - AUTH_BAN_THRESHOLD, 0), 8);
+  const ms = AUTH_BAN_TTL_BASE_MS * (1 << doublings);
+  return ms >= AUTH_BAN_TTL_MAX_MS ? AUTH_BAN_TTL_MAX_MS : ms;
+}
+
+function authBanWaitLabel(until: number): string {
+  const secs = Math.min(Math.max(Math.round((until - Date.now()) / 1000), 1), 3600);
+  if (secs < 60) return `${secs} 秒`;
+  return `${Math.ceil(secs / 60)} 分钟`;
+}
 
 // 三端统一鉴权失效关键词（同 downloadQualityProbe.AUTH_FAIL_RE / 移动端 isAuthFailureMessage）
 function isAuthError(msg: string): boolean {
@@ -211,11 +226,15 @@ export function isPluginAuthBanned(pluginId: string): boolean {
 }
 
 function markAuthFailure(pluginId: string, msg: string): void {
+  // 熔断期间被挡住的重试会再次走到这里（错误同样含鉴权关键词），
+  // 不刷新熔断截止时间，否则「一直点播放就永远熔断」。
+  if (isPluginAuthBanned(pluginId)) return;
   const streak = (_authFailStreak.get(pluginId) ?? 0) + 1;
   _authFailStreak.set(pluginId, streak);
   if (streak >= AUTH_BAN_THRESHOLD) {
-    _authBannedUntil.set(pluginId, Date.now() + AUTH_BAN_TTL_MS);
-    console.warn(`[plugin] ${pluginId} 鉴权连续失败 ${streak} 次，熔断 5 分钟: ${msg}`);
+    const until = Date.now() + authBanTtlMs(streak);
+    _authBannedUntil.set(pluginId, until);
+    console.warn(`[plugin] ${pluginId} 鉴权连续失败 ${streak} 次，熔断 ${authBanWaitLabel(until)}: ${msg}`);
   }
 }
 
@@ -234,7 +253,8 @@ export async function callSandboxMethod(
     throw new Error(`沙箱未就绪: ${pluginId}`);
   }
   if (method === 'request' && isPluginAuthBanned(sandboxId)) {
-    throw new Error(`音源鉴权失效已临时熔断（5 分钟后自动重试）: ${sandboxId}`);
+    const until = _authBannedUntil.get(sandboxId);
+    throw new Error(`音源鉴权失效已临时熔断（${until ? authBanWaitLabel(until) : '稍后'}后自动重试）: ${sandboxId}`);
   }
 
   const freshUserVars = _userVarsProvider?.(pluginId) || {};
