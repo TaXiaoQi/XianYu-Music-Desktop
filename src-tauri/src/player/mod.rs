@@ -6,6 +6,7 @@ mod device;
 pub mod dsd_dop;
 pub mod equalizer;
 pub mod loudness;
+pub mod mv_stream_proxy;
 mod output;
 pub mod plugin_host;
 pub(crate) mod qmc2;
@@ -13,7 +14,7 @@ mod runtime;
 mod session;
 pub mod sound_effect;
 mod spectrum;
-mod stream_cache;
+pub mod stream_cache;
 pub(crate) mod types;
 
 pub use commands::{
@@ -29,6 +30,7 @@ pub use device::{
     get_audio_device_formats, get_current_output_device, get_output_devices, set_audio_output_mode,
     set_output_device,
 };
+pub use mv_stream_proxy::mv_proxy_url;
 pub use plugin_host::manager::{
     plugin_host_close_editor, plugin_host_editor_states, plugin_host_get_parameter_values,
     plugin_host_get_plugin_parameters, plugin_host_get_plugin_presets, plugin_host_get_rack,

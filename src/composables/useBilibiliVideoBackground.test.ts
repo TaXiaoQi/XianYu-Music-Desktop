@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
-  downloadVideoToCacheMock,
+  mvProxyUrlMock,
   getStoredPluginsMock,
   pluginHttpRequestMock,
   pluginGetVideoSourceMock,
@@ -9,17 +9,13 @@ const {
   analyzeMvAudioSyncMock,
   analyzeMvAudioSyncLocalMock,
 } = vi.hoisted(() => ({
-  downloadVideoToCacheMock: vi.fn(),
+  mvProxyUrlMock: vi.fn(),
   getStoredPluginsMock: vi.fn(),
   pluginHttpRequestMock: vi.fn(),
   pluginGetVideoSourceMock: vi.fn(),
   removeCachedBackgroundVideoMock: vi.fn(),
   analyzeMvAudioSyncMock: vi.fn(),
   analyzeMvAudioSyncLocalMock: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({
-  convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
 vi.mock('../services/domain/pluginEngine', () => ({
@@ -29,7 +25,7 @@ vi.mock('../services/domain/pluginEngine', () => ({
 
 vi.mock('../services/tauri/pluginApi', () => ({
   pluginApi: {
-    downloadVideoToCache: downloadVideoToCacheMock,
+    mvProxyUrl: mvProxyUrlMock,
     pluginHttpRequest: pluginHttpRequestMock,
     removeCachedBackgroundVideo: removeCachedBackgroundVideoMock,
   },
@@ -114,7 +110,9 @@ describe('Bilibili player-detail video background', () => {
       url: 'https://upos-sz-mirror.example.bilivideo.com/video.m4s',
       headers: { Range: 'bytes=0-' },
     });
-    downloadVideoToCacheMock.mockResolvedValue('C:\\cache\\video-background\\xy_music_video_test.mp4');
+    mvProxyUrlMock.mockResolvedValue(
+      'http://127.0.0.1:41230/mv?u=https%3A%2F%2Fupos-sz-mirror.example.bilivideo.com%2Fvideo.m4s',
+    );
     removeCachedBackgroundVideoMock.mockResolvedValue(undefined);
     analyzeMvAudioSyncMock.mockResolvedValue(null);
     analyzeMvAudioSyncLocalMock.mockResolvedValue(null);
@@ -138,7 +136,7 @@ describe('Bilibili player-detail video background', () => {
     await expect(background.start(song)).resolves.toBe(true);
 
     expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledWith(
-      expect.stringContaining('asset://'),
+      expect.stringContaining('/mv?u='),
       playbackUrlMock.value,
       0,
       undefined,
@@ -175,7 +173,9 @@ describe('Bilibili player-detail video background', () => {
     expect(background.syncOffsetSec.value).toBe(0);
 
     pluginGetVideoSourceMock.mockResolvedValue({ url: 'https://mv.example.com/1080p.mp4' });
-    downloadVideoToCacheMock.mockResolvedValue('C:\\cache\\video-background\\xy_music_video_1080p.mp4');
+    mvProxyUrlMock.mockResolvedValue(
+      'http://127.0.0.1:41230/mv?u=https%3A%2F%2Fmv.example.com%2F1080p.mp4',
+    );
     await expect(background.setQuality('1080P')).resolves.toBe(true);
     await vi.waitFor(() => expect(background.videoUrl.value).toContain('1080p'));
     expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledTimes(1);
@@ -203,7 +203,7 @@ describe('Bilibili player-detail video background', () => {
       expect.objectContaining({ id: 'BV1j3411D7pu' }),
       '720P',
     );
-    expect(downloadVideoToCacheMock).toHaveBeenCalledWith(
+    expect(mvProxyUrlMock).toHaveBeenCalledWith(
       expect.stringContaining('bilivideo.com'),
       expect.objectContaining({
         Referer: 'https://www.bilibili.com/',
@@ -211,13 +211,12 @@ describe('Bilibili player-detail video background', () => {
       }),
     );
     expect(background.active.value).toBe(true);
-    expect(background.videoUrl.value).toContain('xy_music_video_test.mp4');
+    expect(background.videoUrl.value).toContain('/mv?u=');
 
     await background.stop();
     expect(background.active.value).toBe(false);
-    expect(removeCachedBackgroundVideoMock).toHaveBeenCalledWith(
-      expect.stringContaining('xy_music_video_test.mp4'),
-    );
+    // MV 缓存进流缓存池统一管理，关闭时不删除文件。
+    expect(removeCachedBackgroundVideoMock).not.toHaveBeenCalled();
   });
 
   it('falls back to Bilibili parsing when the installed plugin has no video extension', async () => {
@@ -262,7 +261,7 @@ describe('Bilibili player-detail video background', () => {
       expect.stringContaining('/x/player/playurl?bvid=BV1j3411D7pu&cid=12345'),
       expect.any(Object),
     );
-    expect(downloadVideoToCacheMock).toHaveBeenCalledWith(
+    expect(mvProxyUrlMock).toHaveBeenCalledWith(
       expect.stringContaining('fallback-720p.m4s'),
       expect.objectContaining({ Referer: 'https://www.bilibili.com/' }),
     );
@@ -330,7 +329,7 @@ describe('Bilibili player-detail video background', () => {
       undefined,
       20000,
     );
-    expect(downloadVideoToCacheMock).toHaveBeenCalledWith(
+    expect(mvProxyUrlMock).toHaveBeenCalledWith(
       'http://fsmvpc.kugou.com/le-480p.mp4',
       expect.objectContaining({ Referer: 'https://www.kugou.com/' }),
     );
@@ -356,7 +355,7 @@ describe('Bilibili player-detail video background', () => {
     });
 
     await expect(background.start(makeKugouSong(), '1080P')).resolves.toBe(true);
-    expect(downloadVideoToCacheMock).toHaveBeenCalledWith(
+    expect(mvProxyUrlMock).toHaveBeenCalledWith(
       'http://fsmvpc.kugou.com/hd-1080p.mp4',
       expect.any(Object),
     );

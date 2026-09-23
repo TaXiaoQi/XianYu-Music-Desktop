@@ -33,7 +33,7 @@
           "$APPCACHE/**"
         ]
       },
-      "csp": "default-src 'self' ipc: http://localhost:1420; img-src 'self' asset: http://asset.localhost https://asset.localhost ms-appx-web: data: blob: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost ms-appx-web: data: blob: https:; script-src 'self' blob:; worker-src 'self'; style-src 'self'; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://localhost:1420 ws://localhost:1420 https://api.xianyumusic.cn https://api.github.com https://github.com https://xy.zh2026.cn https://xymusic.zh2026.cn; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'self';"
+      "csp": "default-src 'self' ipc: http://localhost:1420; img-src 'self' asset: http://asset.localhost https://asset.localhost ms-appx-web: data: blob: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost ms-appx-web: data: blob: https: http://127.0.0.1:*; script-src 'self' blob:; worker-src 'self'; style-src 'self'; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://localhost:1420 ws://localhost:1420 http://127.0.0.1:* https://api.xianyumusic.cn https://api.github.com https://github.com https://xy.zh2026.cn https://xymusic.zh2026.cn; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'self';"
     }
   },
   "bundle": {

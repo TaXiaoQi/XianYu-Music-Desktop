@@ -97,6 +97,12 @@ async function removeCachedBackgroundVideo(path: string): Promise<void> {
   return tauriInvoke('remove_cached_background_video', { path });
 }
 
+// MV 流式代理 URL：数据进歌曲的在线播放流缓存池（同 LRU 上限/清理），
+// 代理侧已缓冲部分本地伺服、未命中回源透传。
+async function mvProxyUrl(url: string, headers?: Record<string, string>): Promise<string> {
+  return tauriInvoke('mv_proxy_url', { url, headers: headers ?? null });
+}
+
 async function getLxCover(songInfo: LxUrlSongInfoContract): Promise<string | null> {
   return tauriInvoke('get_lx_cover', { songInfo });
 }
@@ -126,6 +132,7 @@ export const pluginApi = {
   downloadAudioToTemp,
   downloadVideoToCache,
   removeCachedBackgroundVideo,
+  mvProxyUrl,
   getLxCover,
   findAlternativeLxSource,
 };
