@@ -78,6 +78,24 @@ function isMusicVideoSong(song: Song | null | undefined): boolean {
   return !!song.plugin_id || !!nestedValue(song.rawData, 'pluginId');
 }
 
+/// 歌曲信息里可用的 MV 标识字段（与移动端 _kMvIdKeys 一致）。
+const MV_ID_KEYS = [
+  'mv', 'mvHash', 'mvdata', 'mvVid', 'mvId', 'vid', 'vid_hash', 'vhash',
+  'bvid', 'aid', 'cid', 'id', 'songmid', 'mvid', 'mid', 'hash',
+];
+
+function hasMvIdentityHint(song: Song): boolean {
+  for (const key of MV_ID_KEYS) {
+    const v = nestedValue(song.rawData, key);
+    if (v === null || v === undefined) continue;
+    const s = typeof v === 'string' ? v.trim() : String(v);
+    if (s && s !== '0' && s.toLowerCase() !== 'false' && s.toLowerCase() !== 'null') {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// 把初始化/下载异常压成一句短原因（与移动端 _shortMvError 一致）。
 export function shortMvError(raw: string): string {
   const s = raw.toLowerCase();
@@ -147,13 +165,14 @@ export async function probeQueueMvs(songs: (Song | null | undefined)[]): Promise
 
 export function supportsMusicVideo(song: Song | null | undefined): boolean {
   if (!isMusicVideoSong(song)) return false;
-  // 只认真实解析结论：探测确认可解析才显示入口。
-  // 未探测到结果的歌先不显示（起播批次探测完成后有 MV 的会自动出现），
-  // 避免任何静态字段猜测造成「有 MV 的不显示、显示的没有 MV」。
   const key = mvProbeKey(song!);
   if (!key) return false;
   void mvProbeVersion.value; // 建立响应依赖：探测完成后入口自动刷新
-  return mvProbeResults.get(key) === true;
+  // 第二道：真实探测结论优先（与字段判定一致则静默，不一致即修正显隐）。
+  const probed = mvProbeResults.get(key);
+  if (probed !== undefined) return probed;
+  // 第一道：字段判定作初始显示。
+  return hasMvIdentityHint(song!);
 }
 
 /// 探测结论三态：true/false=已探测，undefined=尚未探测。
@@ -164,7 +183,10 @@ export function mvProbeVerdict(song: Song | null | undefined): boolean | undefin
   const key = mvProbeKey(song!);
   if (!key) return false;
   void mvProbeVersion.value;
-  return mvProbeResults.get(key);
+  const probed = mvProbeResults.get(key);
+  if (probed !== undefined) return probed;
+  // 未探测：字段判定说有 MV 才保持播放（交 start 验证），说没有则直接停。
+  return hasMvIdentityHint(song!) ? undefined : false;
 }
 
 function nestedValue(value: unknown, key: string): unknown {
