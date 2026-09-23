@@ -82,33 +82,69 @@ const transformOrigin = `${pivotLeft} ${pivotTop}`;
         transform: `rotate(${isPlaying ? params.downDeg : params.upDeg}deg)`,
       }"
     >
-      <!-- 枢轴圆钮 -->
+      <!-- 枢轴圆钮（多层金属 + 高光点） -->
       <div
         class="tonearm-pivot absolute rounded-full"
         :style="{ left: pivotLeft, top: pivotTop }"
       >
+        <div class="tonearm-pivot-ring absolute inset-[8%] rounded-full" />
         <div class="tonearm-pivot-dot absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full" />
+        <div class="tonearm-pivot-specular absolute left-[22%] top-[16%] h-[22%] w-[30%] -rotate-[30deg] rounded-full bg-white/85 blur-[1px]" />
       </div>
 
-      <!-- 臂杆：参数化路径 -->
+      <!-- 臂杆：参数化路径（暗轮廓 + 金属渐变 + 高光芯线 + 投影，营造圆柱金属质感） -->
       <svg class="absolute inset-0 h-full w-full overflow-visible" :viewBox="`0 0 ${VIEW_W} ${VIEW_H}`" fill="none" aria-hidden="true">
         <defs>
           <linearGradient id="tonearm-arm-gradient" gradientUnits="userSpaceOnUse" x1="30" y1="0" :x2="params.tipX + 16" :y2="params.tipY + 50">
             <stop offset="0" stop-color="#ffffff" />
-            <stop offset="0.55" stop-color="#f2f3f5" />
-            <stop offset="1" stop-color="#d4d7dc" />
+            <stop offset="0.35" stop-color="#f4f5f8" />
+            <stop offset="0.62" stop-color="#d9dce2" />
+            <stop offset="0.85" stop-color="#aeb3bd" />
+            <stop offset="1" stop-color="#c8ccd4" />
           </linearGradient>
+          <filter id="tonearm-shadow" x="-40%" y="-40%" width="180%" height="180%">
+            <feDropShadow dx="5" dy="10" stdDeviation="7" flood-color="#000000" flood-opacity="0.45" />
+          </filter>
         </defs>
-        <path
-          :d="pathD"
-          stroke="url(#tonearm-arm-gradient)"
-          :stroke-width="params.strokeW"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
+        <g filter="url(#tonearm-shadow)">
+          <!-- 底层暗轮廓（管壁背光侧） -->
+          <path
+            :d="pathD"
+            stroke="rgba(20, 22, 30, 0.55)"
+            :stroke-width="params.strokeW + 7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <!-- 金属主体 -->
+          <path
+            :d="pathD"
+            stroke="url(#tonearm-arm-gradient)"
+            :stroke-width="params.strokeW"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <!-- 高光芯线（圆柱受光的高反射带） -->
+          <path
+            :d="pathD"
+            stroke="rgba(255, 255, 255, 0.75)"
+            :stroke-width="params.strokeW * 0.28"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <!-- 细亮缘（管壁顶部反光） -->
+          <path
+            :d="pathD"
+            stroke="rgba(255, 255, 255, 0.9)"
+            :stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            transform="translate(-2 -3)"
+            opacity="0.65"
+          />
+        </g>
       </svg>
 
-      <!-- 唱针头：位于臂杆末端，沿末端切线方向 -->
+      <!-- 唱针头：位于臂杆末端，沿末端切线方向（多层渐变 + 斜向光泽） -->
       <div
         class="tonearm-head absolute"
         :style="{
@@ -119,6 +155,7 @@ const transformOrigin = `${pivotLeft} ${pivotTop}`;
           transform: `translate(-50%, -50%) rotate(${headRotation}deg)`,
         }"
       >
+        <div class="tonearm-head-sheen absolute inset-[12%] rounded-[inherit]" />
         <div class="tonearm-head-tip absolute rounded-full" />
       </div>
     </div>
@@ -126,30 +163,62 @@ const transformOrigin = `${pivotLeft} ${pivotTop}`;
 </template>
 
 <style scoped>
+.tonearm-swing {
+  /* 落针/抬臂绕枢轴旋转的过渡动画（内联 transform 变化时生效） */
+  transition: transform 1.1s cubic-bezier(0.34, 1.3, 0.64, 1);
+  will-change: transform;
+}
 .tonearm-pivot {
   width: 15%;
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #f0f1f4 55%, #cfd2d8 100%);
+  background:
+    radial-gradient(circle at 32% 26%, #ffffff 0%, #f2f3f6 40%, #d5d8de 68%, #a9adb7 100%);
   box-shadow:
-    0 3px 10px rgba(0, 0, 0, 0.45),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.1);
+    0 5px 14px rgba(0, 0, 0, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.18),
+    inset 0 2px 3px rgba(255, 255, 255, 0.9);
   z-index: 1;
+}
+
+/* 内圈金属环（分层车削质感） */
+.tonearm-pivot-ring {
+  background:
+    radial-gradient(circle at 38% 32%, rgba(255, 255, 255, 0.9) 0%, rgba(235, 237, 241, 0.6) 45%, rgba(150, 154, 163, 0.55) 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .tonearm-pivot-dot {
   width: 30%;
   height: 30%;
-  background: radial-gradient(circle at 40% 35%, #8a8a92 0%, #55555d 60%, #33333a 100%);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  background: radial-gradient(circle at 38% 32%, #9a9aa2 0%, #5b5b64 55%, #2c2c33 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.6),
+    0 0 3px rgba(0, 0, 0, 0.3);
 }
 
 .tonearm-head {
   border-radius: 999px;
-  background: linear-gradient(100deg, #ffffff 0%, #eef0f3 55%, #d0d3d9 100%);
+  background: linear-gradient(100deg, #ffffff 0%, #f0f2f5 40%, #d3d6dd 72%, #b4b8c2 100%);
   box-shadow:
-    2px 4px 9px rgba(0, 0, 0, 0.35),
-    inset 0 1px 1px rgba(255, 255, 255, 0.85);
+    3px 6px 14px rgba(0, 0, 0, 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.15);
+}
+
+/* 针头斜向光泽扫过 */
+.tonearm-head-sheen {
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.25) 38%,
+    transparent 55%,
+    rgba(0, 0, 0, 0.12) 85%
+  );
+  mix-blend-mode: screen;
 }
 
 .tonearm-head-tip {
