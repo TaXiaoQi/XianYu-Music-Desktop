@@ -1,127 +1,163 @@
 <script setup lang="ts">
 /**
- * 唱针组件。
- * UI 移植自 mozarta-nexus/music-web-player（src/components/Tonearm.tsx，MIT），
- * 等价重写为 Vue scoped CSS：
- * - 悬浮在唱片右上方，绕底座旋转
- * - 播放落下（rotate 32deg）/ 暂停抬起（rotate -8deg），回弹曲线过渡
+ * 唱针组件（网易云播放页风格）：
+ * - 臂杆为长直斜杆 + 末端短弧折向陡角，白色小圆头唱针在末端
+ * - 播放：落针姿态；暂停：整臂绕枢轴向外摆起离开唱片
+ * - 几何完全由下方 TONEARM_PARAMS 参数化（1 unit = 0.001 × 唱片边长），
+ *   数值来自可视化调参面板实调结果（面板已移除，如需再调可临时恢复）。
  */
-withDefaults(defineProps<{
+import { computed } from 'vue';
+
+const props = defineProps<{
   isPlaying: boolean;
-  accent?: string;
-}>(), {
-  accent: '#EC4141',
+}>();
+
+// 实调固化的几何参数（坐标系：viewBox 400×460，容器 40%×46%，1 unit = 0.001S）
+const TONEARM_PARAMS = {
+  pivotX: 0,
+  pivotY: 39,
+  elbowX: 283,
+  elbowY: 273,
+  tipX: 313,
+  tipY: 450,
+  bendIn: 10,
+  bendOut: 14,
+  strokeW: 35,
+  headW: 15,
+  headH: 16,
+  headRotOffset: 0,
+  downDeg: 0,
+  upDeg: -46,
+} as const;
+
+const params = TONEARM_PARAMS;
+
+// viewBox 固定 400×460 作为坐标系
+const VIEW_W = 400;
+const VIEW_H = 460;
+
+const norm = (dx: number, dy: number) => {
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: dx / len, y: dy / len };
+};
+
+const straightDir = norm(params.elbowX - params.pivotX, params.elbowY - params.pivotY);
+const tipDir = norm(params.tipX - params.elbowX, params.tipY - params.elbowY);
+
+const pathD = computed(() => {
+  const c1x = params.elbowX + straightDir.x * params.bendIn;
+  const c1y = params.elbowY + straightDir.y * params.bendIn;
+  const c2x = params.tipX - tipDir.x * params.bendOut;
+  const c2y = params.tipY - tipDir.y * params.bendOut;
+  return `M ${params.pivotX} ${params.pivotY} L ${params.elbowX} ${params.elbowY} C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${params.tipX} ${params.tipY}`;
 });
+
+/** 与竖直方向的夹角（屏幕坐标向下为正） */
+const angleFromVertical = (dir: { x: number; y: number }) =>
+  Math.atan2(dir.x, dir.y) * 180 / Math.PI;
+
+const headRotation = angleFromVertical(tipDir) + params.headRotOffset;
+
+const pct = (value: number, total: number) => `${(value / total * 100).toFixed(2)}%`;
+
+const pivotLeft = pct(params.pivotX, VIEW_W);
+const pivotTop = pct(params.pivotY, VIEW_H);
+const headLeft = pct(params.tipX, VIEW_W);
+const headTop = pct(params.tipY, VIEW_H);
+
+const transformOrigin = `${pivotLeft} ${pivotTop}`;
 </script>
 
 <template>
-  <div class="pointer-events-none absolute right-[8%] top-[2%] z-20 h-[42%] w-[42%]">
-    <!-- 唱针整体绕底座旋转 -->
+  <div class="pointer-events-none absolute inset-0 z-30 overflow-visible">
+    <!-- 臂杆旋转容器：坐标系 1 unit = 0.001 × 唱片边长 -->
     <div
-      class="absolute inset-0"
-      :class="isPlaying ? 'tonearm-down' : 'tonearm-up'"
+      class="tonearm-swing absolute"
+      :style="{
+        left: '50%',
+        top: '-14%',
+        width: '40%',
+        height: '46%',
+        transformOrigin,
+        transform: `rotate(${isPlaying ? params.downDeg : params.upDeg}deg)`,
+      }"
     >
-      <!-- 底座 -->
-      <div class="tonearm-base absolute rounded-full" :style="{ right: '6%', bottom: '6%', width: '18%', height: '18%' }">
-        <!-- 底座中心装饰 -->
-        <div
-          class="absolute left-1/2 top-1/2 rounded-full"
-          :style="{
-            width: '40%',
-            height: '40%',
-            transform: 'translate(-50%, -50%)',
-            background: `radial-gradient(circle, ${accent} 0%, #6d28d9 100%)`,
-            boxShadow: `0 0 12px ${accent}`,
-          }"
-        />
+      <!-- 枢轴圆钮 -->
+      <div
+        class="tonearm-pivot absolute rounded-full"
+        :style="{ left: pivotLeft, top: pivotTop }"
+      >
+        <div class="tonearm-pivot-dot absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full" />
       </div>
 
-      <!-- 臂杆 -->
-      <div class="tonearm-arm absolute" :style="{ right: '14%', bottom: '14%', width: '78%', height: '5%' }">
-        <!-- 臂杆高光 -->
-        <div class="tonearm-arm-highlight absolute inset-x-0 top-0 h-1/2 rounded-t-full" />
-      </div>
-
-      <!-- 唱针头（前端） -->
-      <div class="tonearm-head absolute" :style="{ right: '82%', bottom: '30%', width: '14%', height: '14%' }">
-        <!-- 针尖发光 -->
-        <div
-          class="tonearm-tip absolute rounded-full"
-          :class="isPlaying ? 'tonearm-tip--playing' : ''"
-          :style="{
-            left: '20%',
-            bottom: '0%',
-            width: '30%',
-            height: '30%',
-            background: `radial-gradient(circle, ${accent} 0%, transparent 70%)`,
-            boxShadow: `0 0 ${isPlaying ? 10 : 8}px ${accent}`,
-          }"
+      <!-- 臂杆：参数化路径 -->
+      <svg class="absolute inset-0 h-full w-full overflow-visible" :viewBox="`0 0 ${VIEW_W} ${VIEW_H}`" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="tonearm-arm-gradient" gradientUnits="userSpaceOnUse" x1="30" y1="0" :x2="params.tipX + 16" :y2="params.tipY + 50">
+            <stop offset="0" stop-color="#ffffff" />
+            <stop offset="0.55" stop-color="#f2f3f5" />
+            <stop offset="1" stop-color="#d4d7dc" />
+          </linearGradient>
+        </defs>
+        <path
+          :d="pathD"
+          stroke="url(#tonearm-arm-gradient)"
+          :stroke-width="params.strokeW"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         />
+      </svg>
+
+      <!-- 唱针头：位于臂杆末端，沿末端切线方向 -->
+      <div
+        class="tonearm-head absolute"
+        :style="{
+          left: headLeft,
+          top: headTop,
+          width: `${params.headW}%`,
+          height: `${params.headH}%`,
+          transform: `translate(-50%, -50%) rotate(${headRotation}deg)`,
+        }"
+      >
+        <div class="tonearm-head-tip absolute rounded-full" />
       </div>
     </div>
-
-    <!-- 底座投影 -->
-    <div class="tonearm-base-shadow absolute rounded-full blur-md" :style="{ right: '8%', bottom: '8%', width: '14%', height: '14%' }" />
   </div>
 </template>
 
 <style scoped>
-.tonearm-down {
-  transition: transform 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transform: rotate(32deg);
-}
-
-.tonearm-up {
-  transition: transform 1s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transform: rotate(-8deg);
-}
-
-.tonearm-down,
-.tonearm-up {
-  transform-origin: 88% 88%;
-}
-
-.tonearm-base {
-  background: radial-gradient(circle at 35% 35%, #4a4a52 0%, #2a2a30 40%, #1a1a1f 100%);
+.tonearm-pivot {
+  width: 15%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #f0f1f4 55%, #cfd2d8 100%);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.8),
-    inset 0 1px 2px rgba(255, 255, 255, 0.2),
-    0 0 20px rgba(236, 65, 65, 0.2);
+    0 3px 10px rgba(0, 0, 0, 0.45),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.1);
+  z-index: 1;
 }
 
-.tonearm-arm {
-  transform-origin: 100% 50%;
-  transform: rotate(-32deg);
-  background: linear-gradient(180deg, #6a6a72 0%, #3a3a42 50%, #1a1a1f 100%);
-  border-radius: 999px;
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.6),
-    inset 0 1px 1px rgba(255, 255, 255, 0.25);
-}
-
-.tonearm-arm-highlight {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent);
+.tonearm-pivot-dot {
+  width: 30%;
+  height: 30%;
+  background: radial-gradient(circle at 40% 35%, #8a8a92 0%, #55555d 60%, #33333a 100%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .tonearm-head {
-  transform: rotate(-32deg);
-  background: radial-gradient(circle at 40% 30%, #5a5a62 0%, #2a2a30 60%, #0a0a0c 100%);
-  border-radius: 30% 30% 50% 50%;
+  border-radius: 999px;
+  background: linear-gradient(100deg, #ffffff 0%, #eef0f3 55%, #d0d3d9 100%);
   box-shadow:
-    0 3px 8px rgba(0, 0, 0, 0.8),
-    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+    2px 4px 9px rgba(0, 0, 0, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.85);
 }
 
-.tonearm-tip {
-  transition: all 0.4s ease;
-  opacity: 0.75;
-}
-
-.tonearm-tip--playing {
-  opacity: 1;
-}
-
-.tonearm-base-shadow {
-  background: radial-gradient(circle, rgba(0, 0, 0, 0.6), transparent 70%);
+.tonearm-head-tip {
+  right: 16%;
+  bottom: 12%;
+  width: 30%;
+  height: 26%;
+  background: radial-gradient(circle at 40% 35%, #8a8a92 0%, #55555d 60%, #33333a 100%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 </style>
