@@ -480,7 +480,15 @@ const dlnaCast = useDlnaCastStore();
       } else {
         const now = performance.now();
         const delta = (now - playbackAnchorTime) / 1000.0;
-        currentTime.value = playbackStartOffset + delta;
+        if (isSongLoaded.value) {
+          currentTime.value = playbackStartOffset + delta;
+        } else {
+          // [修复] 在线歌曲解析/缓冲期间音频尚未起播，此处若继续推进本地时钟，
+          // 进度条会在加载中自行前进，起播后 reanchorPlaybackClock(resumeTime)
+          // 又把它拉回起点，表现为"进度条走了一段后瞬间回跳"。
+          // 未起播时把锚点钉在原位，等 isSongLoaded 为真再开始推进。
+          reanchorPlaybackClock(playbackStartOffset);
+        }
       }
 
       const endTime = activePreviewClip

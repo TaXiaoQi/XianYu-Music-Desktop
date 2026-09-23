@@ -834,6 +834,69 @@ describe('player playback domain', () => {
     playerPlayback.dispose();
   });
 
+  it('does not advance the progress clock while an online song is still loading', async () => {
+    const playbackStore = usePlaybackStore();
+    const onlineSong = makeSong({
+      path: 'plugin://lx-test-plugin/slow-load',
+      title: 'Slow Load',
+      duration: 200,
+      rawData: {
+        pluginId: 'lx-test-plugin',
+        id: 'slow-load',
+      },
+    } as Partial<Song>);
+
+    let resolveMusicInfo!: (value: { url: string }) => void;
+    const pendingMusicInfo = new Promise<{ url: string }>((resolve) => {
+      resolveMusicInfo = resolve;
+    });
+    pluginGetMusicInfoMock.mockReturnValueOnce(pendingMusicInfo);
+
+    // 捕获运行时循环的帧回调，手动驱动时钟
+    let frameCallback: FrameRequestCallback | undefined;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameCallback = callback;
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [onlineSong],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    const playPromise = playerPlayback.playSong(onlineSong);
+
+    expect(playbackStore.isSongLoaded).toBe(false);
+    expect(playbackStore.currentTime).toBe(0);
+
+    // 加载期间真实时间流逝后驱动一帧：进度必须被钉在起点，不能自行前进
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const loadingFrame = frameCallback;
+    frameCallback = undefined;
+    loadingFrame?.(performance.now());
+
+    expect(playbackStore.isSongLoaded).toBe(false);
+    expect(playbackStore.currentTime).toBe(0);
+
+    resolveMusicInfo({ url: 'https://example.test/slow-load.mp3' });
+    await playPromise;
+    expect(playbackStore.isSongLoaded).toBe(true);
+
+    // 起播后同样的时间流逝应正常推进进度
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const playingFrame = frameCallback;
+    frameCallback = undefined;
+    playingFrame?.(performance.now());
+
+    expect(playbackStore.currentTime).toBeGreaterThan(0);
+
+    playerPlayback.dispose();
+    vi.unstubAllGlobals();
+  });
+
   it('maps a qishui vip preview clip back to the full song timeline', async () => {
     const playbackStore = usePlaybackStore();
     const song = makeSong({
