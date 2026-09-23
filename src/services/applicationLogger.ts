@@ -4,7 +4,7 @@ import type { LogLevel, LogSettings } from '../types';
 
 export const APPLICATION_LOG_STORAGE_KEY = 'xianyu_application_logs_v1';
 export const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
-const MAX_LOG_ENTRIES = 200;
+const MAX_LOG_ENTRIES = 300;
 const MAX_ERROR_LOG_ENTRIES = 10;
 
 export interface ApplicationLogEntry {

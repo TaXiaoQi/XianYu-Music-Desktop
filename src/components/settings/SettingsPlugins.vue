@@ -1129,7 +1129,6 @@ async function saveUserVariables() {
                   <input
                     v-model="installUrl"
                     type="text"
-                    placeholder="https://example.com/plugin.js"
                     class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10 flex-1"
                     @keydown.enter="handleInstallFromUrl"
                   />
