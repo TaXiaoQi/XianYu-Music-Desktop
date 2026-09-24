@@ -139,7 +139,7 @@ export interface MediaSourceCacheEntry {
 }
 
 export const BAKA_PLUGIN_METHODS = [
-  'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
+  'search', 'getMediaSource', 'getMusicInfo', 'getLyric', 'getMvSource',
   'getAlbumInfo', 'getMusicSheetInfo', 'getArtistWorks',
   'getArtistInfo', 'importMusicSheet', 'importMusicItem',
   'getTopLists', 'getTopListDetail', 'getRecommendSheetTags',
