@@ -158,8 +158,10 @@ async function refreshSourceList(silent = false) {
   const token = ++refreshToken;
   if (!silent) checkingSources.value = true;
   try {
+    // anime 插件的榜单能力由 pluginSupportsTopLists 判定（wrapper 恒有
+    // getTopLists，不支持的平台返回空列表走「暂无榜单」空态）
     const plugins = getStoredPlugins()
-      .filter(p => p.enabled && p.format === 'musicfree')
+      .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'anime'))
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
     const results = await Promise.all(plugins.map(async (p) => {
