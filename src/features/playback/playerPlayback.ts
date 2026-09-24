@@ -952,9 +952,14 @@ const dlnaCast = useDlnaCastStore();
     // 次后端往返（am lyricBoth/lyricWord），串行会进一步拉大「歌词晚到」的差距。
     // 必须定义在音源解析分支之外——音源解析失败时歌词链路仍需独立可用。
     const wordTimestampPattern = /<\d{1,3}:\d{2}/;
+    // QRC XML 的词级时间是属性式（<src="..." start="21550">），无尖括号时间戳，
+    // 需单独识别，否则解密产物无法覆盖旧的逐行 LRC 缓存（一直显示行级）
+    const qrcXmlPattern = /<(?:QrcInfos|src=")/;
+    const looksWordLevel = (text: string): boolean =>
+      wordTimestampPattern.test(text) || qrcXmlPattern.test(text);
     const coreLyricsFetch = async () => {
       const existingLyricsRaw = song.lyrics_raw?.trim() || '';
-      const canUpgradeToWordLyrics = !!existingLyricsRaw && !wordTimestampPattern.test(existingLyricsRaw);
+      const canUpgradeToWordLyrics = !!existingLyricsRaw && !looksWordLevel(existingLyricsRaw);
 
       // lx:// 旧版歌词升级链路
       if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
@@ -1022,7 +1027,7 @@ const dlnaCast = useDlnaCastStore();
               // 仅首次写入，或当前为逐行而新数据含词级尖括号（升级）时覆盖
               const currentLyricsRaw = song.lyrics_raw?.trim() || '';
               const shouldWriteLyrics = !currentLyricsRaw
-                || (!wordTimestampPattern.test(currentLyricsRaw) && wordTimestampPattern.test(lyricData.lyricsRaw));
+                || (!looksWordLevel(currentLyricsRaw) && looksWordLevel(lyricData.lyricsRaw));
               if (shouldWriteLyrics) {
                 song.lyrics_raw = lyricData.lyricsRaw;
                 libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
