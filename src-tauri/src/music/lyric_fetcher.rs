@@ -2455,4 +2455,19 @@ mod qrc_roundtrip_tests {
         let expected = include_str!("fixtures/lyrics/baby.qrc");
         assert_eq!(decrypted.trim(), expected.trim());
     }
+
+    /// 临时调试：天外来物真实密文（桌面运行时 decryptPluginLyricText 返回 null 的那段）
+    #[test]
+    fn qrc_tianwai_real_hex_decrypts() {
+        let hex = include_str!("fixtures/lyrics/qq_tianwai.hex").trim();
+        println!("hexLen={}", hex.len());
+        match qrc_decrypt(hex) {
+            Ok(plain) => println!(
+                "DECRYPT OK len={} head={}",
+                plain.len(),
+                &plain[..plain.len().min(120)]
+            ),
+            Err(e) => println!("DECRYPT FAIL: {}", e),
+        }
+    }
 }
