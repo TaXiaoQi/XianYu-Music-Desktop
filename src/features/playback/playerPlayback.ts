@@ -650,6 +650,10 @@ const dlnaCast = useDlnaCastStore();
         const segment = (song.cue_source_path || song.path || '').slice('plugin://'.length).split('/')[0] || '';
         try { platformLabel = decodeURIComponent(segment); } catch { platformLabel = segment; }
       }
+      if (!platformLabel.trim()) {
+        // 对齐移动端：搜索结果无 platform 字段时从失败插件已存元数据兜底（如 Baka 插件 "QQ音乐[L1]"）
+        platformLabel = getStoredPlugins().find(p => p.id === searchResult.pluginId)?.name || '';
+      }
       if (!platformLabel.trim()) return false;
 
       const tried = options._siblingTriedPluginIds ?? new Set<string>();
@@ -744,11 +748,14 @@ const dlnaCast = useDlnaCastStore();
       if (song.path.startsWith('lx://')) {
         switchCtx.failedSources.add(song.path.slice('lx://'.length).split('/')[0]);
       } else {
-        const searchResult = song.rawData as { platform?: string } | undefined;
+        const searchResult = song.rawData as { platform?: string; pluginId?: string } | undefined;
         let platformLabel = searchResult?.platform || '';
         if (!platformLabel.trim()) {
           const segment = (song.cue_source_path || song.path || '').slice('plugin://'.length).split('/')[0] || '';
           try { platformLabel = decodeURIComponent(segment); } catch { platformLabel = segment; }
+        }
+        if (!platformLabel.trim() && searchResult?.pluginId) {
+          platformLabel = getStoredPlugins().find(p => p.id === searchResult.pluginId)?.name || '';
         }
         switchCtx.failedSources.add(describePlatform(platformLabel).lxSource ?? 'plugin');
       }
