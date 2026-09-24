@@ -1008,6 +1008,7 @@ const dlnaCast = useDlnaCastStore();
                 }
                 return;
               }
+              console.log('[Lyrics] plugin:// 取词开始:', pluginSource.name, song.path.slice(0, 48), 'existingLen=', existingLyricsRaw.length);
               const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
               if (!lyricData?.lyricsRaw) {
                 console.warn('[Lyrics] plugin:// 歌词获取为空:', pluginSource.name);
@@ -1043,6 +1044,7 @@ const dlnaCast = useDlnaCastStore();
             }
           })();
         } else {
+          console.warn('[Lyrics] plugin:// rawData 缺失或无 pluginId，取词跳过:', song.path.slice(0, 48), 'rawData?', !!song.rawData, 'keys=', song.rawData ? Object.keys(song.rawData).slice(0, 10).join(',') : '');
           markOnlineLyricsUnavailable(song.path);
         }
       }
