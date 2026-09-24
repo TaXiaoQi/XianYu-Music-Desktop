@@ -100,6 +100,7 @@ export const defaultThemeSettings: ThemeSettings = {
   playerDetailCoverBehavior: 'remember',
   lastPlayerDetailCoverVisible: true,
   playerDetailStyle: 'classic',
+  playerDetailMeshBackground: true,
   dynamicBgType: 'none',
   windowMaterial: 'none',
   keepWindowMaterialOnBlur: true,
@@ -447,6 +448,10 @@ export const mergeThemeSettings = (
   const playerDetailStyle = patch.playerDetailStyle === 'vinyl' || patch.playerDetailStyle === 'classic'
     ? patch.playerDetailStyle
     : base.playerDetailStyle;
+  const playerDetailMeshBackground =
+    typeof patch.playerDetailMeshBackground === 'boolean'
+      ? patch.playerDetailMeshBackground
+      : base.playerDetailMeshBackground;
   const mergedCustomBackground = {
     ...base.customBackground,
     ...(patch.customBackground ?? {}),
@@ -458,6 +463,7 @@ export const mergeThemeSettings = (
     accentColor: normalizeThemeColor(patch.accentColor, base.accentColor),
     playerDetailCoverBehavior,
     playerDetailStyle,
+    playerDetailMeshBackground,
     lastPlayerDetailCoverVisible:
       typeof patch.lastPlayerDetailCoverVisible === 'boolean'
         ? patch.lastPlayerDetailCoverVisible

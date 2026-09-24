@@ -241,6 +241,8 @@ export interface ThemeSettings {
   lastPlayerDetailCoverVisible: boolean;
   /** 播放详情页皮肤：classic=经典方形封面，vinyl=黑胶唱片（UI 移植自 mozarta-nexus/music-web-player） */
   playerDetailStyle: 'classic' | 'vinyl';
+  /** 播放详情页多边形流光背景（Voronoi 网格：随机边数多边形缓慢漂移） */
+  playerDetailMeshBackground: boolean;
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;
