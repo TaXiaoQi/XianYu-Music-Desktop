@@ -38,7 +38,7 @@ import {
   type BakaCommentResult,
   type BakaLyricFormat,
 } from './bakaPluginManagerBase';
-import { buildBakaMfLyricsRaw } from './bakaMfLyricsBuilder';
+import { buildBakaMfLyricsRaw, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
 import { clearLastSandboxError, getLastSandboxError } from './pluginSandboxManager';
 import {
   resetMediaItem,
@@ -353,9 +353,13 @@ export class BakaPluginMedia extends BakaPluginCore {
     ) || {};
     const ekey = firstStringField(result, ['ekey', 'eKey', 'encryptKey', 'encryptionKey', 'qmcKey', 'qmc2Key']);
     const cek = firstStringField(result, ['cek', 'cKey', 'contentKey', 'decryptKey', 'decryptionKey', 'cencKey']);
-    const lyric = result.lyric || result.rawLrc || result.lrc || '';
+    const mainLyricRaw = result.lyric || result.rawLrc || result.lrc || '';
+    // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文同批加密），
+    // 不能当歌词展示——密文置空，走「无歌词」
+    const mainEncrypted = pluginLyricLooksEncrypted(mainLyricRaw);
+    const lyric = mainEncrypted ? '' : mainLyricRaw;
     const ttml = result.ttml || '';
-    const tlyric = result.tlyric || result.translation || '';
+    const tlyric = mainEncrypted ? '' : (result.tlyric || result.translation || '');
     // am 等插件作者统一把逐字/逐行都转成 lrc 返回：词级尖括号时间戳直接嵌在
     // lyric 里，无独立 lxlyric 字段。与移动端 fallback 语义对齐：
     // lxlyric 为空且 lyric 含词级时间戳时，lyric 即逐字内容
@@ -431,10 +435,19 @@ export class BakaPluginMedia extends BakaPluginCore {
         return null;
       }
 
-      const rawLrc = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
+      const mainLrcRaw = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
+      // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文/罗马音同批加密），
+      // 不能当歌词展示——密文置空，空判定自然走「无歌词」返回
+      const lrcEncrypted = pluginLyricLooksEncrypted(mainLrcRaw);
+      if (lrcEncrypted) {
+        log(`[getLyric] ${source.name} 检测到未解密密文歌词（QRC/e-lrc hex），已置空`);
+      }
+      const rawLrc = lrcEncrypted ? '' : mainLrcRaw;
       const ttml = lrcSource.ttml || '';
-      const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
-      const romanization = lrcSource.romanization || lrcSource.rlyric || '';
+      const translation = lrcEncrypted
+        ? ''
+        : (lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '');
+      const romanization = lrcEncrypted ? '' : (lrcSource.romanization || lrcSource.rlyric || '');
       // 同 getMediaSource：lxlyric 为空且 lyric 内嵌词级时间戳时，lyric 即逐字内容
       const lxlyric = lrcSource.lxlyric
         || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(rawLrc) ? rawLrc : '');

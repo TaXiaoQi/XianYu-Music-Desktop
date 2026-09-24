@@ -1,6 +1,9 @@
-<script setup lang="ts">
+<script lang="ts">
+// 类型导出必须放在普通 <script> 块：<script setup> 的导出不会成为模块命名导出
 export type SyncDeleteScope = 'local' | 'all' | 'cloud';
+</script>
 
+<script setup lang="ts">
 defineProps<{
   visible: boolean;
   title: string;

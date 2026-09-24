@@ -19,7 +19,7 @@ import {
   resetMediaItem,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
-import { buildBakaMfLyricsRaw } from './bakaMfLyricsBuilder';
+import { buildBakaMfLyricsRaw, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/mediaUrl';
 import { BakaPluginManager } from './bakaPluginManager';
 import { fetchPlatformMusicComments } from './platformComments';
@@ -243,9 +243,13 @@ async function runPluginGetMusicInfo(
     }
   }
   const headers = normalizeMediaRequestHeaders(url, result.headers || {}) || {};
-  const lyric = result.lyric || result.rawLrc || result.lrc || '';
+  const mainLyricRaw = result.lyric || result.rawLrc || result.lrc || '';
+  // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文同批加密），
+  // 不能当歌词展示——密文置空，走「无歌词」
+  const mainEncrypted = pluginLyricLooksEncrypted(mainLyricRaw);
+  const lyric = mainEncrypted ? '' : mainLyricRaw;
   const ttml = result.ttml || '';
-  const tlyric = result.tlyric || result.translation || '';
+  const tlyric = mainEncrypted ? '' : (result.tlyric || result.translation || '');
   const lxlyric = result.lxlyric || '';
   const yrc = result.yrc || '';
   const qrc = result.qrc || '';
@@ -454,10 +458,16 @@ export async function pluginGetLyric(
       return null;
     }
 
-    const rawLrc = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
+    const mainLrcRaw = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
+    // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文/罗马音同批加密），
+    // 不能当歌词展示——密文置空，空判定自然走「无歌词」返回
+    const lrcEncrypted = pluginLyricLooksEncrypted(mainLrcRaw);
+    const rawLrc = lrcEncrypted ? '' : mainLrcRaw;
     const ttml = lrcSource.ttml || '';
-    const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
-    const romanization = lrcSource.romanization || lrcSource.rlyric || '';
+    const translation = lrcEncrypted
+      ? ''
+      : (lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '');
+    const romanization = lrcEncrypted ? '' : (lrcSource.romanization || lrcSource.rlyric || '');
     // 同 bakaPluginManagerMedia：lxlyric 为空且 lyric 内嵌词级时间戳时，lyric 即逐字内容
     const lxlyric = lrcSource.lxlyric
       || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(rawLrc) ? rawLrc : '');
