@@ -1317,10 +1317,10 @@ const dlnaCast = useDlnaCastStore();
         if (resolvedOnlineAudio.currentPlayingAudioUrl) {
           playbackStore.currentPlayingAudioUrl = resolvedOnlineAudio.currentPlayingAudioUrl;
         }
-        // 同 getLyric 链：旧数据为逐行而新数据含词级尖括号时升级覆盖
+        // 同 getLyric 链：旧数据为逐行而新数据含词级（尖括号或 QRC XML）时升级覆盖
         if (resolvedOnlineAudio.lyricsRaw
           && (!song.lyrics_raw?.trim()
-            || (!wordTimestampPattern.test(song.lyrics_raw) && wordTimestampPattern.test(resolvedOnlineAudio.lyricsRaw)))) {
+            || (!looksWordLevel(song.lyrics_raw) && looksWordLevel(resolvedOnlineAudio.lyricsRaw)))) {
           song.lyrics_raw = resolvedOnlineAudio.lyricsRaw;
         }
         if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
