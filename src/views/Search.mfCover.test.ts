@@ -18,7 +18,7 @@ describe('MusicFree search cover backfill', () => {
 
   it('cancels in-flight work when the search or source changes', () => {
     expect(searchSource).toContain('const version = ++coverLoadVersion;');
-    expect(searchSource).toContain('if (version !== coverLoadVersion) return; // 新搜索/切换来源，停止旧任务');
+    expect(searchSource).toContain('if (version !== coverLoadVersion) return;');
   });
 
   it('never re-requests an item whose cover/duration lookup already succeeded or failed', () => {

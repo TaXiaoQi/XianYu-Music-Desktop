@@ -25,7 +25,8 @@ describe('main window rendering power', () => {
     expect(resolveMainWindowLowPower({ ...foregroundSnapshot(), windowFocused: false })).toBe(false);
   });
 
-  it('keeps full rendering when document visibility changes but the main window remains visible', () => {
-    expect(resolveMainWindowLowPower({ ...foregroundSnapshot(), documentHidden: true })).toBe(false);
+  it('uses low power rendering when the document is hidden (switched to background)', () => {
+    // c15549ff 起 documentHidden 参与判定：切后台自动暂停并降功率渲染
+    expect(resolveMainWindowLowPower({ ...foregroundSnapshot(), documentHidden: true })).toBe(true);
   });
 });

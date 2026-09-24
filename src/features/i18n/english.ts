@@ -1,4 +1,26 @@
 const exactEnglishTranslations: Record<string, string> = {
+  // 云端歌单源端更新弹窗（SyncDeleteScopeModal / 歌单更新确认）
+  '仅添加新歌曲': 'Add new songs only',
+  '从源端更新歌单': 'Update playlist from source',
+  '保留本机现有歌曲不变': 'Keep existing local songs unchanged',
+  '删除本机': 'Delete locally',
+  '完全同步': 'Full sync',
+  '新增': 'New',
+  '更新': 'Update',
+  '条': 'items',
+  '检测到源端歌单更新': 'Source playlist updates detected',
+  '首源端已移除的歌曲，并添加新歌曲': ' songs removed from the source, and add new songs',
+  '首，源端已移除': ' songs removed from source',
+  // 备份加密
+  '使用密码加密整个备份文件（含插件用户变量），导入时需输入相同密码': 'Encrypt the entire backup file (including plugin user variables) with a password; the same password is required on import',
+  '加密备份': 'Encrypted backup',
+  '备份密码': 'Backup password',
+  '解密并导入': 'Decrypt and import',
+  '设置备份密码': 'Set backup password',
+  '该备份文件已加密，请输入导出时设置的密码。': 'This backup file is encrypted. Enter the password set during export.',
+  // 本地视频
+  '视频': 'Video',
+  '选择本地视频': 'Select local video',
   '确定': 'OK',
   '取消': 'Cancel',
   '关闭': 'Close',
