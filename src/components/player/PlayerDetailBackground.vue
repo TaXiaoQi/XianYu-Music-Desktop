@@ -30,83 +30,95 @@ const videoRef = ref<HTMLVideoElement | null>(null);
 const videoPlaybackFailed = ref(false);
 const coverImgFailed = ref(false);
 
-// --- MV 音频接管：把音频交给 MV 自带音轨（交叉淡入淡出） ---
+// --- MV 音频接管：把音频交给 MV 自带音轨（等功率交叉淡化，与移动端一致） ---
 const mvTargetVolume = () =>
   Math.min(1, Math.max(0, Number(playbackStore.volume) / 100 || 0));
 
-let videoFadeRaf = 0;
-let backendFadeRaf = 0;
+let crossfadeRaf = 0;
+// 是否真正启动过接管淡化（video 元素就绪并取消静音）。
+// 立即接管在 start 时置标记，video 元素可能尚未挂载——还原时只有真正
+// 动过歌曲通道才需要恢复，避免把正常播放的歌曲音量拖到 0 再拉回。
+let mvAudioEngaged = false;
 
-function fadeVideoTo(target: number, durMs = 400): Promise<void> {
-  const video = videoRef.value;
-  if (!video) return Promise.resolve();
-  const from = video.volume;
+function stopCrossfade() {
+  if (crossfadeRaf) {
+    cancelAnimationFrame(crossfadeRaf);
+    crossfadeRaf = 0;
+  }
+}
+
+// 等功率交叉淡化：歌曲通道增益按 cos 衰减、MV 音轨音量按 sin 上升（反向
+// 同步，单时钟驱动两条曲线），全程总响度基本恒定，听感无「凹坑」。
+// [toMv]=true 为接管（歌曲→MV），false 为释放（MV→歌曲）。
+function equalPowerCrossfade(toMv: boolean, userVol: number, durMs: number): Promise<void> {
   return new Promise((resolve) => {
-    if (videoFadeRaf) cancelAnimationFrame(videoFadeRaf);
-    if (Math.abs(from - target) < 0.004 || durMs <= 0) {
-      video.volume = target;
-      resolve();
-      return;
-    }
+    stopCrossfade();
     const t0 = performance.now();
     const step = (now: number) => {
-      const p = Math.min(1, (now - t0) / durMs);
-      video.volume = from + (target - from) * p;
-      if (p < 1) videoFadeRaf = requestAnimationFrame(step);
-      else { videoFadeRaf = 0; resolve(); }
+      const video = videoRef.value;
+      if (!video) {
+        crossfadeRaf = 0;
+        resolve();
+        return;
+      }
+      const t = Math.min(1, (now - t0) / durMs);
+      const k = t * Math.PI / 2;
+      video.volume = toMv
+        ? Math.min(1, userVol * Math.sin(k))
+        : Math.max(0, userVol * Math.cos(k));
+      void playbackApi.setVolume(
+        toMv ? userVol * Math.cos(k) : userVol * Math.sin(k),
+      );
+      if (t < 1) {
+        crossfadeRaf = requestAnimationFrame(step);
+      } else {
+        crossfadeRaf = 0;
+        resolve();
+      }
     };
-    videoFadeRaf = requestAnimationFrame(step);
+    crossfadeRaf = requestAnimationFrame(step);
   });
 }
 
-function fadeBackendVolume(from: number, target: number, durMs = 400): Promise<void> {
-  return new Promise((resolve) => {
-    if (backendFadeRaf) cancelAnimationFrame(backendFadeRaf);
-    if (Math.abs(from - target) < 0.004 || durMs <= 0) {
-      void playbackApi.setVolume(target);
-      resolve();
-      return;
-    }
-    const t0 = performance.now();
-    const step = (now: number) => {
-      const p = Math.min(1, (now - t0) / durMs);
-      void playbackApi.setVolume(from + (target - from) * p);
-      if (p < 1) backendFadeRaf = requestAnimationFrame(step);
-      else { backendFadeRaf = 0; resolve(); }
-    };
-    backendFadeRaf = requestAnimationFrame(step);
-  });
+// 接管/还原串行队列：start 重开时同一帧内 false→true 连续翻转，
+// 必须先等释放淡化走完（含末尾静音/复位）再执行接管，否则接管的
+// 幂等检查会误判「已接管」而跳过，导致 MV 静音。
+let crossfadeQueue: Promise<void> = Promise.resolve();
+function enqueueCrossfade(op: () => Promise<void>): Promise<void> {
+  crossfadeQueue = crossfadeQueue.then(op).catch(() => {});
+  return crossfadeQueue;
 }
 
-// 接管：取消视频静音，同时 MV 音频渐入、歌曲音频渐出（二者同源同曲，交叉过渡体感无缝）。
+// 接管：取消视频静音，歌曲通道与 MV 音轨等功率交叉（二者同源同曲，过渡无缝）。
 async function engageMvAudioTakeover() {
   const video = videoRef.value;
   if (!video) return;
   if (video.muted === false) return; // 已接管，幂等
+  mvAudioEngaged = true;
   const userVol = mvTargetVolume();
   video.muted = false;
   video.volume = 0;
-  await Promise.all([
-    fadeBackendVolume(userVol, 0, 400),
-    fadeVideoTo(userVol, 400),
-  ]);
+  await equalPowerCrossfade(true, userVol, 420);
 }
 
-// 还原：淡出 MV 音频，恢复歌曲音频通道。
+// 还原：MV 音轨快速淡出的同时歌曲通道淡入，随后静音视频。
 async function releaseMvAudioTakeover() {
+  const wasEngaged = mvAudioEngaged;
+  mvAudioEngaged = false;
   const video = videoRef.value;
   if (video && video.muted === false) {
-    await fadeVideoTo(0, 250);
+    if (wasEngaged) await equalPowerCrossfade(false, mvTargetVolume(), 180);
     video.muted = true;
     video.volume = 0;
+    return;
   }
-  await fadeBackendVolume(0, mvTargetVolume(), 250);
+  // 无可操作的视频元素（如组件卸载中）但歌曲通道已被接管压低：直接恢复。
+  if (wasEngaged) await playbackApi.setVolume(mvTargetVolume());
 }
 
-// 接管状态切换 → 触发交叉淡入淡出。
+// 接管状态切换 → 触发交叉淡入淡出（串行排队，防重开时释放/接管互踩）。
 watch(mvAudioTakenOver, (on) => {
-  if (on) void engageMvAudioTakeover();
-  else void releaseMvAudioTakeover();
+  void enqueueCrossfade(on ? engageMvAudioTakeover : releaseMvAudioTakeover);
 });
 
 // 接管中用户调音量 → 同步 MV 音轨（歌曲通道已被静音）。
@@ -251,11 +263,10 @@ watch(mvSyncOffsetSec, () => syncBackgroundVideo(true));
 const handleVideoLoaded = () => {
   syncBackgroundVideo(true);
   updateVideoPlayback();
-  // 若在视频就绪前就已判定接管，补齐音量与静音态。
-  if (mvAudioTakenOver.value && videoRef.value) {
-    const video = videoRef.value;
-    video.muted = false;
-    video.volume = mvTargetVolume();
+  // 视频就绪时若已判定接管（起播即接管）：从这里启动等功率交叉淡化——
+  // 接管标记置位时 video 元素可能尚未挂载，淡化只能等此刻补执行。
+  if (mvAudioTakenOver.value && videoRef.value?.muted) {
+    void enqueueCrossfade(engageMvAudioTakeover);
   }
 };
 

@@ -8,6 +8,7 @@ const {
   removeCachedBackgroundVideoMock,
   analyzeMvAudioSyncMock,
   analyzeMvAudioSyncLocalMock,
+  wasLastMvSourceCallFailedMock,
 } = vi.hoisted(() => ({
   mvProxyUrlMock: vi.fn(),
   getStoredPluginsMock: vi.fn(),
@@ -16,11 +17,14 @@ const {
   removeCachedBackgroundVideoMock: vi.fn(),
   analyzeMvAudioSyncMock: vi.fn(),
   analyzeMvAudioSyncLocalMock: vi.fn(),
+  wasLastMvSourceCallFailedMock: vi.fn(),
 }));
 
 vi.mock('../services/domain/pluginEngine', () => ({
   getStoredPlugins: getStoredPluginsMock,
   pluginGetVideoSource: pluginGetVideoSourceMock,
+  clearLastMvSourceCallFailed: vi.fn(),
+  wasLastMvSourceCallFailed: wasLastMvSourceCallFailedMock,
 }));
 
 vi.mock('../services/tauri/pluginApi', () => ({
@@ -45,7 +49,7 @@ vi.mock('../features/playback/store', () => ({
 }));
 
 import type { Song } from '../types';
-import { isBilibiliPluginSong, supportsMusicVideo, useBilibiliVideoBackground } from './useBilibiliVideoBackground';
+import { isBilibiliPluginSong, probeMvFor, supportsMusicVideo, useBilibiliVideoBackground } from './useBilibiliVideoBackground';
 
 const makeSong = (overrides: Partial<Song> = {}): Song => ({
   path: 'plugin://bilibili/BV1j3411D7pu',
@@ -104,6 +108,7 @@ describe('Bilibili player-detail video background', () => {
   beforeEach(async () => {
     await background.stop();
     vi.clearAllMocks();
+    wasLastMvSourceCallFailedMock.mockReturnValue(false);
     playbackUrlMock.value = null;
     getStoredPluginsMock.mockReturnValue([{ id: 'bili-plugin', name: '哔哩哔哩' }]);
     pluginGetVideoSourceMock.mockResolvedValue({
@@ -127,7 +132,7 @@ describe('Bilibili player-detail video background', () => {
     }))).toBe(false);
   });
 
-  it('非 B 站 MV 加载后局部匹配音画偏移并接管音频', async () => {
+  it('非 B 站 MV 起播即接管音频，局部匹配命中后更新偏移', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
     playbackUrlMock.value = 'https://isure.stream.qqmusic.qq.com/M800.mp3?vkey=abc';
     analyzeMvAudioSyncLocalMock.mockResolvedValue({ offsetSec: 2.5, confidence: 0.81 });
@@ -140,17 +145,20 @@ describe('Bilibili player-detail video background', () => {
       playbackUrlMock.value,
       0,
       undefined,
+      undefined,
+      269,
     );
     expect(analyzeMvAudioSyncMock).not.toHaveBeenCalled();
+    // 起播即接管：音频在画面起播时就交给 MV 音轨，不等频谱分析。
+    expect(background.audioTakenOver.value).toBe(true);
     await vi.waitFor(() => expect(background.syncOffsetSec.value).toBe(2.5));
-    await vi.waitFor(() => expect(background.audioTakenOver.value).toBe(true));
 
     await background.stop();
     expect(background.syncOffsetSec.value).toBe(0);
     expect(background.audioTakenOver.value).toBe(false);
   });
 
-  it('B 站歌曲局部匹配不可信时保持 0 偏移且不接管', async () => {
+  it('B 站歌曲局部匹配不可信时保持起播接管与 0 偏移', async () => {
     playbackUrlMock.value = 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s';
     analyzeMvAudioSyncLocalMock.mockResolvedValue(null);
 
@@ -158,12 +166,13 @@ describe('Bilibili player-detail video background', () => {
 
     expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalled();
     expect(analyzeMvAudioSyncMock).not.toHaveBeenCalled();
+    // 未得出可信偏移：保持起播对齐（音频已由 MV 音轨承担），不释放接管。
     expect(background.syncOffsetSec.value).toBe(0);
-    expect(background.audioTakenOver.value).toBe(false);
+    expect(background.audioTakenOver.value).toBe(true);
     await background.stop();
   });
 
-  it('分析不可信时保持 0 偏移并缓存结果，切画质不重复分析', async () => {
+  it('分析不可信时不缓存偏移，切画质重新分析', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
     playbackUrlMock.value = 'https://track.example.com/song.flac';
     const song = makeKugouSong({ path: 'plugin://kg-plugin/mv-sync-b' });
@@ -171,6 +180,7 @@ describe('Bilibili player-detail video background', () => {
     await expect(background.start(song)).resolves.toBe(true);
     await vi.waitFor(() => expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledTimes(1));
     expect(background.syncOffsetSec.value).toBe(0);
+    expect(background.audioTakenOver.value).toBe(true);
 
     pluginGetVideoSourceMock.mockResolvedValue({ url: 'https://mv.example.com/1080p.mp4' });
     mvProxyUrlMock.mockResolvedValue(
@@ -178,7 +188,9 @@ describe('Bilibili player-detail video background', () => {
     );
     await expect(background.setQuality('1080P')).resolves.toBe(true);
     await vi.waitFor(() => expect(background.videoUrl.value).toContain('1080p'));
-    expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledTimes(1);
+    // 无可信偏移缓存 → 切画质重新分析（分析仍不可信则保持起播对齐）。
+    await vi.waitFor(() => expect(analyzeMvAudioSyncLocalMock).toHaveBeenCalledTimes(2));
+    expect(background.audioTakenOver.value).toBe(true);
 
     await background.stop();
   });
@@ -391,5 +403,37 @@ describe('Bilibili player-detail video background', () => {
 
     await expect(background.start(song)).rejects.toThrow('未能解析当前歌曲的 MV');
     expect(pluginHttpRequestMock).not.toHaveBeenCalled();
+  });
+
+  it('MV 探测：插件干净无结果才缓存 false，入口隐藏', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
+    const song = makeKugouSong({
+      path: 'plugin://kg-plugin/probe-clean',
+      rawData: { id: 'abc123', platform: '酷狗音乐', pluginId: 'kg-plugin' },
+    });
+
+    // 字段判定（id 命中 MV 标识）先显示入口。
+    expect(supportsMusicVideo(song)).toBe(true);
+
+    await probeMvFor(song);
+
+    // 插件全程干净返回无结果 → 确认无 MV，缓存 false 并隐藏入口。
+    expect(supportsMusicVideo(song)).toBe(false);
+  });
+
+  it('MV 探测：插件异常导致结果存疑，不缓存 false', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
+    wasLastMvSourceCallFailedMock.mockReturnValue(true);
+    const song = makeKugouSong({
+      path: 'plugin://kg-plugin/probe-ambiguous',
+      rawData: { id: 'abc123', platform: '酷狗音乐', pluginId: 'kg-plugin' },
+    });
+
+    await probeMvFor(song);
+
+    // 存疑结果不写缓存 → 入口仍按字段判定显示，下次重探。
+    expect(supportsMusicVideo(song)).toBe(true);
   });
 });
