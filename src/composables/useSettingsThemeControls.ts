@@ -69,6 +69,12 @@ export function useSettingsThemeControls() {
       patchTheme({ playerDetailStyle: value });
     },
   });
+  const playerDetailMeshBackground = computed({
+    get: () => theme.value.playerDetailMeshBackground,
+    set: (value: boolean) => {
+      patchTheme({ playerDetailMeshBackground: value });
+    },
+  });
 
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
@@ -231,6 +237,10 @@ export function useSettingsThemeControls() {
     playerDetailStyle.value = value;
   };
 
+  const setPlayerDetailMeshBackground = (value: boolean) => {
+    playerDetailMeshBackground.value = value;
+  };
+
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -250,6 +260,7 @@ export function useSettingsThemeControls() {
     showLeaderboard,
     playerDetailCoverBehavior,
     playerDetailStyle,
+    playerDetailMeshBackground,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -278,5 +289,6 @@ export function useSettingsThemeControls() {
     setShowLeaderboard,
     setPlayerDetailCoverBehavior,
     setPlayerDetailStyle,
+    setPlayerDetailMeshBackground,
   };
 }

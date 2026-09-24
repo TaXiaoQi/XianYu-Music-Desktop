@@ -18,6 +18,7 @@ import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
 
 const LyricsView = defineAsyncComponent(() => import('./LyricsView.vue'));
 const PlayerDetailBackground = defineAsyncComponent(() => import('./PlayerDetailBackground.vue'));
+const PlayerDetailMeshBackground = defineAsyncComponent(() => import('./PlayerDetailMeshBackground.vue'));
 const PlayerDetailLeft = defineAsyncComponent(() => import('./PlayerDetailLeft.vue'));
 const PlayerDetailVinyl = defineAsyncComponent(() => import('./PlayerDetailVinyl.vue'));
 const QueueList = defineAsyncComponent(() => import('./QueueList.vue'));
@@ -478,7 +479,16 @@ const toggleVideoBackground = async () => {
           transform: showPlayerDetail ? 'translateY(0)' : 'translateY(100%)',
         }"
       >
-        <PlayerDetailBackground v-if="shouldRenderHeavyContent" :bgOpacity="1" :active="showPlayerDetail" />
+        <!-- 多边形流光背景（Voronoi 网格，开关开启时替换默认模糊封面背景） -->
+        <PlayerDetailMeshBackground
+          v-if="shouldRenderHeavyContent && settings.theme.playerDetailMeshBackground && !isMovieMode"
+          :active="showPlayerDetail"
+        />
+        <PlayerDetailBackground
+          v-else-if="shouldRenderHeavyContent"
+          :bg-opacity="1"
+          :active="showPlayerDetail"
+        />
         <div class="absolute inset-0 z-[-1] bg-[#0a0a0a]"></div>
       </div>
 

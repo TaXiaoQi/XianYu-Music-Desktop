@@ -38,6 +38,9 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailStyleLabel: 'Page style',
   playerDetailStyleClassic: 'Classic',
   playerDetailStyleVinyl: 'Vinyl Record',
+  playerDetailMeshBackgroundTitle: 'Polygon Flow Background',
+  playerDetailMeshBackgroundHint: 'Generate randomly-shaped drifting polygons from the cover',
+  playerDetailMeshBackgroundLabel: 'Use polygon flow background',
   dynamicTitle: 'Dynamic Background',
   dynamicHint: 'Changes with the album cover',
   dynamicOff: 'Off',
@@ -88,6 +91,9 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailStyleLabel: '页面样式',
   playerDetailStyleClassic: '经典',
   playerDetailStyleVinyl: '黑胶唱片',
+  playerDetailMeshBackgroundTitle: '多边形流光背景',
+  playerDetailMeshBackgroundHint: '由封面色场生成随机边数、缓慢漂移的多边形',
+  playerDetailMeshBackgroundLabel: '使用多边形流光背景',
   dynamicTitle: '动态背景',
   dynamicHint: '跟随封面变化',
   dynamicOff: '关闭',
@@ -217,6 +223,8 @@ const {
   setPlayerDetailCoverBehavior,
   playerDetailStyle,
   setPlayerDetailStyle,
+  playerDetailMeshBackground,
+  setPlayerDetailMeshBackground,
 } = useSettingsThemeControls();
 
 const commitAccentColor = (event: Event) => {
@@ -971,6 +979,28 @@ onUnmounted(() => {
           </Transition>
         </Teleport>
       </label>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.playerDetailMeshBackgroundTitle }}
+        </span>
+        <SettingHint :text="TEXT.playerDetailMeshBackgroundHint" />
+      </h2>
+
+      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {{ TEXT.playerDetailMeshBackgroundLabel }}
+        </span>
+        <button
+          type="button"
+          class="glass-switch"
+          :class="{ 'is-checked': playerDetailMeshBackground }"
+          @click="setPlayerDetailMeshBackground(!playerDetailMeshBackground)"
+        ></button>
+      </div>
     </section>
 
     <section class="space-y-3">
