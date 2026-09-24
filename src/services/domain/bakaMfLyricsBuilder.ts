@@ -375,6 +375,17 @@ export interface BakaMfLyricsPayload {
   eslrc?: string | null;
 }
 
+/** 是否为未解密的加密歌词密文（对齐移动端 pluginLyricLooksEncrypted）：
+ * Baka 系插件 crypt:1 时返回 QRC/e-lrc 的 3DES+zlib 包 hex 密文，不能当歌词
+ * 展示。判据：剥空白后几乎全为十六进制字符且无 [mm:ss 时间戳——真实歌词
+ * （LRC/QRC/YRC/lys）必然带时间戳。 */
+export function pluginLyricLooksEncrypted(text: string): boolean {
+  const t = text.replace(/\s+/g, '');
+  if (t.length < 48) return false;
+  const nonHex = t.replace(/[0-9A-Fa-f]/g, '').length;
+  return nonHex <= t.length * 0.05 && !/\[\d{1,3}:\d{2}/.test(text);
+}
+
 export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
   const parts: string[] = [];
 
