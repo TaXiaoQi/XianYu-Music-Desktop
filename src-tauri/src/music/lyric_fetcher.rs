@@ -185,10 +185,11 @@ const QRC_KEY_COMPRESSION: [u32; 48] = [
     13, 16, 10, 23, 0, 4, 2, 27, 14, 5, 20, 9, 22, 18, 11, 3, 25, 7, 15, 6, 26, 19, 12, 1, 40, 51,
     30, 36, 46, 54, 29, 39, 50, 44, 32, 47, 43, 48, 38, 55, 33, 52, 45, 41, 49, 35, 28, 31,
 ];
-const QRC_KEY: [u8; 24] = [
-    0x21, 0x40, 0x23, 0x29, 0x28, 0x2a, 0x24, 0x25, 0x31, 0x32, 0x33, 0x5a, 0x58, 0x43, 0x21, 0x40,
-    0x21, 0x40, 0x23, 0x29, 0x28, 0x4e, 0x48, 0x4c,
-];
+// QQ 客户端三把自定义 DES 密钥（移植自 BakaMusic lyric-decrypt.ts，同源于
+// MusicFree 移动端 customDES.ts；16 字节写法中仅前 8 字节参与 DES 位寻址）
+const QRC_KEY1: &[u8; 8] = b"!@#)(NHL";
+const QRC_KEY2: &[u8; 8] = b"123ZXC!@";
+const QRC_KEY3: &[u8; 8] = b"!@#)(*$%";
 
 type QrcSchedule = [[u8; 6]; 16];
 
@@ -460,11 +461,12 @@ fn qrc_key_schedule(key: &[u8], decrypt: bool) -> QrcSchedule {
     schedule
 }
 
-fn qrc_tripledes_key_setup(key: &[u8]) -> [QrcSchedule; 3] {
+/// 三段自定义 DES 密钥调度（D(KEY1) -> E(KEY2) -> D(KEY3)，与 BakaMusic 一致）
+fn qrc_tripledes_key_setup() -> [QrcSchedule; 3] {
     [
-        qrc_key_schedule(&key[16..24], true),
-        qrc_key_schedule(&key[8..16], false),
-        qrc_key_schedule(&key[0..8], true),
+        qrc_key_schedule(QRC_KEY1, true),
+        qrc_key_schedule(QRC_KEY2, false),
+        qrc_key_schedule(QRC_KEY3, true),
     ]
 }
 
@@ -476,7 +478,7 @@ fn qrc_tripledes_crypt(input: &[u8], schedule: &[QrcSchedule; 3], output: &mut [
     output.copy_from_slice(&buf);
 }
 
-/// 解密插件返回的加密歌词密文（QQ QRC / 酷我 e-lrc，3DES+zlib 压缩包 hex）。
+/// 解密插件返回的加密歌词密文（QQ QRC，三段自定义 DES+zlib 压缩包 hex）。
 /// Baka 系 musicfree 插件 getLyric 的注释即声明「由应用层解密」——与移动端/
 /// 腕上端一致，前端在密文检测命中后直接调本命令解密复用（三端后端同一实现）。
 #[tauri::command]
@@ -493,7 +495,7 @@ fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
     if encrypted.is_empty() {
         return Err("No data to decrypt".to_string());
     }
-    let schedule = qrc_tripledes_key_setup(&QRC_KEY);
+    let schedule = qrc_tripledes_key_setup();
     let mut block = [0u8; 8];
     let mut i = 0;
     while i + 8 <= encrypted.len() {
@@ -502,9 +504,11 @@ fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
         i += 8;
     }
 
+    // 解压：正确密钥下产物为标准 zlib 流（BakaMusic 用 pako.inflate），
+    // 保留多格式尝试兜底老变体
     for attempt in [
-        decompress_zlib_sync_flush(&encrypted),
         decompress_zlib_to_bytes(&encrypted),
+        decompress_zlib_sync_flush(&encrypted),
         decompress_deflate_to_bytes(&encrypted),
         decompress_zlib_to_bytes_skip_header(&encrypted),
         decompress_gzip_to_bytes(&encrypted),
@@ -2436,4 +2440,19 @@ pub async fn fetch_lyric_from_source(
         _ => return Ok(None),
     };
     Ok(result)
+}
+
+#[cfg(test)]
+mod qrc_roundtrip_tests {
+    use super::qrc_decrypt;
+
+    /// 密文由 BakaMusic lyric-decrypt.ts 同款 JS 实现（Node + zlib.deflateSync）
+    /// 对 fixtures/lyrics/baby.qrc 加密生成，验证 Rust 移植与 BakaMusic 等价。
+    #[test]
+    fn qrc_decrypt_roundtrip_baka_music_sample() {
+        let hex = "28feb85c1e5b0aee52751548debf8cec52f70ac1da86688e31bcd4d2a45cb2c8160f5c250523e901f07ebf7fe6d77f6faa0f5043b807fcc537f7187d35c7679b37036be3184b3105526561110e1753714a7e6d1d7f17b0b2a10fe8c072d2e43ef5ec7d25bc331953a9ca7bf72bc291aa1c86176920dd579407719661fa2779178156cd4d9c435d39b7d92fad21e1e16de1096ea95d514b6e9d649c010e4f4003d763cf03ee9144d0ee69b070891a4636";
+        let decrypted = qrc_decrypt(hex).expect("decrypt failed");
+        let expected = include_str!("fixtures/lyrics/baby.qrc");
+        assert_eq!(decrypted.trim(), expected.trim());
+    }
 }
