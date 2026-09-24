@@ -329,6 +329,19 @@ export interface PluginVideoSource {
   availableVideoQualities?: PluginVideoQuality[];
 }
 
+/// 最近一次 pluginGetVideoSource 是否因插件异常被吞成 null（区别于插件干净
+/// 返回无结果）。供 MV 探测区分「存疑」与「确认无 MV」——JS 单线程内顺序
+/// 调用，模块级标记即可（与移动端 _mvResolveAmbiguous 语义一致）。
+let lastMvSourceCallFailed = false;
+
+export function clearLastMvSourceCallFailed(): void {
+  lastMvSourceCallFailed = false;
+}
+
+export function wasLastMvSourceCallFailed(): boolean {
+  return lastMvSourceCallFailed;
+}
+
 export async function pluginGetVideoSource(
   source: PluginSource,
   item: PluginSearchResult,
@@ -399,6 +412,9 @@ export async function pluginGetVideoSource(
       availableVideoQualities: availableVideoQualities?.length ? availableVideoQualities : undefined,
     };
   } catch (error) {
+    // 标记本次调用因插件异常返回 null（区别于插件干净地返回无结果），
+    // 供 MV 探测区分「存疑」与「确认无 MV」。
+    lastMvSourceCallFailed = true;
     log(`[getMvSource] ${source.name} 调用失败: ${error}`);
     return null;
   }

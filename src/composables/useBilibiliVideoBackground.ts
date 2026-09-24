@@ -1,8 +1,10 @@
 import { computed, ref } from 'vue';
 
 import {
+  clearLastMvSourceCallFailed,
   getStoredPlugins,
   pluginGetVideoSource,
+  wasLastMvSourceCallFailed,
   type PluginVideoQuality,
   type PluginVideoSource,
 } from '../services/domain/pluginEngine';
@@ -132,9 +134,19 @@ function mvProbeKey(song: Song): string {
   return `${pluginId}|${song.path}`;
 }
 
+/// 「确认无 MV」错误：整条解析链路（插件三档 + 兜底）都干净地返回了无结果，
+/// 没有发生任何插件异常。探测/显式开启据此缓存 false；普通解析异常
+/// （鉴权/网络等，被插件引擎吞成 null）属于存疑结果，不缓存。
+export class MvConfirmedNoResultError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MvConfirmedNoResultError';
+  }
+}
+
 /// 起播后静默探测：这首歌的插件是否真能解析出 MV。
-/// 「插件明确无结果」写 false；网络/鉴权等异常不写缓存（下次重探），
-/// 避免瞬时故障造成假阴性把有 MV 的歌错误隐藏。
+/// 「插件全部干净返回无结果」写 false；链路上有插件异常（鉴权/网络等）时
+/// 结果存疑不写缓存（下次重探），避免瞬时故障造成假阴性把有 MV 的歌错误隐藏。
 export async function probeMvFor(song: Song): Promise<void> {
   const key = mvProbeKey(song);
   if (!key || mvProbeResults.has(key)) return;
@@ -142,8 +154,7 @@ export async function probeMvFor(song: Song): Promise<void> {
     const { videoSource } = await resolveMvVideoSource(song, preferredMvQuality());
     mvProbeResults.set(key, !!videoSource?.url);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e || '');
-    if (msg.includes('均无结果') || msg.includes('无 MV') || msg.includes('不支持')) {
+    if (e instanceof MvConfirmedNoResultError) {
       mvProbeResults.set(key, false);
     }
   }
@@ -479,6 +490,7 @@ async function resolveMvVideoSource(song: Song, quality: string): Promise<{
   if (!source) {
     throw new Error('未找到当前歌曲对应的插件');
   }
+  clearLastMvSourceCallFailed();
   let resolved: PluginVideoSource | null = null;
   for (const q of mvQualityLadder(quality)) {
     resolved = await pluginGetVideoSource(source, toPluginSearchResult(song), q);
@@ -494,7 +506,11 @@ async function resolveMvVideoSource(song: Song, quality: string): Promise<{
     resolved = await resolveBilibiliVideoSource(song, quality);
   }
   if (!resolved?.url) {
-    throw new Error(isBili ? '未能解析当前 Bilibili 视频' : '未能解析当前歌曲的 MV');
+    // 插件链路上发生过异常（被引擎吞成 null）→ 结果存疑，抛普通错误让探测侧
+    // 不缓存 false；全程干净无结果 → 确认无 MV，探测/显式开启据此缓存 false。
+    const message = isBili ? '未能解析当前 Bilibili 视频' : '未能解析当前歌曲的 MV';
+    if (wasLastMvSourceCallFailed()) throw new Error(message);
+    throw new MvConfirmedNoResultError(message);
   }
   const headers = isBili
     ? withBilibiliHeaders(resolved.headers, resolved.userAgent)
@@ -503,11 +519,11 @@ async function resolveMvVideoSource(song: Song, quality: string): Promise<{
 }
 
 async function runSyncAnalysis(song: Song, isBili: boolean, requestId: number): Promise<void> {
-  // 已有可信偏移（历史匹配缓存）→ 直接接管音频，无需重复分析。
+  // 已有可信偏移（历史匹配缓存）→ 直接采用，无需重复分析。
+  // 音频自起播即由 MV 音轨承担（start 的立即接管），这里只负责对齐偏移。
   const cached = syncOffsetCache.get(song.path);
   if (cached !== undefined) {
     syncOffsetSec.value = cached;
-    audioTakenOver.value = true;
     return;
   }
   let audioUrl: string | null = null;
@@ -520,12 +536,15 @@ async function runSyncAnalysis(song: Song, isBili: boolean, requestId: number): 
 
   try {
     const songPosSec = usePlaybackStore().currentTime || 0;
-    // 局部滑动匹配：以当前播放位置为锚，容忍 MV 片头/花絮导致的对齐错位。
+    // 局部滑动匹配：以当前播放位置为锚，容忍 MV 片头/花絮导致的对齐错位；
+    // 搜索带按歌曲相对位置收窄（前/中/后粗对应），防止歌头误配到 MV 尾部高潮。
     let estimate = await analyzeMvAudioSyncLocal(
       videoUrl.value,
       audioUrl,
       songPosSec,
       song.remote_headers,
+      undefined,
+      song.duration ?? 0,
     );
     // 局部匹配失败时，非 B 站源回退到经典全局互相关（兼容旧行为）。
     if (!estimate && !isBili) {
@@ -535,16 +554,13 @@ async function runSyncAnalysis(song: Song, isBili: boolean, requestId: number): 
     if (estimate) {
       syncOffsetSec.value = estimate.offsetSec;
       syncOffsetCache.set(song.path, estimate.offsetSec);
-      // 可信对齐命中 → 整首歌改用 MV 自带音轨。
-      audioTakenOver.value = true;
     } else {
-      syncOffsetSec.value = 0;
-      syncOffsetCache.set(song.path, 0);
-      audioTakenOver.value = false;
-      console.warn(`[MV自动对齐] ${song.name}: 未得出可信偏移，保持 0（本次不校正内容错位，也不接管音频）`);
+      // 未得出可信偏移：保持起播对齐继续播（音频已由 MV 音轨承担），不写
+      // 缓存，下次开启重探。
+      console.warn(`[MV自动对齐] ${song.name}: 未得出可信偏移，保持起播对齐`);
     }
   } catch (e) {
-    console.warn('[MV自动对齐] 分析失败，保持 0 偏移:', e);
+    console.warn('[MV自动对齐] 分析失败，保持起播对齐:', e);
   }
 }
 
@@ -593,6 +609,12 @@ export function useBilibiliVideoBackground() {
     try {
       ({ videoSource, headers } = await resolveMvVideoSource(song, targetQuality));
     } catch (resolutionError) {
+      // 与移动端一致：显式开启也把「确认无 MV」写进探测缓存，入口随即消失；
+      // 存疑结果（插件异常）不写，避免一次瞬时失败隐藏整个会话的入口。
+      if (resolutionError instanceof MvConfirmedNoResultError) {
+        const key = mvProbeKey(song);
+        if (key) mvProbeResults.set(key, false);
+      }
       if (requestId === requestVersion) {
         loading.value = false;
         phase.value = '';
@@ -648,6 +670,10 @@ export function useBilibiliVideoBackground() {
         : [{ key: videoSource.videoQuality || targetQuality }]);
     activeQuality.value = videoSource.videoQuality || targetQuality;
     syncOffsetSec.value = syncOffsetCache.get(song.path) ?? 0;
+    // 立即接管：画面起播即由 MV 音轨承担——起播位置已按当前偏移环形映射
+    // （未分析时 offset=0，与歌曲同刻度），音画天然同步；频谱分析命中后仅
+    // 做一次重对齐 seek（组件监听 syncOffsetSec），不存在二次音频切换。
+    audioTakenOver.value = true;
     void runSyncAnalysis(song, isBili, requestId);
     return true;
   };

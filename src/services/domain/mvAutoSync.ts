@@ -9,6 +9,8 @@ const MIN_CONFIDENCE = 0.2;
 const LOCAL_MIN_CONFIDENCE = 0.5;
 const LOCAL_DEFAULT_WINDOW_SEC = 15;
 const LOCAL_MIN_OVERLAP_FRAMES = 48;
+// 时间轴模糊匹配的最小半带宽（秒），对齐移动端 mv_sync.rs 的 LOCAL_BAND_MIN_SEC
+const LOCAL_BAND_MIN_SEC = 60;
 
 export interface MvSyncEstimate {
   offsetSec: number;
@@ -124,6 +126,10 @@ export function isTrustworthyEstimate(estimate: MvSyncEstimate | null): estimate
  * 包络上逐帧滑窗求 Pearson 相关，返回最佳对齐。比全局互相关对「MV 加了片头/花絮」
  * 更鲁棒——只要这段歌在 MV 里出现过就能对准，不会像全局那样被整段不匹配的开头带偏。
  *
+ * 时间轴模糊匹配（与移动端 mv_sync.rs 对齐）：搜索带按「歌曲相对位置 ↔ MV 相对位置」
+ * 收窄——带心 = f×MV 时长（f = 歌曲位置/歌曲时长），半带宽 = max(0.25×MV 时长, 60s)。
+ * 歌曲时长未知（≤0）时退化为全轴搜索。
+ *
  * 语义与全局一致：`offsetSec = mvPosSec - songPosSecActual`，即 `videoPos = audioPos + offset`。
  */
 export function estimateEnvelopeLagLocal(
@@ -131,6 +137,7 @@ export function estimateEnvelopeLagLocal(
   songEnvelope: Float32Array,
   songPosSec: number,
   windowSec = LOCAL_DEFAULT_WINDOW_SEC,
+  songDurSec = 0,
 ): MvSyncEstimate | null {
   const hopSec = ENVELOPE_HOP / ANALYSIS_SAMPLE_RATE;
   const winFrames = Math.max(LOCAL_MIN_OVERLAP_FRAMES, Math.round(windowSec / hopSec));
@@ -140,10 +147,29 @@ export function estimateEnvelopeLagLocal(
   const songStart = Math.min(songStartFrame, songEnvelope.length - winFrames);
   const songWin = zNormalize(songEnvelope.subarray(songStart, songStart + winFrames));
 
+  // —— 时间轴模糊匹配（前/中/后对应带）——
+  // 全轴滑窗的根因缺陷：相似段落（副歌）在时间轴上可以任意远，歌曲开头会
+  // 误配到 MV 尾部高潮。约束锚点只能落在模糊带内搜索。
+  const mvLastStart = Math.max(0, mvEnvelope.length - winFrames);
+  let searchLo = 0;
+  let searchHi = mvLastStart;
+  if (Number.isFinite(songDurSec) && songDurSec > 0) {
+    const f = Math.min(1, Math.max(0, songPosSec / songDurSec));
+    const mvTotalSec = mvEnvelope.length * hopSec;
+    const halfBand = Math.max(mvTotalSec * 0.25, LOCAL_BAND_MIN_SEC);
+    const center = f * mvTotalSec;
+    searchLo = Math.max(0, Math.floor((center - halfBand) / hopSec));
+    searchHi = Math.min(mvLastStart, Math.ceil((center + halfBand) / hopSec));
+    if (searchHi < searchLo) {
+      searchLo = 0;
+      searchHi = mvLastStart;
+    }
+  }
+
   let bestStart = 0;
   let bestScore = -Infinity;
   let hasFinite = false;
-  for (let start = 0; start <= mvEnvelope.length - winFrames; start += 1) {
+  for (let start = searchLo; start <= searchHi; start += 1) {
     const slice = zNormalize(mvEnvelope.subarray(start, start + winFrames));
     let dot = 0;
     for (let i = 0; i < winFrames; i += 1) dot += songWin[i] * slice[i];
@@ -233,7 +259,8 @@ export async function analyzeMvAudioSync(
 
 /**
  * 局部频谱对齐：以歌曲当前位置 [songPosSec] 为锚下载歌曲音频 + 读取 MV 缓存，
- * 在整个 MV 上滑窗匹配。用于 MV 开启时对齐并接管音频（容忍片头/花絮）。
+ * 在搜索带内滑窗匹配。用于 MV 开启时对齐（容忍片头/花絮）。
+ * [songDurSec] 为歌曲时长（秒），用于时间轴模糊带收窄搜索范围；未知传 0。
  * 返回失败或低置信度时返回 null。
  */
 export async function analyzeMvAudioSyncLocal(
@@ -242,6 +269,7 @@ export async function analyzeMvAudioSyncLocal(
   songPosSec: number,
   audioHeaders?: Record<string, string> | null,
   windowSec = LOCAL_DEFAULT_WINDOW_SEC,
+  songDurSec = 0,
 ): Promise<MvSyncEstimate | null> {
   const { pluginApi } = await import('../tauri/pluginApi');
   const { convertFileSrc } = await import('@tauri-apps/api/core');
@@ -269,7 +297,7 @@ export async function analyzeMvAudioSyncLocal(
     ]);
     if (!mvEnvelope || !songEnvelope) return null;
 
-    const estimate = estimateEnvelopeLagLocal(mvEnvelope, songEnvelope, songPosSec, windowSec);
+    const estimate = estimateEnvelopeLagLocal(mvEnvelope, songEnvelope, songPosSec, windowSec, songDurSec);
     return isTrustworthyEstimateLocal(estimate) ? estimate : null;
   } finally {
     if (audioCachePath) {
