@@ -13,6 +13,7 @@ import { installApplicationLogger } from './services/applicationLogger'
 import { initFallbackModuleSync } from './services/fallbackModules/sync'
 import { reportError } from './services/domain/usageStats'
 import { installScrollbarController } from './utils/scrollbarController'
+import { setLoggerCallback } from './services/domain/pluginEngineBase'
 
 const currentWindowLabel = (() => {
   try {
@@ -23,6 +24,10 @@ const currentWindowLabel = (() => {
 })()
 
 installApplicationLogger(currentWindowLabel)
+
+// 插件引擎域内 log() 此前无回调注册、消息全被静默丢弃（getLyric/MV 探测等
+// 排障日志在 devtools 与日志文件里都不可见）——统一转发到 console
+setLoggerCallback((msg) => console.log('[plugin-engine]', msg))
 
 if (currentWindowLabel === 'main') {
   initFallbackModuleSync()
