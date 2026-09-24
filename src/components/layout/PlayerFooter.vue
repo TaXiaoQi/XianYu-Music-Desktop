@@ -610,7 +610,7 @@ const ensureFooterQualityInfo = async () => {
   }
   if (!isCurrent()) return;
 
-  const probe = await ensureSharedQualityProbe(song, declaredQualities);
+  const probe = await ensureSharedQualityProbe(song, declaredQualities, { full: true });
   if (!probe || !isCurrent()) {
     if (isCurrent()) isFooterQualityInfoProbing.value = false;
     return;

@@ -216,6 +216,10 @@ export async function createShareUrl(
 
 type ShareBodyExtra = Partial<{ expireMinutes: number; source: string }>;
 
+// 预取失败负缓存：服务器不可达时不反复重试整条链路
+const PRELOAD_FAIL_BACKOFF_MS = 60_000;
+const preloadFailAt = new Map<string, number>();
+
 export function preloadShareUrl(
   song: Song | null | undefined,
   coverUrl?: string,
@@ -224,8 +228,17 @@ export function preloadShareUrl(
   if (!song) return;
   const key = shareCacheKey(song);
   if (shareCache.has(key)) return;
+  const failedAt = preloadFailAt.get(key);
+  if (failedAt != null) {
+    if (Date.now() - failedAt < PRELOAD_FAIL_BACKOFF_MS) return;
+    preloadFailAt.delete(key);
+  }
   const pending = createShareUrl(song, coverUrl, extra).catch(() => '');
   shareCache.set(key, { pending });
+  void pending.then(() => {
+    // 成功且带封面时 createShareUrl 会写入 { url }；未落 url（封面失败/整体失败）记负缓存
+    if (!shareCache.get(key)?.url) preloadFailAt.set(key, Date.now());
+  });
 }
 
 export function reportShareAction(): void {
