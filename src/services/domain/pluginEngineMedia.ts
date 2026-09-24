@@ -19,7 +19,7 @@ import {
   resetMediaItem,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
-import { buildBakaMfLyricsRaw, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
+import { buildBakaMfLyricsRaw, decryptPluginLyricText, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/mediaUrl';
 import { BakaPluginManager } from './bakaPluginManager';
 import { fetchPlatformMusicComments } from './platformComments';
@@ -244,15 +244,27 @@ async function runPluginGetMusicInfo(
   }
   const headers = normalizeMediaRequestHeaders(url, result.headers || {}) || {};
   const mainLyricRaw = result.lyric || result.rawLrc || result.lrc || '';
-  // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文同批加密），
-  // 不能当歌词展示——密文置空，走「无歌词」
-  const mainEncrypted = pluginLyricLooksEncrypted(mainLyricRaw);
-  const lyric = mainEncrypted ? '' : mainLyricRaw;
+  // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文同批加密）——
+  // 调后端解密复用（三端同一能力），解密产物走逐字管线；失败置空走「无歌词」
+  let lyric = mainLyricRaw;
+  let qrc = result.qrc || '';
+  let tlyric = result.tlyric || result.translation || '';
+  if (pluginLyricLooksEncrypted(mainLyricRaw)) {
+    const decrypted = await decryptPluginLyricText(mainLyricRaw);
+    if (decrypted) {
+      qrc = decrypted;
+      lyric = '';
+      if (tlyric && pluginLyricLooksEncrypted(tlyric)) {
+        tlyric = (await decryptPluginLyricText(tlyric)) ?? '';
+      }
+    } else {
+      lyric = '';
+      tlyric = '';
+    }
+  }
   const ttml = result.ttml || '';
-  const tlyric = mainEncrypted ? '' : (result.tlyric || result.translation || '');
   const lxlyric = result.lxlyric || '';
   const yrc = result.yrc || '';
-  const qrc = result.qrc || '';
   const eslrc = result.eslrc || '';
   const coverUrl = result.coverUrl || result.artwork || '';
   if (!url) {

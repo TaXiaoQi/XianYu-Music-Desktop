@@ -55,7 +55,8 @@ use install_language::{get_install_language, set_install_language};
 use music::{
     add_library_folder, authed_request, batch_move_music_files, clear_auth_credentials,
     clear_cover_cache, clear_song_background, create_folder, delete_folder, delete_music_file,
-    extract_palette, fetch_lyric_from_source, find_alternative_lx_source, get_auth_api_secret,
+    decrypt_plugin_lyric, extract_palette, fetch_lyric_from_source, find_alternative_lx_source,
+    get_auth_api_secret,
     get_auth_base_url, get_auth_credentials, get_folder_children, get_folder_first_song,
     get_library_album_catalog, get_library_artist_catalog, get_library_folders,
     get_library_hierarchy, get_library_song_paths_by_album, get_library_song_paths_by_artist,
@@ -424,6 +425,7 @@ pub fn run() {
             read_state_json,
             open_devtools,
             fetch_lyric_from_source,
+            decrypt_plugin_lyric,
             get_lx_cover,
             find_alternative_lx_source,
             save_playback_session,

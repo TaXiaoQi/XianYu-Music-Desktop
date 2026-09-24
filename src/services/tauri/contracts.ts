@@ -1124,6 +1124,10 @@ export interface TauriCommandMap {
     payload: { source: string; songInfo: LyricSongInfoContract };
     response: LyricResultContract | null;
   };
+  decrypt_plugin_lyric: {
+    payload: { encryptedHex: string };
+    response: string;
+  };
   get_lx_cover: {
     payload: { songInfo: LxUrlSongInfoContract };
     response: string | null;
