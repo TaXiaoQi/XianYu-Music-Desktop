@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
-const DEFAULT_API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
+const DEFAULT_API_SECRET: &str = "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3";
 
 const OFFICIAL_AUTH_BASE_URL: &str = "https://api.xianyumusic.cn/api";
 
