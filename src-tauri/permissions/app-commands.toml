@@ -25,6 +25,7 @@ commands.allow = [
   "get_song_lyrics_payload",
   "get_song_lyrics_for_edit",
   "save_song_lyrics",
+  "decrypt_plugin_lyric",
   "save_song_info",
   "save_song_background",
   "get_song_background",
