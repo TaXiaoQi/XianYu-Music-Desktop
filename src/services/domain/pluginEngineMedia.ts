@@ -471,20 +471,36 @@ export async function pluginGetLyric(
     }
 
     const mainLrcRaw = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
-    // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文/罗马音同批加密），
-    // 不能当歌词展示——密文置空，空判定自然走「无歌词」返回
-    const lrcEncrypted = pluginLyricLooksEncrypted(mainLrcRaw);
-    const rawLrc = lrcEncrypted ? '' : mainLrcRaw;
+    // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文/罗马音同批加密）。
+    // 非 Baka 插件同样可能返回密文（如 QQ音乐[L1] legacy 插件）——与 Baka 分支
+    // 同款：调后端解密复用（三端同一 Rust 实现），解密产物走 qrc 逐字管线；
+    // 解密失败才置空走「无歌词」
+    let rawLrc = mainLrcRaw;
+    let translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
+    let romanization = lrcSource.romanization || lrcSource.rlyric || '';
+    let qrc = lrcSource.qrc || '';
+    if (pluginLyricLooksEncrypted(mainLrcRaw)) {
+      const decrypted = await decryptPluginLyricText(mainLrcRaw);
+      if (decrypted) {
+        qrc = decrypted;
+        rawLrc = '';
+        log(`[getLyric] ${source.name} 密文歌词已解密 len=${decrypted.length}`);
+      } else {
+        rawLrc = '';
+        log(`[getLyric] ${source.name} 密文歌词解密失败，置空`);
+      }
+      if (translation && pluginLyricLooksEncrypted(translation)) {
+        translation = (await decryptPluginLyricText(translation)) ?? '';
+      }
+      if (romanization && pluginLyricLooksEncrypted(romanization)) {
+        romanization = (await decryptPluginLyricText(romanization)) ?? '';
+      }
+    }
     const ttml = lrcSource.ttml || '';
-    const translation = lrcEncrypted
-      ? ''
-      : (lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '');
-    const romanization = lrcEncrypted ? '' : (lrcSource.romanization || lrcSource.rlyric || '');
     // 同 bakaPluginManagerMedia：lxlyric 为空且 lyric 内嵌词级时间戳时，lyric 即逐字内容
     const lxlyric = lrcSource.lxlyric
       || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(rawLrc) ? rawLrc : '');
     const yrc = lrcSource.yrc || '';
-    const qrc = lrcSource.qrc || '';
     const eslrc = lrcSource.eslrc || '';
 
     if (!rawLrc && !ttml && !lxlyric && !yrc && !qrc && !eslrc) {

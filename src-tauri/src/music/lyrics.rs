@@ -4727,6 +4727,23 @@ mod tests {
     }
 
     #[test]
+    fn parses_qq_real_qrc_fixture() {
+        // Baka QQ 插件解密产物（天外来物真实 QRC XML）：桌面 amll parse_qrc
+        // 对 QQ 实际 XML 结构的兼容性回归（移动端同源 fixture）
+        let parsed = parse_raw_lyrics(include_str!("fixtures/lyrics/qq_real.qrc"));
+
+        assert!(
+            !parsed.is_empty(),
+            "QQ 真实 QRC XML 应解析出歌词行，实际 0 行"
+        );
+        assert_eq!(parsed[0].source_format, ParsedLineSourceFormat::Qrc);
+        assert!(
+            parsed.iter().all(|line| !line.text.trim().is_empty()),
+            "解析行不应有空文本"
+        );
+    }
+
+    #[test]
     fn parses_lys_fixture_into_word_timed_lines() {
         let parsed = parse_raw_lyrics(include_str!("fixtures/lyrics/from_that_day.lys"));
 
