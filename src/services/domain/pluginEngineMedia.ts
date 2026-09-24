@@ -350,6 +350,10 @@ export interface PluginVideoSource {
 /// 调用，模块级标记即可（与移动端 _mvResolveAmbiguous 语义一致）。
 let lastMvSourceCallFailed = false;
 
+// 插件明确报「无 MV/无可用画质」属于确定性无结果（这首歌就是没有 MV），
+// 不算插件异常：归入干净无结果语义，让探测缓存 false，避免对同一首歌反复重探。
+const MV_DEFINITIVE_NO_RESULT_RE = /无可用画质|无可用mv|没有mv|不支持mv|无mv|no\s*mv|mv\s*not\s*found/i;
+
 export function clearLastMvSourceCallFailed(): void {
   lastMvSourceCallFailed = false;
 }
@@ -428,9 +432,12 @@ export async function pluginGetVideoSource(
       availableVideoQualities: availableVideoQualities?.length ? availableVideoQualities : undefined,
     };
   } catch (error) {
-    // 标记本次调用因插件异常返回 null（区别于插件干净地返回无结果），
-    // 供 MV 探测区分「存疑」与「确认无 MV」。
-    lastMvSourceCallFailed = true;
+    // 插件异常一般标记为「存疑」（探测侧不缓存 false，会重探）；
+    // 但明确报「无 MV/无可用画质」的属于确定性无结果，不算异常，
+    // 让解析链路抛 MvConfirmedNoResultError 以缓存 false。
+    if (!MV_DEFINITIVE_NO_RESULT_RE.test(String(error ?? ''))) {
+      lastMvSourceCallFailed = true;
+    }
     log(`[getMvSource] ${source.name} 调用失败: ${error}`);
     return null;
   }
