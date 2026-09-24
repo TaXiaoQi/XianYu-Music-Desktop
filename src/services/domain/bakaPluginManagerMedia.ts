@@ -38,7 +38,7 @@ import {
   type BakaCommentResult,
   type BakaLyricFormat,
 } from './bakaPluginManagerBase';
-import { buildBakaMfLyricsRaw, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
+import { buildBakaMfLyricsRaw, decryptPluginLyricText, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
 import { clearLastSandboxError, getLastSandboxError } from './pluginSandboxManager';
 import {
   resetMediaItem,
@@ -354,19 +354,31 @@ export class BakaPluginMedia extends BakaPluginCore {
     const ekey = firstStringField(result, ['ekey', 'eKey', 'encryptKey', 'encryptionKey', 'qmcKey', 'qmc2Key']);
     const cek = firstStringField(result, ['cek', 'cKey', 'contentKey', 'decryptKey', 'decryptionKey', 'cencKey']);
     const mainLyricRaw = result.lyric || result.rawLrc || result.lrc || '';
-    // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文同批加密），
-    // 不能当歌词展示——密文置空，走「无歌词」
-    const mainEncrypted = pluginLyricLooksEncrypted(mainLyricRaw);
-    const lyric = mainEncrypted ? '' : mainLyricRaw;
+    // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文同批加密）——
+    // 调后端解密复用（三端同一能力），解密产物走逐字管线；失败置空走「无歌词」
+    let lyric = mainLyricRaw;
+    let tlyric = result.tlyric || result.translation || '';
+    let qrc = result.qrc || '';
+    if (pluginLyricLooksEncrypted(mainLyricRaw)) {
+      const decrypted = await decryptPluginLyricText(mainLyricRaw);
+      if (decrypted) {
+        qrc = decrypted;
+        lyric = '';
+        if (tlyric && pluginLyricLooksEncrypted(tlyric)) {
+          tlyric = (await decryptPluginLyricText(tlyric)) ?? '';
+        }
+      } else {
+        lyric = '';
+        tlyric = '';
+      }
+    }
     const ttml = result.ttml || '';
-    const tlyric = mainEncrypted ? '' : (result.tlyric || result.translation || '');
     // am 等插件作者统一把逐字/逐行都转成 lrc 返回：词级尖括号时间戳直接嵌在
     // lyric 里，无独立 lxlyric 字段。与移动端 fallback 语义对齐：
     // lxlyric 为空且 lyric 含词级时间戳时，lyric 即逐字内容
     const lxlyric = result.lxlyric
       || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(lyric) ? lyric : '');
     const yrc = result.yrc || '';
-    const qrc = result.qrc || '';
     const eslrc = result.eslrc || '';
     const coverUrl = extractCoverUrl(result) || result.coverUrl || result.artwork || '';
 
@@ -436,23 +448,34 @@ export class BakaPluginMedia extends BakaPluginCore {
       }
 
       const mainLrcRaw = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
-      // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文/罗马音同批加密），
-      // 不能当歌词展示——密文置空，空判定自然走「无歌词」返回
-      const lrcEncrypted = pluginLyricLooksEncrypted(mainLrcRaw);
-      if (lrcEncrypted) {
-        log(`[getLyric] ${source.name} 检测到未解密密文歌词（QRC/e-lrc hex），已置空`);
+      // Baka 系 crypt:1 返回未解密 QRC/e-lrc hex 密文（主文/译文/罗马音同批
+      // 加密）——调后端解密复用（三端同一能力），解密产物走逐字管线；失败置空
+      let rawLrc = mainLrcRaw;
+      let translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
+      let romanization = lrcSource.romanization || lrcSource.rlyric || '';
+      let qrc = lrcSource.qrc || '';
+      if (pluginLyricLooksEncrypted(mainLrcRaw)) {
+        const decrypted = await decryptPluginLyricText(mainLrcRaw);
+        if (decrypted) {
+          qrc = decrypted;
+          rawLrc = '';
+          log(`[getLyric] ${source.name} 密文歌词已解密 len=${decrypted.length}`);
+        } else {
+          rawLrc = '';
+          log(`[getLyric] ${source.name} 密文歌词解密失败，置空`);
+        }
+        if (translation && pluginLyricLooksEncrypted(translation)) {
+          translation = (await decryptPluginLyricText(translation)) ?? '';
+        }
+        if (romanization && pluginLyricLooksEncrypted(romanization)) {
+          romanization = (await decryptPluginLyricText(romanization)) ?? '';
+        }
       }
-      const rawLrc = lrcEncrypted ? '' : mainLrcRaw;
       const ttml = lrcSource.ttml || '';
-      const translation = lrcEncrypted
-        ? ''
-        : (lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '');
-      const romanization = lrcEncrypted ? '' : (lrcSource.romanization || lrcSource.rlyric || '');
       // 同 getMediaSource：lxlyric 为空且 lyric 内嵌词级时间戳时，lyric 即逐字内容
       const lxlyric = lrcSource.lxlyric
         || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(rawLrc) ? rawLrc : '');
       const yrc = lrcSource.yrc || '';
-      const qrc = lrcSource.qrc || '';
       const eslrc = lrcSource.eslrc || '';
 
       log(`[getLyric] ${source.name} 原始返回字段: keys=[${Object.keys(lrcSource).join(',')}], format=${lrcSource.format ?? '(none)'}, rawLrcLen=${rawLrc.length}, ttmlLen=${ttml.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}`);

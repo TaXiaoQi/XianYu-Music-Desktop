@@ -33,7 +33,7 @@ pub use library::{
     get_library_song_paths_for_folder_view, get_library_songs_cached, remove_library_folder,
     scan_library, search_library_songs,
 };
-pub use lyric_fetcher::fetch_lyric_from_source;
+pub use lyric_fetcher::{decrypt_plugin_lyric, fetch_lyric_from_source};
 pub use palette::extract_palette;
 pub use scanner::{
     get_folder_first_song, parse_audio_files, parse_music_folder, scan_folder_as_playlists,

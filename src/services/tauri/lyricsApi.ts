@@ -17,6 +17,8 @@ export const lyricsApi = {
     tauriInvoke('read_lyrics_file', { path }),
   fetchLyricFromSource: (source: string, songInfo: LyricSongInfoContract) =>
     tauriInvoke('fetch_lyric_from_source', { source, songInfo }),
+  decryptPluginLyric: (encryptedHex: string) =>
+    tauriInvoke('decrypt_plugin_lyric', { encryptedHex }),
   saveSongInfo: (path: string, payload: SongInfoEditPayload) =>
     tauriInvoke('save_song_info', { path, payload }),
   parseLyricsText: (text: string) =>

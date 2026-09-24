@@ -476,6 +476,14 @@ fn qrc_tripledes_crypt(input: &[u8], schedule: &[QrcSchedule; 3], output: &mut [
     output.copy_from_slice(&buf);
 }
 
+/// 解密插件返回的加密歌词密文（QQ QRC / 酷我 e-lrc，3DES+zlib 压缩包 hex）。
+/// Baka 系 musicfree 插件 getLyric 的注释即声明「由应用层解密」——与移动端/
+/// 腕上端一致，前端在密文检测命中后直接调本命令解密复用（三端后端同一实现）。
+#[tauri::command]
+pub async fn decrypt_plugin_lyric(encrypted_hex: String) -> Result<String, String> {
+    qrc_decrypt(&encrypted_hex)
+}
+
 fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
     let encrypted_hex = encrypted_hex.trim();
     if encrypted_hex.is_empty() || encrypted_hex.len() % 2 != 0 {

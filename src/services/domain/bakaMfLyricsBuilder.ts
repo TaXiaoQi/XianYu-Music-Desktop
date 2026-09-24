@@ -1,4 +1,6 @@
 
+import { lyricsApi } from '../tauri/lyricsApi';
+
 const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d+:\d{2}(?:\.\d+)?)](.*)$/;
 const ENHANCED_TIMESTAMP_PATTERN = /<\d+:\d{2}(?:\.\d+)?>/;
 
@@ -384,6 +386,19 @@ export function pluginLyricLooksEncrypted(text: string): boolean {
   if (t.length < 48) return false;
   const nonHex = t.replace(/[0-9A-Fa-f]/g, '').length;
   return nonHex <= t.length * 0.05 && !/\[\d{1,3}:\d{2}/.test(text);
+}
+
+/** 解密插件密文歌词（QQ QRC / 酷我 e-lrc，3DES+zlib 压缩包 hex）——调后端
+ * decrypt_plugin_lyric（三端同一 Rust 实现，与原生歌词源内部解密同款）。
+ * 失败/空结果返回 null。 */
+export async function decryptPluginLyricText(text: string): Promise<string | null> {
+  try {
+    const out = await lyricsApi.decryptPluginLyric(text.replace(/\s+/g, ''));
+    const s = (out || '').trim();
+    return s.length > 0 ? s : null;
+  } catch {
+    return null;
+  }
 }
 
 export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
