@@ -224,7 +224,7 @@ const probeQualities = async (song: Song) => {
     return;
   }
 
-  const probe = await ensureSharedQualityProbe(song, declaredQualities.value);
+  const probe = await ensureSharedQualityProbe(song, declaredQualities.value, { full: true });
   if (!probe) {
     isProbing.value = false;
     return;

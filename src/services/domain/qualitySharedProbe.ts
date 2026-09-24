@@ -89,7 +89,9 @@ function launchProbeRound(
 export async function ensureSharedQualityProbe(
   song: Song,
   declaredQualities: QualityKey[] | null,
+  opts?: { full?: boolean },
 ): Promise<SharedQualityProbe | null> {
+  const full = opts?.full ?? false;
   if (!isDownloadableOnlineSong(song)) return null;
   const songKey = getSongKey(song);
   if (!songKey) return null;
@@ -104,6 +106,8 @@ export async function ensureSharedQualityProbe(
     }
     if (Object.keys(existing.resolvedUrls).length > 0 && !existing.seeded) return existing;
     if (existing.seeded && Object.keys(existing.resolvedUrls).length > 0) {
+      // 非全量调用（播放解析）直接复用种子结果，避免反复全档扫描
+      if (!full) return existing;
       existing.seeded = false;
       existing.done = false;
       existing.startAt = Date.now();
@@ -113,6 +117,9 @@ export async function ensureSharedQualityProbe(
     }
     _sharedProbes.delete(songKey);
   }
+
+  // 非全量调用且无现成结果时不发起新扫描，走调用方自身的单档解析兜底
+  if (!full) return null;
 
   for (const [key, probe] of _sharedProbes) {
     if (!probe.done && key !== songKey) {
