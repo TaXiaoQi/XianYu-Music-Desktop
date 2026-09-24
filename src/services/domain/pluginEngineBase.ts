@@ -572,17 +572,28 @@ export function createSandboxProxy(pluginId: string, metadata: any): IPluginInst
 
 export const userVarKey = (pluginId: string) => `xianyu_plugin_user_vars_${pluginId}`;
 
+// 用户变量值进程内缓存：以原始字符串为键，未变化时免 JSON.parse 与重复日志；
+// 仍每次读 localStorage（内存级开销，外部直接改写也能感知），返回浅拷贝防调用方改写污染缓存
+const userVarValuesCache = new Map<string, { raw: string; values: Record<string, string> }>();
+
 export function getPluginUserVariableValues(pluginId: string): Record<string, string> {
   try {
     const storageKey = userVarKey(pluginId);
     const raw = localStorage.getItem(storageKey);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const keys = Object.keys(parsed);
-      log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... storageKey=${storageKey.substring(0, 40)}... keys=[${keys.join(',')}] count=${keys.length}`);
-      return parsed;
+    const cached = userVarValuesCache.get(storageKey);
+    if (raw === null) {
+      if (!cached || cached.raw !== '') {
+        log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... localStorage无值 (key=${storageKey.substring(0, 40)}...)`);
+        userVarValuesCache.set(storageKey, { raw: '', values: {} });
+      }
+      return {};
     }
-    log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... localStorage无值 (key=${storageKey.substring(0, 40)}...)`);
+    if (cached && cached.raw === raw) return { ...cached.values };
+    const parsed = JSON.parse(raw);
+    const keys = Object.keys(parsed);
+    log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... storageKey=${storageKey.substring(0, 40)}... keys=[${keys.join(',')}] count=${keys.length}`);
+    userVarValuesCache.set(storageKey, { raw, values: parsed });
+    return { ...parsed };
   } catch (e) {
     log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... 读取异常: ${e}`);
   }
