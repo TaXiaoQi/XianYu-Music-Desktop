@@ -21,9 +21,12 @@ describe('SettingsDesktopLyrics preview copy', () => {
   });
 
   it('pairs typography controls without leaving an empty grid cell', () => {
-    expect(source).toContain('<!-- 行三：描边阴影 & 阴影颜色 -->');
-    expect(source).toContain('<!-- 行四：对齐方式 & 双行显示 -->');
-    expect(source).toContain('<!-- 行六：字体方案 & 配色方案 -->');
+    // 行三/行四/行六的成对控件锚点：控件本体必须都在（网格不留空位）。
+    // 此前断言依赖分组注释，注释清理后改用控件文本锚点。
+    expect(source).toContain('>描边阴影<');
+    expect(source).toContain('>双行显示<');
+    expect(source).toContain('>字体方案<');
+    expect(source).toContain('>配色方案<');
     expect(source).not.toContain('desktop-compact-row-full');
   });
 });
