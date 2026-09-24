@@ -122,7 +122,6 @@ const viewInstanceKey = computed(() => {
   <div class="flex flex-1 flex-col min-h-0 min-w-0">
       <div :key="viewInstanceKey" class="home-view-switch-host flex flex-1 flex-col min-h-0 min-w-0">
       <HomeHeaderPanel
-        class="relative z-20"
         :localViewMode="localViewMode"
         :isBatchMode="isBatchMode"
         :isManagementMode="isManagementMode"
