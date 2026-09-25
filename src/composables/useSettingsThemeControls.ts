@@ -75,6 +75,12 @@ export function useSettingsThemeControls() {
       patchTheme({ playerDetailMeshBackground: value });
     },
   });
+  const playerDetailMeshAntiAlias = computed({
+    get: () => theme.value.playerDetailMeshAntiAlias,
+    set: (value: boolean) => {
+      patchTheme({ playerDetailMeshAntiAlias: value });
+    },
+  });
 
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
@@ -241,6 +247,10 @@ export function useSettingsThemeControls() {
     playerDetailMeshBackground.value = value;
   };
 
+  const setPlayerDetailMeshAntiAlias = (value: boolean) => {
+    playerDetailMeshAntiAlias.value = value;
+  };
+
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -261,6 +271,7 @@ export function useSettingsThemeControls() {
     playerDetailCoverBehavior,
     playerDetailStyle,
     playerDetailMeshBackground,
+    playerDetailMeshAntiAlias,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -290,5 +301,6 @@ export function useSettingsThemeControls() {
     setPlayerDetailCoverBehavior,
     setPlayerDetailStyle,
     setPlayerDetailMeshBackground,
+    setPlayerDetailMeshAntiAlias,
   };
 }

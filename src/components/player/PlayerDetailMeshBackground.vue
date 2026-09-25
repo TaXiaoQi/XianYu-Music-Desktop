@@ -12,9 +12,10 @@
  * 渲染：WebGL2/WebGL1 + 单个全屏三角形，逐像素计算；封面色场作为纹理上传，
  * 换歌时用 uniform 交叉淡化两张色场。种子漂移在 GPU 内完成，不逐帧上传纹理。
  */
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlaybackStore } from '../../features/playback/store';
+import { useThemeSettings } from '../../composables/useThemeSettings';
 
 const props = defineProps<{
   /** 详情页是否可见：不可见时暂停渲染 */
@@ -23,6 +24,9 @@ const props = defineProps<{
 
 const playbackStore = usePlaybackStore();
 const { currentCover, currentCoverFull } = storeToRefs(playbackStore);
+const { theme } = useThemeSettings();
+/** 边缘抗锯齿：在片元内做屏幕空间平滑，并提高渲染分辨率以承载过渡带 */
+const antiAliasEnabled = computed(() => theme.value?.playerDetailMeshAntiAlias === true);
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 
@@ -45,8 +49,10 @@ const GRADIENT_BLEND = 0.45;
 const SATURATION = 0.72;
 /** 色场整体明度（<1 更暗更沉稳） */
 const BRIGHTNESS = 0.86;
-/** 渲染分辨率系数：低于 1 由浏览器放大，边缘自然柔化并显著降低填充率 */
+/** 渲染分辨率系数（关闭边缘抗锯齿）：低于 1 由浏览器放大，边缘自然柔化并显著降低填充率 */
 const RENDER_SCALE = 0.45;
+/** 开启边缘抗锯齿时的分辨率系数：平滑过渡需要足够像素承载，否则放大后仍显台阶 */
+const RENDER_SCALE_AA = 0.8;
 /** 换歌交叉淡化时长（ms） */
 const FADE_MS = 900;
 /** 封面色场采样分辨率（低频色场；越低，相邻多边形颜色越接近、整体越柔和） */
@@ -69,6 +75,7 @@ uniform float uSeamWidth;
 uniform float uGradientBlend;
 uniform float uSaturation;
 uniform float uBrightness;
+uniform float uAntiAlias;
 uniform sampler2D uColorFieldA;
 uniform sampler2D uColorFieldB;
 uniform float uFade;
@@ -93,14 +100,16 @@ vec2 driftDir(vec2 cell, float i) {
 }
 
 /**
- * 求像素到所有邻近种子的最近距离 F1、次近距离 F2，以及最近种子的格子标识。
+ * 求像素到所有邻近种子的最近距离 F1、次近距离 F2，以及最近与次近两个种子的格子标识。
  * 3x3 邻域足以覆盖一个格子的影响范围（种子漂移量小于半格）。
+ * 次近格子供边缘抗锯齿使用：多边形边界处恰好 F1 == F2，两侧各取一色做过渡。
  */
-void voronoi(vec2 p, out float f1, out float f2, out vec2 nearestId) {
+void voronoi(vec2 p, out float f1, out float f2, out vec2 id1, out vec2 id2) {
   vec2 baseCell = floor(p);
   f1 = 8.0;
   f2 = 8.0;
-  nearestId = baseCell;
+  id1 = baseCell;
+  id2 = baseCell;
 
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
@@ -113,15 +122,24 @@ void voronoi(vec2 p, out float f1, out float f2, out vec2 nearestId) {
       float d = distance(p, seed);
       if (d < f1) {
         f2 = f1;
+        id2 = id1;
         f1 = d;
-        nearestId = cell;
+        id1 = cell;
       } else if (d < f2) {
         f2 = d;
+        id2 = cell;
       }
     }
   }
 }
 
+/** 某个元胞的平涂色：按种子中心位置采样色场，使整个多边形同色 */
+vec3 cellFlatColor(vec2 cellId, float aspect) {
+  vec2 cellCenter = (cellId + 0.5) / uDensity;
+  // 反算回屏幕 uv（与按像素取色共用同一映射，两者才能平滑混合）
+  vec2 cellUv = clamp(vec2(cellCenter.x / aspect, cellCenter.y), 0.0, 1.0);
+  return mix(texture(uColorFieldA, cellUv).rgb, texture(uColorFieldB, cellUv).rgb, uFade);
+}
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
   // 保持格子在各方向等大（用分辨率较短的边归一化）
@@ -129,19 +147,22 @@ void main() {
   vec2 p = vec2(uv.x * aspect, uv.y) * uDensity;
 
   float f1, f2;
-  vec2 nearestId;
-  voronoi(p, f1, f2, nearestId);
+  vec2 id1, id2;
+  voronoi(p, f1, f2, id1, id2);
 
   // 关键：按「最近种子的格子」取样，整个多边形平涂一色。
   // 若按 floor(p) 取样，得到的是与 Voronoi 元胞不对齐的轴对齐矩形色块。
-  vec2 cellCenter = (nearestId + 0.5) / uDensity;
-  // 反算回屏幕 uv（与按像素取色共用同一映射，两者才能平滑混合）
-  vec2 cellUv = clamp(vec2(cellCenter.x / aspect, cellCenter.y), 0.0, 1.0);
+  vec3 flatNear = cellFlatColor(id1, aspect);
+  vec3 flatFar = cellFlatColor(id2, aspect);
 
-  // 纯平涂色（多边形感来源）
-  vec3 flatA = texture(uColorFieldA, cellUv).rgb;
-  vec3 flatB = texture(uColorFieldB, cellUv).rgb;
-  vec3 flatColor = mix(flatA, flatB, uFade);
+  // 边缘抗锯齿：d = F2 - F1 在多边形边界处为 0、向两侧线性增大（恒非负），
+  // 用屏幕空间导数把它换算成固定像素宽度的过渡带。
+  float edgeDistance = f2 - f1;
+  float edgeWidth = max(fwidth(edgeDistance), 1e-5) * 2.0;
+  // 只做「向邻胞最多混 50%」：边界上两色各半，离开边界约 2 像素后恢复本胞纯色。
+  // 关闭抗锯齿时系数归 0，退化为原来的硬边界（纯 flatNear）。
+  float edgeMix = (1.0 - smoothstep(0.0, edgeWidth, edgeDistance)) * 0.5 * uAntiAlias;
+  vec3 flatColor = mix(flatNear, flatFar, edgeMix);
 
   // 按像素位置取色（连续渐变色，柔和的来源）
   vec2 pixelUv = clamp(uv, 0.0, 1.0);
@@ -249,7 +270,7 @@ function initGl(): boolean {
 
   for (const name of [
     'uResolution', 'uTime', 'uDensity', 'uSeedJitter', 'uDriftSpeed',
-    'uSeamDepth', 'uSeamWidth', 'uGradientBlend', 'uSaturation', 'uBrightness',
+    'uSeamDepth', 'uSeamWidth', 'uGradientBlend', 'uSaturation', 'uBrightness', 'uAntiAlias',
     'uColorFieldA', 'uColorFieldB', 'uFade',
   ]) {
     uniformLoc[name] = context.getUniformLocation(prog, name);
@@ -278,8 +299,10 @@ function createTexture(context: WebGL2RenderingContext): WebGLTexture | null {
 
 function resize() {
   if (!canvas || !gl) return;
-  // 用低于 1 的分辨率系数渲染，由浏览器放大：边缘更柔和，填充率显著降低
-  const dpr = Math.min(2, window.devicePixelRatio || 1) * RENDER_SCALE;
+  // 分辨率系数：关抗锯齿时用低分辨率省填充率；开抗锯齿时提高分辨率，
+  // 否则平滑过渡带落到屏幕上仍会被放大成台阶
+  const scale = antiAliasEnabled.value ? RENDER_SCALE_AA : RENDER_SCALE;
+  const dpr = Math.min(2, window.devicePixelRatio || 1) * scale;
   const w = Math.max(1, Math.round(window.innerWidth * dpr));
   const h = Math.max(1, Math.round(window.innerHeight * dpr));
   if (canvas.width === w && canvas.height === h) return;
@@ -306,6 +329,7 @@ function renderFrame() {
   gl.uniform1f(uniformLoc.uGradientBlend ?? null, GRADIENT_BLEND);
   gl.uniform1f(uniformLoc.uSaturation ?? null, SATURATION);
   gl.uniform1f(uniformLoc.uBrightness ?? null, BRIGHTNESS);
+  gl.uniform1f(uniformLoc.uAntiAlias ?? null, antiAliasEnabled.value ? 1 : 0);
 
   // 交叉淡化进度
   const fade = hasPrev ? Math.min(1, (now - fadeStart) / FADE_MS) : 1;
