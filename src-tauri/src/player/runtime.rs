@@ -437,7 +437,7 @@ pub(crate) struct RemoteRangeReader {
 
 impl RemoteRangeReader {
     pub(crate) fn new(source: RemoteStreamSource) -> Result<Self, String> {
-        let client = reqwest::blocking::Client::builder()
+        let client = crate::netproxy::blocking_client_builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .gzip(true)

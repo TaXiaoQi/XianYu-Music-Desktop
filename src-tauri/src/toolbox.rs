@@ -742,7 +742,7 @@ use std::time::{Duration, SystemTime};
 pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String, String> {
     let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(10))
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XianYuMusic-Updater")
@@ -780,7 +780,7 @@ pub async fn download_update_file(
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(300))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
@@ -924,7 +924,7 @@ pub async fn download_online_song(
         .await
         .map_err(|e| format!("下载链接校验失败: {e}"))?;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(600))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
@@ -1222,7 +1222,7 @@ pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
         .await
         .map_err(|e| format!("图片链接校验失败: {e}"))?;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(30))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
@@ -1504,7 +1504,7 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
         .await
         .map_err(|e| format!("探测链接校验失败: {e}"))?;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(8))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
@@ -1821,7 +1821,7 @@ pub async fn download_wallpaper(
         .map_err(|e| format!("创建壁纸目录失败: {e}"))?;
     let dest_path = wallpaper_dir.join(&safe_name);
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(60))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())

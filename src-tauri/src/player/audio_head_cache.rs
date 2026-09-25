@@ -138,7 +138,7 @@ fn fetch_head(
 ) -> Result<HeadEntry, String> {
     let max_bytes = max_bytes.clamp(64 * 1024, MAX_READ_GUARD);
 
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::netproxy::blocking_client_builder()
         .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(10))
         .gzip(true)

@@ -149,7 +149,7 @@ mod tests {
     async fn server_binds_and_serves_404_for_disabled_dmr() {
         let (tx, _rx) = tokio::sync::mpsc::channel(4);
         let state = AppState {
-            registry: Arc::new(MediaRegistry::new(reqwest::Client::new())),
+            registry: Arc::new(MediaRegistry::new(crate::netproxy::client())),
             dmr: Arc::new(dmr::DmrShared::new(tx)),
         };
         let server = start(state).await.expect("server should bind");
@@ -165,7 +165,7 @@ mod tests {
     async fn media_unknown_token_404() {
         let (tx, _rx) = tokio::sync::mpsc::channel(4);
         let state = AppState {
-            registry: Arc::new(MediaRegistry::new(reqwest::Client::new())),
+            registry: Arc::new(MediaRegistry::new(crate::netproxy::client())),
             dmr: Arc::new(dmr::DmrShared::new(tx)),
         };
         let server = start(state).await.expect("server should bind");

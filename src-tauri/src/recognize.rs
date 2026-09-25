@@ -219,7 +219,7 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
         return Err("识别已取消".to_string());
     }
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .timeout(std::time::Duration::from_secs(30))

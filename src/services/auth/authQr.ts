@@ -2,20 +2,21 @@ import { getDeviceId, getDeviceInfo } from '../domain/usageStats';
 import { getAuthErrorMessage, mapUser } from './authShared';
 import { requestAction } from './authHttp';
 import { saveAuth } from './authSession';
+import { networkApi } from '../tauri/networkApi';
 import type { AuthUser } from './authTypes';
 
 const LOCATION_CACHE_KEY = 'xy.qr.location';
+const LOCATION_URL = 'https://ipapi.co/json/';
+const LOCATION_TIMEOUT_MS = 2500;
 
 async function getDesktopLocation(): Promise<string> {
   try {
     const cached = localStorage.getItem(LOCATION_CACHE_KEY);
     if (cached) return cached;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 2500);
-    const res = await fetch('https://ipapi.co/json/', { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (res.ok) {
-      const d = (await res.json()) as {
+    // 走 Rust：浏览器 fetch 的网络栈不受「网络代理」设置覆盖，而 ipapi 在许多网络下直连不可达。
+    const res = await networkApi.getTextViaRust(LOCATION_URL, LOCATION_TIMEOUT_MS);
+    if (res.status >= 200 && res.status < 300 && res.body) {
+      const d = JSON.parse(res.body) as {
         city?: string;
         region?: string;
         country_name?: string;

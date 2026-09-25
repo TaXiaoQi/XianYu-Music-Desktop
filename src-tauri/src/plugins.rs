@@ -103,7 +103,7 @@ pub async fn plugin_http_request(
 
     let redirect_limit = follow.unwrap_or(10);
     let timeout_secs = timeout.unwrap_or(30);
-    let client_builder = reqwest::Client::builder()
+    let client_builder = crate::netproxy::client_builder()
         .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .gzip(true)
@@ -184,7 +184,7 @@ pub async fn plugin_http_request_binary(
 
     let redirect_limit = follow.unwrap_or(10);
     let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .timeout(request_timeout)
@@ -387,7 +387,7 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         .await
         .map_err(|e| format!("图片链接校验失败: {e}"))?;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(15))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
@@ -513,7 +513,7 @@ pub async fn download_audio_to_temp(
         .await
         .map_err(|e| e.to_string())?;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(60))
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
@@ -612,7 +612,7 @@ pub async fn download_video_to_cache(
         .await
         .map_err(|error| error.to_string())?;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(180))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())

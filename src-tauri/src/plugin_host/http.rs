@@ -64,6 +64,12 @@ impl HttpBridge {
         }
     }
 
+    /// 丢弃已缓存的 client，下次请求会按当前代理配置重建。
+    /// 网络代理开关变化后调用，使插件链路无需重启即可切换。
+    pub fn clear_clients(&self) {
+        self.clients.lock().unwrap().clear();
+    }
+
     fn client_for(&self, redirect_limit: usize) -> Result<reqwest::Client, String> {
         {
             let clients = self.clients.lock().unwrap();
@@ -76,7 +82,7 @@ impl HttpBridge {
         } else {
             crate::security::ssrf::ssrf_redirect_policy()
         };
-        let client = reqwest::Client::builder()
+        let client = crate::netproxy::client_builder()
             .redirect(policy)
             .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .gzip(true)

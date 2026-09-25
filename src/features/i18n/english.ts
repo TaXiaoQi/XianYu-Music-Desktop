@@ -1,4 +1,9 @@
 const exactEnglishTranslations: Record<string, string> = {
+// 网络代理（src-tauri/src/netproxy.rs 回传的错误文案）
+'启用网络代理时必须填写代理主机': 'A proxy host is required when the network proxy is enabled',
+'代理端口必须在 1-65535 之间': 'The proxy port must be between 1 and 65535',
+'代理主机不能为空': 'The proxy host cannot be empty',
+'请先启用网络代理再测试': 'Enable the network proxy before testing',
   // 云端歌单源端更新弹窗（SyncDeleteScopeModal / 歌单更新确认）
   '仅添加新歌曲': 'Add new songs only',
   '从源端更新歌单': 'Update playlist from source',
@@ -5059,6 +5064,10 @@ const dynamicEnglishTranslations: Array<{
     pattern: new RegExp("^(.+) 播放$"),
     replace: (_m, g0) => `${g0} plays`,
   },
+{
+  pattern: new RegExp("^代理地址无效: (.+)$"),
+  replace: (_m, g0) => `Invalid proxy address: ${g0}`,
+},
 ];
 
 const containsHan = (value: string) => /[\u3400-\u9fff\uf900-\ufaff]/.test(value);

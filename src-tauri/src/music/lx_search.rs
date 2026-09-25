@@ -206,7 +206,7 @@ static HTTP_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 
 fn http_client() -> &'static Result<reqwest::Client, String> {
     HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
+        crate::netproxy::client_builder()
             .timeout(Duration::from_secs(15))
             .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()

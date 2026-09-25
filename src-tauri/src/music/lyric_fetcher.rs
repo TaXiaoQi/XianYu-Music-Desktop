@@ -842,7 +842,7 @@ async fn http_fetch_text(
         .await
         .map_err(|e| e.to_string())?;
 
-    let client = reqwest::Client::builder()
+    let client = crate::netproxy::client_builder()
         .redirect(crate::security::ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .build()
