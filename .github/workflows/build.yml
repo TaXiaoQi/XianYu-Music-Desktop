@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release-assets | Out-Null
-          Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File |
+          Get-ChildItem -Path "src-tauri\target\release\bundle", "releases\windows" -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -in ".exe", ".msi", ".zip" } |
             Copy-Item -Destination release-assets -Force
           if (-not (Get-ChildItem -Path release-assets -File)) {
@@ -73,5 +73,139 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xianyu-music-windows
+          path: release-assets/*
+          if-no-files-found: error
+
+  build-macos:
+    name: Tauri macOS build (${{ matrix.target }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Fetch static ffmpeg sidecar
+        run: |
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin) FFMPEG_URL="https://evermeet.cx/ffmpeg/getrelease/arm64/zip" ;;
+            x86_64-apple-darwin)  FFMPEG_URL="https://evermeet.cx/ffmpeg/getrelease/zip" ;;
+          esac
+          TMP_DIR=$(mktemp -d)
+          curl -fsSL "$FFMPEG_URL" -o "$TMP_DIR/ffmpeg.zip"
+          unzip -o "$TMP_DIR/ffmpeg.zip" -d "$TMP_DIR"
+          install -m 0755 "$TMP_DIR/ffmpeg" "src-tauri/bin/ffmpeg-${{ matrix.target }}"
+
+      - name: Build Tauri app
+        run: npm run tauri:build:mac -- --target ${{ matrix.target }}
+
+      - name: Stage bundle artifacts
+        run: |
+          mkdir -p release-assets
+          find src-tauri/target/release/bundle/dmg -type f -name "*.dmg" \
+            -exec cp {} release-assets/ \;
+          if [ -z "$(ls -A release-assets)" ]; then
+            echo "No Tauri bundle artifacts were produced." >&2
+            exit 1
+          fi
+          (cd release-assets && shasum -a 256 * > SHA256SUMS.txt)
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xianyu-music-macos-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  build-linux:
+    name: Tauri Linux build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build Tauri app
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: npm run tauri:build:linux
+
+      - name: Stage bundle artifacts
+        run: |
+          mkdir -p release-assets
+          find src-tauri/target/release/bundle/deb \
+            src-tauri/target/release/bundle/rpm \
+            src-tauri/target/release/bundle/appimage \
+            -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
+            -exec cp {} release-assets/ \;
+          if [ -z "$(ls -A release-assets)" ]; then
+            echo "No Tauri bundle artifacts were produced." >&2
+            exit 1
+          fi
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xianyu-music-linux
           path: release-assets/*
           if-no-files-found: error
