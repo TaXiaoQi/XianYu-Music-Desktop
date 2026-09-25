@@ -437,9 +437,9 @@ mod time_calibrate_tests {
 
     #[test]
     fn parse_http_date_standard() {
+        // 只断言解析出的精确时间戳。不要与「当前系统时间」比较：
+        // 硬编码日期一旦过去一天，那种断言就必然失败（时间炸弹）。
         let secs = parse_http_date("Thu, 10 Sep 2026 06:34:48 GMT").expect("应解析成功");
-        let local = local_now_secs();
-        assert!((secs - local).abs() < 86_400);
         assert_eq!(secs, 1789022088);
     }
 
