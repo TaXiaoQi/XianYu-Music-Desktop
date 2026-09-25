@@ -1,46 +1,14 @@
-<script setup lang="ts">
-import { ref } from 'vue';
-
-const isEasterEgg = ref(false);
-const isAnimating = ref(false);
-
-const toggleEasterEgg = () => {
-  if (isAnimating.value) return;
-  isAnimating.value = true;
-  isEasterEgg.value = !isEasterEgg.value;
-  setTimeout(() => {
-    isAnimating.value = false;
-  }, 250);
-};
-</script>
-
 <template>
-  <div class="h-16 relative px-6 shrink-0 mb-2 cursor-pointer" data-tauri-drag-region>
-    <div
-      class="absolute inset-0 flex items-center justify-center transition-opacity duration-200"
-      :class="isEasterEgg ? 'opacity-0 pointer-events-none' : 'opacity-100'"
-      @click.stop="toggleEasterEgg"
-    >
-      <img
-        src="/logo.png"
-        alt="Logo"
-        class="object-contain drop-shadow-sm opacity-80 w-[29px] h-[29px] dark:invert pointer-events-none shrink-0 translate-x-[-14px] translate-y-[11px]"
-      />
-      <h1 class="font-medium tracking-wide text-[18px] text-[#353A3E] dark:text-white/80 pointer-events-none translate-x-[-3px] translate-y-[12px]">
-        弦予音乐
-      </h1>
-    </div>
-    <div
-      class="absolute inset-0 flex items-center justify-center transition-opacity duration-200"
-      :class="isEasterEgg ? 'opacity-100' : 'opacity-0 pointer-events-none'"
-      @click.stop="toggleEasterEgg"
-    >
-      <h1 class="font-black tracking-wider text-[19px] text-[#353A3E] dark:text-white/80 pointer-events-none translate-x-[-12px] translate-y-[15px]">
-        XianYu Music
-      </h1>
-    </div>
+  <!-- 品牌区：整块作为窗口拖拽区域；子元素设 pointer-events-none，
+       保证拖拽始终命中带 data-tauri-drag-region 的容器 -->
+  <div class="h-16 px-6 shrink-0 mb-2 flex items-center justify-center" data-tauri-drag-region>
+    <img
+      src="/logo.png"
+      alt="Logo"
+      class="object-contain drop-shadow-sm opacity-80 w-[29px] h-[29px] dark:invert pointer-events-none shrink-0 translate-x-[-14px] translate-y-[11px]"
+    />
+    <h1 class="font-medium tracking-wide text-[18px] text-[#353A3E] dark:text-white/80 pointer-events-none translate-x-[-3px] translate-y-[12px]">
+      弦予音乐
+    </h1>
   </div>
 </template>
-
-<style scoped>
-</style>
