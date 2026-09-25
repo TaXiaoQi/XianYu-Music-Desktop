@@ -4,6 +4,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 
 import { useCustomThemeModal } from '../../composables/useCustomThemeModal';
 import { calculateCoverGeometry } from '../../composables/useThemeBackgroundGeometry';
+import RangeSlider from '../common/RangeSlider.vue';
 import WallpaperGallery from './WallpaperGallery.vue';
 
 const emit = defineEmits(['close']);
@@ -618,12 +619,12 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
                   <span>模糊度</span>
                   <span>{{ preview.blur }}px</span>
                 </div>
-                <input
-                  v-model.number="preview.blur"
-                  type="range"
-                  min="0"
-                  max="50"
-                  step="1"
+                <RangeSlider
+                  v-model="preview.blur"
+                  :min="0"
+                  :max="50"
+                  :step="1"
+                  variant="skin"
                   class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
                 />
               </div>
@@ -633,12 +634,12 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
                   <span>遮罩浓度</span>
                   <span>{{ Math.round(preview.maskAlpha * 100) }}%</span>
                 </div>
-                <input
-                  v-model.number="preview.maskAlpha"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
+                <RangeSlider
+                  v-model="preview.maskAlpha"
+                  :min="0"
+                  :max="1"
+                  :step="0.01"
+                  variant="skin"
                   class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
                 />
               </div>
@@ -648,12 +649,12 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
                   <span>背景亮度</span>
                   <span>{{ Math.round(preview.opacity * 100) }}%</span>
                 </div>
-                <input
-                  v-model.number="preview.opacity"
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.01"
+                <RangeSlider
+                  v-model="preview.opacity"
+                  :min="0.1"
+                  :max="1"
+                  :step="0.01"
+                  variant="skin"
                   class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
                 />
               </div>
@@ -663,12 +664,12 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
                   <span>画面缩放</span>
                   <span>{{ preview.scale.toFixed(2) }}x</span>
                 </div>
-                <input
-                  v-model.number="preview.scale"
-                  type="range"
-                  min="1"
-                  max="2.0"
-                  step="0.01"
+                <RangeSlider
+                  v-model="preview.scale"
+                  :min="1"
+                  :max="2.0"
+                  :step="0.01"
+                  variant="skin"
                   class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
                 />
               </div>
@@ -718,20 +719,7 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
 </template>
 
 <style scoped>
-input[type='range'] {
-  height: 6px;
-}
 
-input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  background: white;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-}
 
 .scale-layer {
   -webkit-user-drag: none;

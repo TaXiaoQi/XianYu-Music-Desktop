@@ -31,6 +31,7 @@ import {
 import { DESKTOP_LYRICS_RESET_BOUNDS_EVENT } from '../../features/desktopLyrics/shared';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
+import RangeSlider from '../common/RangeSlider.vue';
 import SettingHint from './SettingHint.vue';
 import {
   buildDesktopLyricsPreviewWidgetStyle,
@@ -940,13 +941,13 @@ onUnmounted(() => {
                   >
                     <Minus class="h-4 w-4" />
                   </button>
-                  <input
+                  <RangeSlider
                     v-model="lyricsSyncOffsetMs"
-                    type="range"
                     :min="LYRICS_SYNC_OFFSET_MIN_MS"
                     :max="LYRICS_SYNC_OFFSET_MAX_MS"
                     :step="LYRICS_SYNC_OFFSET_STEP_MS"
-                    class="desktop-slider min-w-0 flex-1"
+                    variant="warm"
+                    class="min-w-0 flex-1"
                   />
                   <button
                     type="button"
@@ -1049,14 +1050,13 @@ onUnmounted(() => {
         <div class="desktop-compact-row">
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">字号</div>
-            <input
-              v-model.number="localSettings.playerFontScale"
-              type="range"
-              min="0.50"
-              max="3.00"
-              step="0.05"
+            <RangeSlider
+              v-model="localSettings.playerFontScale"
+              :min="0.50"
+              :max="3.00"
+              :step="0.05"
+              variant="compact"
               aria-label="字号"
-              class="desktop-compact-range-slider"
             />
             <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
               {{ Math.round(localSettings.playerFontScale * 100) }}%
@@ -1064,14 +1064,13 @@ onUnmounted(() => {
           </div>
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">副词字号</div>
-            <input
-              v-model.number="localSettings.subFontScale"
-              type="range"
-              min="0.50"
-              max="3.00"
-              step="0.05"
+            <RangeSlider
+              v-model="localSettings.subFontScale"
+              :min="0.50"
+              :max="3.00"
+              :step="0.05"
+              variant="compact"
               aria-label="副词字号"
-              class="desktop-compact-range-slider"
             />
             <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
               {{ Math.round(localSettings.subFontScale * 100) }}%
@@ -1082,14 +1081,13 @@ onUnmounted(() => {
         <div class="desktop-compact-row">
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">行距</div>
-            <input
-              v-model.number="localSettings.playerLineGap"
-              type="range"
-              min="0.50"
-              max="3.00"
-              step="0.05"
+            <RangeSlider
+              v-model="localSettings.playerLineGap"
+              :min="0.50"
+              :max="3.00"
+              :step="0.05"
+              variant="compact"
               aria-label="行距"
-              class="desktop-compact-range-slider"
             />
             <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
               {{ Math.round(localSettings.playerLineGap * 100) }}%
@@ -1097,14 +1095,13 @@ onUnmounted(() => {
           </div>
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">不透明度</div>
-            <input
-              v-model.number="localSettings.textOpacity"
-              type="range"
-              min="0.10"
-              max="1.00"
-              step="0.05"
+            <RangeSlider
+              v-model="localSettings.textOpacity"
+              :min="0.10"
+              :max="1.00"
+              :step="0.05"
+              variant="compact"
               aria-label="不透明度"
-              class="desktop-compact-range-slider"
             />
             <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
               {{ Math.round(localSettings.textOpacity * 100) }}%
@@ -1115,15 +1112,14 @@ onUnmounted(() => {
         <div class="desktop-compact-row">
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">描边阴影</div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="5"
-              :value="localSettings.firstLineTextShadowStrength"
-              @input="setDesktopTextShadowStrength(Number(($event.target as HTMLInputElement).value))"
+            <RangeSlider
+              :model-value="localSettings.firstLineTextShadowStrength"
+              :min="0"
+              :max="100"
+              :step="5"
+              variant="compact"
               aria-label="描边阴影"
-              class="desktop-compact-range-slider"
+              @update:model-value="setDesktopTextShadowStrength"
             />
             <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
               {{ localSettings.firstLineTextShadowStrength }}
@@ -1499,15 +1495,14 @@ onUnmounted(() => {
         </div>
         <div class="desktop-custom-hue-row">
           <span class="desktop-custom-current-color" :style="{ backgroundColor: customPickerColor }"></span>
-          <input
-            class="desktop-custom-hue-slider"
-            type="range"
-            min="0"
-            max="359"
-            :value="customPickerHue"
+          <RangeSlider
+            variant="hue-lg"
+            :min="0"
+            :max="359"
+            :model-value="customPickerHue"
             aria-label="色相"
-            @input="setCustomPickerHue(($event.target as HTMLInputElement).value)"
-          >
+            @update:model-value="setCustomPickerHue"
+          />
         </div>
         <div class="desktop-custom-rgb-row">
           <label>
@@ -2154,38 +2149,6 @@ onUnmounted(() => {
     0 4px 12px rgba(15, 23, 42, 0.14);
 }
 
-.desktop-custom-hue-slider {
-  width: 100%;
-  height: 14px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
-  appearance: none;
-  cursor: pointer;
-}
-
-.desktop-custom-hue-slider::-webkit-slider-thumb {
-  width: 22px;
-  height: 22px;
-  border: 3px solid #fff;
-  border-radius: 999px;
-  background: transparent;
-  box-shadow:
-    0 0 0 1px rgba(15, 23, 42, 0.2),
-    0 2px 8px rgba(15, 23, 42, 0.22);
-  appearance: none;
-}
-
-.desktop-custom-hue-slider::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
-  border: 3px solid #fff;
-  border-radius: 999px;
-  background: transparent;
-  box-shadow:
-    0 0 0 1px rgba(15, 23, 42, 0.2),
-    0 2px 8px rgba(15, 23, 42, 0.22);
-}
-
 .desktop-custom-rgb-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2380,33 +2343,6 @@ onUnmounted(() => {
   }
 }
 
-.desktop-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(236, 65, 65, 0.88), rgba(251, 146, 60, 0.88));
-  appearance: none;
-  cursor: pointer;
-}
-
-.desktop-slider::-webkit-slider-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid #fff;
-  border-radius: 999px;
-  background: #ec4141;
-  box-shadow: 0 2px 8px rgba(236, 65, 65, 0.3);
-  appearance: none;
-}
-
-.desktop-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid #fff;
-  border-radius: 999px;
-  background: #ec4141;
-  box-shadow: 0 2px 8px rgba(236, 65, 65, 0.3);
-}
 
 .desktop-lyrics-preview-container {
   display: flex;
@@ -2998,103 +2934,6 @@ onUnmounted(() => {
 }
 
 
-.desktop-compact-range-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 20px;
-  background: transparent;
-  border: none;
-  outline: none;
-  cursor: pointer;
-  margin: 0;
-  padding: 0;
-}
-
-.desktop-compact-range-slider::-webkit-slider-runnable-track {
-  width: 100%;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.1);
-  transition: background 150ms ease;
-}
-
-:global(.dark) .desktop-compact-range-slider::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.desktop-compact-range-slider:hover::-webkit-slider-runnable-track {
-  background: rgba(15, 23, 42, 0.16);
-}
-
-:global(.dark) .desktop-compact-range-slider:hover::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.24);
-}
-
-.desktop-compact-range-slider::-moz-range-track {
-  width: 100%;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.1);
-  transition: background 150ms ease;
-  border: none;
-}
-
-:global(.dark) .desktop-compact-range-slider::-moz-range-track {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.desktop-compact-range-slider:hover::-moz-range-track {
-  background: rgba(15, 23, 42, 0.16);
-}
-
-:global(.dark) .desktop-compact-range-slider:hover::-moz-range-track {
-  background: rgba(255, 255, 255, 0.24);
-}
-
-.desktop-compact-range-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.12), 0 0 1px rgba(15, 23, 42, 0.2);
-  margin-top: -5px; 
-  transition: transform 120ms ease, box-shadow 120ms ease;
-}
-
-.desktop-compact-range-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.18);
-  box-shadow: 0 3px 6px rgba(15, 23, 42, 0.16), 0 0 2px rgba(15, 23, 42, 0.24);
-}
-
-.desktop-compact-range-slider::-webkit-slider-thumb:active {
-  transform: scale(1.05);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
-}
-
-.desktop-compact-range-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.12), 0 0 1px rgba(15, 23, 42, 0.2);
-  transition: transform 120ms ease, box-shadow 120ms ease;
-  box-sizing: border-box;
-}
-
-.desktop-compact-range-slider::-moz-range-thumb:hover {
-  transform: scale(1.18);
-  box-shadow: 0 3px 6px rgba(15, 23, 42, 0.16), 0 0 2px rgba(15, 23, 42, 0.24);
-}
-
-.desktop-compact-range-slider::-moz-range-thumb:active {
-  transform: scale(1.05);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
-}
 </style>
 
 <style>
@@ -3231,22 +3070,6 @@ html.dark .desktop-segmented-btn--active {
 html.dark .desktop-lyrics-toggle {
   border-color: rgba(31, 41, 55, 0.4);
   background: rgba(0, 0, 0, 0.1);
-}
-
-html.dark .desktop-compact-range-slider::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-html.dark .desktop-compact-range-slider:hover::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.24);
-}
-
-html.dark .desktop-compact-range-slider::-moz-range-track {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-html.dark .desktop-compact-range-slider:hover::-moz-range-track {
-  background: rgba(255, 255, 255, 0.24);
 }
 
 html.dark .desktop-preview-btn--default {

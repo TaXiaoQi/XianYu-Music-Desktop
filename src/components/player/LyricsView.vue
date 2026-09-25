@@ -44,6 +44,7 @@ const AmlLyricPlayer = defineAsyncComponent({
   timeout: 10000,
 });
 import { getPlaybackSeekSecondsForAmlLine } from './amllSeekLayout';
+import RangeSlider from '../common/RangeSlider.vue';
 import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
 const props = defineProps<{
@@ -366,33 +367,6 @@ function toggleWordEffect() {
   lyricsSettings.enableWordEffect = !lyricsSettings.enableWordEffect;
 }
 
-function handleFontScaleInput(event: Event) {
-  const target = event.target as HTMLInputElement | null;
-  if (!target) return;
-
-  setPlayerFontScale(Number(target.value));
-}
-
-function handleLineGapInput(event: Event) {
-  const target = event.target as HTMLInputElement | null;
-  if (!target) return;
-
-  setPlayerLineGap(Number(target.value));
-}
-
-function handleOffsetXInput(event: Event) {
-  const target = event.target as HTMLInputElement | null;
-  if (!target) return;
-
-  setPlayerOffsetX(Number(target.value));
-}
-
-function handleOffsetYInput(event: Event) {
-  const target = event.target as HTMLInputElement | null;
-  if (!target) return;
-
-  setPlayerOffsetY(Number(target.value));
-}
 
 function selectFontPreset(value: LyricsFontPreset) {
   const normalized = normalizeLyricsFontPreset(value);
@@ -614,15 +588,15 @@ watch(() => props.coverHidden, async () => {
 
             <div class="flex items-center gap-3">
               <span class="text-[10px] text-white/40 w-6 text-right">0%</span>
-              <input
-                class="font-size-slider h-1 flex-1 cursor-pointer appearance-none rounded-full"
+              <RangeSlider
+                variant="compact-sm"
+                class="h-1 flex-1"
                 :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${backgroundBlurProgress}%, rgba(255,255,255,0.12) ${backgroundBlurProgress}%)` }"
-                type="range"
                 :min="MIN_BACKGROUND_BLUR"
                 :max="MAX_BACKGROUND_BLUR"
                 :step="1"
-                :value="lyricsSettings.backgroundBlur"
-                @input="setBackgroundBlur(Number(($event.target as HTMLInputElement).value))"
+                :model-value="lyricsSettings.backgroundBlur"
+                @update:model-value="setBackgroundBlur"
               />
               <span class="text-[10px] text-white/40 w-6">100%</span>
             </div>
@@ -706,15 +680,15 @@ watch(() => props.coverHidden, async () => {
               A-
             </button>
 
-            <input
-              class="font-size-slider h-1 flex-1 cursor-pointer appearance-none rounded-full"
+            <RangeSlider
+              variant="compact-sm"
+              class="h-1 flex-1"
               :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${fontScaleProgress}%, rgba(255,255,255,0.12) ${fontScaleProgress}%)` }"
-              type="range"
               :min="MIN_PLAYER_FONT_SCALE"
               :max="MAX_PLAYER_FONT_SCALE"
               :step="FONT_SCALE_STEP"
-              :value="lyricsSettings.playerFontScale"
-              @input="handleFontScaleInput"
+              :model-value="lyricsSettings.playerFontScale"
+              @update:model-value="setPlayerFontScale"
             />
 
             <button
@@ -756,15 +730,15 @@ watch(() => props.coverHidden, async () => {
               -
             </button>
 
-            <input
-              class="font-size-slider h-1 flex-1 cursor-pointer appearance-none rounded-full"
+            <RangeSlider
+              variant="compact-sm"
+              class="h-1 flex-1"
               :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${lineGapProgress}%, rgba(255,255,255,0.12) ${lineGapProgress}%)` }"
-              type="range"
               :min="MIN_PLAYER_LINE_GAP"
               :max="MAX_PLAYER_LINE_GAP"
               :step="LINE_GAP_STEP"
-              :value="lyricsSettings.playerLineGap"
-              @input="handleLineGapInput"
+              :model-value="lyricsSettings.playerLineGap"
+              @update:model-value="setPlayerLineGap"
             />
 
             <button
@@ -888,15 +862,15 @@ watch(() => props.coverHidden, async () => {
                 <span class="text-[12px] font-medium text-white/70">水平</span>
                 <span class="text-[11px] font-medium tabular-nums text-white/48">{{ horizontalOffsetPercent }}</span>
               </div>
-              <input
-                class="font-size-slider h-1 w-full cursor-pointer appearance-none rounded-full"
+              <RangeSlider
+                variant="compact-sm"
+                class="h-1 w-full"
                 :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${horizontalOffsetProgress}%, rgba(255,255,255,0.12) ${horizontalOffsetProgress}%)` }"
-                type="range"
                 :min="MIN_PLAYER_OFFSET_X"
                 :max="MAX_PLAYER_OFFSET_X"
                 :step="OFFSET_STEP"
-                :value="lyricsSettings.playerOffsetX"
-                @input="handleOffsetXInput"
+                :model-value="lyricsSettings.playerOffsetX"
+                @update:model-value="setPlayerOffsetX"
               />
             </div>
 
@@ -905,15 +879,15 @@ watch(() => props.coverHidden, async () => {
                 <span class="text-[12px] font-medium text-white/70">垂直</span>
                 <span class="text-[11px] font-medium tabular-nums text-white/48">{{ verticalOffsetPercent }}</span>
               </div>
-              <input
-                class="font-size-slider h-1 w-full cursor-pointer appearance-none rounded-full"
+              <RangeSlider
+                variant="compact-sm"
+                class="h-1 w-full"
                 :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${verticalOffsetProgress}%, rgba(255,255,255,0.12) ${verticalOffsetProgress}%)` }"
-                type="range"
                 :min="MIN_PLAYER_OFFSET_Y"
                 :max="MAX_PLAYER_OFFSET_Y"
                 :step="OFFSET_STEP"
-                :value="lyricsSettings.playerOffsetY"
-                @input="handleOffsetYInput"
+                :model-value="lyricsSettings.playerOffsetY"
+                @update:model-value="setPlayerOffsetY"
               />
             </div>
           </div>
@@ -1251,28 +1225,4 @@ watch(() => props.coverHidden, async () => {
   transform: translateX(-12px);
 }
 
-.font-size-slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0,0,0,0.05);
-}
-
-.font-size-slider::-moz-range-thumb {
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border: 0;
-  border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0,0,0,0.05);
-}
-
-.font-size-slider::-moz-range-track {
-  height: 4px;
-  border-radius: 9999px;
-  background: transparent;
-}
 </style>
