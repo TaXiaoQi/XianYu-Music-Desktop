@@ -19,17 +19,34 @@ if (process.env.BUILD_RELEASES_MODE === 'true') {
   process.exit(0);
 }
 
-const bundleDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle');
-const releasesDir = path.join(rootDir, 'releases', 'windows');
+// 收集所有 bundle 根目录：宿主 target/release/bundle + 交叉编译 target/<triple>/release/bundle。
+// 交叉目标按 triple 归档到对应平台目录（如 aarch64-pc-windows-msvc → releases/windows）。
+const targetRoot = path.join(rootDir, 'src-tauri', 'target');
 
-// 检查 bundle 目录是否存在
-if (!fs.existsSync(bundleDir)) {
-  process.exit(0);
+function platformForTargetDir(name) {
+  if (name.includes('windows')) return 'windows';
+  if (name.includes('darwin')) return 'macos';
+  if (name.includes('linux')) return 'linux';
+  return null;
 }
 
-// 确保 releases 目录存在
-if (!fs.existsSync(releasesDir)) {
-  fs.mkdirSync(releasesDir, { recursive: true });
+const bundleRoots = [];
+for (const entry of fs.existsSync(targetRoot)
+  ? fs.readdirSync(targetRoot, { withFileTypes: true })
+  : []) {
+  if (!entry.isDirectory()) continue;
+  const dir = path.join(targetRoot, entry.name, 'release', 'bundle');
+  const platform = entry.name === 'release'
+    ? 'windows'
+    : platformForTargetDir(entry.name);
+  if (platform && fs.existsSync(dir)) {
+    bundleRoots.push({ dir, platform });
+  }
+}
+
+// 检查是否存在 bundle 目录
+if (bundleRoots.length === 0) {
+  process.exit(0);
 }
 
 // 安装包文件扩展名
@@ -58,34 +75,59 @@ function collectFreshBundles(srcDir, files) {
 }
 
 const files = [];
-collectFreshBundles(bundleDir, files);
+for (const root of bundleRoots) {
+  const found = [];
+  collectFreshBundles(root.dir, found);
+  for (const f of found) {
+    files.push({ path: f, platform: root.platform });
+  }
+}
 
 if (files.length === 0) {
   console.log('[move-bundles] 未检测到新生成的构建产物，跳过');
   process.exit(0);
 }
 
-// 归档命名对齐移动端/腕上端标准：弦予音乐v<版本>-<平台>[后缀].<扩展名>
+// 归档命名对齐移动端/腕上端标准：弦予音乐v<版本>-Desktop-<架构>.<扩展名>
 // 版本号以 version.ts 为唯一源头（构建前 sync-version 已同步到各处）；
-// NSIS 安装器与 MSI 同为 Windows 产物，用 -Setup 后缀区分，其余格式直接用扩展名。
+// 架构从 Tauri 产物名提取（如 弦予音乐_2.0.4_x64-setup.exe → X64），
+// 识别不出架构时兜底旧规则（exe 用 -Setup 后缀，其余直接用扩展名）。
 function readAppVersion() {
   const content = fs.readFileSync(path.join(rootDir, 'version.ts'), 'utf8');
   const match = content.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
   return match ? match[1] : null;
 }
 
-function archiveName(originalName) {
+function detectArch(originalName) {
+  const m = originalName.match(/_(x64|x86|aarch64|arm64)(?:_|-|\.|$)/i);
+  if (!m) return null;
+  const raw = m[1].toLowerCase();
+  if (raw === 'x64') return 'X64';
+  if (raw === 'x86') return 'X86';
+  return 'ARM64'; // aarch64 / arm64
+}
+
+function archiveName(originalName, platform) {
   const ext = path.extname(originalName).toLowerCase();
   const version = readAppVersion();
   if (!version) return originalName; // 兜底：读不到版本号就保留原名
-  const suffix = ext === '.exe' ? '-Setup' : '';
-  return `弦予音乐v${version}-Desktop${suffix}${ext}`;
+  const platformLabel = platform === 'macos' ? 'MacOS' : platform === 'linux' ? 'Linux' : 'Desktop';
+  const arch = detectArch(originalName);
+  if (!arch) {
+    const suffix = platform === 'windows' && ext === '.exe' ? '-Setup' : '';
+    return `弦予音乐v${version}-${platformLabel}${suffix}${ext}`;
+  }
+  return `弦予音乐v${version}-${platformLabel}-${arch}${ext}`;
 }
 
-console.log('[move-bundles] 正在移动构建产物到 releases/windows/ ...');
-for (const file of files) {
+console.log('[move-bundles] 正在移动构建产物到 releases/ ...');
+for (const { path: file, platform } of files) {
   const fileName = path.basename(file);
-  const destName = archiveName(fileName);
+  const destName = archiveName(fileName, platform);
+  const releasesDir = path.join(rootDir, 'releases', platform);
+  if (!fs.existsSync(releasesDir)) {
+    fs.mkdirSync(releasesDir, { recursive: true });
+  }
   const destPath = path.join(releasesDir, destName);
   // 优先使用 rename（同盘原子操作），失败则回退到复制+删除
   try {
@@ -117,6 +159,8 @@ function cleanupEmptyDirs(dir) {
     }
   }
 }
-cleanupEmptyDirs(bundleDir);
+for (const root of bundleRoots) {
+  cleanupEmptyDirs(root.dir);
+}
 
-console.log(`[move-bundles] 完成，共移动 ${files.length} 个文件到 releases/windows/`);
+console.log(`[move-bundles] 完成，共移动 ${files.length} 个文件到 releases/`);
