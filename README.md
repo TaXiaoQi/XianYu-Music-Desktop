@@ -12,9 +12,9 @@
  [](https://www.rust-lang.org/)
  [](https://tailwindcss.com/)
 
-[](https://github.com/TaXiaoQi/XY-Music-Desktop/commits/dev)
- [](https://github.com/TaXiaoQi/XY-Music-Desktop/stargazers)
- [](https://github.com/TaXiaoQi/XY-Music_Desktop/graphs/contributors)
+[](https://github.com/TaXiaoQi/XianYu-Music-Desktop/commits/dev)
+ [](https://github.com/TaXiaoQi/XianYu-Music-Desktop/stargazers)
+ [](https://github.com/TaXiaoQi/XianYu-Music-Desktop/graphs/contributors)
  [](./LICENSE)
 
 </div>
