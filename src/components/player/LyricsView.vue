@@ -322,6 +322,17 @@ function toggleMeshBackground() {
   patchTheme({ playerDetailMeshBackground: !meshBackgroundEnabled.value });
 }
 
+/** 流动速度倍率的滑块范围（渲染侧 PlayerDetailMeshBackground 还会夹取一次兜底） */
+const MESH_SPEED_MIN = 0;
+const MESH_SPEED_MAX = 3;
+const meshBackgroundSpeed = computed(() => themeSettings.value?.playerDetailMeshSpeed ?? 1);
+const meshBackgroundSpeedProgress = computed(
+  () => ((meshBackgroundSpeed.value - MESH_SPEED_MIN) / (MESH_SPEED_MAX - MESH_SPEED_MIN)) * 100,
+);
+
+function setMeshBackgroundSpeed(value: number) {
+  patchTheme({ playerDetailMeshSpeed: value });
+}
 /** 电影模式下外观由背景视频接管：黑胶与多边形背景在 PlayerDetail 里都带 !isMovieMode 抑制 */
 const movieModeActive = computed(() => Boolean(props.movieMode));
 /** 模糊设置何时失效：多边形背景开启，或电影模式（后者会把 backgroundBlur 强制置 0，退出时用旧值还原） */
@@ -637,6 +648,29 @@ watch(() => props.coverHidden, async () => {
 
               <div v-if="movieModeActive" class="mt-1.5 text-[10px] text-[#EC4141]/85">{{ appearanceHint }}</div>
               <div v-else class="mt-1.5 text-[10px] text-white/30">与「设置 → 主题」里的同名开关是同一份设置</div>
+
+              <div v-if="meshBackgroundEnabled" class="mt-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-[13px] font-medium text-white/85">流动速度</span>
+                  <span class="text-xs font-medium tabular-nums text-white/60">{{ meshBackgroundSpeed.toFixed(1) }}×</span>
+                </div>
+                <div class="mt-2 flex items-center gap-3">
+                  <span class="text-[10px] text-white/40 w-6 text-right">0×</span>
+                  <RangeSlider
+                    variant="compact-sm"
+                    class="h-1 flex-1"
+                    :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${meshBackgroundSpeedProgress}%, rgba(255,255,255,0.12) ${meshBackgroundSpeedProgress}%)` }"
+                    :min="MESH_SPEED_MIN"
+                    :max="MESH_SPEED_MAX"
+                    :step="0.1"
+                    :disabled="movieModeActive"
+                    :model-value="meshBackgroundSpeed"
+                    @update:model-value="setMeshBackgroundSpeed"
+                  />
+                  <span class="text-[10px] text-white/40 w-6">3×</span>
+                </div>
+                <div class="mt-1.5 text-[10px] text-white/30">数值越大流动越快，0 为静止</div>
+              </div>
             </div>
             <!-- 多边形流光背景会整体替换模糊封面背景；电影模式下模糊同样被强制归零，两种情况都禁用此设置 -->
             <div

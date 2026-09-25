@@ -245,6 +245,8 @@ export interface ThemeSettings {
   playerDetailMeshBackground: boolean;
   /** 多边形流光背景的边缘抗锯齿：片元内做屏幕空间平滑，并提高渲染分辨率 */
   playerDetailMeshAntiAlias: boolean;
+  /** 多边形流光背景的流动速度倍率（0 为静止，1 为默认） */
+  playerDetailMeshSpeed: number;
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;
