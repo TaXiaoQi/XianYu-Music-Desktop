@@ -27,6 +27,7 @@ describe('settings search index', () => {
     expect(searchSettings('音量平衡')[0]?.label).toBe('音量平衡');
     expect(searchSettings('ReplayGain').some(item => item.label === '音量平衡')).toBe(true);
     expect(searchSettings('缓存').some(item => item.label === '播放缓存上限')).toBe(true);
+    expect(searchSettings('单声道').some(item => item.label === '单声道合并')).toBe(true);
   });
 
   it('does not expand children when a complete category name is entered', () => {
