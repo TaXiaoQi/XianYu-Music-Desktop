@@ -616,40 +616,50 @@ watch(() => props.coverHidden, async () => {
 
               <div class="mt-1.5 text-[10px] text-white/30">与「设置 → 主题」里的同名开关是同一份设置</div>
             </div>
-            <div class="mb-3">
-              <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Blur</div>
-              <div class="mt-1.5 flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <span class="text-[13px] font-medium text-white/85">背景模糊程度</span>
-                  <button
-                    v-if="lyricsSettings.backgroundBlur !== DEFAULT_BACKGROUND_BLUR"
-                    type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded-full text-white/40 transition hover:bg-white/10 hover:text-white"
-                    @click="resetBackgroundBlur"
-                    title="重置"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                  </button>
+            <!-- 多边形流光背景会整体替换模糊封面背景，启用时此设置不再生效 -->
+            <div
+              class="transition-opacity duration-200"
+              :class="meshBackgroundEnabled ? 'opacity-40 pointer-events-none select-none' : ''"
+              :aria-disabled="meshBackgroundEnabled"
+            >
+              <div class="mb-3">
+                <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Blur</div>
+                <div class="mt-1.5 flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[13px] font-medium text-white/85">背景模糊程度</span>
+                    <button
+                      v-if="lyricsSettings.backgroundBlur !== DEFAULT_BACKGROUND_BLUR"
+                      type="button"
+                      class="flex h-5 w-5 items-center justify-center rounded-full text-white/40 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed"
+                      :disabled="meshBackgroundEnabled"
+                      @click="resetBackgroundBlur"
+                      title="重置"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    </button>
+                  </div>
+                  <span class="text-xs font-medium tabular-nums text-white/60">{{ backgroundBlurPercent }}</span>
                 </div>
-                <span class="text-xs font-medium tabular-nums text-white/60">{{ backgroundBlurPercent }}</span>
               </div>
-            </div>
 
-            <div class="flex items-center gap-3">
-              <span class="text-[10px] text-white/40 w-6 text-right">0%</span>
-              <RangeSlider
-                variant="compact-sm"
-                class="h-1 flex-1"
-                :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${backgroundBlurProgress}%, rgba(255,255,255,0.12) ${backgroundBlurProgress}%)` }"
-                :min="MIN_BACKGROUND_BLUR"
-                :max="MAX_BACKGROUND_BLUR"
-                :step="1"
-                :model-value="lyricsSettings.backgroundBlur"
-                @update:model-value="setBackgroundBlur"
-              />
-              <span class="text-[10px] text-white/40 w-6">100%</span>
+              <div class="flex items-center gap-3">
+                <span class="text-[10px] text-white/40 w-6 text-right">0%</span>
+                <RangeSlider
+                  variant="compact-sm"
+                  class="h-1 flex-1"
+                  :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${backgroundBlurProgress}%, rgba(255,255,255,0.12) ${backgroundBlurProgress}%)` }"
+                  :min="MIN_BACKGROUND_BLUR"
+                  :max="MAX_BACKGROUND_BLUR"
+                  :step="1"
+                  :disabled="meshBackgroundEnabled"
+                  :model-value="lyricsSettings.backgroundBlur"
+                  @update:model-value="setBackgroundBlur"
+                />
+                <span class="text-[10px] text-white/40 w-6">100%</span>
+              </div>
+              <div class="mt-1.5 text-[10px] text-white/30">数值越小越清晰，越大越模糊</div>
             </div>
-            <div class="mt-1.5 text-[10px] text-white/30">数值越小越清晰，越大越模糊</div>
+            <div v-if="meshBackgroundEnabled" class="mt-1.5 text-[10px] text-[#EC4141]/85">已启用多边形流光背景，模糊设置不生效</div>
 
             <div class="mt-6 mb-3">
               <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Custom</div>
