@@ -149,29 +149,37 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 整窗铺一层 1% 不到的底色：Windows 对分层窗口会把「完全透明」像素的点击透传给
+       下层窗口，而这里下面恰好是小窗播放器的进度条。圆角外的像素原本 alpha=0，点上去会
+       直接跳到进度条；抬高 1% 后整窗都能接住点击，视觉上仍完全看不出来。 -->
   <div
-    class="w-full h-full flex items-center gap-2 px-3 rounded-[10px] transition-opacity duration-200"
-    :style="{ background: 'rgba(26, 26, 26, 0.92)', backdropFilter: 'blur(18px)', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255, 255, 255, 0.1)', opacity: isVisible ? 1 : 0 }"
-    @wheel.prevent.stop="handleVolumeWheel"
+    class="w-full h-full transition-opacity duration-200"
+    :style="{ background: 'rgba(0, 0, 0, 0.01)', opacity: isVisible ? 1 : 0 }"
   >
-    <button
-      @click.stop="sendAction({ type: 'toggle-mute' })"
-      class="shrink-0 text-white/70 hover:text-white transition-colors"
-      title="静音"
-    >
-      <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
-      <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-    </button>
-
     <div
-      ref="volumeBarRef"
-      class="relative flex-1 h-1.5 bg-white/25 rounded-full cursor-pointer [touch-action:none]"
-      @pointerdown.stop="startVolumeDrag"
+      class="w-full h-full flex items-center gap-2 px-3 rounded-[10px]"
+      :style="{ background: 'rgba(26, 26, 26, 0.92)', backdropFilter: 'blur(18px)', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255, 255, 255, 0.1)' }"
+      @wheel.prevent.stop="handleVolumeWheel"
     >
-      <div class="absolute left-0 top-0 h-full bg-white/80 rounded-full" :style="{ width: volume + '%' }"></div>
-      <div class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ left: volume + '%' }"></div>
-    </div>
+      <button
+        @click.stop="sendAction({ type: 'toggle-mute' })"
+        class="shrink-0 text-white/70 hover:text-white transition-colors"
+        title="静音"
+      >
+        <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+      </button>
 
-    <div class="w-9 text-right text-[11px] text-white/70 font-medium select-none">{{ volume }}%</div>
+      <div
+        ref="volumeBarRef"
+        class="relative flex-1 h-1.5 bg-white/25 rounded-full cursor-pointer [touch-action:none]"
+        @pointerdown.stop="startVolumeDrag"
+      >
+        <div class="absolute left-0 top-0 h-full bg-white/80 rounded-full" :style="{ width: volume + '%' }"></div>
+        <div class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ left: volume + '%' }"></div>
+      </div>
+
+      <div class="w-9 text-right text-[11px] text-white/70 font-medium select-none">{{ volume }}%</div>
+    </div>
   </div>
 </template>
