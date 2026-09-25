@@ -101,6 +101,16 @@ describe('settings store', () => {
     expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
   });
 
+  it('stores the polygon mesh anti-aliasing flag with normalization', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(true);
+    settingsStore.patchTheme({ playerDetailMeshAntiAlias: false });
+    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(false);
+
+    settingsStore.patchTheme({ playerDetailMeshAntiAlias: 'yes' as unknown as boolean });
+    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(false);
+  });
   it('replaces theme through the settings domain instead of mutating ui state', () => {
     const settingsStore = useSettingsStore();
 

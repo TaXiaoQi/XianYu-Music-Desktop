@@ -243,6 +243,8 @@ export interface ThemeSettings {
   playerDetailStyle: 'classic' | 'vinyl';
   /** 播放详情页多边形流光背景（Voronoi 网格：随机边数多边形缓慢漂移） */
   playerDetailMeshBackground: boolean;
+  /** 多边形流光背景的边缘抗锯齿：片元内做屏幕空间平滑，并提高渲染分辨率 */
+  playerDetailMeshAntiAlias: boolean;
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;

@@ -42,6 +42,8 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailMeshBackgroundTitle: 'Polygon Flow Background',
   playerDetailMeshBackgroundHint: 'Generate randomly-shaped drifting polygons from the cover',
   playerDetailMeshBackgroundLabel: 'Use polygon flow background',
+  playerDetailMeshAntiAliasLabel: 'Smooth polygon edges',
+  playerDetailMeshAntiAliasHint: 'Anti-alias polygon edges and render at a higher resolution: smoother, crisper edges at a higher GPU cost',
   dynamicTitle: 'Dynamic Background',
   dynamicHint: 'Changes with the album cover',
   dynamicOff: 'Off',
@@ -95,6 +97,8 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailMeshBackgroundTitle: '多边形流光背景',
   playerDetailMeshBackgroundHint: '由封面色场生成随机边数、缓慢漂移的多边形',
   playerDetailMeshBackgroundLabel: '使用多边形流光背景',
+  playerDetailMeshAntiAliasLabel: '边缘抗锯齿',
+  playerDetailMeshAntiAliasHint: '平滑多边形边界并按更高分辨率渲染：边缘更顺滑锐利，GPU 占用更高',
   dynamicTitle: '动态背景',
   dynamicHint: '跟随封面变化',
   dynamicOff: '关闭',
@@ -225,6 +229,8 @@ const {
   playerDetailStyle,
   setPlayerDetailStyle,
   playerDetailMeshBackground,
+  playerDetailMeshAntiAlias,
+  setPlayerDetailMeshAntiAlias,
   setPlayerDetailMeshBackground,
 } = useSettingsThemeControls();
 
@@ -995,6 +1001,21 @@ onUnmounted(() => {
           class="glass-switch"
           :class="{ 'is-checked': playerDetailMeshBackground }"
           @click="setPlayerDetailMeshBackground(!playerDetailMeshBackground)"
+        ></button>
+      </div>
+      <div
+        v-if="playerDetailMeshBackground"
+        class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+      >
+        <span class="min-w-0">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshAntiAliasLabel }}</span>
+          <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailMeshAntiAliasHint }}</span>
+        </span>
+        <button
+          type="button"
+          class="glass-switch"
+          :class="{ 'is-checked': playerDetailMeshAntiAlias }"
+          @click="setPlayerDetailMeshAntiAlias(!playerDetailMeshAntiAlias)"
         ></button>
       </div>
     </section>
