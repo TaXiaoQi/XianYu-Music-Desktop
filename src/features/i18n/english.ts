@@ -2504,6 +2504,7 @@ const exactEnglishTranslations: Record<string, string> = {
   "黑胶唱片": "Vinyl Record",
   "多边形流光背景": "Polygon Flow Background",
   "已启用多边形流光背景，模糊设置不生效": "Polygon flow background is on; the blur setting has no effect.",
+  "电影模式下由背景视频接管，外观设置不生效": "Movie mode is driven by the background video; appearance settings are inactive.",
   "与「设置 → 主题」里的同名开关是同一份设置": "Same setting as the matching switch under Settings → Theme.",
   "流畅": "Smooth",
   "清晰": "Clear",

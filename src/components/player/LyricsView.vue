@@ -51,6 +51,8 @@ import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 const props = defineProps<{
   coverHidden?: boolean;
   disabled?: boolean;
+  /** 电影模式（背景视频接管外观）：由 PlayerDetail 透传，避免子组件重复计算同一份状态 */
+  movieMode?: boolean;
 }>();
 
 const {
@@ -320,6 +322,17 @@ function toggleMeshBackground() {
   patchTheme({ playerDetailMeshBackground: !meshBackgroundEnabled.value });
 }
 
+/** 电影模式下外观由背景视频接管：黑胶与多边形背景在 PlayerDetail 里都带 !isMovieMode 抑制 */
+const movieModeActive = computed(() => Boolean(props.movieMode));
+/** 模糊设置何时失效：多边形背景开启，或电影模式（后者会把 backgroundBlur 强制置 0，退出时用旧值还原） */
+const isBlurSettingDisabled = computed(() => meshBackgroundEnabled.value || movieModeActive.value);
+/** 失效原因提示：两处共用同一句文案 */
+const appearanceHint = computed(() => (
+  movieModeActive.value
+    ? '电影模式下由背景视频接管，外观设置不生效'
+    : '已启用多边形流光背景，模糊设置不生效'
+));
+
 const handleChooseBackgroundImage = async () => {
   const { open } = await import('@tauri-apps/plugin-dialog');
   const selected = await open({
@@ -584,43 +597,52 @@ watch(() => props.coverHidden, async () => {
             <div class="mb-6">
               <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Skin</div>
 
-              <div class="mt-2 flex items-center justify-between gap-3">
-                <span class="text-[13px] font-medium text-white/85">黑胶唱片</span>
-                <button
-                  type="button"
-                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
-                  :class="isVinylRecordStyle ? 'bg-[#EC4141]' : 'bg-white/15'"
-                  @click="toggleVinylRecordStyle"
-                >
-                  <span
-                    class="pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200"
-                    :class="isVinylRecordStyle ? 'translate-x-4' : 'translate-x-0.5'"
-                  />
-                </button>
+              <div
+                class="transition-opacity duration-200"
+                :class="movieModeActive ? 'opacity-40 pointer-events-none select-none' : ''"
+                :aria-disabled="movieModeActive"
+              >
+                <div class="mt-2 flex items-center justify-between gap-3">
+                  <span class="text-[13px] font-medium text-white/85">黑胶唱片</span>
+                  <button
+                    type="button"
+                    class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                    :class="isVinylRecordStyle ? 'bg-[#EC4141]' : 'bg-white/15'"
+                    :disabled="movieModeActive"
+                    @click="toggleVinylRecordStyle"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200"
+                      :class="isVinylRecordStyle ? 'translate-x-4' : 'translate-x-0.5'"
+                    />
+                  </button>
+                </div>
+
+                <div class="mt-3 flex items-center justify-between gap-3">
+                  <span class="text-[13px] font-medium text-white/85">多边形流光背景</span>
+                  <button
+                    type="button"
+                    class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                    :class="meshBackgroundEnabled ? 'bg-[#EC4141]' : 'bg-white/15'"
+                    :disabled="movieModeActive"
+                    @click="toggleMeshBackground"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200"
+                      :class="meshBackgroundEnabled ? 'translate-x-4' : 'translate-x-0.5'"
+                    />
+                  </button>
+                </div>
               </div>
 
-              <div class="mt-3 flex items-center justify-between gap-3">
-                <span class="text-[13px] font-medium text-white/85">多边形流光背景</span>
-                <button
-                  type="button"
-                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
-                  :class="meshBackgroundEnabled ? 'bg-[#EC4141]' : 'bg-white/15'"
-                  @click="toggleMeshBackground"
-                >
-                  <span
-                    class="pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200"
-                    :class="meshBackgroundEnabled ? 'translate-x-4' : 'translate-x-0.5'"
-                  />
-                </button>
-              </div>
-
-              <div class="mt-1.5 text-[10px] text-white/30">与「设置 → 主题」里的同名开关是同一份设置</div>
+              <div v-if="movieModeActive" class="mt-1.5 text-[10px] text-[#EC4141]/85">{{ appearanceHint }}</div>
+              <div v-else class="mt-1.5 text-[10px] text-white/30">与「设置 → 主题」里的同名开关是同一份设置</div>
             </div>
-            <!-- 多边形流光背景会整体替换模糊封面背景，启用时此设置不再生效 -->
+            <!-- 多边形流光背景会整体替换模糊封面背景；电影模式下模糊同样被强制归零，两种情况都禁用此设置 -->
             <div
               class="transition-opacity duration-200"
-              :class="meshBackgroundEnabled ? 'opacity-40 pointer-events-none select-none' : ''"
-              :aria-disabled="meshBackgroundEnabled"
+              :class="isBlurSettingDisabled ? 'opacity-40 pointer-events-none select-none' : ''"
+              :aria-disabled="isBlurSettingDisabled"
             >
               <div class="mb-3">
                 <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Blur</div>
@@ -631,7 +653,7 @@ watch(() => props.coverHidden, async () => {
                       v-if="lyricsSettings.backgroundBlur !== DEFAULT_BACKGROUND_BLUR"
                       type="button"
                       class="flex h-5 w-5 items-center justify-center rounded-full text-white/40 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed"
-                      :disabled="meshBackgroundEnabled"
+                      :disabled="isBlurSettingDisabled"
                       @click="resetBackgroundBlur"
                       title="重置"
                     >
@@ -651,7 +673,7 @@ watch(() => props.coverHidden, async () => {
                   :min="MIN_BACKGROUND_BLUR"
                   :max="MAX_BACKGROUND_BLUR"
                   :step="1"
-                  :disabled="meshBackgroundEnabled"
+                  :disabled="isBlurSettingDisabled"
                   :model-value="lyricsSettings.backgroundBlur"
                   @update:model-value="setBackgroundBlur"
                 />
@@ -659,7 +681,7 @@ watch(() => props.coverHidden, async () => {
               </div>
               <div class="mt-1.5 text-[10px] text-white/30">数值越小越清晰，越大越模糊</div>
             </div>
-            <div v-if="meshBackgroundEnabled" class="mt-1.5 text-[10px] text-[#EC4141]/85">已启用多边形流光背景，模糊设置不生效</div>
+            <div v-if="isBlurSettingDisabled" class="mt-1.5 text-[10px] text-[#EC4141]/85">{{ appearanceHint }}</div>
 
             <div class="mt-6 mb-3">
               <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Custom</div>

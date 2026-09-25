@@ -624,7 +624,7 @@ const toggleVideoBackground = async () => {
               class="h-full rounded-2xl border border-white/5 bg-black/10 p-4 shadow-xl backdrop-blur-sm"
             />
 
-            <LyricsView v-else :meta-info="metaInfo" :cover-hidden="coverHidden" :disabled="!showPlayerDetail" class="h-full" />
+            <LyricsView v-else :meta-info="metaInfo" :cover-hidden="coverHidden" :disabled="!showPlayerDetail" :movie-mode="isMovieMode" class="h-full" />
           </transition>
         </div>
       </div>
