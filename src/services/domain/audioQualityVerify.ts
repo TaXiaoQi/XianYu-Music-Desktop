@@ -25,6 +25,16 @@ export function isDegradedLossless(quality: QualityKey, url: string): boolean {
   return LOSSY_EXTENSIONS.has(ext);
 }
 
+// 酷狗「蝰蛇」音效流（quviper_atmos 全景声 / quviper_clear 超清母带）是
+// 酷狗自研 VIPER 编码伪装的 .flac 后缀，标准 FLAC 解码得到错乱 PCM——
+// 表现为破音/撕裂（atmos 档还会解出伪 6ch、clear 档伪 96kHz）。客户端
+// 无 VIPER 解码器，解析命中这类流时视为该档不可用，降级尝试下一档
+// （hires/quhigh 等标准流正常）。
+export function isViperEncodedStream(url: string): boolean {
+  const u = url.toLowerCase();
+  return u.includes('quviper_atmos_') || u.includes('quviper_clear_');
+}
+
 export function resolveActualQuality(quality: QualityKey, url: string): QualityKey {
   if (!isDegradedLossless(quality, url)) return quality;
 

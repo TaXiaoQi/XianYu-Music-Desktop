@@ -14,6 +14,7 @@ import {
 } from '../../types';
 import {
   isDegradedLossless,
+  isViperEncodedStream,
   resolveActualQuality,
 } from './audioQualityVerify';
 import {
@@ -102,6 +103,10 @@ export async function resolveLxAudioForQuality(
     console.warn(`[Download] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
     return null;
   }
+  if (isViperEncodedStream(url)) {
+    console.warn(`[Download] ${q} 命中酷狗蝰蛇音效流（VIPER 编码不可解），跳过该档位`);
+    return null;
+  }
   return { quality: resolveActualQuality(reportedQuality, url), url };
 }
 
@@ -173,6 +178,10 @@ export async function resolvePluginAudioForQuality(
         console.warn(`[Download][plugin] 预解析 ${q}(${key}) 被降级为 ${extFromUrl(preUrl)}，跳过该档位`);
         return null;
       }
+      if (isViperEncodedStream(preUrl)) {
+        console.warn(`[Download][plugin] 预解析 ${q}(${key}) 命中酷狗蝰蛇音效流，跳过该档位`);
+        return null;
+      }
       return { quality: resolveActualQuality(q, preUrl), url: preUrl };
     }
   }
@@ -185,6 +194,10 @@ export async function resolvePluginAudioForQuality(
 
   if (isDegradedLossless(q, url)) {
     console.warn(`[Download][plugin] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
+    return null;
+  }
+  if (isViperEncodedStream(url)) {
+    console.warn(`[Download][plugin] ${q} 命中酷狗蝰蛇音效流（VIPER 编码不可解），跳过该档位`);
     return null;
   }
   let coverThumbPath = musicInfo?.coverUrl;
@@ -232,7 +245,8 @@ export async function resolveOnlineQualityUrl(
 
   for (const q of candidates) {
     const preResolved = sanitizeMediaUrl(preResolvedUrls?.[q]);
-    if (preResolved && /^https?:/.test(preResolved) && !isDegradedLossless(q, preResolved)) {
+    if (preResolved && /^https?:/.test(preResolved)
+        && !isDegradedLossless(q, preResolved) && !isViperEncodedStream(preResolved)) {
       let coverThumbPath: string | undefined;
       if (options?.includePlaybackExtras && isPlugin && !song.cover_thumb_path) {
         const pluginCtx = ctx as PluginResolveContext;
