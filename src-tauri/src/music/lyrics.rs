@@ -2283,7 +2283,34 @@ fn find_context_start(
 
     None
 }
+/// 译文行可能比主行早或晚几十到几百毫秒（不同歌词源的主行/译文先后与偏移都不一样）。
+/// 而分组容差按行距收缩（见 get_effective_tolerance）：译文与主行相邻时「行距」恰好就是
+/// 那个偏移量，容差被压到偏移的 1/4，于是任何非零偏移都合不上组，译文被迫成为独立的一行
+/// ——表现为主行唱完跳到译文行再快速过一遍。
+/// 这里对「一侧是纯汉字、另一侧不是」的相邻行单独放行；谁当主行、谁当译文仍由既有角色
+/// 判定决定（与时间戳相同的形态走同一条路，实测中文在前/在后都能得到「外文主行 + 中文译文」）。
+const TRANSLATION_ATTACH_WINDOW_MS: u32 = 800;
 
+fn is_script_changed_attachment(group: &[LyricTrackLine], candidate: &LyricTrackLine) -> bool {
+    let Some(first) = group.first() else {
+        return false;
+    };
+    if candidate.start_ms.abs_diff(first.start_ms) > TRANSLATION_ATTACH_WINDOW_MS {
+        return false;
+    }
+    if matches!(candidate.explicit_role, Some(ExplicitLineRole::Translation)) {
+        return true;
+    }
+    // 候选行自身像日语（含假名）→ 更可能是「下一句歌词」，不该被当成译文
+    if is_japanese_like(&candidate.script_profile) {
+        return false;
+    }
+    // 一侧是纯汉字（无假名/谚文）、另一侧不是 → 疑似「主行 + 译文」对。
+    // 罗马音（纯拉丁）刻意不在此列：合组后既有角色判定不会把文本挂回主行的 roman_text，
+    // 放行只会把罗马音行整行吞掉，故维持原行为。
+    has_han_translation_content(&candidate.script_profile)
+        != has_han_translation_content(&first.script_profile)
+}
 fn should_keep_separate_for_script_similarity(
     group: &[LyricTrackLine],
     candidate: &LyricTrackLine,
@@ -2352,7 +2379,8 @@ fn group_candidate_lines(lines: &[LyricTrackLine]) -> Vec<Vec<LyricTrackLine>> {
             find_context_start(lines, group_start_index, -1),
             find_context_start(lines, group_start_index, 1),
         );
-        let within_tolerance = line.start_ms.abs_diff(current_group[0].start_ms) <= tolerance;
+        let within_tolerance = line.start_ms.abs_diff(current_group[0].start_ms) <= tolerance
+            || is_script_changed_attachment(current_group, line);
 
         if within_tolerance && !should_keep_separate_for_script_similarity(current_group, line) {
             current_group.push(line.clone());
@@ -4408,6 +4436,117 @@ mod tests {
         build_structured_lyrics_payload, parse_raw_lyrics, score_romanized_latin_text,
         ParsedLineSourceFormat, ENHANCED_TRAILING_WORD_DURATION_MS,
     };
+
+    fn lrc_line(ms: u32, text: &str) -> String {
+        format!(
+            "[{:02}:{:02}.{:03}]{text}",
+            ms / 60_000,
+            (ms / 1_000) % 60,
+            ms % 1_000
+        )
+    }
+
+    #[test]
+    fn attaches_offset_translation_line_to_its_main_line() {
+        // 译文行常比主行晚几十到几百毫秒。分组容差按行距收缩（译文紧跟主行时行距恰好等于
+        // 那个偏移量），早期这种偏移对合不上组，译文被迫成为独立一行——表现为「主行唱完
+        // 跳到译文行再快速过一遍」。
+        for offset in [0u32, 60, 120, 300, 700] {
+            let raw = format!(
+                "{}\n{}",
+                lrc_line(12_340, "夜に駆ける"),
+                lrc_line(12_340 + offset, "奔向夜晚"),
+            );
+            let payload = build_structured_lyrics_payload(raw);
+            let lines = payload
+                .display_lines
+                .iter()
+                .map(|line| (line.text.as_str(), line.translation.as_str()))
+                .collect::<Vec<_>>();
+            assert_eq!(lines.len(), 1, "译文晚 {offset}ms 时应与主行合并，实际 {lines:?}");
+            assert_eq!(lines[0].0, "夜に駆ける");
+            assert_eq!(lines[0].1, "奔向夜晚", "译文晚 {offset}ms 时应关联出译文");
+        }
+    }
+
+    #[test]
+    fn attaches_offset_translation_line_after_latin_main_line() {
+        let raw = format!(
+            "{}\n{}",
+            lrc_line(12_340, "Running into the night"),
+            lrc_line(12_640, "奔向夜晚"),
+        );
+        let payload = build_structured_lyrics_payload(raw);
+        assert_eq!(payload.display_lines.len(), 1, "拉丁主行 + 偏移译文应合并");
+        assert_eq!(payload.display_lines[0].translation, "奔向夜晚");
+    }
+
+    #[test]
+    fn attaches_offset_translation_line_when_translation_comes_first() {
+        // 有些歌词源把译文写在主行之前，且带几十到几百毫秒偏移
+        for offset in [0u32, 60, 200, 700] {
+            let raw = format!(
+                "{}\n{}",
+                lrc_line(12_340, "奔向夜晚"),
+                lrc_line(12_340 + offset, "Running into the night"),
+            );
+            let payload = build_structured_lyrics_payload(raw);
+            let lines = payload
+                .display_lines
+                .iter()
+                .map(|line| (line.text.as_str(), line.translation.as_str()))
+                .collect::<Vec<_>>();
+            assert_eq!(lines.len(), 1, "中文在前、偏移 {offset}ms 时应合并，实际 {lines:?}");
+            assert_eq!(lines[0].0, "Running into the night", "应以外文为主行");
+            assert_eq!(lines[0].1, "奔向夜晚", "中文应作为译文");
+        }
+    }
+
+    #[test]
+    fn keeps_same_script_pairs_separate_within_attach_window() {
+        // 同一语言的两行即使相隔几十毫秒，也不能被当成「主行 + 译文」
+        let cases: [(&str, &str, &str); 4] = [
+            ("两条中文", "奔向夜晚", "夜幕降临"),
+            ("两条英文", "Running into the night", "Only thing that is burning"),
+            ("两条日语", "夜に駆ける", "沈むように溶けてゆく"),
+            ("汉字行在前", "東京", "夜に駆ける"),
+        ];
+        for (name, first_text, second_text) in cases {
+            let raw = format!(
+                "{}\n{}",
+                lrc_line(12_340, first_text),
+                lrc_line(12_400, second_text),
+            );
+            let payload = build_structured_lyrics_payload(raw);
+            assert_eq!(payload.display_lines.len(), 2, "{name}：应保持两行独立");
+            assert!(
+                payload
+                    .display_lines
+                    .iter()
+                    .all(|line| line.translation.is_empty()),
+                "{name}：不应产生译文"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_same_script_lines_separate_even_when_close() {
+        // 回归保护：同一语言、相隔几十毫秒的两行不能被当成「主行 + 译文」合并
+        let raw = format!(
+            "{}\n{}",
+            lrc_line(12_340, "夜に駆ける"),
+            lrc_line(12_400, "沈むように溶けてゆく"),
+        );
+        let payload = build_structured_lyrics_payload(raw);
+        assert_eq!(payload.display_lines.len(), 2, "同为日语的两行应保持独立");
+        assert!(
+            payload
+                .display_lines
+                .iter()
+                .all(|line| line.translation.is_empty()),
+            "同语言的两行不应产生译文"
+        );
+    }
 
     #[test]
     fn plugin_lrc_with_inline_angle_words_produces_display_words() {
