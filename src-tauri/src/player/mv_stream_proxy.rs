@@ -329,7 +329,6 @@ pub async fn ensure_started() -> Result<u16, String> {
         let app = Router::new().route("/mv", get(serve_mv));
         match tokio::net::TcpListener::bind(("127.0.0.1", 0)).await {
             Ok(listener) => {
-                let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
                 if let Err(e) = axum::serve(listener, app).await {
                     eprintln!("[mv-proxy] 服务退出: {e}");
                     let _ = tx.send(Err(format!("MV 代理服务退出: {e}")));
