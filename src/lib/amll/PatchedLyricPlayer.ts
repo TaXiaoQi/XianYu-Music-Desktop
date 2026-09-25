@@ -1,5 +1,12 @@
 import { DomLyricPlayer } from '@applemusic-like-lyrics/core';
 
+import {
+  SUB_LINE_CLASS_FRAGMENT,
+  SUB_LINE_PROGRESS_VAR,
+  SUB_LINE_TEXT_CLASS,
+  resolveSubLineProgressValue,
+} from './subLineHighlight';
+
 function isCjkWord(word: string): boolean {
   return /^[\p{Unified_Ideograph}\u0800-\u9FFC]+$/u.test(word);
 }
@@ -50,6 +57,51 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
     return ((2 * value - 2) ** 2 * ((constant + 1) * (value * 2 - 2) + constant) + 2) / 2;
   }
 
+  /**
+   * 翻译/音译子行的同步扫光。
+   *
+   * AMLL 的子行是固定透明度的静态暗行（库 CSS `._lyricSubLine_ { opacity: .3 }`），只有
+   * 主行的词级遮罩会扫光，所以翻译看着「没有高光」。这里按行的演唱进度写一个进度变量到行
+   * 元素（CSS 变量会被子行继承），并确保子行文本被一个 inline-block 包裹层夹住——遮罩挂在
+   * 包裹层上，其宽度就是文本宽度，扫光恰好覆盖文本、与主行逐字高光同时结束，不会因为中文
+   * 比整行短就提前扫完。
+   */
+  private syncSubLineHighlights() {
+    const currentTime = this.currentTime;
+    if (!this.hasFiniteTime(currentTime)) return;
+
+    for (const lineObj of this.currentLyricLineObjects) {
+      const element = this.getLineElement(lineObj);
+      if (!element) continue;
+
+      const line = lineObj.getLine();
+      // 没有子行就不必动 DOM
+      if (!line.translatedLyric.trim() && !line.romanLyric.trim()) continue;
+
+      const value = resolveSubLineProgressValue(currentTime, line);
+      if (element.style.getPropertyValue(SUB_LINE_PROGRESS_VAR) !== value) {
+        element.style.setProperty(SUB_LINE_PROGRESS_VAR, value);
+      }
+
+      for (const subLine of element.querySelectorAll<HTMLElement>(`[class*="${SUB_LINE_CLASS_FRAGMENT}"]`)) {
+        this.ensureSubLineTextWrapper(subLine);
+      }
+    }
+  }
+
+  /** 库会用 innerText 重写子行内容，所以每帧确认包裹层还在（只读类名，不做布局读取）。 */
+  private ensureSubLineTextWrapper(subLine: HTMLElement) {
+    const first = subLine.firstElementChild;
+    if (first && first.classList.contains(SUB_LINE_TEXT_CLASS)) return;
+
+    const text = subLine.textContent ?? '';
+    if (!text.trim()) return;
+
+    const wrapper = document.createElement('span');
+    wrapper.className = SUB_LINE_TEXT_CLASS;
+    wrapper.textContent = text;
+    subLine.replaceChildren(wrapper);
+  }
   private syncLineTransformsToDom() {
     for (const lineObj of this.currentLyricLineObjects) {
       const lineElement = this.getLineElement(lineObj);
@@ -482,6 +534,7 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
     super.update(delta);
     this.syncLineTransformsToDom();
     this.syncAuxiliaryTransformsToDom();
+    this.syncSubLineHighlights();
   }
 
   override async calcLayout(sync = false) {

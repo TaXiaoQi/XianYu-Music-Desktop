@@ -1240,6 +1240,28 @@ watch(() => props.coverHidden, async () => {
   order: 1;
 }
 
+/* 翻译/音译子行：库默认是固定 .3 透明度的静态暗行。改成由遮罩表达明暗（未唱 .3、已唱
+   全亮），进度由播放器补丁逐帧写进 --xy-sub-line-progress。遮罩挂在文本包裹层上：它的
+   宽度恰好是文本宽度，扫光因此正好覆盖文本、与主行逐字高光同时结束，翻译比整行短也不会
+   提前扫完。 */
+.amll-host :deep(.amll-lyric-player [class*="_lyricSubLine_"]) {
+  opacity: 1;
+}
+
+.amll-host :deep(.amll-lyric-player [class*="_lyricSubLine_"] > .xy-sub-line-text) {
+  display: inline-block;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 var(--xy-sub-line-progress, 0%),
+    rgba(0, 0, 0, 0.3) var(--xy-sub-line-progress, 0%)
+  );
+  mask-image: linear-gradient(
+    90deg,
+    #000 var(--xy-sub-line-progress, 0%),
+    rgba(0, 0, 0, 0.3) var(--xy-sub-line-progress, 0%)
+  );
+}
+
 .amll-host :deep(.amll-lyric-player[class*="_hasDuetLine_"] [class*="_lyricLine_"]) {
   padding-left: 1em;
   padding-right: 1em;
