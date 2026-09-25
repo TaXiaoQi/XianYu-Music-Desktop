@@ -16,6 +16,7 @@ const settingsLoaders = {
   audioOutput: () => import("../components/settings/SettingsAudioOutput.vue").then(m => m.default),
   download: () => import("../components/settings/SettingsDownload.vue").then(m => m.default),
   debug: () => import("../components/settings/SettingsDebug.vue").then(m => m.default),
+  network: () => import("../components/settings/SettingsNetwork.vue").then(m => m.default),
   advanced: () => import("../components/settings/SettingsAdvanced.vue").then(m => m.default),
   feedback: () => import("../components/settings/SettingsFeedback.vue").then(m => m.default),
 };
@@ -55,6 +56,7 @@ const SettingsToolbox = lazySettings(settingsLoaders.toolbox);
 const SettingsAudioOutput = lazySettings(settingsLoaders.audioOutput);
 const SettingsDownload = lazySettings(settingsLoaders.download);
 const SettingsDebug = lazySettings(settingsLoaders.debug);
+const SettingsNetwork = lazySettings(settingsLoaders.network);
 const SettingsAdvanced = lazySettings(settingsLoaders.advanced);
 const SettingsFeedback = lazySettings(settingsLoaders.feedback);
 import { useDeveloperMode } from '../features/settings/developerMode';
@@ -68,7 +70,7 @@ import { useI18n } from '../features/i18n';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'feedback', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'network', 'advanced', 'feedback', 'debug', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -333,6 +335,7 @@ const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => 
   { id: 'toolbox', name: t('settings.toolbox') },
   { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
   { id: 'shortcuts', name: t('settings.shortcuts') },
+  { id: 'network', name: t('settings.network') },
   { id: 'advanced', name: t('settings.advanced') },
   { id: 'feedback', name: t('settings.feedback') },
   { id: 'about', name: t('settings.about') },
@@ -466,6 +469,7 @@ const tabs = computed(() => {
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
+          <SettingsNetwork v-else-if="activeTab === 'network'" key="network" />
           <SettingsAdvanced v-else-if="activeTab === 'advanced'" key="advanced" />
           <SettingsFeedback v-else-if="activeTab === 'feedback'" key="feedback" />
           <SettingsDebug v-else-if="activeTab === 'debug'" key="debug" />

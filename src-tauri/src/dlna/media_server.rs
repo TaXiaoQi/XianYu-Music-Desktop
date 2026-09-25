@@ -76,7 +76,7 @@ impl MediaRegistry {
 
 impl Default for MediaRegistry {
     fn default() -> Self {
-        Self::new(reqwest::Client::new())
+        Self::new(crate::netproxy::client())
     }
 }
 
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn registry_create_update_get() {
-        let reg = MediaRegistry::new(reqwest::Client::new());
+        let reg = MediaRegistry::new(crate::netproxy::client());
         let t = reg.create(MediaPayload::LocalFile {
             path: "/a.mp3".into(),
         });

@@ -16,6 +16,7 @@ describe('settings search index', () => {
       'plugins',
       'shortcuts',
       'account',
+      'network',
       'advanced',
       'feedback',
       'about',
@@ -50,5 +51,8 @@ describe('settings search index', () => {
     expect(searchSettings('\u6b4c\u8bcd\u9875\u5c01\u9762')).toMatchObject([
       { kind: 'section', label: '\u6b4c\u8bcd\u9875\u5c01\u9762', tab: 'theme' },
     ]);
+  });
+  it('indexes the network proxy settings on the network page', () => {
+    expect(searchSettings('代理').some(item => item.label === '启用网络代理')).toBe(true);
   });
 });

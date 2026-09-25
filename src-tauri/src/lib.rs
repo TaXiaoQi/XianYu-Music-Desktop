@@ -11,6 +11,7 @@ mod foreground_window;
 mod host_crypto;
 mod install_language;
 mod music;
+mod netproxy;
 mod player;
 mod plugin_host;
 mod plugins;
@@ -34,8 +35,9 @@ mod window_z_order;
 
 use app_runtime::{
     consume_pending_deep_links, consume_pending_open_paths, exit_app, handle_single_instance,
-    open_devtools, setup_app, update_native_tray_menu,
+    open_devtools, restart_app, setup_app, update_native_tray_menu,
 };
+use netproxy::{get_network_proxy, set_network_proxy, test_network_proxy};
 use audio_convert::{convert_audio, detect_ffmpeg};
 use audio_trim::{probe_audio_duration, trim_audio};
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
@@ -401,6 +403,10 @@ pub fn run() {
             refresh_taskbar_window_topmost,
             uninstall_taskbar_zorder_guard,
             exit_app,
+            restart_app,
+            get_network_proxy,
+            set_network_proxy,
+            test_network_proxy,
             update_native_tray_menu,
             set_gpu_acceleration,
             check_update_by_rust,

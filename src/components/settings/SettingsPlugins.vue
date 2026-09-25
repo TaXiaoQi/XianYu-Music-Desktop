@@ -4,6 +4,7 @@ import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download,
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
+import { ensureNetworkProxyLoaded, isNetworkProxyEnabled } from '../../composables/useNetworkProxy';
 import type { PluginSource, PluginSubscription } from '../../types';
 import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
@@ -17,6 +18,35 @@ import type { SyncDeleteScope } from '../overlays/SyncDeleteScopeModal.vue';
 
 const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
 
+/**
+ * 取远程脚本文本。启用网络代理时优先走 Rust——浏览器 fetch 的网络栈不受代理覆盖，
+ * 需要代理才能联网的环境下会白等一次失败。未启用代理时维持原有「先 fetch、失败回退 Rust」
+ * 的顺序，不改变普通用户的行为。
+ */
+async function fetchRemoteScript(url: string): Promise<string> {
+  let preferRust = false;
+  try {
+    await ensureNetworkProxyLoaded();
+    preferRust = isNetworkProxyEnabled();
+  } catch { /* 读不到代理设置就按未启用处理 */ }
+
+  if (preferRust) {
+    try {
+      return await pluginApi.fetchPluginUrl(url);
+    } catch { /* 回退浏览器 fetch */ }
+  }
+
+  try {
+    const resp = await fetch(url, { method: 'GET', headers: { 'Accept': '*/*' } });
+    if (resp.ok) return await resp.text();
+  } catch { /* ignore, try Tauri backend */ }
+
+  try {
+    return await pluginApi.fetchPluginUrl(url);
+  } catch {
+    return '';
+  }
+}
 const props = withDefaults(defineProps<{
   overlayZClass?: string;
 }>(), {
@@ -438,18 +468,7 @@ async function handleInstallFromUrl() {
 
   isPluginBusy.value = true;
   try {
-    let content = '';
-    try {
-      const resp = await fetch(url, {
-        method: 'GET',
-        headers: { 'Accept': '*/*' },
-      });
-      if (resp.ok) content = await resp.text();
-    } catch { /* ignore, try Tauri backend */ }
-
-    if (!content) {
-      content = await pluginApi.fetchPluginUrl(url);
-    }
+    const content = await fetchRemoteScript(url);
 
     if (!content || !content.trim()) {
       showToast('获取链接内容失败，请检查 URL 是否正确', 'error');
@@ -496,15 +515,7 @@ async function importMultiplePlugins(pluginList: Array<{ name?: string; url: str
       ((i + 1) / items.length) * 100,
     );
     try {
-      let script = '';
-      try {
-        const resp = await fetch(item.url, { headers: { 'Accept': '*/*' } });
-        if (resp.ok) script = await resp.text();
-      } catch { /* ignore */ }
-
-      if (!script) {
-        try { script = await pluginApi.fetchPluginUrl(item.url); } catch { /* ignore */ }
-      }
+      const script = await fetchRemoteScript(item.url);
 
       if (!script || !script.trim()) {
         failCount++;

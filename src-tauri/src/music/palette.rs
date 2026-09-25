@@ -394,7 +394,7 @@ fn load_image_bytes(source: &str) -> Result<Vec<u8>, String> {
     } else if source.starts_with("http://") || source.starts_with("https://") {
         crate::security::ssrf::validate_outbound_url_sync(&source)
             .map_err(|e| format!("图片源校验失败: {e}"))?;
-        let client = reqwest::blocking::Client::builder()
+        let client = crate::netproxy::blocking_client_builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
             .redirect(crate::security::ssrf::ssrf_redirect_policy())
             .dns_resolver(crate::security::ssrf::pinned_dns_resolver())

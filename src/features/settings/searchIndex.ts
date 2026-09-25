@@ -13,6 +13,7 @@ export type SettingsTabId =
   | 'plugins'
   | 'shortcuts'
   | 'account'
+  | 'network'
   | 'advanced'
   | 'feedback'
   | 'about';
@@ -45,6 +46,7 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   toolbox: '工具箱',
   desktopLyrics: '桌面歌词',
   shortcuts: '快捷按键',
+  network: '网络',
   advanced: '高级设置',
   feedback: '问题反馈',
   about: '关于',
@@ -298,6 +300,13 @@ const staticItems: SettingsSearchItem[] = [
     { label: '删除全部日志', keywords: '日志 清空 删除' },
   ]),
 
+  ...makeItems('network', '网络代理', [
+    { label: '启用网络代理', keywords: 'HTTP 代理 proxy 主机 端口 账号 密码 认证' },
+    { label: '代理主机', keywords: 'HTTP 代理 host 地址 服务器' },
+    { label: '代理端口', keywords: 'HTTP 代理 port 端口' },
+    { label: '代理账号', keywords: 'HTTP 代理 认证 用户名' },
+    { label: '代理密码', keywords: 'HTTP 代理 认证 密码' },
+  ]),
   ...makeItems('feedback', '问题反馈', [
     { label: '问题反馈', keywords: '反馈 建议 提交 意见 bug 故障' },
     { label: '申请内测', keywords: '内测 beta 资格 申请' },

@@ -527,6 +527,11 @@ impl PluginEngine {
         &self.store
     }
 
+    /// 供网络代理开关变化后清空 HTTP client 缓存（见 `netproxy::save`）。
+    pub fn clear_http_clients(&self) {
+        self.http.clear_clients();
+    }
+
     async fn destroy(&self, plugin_id: &str) {
         self.instances.lock().await.remove(plugin_id);
     }
@@ -1301,7 +1306,7 @@ mod tests {
         let only: Option<String> = std::env::var("PLUGIN_ONLY").ok();
         let keyword = std::env::var("PLUGIN_KEYWORD").unwrap_or_else(|_| "晴天 周杰伦".to_string());
         let engine = engine();
-        let http = reqwest::Client::builder()
+        let http = crate::netproxy::client_builder()
             .timeout(Duration::from_secs(12))
             .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()

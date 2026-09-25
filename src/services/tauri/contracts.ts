@@ -590,6 +590,29 @@ export interface TrimAudioResult {
   error: string | null;
 }
 
+/** 网络代理配置（对应 src-tauri/src/netproxy.rs 的 ProxyConfig，字段名与序列化一致） */
+export interface NetworkProxyConfigOptions {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+}
+
+/** 网络代理配置视图。密码不回传，只告知是否已设置。 */
+export interface NetworkProxyState {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  password_set: boolean;
+}
+
+export interface NetworkProxyTestResult {
+  success: boolean;
+  status: number | null;
+  elapsed_ms: number;
+  error: string | null;
+}
 export interface TauriCommandMap {
   add_library_folder: { payload: { path: string }; response: void };
   remove_library_folder: { payload: { path: string }; response: void };
@@ -1180,6 +1203,17 @@ export interface TauriCommandMap {
   is_store_build: { payload: undefined; response: boolean };
   // ============ 应用生命周期 ============
   exit_app: { payload: undefined; response: void };
+  // ============ 网络代理 ============
+  get_network_proxy: { payload: undefined; response: NetworkProxyState };
+  set_network_proxy: {
+    payload: { config: NetworkProxyConfigOptions; password: string | null };
+    response: void;
+  };
+  test_network_proxy: {
+    payload: { config: NetworkProxyConfigOptions; password: string | null };
+    response: NetworkProxyTestResult;
+  };
+  restart_app: { payload: undefined; response: void };
   // ============ 安装语言 ============
   get_install_language: { payload: undefined; response: string | null };
   set_install_language: { payload: { language: string }; response: boolean };

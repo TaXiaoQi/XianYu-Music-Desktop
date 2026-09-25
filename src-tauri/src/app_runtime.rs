@@ -496,6 +496,9 @@ pub(crate) fn handle_opened_urls<R: tauri::Runtime>(
 pub(crate) fn setup_app(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // 网络代理必须在构造任何 HTTP client 之前确定，故放在 setup 的第一步。
+    crate::netproxy::load(app.handle());
+
     app.manage(PendingOpenPaths::default());
     app.manage(PendingDeepLinks::default());
     app.manage(TrayMenuRuntimeState::default());
@@ -585,6 +588,16 @@ pub(crate) fn consume_pending_deep_links(
 #[tauri::command]
 pub(crate) fn exit_app(app: tauri::AppHandle) {
     crate::graceful_shutdown(&app);
+}
+
+/// 重启应用。给「必须重建进程内 HTTP client 才会完全生效」的设置用（当前是网络代理）。
+///
+/// 不走 `graceful_shutdown`：那条路径会直接 `app.exit(0)`，退出后不会重启。这里交给
+/// Tauri 的 `AppHandle::restart()`——从非主线程调用时它会触发一次正常的退出流程
+/// （窗口状态保存、WebView 缓存清理等照常发生），再拉起新进程。
+#[tauri::command]
+pub(crate) fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    app.restart()
 }
 
 #[tauri::command]

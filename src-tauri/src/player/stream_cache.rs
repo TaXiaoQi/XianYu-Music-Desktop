@@ -1160,7 +1160,7 @@ fn send_audio_request(
             .map(|d| http_only_audio_domains().lock().unwrap().contains(&d))
             .unwrap_or(false);
         if !skip_probe {
-            let probe_ok = if let Ok(probe) = reqwest::blocking::Client::builder()
+            let probe_ok = if let Ok(probe) = crate::netproxy::blocking_client_builder()
                 .connect_timeout(Duration::from_millis(800))
                 .timeout(Duration::from_millis(1200))
                 .gzip(true)
@@ -1252,7 +1252,7 @@ fn download_thread(
         post_check_pending.store(true, Ordering::Relaxed);
     }
 
-    let client = match reqwest::blocking::Client::builder()
+    let client = match crate::netproxy::blocking_client_builder()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(10))
         .gzip(true)
