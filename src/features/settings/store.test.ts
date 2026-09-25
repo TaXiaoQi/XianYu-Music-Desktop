@@ -101,6 +101,18 @@ describe('settings store', () => {
     expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
   });
 
+  it('stores the polygon mesh flow speed multiplier', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(1);
+    settingsStore.patchTheme({ playerDetailMeshSpeed: 2.5 });
+    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(2.5);
+
+    // 0 表示静止，是合法取值（渲染侧只做夹取，不排除 0）
+    settingsStore.patchTheme({ playerDetailMeshSpeed: 0 });
+    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(0);
+  });
+
   it('stores the polygon mesh anti-aliasing flag with normalization', () => {
     const settingsStore = useSettingsStore();
 

@@ -102,6 +102,7 @@ export const defaultThemeSettings: ThemeSettings = {
   playerDetailStyle: 'classic',
   playerDetailMeshBackground: true,
   playerDetailMeshAntiAlias: true,
+  playerDetailMeshSpeed: 1,
   dynamicBgType: 'none',
   windowMaterial: 'none',
   keepWindowMaterialOnBlur: true,

@@ -4,6 +4,8 @@ const exactEnglishTranslations: Record<string, string> = {
 '代理端口必须在 1-65535 之间': 'The proxy port must be between 1 and 65535',
 '代理主机不能为空': 'The proxy host cannot be empty',
 '请先启用网络代理再测试': 'Enable the network proxy before testing',
+// 多边形流光背景的流动速度滑块（标签「流动速度」复用既有英译）
+'数值越大流动越快，0 为静止': 'Higher values drift faster; 0 freezes the drift',
   // 云端歌单源端更新弹窗（SyncDeleteScopeModal / 歌单更新确认）
   '仅添加新歌曲': 'Add new songs only',
   '从源端更新歌单': 'Update playlist from source',

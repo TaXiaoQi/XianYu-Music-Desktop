@@ -37,8 +37,21 @@ const CELL_DENSITY = 4.3;
 const SEED_JITTER = 0.5;
 /** 种子漂移速度 */
 const DRIFT_SPEED = 0.42;
-/** 接缝暗缝深度：相邻多边形之间压暗，形成切面感（参考图的柔和暗边） */
-const SEAM_DEPTH = 0.16;
+
+/** 流动速度倍率的可调范围（样式面板里的滑块） */
+const DRIFT_SPEED_MIN_MULTIPLIER = 0;
+const DRIFT_SPEED_MAX_MULTIPLIER = 3;
+
+/** 面板里调的是倍率，0 为静止。夹取兜底：异常值不该把动画冻死或飙飞。 */
+function resolveDriftSpeed(multiplier: unknown): number {
+  const value = typeof multiplier === 'number' && Number.isFinite(multiplier) ? multiplier : 1;
+  const clamped = Math.min(DRIFT_SPEED_MAX_MULTIPLIER, Math.max(DRIFT_SPEED_MIN_MULTIPLIER, value));
+  return DRIFT_SPEED * clamped;
+}
+/** 接缝暗缝深度：相邻多边形之间压暗，形成切面感。取值偏大时在屏幕上是一条又宽又深的
+ *  暗带（0.14 的宽度约合 30 多个屏幕像素），看着像板块之间的裂口，故压到 0.06，
+ *  只留一层柔和暗部；多边形结构改由相邻色差与边缘抗锯齿的过渡来体现。 */
+const SEAM_DEPTH = 0.06;
 /** 接缝过渡宽度：越大越柔和 */
 const SEAM_WIDTH = 0.14;
 /** 多边形颜色向「按像素位置取色」的平滑渐变色混合的比例：
@@ -323,7 +336,7 @@ function renderFrame() {
   gl.uniform1f(uniformLoc.uTime ?? null, time);
   gl.uniform1f(uniformLoc.uDensity ?? null, CELL_DENSITY);
   gl.uniform1f(uniformLoc.uSeedJitter ?? null, SEED_JITTER);
-  gl.uniform1f(uniformLoc.uDriftSpeed ?? null, DRIFT_SPEED);
+  gl.uniform1f(uniformLoc.uDriftSpeed ?? null, resolveDriftSpeed(theme.value?.playerDetailMeshSpeed));
   gl.uniform1f(uniformLoc.uSeamDepth ?? null, SEAM_DEPTH);
   gl.uniform1f(uniformLoc.uSeamWidth ?? null, SEAM_WIDTH);
   gl.uniform1f(uniformLoc.uGradientBlend ?? null, GRADIENT_BLEND);
