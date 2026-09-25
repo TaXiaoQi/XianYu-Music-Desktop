@@ -2,7 +2,7 @@
 /**
  * 唱针组件（网易云播放页风格）：
  * - 臂杆为长直斜杆 + 末端短弧折向陡角，白色小圆头唱针在末端
- * - 播放：落针姿态；暂停：整臂绕枢轴向外摆起离开唱片
+ * - 播放：落针姿态；暂停：整臂绕枢轴向外摆起离开唱片；切歌：小幅抬针后快速回落
  * - 几何完全由下方 TONEARM_PARAMS 参数化（1 unit = 0.001 × 唱片边长），
  *   数值来自可视化调参面板实调结果（面板已移除，如需再调可临时恢复）。
  */
@@ -16,28 +16,50 @@ const props = withDefaults(defineProps<{
   songKey: '',
 });
 
-/** 切歌动作中的抬针状态 */
+/**
+ * 切歌动作：小幅抬针 + 快速回落。
+ * 不能摆到暂停位（-46°）——那需要 1.1s 的过渡，切歌时播放已经开始，
+ * 而唱针还在归位途中。
+ */
+const SWITCH_LIFT_MS = 240;
+const SWITCH_SETTLE_MS = 620;
+
+/** 切歌抬针中（旋转到 switchDeg） */
 const isLifting = ref(false);
+/** 整个切歌动作期间为真（含回落段），用于临时换成更短的过渡 */
+const isSwitching = ref(false);
 let liftTimer: ReturnType<typeof setTimeout> | null = null;
+let switchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearSwitchTimers() {
+  if (liftTimer) {
+    clearTimeout(liftTimer);
+    liftTimer = null;
+  }
+  if (switchTimer) {
+    clearTimeout(switchTimer);
+    switchTimer = null;
+  }
+}
 
 watch(() => props.songKey, (next, prev) => {
   // 首次挂载不算切歌
   if (!prev || next === prev) return;
 
+  clearSwitchTimers();
+  isSwitching.value = true;
   isLifting.value = true;
-  if (liftTimer) clearTimeout(liftTimer);
   liftTimer = setTimeout(() => {
     isLifting.value = false;
     liftTimer = null;
-  }, 760);
+  }, SWITCH_LIFT_MS);
+  switchTimer = setTimeout(() => {
+    isSwitching.value = false;
+    switchTimer = null;
+  }, SWITCH_SETTLE_MS);
 });
 
-onBeforeUnmount(() => {
-  if (liftTimer) {
-    clearTimeout(liftTimer);
-    liftTimer = null;
-  }
-});
+onBeforeUnmount(clearSwitchTimers);
 
 // 实调固化的几何参数（坐标系：viewBox 400×460，容器 40%×46%，1 unit = 0.001S）
 const TONEARM_PARAMS = {
@@ -55,6 +77,8 @@ const TONEARM_PARAMS = {
   headRotOffset: 0,
   downDeg: 0,
   upDeg: -46,
+  /** 切歌时的小幅抬针角度：不整臂归位，避免播放已开始、唱针还在回摆 */
+  switchDeg: -15,
 } as const;
 
 const params = TONEARM_PARAMS;
@@ -94,10 +118,12 @@ const headTop = pct(params.tipY, VIEW_H);
 
 const transformOrigin = `${pivotLeft} ${pivotTop}`;
 
-/** 抬针 = 暂停态或切歌动作中 */
-const rotationDeg = computed(() => (
-  isLifting.value || !props.isPlaying ? params.upDeg : params.downDeg
-));
+/** 暂停 = 整臂抬针；切歌 = 小幅抬针后快速回落；否则落针 */
+const rotationDeg = computed(() => {
+  if (!props.isPlaying) return params.upDeg;
+  if (isLifting.value) return params.switchDeg;
+  return params.downDeg;
+});
 </script>
 
 <template>
@@ -112,6 +138,10 @@ const rotationDeg = computed(() => (
         height: '46%',
         transformOrigin,
         transform: `rotate(${rotationDeg}deg)`,
+        // 切歌期间临时缩短过渡，保证动作在播放开始后很快结束
+        transition: isSwitching
+          ? 'transform 0.26s cubic-bezier(0.22, 1, 0.36, 1)'
+          : undefined,
       }"
     >
       <!-- 枢轴圆钮（多层金属 + 高光点） -->
