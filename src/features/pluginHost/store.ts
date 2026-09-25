@@ -107,7 +107,7 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     if (!disabledPluginPaths.value.some(p => p.toLowerCase() === clean.toLowerCase())) {
       disabledPluginPaths.value.push(clean);
       persistDisabledPaths();
-      showToast(`已跳过并禁用插件: ${clean.split(/[\/\\]/).pop()}`, 'info');
+      showToast(`已跳过并禁用插件: ${clean.split(/[/\\]/).pop()}`, 'info');
     }
   };
 

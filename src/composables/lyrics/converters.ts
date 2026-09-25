@@ -184,7 +184,7 @@ export function convertLyricsToAmlLines(
 ): CoreAmlLyricLine[] {
   const validLines = lines.filter((line) => {
     const text = (line.text || '').trim();
-    if (/^\s*\/[\/\\\s]+\s*$/.test(text) && !line.translation && !line.romaji) {
+    if (/^\s*\/[/\\\s]+\s*$/.test(text) && !line.translation && !line.romaji) {
       return false;
     }
     return Boolean(text || line.translation || line.romaji);
