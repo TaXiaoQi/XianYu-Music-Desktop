@@ -264,7 +264,7 @@ fn tray_track_title(state: &NativeTrayMenuState) -> String {
                         .map(clean_track_name)
                 })
         })
-        .unwrap_or_else(|| "XY-Music".to_string())
+        .unwrap_or_else(|| "XianYu Music".to_string())
 }
 
 fn tray_track_artist(state: &NativeTrayMenuState) -> String {

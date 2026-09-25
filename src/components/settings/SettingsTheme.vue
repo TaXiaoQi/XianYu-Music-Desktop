@@ -58,7 +58,7 @@ const TEXT = computed(() => isEnglish.value ? {
   keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.',
   trayMenuTitle: 'Tray Menu',
   customTrayMenu: 'Use Custom Tray Menu',
-  customTrayMenuHint: 'Use the tray menu drawn by XY-Music. Turn this off to use the native system menu.',
+  customTrayMenuHint: 'Use the tray menu drawn by XianYu Music. Turn this off to use the native system menu.',
   customTrayMenuOn: 'Custom',
   customTrayMenuOff: 'System',
   leaderboardTitle: 'Home Leaderboard',
@@ -111,7 +111,7 @@ const TEXT = computed(() => isEnglish.value ? {
   keepWindowMaterialOnBlurHint: '开启后窗口失焦时仍会尝试保持当前材质效果。',
   trayMenuTitle: '托盘菜单',
   customTrayMenu: '启动自定义托盘',
-  customTrayMenuHint: '开启后默认使用 XY-Music 绘制的托盘菜单；关闭后使用系统原生菜单。',
+  customTrayMenuHint: '开启后默认使用 XianYu Music 绘制的托盘菜单；关闭后使用系统原生菜单。',
   customTrayMenuOn: '自定义',
   customTrayMenuOff: '系统',
   leaderboardTitle: '首页排行榜',
@@ -542,7 +542,7 @@ onUnmounted(() => {
               <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ FLOW_TEXT.panelTitle }}</div>
-                  <div class="text-xs text-gray-600 dark:text-white/60">XY-Music Flow</div>
+                  <div class="text-xs text-gray-600 dark:text-white/60">XianYu Music Flow</div>
                 </div>
                 <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]">
                   {{ theme.flowColorBoost }} / {{ theme.flowDepth }} / {{ theme.flowSpeed }} / {{ theme.flowTexture }}

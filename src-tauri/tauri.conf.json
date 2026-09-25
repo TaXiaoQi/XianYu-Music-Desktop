@@ -44,7 +44,7 @@
     "externalBin": [
       "bin/ffmpeg"
     ],
-    "copyright": "Copyright © 2026 XY-Music-Desktop Team",
+    "copyright": "Copyright © 2026 XianYu Music Team",
     "shortDescription": "A beautiful local music player powered by Tauri.",
     "license": "AGPL-3.0-only",
     "fileAssociations": [
@@ -62,16 +62,16 @@
           "ogg",
           "wav"
         ],
-        "name": "XY-Music Audio",
-        "description": "XY-Music Audio File",
+        "name": "XianYu Music Audio",
+        "description": "XianYu Music Audio File",
         "role": "Viewer"
       },
       {
         "ext": [
           "js"
         ],
-        "name": "XY-Music Plugin Script",
-        "description": "XY-Music Plugin Script",
+        "name": "XianYu Music Plugin Script",
+        "description": "XianYu Music Plugin Script",
         "role": "Viewer"
       }
     ],

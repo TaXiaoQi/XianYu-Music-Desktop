@@ -223,7 +223,7 @@ export function createDesktopLyricsWindowOptions({
 }) {
   return {
     url: '/',
-    title: 'XY-Music Desktop Lyrics',
+    title: 'XianYu Music Desktop Lyrics',
     width: DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
     height: DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT,
     minWidth: DESKTOP_LYRICS_WINDOW_MIN_WIDTH,

@@ -2,7 +2,7 @@
 ; 弦予音乐 NSIS 安装自定义钩子
 ;
 ; 背景：Tauri 的 NSIS 模板已通过 MUI_LANGDLL_REGISTRY 把安装器语言写入
-;   HKCU\Software\xymusic\弦予音乐 的 "Installer Language" 值（LCID 数字），
+;   HKCU\Software\xianyu\弦予音乐 的 "Installer Language" 值（LCID 数字），
 ;   卸载器 un.onInit 里的 MUI_UNGETLANGUAGE 会自动读取该值继承语言，
 ;   因此“卸载器继承语言”无需额外处理。
 ;
@@ -16,7 +16,7 @@
 ;   1033 English  (English)     -> en-US
 ; ============================================================================
 
-!define XY_LANG_REGKEY "Software\xymusic\${PRODUCTNAME}"
+!define XY_LANG_REGKEY "Software\xianyu\${PRODUCTNAME}"
 !define XY_LANG_REGVALUE "AppLanguage"
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -28,22 +28,22 @@
     WriteRegStr HKCU "${XY_LANG_REGKEY}" "${XY_LANG_REGVALUE}" "zh-CN"
   ${EndIf}
   ; 「打开方式」列表的应用名跟随安装语言：中文系统显示「弦予音乐」，其它显示 "XianYuMusic"。
-  ; 背景：Tauri 模板把文件关联 ProgId（XY-Music Audio / XY-Music Plugin Script）的默认值
-  ;   写成 description（如 "XY-Music Audio File"），右键「打开方式」显示的就是它。
+  ; 背景：Tauri 模板把文件关联 ProgId（XianYu Music Audio / XianYu Music Plugin Script）的默认值
+  ;   写成 description（如 "XianYu Music Audio File"），右键「打开方式」显示的就是它。
   ;   这里覆盖默认值并补 FriendlyTypeName（shell 显示名优先级最高）。升级重装时 Tauri
   ;   会重写默认值，本钩子在其后重跑，覆盖始终生效。ProgId 键名保持不动（shell\open\command
   ;   与 .ext 默认值都挂在它下面）。
   ${If} $LANGUAGE == 2052
   ${OrIf} $LANGUAGE == 1028
-    WriteRegStr HKCU "Software\Classes\XY-Music Audio" "FriendlyTypeName" "弦予音乐"
-    WriteRegStr HKCU "Software\Classes\XY-Music Audio" "" "弦予音乐"
-    WriteRegStr HKCU "Software\Classes\XY-Music Plugin Script" "FriendlyTypeName" "弦予音乐"
-    WriteRegStr HKCU "Software\Classes\XY-Music Plugin Script" "" "弦予音乐"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Audio" "FriendlyTypeName" "弦予音乐"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Audio" "" "弦予音乐"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Plugin Script" "FriendlyTypeName" "弦予音乐"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Plugin Script" "" "弦予音乐"
   ${Else}
-    WriteRegStr HKCU "Software\Classes\XY-Music Audio" "FriendlyTypeName" "XianYuMusic"
-    WriteRegStr HKCU "Software\Classes\XY-Music Audio" "" "XianYuMusic"
-    WriteRegStr HKCU "Software\Classes\XY-Music Plugin Script" "FriendlyTypeName" "XianYuMusic"
-    WriteRegStr HKCU "Software\Classes\XY-Music Plugin Script" "" "XianYuMusic"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Audio" "FriendlyTypeName" "XianYuMusic"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Audio" "" "XianYuMusic"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Plugin Script" "FriendlyTypeName" "XianYuMusic"
+    WriteRegStr HKCU "Software\Classes\XianYu Music Plugin Script" "" "XianYuMusic"
   ${EndIf}
   ; 注册 xianyu:// URL 协议：分享落地页点「在弦予音乐中打开」时由系统
   ; 用 `"$INSTDIR\弦予音乐.exe" "%1"` 拉起本程序并带入深链参数。

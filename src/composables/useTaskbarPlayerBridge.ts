@@ -231,7 +231,7 @@ async function ensureTaskbarPlayerWindow() {
     taskbarPlayerWindowPromise = (async () => {
       const windowInstance = new WebviewWindow(TASKBAR_PLAYER_WINDOW_LABEL, {
         url: '/',
-        title: 'XY-Music Taskbar Player',
+        title: 'XianYu Music Taskbar Player',
         width: TASKBAR_PLAYER_WINDOW_WIDTH,
         height: TASKBAR_PLAYER_WINDOW_HEIGHT,
         minWidth: TASKBAR_PLAYER_WINDOW_WIDTH,

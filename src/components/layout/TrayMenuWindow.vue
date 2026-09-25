@@ -46,7 +46,7 @@ let unlistenCloseRequested: UnlistenFn | null = null;
 
 const trackTitle = computed(() => {
   const song = currentSong.value;
-  if (!song) return 'XY-Music';
+  if (!song) return 'XianYu Music';
   return song.title || song.name.replace(/\.[^/.]+$/, '');
 });
 

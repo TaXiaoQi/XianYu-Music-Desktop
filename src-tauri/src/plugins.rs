@@ -584,7 +584,7 @@ pub async fn download_audio_to_temp(
 
     let temp_dir = std::env::temp_dir();
     let file_name = format!(
-        "xy_music_{}.m4s",
+        "xianyu_music_{}.m4s",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -651,7 +651,7 @@ pub async fn download_video_to_cache(
     tokio::fs::create_dir_all(&cache_dir)
         .await
         .map_err(|error| error.to_string())?;
-    let file_name = format!("xy_music_video_{}.mp4", uuid::Uuid::new_v4());
+    let file_name = format!("xianyu_music_video_{}.mp4", uuid::Uuid::new_v4());
     let cache_path = cache_dir.join(file_name);
     let mut file = tokio::fs::File::create(&cache_path)
         .await
@@ -728,7 +728,7 @@ pub async fn remove_cached_background_video(
         .and_then(|value| value.to_str())
         .unwrap_or_default();
     if candidate.parent() != Some(canonical_cache.as_path())
-        || !file_name.starts_with("xy_music_video_")
+        || !file_name.starts_with("xianyu_music_video_")
     {
         return Err("Refusing to remove a non-background-video file".to_string());
     }

@@ -358,7 +358,7 @@ onUnmounted(() => {
             class="inline-block whitespace-nowrap"
             :class="{ 'marquee-scroll': shouldScroll }"
           >
-            {{ currentSong ? (currentSong.title || currentSong.name) : 'XY-Music' }}
+            {{ currentSong ? (currentSong.title || currentSong.name) : 'XianYu Music' }}
           </div>
         </div>
 

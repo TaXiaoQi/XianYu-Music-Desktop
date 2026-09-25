@@ -36,7 +36,7 @@ const toggleEasterEgg = () => {
       @click.stop="toggleEasterEgg"
     >
       <h1 class="font-black tracking-wider text-[19px] text-[#353A3E] dark:text-white/80 pointer-events-none translate-x-[-12px] translate-y-[15px]">
-        XY Music
+        XianYu Music
       </h1>
     </div>
   </div>

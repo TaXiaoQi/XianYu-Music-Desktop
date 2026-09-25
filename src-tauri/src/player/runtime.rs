@@ -364,8 +364,8 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let config = PlatformConfig {
-            dbus_name: "xy_music",
-            display_name: "XY-Music",
+            dbus_name: "xianyu_music",
+            display_name: "XianYu Music",
             hwnd: None,
         };
 
@@ -385,8 +385,8 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
                 let hwnd = h.hwnd.get() as *mut std::ffi::c_void;
 
                 let config = PlatformConfig {
-                    dbus_name: "xy_music",
-                    display_name: "XY-Music",
+                    dbus_name: "xianyu_music",
+                    display_name: "XianYu Music",
                     hwnd: Some(hwnd),
                 };
 
@@ -2424,7 +2424,7 @@ mod tests {
     #[ignore = "依赖本地 m4s 临时文件（XY_M4S_PATH 可指定），手动 --ignored 运行"]
     fn debug_decode_bilibili_m4s() {
         let path = std::env::var("XY_M4S_PATH").unwrap_or_else(|_| {
-            "C:\\Users\\小奇\\AppData\\Local\\Temp\\xy_music_1787144280366.m4s".to_string()
+            "C:\\Users\\小奇\\AppData\\Local\\Temp\\xianyu_music_1787144280366.m4s".to_string()
         });
         let file = std::fs::File::open(&path).expect("open m4s");
         let reader = std::io::BufReader::with_capacity(512 * 1024, file);
