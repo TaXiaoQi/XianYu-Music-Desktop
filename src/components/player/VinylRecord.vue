@@ -134,21 +134,21 @@ onBeforeUnmount(() => {
   will-change: transform;
   background:
     radial-gradient(circle at 50% 50%,
-      #1a1a1f 0%,
-      #0d0d10 28%,
-      #161618 30%,
-      #0a0a0c 32%,
-      #141416 100%
+      #242429 0%,
+      #151518 28%,
+      #202024 30%,
+      #121214 32%,
+      #1d1d22 100%
     ),
     repeating-radial-gradient(circle at 50% 50%,
       transparent 0px,
       transparent 2px,
-      rgba(255, 255, 255, 0.018) 2.5px,
+      rgba(255, 255, 255, 0.05) 2.5px,
       transparent 3px
     );
   box-shadow:
-    inset 0 0 40px rgba(0, 0, 0, 0.9),
-    inset 0 0 120px rgba(255, 255, 255, 0.03),
+    inset 0 0 34px rgba(0, 0, 0, 0.72),
+    inset 0 0 120px rgba(255, 255, 255, 0.05),
     0 20px 60px rgba(0, 0, 0, 0.8),
     0 0 80px v-bind('props.accent + "22"');
 }
@@ -157,10 +157,10 @@ onBeforeUnmount(() => {
   background: conic-gradient(
     from 0deg,
     transparent 0deg,
-    rgba(255, 255, 255, 0.04) 30deg,
+    rgba(255, 255, 255, 0.085) 30deg,
     transparent 60deg,
     transparent 180deg,
-    rgba(255, 255, 255, 0.06) 210deg,
+    rgba(255, 255, 255, 0.11) 210deg,
     transparent 240deg,
     transparent 360deg
   );
@@ -176,14 +176,14 @@ onBeforeUnmount(() => {
   );
 }
 
-/* 第三层宽距深沟：偶发粗沟槽，增强盘面立体层次 */
+/* 第三层深沟：间距略大于细密层，两层叠加形成盘面层次 */
 .vinyl-grooves-deep {
   background: repeating-radial-gradient(circle at 50% 50%,
     transparent 0px,
-    transparent 22px,
-    rgba(0, 0, 0, 0.32) 23px,
-    rgba(255, 255, 255, 0.03) 23.6px,
-    transparent 24.5px
+    transparent 8px,
+    rgba(0, 0, 0, 0.26) 8.6px,
+    rgba(255, 255, 255, 0.06) 9px,
+    transparent 9.8px
   );
 }
 
@@ -229,26 +229,28 @@ onBeforeUnmount(() => {
 .vinyl-top-highlight {
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.12) 0%,
     transparent 30%,
     transparent 70%,
-    rgba(255, 255, 255, 0.03) 100%
+    rgba(255, 255, 255, 0.05) 100%
   );
   mix-blend-mode: screen;
 }
 
-/* 固定光源各向异性反光：两道楔形亮带斜跨盘面（沟槽转动时呈现流动光泽） */
+/* 固定光源各向异性反光：主亮带对准左上光源、副带落在右下，沟槽转动时呈现流动光泽 */
 .vinyl-light-sweep {
   background: conic-gradient(
-    from 315deg at 50% 50%,
+    from 270deg at 50% 50%,
     transparent 0deg,
-    rgba(255, 255, 255, 0.09) 14deg,
-    rgba(255, 255, 255, 0.02) 30deg,
-    transparent 46deg,
-    transparent 158deg,
-    rgba(255, 255, 255, 0.06) 172deg,
-    rgba(255, 255, 255, 0.015) 190deg,
-    transparent 206deg,
+    rgba(255, 255, 255, 0.03) 15deg,
+    rgba(255, 255, 255, 0.22) 45deg,
+    rgba(255, 255, 255, 0.08) 92deg,
+    transparent 130deg,
+    transparent 205deg,
+    rgba(255, 255, 255, 0.05) 228deg,
+    rgba(255, 255, 255, 0.14) 255deg,
+    rgba(255, 255, 255, 0.03) 290deg,
+    transparent 320deg,
     transparent 360deg
   );
   mix-blend-mode: screen;
@@ -257,7 +259,7 @@ onBeforeUnmount(() => {
 /* 边缘轮辉：外圈细亮环 + 主题色氛围边光 */
 .vinyl-rim-light {
   box-shadow:
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.3),
     inset 0 0 12px rgba(255, 255, 255, 0.06),
     0 0 24px v-bind('props.accent + "30"');
 }
