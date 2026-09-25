@@ -56,7 +56,9 @@ src-tauri/examples/*_probe.rs
 # --- 🎛️ 内置 ffmpeg 构建工作区（产物不入库，脚本在 scripts/ffmpeg/）---
 scripts/ffmpeg/src/
 scripts/ffmpeg/build/
+scripts/ffmpeg/build-arm64/
 scripts/ffmpeg/out/
+scripts/ffmpeg/out-arm64/
 scripts/ffmpeg/toolchain/
 
 # --- 🧪 本地测试输出日志（cargo test 重定向产物）---
