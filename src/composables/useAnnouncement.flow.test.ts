@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// 项目规则禁止直接引入 @tauri-apps/api/core 的 invoke。
+// 这里用 vi.hoisted 自建 mock 注入，拦截位置与之前完全一致
+// （services/tauri/invoke 是该模块唯一的使用方）。
+const mockInvoke = vi.hoisted(() => vi.fn());
+
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+  invoke: mockInvoke,
 }));
 
 vi.mock('../services/domain/usageStats', () => ({
@@ -25,11 +30,7 @@ class MemoryStorage {
 }
 vi.stubGlobal('localStorage', new MemoryStorage());
 
-import { invoke } from '@tauri-apps/api/core';
-
 import { useAnnouncement } from './useAnnouncement';
-
-const mockInvoke = vi.mocked(invoke);
 
 async function resetAnnouncementState() {
   const { announcementVisible, currentAnnouncement, closeAnnouncement } = useAnnouncement();

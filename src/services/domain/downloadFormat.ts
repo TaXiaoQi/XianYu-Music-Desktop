@@ -64,6 +64,8 @@ export function isPluginSong(song: { cue_source_path?: string; path?: string }):
 
 export function sanitizeFileName(name: string): string {
   return name
+    // 控制字符（\x00-\x1f）正是这里要清理的目标，不能从字符类里去掉
+    // eslint-disable-next-line no-control-regex
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()

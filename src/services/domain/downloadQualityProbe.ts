@@ -132,12 +132,12 @@ export async function probeDownloadableQualities(
         if (/请求过于频繁|rate.?limit|too many requests|频繁|frequent/i.test(msg)) {
           console.warn(`[Probe] 检测到风控，停止剩余 ${queue.length} 个档位的探测`);
           queue.length = 0;
-          throw new Error(msg);
+          throw new Error(msg, { cause: e });
         }
         if (AUTH_FAIL_RE.test(msg)) {
           console.warn(`[Probe] 检测到鉴权失效，停止剩余 ${queue.length} 个档位的探测`);
           queue.length = 0;
-          throw new Error(msg);
+          throw new Error(msg, { cause: e });
         }
       }
     }

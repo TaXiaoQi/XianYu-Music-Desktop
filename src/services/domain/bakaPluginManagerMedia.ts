@@ -423,7 +423,7 @@ export class BakaPluginMedia extends BakaPluginCore {
   async getLyric(
     source: PluginSource,
     item: PluginSearchResult,
-  ): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; ttml?: string; format?: BakaLyricFormat } | null> {
+  ): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; ttml?: string; lyricsRaw?: string; format?: BakaLyricFormat } | null> {
     const inst = await this._ensureInstance(source);
     if (!inst) return null;
 

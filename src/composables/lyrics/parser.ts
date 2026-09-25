@@ -64,8 +64,8 @@ async function getAmlModule() {
 export function sanitizeLineText(text: string): string {
   const cleaned = text.replace(/\u200b/g, '').trim();
   return cleaned
-    .replace(/^\s*\/[\/\\\s]+\s*/, '')
-    .replace(/\s*\/[\/\\\s]+$/, '')
+    .replace(/^\s*\/[/\\\s]+\s*/, '')
+    .replace(/\s*\/[/\\\s]+$/, '')
     .trim();
 }
 
@@ -344,7 +344,7 @@ function prepareParsedLine(
 
   const words = (line.words || [])
     .map((word) => normalizeParsedWord(word, fallbackStartMs, fallbackEndMs))
-    .filter((word) => word.text.length > 0 && !/^\s*\/[\/\\\s]+\s*$/.test(word.text))
+    .filter((word) => word.text.length > 0 && !/^\s*\/[/\\\s]+\s*$/.test(word.text))
     .sort((left, right) => left.startMs - right.startMs);
 
   const wordsText = sanitizeLineText((line.words || []).map((word) => word.word || '').join(''));
@@ -361,7 +361,7 @@ function prepareParsedLine(
 
   if (!detected.text && !translatedText && !romanText && words.length === 0) return null;
 
-  const isPureDivider = /^\s*\/[\/\\\s]+\s*$/.test(detected.text);
+  const isPureDivider = /^\s*\/[/\\\s]+\s*$/.test(detected.text);
   if (isPureDivider && !translatedText && !romanText) return null;
 
   return {

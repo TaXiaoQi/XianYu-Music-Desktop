@@ -257,25 +257,21 @@ export async function importPlaylist(
   }
 
   let result: PlaylistImportResult;
-  try {
-    switch (actualSource) {
-      case 'wy':
-        result = await getListDetailWy(actualId);
-        break;
-      case 'tx':
-        result = await getListDetailTx(actualId);
-        break;
-      case 'kw':
-        result = await getListDetailKw(actualId);
-        break;
-      case 'kg':
-        result = await getListDetailKg(actualId);
-        break;
-      default:
-        throw new Error(`不支持的音源: ${actualSource}`);
-    }
-  } catch (e: any) {
-    throw e;
+  switch (actualSource) {
+    case 'wy':
+      result = await getListDetailWy(actualId);
+      break;
+    case 'tx':
+      result = await getListDetailTx(actualId);
+      break;
+    case 'kw':
+      result = await getListDetailKw(actualId);
+      break;
+    case 'kg':
+      result = await getListDetailKg(actualId);
+      break;
+    default:
+      throw new Error(`不支持的音源: ${actualSource}`);
   }
 
   return {

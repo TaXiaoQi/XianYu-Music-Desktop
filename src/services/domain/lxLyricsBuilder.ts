@@ -225,7 +225,7 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
     if (!line || kuwoTagPattern.test(line)) continue;
 
     const bodyTextOnly = line.replace(LRC_LINE_TIMESTAMP_PATTERN, '$2').trim();
-    if (/^\s*[\/\\_\-—–]+\s*$/.test(bodyTextOnly)) continue;
+    if (/^\s*[/\\_\-—–]+\s*$/.test(bodyTextOnly)) continue;
 
     wordTimePattern.lastIndex = 0;
     if (ENHANCED_TIMESTAMP_PATTERN.test(line) && !wordTimePattern.test(line)) {
