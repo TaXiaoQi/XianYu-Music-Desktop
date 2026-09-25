@@ -110,7 +110,7 @@ npm run dev          # 仅浏览器调试前端
 powershell -ExecutionPolicy Bypass -File scripts\ffmpeg\build-audio-ffmpeg.ps1    # 产物自动落到 src-tauri/bin/，-Force 强制重编
 ```
 
-- `tauri build` 对 `externalBin`（内置 ffmpeg）强校验，`src-tauri/bin/ffmpeg-<target-triple>` 缺失会直接报错；当前仓库附带 Windows x64 与 Linux x64（gnu）产物，mac 侧产物由 CI 构建时自动拉取，Windows ARM64（`ffmpeg-aarch64-pc-windows-msvc.exe`）需从 [BtbN Builds](https://github.com/BtbN/FFmpeg-Builds/releases) 下载 `winarm64` 版放入
+- `tauri build` 对 `externalBin`（内置 ffmpeg）强校验，`src-tauri/bin/ffmpeg-<target-triple>` 缺失会直接报错；当前仓库附带 Windows x64 与 Linux x64（gnu）产物，mac 侧产物由 CI 构建时自动拉取；Windows ARM64 产物（约 4MB）用下方脚本重编（首次自动下载 llvm-mingw 交叉工具链）：`powershell -ExecutionPolicy Bypass -File scripts\ffmpeg\build-audio-ffmpeg.ps1 -Arch arm64`
 
 ```bash
 npm run tauri build              # Windows 官网版（.exe，x64）
