@@ -1228,7 +1228,13 @@ onUnmounted(() => {
     <div
       ref="progressBarRef"
       class="absolute top-[-10px] left-0 w-full h-[22px] cursor-pointer group/progress z-50 [touch-action:none] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
-      :class="isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0'"
+      :class="[
+        isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0',
+        // 音量弹窗打开时让出命中区：弹窗只占 36px 宽，而这里的命中带是 22px 高的整窗
+        // 横幅，点弹窗旁边（含透过半透明面板露出来的位置）会误触发跳转。此时鼠标仍在
+        // 音量控件上，松开鼠标 300ms 后弹窗关闭，命中区随即可用。
+        showVolumeSlider && !isDraggingProgress ? 'pointer-events-none' : '',
+      ]"
       @pointerdown="startProgressDrag"
     >
       <div class="absolute inset-y-0 left-0 right-0 flex items-center">
