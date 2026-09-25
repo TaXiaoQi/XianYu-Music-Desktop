@@ -1,6 +1,9 @@
 import { computed, ref, watch } from 'vue';
 
 import { usePlaybackStore } from '../../features/playback/store';
+import { useLibraryStore } from '../../features/library/store';
+import type { Song } from '../../types';
+import { fetchOnlineLyricsRaw } from '../../features/playback/onlineLyrics';
 import { useSettingsStore } from '../../features/settings/store';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
 import { toTraditional } from '../../features/i18n/traditional';
@@ -28,6 +31,7 @@ let loadRequestId = 0;
 const MAX_ONLINE_LYRICS_RETRIES = 15;
 let onlineLyricsRetryCount = 0;
 const unavailableOnlineLyricsPaths = new Set<string>();
+const onlineLyricsFetchRequests = new Set<string>();
 
 export function markOnlineLyricsUnavailable(songPath: string) {
   if (!songPath) return;
@@ -190,6 +194,28 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       }
 
       lyricsStatus.value = 'loading';
+      // 主力路径：自己取词，不等播放流程投喂——用户可能只是进了详情页、还没点播放
+      if (!onlineLyricsFetchRequests.has(song.path)) {
+        onlineLyricsFetchRequests.add(song.path);
+        void (async () => {
+          const lyricsRaw = await fetchOnlineLyricsRaw(song);
+          onlineLyricsFetchRequests.delete(song.path);
+          if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
+
+          if (!lyricsRaw) {
+            markOnlineLyricsUnavailable(song.path);
+            return;
+          }
+
+          song.lyrics_raw = lyricsRaw;
+          useLibraryStore().patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
+          playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
+          void loadLyrics(lyricsRaw);
+        })();
+        return;
+      }
+
+      // 同一首歌的取词已在飞：沿用原来的等待-重试（播放流程也可能先投喂）
       onlineLyricsRetryCount += 1;
       if (onlineLyricsRetryCount > MAX_ONLINE_LYRICS_RETRIES) {
         console.warn('[Lyrics] 在线歌曲歌词获取超时，置为空:', song.path);
