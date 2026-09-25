@@ -1683,6 +1683,7 @@ async function saveUserVariables() {
           v-if="detailPlugin"
           class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           :class="overlayZClass"
+          @click.self="closePluginDetail"
         >
           <div class="plugin-detail-card">
             <div class="plugin-detail-header">
