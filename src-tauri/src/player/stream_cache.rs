@@ -1601,12 +1601,7 @@ pub fn clear_all() {
 
 /// MV 代理用：查询某 URL 的流缓存状态（与歌曲同池，key 需用 stream_cache_key 对齐）。
 pub struct MvCacheStatus {
-    pub exists: bool,
     pub complete: bool,
-    pub failed: bool,
-    pub downloaded: u64,
-    /// 仅 complete 时为文件总大小，否则 0。
-    pub total: u64,
 }
 
 pub fn mv_cache_status(url: &str) -> MvCacheStatus {
@@ -1615,21 +1610,9 @@ pub fn mv_cache_status(url: &str) -> MvCacheStatus {
     if let Some(entry) = mgr.entries.get(&hash) {
         let complete = entry.download_complete.load(Ordering::Relaxed)
             && !entry.download_failed.load(Ordering::Relaxed);
-        return MvCacheStatus {
-            exists: true,
-            complete,
-            failed: entry.download_failed.load(Ordering::Relaxed),
-            downloaded: entry.downloaded_bytes.load(Ordering::Relaxed),
-            total: if complete { entry.size } else { 0 },
-        };
+        return MvCacheStatus { complete };
     }
-    MvCacheStatus {
-        exists: false,
-        complete: false,
-        failed: false,
-        downloaded: 0,
-        total: 0,
-    }
+    MvCacheStatus { complete: false }
 }
 
 /// MV 代理用：读取已下载前缀内的 [offset, offset+len) 数据。
