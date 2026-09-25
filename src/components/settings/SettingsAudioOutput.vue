@@ -18,6 +18,7 @@ import {
   buildAudioOutputDeviceOptions,
   getSelectedOutputDeviceLabel,
 } from './audioOutputDeviceLabels';
+import RangeSlider from '../common/RangeSlider.vue';
 import SettingHint from './SettingHint.vue';
 import {
   LYRICS_SYNC_OFFSET_MAX_MS,
@@ -210,8 +211,8 @@ const shareValidityLabel = computed(() => {
   return `${v} 分钟`;
 });
 
-const handleValidityChange = (value: string) => {
-  const num = Math.round(Number(value));
+const handleValidityChange = (value: number) => {
+  const num = Math.round(value);
   if (Number.isNaN(num)) return;
   patchSettings({ shareLinkValidityMinutes: Math.max(5, Math.min(1440, num)) });
 };
@@ -583,13 +584,13 @@ onScopeDispose(() => {
               </div>
             </div>
             <div class="flex items-center gap-3">
-              <input
-                type="range"
-                min="100"
-                max="2000"
-                step="100"
-                v-model.number="settings.audio.fadeInOutDurationMs"
-                class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer accent-[#EC4141]"
+              <RangeSlider
+                v-model="settings.audio.fadeInOutDurationMs"
+                :min="100"
+                :max="2000"
+                :step="100"
+                variant="native"
+                class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer"
               />
             </div>
           </div>
@@ -640,13 +641,13 @@ onScopeDispose(() => {
               </div>
             </div>
             <div class="flex items-center gap-3">
-              <input
-                type="range"
-                min="-12"
-                max="6"
-                step="1"
-                v-model.number="settings.audio.volumeBalance.gainOffsetDb"
-                class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer accent-[#EC4141]"
+              <RangeSlider
+                v-model="settings.audio.volumeBalance.gainOffsetDb"
+                :min="-12"
+                :max="6"
+                :step="1"
+                variant="native"
+                class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer"
               />
             </div>
           </div>
@@ -752,14 +753,14 @@ onScopeDispose(() => {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-3">
-            <input
-              type="range"
-              min="5"
-              max="1440"
-              step="5"
-              class="w-52 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer accent-[#EC4141]"
-              :value="shareValidityMinutes"
-              @input="handleValidityChange(($event.target as HTMLInputElement).value)"
+            <RangeSlider
+              :model-value="shareValidityMinutes"
+              :min="5"
+              :max="1440"
+              :step="5"
+              variant="native"
+              class="w-52 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer"
+              @update:model-value="handleValidityChange"
             />
             <span class="w-20 shrink-0 text-right text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200">
               {{ shareValidityLabel }}
@@ -1102,13 +1103,13 @@ onScopeDispose(() => {
                     >
                       <Minus class="h-4 w-4" />
                     </button>
-                    <input
+                    <RangeSlider
                       v-model="lyricsSyncOffsetMs"
-                      type="range"
                       :min="LYRICS_SYNC_OFFSET_MIN_MS"
                       :max="LYRICS_SYNC_OFFSET_MAX_MS"
                       :step="LYRICS_SYNC_OFFSET_STEP_MS"
-                      class="settings-slider min-w-0 flex-1"
+                      variant="native"
+                      class="min-w-0 flex-1 h-1.5 cursor-pointer"
                     />
                     <button
                       type="button"
@@ -1331,11 +1332,6 @@ onScopeDispose(() => {
   overflow: hidden;
 }
 
-.settings-slider {
-  height: 6px;
-  cursor: pointer;
-  accent-color: #ec4141;
-}
 
 .settings-number-input {
   width: 98px;

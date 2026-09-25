@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useSoundEffectStore, eqPresetNames, advancedEqPresetNames } from '../../../features/playback/soundEffectStore';
 import { convolutions, algorithmicReverbs } from '../../../utils/audio/soundEffectEngine';
+import RangeSlider from '../RangeSlider.vue';
 import { computed, ref } from 'vue';
 
 defineProps<{
@@ -279,12 +280,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                     >
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">原始增益</span>
-                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.originalGain" :disabled="reverbNoneActive" @input="handleReverbGainInput">
+                        <RangeSlider variant="brand" interactive min="0" max="100" v-model="store.originalGain" :disabled="reverbNoneActive" @input="handleReverbGainInput" />
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.originalGain }}%</span>
                       </div>
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">环境增益</span>
-                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.envGain" :disabled="reverbNoneActive" @input="handleReverbGainInput">
+                        <RangeSlider variant="brand" interactive min="0" max="100" v-model="store.envGain" :disabled="reverbNoneActive" @input="handleReverbGainInput" />
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.envGain }}%</span>
                       </div>
                     </div>
@@ -310,17 +311,17 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                           <div v-show="store.enable3DSurround" class="mt-2 space-y-1.5">
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">环绕强度</span>
-                              <input type="range" class="fx-slider" min="0" max="10" v-model.number="store.surroundIntensity">
+                              <RangeSlider variant="brand" interactive min="0" max="10" v-model="store.surroundIntensity" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.surroundIntensity }}</span>
                             </div>
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
-                              <input type="range" class="fx-slider" min="0.5" max="20" step="0.1" v-model.number="store.surround3DRotation">
+                              <RangeSlider variant="brand" interactive min="0.5" max="20" step="0.1" v-model="store.surround3DRotation" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.surround3DRotation.toFixed(1) }}s</span>
                             </div>
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声音距离</span>
-                              <input type="range" class="fx-slider" min="0" max="20" v-model.number="store.soundDistance">
+                              <RangeSlider variant="brand" interactive min="0" max="20" v-model="store.soundDistance" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.soundDistance }}</span>
                             </div>
                           </div>
@@ -339,12 +340,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                           <div v-show="store.enable8D" class="mt-2 space-y-1.5">
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
-                              <input type="range" class="fx-slider" min="2" max="60" v-model.number="store.rotationSpeed8D">
+                              <RangeSlider variant="brand" interactive min="2" max="60" v-model="store.rotationSpeed8D" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.rotationSpeed8D }}s</span>
                             </div>
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声源距离</span>
-                              <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualDistance8D">
+                              <RangeSlider variant="brand" interactive min="1" max="20" v-model="store.virtualDistance8D" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualDistance8D }}</span>
                             </div>
                           </div>
@@ -363,12 +364,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                           <div v-show="store.enable36D" class="mt-2 space-y-1.5">
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
-                              <input type="range" class="fx-slider" min="2" max="60" v-model.number="store.rotationSpeed36D">
+                              <RangeSlider variant="brand" interactive min="2" max="60" v-model="store.rotationSpeed36D" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.rotationSpeed36D }}s</span>
                             </div>
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声源距离</span>
-                              <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualDistance36D">
+                              <RangeSlider variant="brand" interactive min="1" max="20" v-model="store.virtualDistance36D" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualDistance36D }}</span>
                             </div>
                           </div>
@@ -394,7 +395,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                             </div>
                             <div class="flex items-center gap-2">
                               <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声场宽度</span>
-                              <input type="range" class="fx-slider" min="3" max="20" v-model.number="store.virtualSurroundSpread">
+                              <RangeSlider variant="brand" interactive min="3" max="20" v-model="store.virtualSurroundSpread" />
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualSurroundSpread }}</span>
                             </div>
                           </div>
@@ -425,19 +426,28 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div v-if="pitchMode === 'percent'" class="flex items-center gap-2.5">
                         <span class="min-w-[48px] text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">{{ (store.pitchShift / 100).toFixed(2) }}x</span>
-                        <input type="range" class="fx-slider flex-1" min="50" max="200" v-model.number="store.pitchShift" :style="{ '--pitch-progress': pitchProgress + '%' }">
+                        <RangeSlider
+                          variant="brand"
+                          interactive
+                          class="flex-1"
+                          :min="50"
+                          :max="200"
+                          v-model="store.pitchShift"
+                          :progress="pitchProgress"
+                        />
                       </div>
                       <div v-else class="flex items-center gap-2.5">
                         <span class="min-w-[48px] text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">{{ semitoneLabel }}</span>
-                        <input
-                          type="range"
-                          class="fx-slider flex-1"
+                        <RangeSlider
+                          variant="brand"
+                          interactive
+                          class="flex-1"
                           :min="SEMITONE_MIN"
                           :max="SEMITONE_MAX"
-                          step="1"
-                          v-model.number="pitchSemitones"
-                          :style="{ '--pitch-progress': semitoneProgress + '%' }"
-                        >
+                          :step="1"
+                          v-model="pitchSemitones"
+                          :progress="semitoneProgress"
+                        />
                         <span class="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ (store.pitchShift / 100).toFixed(2) }}x</span>
                       </div>
                     </section>
@@ -449,7 +459,15 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="flex items-center gap-2.5">
                         <span class="min-w-[48px] text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">{{ (store.playbackRate / 100).toFixed(2) }}x</span>
-                        <input type="range" class="fx-slider flex-1" min="50" max="200" v-model.number="store.playbackRate" :style="{ '--pitch-progress': playbackRateProgress + '%' }">
+                        <RangeSlider
+                          variant="brand"
+                          interactive
+                          class="flex-1"
+                          :min="50"
+                          :max="200"
+                          v-model="store.playbackRate"
+                          :progress="playbackRateProgress"
+                        />
                         <button class="fx-reset-btn" @click="handleResetPlaybackRate">重置</button>
                       </div>
                     </section>
@@ -482,12 +500,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       <div v-show="store.pitchDriftEnabled" class="mt-2 space-y-1.5">
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">漂移速度</span>
-                          <input type="range" class="fx-slider" min="0.1" max="5" step="0.1" v-model.number="store.pitchDriftSpeed">
+                          <RangeSlider variant="brand" interactive min="0.1" max="5" step="0.1" v-model="store.pitchDriftSpeed" />
                           <span class="w-12 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ (store.pitchDriftSpeed * 0.1).toFixed(2) }}Hz</span>
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">漂移范围</span>
-                          <input type="range" class="fx-slider" min="0" max="30" v-model.number="store.pitchDriftRange">
+                          <RangeSlider variant="brand" interactive min="0" max="30" v-model="store.pitchDriftRange" />
                           <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.pitchDriftRange }}ms</span>
                         </div>
                       </div>
@@ -503,12 +521,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       <div v-show="store.vibratoEnabled" class="mt-2 space-y-1.5">
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span>
-                          <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.vibratoRate">
+                          <RangeSlider variant="brand" interactive min="1" max="20" v-model="store.vibratoRate" />
                           <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.vibratoRate }}Hz</span>
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">深度</span>
-                          <input type="range" class="fx-slider" min="0" max="10" v-model.number="store.vibratoDepth">
+                          <RangeSlider variant="brand" interactive min="0" max="10" v-model="store.vibratoDepth" />
                           <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.vibratoDepth }}ms</span>
                         </div>
                       </div>
@@ -525,12 +543,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       <div v-show="store.tremoloEnabled" class="mt-2 space-y-1.5">
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span>
-                          <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.tremoloRate">
+                          <RangeSlider variant="brand" interactive min="1" max="20" v-model="store.tremoloRate" />
                           <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.tremoloRate }}Hz</span>
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">深度</span>
-                          <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.tremoloDepth">
+                          <RangeSlider variant="brand" interactive min="0" max="100" v-model="store.tremoloDepth" />
                           <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.tremoloDepth }}%</span>
                         </div>
                       </div>
@@ -568,14 +586,13 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       <span class="eq-fader-scale top">+12</span>
                       <span class="eq-fader-scale mid">0</span>
                       <span class="eq-fader-scale bot">−12</span>
-                      <input
-                        type="range"
-                        class="eq-fader-input"
-                        min="-12"
-                        max="12"
-                        step="1"
-                        v-model.number="store.eqBands[band.key]"
-                      >
+                      <RangeSlider
+                        variant="fader"
+                        :min="-12"
+                        :max="12"
+                        :step="1"
+                        v-model="store.eqBands[band.key]"
+                      />
                     </div>
                     <div class="eq-fader-freq">{{ band.freq }}<span class="eq-fader-freq-unit">Hz</span></div>
                   </div>
@@ -621,7 +638,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                     <div v-show="store.bassBoostEnabled" class="mt-2 space-y-1.5">
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">增益量</span>
-                        <input type="range" class="fx-slider" min="0" max="15" v-model.number="store.bassBoostGain">
+                        <RangeSlider variant="brand" interactive min="0" max="15" v-model="store.bassBoostGain" />
                         <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.bassBoostGain }}dB</span>
                       </div>
                     </div>
@@ -645,7 +662,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       <div v-show="store.distortionEnabled" class="mt-2 space-y-1.5">
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">失真量</span>
-                          <input type="range" class="fx-slider" min="1" max="100" v-model.number="store.distortionAmount">
+                          <RangeSlider variant="brand" interactive min="1" max="100" v-model="store.distortionAmount" />
                           <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.distortionAmount }}</span>
                         </div>
                         <div class="flex items-center gap-2">
@@ -667,10 +684,10 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">左右声道相位错位，产生空灵飘忽音效</div>
                       <div v-show="store.flangerEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">速率</span><input type="range" class="fx-slider" min="0.1" max="5" step="0.1" v-model.number="store.flangerRate"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerRate.toFixed(1) }}Hz</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">深度</span><input type="range" class="fx-slider" min="0.5" max="5" step="0.1" v-model.number="store.flangerDepth"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerDepth.toFixed(1) }}ms</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">反馈</span><input type="range" class="fx-slider" min="0" max="70" v-model.number="store.flangerFeedback"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerFeedback }}%</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">混合</span><input type="range" class="fx-slider" min="0" max="75" v-model.number="store.flangerMix"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerMix }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">速率</span><RangeSlider variant="brand" interactive min="0.1" max="5" step="0.1" v-model="store.flangerRate" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerRate.toFixed(1) }}Hz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">深度</span><RangeSlider variant="brand" interactive min="0.5" max="5" step="0.1" v-model="store.flangerDepth" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerDepth.toFixed(1) }}ms</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">反馈</span><RangeSlider variant="brand" interactive min="0" max="70" v-model="store.flangerFeedback" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerFeedback }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">混合</span><RangeSlider variant="brand" interactive min="0" max="75" v-model="store.flangerMix" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.flangerMix }}%</span></div>
                       </div>
                     </section>
 
@@ -683,10 +700,10 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">声音周期性厚薄起伏</div>
                       <div v-show="store.phaserEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">速率</span><input type="range" class="fx-slider" min="0.1" max="5" step="0.1" v-model.number="store.phaserRate"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.phaserRate.toFixed(1) }}Hz</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">深度</span><input type="range" class="fx-slider" min="0" max="30" v-model.number="store.phaserDepth"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ (store.phaserDepth / 10).toFixed(1) }}</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">反馈</span><input type="range" class="fx-slider" min="0" max="90" v-model.number="store.phaserFeedback"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.phaserFeedback }}%</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">混合</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.phaserMix"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.phaserMix }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">速率</span><RangeSlider variant="brand" interactive min="0.1" max="5" step="0.1" v-model="store.phaserRate" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.phaserRate.toFixed(1) }}Hz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">深度</span><RangeSlider variant="brand" interactive min="0" max="30" v-model="store.phaserDepth" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ (store.phaserDepth / 10).toFixed(1) }}</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">反馈</span><RangeSlider variant="brand" interactive min="0" max="90" v-model="store.phaserFeedback" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.phaserFeedback }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">混合</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.phaserMix" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.phaserMix }}%</span></div>
                       </div>
                     </section>
                   </div>
@@ -708,9 +725,9 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                             <button class="fx-mode-btn" :class="{ active: store.delayType === 'pingpong' }" @click="store.delayType = 'pingpong'">乒乓</button>
                           </div>
                         </div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">延迟时间</span><input type="range" class="fx-slider" min="50" max="2000" v-model.number="store.delayTime"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.delayTime }}ms</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">反馈</span><input type="range" class="fx-slider" min="0" max="90" v-model.number="store.delayFeedback"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.delayFeedback }}%</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">混合</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.delayMix"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.delayMix }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">延迟时间</span><RangeSlider variant="brand" interactive min="50" max="2000" v-model="store.delayTime" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.delayTime }}ms</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">反馈</span><RangeSlider variant="brand" interactive min="0" max="90" v-model="store.delayFeedback" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.delayFeedback }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">混合</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.delayMix" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.delayMix }}%</span></div>
                       </div>
                     </section>
 
@@ -723,10 +740,10 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">统一歌曲音量，避免副歌爆音</div>
                       <div v-show="store.compressorEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><input type="range" class="fx-slider" min="-60" max="0" v-model.number="store.compressorThreshold"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorThreshold }}dB</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">压缩比</span><input type="range" class="fx-slider" min="1" max="20" v-model.number="store.compressorRatio"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorRatio }}:1</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">启动</span><input type="range" class="fx-slider" min="1" max="100" v-model.number="store.compressorAttack"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorAttack }}ms</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">释放</span><input type="range" class="fx-slider" min="120" max="1000" v-model.number="store.compressorRelease"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorRelease }}ms</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><RangeSlider variant="brand" interactive min="-60" max="0" v-model="store.compressorThreshold" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorThreshold }}dB</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">压缩比</span><RangeSlider variant="brand" interactive min="1" max="20" v-model="store.compressorRatio" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorRatio }}:1</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">启动</span><RangeSlider variant="brand" interactive min="1" max="100" v-model="store.compressorAttack" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorAttack }}ms</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">释放</span><RangeSlider variant="brand" interactive min="120" max="1000" v-model="store.compressorRelease" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.compressorRelease }}ms</span></div>
                       </div>
                     </section>
                   </div>
@@ -747,10 +764,10 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">分低/中/高频段单独压缩，比单段压缩器精细很多</div>
                       <div v-show="store.multibandCompEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">低频分频</span><input type="range" class="fx-slider" min="50" max="500" v-model.number="store.mbLowFreq"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbLowFreq }}Hz</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">中频分频</span><input type="range" class="fx-slider" min="1000" max="5000" v-model.number="store.mbMidFreq"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbMidFreq }}Hz</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><input type="range" class="fx-slider" min="-60" max="0" v-model.number="store.mbThreshold"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbThreshold }}dB</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">压缩比</span><input type="range" class="fx-slider" min="1" max="20" v-model.number="store.mbRatio"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbRatio }}:1</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">低频分频</span><RangeSlider variant="brand" interactive min="50" max="500" v-model="store.mbLowFreq" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbLowFreq }}Hz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">中频分频</span><RangeSlider variant="brand" interactive min="1000" max="5000" v-model="store.mbMidFreq" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbMidFreq }}Hz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><RangeSlider variant="brand" interactive min="-60" max="0" v-model="store.mbThreshold" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbThreshold }}dB</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">压缩比</span><RangeSlider variant="brand" interactive min="1" max="20" v-model="store.mbRatio" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.mbRatio }}:1</span></div>
                       </div>
                     </section>
 
@@ -763,7 +780,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">智能控制最大音量，杜绝爆音破音，安全提升整体响度</div>
                       <div v-show="store.limiterEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><input type="range" class="fx-slider" min="-10" max="0" step="0.5" v-model.number="store.limiterThreshold"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.limiterThreshold }}dB</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><RangeSlider variant="brand" interactive min="-10" max="0" step="0.5" v-model="store.limiterThreshold" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.limiterThreshold }}dB</span></div>
                       </div>
                     </section>
                   </div>
@@ -778,9 +795,9 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">自动过滤低音量的背景底噪、磁带杂音</div>
                       <div v-show="store.noiseGateEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><input type="range" class="fx-slider" min="-80" max="0" v-model.number="store.noiseGateThreshold"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.noiseGateThreshold }}dB</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">启动</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.noiseGateAttack"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.noiseGateAttack }}ms</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">释放</span><input type="range" class="fx-slider" min="10" max="1000" v-model.number="store.noiseGateRelease"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.noiseGateRelease }}ms</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><RangeSlider variant="brand" interactive min="-80" max="0" v-model="store.noiseGateThreshold" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.noiseGateThreshold }}dB</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">启动</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.noiseGateAttack" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.noiseGateAttack }}ms</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">释放</span><RangeSlider variant="brand" interactive min="10" max="1000" v-model="store.noiseGateRelease" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.noiseGateRelease }}ms</span></div>
                       </div>
                     </section>
 
@@ -793,8 +810,8 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">放大音乐的强弱动态对比，古典乐现场演奏氛围感更强</div>
                       <div v-show="store.expanderEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><input type="range" class="fx-slider" min="-80" max="0" v-model.number="store.expanderThreshold"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.expanderThreshold }}dB</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">扩展比</span><input type="range" class="fx-slider" min="1" max="10" step="0.5" v-model.number="store.expanderRatio"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.expanderRatio }}:1</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><RangeSlider variant="brand" interactive min="-80" max="0" v-model="store.expanderThreshold" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.expanderThreshold }}dB</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">扩展比</span><RangeSlider variant="brand" interactive min="1" max="10" step="0.5" v-model="store.expanderRatio" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.expanderRatio }}:1</span></div>
                       </div>
                     </section>
                   </div>
@@ -812,8 +829,8 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">给中高频添加柔和谐波失真，让发闷的耳机/歌曲变得通透</div>
                       <div v-show="store.exciterEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">激励量</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.exciterAmount"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.exciterAmount }}%</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span><input type="range" class="fx-slider" min="1000" max="8000" step="100" v-model.number="store.exciterFrequency"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.exciterFrequency }}Hz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">激励量</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.exciterAmount" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.exciterAmount }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span><RangeSlider variant="brand" interactive min="1000" max="8000" step="100" v-model="store.exciterFrequency" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.exciterFrequency }}Hz</span></div>
                       </div>
                     </section>
 
@@ -826,8 +843,8 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">生成缺失的低频谐波，小耳机也能感受到更沉的下潜</div>
                       <div v-show="store.subBassEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">增强量</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.subBassAmount"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.subBassAmount }}%</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span><input type="range" class="fx-slider" min="50" max="250" v-model.number="store.subBassFrequency"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.subBassFrequency }}Hz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">增强量</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.subBassAmount" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.subBassAmount }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span><RangeSlider variant="brand" interactive min="50" max="250" v-model="store.subBassFrequency" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.subBassFrequency }}Hz</span></div>
                       </div>
                     </section>
                   </div>
@@ -842,8 +859,8 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">精准压制人声里刺耳的"嘶、哧"高频齿音</div>
                       <div v-show="store.deEsserEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><input type="range" class="fx-slider" min="-60" max="0" v-model.number="store.deEsserThreshold"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.deEsserThreshold }}dB</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span><input type="range" class="fx-slider" min="3000" max="10000" step="100" v-model.number="store.deEsserFrequency"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.deEsserFrequency }}Hz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">阈值</span><RangeSlider variant="brand" interactive min="-60" max="0" v-model="store.deEsserThreshold" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.deEsserThreshold }}dB</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">频率</span><RangeSlider variant="brand" interactive min="3000" max="10000" step="100" v-model="store.deEsserFrequency" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.deEsserFrequency }}Hz</span></div>
                       </div>
                     </section>
 
@@ -856,7 +873,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">自动拉平不同歌曲的音量差，切歌时不用频繁手动调音量</div>
                       <div v-show="store.agcEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">目标音量</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.agcTargetLevel"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.agcTargetLevel }}</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">目标音量</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.agcTargetLevel" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.agcTargetLevel }}</span></div>
                       </div>
                     </section>
                   </div>
@@ -874,9 +891,9 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">叠加降采样、位深降低、磁带底噪，适合复古松弛听歌氛围</div>
                       <div v-show="store.loFiEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">采样率</span><input type="range" class="fx-slider" min="2000" max="22050" step="500" v-model.number="store.loFiSampleRate"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ (store.loFiSampleRate / 1000).toFixed(1) }}kHz</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">位深</span><input type="range" class="fx-slider" min="4" max="16" v-model.number="store.loFiBitDepth"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.loFiBitDepth }}bit</span></div>
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">底噪</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.loFiNoise"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.loFiNoise }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">采样率</span><RangeSlider variant="brand" interactive min="2000" max="22050" step="500" v-model="store.loFiSampleRate" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ (store.loFiSampleRate / 1000).toFixed(1) }}kHz</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">位深</span><RangeSlider variant="brand" interactive min="4" max="16" v-model="store.loFiBitDepth" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.loFiBitDepth }}bit</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">底噪</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.loFiNoise" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.loFiNoise }}%</span></div>
                       </div>
                     </section>
                   </div>
@@ -891,7 +908,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">降采样降位深的复古电子质感，适合芯片音乐、实验电子</div>
                       <div v-show="store.bitcrushEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">位深</span><input type="range" class="fx-slider" min="2" max="16" v-model.number="store.bitcrushBits"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.bitcrushBits }}bit</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">位深</span><RangeSlider variant="brand" interactive min="2" max="16" v-model="store.bitcrushBits" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.bitcrushBits }}bit</span></div>
                       </div>
                     </section>
                   </div>
@@ -921,7 +938,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">解决耳机左右声道割裂，模拟音箱外放听感</div>
                       <div v-show="store.crossfeedEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">互馈强度</span><input type="range" class="fx-slider" min="0" max="100" v-model.number="store.crossfeedStrength"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.crossfeedStrength }}%</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">互馈强度</span><RangeSlider variant="brand" interactive min="0" max="100" v-model="store.crossfeedStrength" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.crossfeedStrength }}%</span></div>
                       </div>
                     </section>
 
@@ -934,7 +951,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                       <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">拉宽左右声道距离，歌曲显得更宏大</div>
                       <div v-show="store.stereoWidenEnabled" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">拓宽量</span><input type="range" class="fx-slider" min="0" max="3" step="0.1" v-model.number="store.stereoWidenAmount"><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.stereoWidenAmount.toFixed(1) }}</span></div>
+                        <div class="flex items-center gap-2"><span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">拓宽量</span><RangeSlider variant="brand" interactive min="0" max="3" step="0.1" v-model="store.stereoWidenAmount" /><span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.stereoWidenAmount.toFixed(1) }}</span></div>
                       </div>
                     </section>
                   </div>
@@ -996,93 +1013,6 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 </template>
 
 <style scoped>
-
-/* ===== 水平滑块（红色渐变轨道 + 红色 thumb） =====
-   与 SettingsTheme.vue 的 .flow-slider 完全一致，保持项目滑块视觉统一 */
-.fx-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  flex: 1;
-  height: 6px;
-  border-radius: 9999px;
-  background: linear-gradient(90deg, rgba(236, 65, 65, 0.18), rgba(236, 65, 65, 0.62));
-  outline: none;
-  cursor: pointer;
-}
-
-.fx-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.95);
-  border-radius: 9999px;
-  background: #ec4141;
-  box-shadow: 0 4px 10px rgba(236, 65, 65, 0.35);
-  cursor: pointer;
-  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.fx-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-}
-
-.fx-slider:active::-webkit-slider-thumb {
-  transform: scale(1.35);
-}
-
-.fx-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.95);
-  border-radius: 9999px;
-  background: #ec4141;
-  box-shadow: 0 4px 10px rgba(236, 65, 65, 0.35);
-  cursor: pointer;
-}
-
-/* ===== 滑杆禁用态（混响为「无」时）：轨道与滑块置灰，禁止拖动 ===== */
-.fx-slider:disabled {
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.14));
-  cursor: not-allowed;
-}
-
-:global(html.dark) .fx-slider:disabled {
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.14));
-}
-
-.fx-slider:disabled::-webkit-slider-thumb {
-  background: #b9b9b9;
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-.fx-slider:disabled::-webkit-slider-thumb:hover,
-.fx-slider:disabled:active::-webkit-slider-thumb {
-  transform: none;
-}
-
-.fx-slider:disabled::-moz-range-thumb {
-  background: #b9b9b9;
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-.fx-slider[style*="--pitch-progress"] {
-  background: linear-gradient(to right,
-    rgba(236, 65, 65, 0.5) 0%,
-    rgba(236, 65, 65, 0.5) var(--pitch-progress, 50%),
-    rgba(0, 0, 0, 0.08) var(--pitch-progress, 50%),
-    rgba(0, 0, 0, 0.08) 100%);
-}
-
-:global(html.dark) .fx-slider[style*="--pitch-progress"] {
-  background: linear-gradient(to right,
-    rgba(236, 65, 65, 0.55) 0%,
-    rgba(236, 65, 65, 0.55) var(--pitch-progress, 50%),
-    rgba(255, 255, 255, 0.12) var(--pitch-progress, 50%),
-    rgba(255, 255, 255, 0.12) 100%);
-}
 
 /* ===== Toggle 开关（红色开启态） =====
    与 SettingsTheme.vue 的 toggle 视觉一致 */
@@ -1371,54 +1301,6 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 
 :global(html.dark) .eq-fader-track::before {
   background: rgba(255, 255, 255, 0.1);
-}
-
-.eq-fader-input {
-  -webkit-appearance: none;
-  appearance: none;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 6px;
-  height: 140px;
-  background: linear-gradient(to top, rgba(236, 65, 65, 0.15), rgba(236, 65, 65, 0.5));
-  border-radius: 9999px;
-  outline: none;
-  cursor: pointer;
-  position: relative;
-  z-index: 1;
-}
-
-.eq-fader-input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 24px;
-  height: 10px;
-  border-radius: 3px;
-  background: #ec4141;
-  cursor: grab;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  transition: transform 0.1s, box-shadow 0.15s;
-}
-
-.eq-fader-input::-webkit-slider-thumb:hover {
-  transform: scaleY(1.15);
-  box-shadow: 0 2px 6px rgba(236, 65, 65, 0.4);
-}
-
-.eq-fader-input:active::-webkit-slider-thumb {
-  cursor: grabbing;
-  transform: scaleY(1.25);
-}
-
-.eq-fader-input::-moz-range-thumb {
-  width: 24px;
-  height: 10px;
-  border-radius: 3px;
-  background: #ec4141;
-  cursor: grab;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 .eq-fader-freq {

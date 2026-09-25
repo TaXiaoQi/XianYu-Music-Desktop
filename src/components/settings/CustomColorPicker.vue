@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import RangeSlider from '../common/RangeSlider.vue';
 import { Pipette } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -291,14 +292,13 @@ onUnmounted(() => {
           ></div>
 
           <div class="relative flex-1 h-3 flex items-center">
-            <input
-              :value="hsv.h"
-              type="range"
-              min="0"
-              max="360"
-              step="1"
-              class="hue-slider"
-              @input="updateFromHsv(Number(($event.target as HTMLInputElement).value), hsv.s, hsv.v)"
+            <RangeSlider
+              variant="hue"
+              :min="0"
+              :max="360"
+              :step="1"
+              :model-value="hsv.h"
+              @update:model-value="(h) => updateFromHsv(h, hsv.s, hsv.v)"
             />
           </div>
         </div>
@@ -369,38 +369,4 @@ onUnmounted(() => {
   transform: scale(0.9) translateY(8px);
 }
 
-.hue-slider {
-  width: 100%;
-  height: 8px;
-  border-radius: 9999px;
-  appearance: none;
-  background: linear-gradient(
-    to right,
-    #ff0000 0%, #ffff00 17%, #00ff00 33%,
-    #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%
-  );
-  outline: none;
-  cursor: pointer;
-}
-
-.hue-slider::-webkit-slider-thumb {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #ffffff;
-  border-radius: 9999px;
-  appearance: none;
-  background: transparent;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-}
-
-.hue-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #ffffff;
-  border-radius: 9999px;
-  background: transparent;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-}
 </style>

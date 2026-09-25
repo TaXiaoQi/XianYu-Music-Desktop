@@ -5,6 +5,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior, MvQualityKey } from '../../types';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
+import RangeSlider from '../common/RangeSlider.vue';
 import { computed, ref } from 'vue';
 
 const { settings, patchSettings } = useSettings();
@@ -88,8 +89,7 @@ const handleDownloadBehaviorSelect = (value: DownloadBehavior) => {
   patchSettings({ download: { ...settings.value.download, behavior: value } });
 };
 
-const handleBatchDownloadLimitChange = (event: Event) => {
-  const value = Number((event.target as HTMLInputElement).value);
+const handleBatchDownloadLimitChange = (value: number) => {
   patchSettings({
     download: {
       ...settings.value.download,
@@ -179,14 +179,14 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
             <div class="text-xs text-gray-500 dark:text-gray-400">同时下载数量，最高 5，默认 2</div>
           </div>
           <div class="flex items-center gap-3 shrink-0 min-w-[220px]">
-            <input
-              type="range"
-              min="1"
-              max="5"
-              step="1"
-              :value="settings.download.batchDownloadLimit ?? 2"
-              class="w-36 accent-[#EC4141]"
-              @input="handleBatchDownloadLimitChange"
+            <RangeSlider
+              :model-value="settings.download.batchDownloadLimit ?? 2"
+              :min="1"
+              :max="5"
+              :step="1"
+              variant="native"
+              class="w-36"
+              @update:model-value="handleBatchDownloadLimitChange"
             />
             <span class="w-6 text-center text-sm font-semibold text-[#EC4141]">
               {{ settings.download.batchDownloadLimit ?? 2 }}

@@ -9,6 +9,7 @@ import {
   getPluginPresets,
   loadPreset,
 } from '../../services/tauri/pluginHostApi';
+import RangeSlider from '../common/RangeSlider.vue';
 import { useToast } from '../../composables/toast';
 import type {
   PluginHostParameterValueEntry,
@@ -98,8 +99,7 @@ const paramText = (param: PluginHostParameterEntry) => {
 const paramStep = (param: PluginHostParameterEntry) =>
   param.stepCount > 0 ? 1 / param.stepCount : 0.001;
 
-const handleParamInput = (param: PluginHostParameterEntry, event: Event) => {
-  const value = Number.parseFloat((event.target as HTMLInputElement).value);
+const handleParamInput = (param: PluginHostParameterEntry, value: number) => {
   if (!Number.isFinite(value)) return;
   const existing = values[param.index];
   values[param.index] = {
@@ -209,16 +209,16 @@ const handleOpenNativeEditor = () => {
                 <div class="w-32 shrink-0 truncate text-[11px] font-medium text-gray-600 dark:text-white/55" :title="param.name">
                   {{ param.name }}
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  :step="paramStep(param)"
-                  :value="paramValue(param)"
-                  :disabled="param.readOnly || !entry.enabled"
-                  class="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-black/10 accent-[#EC4141] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/10"
-                  @input="handleParamInput(param, $event)"
-                />
+                  <RangeSlider
+                    :model-value="paramValue(param)"
+                    :min="0"
+                    :max="1"
+                    :step="paramStep(param)"
+                    :disabled="param.readOnly || !entry.enabled"
+                    variant="native"
+                    class="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-black/10 dark:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    @update:model-value="handleParamInput(param, $event)"
+                  />
                 <div class="w-20 shrink-0 truncate text-right text-[11px] tabular-nums text-gray-500 dark:text-white/45" :title="paramText(param)">
                   {{ paramText(param) }}
                 </div>

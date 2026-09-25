@@ -5,6 +5,7 @@ import { useSettingsThemeControls } from '../../composables/useSettingsThemeCont
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
 import { useI18n } from '../../features/i18n';
 import SettingHint from './SettingHint.vue';
+import RangeSlider from '../common/RangeSlider.vue';
 import CustomColorPicker from './CustomColorPicker.vue';
 
 const { isEnglish, t } = useI18n();
@@ -556,14 +557,13 @@ onUnmounted(() => {
                   </div>
                   <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowColorBoost }}</div>
                 </div>
-                <input
-                  :value="theme.flowColorBoost"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  class="flow-slider"
-                  @input="setFlowColorBoost(Number(($event.target as HTMLInputElement).value))"
+                <RangeSlider
+                  :model-value="theme.flowColorBoost"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  variant="brand"
+                  @update:model-value="setFlowColorBoost"
                 />
                 <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
                   <span>{{ FLOW_TEXT.subtle }}</span>
@@ -578,14 +578,13 @@ onUnmounted(() => {
                   </div>
                   <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowDepth }}</div>
                 </div>
-                <input
-                  :value="theme.flowDepth"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  class="flow-slider"
-                  @input="setFlowDepth(Number(($event.target as HTMLInputElement).value))"
+                <RangeSlider
+                  :model-value="theme.flowDepth"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  variant="brand"
+                  @update:model-value="setFlowDepth"
                 />
                 <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
                   <span>{{ FLOW_TEXT.airy }}</span>
@@ -600,14 +599,13 @@ onUnmounted(() => {
                   </div>
                   <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowSpeed }}</div>
                 </div>
-                <input
-                  :value="theme.flowSpeed"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  class="flow-slider"
-                  @input="setFlowSpeed(Number(($event.target as HTMLInputElement).value))"
+                <RangeSlider
+                  :model-value="theme.flowSpeed"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  variant="brand"
+                  @update:model-value="setFlowSpeed"
                 />
                 <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
                   <span>{{ FLOW_TEXT.calm }}</span>
@@ -622,14 +620,13 @@ onUnmounted(() => {
                   </div>
                   <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowTexture }}</div>
                 </div>
-                <input
-                  :value="theme.flowTexture"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  class="flow-slider"
-                  @input="setFlowTexture(Number(($event.target as HTMLInputElement).value))"
+                <RangeSlider
+                  :model-value="theme.flowTexture"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  variant="brand"
+                  @update:model-value="setFlowTexture"
                 />
                 <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
                   <span>{{ FLOW_TEXT.clean }}</span>
@@ -772,14 +769,13 @@ onUnmounted(() => {
             </div>
 
             <label class="block">
-              <input
-                :value="theme.windowBlurTint"
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                class="flow-slider"
-                @input="setWindowBlurTint(Number(($event.target as HTMLInputElement).value))"
+              <RangeSlider
+                :model-value="theme.windowBlurTint"
+                :min="0"
+                :max="100"
+                :step="1"
+                variant="brand"
+                @update:model-value="setWindowBlurTint"
               />
               <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
                 <span>{{ BLUR_TEXT.clear }}</span>
@@ -1122,36 +1118,6 @@ onUnmounted(() => {
 .flow-panel-leave-to {
   opacity: 0;
   transform: scale(0.96) translateY(-10px);
-}
-
-.flow-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 9999px;
-  appearance: none;
-  background: linear-gradient(90deg, rgba(236, 65, 65, 0.18), rgba(236, 65, 65, 0.62));
-  outline: none;
-}
-
-.flow-slider::-webkit-slider-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.95);
-  border-radius: 9999px;
-  appearance: none;
-  background: #ec4141;
-  box-shadow: 0 4px 10px rgba(236, 65, 65, 0.35);
-  cursor: pointer;
-}
-
-.flow-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.95);
-  border-radius: 9999px;
-  background: #ec4141;
-  box-shadow: 0 4px 10px rgba(236, 65, 65, 0.35);
-  cursor: pointer;
 }
 
 /* ---- 歌词页封面 inline 下拉面板 ---- */
