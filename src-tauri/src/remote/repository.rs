@@ -4,17 +4,37 @@ use uuid::Uuid;
 
 use super::now_seconds;
 
-const REMOTE_KEYRING_SERVICE: &str = "XY-Music WebDAV";
+const REMOTE_KEYRING_SERVICE: &str = "XianYu Music WebDAV";
+/// 旧的服务名：仅读取时回退，避免用户已保存的 WebDAV 密码失联
+const LEGACY_REMOTE_KEYRING_SERVICE: &str = "XY-Music WebDAV";
 
-fn keyring_entry(source_id: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(REMOTE_KEYRING_SERVICE, source_id).map_err(|error| error.to_string())
+fn keyring_entry_for(service: &str, source_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(service, source_id).map_err(|error| error.to_string())
 }
 
-fn read_password_from_keyring(source_id: &str) -> Option<String> {
-    keyring_entry(source_id)
+fn keyring_entry(source_id: &str) -> Result<keyring::Entry, String> {
+    keyring_entry_for(REMOTE_KEYRING_SERVICE, source_id)
+}
+
+fn read_password_for_service(service: &str, source_id: &str) -> Option<String> {
+    keyring_entry_for(service, source_id)
         .ok()
         .and_then(|entry| entry.get_password().ok())
         .filter(|password| !password.is_empty())
+}
+
+fn read_password_from_keyring(source_id: &str) -> Option<String> {
+    if let Some(password) = read_password_for_service(REMOTE_KEYRING_SERVICE, source_id) {
+        return Some(password);
+    }
+    // 老版本把密码存在旧服务名下：读到就搬到新服务名并清掉旧条目
+    let legacy_password = read_password_for_service(LEGACY_REMOTE_KEYRING_SERVICE, source_id)?;
+    if write_password_to_keyring(source_id, &legacy_password).is_ok() {
+        if let Ok(entry) = keyring_entry_for(LEGACY_REMOTE_KEYRING_SERVICE, source_id) {
+            let _ = entry.delete_credential();
+        }
+    }
+    Some(legacy_password)
 }
 
 fn write_password_to_keyring(source_id: &str, password: &str) -> Result<(), String> {
@@ -32,8 +52,11 @@ fn write_password_to_keyring_verified(source_id: &str, password: &str) -> bool {
 }
 
 fn delete_password_from_keyring(source_id: &str) {
-    if let Ok(entry) = keyring_entry(source_id) {
-        let _ = entry.delete_credential();
+    // 新旧服务名都清一遍，避免旧条目残留后被回退读到
+    for service in [REMOTE_KEYRING_SERVICE, LEGACY_REMOTE_KEYRING_SERVICE] {
+        if let Ok(entry) = keyring_entry_for(service, source_id) {
+            let _ = entry.delete_credential();
+        }
     }
 }
 

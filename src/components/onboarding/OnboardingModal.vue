@@ -624,7 +624,7 @@ onUnmounted(() => {
                   class="mt-6 font-light tracking-[0.5em] text-black/50 dark:text-white/50 uppercase"
                   style="font-size: clamp(28px, 3.5vw, 48px);"
                 >
-                  XY Music
+                  XianYu Music
                 </div>
                 <div
                   class="mt-[clamp(2.5rem,5vh,4rem)] font-light text-black/75 dark:text-white/75"

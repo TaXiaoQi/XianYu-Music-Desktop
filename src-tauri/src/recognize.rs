@@ -100,7 +100,7 @@ fn md5_compute(input: &[u8]) -> [u8; 16] {
 const ANDROID_SALT: &str = "OIlwieks28dk2k092lksi2UIkp";
 
 fn device_mid() -> String {
-    md5_hex(b"xy-music-desktop-recognize-device-v1")
+    md5_hex(b"xianyu-music-desktop-recognize-device-v1")
 }
 
 fn build_params_string(params: &BTreeMap<String, String>) -> String {

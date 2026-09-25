@@ -1781,7 +1781,7 @@ const exactEnglishTranslations: Record<string, string> = {
   "该设备已被封禁，不支持在该设备上继续使用。如有疑问请联系管理员。": "This device has been banned and can no longer be used. Contact the admin if you have questions.",
   "测试用户": "Test user",
   "验证": "Verify",
-  "使用 XY-Music 的默认红色方案": "Use XY-Music default red scheme",
+  "使用 XianYu Music 的默认红色方案": "Use XianYu Music default red scheme",
   "偏柔和、偏梦幻的粉色搭配": "Soft, dreamy pink palette",
   "更冷静的蓝色高亮": "Calmer blue highlight",
   "更清爽的绿色高亮": "Fresher green highlight",

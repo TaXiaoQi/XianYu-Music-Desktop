@@ -745,7 +745,7 @@ pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String,
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
-        .user_agent("XY-Music-Updater")
+        .user_agent("XianYuMusic-Updater")
         .build()
         .map_err(|e| format!("创建更新请求失败: {e}"))?;
 
@@ -784,7 +784,7 @@ pub async fn download_update_file(
         .timeout(Duration::from_secs(300))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
-        .user_agent("XY-Music-Updater")
+        .user_agent("XianYuMusic-Updater")
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
 
@@ -1699,7 +1699,7 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
     #[cfg(target_os = "macos")]
     {
         let script = "#!/bin/sh\n\
-            # XY-Music 应用内更新安装脚本（参数: $1=dmg 路径）\n\
+            # XianYu Music 应用内更新安装脚本（参数: $1=dmg 路径）\n\
             sleep 2\n\
             MOUNT=$(hdiutil attach -nobrowse -readonly \"$1\" | grep -o '/Volumes/.*' | head -1)\n\
             if [ -z \"$MOUNT\" ]; then\n\
@@ -1825,7 +1825,7 @@ pub async fn download_wallpaper(
         .timeout(Duration::from_secs(60))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
-        .user_agent("XY-Music-WallpaperDownloader")
+        .user_agent("XianYuMusic-WallpaperDownloader")
         .build()
         .map_err(|e| format!("创建HTTP客户端失败: {e}"))?;
 

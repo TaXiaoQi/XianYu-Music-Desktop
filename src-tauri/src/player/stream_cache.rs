@@ -482,7 +482,7 @@ fn cache_dir() -> PathBuf {
         }
     }
 
-    let dir = std::env::temp_dir().join("xy-music-stream-cache");
+    let dir = std::env::temp_dir().join("xianyu-music-stream-cache");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

@@ -1,5 +1,8 @@
 #[cfg(target_os = "windows")]
-const REG_SUBKEY: &str = "Software\\xymusic\\弦予音乐";
+const REG_SUBKEY: &str = "Software\\xianyu\\弦予音乐";
+/// 旧版本的注册表路径：仅读取时回退，避免升级后丢失安装时记住的语言
+#[cfg(target_os = "windows")]
+const LEGACY_REG_SUBKEY: &str = "Software\\xymusic\\弦予音乐";
 #[cfg(target_os = "windows")]
 const APP_LANGUAGE_VALUE: &str = "AppLanguage";
 #[cfg(target_os = "windows")]
@@ -90,7 +93,8 @@ fn write_hkcu_string(subkey: &str, value_name: &str, value: &str) -> bool {
 pub fn get_install_language() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
-        let lang = read_hkcu_string(REG_SUBKEY, APP_LANGUAGE_VALUE)?;
+        let lang = read_hkcu_string(REG_SUBKEY, APP_LANGUAGE_VALUE)
+            .or_else(|| read_hkcu_string(LEGACY_REG_SUBKEY, APP_LANGUAGE_VALUE))?;
         match lang.as_str() {
             "zh-CN" | "zh-TW" | "en-US" => Some(lang),
             _ => None,

@@ -131,7 +131,7 @@ const ensureVolumePopoverWindow = async (): Promise<WebviewWindow | null> => {
     try {
       const instance = new WebviewWindow(VOLUME_POPOVER_WINDOW_LABEL, {
         url: '/',
-        title: 'XY-Music Volume',
+        title: 'XianYu Music Volume',
         width: VOLUME_POPOVER_WINDOW_WIDTH,
         height: VOLUME_POPOVER_WINDOW_HEIGHT,
         minWidth: VOLUME_POPOVER_WINDOW_WIDTH,
@@ -477,7 +477,7 @@ onUnmounted(() => {
         <div class="min-w-0 flex items-center gap-2" data-tauri-drag-region>
           <div class="flex-1 min-w-0 flex flex-col gap-0.5" data-tauri-drag-region>
             <div class="text-[14px] font-medium text-white truncate leading-tight">
-              {{ currentSong ? (currentSong.title || currentSong.name.replace(/\.[^/.]+$/, '')) : 'XY-Music' }}
+              {{ currentSong ? (currentSong.title || currentSong.name.replace(/\.[^/.]+$/, '')) : 'XianYu Music' }}
             </div>
             <div class="text-[12px] text-white/60 truncate leading-tight">
               <template v-if="currentSong && (currentSong.artist || currentSong.album)">
