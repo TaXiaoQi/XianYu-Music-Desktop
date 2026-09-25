@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isTraditionalLanguage, toTraditional } from './traditional';
+import { isTraditionalLanguage, toSimplified, toTraditional } from './traditional';
 
 describe('toTraditional', () => {
   it('converts simplified Chinese to traditional (Taiwan)', () => {
@@ -31,5 +31,21 @@ describe('toTraditional', () => {
     expect(isTraditionalLanguage('zh-TW')).toBe(true);
     expect(isTraditionalLanguage('zh-CN')).toBe(false);
     expect(isTraditionalLanguage('en-US')).toBe(false);
+  });
+});
+
+describe('toSimplified', () => {
+  it('能把台湾用语换回大陆用语', () => {
+    expect(toSimplified('資訊')).toBe('信息');
+    expect(toSimplified('程式')).toBe('程序');
+  });
+
+  it('它是词汇替换表，不可用于基准简体文案（回归：侧边栏曾显示「文档夹」）', () => {
+    // 台湾的「文件」指 document，大陆的「文档」才是 document，
+    // 所以反查表会把大陆语境的「文件夹」改写成「文档夹」。
+    // useGlobalInterfaceLanguage 在 zh-CN 下已不再调用本函数，理由见该文件注释。
+    expect(toSimplified('文件夹')).toBe('文档夹');
+    expect(toSimplified('音频文件')).toBe('音频文档');
+    expect(toSimplified('文件关联')).toBe('文档关联');
   });
 });

@@ -2,7 +2,7 @@ import { watch } from 'vue';
 
 import { useI18n } from './index';
 import { toEnglish } from './english';
-import { toSimplified, toTraditional } from './traditional';
+import { toTraditional } from './traditional';
 import type { AppLanguage } from '../../types';
 
 const SKIP_TAGS = new Set([
@@ -44,7 +44,12 @@ function isInsideSkippedSubtree(node: Node): boolean {
 function translateSource(source: string, language: AppLanguage): string {
   if (language === 'zh-TW') return toTraditional(source);
   if (language === 'en-US') return toEnglish(source);
-  return toSimplified(source);
+  // zh-CN 是源码基准语言，文本本身已是大陆简体，原样返回即可。
+  // 这里不能再过 toSimplified()：它走的是 OpenCC「台湾用语 → 大陆用语」反查表，
+  // 做的是词汇替换而非单纯字形转换，会把已经正确的简体词改坏——
+  // 实测 toSimplified('文件夹') === '文档夹'（台湾的「文件」= 大陆的「文档」）。
+  // 该问题曾导致侧边栏「文件夹」在简中界面显示为「文档夹」。
+  return source;
 }
 
 function translateTextNode(node: Text, language: AppLanguage, force = false): void {
