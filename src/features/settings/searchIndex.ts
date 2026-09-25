@@ -147,6 +147,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '音量平衡', keywords: 'ReplayGain 响度 标准化' },
     { label: '整体增益偏移', keywords: 'ReplayGain dB 音量' },
     { label: '防削波破音保护', keywords: '峰值 clipping 音量增益' },
+    { label: '单声道合并', keywords: '声道 单声道 mono 合并 立体声 单耳 耳机' },
   ]),
   ...makeItems('audioOutput', '在线播放', [
     { label: '默认播放音质', keywords: '在线 无损 Hi-Res 320k' },
