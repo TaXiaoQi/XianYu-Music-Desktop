@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { resolveWheelValue } from './rangeSliderWheel';
 
 /** 现有滑块的呈现变体，逐值对应迁移前的各类实现 */
 type RangeSliderVariant =
@@ -57,10 +58,48 @@ const rangeStyle = computed(() => {
 function handleInput(event: Event) {
   emit('update:modelValue', Number((event.target as HTMLInputElement).value));
 }
+
+// —— 鼠标悬浮时用滚轮调数值 ——
+// 全部滑块共用此能力：上滚加一个 step，下滚减一个 step。
+// 取值计算（含边界、网格对齐、浮点误差）在 rangeSliderWheel.ts 里，便于单测。
+
+const inputRef = ref<HTMLInputElement | null>(null);
+
+function handleWheel(event: WheelEvent) {
+  const el = inputRef.value;
+  if (!el || props.disabled) return;
+
+  const next = resolveWheelValue({
+    min: Number(props.min),
+    max: Number(props.max),
+    step: props.step,
+    current: Number(el.value),
+    deltaY: event.deltaY,
+    deltaX: event.deltaX,
+  });
+  // null 表示这次滚轮不该由滑块消费（到边界等），放行给外层滚动容器
+  if (next === null) return;
+
+  event.preventDefault();
+
+  el.value = String(next);
+  // 派发原生 input，与用户拖动等价：既驱动 v-model，也触发调用点透传的 @input
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+onMounted(() => {
+  // 必须显式声明非 passive，否则无法阻止外层滚动容器跟着一起滚
+  inputRef.value?.addEventListener('wheel', handleWheel, { passive: false });
+});
+
+onBeforeUnmount(() => {
+  inputRef.value?.removeEventListener('wheel', handleWheel);
+});
 </script>
 
 <template>
   <input
+    ref="inputRef"
     type="range"
     :class="rangeClass"
     :min="min"
