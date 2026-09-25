@@ -35,6 +35,7 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
   private restoreScrollFrameId = 0;
   public disableBlurFilter = false;
   private blurCache = new WeakMap<object, number>();
+  private layoutSettleFrameId = 0;
 
   private hasFiniteTime(value: number | undefined): value is number {
     return Number.isFinite(value);
@@ -101,6 +102,37 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
     wrapper.className = SUB_LINE_TEXT_CLASS;
     wrapper.textContent = text;
     subLine.replaceChildren(wrapper);
+  }
+  /**
+   * 重设行之后收敛布局。
+   *
+   * 行位置由弹簧推进，而弹簧只在 update() 里前进——组件只在播放中调 update，于是暂停时
+   * 重设行（进详情页挂载、切换翻译/罗马音）会让所有行停在初始位置、看起来「歌词没了」，
+   * 必须点播放才出现。这里自己跑一小段 update 把位置收敛到位，与是否播放无关。
+   */
+  private scheduleLayoutSettle(frames = 16) {
+    if (this.layoutSettleFrameId !== 0) {
+      cancelAnimationFrame(this.layoutSettleFrameId);
+      this.layoutSettleFrameId = 0;
+    }
+
+    let remaining = frames;
+    let lastTime = -1;
+    const tick = (time: number) => {
+      if (lastTime === -1) lastTime = time;
+      const delta = time - lastTime;
+      lastTime = time;
+      this.update(delta > 0 ? delta : 0);
+
+      remaining -= 1;
+      if (remaining > 0) {
+        this.layoutSettleFrameId = requestAnimationFrame(tick);
+      } else {
+        this.layoutSettleFrameId = 0;
+      }
+    };
+
+    this.layoutSettleFrameId = requestAnimationFrame(tick);
   }
   private syncLineTransformsToDom() {
     for (const lineObj of this.currentLyricLineObjects) {
@@ -528,6 +560,7 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
     this.patchLineElementLayout();
     this.syncLineTransformsToDom();
     this.syncAuxiliaryTransformsToDom();
+    this.scheduleLayoutSettle();
   }
 
   override update(delta = 0): void {
@@ -687,6 +720,10 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
       this.restoreScrollFrameId = 0;
     }
 
+    if (this.layoutSettleFrameId !== 0) {
+      cancelAnimationFrame(this.layoutSettleFrameId);
+      this.layoutSettleFrameId = 0;
+    }
     super.dispose();
   }
 }
