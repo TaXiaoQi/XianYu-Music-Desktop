@@ -45,6 +45,7 @@ const AmlLyricPlayer = defineAsyncComponent({
 });
 import { getPlaybackSeekSecondsForAmlLine } from './amllSeekLayout';
 import RangeSlider from '../common/RangeSlider.vue';
+import { useThemeSettings } from '../../composables/useThemeSettings';
 import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
 const props = defineProps<{
@@ -304,6 +305,19 @@ function resetBackgroundBlur() {
 
 function resetCustomBackgroundImage() {
   lyricsSettings.customBackgroundImage = DEFAULT_CUSTOM_BACKGROUND_IMAGE;
+}
+
+// --- 播放详情页外观（与「设置 → 主题」里的同名开关是同一份设置）---
+const { theme: themeSettings, patchTheme } = useThemeSettings();
+const isVinylRecordStyle = computed(() => themeSettings.value?.playerDetailStyle === 'vinyl');
+const meshBackgroundEnabled = computed(() => themeSettings.value?.playerDetailMeshBackground === true);
+
+function toggleVinylRecordStyle() {
+  patchTheme({ playerDetailStyle: isVinylRecordStyle.value ? 'classic' : 'vinyl' });
+}
+
+function toggleMeshBackground() {
+  patchTheme({ playerDetailMeshBackground: !meshBackgroundEnabled.value });
 }
 
 const handleChooseBackgroundImage = async () => {
@@ -567,6 +581,41 @@ watch(() => props.coverHidden, async () => {
           <div class="relative min-h-0 flex-1">
             <Transition name="tab-switch" mode="out-in">
           <div v-if="activeSettingsTab === 'background'" key="background" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar">
+            <div class="mb-6">
+              <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Skin</div>
+
+              <div class="mt-2 flex items-center justify-between gap-3">
+                <span class="text-[13px] font-medium text-white/85">黑胶唱片</span>
+                <button
+                  type="button"
+                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                  :class="isVinylRecordStyle ? 'bg-[#EC4141]' : 'bg-white/15'"
+                  @click="toggleVinylRecordStyle"
+                >
+                  <span
+                    class="pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200"
+                    :class="isVinylRecordStyle ? 'translate-x-4' : 'translate-x-0.5'"
+                  />
+                </button>
+              </div>
+
+              <div class="mt-3 flex items-center justify-between gap-3">
+                <span class="text-[13px] font-medium text-white/85">多边形流光背景</span>
+                <button
+                  type="button"
+                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                  :class="meshBackgroundEnabled ? 'bg-[#EC4141]' : 'bg-white/15'"
+                  @click="toggleMeshBackground"
+                >
+                  <span
+                    class="pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200"
+                    :class="meshBackgroundEnabled ? 'translate-x-4' : 'translate-x-0.5'"
+                  />
+                </button>
+              </div>
+
+              <div class="mt-1.5 text-[10px] text-white/30">与「设置 → 主题」里的同名开关是同一份设置</div>
+            </div>
             <div class="mb-3">
               <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Blur</div>
               <div class="mt-1.5 flex items-center justify-between">
