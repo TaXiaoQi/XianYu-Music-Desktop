@@ -37,7 +37,7 @@ mod window_z_order;
 
 use app_runtime::{
     consume_pending_deep_links, consume_pending_open_paths, exit_app, handle_single_instance,
-    open_devtools, restart_app, setup_app, update_native_tray_menu,
+    open_devtools, restart_app, setup_app, update_native_tray_menu, was_launched_at_startup,
 };
 use autostart::{get_launch_on_startup, set_launch_on_startup};
 use netproxy::{get_network_proxy, set_network_proxy, test_network_proxy};
@@ -447,6 +447,7 @@ pub fn run() {
             set_install_language,
             get_launch_on_startup,
             set_launch_on_startup,
+            was_launched_at_startup,
             set_sleep_timer,
             clear_sleep_timer,
             get_sleep_timer,

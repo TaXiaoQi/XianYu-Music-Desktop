@@ -1209,6 +1209,10 @@ export interface TauriCommandMap {
   is_store_build: { payload: undefined; response: boolean };
   // ============ 应用生命周期 ============
   exit_app: { payload: undefined; response: void };
+  // ============ 开机自启动 ============
+  set_launch_on_startup: { payload: { enabled: boolean }; response: void };
+  get_launch_on_startup: { payload: undefined; response: boolean };
+  was_launched_at_startup: { payload: undefined; response: boolean };
   // ============ 网络代理 ============
   get_network_proxy: { payload: undefined; response: NetworkProxyState };
   set_network_proxy: {

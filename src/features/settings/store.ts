@@ -237,6 +237,8 @@ export const defaultLogSettings: LogSettings = {
 export const defaultAppSettings: AppSettings = {
   language: 'system',
   closeToTray: true,
+  launchOnStartup: false,
+  launchOnStartupMinimized: false,
   preventSleepWhilePlaying: true,
   showDesktopLyrics: false,
   showQualityBadges: true,
