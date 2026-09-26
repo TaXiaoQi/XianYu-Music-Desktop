@@ -502,6 +502,7 @@ pub(crate) fn setup_app(
     app.manage(PendingOpenPaths::default());
     app.manage(PendingDeepLinks::default());
     app.manage(TrayMenuRuntimeState::default());
+    app.manage(crate::sleep_timer::SleepTimerState::default());
 
     let min_size_cfg = app
         .config()
