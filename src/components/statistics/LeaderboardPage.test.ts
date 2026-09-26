@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import source from './StatisticsPage.vue?raw';
+import source from './LeaderboardPage.vue?raw';
 
 describe('StatisticsPage leaderboard sticky row', () => {
   it('renders the normal dashboard when the local library is empty', () => {

@@ -242,7 +242,7 @@ const handleUpdateFromSource = async () => {
   />
 
   <LocalMusicHeader
-    v-else-if="!['statistics', 'artist', 'album', 'dailyRecommend', 'topLists'].includes(localViewMode)"
+    v-else-if="!['statistics', 'leaderboard', 'artist', 'album', 'dailyRecommend', 'topLists'].includes(localViewMode)"
     v-model:isBatchMode="isBatchModeModel"
     :selectedCount="selectedCount"
     :totalSongCount="localSongList.length"
