@@ -17,6 +17,8 @@ import type {
   SongDetail,
   SaveArtistAvatarResponse,
   ImportedLyricsFont,
+  SleepTimerAction,
+  SleepTimerSnapshot,
 } from '../../types';
 import type { AudioOutputMode } from '../../types';
 import type { LyricsPayload } from '../../composables/lyrics/types';
@@ -614,6 +616,10 @@ export interface NetworkProxyTestResult {
   error: string | null;
 }
 export interface TauriCommandMap {
+  set_sleep_timer: { payload: { seconds: number; action: SleepTimerAction }; response: SleepTimerSnapshot };
+  clear_sleep_timer: { payload: undefined; response: void };
+  get_sleep_timer: { payload: undefined; response: SleepTimerSnapshot | null };
+  run_sleep_action: { payload: { action: SleepTimerAction }; response: void };
   add_library_folder: { payload: { path: string }; response: void };
   remove_library_folder: { payload: { path: string }; response: void };
   get_library_hierarchy: { payload: undefined; response: FolderNode[] };

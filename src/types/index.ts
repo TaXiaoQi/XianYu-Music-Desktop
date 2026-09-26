@@ -237,6 +237,16 @@ export interface LibraryScanSession {
 /** 写实唱机底座材质：浅灰（默认）/ 哑光深灰 / 橡木 / 大理石 */
 export type VinylPlinthMaterial = 'light' | 'matte' | 'oak' | 'marble';
 
+/** 睡眠定时器到点后执行的动作（与 src-tauri/src/sleep_timer.rs 的 serde snake_case 对齐） */
+export type SleepTimerAction = 'pause' | 'exit' | 'hide_to_tray';
+
+/** 睡眠定时器当前状态（Rust 侧 get_sleep_timer 回传） */
+export interface SleepTimerSnapshot {
+  action: SleepTimerAction;
+  /** 剩余秒数；后端为墙钟计时，这里只用于显示 */
+  remaining_seconds: number;
+}
+
 export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
   accentColor: string;
