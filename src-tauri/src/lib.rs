@@ -1,6 +1,7 @@
 mod app_runtime;
 mod audio_convert;
 mod audio_trim;
+mod autostart;
 mod custom_fonts;
 mod database;
 pub(crate) mod dlna;
@@ -38,6 +39,7 @@ use app_runtime::{
     consume_pending_deep_links, consume_pending_open_paths, exit_app, handle_single_instance,
     open_devtools, restart_app, setup_app, update_native_tray_menu,
 };
+use autostart::{get_launch_on_startup, set_launch_on_startup};
 use netproxy::{get_network_proxy, set_network_proxy, test_network_proxy};
 use audio_convert::{convert_audio, detect_ffmpeg};
 use audio_trim::{probe_audio_duration, trim_audio};
@@ -443,6 +445,8 @@ pub fn run() {
             flush_playback_session,
             get_install_language,
             set_install_language,
+            get_launch_on_startup,
+            set_launch_on_startup,
             set_sleep_timer,
             clear_sleep_timer,
             get_sleep_timer,
