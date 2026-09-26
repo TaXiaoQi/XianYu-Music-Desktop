@@ -20,6 +20,7 @@ mod recognize;
 mod remote;
 mod security;
 mod skin_image;
+mod sleep_timer;
 mod statistics;
 mod system_audio;
 mod system_fonts;
@@ -104,6 +105,7 @@ use remote::{
     test_remote_source, update_remote_source,
 };
 use skin_image::import_skin_image;
+use sleep_timer::{clear_sleep_timer, get_sleep_timer, run_sleep_action, set_sleep_timer};
 use statistics::{
     add_to_history, clear_listen_stats, clear_recent_history, export_listen_snapshot,
     export_statistics_file, get_behavior_stats, get_favorite_album_catalog,
@@ -441,6 +443,10 @@ pub fn run() {
             flush_playback_session,
             get_install_language,
             set_install_language,
+            set_sleep_timer,
+            clear_sleep_timer,
+            get_sleep_timer,
+            run_sleep_action,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
