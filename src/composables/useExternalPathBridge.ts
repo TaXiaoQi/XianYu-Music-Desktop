@@ -4,6 +4,8 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import { appApi } from '../services/tauri/appApi';
 import { importPluginScriptsFromPaths } from '../services/domain/pluginImport';
 import { usePlaybackStore } from '../features/playback/store';
+import { useSettingsStore } from '../features/settings/store';
+import { useUiStore } from '../shared/stores/ui';
 import { modalDragInterceptActive } from './dragState';
 
 type ExternalPathSource = 'drop' | 'open';
@@ -44,6 +46,8 @@ export function useExternalPathBridge({
   afterWindowShow,
 }: UseExternalPathBridgeOptions) {
   const playbackStore = usePlaybackStore();
+  const settingsStore = useSettingsStore();
+  const uiStore = useUiStore();
   const isExternalDragActive = ref(false);
   let externalPathTask: Promise<void> = Promise.resolve();
   let unlistenDragDrop: (() => void) | null = null;
@@ -115,6 +119,16 @@ export function useExternalPathBridge({
     });
 
     await consumePendingOpenPaths({ startup: true });
+
+    // 开机自启且用户勾选了「启动时最小化到托盘」：不显示主窗口，改走托盘睡眠路径。
+    // 直接置 uiStore.mainWindowUiSleepRequested，复用 App.vue 里 enterTraySleep 的同一套簿记
+    // （渲染快照 + 缓存释放由 App.vue 的 watch 处理，不会因绕过 show() 而漏掉）。
+    const launchedAtStartup = await appApi.wasLaunchedAtStartup().catch(() => false);
+    if (launchedAtStartup && settingsStore.settings.launchOnStartupMinimized) {
+      uiStore.mainWindowUiSleepRequested = true;
+      await getCurrentWindow().hide();
+      return;
+    }
 
     try {
       const appWindow = getCurrentWindow();

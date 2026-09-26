@@ -61,6 +61,10 @@ pub(crate) struct PendingOpenPaths(pub(crate) Mutex<Vec<String>>);
 #[derive(Default)]
 pub(crate) struct PendingDeepLinks(pub(crate) Mutex<Vec<String>>);
 
+/// 本次进程是否由开机自启拉起。前端据此决定是否最小化到托盘（配合设置项）。
+#[derive(Default)]
+pub(crate) struct LaunchedAtStartupState(pub(crate) bool);
+
 #[derive(Default)]
 pub(crate) struct TrayMenuRuntimeState {
     native_menu_enabled: Mutex<bool>,
@@ -84,6 +88,13 @@ fn append_unique_paths(target: &mut Vec<String>, incoming: impl IntoIterator<Ite
     }
 }
 
+/// 启动参数里是否带 `--autostart`（识别「本次由开机自启拉起」）。
+/// 字面量取自 autostart.rs，避免写入端与识别端各写一份而漂移。
+fn has_autostart_flag(args: impl IntoIterator<Item = String>) -> bool {
+    args.into_iter()
+        .any(|arg| arg.trim() == crate::autostart::AUTOSTART_ARG)
+}
+
 fn collect_existing_open_paths(
     args: impl IntoIterator<Item = String>,
     current_exe: Option<&Path>,
@@ -94,6 +105,11 @@ fn collect_existing_open_paths(
     for arg in args {
         let trimmed = arg.trim();
         if trimmed.is_empty() {
+            continue;
+        }
+
+        // 跳过命令行开关（如 `--autostart`），它们不是待打开的文件路径。
+        if trimmed.starts_with('-') {
             continue;
         }
 
@@ -504,6 +520,10 @@ pub(crate) fn setup_app(
     app.manage(TrayMenuRuntimeState::default());
     app.manage(crate::sleep_timer::SleepTimerState::default());
 
+    // 记录本次是否为开机自启拉起：前端据此决定是否直接最小化到托盘。
+    let launched_at_startup = has_autostart_flag(std::env::args());
+    app.manage(LaunchedAtStartupState(launched_at_startup));
+
     let min_size_cfg = app
         .config()
         .app
@@ -586,6 +606,12 @@ pub(crate) fn consume_pending_deep_links(
     Ok(std::mem::take(&mut *pending))
 }
 
+/// 本次进程是否由开机自启拉起（前端据此决定是否最小化到托盘）。
+#[tauri::command]
+pub(crate) fn was_launched_at_startup(state: tauri::State<LaunchedAtStartupState>) -> bool {
+    state.0
+}
+
 #[tauri::command]
 pub(crate) fn exit_app(app: tauri::AppHandle) {
     crate::graceful_shutdown(&app);
@@ -625,4 +651,41 @@ pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub(crate) fn open_devtools(_app: tauri::AppHandle) -> Result<(), String> {
     Err("DevTools 在生产构建中不可用".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(items: &[&str]) -> Vec<String> {
+        items.iter().map(|item| item.to_string()).collect()
+    }
+
+    #[test]
+    fn detects_autostart_flag() {
+        assert!(has_autostart_flag(args(&["--autostart"])));
+        assert!(has_autostart_flag(args(&[
+            "C:\\Music\\song.flac",
+            "--autostart"
+        ])));
+        // 单实例转发 argv 时同样能识别。
+        assert!(has_autostart_flag(args(&["xianyu://play/1", "--autostart"])));
+    }
+
+    #[test]
+    fn ignores_absent_or_different_flags() {
+        assert!(!has_autostart_flag(args(&[])));
+        assert!(!has_autostart_flag(args(&["C:\\Music\\song.flac"])));
+        assert!(!has_autostart_flag(args(&["--autostart-extra"])));
+    }
+
+    #[test]
+    fn autostart_flag_is_not_treated_as_a_path() {
+        // 仅有开关、没有真实文件：解析结果应为空，且开关不会混进路径。
+        let startup = args(&["--autostart"]);
+        let paths = collect_existing_open_paths(startup.iter().cloned(), None);
+        assert!(paths.is_empty());
+        let deep_links = collect_deep_links(startup);
+        assert!(deep_links.is_empty());
+    }
 }

@@ -13,7 +13,8 @@
 //! 同时在任何平台 `cargo test` 下都可单测。
 
 /// 标识「本次由开机自启拉起」的命令行参数。
-const AUTOSTART_ARG: &str = "--autostart";
+/// 对 crate 内可见：app_runtime 解析启动参数时要按同一口径识别，避免两处字面量漂移。
+pub(crate) const AUTOSTART_ARG: &str = "--autostart";
 
 /// 传给应用的参数（用函数暴露，便于单测断言与复用）。
 #[cfg(any(test, unix))]

@@ -67,6 +67,7 @@ const zhCN = {
 
   'general.section': '常规与启动',
   'general.launchOnStartup': '开机自动运行',
+  'general.launchOnStartupMinimized': '开机启动时最小化到托盘',
   'general.checkUpdates': '启动检测更新',
   'general.gpuAcceleration': 'GPU 加速',
   'general.performanceMode': '性能模式',
@@ -315,6 +316,7 @@ const enUS: Record<I18nKey, string> = {
 
   'general.section': 'General & Startup',
   'general.launchOnStartup': 'Launch at startup',
+  'general.launchOnStartupMinimized': 'Minimize to tray when launched at startup',
   'general.checkUpdates': 'Check for updates at startup',
   'general.gpuAcceleration': 'GPU acceleration',
   'general.performanceMode': 'Performance mode',

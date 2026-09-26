@@ -13,4 +13,7 @@ export const appApi = {
   getInstallLanguage: () => tauriInvoke('get_install_language'),
   setInstallLanguage: (language: string) =>
     tauriInvoke('set_install_language', { language }),
+  setLaunchOnStartup: (enabled: boolean) => tauriInvoke('set_launch_on_startup', { enabled }),
+  getLaunchOnStartup: () => tauriInvoke('get_launch_on_startup'),
+  wasLaunchedAtStartup: () => tauriInvoke('was_launched_at_startup'),
 };

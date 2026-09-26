@@ -72,7 +72,29 @@ onUnmounted(() => {
   window.removeEventListener('mousedown', handlePerformanceModeDropdownOutsideClick);
 });
 
-const launchOnStartup = ref(false);
+const launchOnStartup = computed({
+  get: () => settings.value.launchOnStartup,
+  set: (value: boolean) => {
+    if (settings.value.launchOnStartup === value) return;
+    patchSettings({ launchOnStartup: value });
+    playerStorage.writeSettings(settings.value);
+    void appApi.setLaunchOnStartup(value).catch((error) => {
+      console.error('Failed to update launch on startup:', error);
+    });
+  },
+});
+
+// 进页面时以系统真实状态为准：用户可能在任务管理器「启动」页里手动关掉了自启。
+const syncLaunchOnStartupFromSystem = async () => {
+  try {
+    const enabled = await appApi.getLaunchOnStartup();
+    if (settings.value.launchOnStartup !== enabled) {
+      patchSettings({ launchOnStartup: enabled });
+    }
+  } catch {
+    // 非 Tauri 环境静默忽略
+  }
+};
 
 async function handleGpuAccelerationChange() {
   const previous = settings.value.gpuAcceleration;
@@ -226,6 +248,7 @@ const handleClearAllData = async () => {
 };
 
 onMounted(() => {
+  void syncLaunchOnStartupFromSystem();
   void playbackApi.setStreamCacheMaxSize(settings.value.audio.streamCacheSizeMB * 1024 * 1024)
     .then(refreshStreamCacheInfo);
   if (settings.value.audio.streamCacheDir) {
@@ -321,6 +344,13 @@ onMounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.launchOnStartup') }}</div>
           </div>
           <button type="button" @click="launchOnStartup = !launchOnStartup" class="glass-switch" :class="{ 'is-checked': launchOnStartup }"></button>
+        </div>
+
+        <div v-if="launchOnStartup" class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.launchOnStartupMinimized') }}</div>
+          </div>
+          <button type="button" @click="settings.launchOnStartupMinimized = !settings.launchOnStartupMinimized" class="glass-switch" :class="{ 'is-checked': settings.launchOnStartupMinimized }"></button>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">

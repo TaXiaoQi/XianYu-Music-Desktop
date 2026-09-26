@@ -705,6 +705,8 @@ export interface LogSettings {
 export interface AppSettings {
   language: AppLanguage;
   closeToTray: boolean;
+  launchOnStartup: boolean;
+  launchOnStartupMinimized: boolean;
   preventSleepWhilePlaying: boolean;
   showDesktopLyrics: boolean;
   showQualityBadges: boolean;

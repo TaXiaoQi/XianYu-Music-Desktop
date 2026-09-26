@@ -188,6 +188,7 @@ commands.allow = [
   "set_install_language",
   "get_launch_on_startup",
   "set_launch_on_startup",
+  "was_launched_at_startup",
   "set_sleep_timer",
   "clear_sleep_timer",
   "get_sleep_timer",
