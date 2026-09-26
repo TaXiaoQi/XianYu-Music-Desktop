@@ -46,13 +46,13 @@ defineExpose({ detailCoverRef });
 
 /**
  * 俯视写实唱机的布局，数值均为方形容器的百分比。
- * 座体略宽于容器（父级 overflow-visible，不会裁切），右侧留给唱臂总成。
+ * 座体是正方形，四周各比容器大 2%（父级 overflow-visible，不会裁切）。
  */
-const PLINTH = { width: 108, height: 92, top: 4 } as const;
-/** 转盘：大圆盘略偏左，左侧留出可见的座体边距，右侧留出枢轴与配重的空间 */
-const PLATTER = { centerX: 46, centerY: 50, diameter: 86 } as const;
-/** 封面盘占转盘直径的比例（参考机型约 0.47）：封面外的金属环即为落针区 */
-const COVER_RATIO = 0.465;
+const PLINTH = { width: 104, height: 104, top: -2 } as const;
+/** 转盘：圆盘居中，四周留出等宽的座体边距（枢轴落在盘缘右上） */
+const PLATTER = { centerX: 50, centerY: 50, diameter: 90 } as const;
+/** 封面盘占转盘直径的比例（参考机型约 0.5）：封面外的金属环即为落针区 */
+const COVER_RATIO = 0.5;
 
 const plinthStyle = {
   left: `${(100 - PLINTH.width) / 2}%`,
@@ -200,9 +200,6 @@ const handleCoverClick = (event: MouseEvent) => {
               <rect width="600" height="420" fill="url(#xy-marble-sheen)" />
             </svg>
           </div>
-          <!-- 支脚：从座体下缘露出一点点（浅灰机身不露脚，见样式表） -->
-          <div class="turntable-foot left-[10%]" />
-          <div class="turntable-foot right-[10%]" />
         </div>
 
         <!-- 转盘：拉丝铝大圆盘，封面盘直接贴在其中心 -->
@@ -240,25 +237,14 @@ const handleCoverClick = (event: MouseEvent) => {
 
 /* 座体与顶面板：结构性规则（外观全部由下方的材质类给出） */
 .turntable-plinth {
-  border-radius: 5%;
+  border-radius: 6.5%;
 }
 
 .turntable-top-plate {
   border-radius: 4%;
 }
 
-/* 支脚：只从座体下缘露出一点点 */
-.turntable-foot {
-  position: absolute;
-  bottom: -2.6%;
-  width: 9%;
-  height: 6%;
-  border-radius: 45%;
-  background: linear-gradient(180deg, #16171b 0%, #0a0b0d 100%);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
-}
-
-/* 转盘：拉丝铝盘面 —— 左上一大片柔和受光、右下渐暗，盘缘一圈细亮环 */
+/* 转盘：拉丝铝盘面 —— 左上一片柔和受光、向右下渐暗，盘缘一圈细亮环 */
 .turntable-platter {
   background:
     repeating-conic-gradient(
@@ -268,12 +254,12 @@ const handleCoverClick = (event: MouseEvent) => {
     ),
     radial-gradient(
       circle at 36% 24%,
-      #f5f7fa 0%,
-      #e0e4ea 16%,
-      #c4c9d1 38%,
-      #a9afb8 60%,
-      #8e949e 80%,
-      #777d87 100%
+      #e3e7ec 0%,
+      #ccd1d8 20%,
+      #b3b9c1 42%,
+      #9ea4ad 64%,
+      #8b9199 84%,
+      #79808a 100%
     );
   box-shadow:
     inset 0 0 0 1.5px rgba(255, 255, 255, 0.5),
@@ -285,26 +271,20 @@ const handleCoverClick = (event: MouseEvent) => {
 
 /* —— 底座材质 —— */
 
-/* 浅灰（默认）：素净的浅色机身，几乎不反光，靠柔和落地投影撑起体积 */
+/* 浅灰（默认）：参考机型那种素净的中浅灰机壳，几乎不反光，靠柔和落地投影撑起体积 */
 .turntable-plinth--light {
-  background: linear-gradient(180deg, #eceef1 0%, #e2e4e8 52%, #cdd0d5 100%);
+  background: linear-gradient(180deg, #dfe2e6 0%, #d4d7dc 52%, #c5c9ce 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
     inset 0 -1px 0 rgba(140, 145, 155, 0.35),
     0 34px 60px rgba(15, 18, 25, 0.34),
     0 12px 24px rgba(15, 18, 25, 0.2);
 }
 
 .turntable-plinth--light .turntable-top-plate {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.62) 0%, rgba(206, 210, 216, 0.34) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 8px 18px rgba(150, 156, 168, 0.16);
-}
-
-/* 浅灰是整块落地的素净机身，不露支脚 */
-.turntable-plinth--light .turntable-foot {
-  display: none;
+  /* 参考机型是整块素净卡面：顶面板只留一点上缘受光，不做可见落差 */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 62%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 /* 哑光深灰：深灰底 + 左上受光、底部沉下去 */
