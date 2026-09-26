@@ -3,15 +3,20 @@
  * 唱臂总成（俯视写实布局）。
  *
  * 真机形态：枢轴在转盘右上方，臂管向左下方伸出，唱头落在转盘右侧的金属盘面上
- * （封面盘只占盘心 0.47 直径，落针区在封面与盘缘之间）；暂停时唱臂摆出转盘、
+ * （封面盘只占盘心 0.5 直径，落针区在封面与盘缘之间）；暂停时唱臂摆出转盘、
  * 停靠在臂托上；切歌时小幅抬针后快速回落。
  *
  * 坐标系固定 1000×1000（= 容器边长，1 unit = 0.1% 边长），与 PlayerDetailVinyl 的
- * 转盘布局共用同一比例：转盘圆心 (460, 500)、转盘半径 430、封面盘半径 200。
- * 几何按参考机型比例推得：枢轴到圆心 482（1.12 × 半径）、有效臂长 680（1.58 × 半径）。
- * 基准姿态落针在半径 373（0.87R，封面外、盘缘内），相对「枢轴→圆心」连线偏 -32.1°
- * （负号 = 沿屏幕顺时针的反向，即臂管朝下方垂落）；再偏 -9.2° 后落针到半径 450
- * （1.05R），让开转盘，即臂托位置。改姿态只需调下面这几个数。
+ * 转盘布局共用同一比例：转盘圆心 (500, 500)、转盘半径 450、封面盘半径 225。
+ * 几何按参考机型比例推得：枢轴到圆心 504（1.12 × 半径 —— 枢轴落在盘缘之外，轴承圆钮
+ * 不压在盘面上；轴承半径 38，内缘到圆心 466，离盘缘还有 16）、有效臂长 716（1.59 ×
+ * 半径）。基准姿态落针在半径 387（0.86R，封面外的金属环上），相对「枢轴→圆心」连线偏
+ * -31.3°（负号 = 沿屏幕顺时针的反向，即臂管朝下方垂落）；暂停时再偏 -9.9°、落针到半径
+ * 472（1.05R）让开转盘 —— 参考机型没有臂托立柱，抬臂就是悬停在盘外。
+ * 唱臂最短触及 211 略小于封面半径 225（真机的内圈极限也在标签附近），但落针/抬臂只在
+ * 0.93R~1.05R 间活动，碰不到封面。
+ * 唱头壳相对臂管轴向偏置 42°（真机 offset angle）—— 弯得明显一些，但靠「臂管末端切线 =
+ * 唱头壳轴向」保持平滑，接缝处没有折角。折点 = 唱针沿唱头壳轴向往回一个壳长。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
@@ -69,23 +74,27 @@ onBeforeUnmount(clearSwitchTimers);
 
 /** 几何参数（坐标系 1000×1000，与 PlayerDetailVinyl 的转盘布局对齐） */
 const TONEARM_PARAMS = {
-  pivotX: 847,
-  pivotY: 212,
-  /** 有效臂长：枢轴 → 唱针 */
-  armLength: 680,
-  platterCenterX: 460,
+  pivotX: 876,
+  pivotY: 164,
+  /** 有效臂长：枢轴 → 唱针的直线距离（不是画出来的臂管长度） */
+  armLength: 716,
+  platterCenterX: 500,
   platterCenterY: 500,
-  /** 基准姿态相对「枢轴→圆心」连线的偏角（负 = 朝屏幕下方垂落，落针在 0.87R） */
-  baseOffsetDeg: -32.1,
-  /** 抬臂（暂停）：再向盘外摆到臂托 —— 落针到 1.05R，让开转盘（半径 430），
-   *  臂托才不会压在盘面上 */
-  upOffsetDeg: -9.2,
-  /** 切歌：小幅抬针（落针移到 ~0.98R） */
-  switchOffsetDeg: -6,
+  /** 基准姿态相对「枢轴→圆心」连线的偏角（负 = 朝屏幕下方垂落，落针在 0.86R） */
+  baseOffsetDeg: -31.3,
+  /** 抬臂（暂停）：向盘外摆出，落针到 1.05R 让开转盘（半径 450） */
+  upOffsetDeg: -9.9,
+  /** 切歌：小幅抬针（落针移到 ~0.91R） */
+  switchOffsetDeg: -2.6,
   /** 臂管直径（细金属管） */
   tubeWidth: 13,
-  /** 唱头壳长度 */
-  headshellLength: 62,
+  /** 唱头壳长度（含末端唱头；按参考机型量得约 0.21 × 臂长） */
+  headshellLength: 150,
+  /** 唱头壳相对臂管轴向的偏置角（真机 offset angle）—— 臂管的折点由它和壳长决定；
+   *  值越大弯得越明显（42° 是肉眼可见的弯，末端仍与唱头壳相切） */
+  headshellOffsetDeg: 42,
+  /** 唱头壳管径 */
+  headshellWidth: 26,
   /** 配重长度 / 直径 */
   counterweightLength: 96,
   counterweightWidth: 46,
@@ -124,34 +133,45 @@ const stylusAt = (offsetDeg: number) => {
   };
 };
 
-/** 基准（落针）姿态：唱针在唱片中部凹槽，唱头壳起点沿臂管回退一个壳长 */
+/** 基准（落针）姿态：唱针落在转盘右侧的金属环上 */
 const stylus = stylusAt(0);
 const baseDir = dirAt(0);
+/** 唱头壳轴向 = 臂管轴向再偏置一个角度（真机 offset angle），折点由此产生 */
+const headshellDeg = Math.atan2(baseDir.y, baseDir.x) * 180 / Math.PI + params.headshellOffsetDeg;
+const headshellDir = {
+  x: Math.cos(headshellDeg * Math.PI / 180),
+  y: Math.sin(headshellDeg * Math.PI / 180),
+};
+/** 折点：从唱针沿唱头壳轴向往回量一个壳长，臂管画到这里为止 */
 const headshellStart = {
-  x: stylus.x - baseDir.x * params.headshellLength,
-  y: stylus.y - baseDir.y * params.headshellLength,
+  x: stylus.x - headshellDir.x * params.headshellLength,
+  y: stylus.y - headshellDir.y * params.headshellLength,
 };
 
-/** 臂管：枢轴 → 唱头壳起点，带一点 S 形（真机臂管不是纯直） */
+/**
+ * 臂管：枢轴 → 折点，用一段平滑曲线连接。
+ * 起点切线沿「枢轴 → 折点」，终点切线取唱头壳轴向 —— 与唱头壳切线连续，
+ * 接缝处因此没有折角，整根杆看起来是一路平滑弯下去的（弯势落在金属杆上段）。
+ */
 const tubePathD = (() => {
   const dx = headshellStart.x - params.pivotX;
   const dy = headshellStart.y - params.pivotY;
   const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len;
-  const ny = dx / len;
-  const cx1 = params.pivotX + dx * 0.34 + nx * 4.5;
-  const cy1 = params.pivotY + dy * 0.34 + ny * 4.5;
-  const cx2 = params.pivotX + dx * 0.7 - nx * 6;
-  const cy2 = params.pivotY + dy * 0.7 - ny * 6;
+  const cx1 = params.pivotX + dx * 0.28;
+  const cy1 = params.pivotY + dy * 0.28;
+  // 尾部直线段占比：越小，弯势越集中在金属杆上、越显眼（末端仍与唱头壳相切）
+  const tail = len * 0.26;
+  const cx2 = headshellStart.x - headshellDir.x * tail;
+  const cy2 = headshellStart.y - headshellDir.y * tail;
   return `M ${params.pivotX} ${params.pivotY} C ${cx1.toFixed(1)} ${cy1.toFixed(1)} ${cx2.toFixed(1)} ${cy2.toFixed(1)} ${headshellStart.x.toFixed(1)} ${headshellStart.y.toFixed(1)}`;
 })();
 
-/** 唱头壳朝向：沿臂管末端切线（直线臂 + 末端偏置角由壳内唱头表达） */
-const headshellDeg = (Math.atan2(stylus.y - headshellStart.y, stylus.x - headshellStart.x) * 180 / Math.PI);
-
-/** 配重：枢轴后方，沿臂管反向 */
+/** 配重：枢轴后方，沿臂管起始方向的反向（臂管是曲线，取起点切线，才与杆身同轴） */
 const counterweight = (() => {
-  const dir = baseDir;
+  const dx = headshellStart.x - params.pivotX;
+  const dy = headshellStart.y - params.pivotY;
+  const len = Math.hypot(dx, dy) || 1;
+  const dir = { x: dx / len, y: dy / len };
   const offset = params.counterweightGap + params.counterweightLength / 2;
   return {
     x: params.pivotX - dir.x * offset,
@@ -160,16 +180,7 @@ const counterweight = (() => {
   };
 })();
 
-/** 臂托位置 = 暂停姿态下唱针的位置（+ 一点点余量） */
-const restPosition = (() => {
-  const parked = stylusAt(params.upOffsetDeg);
-  const dir = dirAt(params.upOffsetDeg);
-  return {
-    x: parked.x + dir.x * 16,
-    y: parked.y + dir.y * 16,
-  };
-})();
-
+/** 唱臂姿态：暂停摆到盘外，切歌小幅抬针，播放落针 */
 const rotationDeg = computed(() => {
   if (!props.isPlaying) return params.upOffsetDeg;
   if (isLifting.value) return params.switchOffsetDeg;
@@ -190,20 +201,10 @@ const bearingStyle = {
   left: toPct(params.pivotX),
   top: toPct(params.pivotY),
 };
-
-const restStyle = {
-  left: toPct(restPosition.x),
-  top: toPct(restPosition.y),
-};
 </script>
 
 <template>
   <div class="pointer-events-none absolute inset-0 z-30 overflow-visible">
-    <!-- 臂托：座体上的立柱，暂停时唱臂停靠其上（不随唱臂转动） -->
-    <div class="tonearm-rest absolute rounded-full" :style="restStyle">
-      <div class="tonearm-rest-clip absolute" />
-    </div>
-
     <!-- 唱臂总成（绕枢轴旋转） -->
     <div
       class="tonearm-swing absolute inset-0"
@@ -255,9 +256,9 @@ const restStyle = {
             :x2="stylus.x"
             :y2="stylus.y + 16"
           >
-            <stop offset="0" stop-color="#e4e6eb" />
-            <stop offset="0.5" stop-color="#b9bec6" />
-            <stop offset="1" stop-color="#8d939c" />
+            <stop offset="0" stop-color="#f8f9fb" />
+            <stop offset="0.5" stop-color="#e2e5ea" />
+            <stop offset="1" stop-color="#bfc4cc" />
           </linearGradient>
           <filter id="tonearm-shadow" x="-40%" y="-40%" width="180%" height="180%">
             <feDropShadow
@@ -323,13 +324,20 @@ const restStyle = {
           <g :transform="`translate(${stylus.x.toFixed(1)} ${stylus.y.toFixed(1)}) rotate(${headshellDeg.toFixed(2)})`">
             <rect
               :x="(-params.headshellLength).toFixed(1)"
-              y="-11"
+              :y="(-params.headshellWidth / 2).toFixed(1)"
               :width="params.headshellLength"
-              height="22"
-              rx="4.5"
+              :height="params.headshellWidth"
+              :rx="(params.headshellWidth / 5).toFixed(1)"
               fill="url(#tonearm-headshell-gradient)"
             />
-            <rect :x="(-params.headshellLength + 4).toFixed(1)" y="-11" :width="params.headshellLength - 8" height="4" rx="2" fill="rgba(255, 255, 255, 0.5)" />
+            <rect
+              :x="(-params.headshellLength + 5).toFixed(1)"
+              :y="(-params.headshellWidth / 2 + 2).toFixed(1)"
+              :width="params.headshellLength - 10"
+              height="4.5"
+              rx="2.2"
+              fill="rgba(255, 255, 255, 0.62)"
+            />
             <!-- 唱头块 -->
             <rect x="-26" y="-7.5" width="30" height="15" rx="2.5" fill="#1b1c21" />
             <rect x="-26" y="-7.5" width="30" height="3.5" rx="1.7" fill="rgba(255, 255, 255, 0.1)" />
@@ -355,28 +363,6 @@ const restStyle = {
   /* 落针 / 抬臂绕枢轴旋转的过渡（切歌时由内联样式临时缩短） */
   transition: transform 1.1s cubic-bezier(0.34, 1.3, 0.64, 1);
   will-change: transform;
-}
-
-/* 臂托：座体上的小立柱 + 夹口，暂停时臂管停在其上 */
-.tonearm-rest {
-  width: 3.6%;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(circle at 36% 30%, #6c7078 0%, #3d4047 46%, #191a1f 100%);
-  box-shadow:
-    0 4px 10px rgba(0, 0, 0, 0.6),
-    inset 0 1px 1px rgba(255, 255, 255, 0.28);
-}
-
-/* 夹口：臂管停靠处的那道槽 */
-.tonearm-rest-clip {
-  left: 18%;
-  top: 44%;
-  width: 64%;
-  height: 12%;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.75);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.16);
 }
 
 /* 枢轴轴承：拉丝铝圆柱，左上受光 */
