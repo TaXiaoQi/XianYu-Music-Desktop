@@ -9,6 +9,7 @@ describe('settings search index', () => {
       'general',
       'theme',
       'desktopLyrics',
+      'sleepTimer',
       'audioOutput',
       'download',
       'toolbox',

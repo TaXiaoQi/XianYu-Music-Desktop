@@ -7,6 +7,7 @@ const settingsLoaders = {
   about: () => import("../components/settings/SettingsAbout.vue").then(m => m.default),
   account: () => import("../components/settings/SettingsAccount.vue").then(m => m.default),
   desktopLyrics: () => import("../components/settings/SettingsDesktopLyrics.vue").then(m => m.default),
+  sleepTimer: () => import("../components/settings/SettingsSleepTimer.vue").then(m => m.default),
   general: () => import("../components/settings/SettingsGeneral.vue").then(m => m.default),
   library: () => import("../components/settings/SettingsLibrary.vue").then(m => m.default),
   plugins: () => import("../components/settings/SettingsPlugins.vue").then(m => m.default),
@@ -70,7 +71,7 @@ import { useI18n } from '../features/i18n';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'network', 'advanced', 'feedback', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'sleepTimer', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'network', 'advanced', 'feedback', 'debug', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -334,6 +335,7 @@ const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => 
   { id: 'library', name: t('settings.library') },
   { id: 'toolbox', name: t('settings.toolbox') },
   { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
+  { id: 'sleepTimer', name: t('settings.sleepTimer') },
   { id: 'shortcuts', name: t('settings.shortcuts') },
   { id: 'network', name: t('settings.network') },
   { id: 'advanced', name: t('settings.advanced') },

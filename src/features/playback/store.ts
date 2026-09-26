@@ -32,6 +32,14 @@ export const usePlaybackStore = defineStore('playback', () => {
     sessionQualityOverride.value = q;
   };
 
+  /**
+   * 播放被外部（Rust 睡眠定时器）暂停后的状态同步。
+   * 只改状态、不调用 pauseSong：音频已经停了，再走一遍会多一次淡出。
+   */
+  const markPausedExternally = () => {
+    isPlaying.value = false;
+  };
+
   const dailyRecommendPaths = ref<Set<string>>(new Set());
   const markDailyRecommendPaths = (paths: string[]) => {
     if (paths.length === 0) return;
@@ -214,6 +222,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentPlayingAudioUrl,
     sessionQualityOverride,
     setSessionQualityOverride,
+    markPausedExternally,
     resetPlaybackState,
     patchQueueSongMeta,
     setQueueFromPaths,

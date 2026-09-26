@@ -6,6 +6,7 @@ export type SettingsTabId =
   | 'general'
   | 'theme'
   | 'desktopLyrics'
+  | 'sleepTimer'
   | 'audioOutput'
   | 'download'
   | 'toolbox'
@@ -45,6 +46,7 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   library: '音乐库',
   toolbox: '工具箱',
   desktopLyrics: '桌面歌词',
+  sleepTimer: '睡眠定时',
   shortcuts: '快捷按键',
   network: '网络',
   advanced: '高级设置',

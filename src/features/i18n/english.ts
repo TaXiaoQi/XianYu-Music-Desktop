@@ -1,5 +1,27 @@
 const exactEnglishTranslations: Record<string, string> = {
-// 网络代理（src-tauri/src/netproxy.rs 回传的错误文案）
+  // 睡眠定时（src/components/settings/SettingsSleepTimer.vue 与 src/features/sleepTimer）
+  '睡眠定时': 'Sleep timer',
+  '到点或一段时间没有操作后，自动暂停播放；也可以退出应用或隐藏到托盘。': 'Pause playback at the set time, or after a period without input; can also exit the app or hide to the tray.',
+  '触发方式': 'Trigger',
+  '倒计时到点，或应用内一段时间没有操作': 'A countdown deadline, or a period without in-app input',
+  '倒计时': 'Countdown',
+  '无操作': 'Idle',
+  '倒计时时长': 'Countdown length',
+  '暂停播放也照常计时（按墙钟）': 'Keeps counting even while playback is paused (wall clock)',
+  '无操作时长': 'Idle length',
+  '只统计应用内的鼠标 / 键盘 / 滚轮 / 触摸；暂停播放时不触发': 'Only counts in-app pointer / keyboard / wheel / touch input; does not fire while paused',
+  '自定义分钟数': 'Custom minutes',
+  '到点动作': 'Action at deadline',
+  '暂停前会先做一次音量淡出': 'Volume fades out before pausing',
+  '退出应用': 'Exit app',
+  '隐藏到托盘': 'Hide to tray',
+  '开始': 'Start',
+  '进行中': 'Running',
+  '未开始': 'Not started',
+  '选好方式与动作后点「开始」': 'Pick a trigger and an action, then press Start',
+  '睡眠定时已暂停播放': 'Sleep timer paused playback',
+  '睡眠定时已隐藏到托盘': 'Sleep timer hid the window to the tray',
+  // 网络代理（src-tauri/src/netproxy.rs 回传的错误文案）
 '启用网络代理时必须填写代理主机': 'A proxy host is required when the network proxy is enabled',
 '代理端口必须在 1-65535 之间': 'The proxy port must be between 1 and 65535',
 '代理主机不能为空': 'The proxy host cannot be empty',
