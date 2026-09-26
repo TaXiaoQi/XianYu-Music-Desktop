@@ -1,5 +1,6 @@
 import { computed, onMounted, ref } from 'vue';
 
+import type { VinylPlinthMaterial } from '../types';
 import { useThemeSettings } from './useThemeSettings';
 import { useWindowMaterial, type WindowMaterialMode } from './windowMaterial';
 import { useUiStore } from '../shared/stores/ui';
@@ -82,6 +83,12 @@ export function useSettingsThemeControls() {
     },
   });
 
+  const playerDetailVinylMaterial = computed({
+    get: () => theme.value.playerDetailVinylMaterial,
+    set: (value: VinylPlinthMaterial) => {
+      patchTheme({ playerDetailVinylMaterial: value });
+    },
+  });
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
   );
@@ -251,6 +258,9 @@ export function useSettingsThemeControls() {
     playerDetailMeshAntiAlias.value = value;
   };
 
+  const setPlayerDetailVinylMaterial = (value: VinylPlinthMaterial) => {
+    playerDetailVinylMaterial.value = value;
+  };
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -302,5 +312,7 @@ export function useSettingsThemeControls() {
     setPlayerDetailStyle,
     setPlayerDetailMeshBackground,
     setPlayerDetailMeshAntiAlias,
+    playerDetailVinylMaterial,
+    setPlayerDetailVinylMaterial,
   };
 }

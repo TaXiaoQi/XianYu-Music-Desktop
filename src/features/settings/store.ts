@@ -103,6 +103,7 @@ export const defaultThemeSettings: ThemeSettings = {
   playerDetailMeshBackground: true,
   playerDetailMeshAntiAlias: true,
   playerDetailMeshSpeed: 1,
+  playerDetailVinylMaterial: 'light',
   dynamicBgType: 'none',
   windowMaterial: 'none',
   keepWindowMaterialOnBlur: true,
@@ -458,6 +459,13 @@ export const mergeThemeSettings = (
     typeof patch.playerDetailMeshAntiAlias === 'boolean'
       ? patch.playerDetailMeshAntiAlias
       : base.playerDetailMeshAntiAlias;
+  const playerDetailVinylMaterial =
+    patch.playerDetailVinylMaterial === 'light'
+      || patch.playerDetailVinylMaterial === 'matte'
+      || patch.playerDetailVinylMaterial === 'oak'
+      || patch.playerDetailVinylMaterial === 'marble'
+      ? patch.playerDetailVinylMaterial
+      : base.playerDetailVinylMaterial;
   const mergedCustomBackground = {
     ...base.customBackground,
     ...(patch.customBackground ?? {}),
@@ -471,6 +479,7 @@ export const mergeThemeSettings = (
     playerDetailStyle,
     playerDetailMeshBackground,
     playerDetailMeshAntiAlias,
+    playerDetailVinylMaterial,
     lastPlayerDetailCoverVisible:
       typeof patch.lastPlayerDetailCoverVisible === 'boolean'
         ? patch.lastPlayerDetailCoverVisible
