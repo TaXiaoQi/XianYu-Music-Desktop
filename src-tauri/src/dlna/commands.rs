@@ -86,9 +86,15 @@ pub async fn dlna_cast_set_uri(
     album: String,
     duration_ms: u64,
 ) -> Result<CastMediaInfo, String> {
-    DlnaCore::shared()
+    eprintln!(
+        "[dlna] cast_set_uri -> avt={:?} title={title} media={media:?}",
+        device.avt_control_url
+    );
+    let r = DlnaCore::shared()
         .cast_set_uri(&device, media, cover, &title, &artist, &album, duration_ms)
-        .await
+        .await;
+    eprintln!("[dlna] cast_set_uri <= {:?}", r.as_ref().map(|i| i.media_url.clone()));
+    r
 }
 
 #[tauri::command]
@@ -140,6 +146,8 @@ pub async fn dlna_enable_renderer(
     } else {
         friendly_name.trim().to_string()
     };
+    // 前端持久化的 UDN 自带 "uuid:" 前缀，协议层统一裸 UUID，避免 USN/描述里出现 uuid:uuid:
+    let udn = udn.trim().trim_start_matches("uuid:").to_string();
     let core = DlnaCore::shared();
     let host = Arc::new(PlayerDmrHost {
         progress: state.progress.clone(),

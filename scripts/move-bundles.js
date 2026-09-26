@@ -35,7 +35,10 @@ for (const entry of fs.existsSync(targetRoot)
   ? fs.readdirSync(targetRoot, { withFileTypes: true })
   : []) {
   if (!entry.isDirectory()) continue;
-  const dir = path.join(targetRoot, entry.name, 'release', 'bundle');
+  // 宿主原生目录是 target/release/bundle，交叉目标是 target/<triple>/release/bundle
+  const dir = entry.name === 'release'
+    ? path.join(targetRoot, 'release', 'bundle')
+    : path.join(targetRoot, entry.name, 'release', 'bundle');
   const platform = entry.name === 'release'
     ? 'windows'
     : platformForTargetDir(entry.name);

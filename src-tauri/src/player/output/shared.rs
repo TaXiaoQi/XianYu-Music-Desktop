@@ -8,6 +8,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
+use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -139,6 +140,12 @@ pub(crate) fn restore_current_playback(
                         Err(())
                     }
                 }
+            } else if let Some((wav_reader, _codec)) =
+                crate::player::runtime::bridge_local_file(Path::new(current_path))
+            {
+                // 内层 Box<dyn stream_cache::ReadSeek> 实现 Read+Seek，
+                // 经 shared::ReadSeek 的 blanket impl 再包一层即可复用
+                Ok(Box::new(wav_reader))
             } else {
                 match File::open(current_path) {
                     Ok(file) => Ok(Box::new(BufReader::with_capacity(512 * 1024, file))),
@@ -151,7 +158,22 @@ pub(crate) fn restore_current_playback(
 
         if let Ok(reader) = reader_result {
             if let Ok(source) = Decoder::new(reader) {
-                let skipped = source.convert_samples::<f32>().skip_duration(jump_target);
+                // 与 append_decoded_source 一致：>2 声道下混为立体声
+                let channels = source.channels();
+                progress.channels.store(
+                    if channels > 2 { 2 } else { channels as u32 },
+                    Ordering::Relaxed,
+                );
+                let raw_source = source.convert_samples::<f32>();
+                let unified: Box<dyn Source<Item = f32> + Send> = if channels > 2 {
+                    Box::new(crate::player::channel_downmix::DownmixSource::new(
+                        raw_source,
+                        channels,
+                    ))
+                } else {
+                    Box::new(raw_source)
+                };
+                let skipped = unified.skip_duration(jump_target);
 
                 let buffered = crate::player::buffered_source::BufferedSource::new(skipped);
 

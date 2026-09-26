@@ -10,6 +10,7 @@ import {
 } from '../../services/tauri/dlnaApi';
 import { usePlaybackStore } from './store';
 import { useSettingsStore } from '../settings/store';
+import { useCoverCache } from '../../composables/useCoverCache';
 import { useToast } from '../../composables/toast';
 
 export interface DmrCommandPayload {
@@ -41,6 +42,7 @@ interface CastMediaInfo {
 
 export const useDlnaCastStore = defineStore('dlnaCast', () => {
   const playbackStore = usePlaybackStore();
+  const { peekCoverUrl, peekCoverPath } = useCoverCache();
   const { showToast } = useToast();
 
   // ---------------- 发送端（DMC）状态 ----------------
@@ -96,8 +98,27 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
 
   function buildCoverPayload(cover: string): DlnaMediaPayload | null {
     const trimmed = (cover || '').trim();
-    if (!trimmed || !isDlnaRemotePath(trimmed)) return null;
-    return { kind: 'cover', url: trimmed };
+    if (!trimmed) return null;
+    if (isDlnaRemotePath(trimmed)) return { kind: 'cover', url: trimmed };
+    // 本地封面/缩略图文件：经本机 httpd 代理成 albumArtURI 给渲染端
+    if (/^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\')) {
+      return { kind: 'local', path: trimmed };
+    }
+    return null;
+  }
+
+  /// 投递封面源：优先本地缩略图文件（httpd 直接读盘），其次 http 封面 URL。
+  /// 不能用 peekCoverUrl——它返回 UI 层 loopback 缓存地址，Rust 端自抓会拿空。
+  function castCoverSource(path: string): string {
+    return peekCoverPath(path) || peekCoverUrl(path) || '';
+  }
+
+  /// 可直接投递的路径：http(s) 直链或本地文件。
+  /// 插件Scheme（需解析+防盗链头）只有播放流程里才拿得到直链与头，这里跳过，
+  /// 由用户点歌时的常规投递路由处理。
+  function isCastablePath(path: string): boolean {
+    if (isDlnaRemotePath(path)) return true;
+    return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\');
   }
 
   // ---------------- 连接 / 断开 ----------------
@@ -165,6 +186,24 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
       tvState.value = 'NO_MEDIA_PRESENT';
       lastError.value = '';
       startPolling();
+      // 连接即接管：当前有曲目就立刻续投到渲染器（携带当前进度）。
+      // 否则用户此后按播放键只会给渲染器发裸 Play，渲染器无媒体不会出声。
+      const song = playbackStore.currentSong;
+      if (song && isCastablePath(song.path)) {
+        try {
+          await castFromPlayAudio({
+            path: song.path,
+            title: song.title || song.name,
+            artist: song.artist || 'Unknown Artist',
+            album: song.album || 'Unknown Album',
+            cover: castCoverSource(song.path),
+            duration: Math.floor(song.duration || 0),
+            startOffsetMs: Math.max(0, Math.round((playbackStore.currentTime || 0) * 1000)),
+          });
+        } catch (e) {
+          console.warn('[dlna] 连接后续投当前曲目失败:', e);
+        }
+      }
     } catch (e) {
       phase.value = 'idle';
       device.value = null;
@@ -410,6 +449,7 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     connect,
     disconnect,
     castFromPlayAudio,
+    castCoverSource,
     castPlay,
     castPause,
     castStop,

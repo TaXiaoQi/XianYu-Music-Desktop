@@ -14,6 +14,7 @@ export type SettingsTabId =
   | 'shortcuts'
   | 'account'
   | 'advanced'
+  | 'linkage'
   | 'feedback'
   | 'about';
 
@@ -46,6 +47,7 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   desktopLyrics: '桌面歌词',
   shortcuts: '快捷按键',
   advanced: '高级设置',
+  linkage: '联动',
   feedback: '问题反馈',
   about: '关于',
 };
@@ -296,6 +298,12 @@ const staticItems: SettingsSearchItem[] = [
     { label: '日志保留时长', keywords: '日志 保存 自动清理 天数' },
     { label: '导出日志', keywords: '日志 调试 反馈 全部 导出' },
     { label: '删除全部日志', keywords: '日志 清空 删除' },
+  ]),
+
+  ...makeItems('linkage', 'DLNA 投放', [
+    { label: '接收其它设备投屏', keywords: 'DLNA 渲染器 投屏 局域网 联动 电视 音箱 弦予 手机' },
+    { label: '设备名称', keywords: 'DLNA 渲染器 名称 投送端 显示' },
+    { label: '投放到 DLNA 设备', keywords: 'DLNA 投放 电视 音箱 局域网 遥控 底栏' },
   ]),
 
   ...makeItems('feedback', '问题反馈', [

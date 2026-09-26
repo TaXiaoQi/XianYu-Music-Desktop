@@ -29,6 +29,9 @@ pub struct DlnaCore {
     client: reqwest::Client,
     registry: Arc<media_server::MediaRegistry>,
     httpd_port: AtomicU64,
+    /// httpd 句柄保活：HttpServer 持有优雅停机 Sender，drop 即触发 graceful
+    /// shutdown 关闭监听，必须长期持有（生产进程内 httpd 只随进程退出）。
+    httpd: Mutex<Option<httpd::HttpServer>>,
     dmr_shared: OnceLock<Arc<dmr::DmrShared>>,
     dmr_rx: tokio::sync::Mutex<Option<mpsc::Receiver<DmrCommand>>>,
     renderer: Mutex<Option<RendererSession>>,
@@ -51,6 +54,7 @@ impl DlnaCore {
                     .unwrap_or_default(),
             )),
             httpd_port: AtomicU64::new(0),
+            httpd: Mutex::new(None),
             dmr_shared: OnceLock::new(),
             dmr_rx: tokio::sync::Mutex::new(None),
             renderer: Mutex::new(None),
@@ -86,6 +90,14 @@ impl DlnaCore {
                     .insert(dev.udn.clone(), dev);
             }
         }
+        // 本机渲染器开启时会收到自己的 M-SEARCH 应答（多接口/多 ST 还会产生
+        // 重复条目）：按 UDN 剔除自己并去重。
+        let own_udn = self
+            .dmr_shared
+            .get()
+            .map(|s| s.udn.lock().unwrap().clone());
+        let mut seen = std::collections::HashSet::new();
+        out.retain(|d| Some(&d.udn) != own_udn.as_ref() && seen.insert(d.udn.clone()));
         out.sort_by(|a, b| a.friendly_name.cmp(&b.friendly_name));
         out
     }
@@ -104,8 +116,11 @@ impl DlnaCore {
         .await?;
         let _ = self.dmr_shared.set(shared);
         *self.dmr_rx.lock().await = Some(cmd_rx);
-        self.httpd_port.store(server.port as u64, Ordering::SeqCst);
-        Ok(server.port)
+        let port = server.port;
+        self.httpd_port.store(port as u64, Ordering::SeqCst);
+        // 回归关键：句柄交由 DlnaCore 保活，drop 会立即关闭监听（见 struct 注释）
+        *self.httpd.lock().unwrap() = Some(server);
+        Ok(port)
     }
 
     pub fn update_media_token(&self, token: &str, payload: MediaPayload) -> bool {
@@ -381,6 +396,21 @@ fn build_didl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 回归：ensure_httpd 返回后监听必须仍存活。曾经 HttpServer（持有优雅停机
+    /// Sender）在 ensure_httpd 末尾被 drop，graceful shutdown 立即触发，监听
+    /// 秒死，渲染器与投放媒体伺服整体不可用（DOA bug）。
+    #[tokio::test]
+    async fn ensure_httpd_keeps_listener_alive() {
+        let core = DlnaCore::shared();
+        let port = core.ensure_httpd().await.expect("httpd should bind");
+        // 给潜在的错误 shutdown 路径留出跑完的时间窗
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let resp = reqwest::get(format!("http://127.0.0.1:{port}/dlna/desc.xml"))
+            .await
+            .expect("listener must still be alive after ensure_httpd returns");
+        assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
+    }
 
     #[test]
     fn didl_contains_metadata() {

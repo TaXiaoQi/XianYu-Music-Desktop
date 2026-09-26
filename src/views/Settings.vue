@@ -17,6 +17,7 @@ const settingsLoaders = {
   download: () => import("../components/settings/SettingsDownload.vue").then(m => m.default),
   debug: () => import("../components/settings/SettingsDebug.vue").then(m => m.default),
   advanced: () => import("../components/settings/SettingsAdvanced.vue").then(m => m.default),
+  linkage: () => import("../components/settings/SettingsLinkage.vue").then(m => m.default),
   feedback: () => import("../components/settings/SettingsFeedback.vue").then(m => m.default),
 };
 
@@ -56,6 +57,7 @@ const SettingsAudioOutput = lazySettings(settingsLoaders.audioOutput);
 const SettingsDownload = lazySettings(settingsLoaders.download);
 const SettingsDebug = lazySettings(settingsLoaders.debug);
 const SettingsAdvanced = lazySettings(settingsLoaders.advanced);
+const SettingsLinkage = lazySettings(settingsLoaders.linkage);
 const SettingsFeedback = lazySettings(settingsLoaders.feedback);
 import { useDeveloperMode } from '../features/settings/developerMode';
 import {
@@ -68,7 +70,7 @@ import { useI18n } from '../features/i18n';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'feedback', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'linkage', 'feedback', 'debug', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -329,6 +331,7 @@ const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => 
   { id: 'plugins', name: t('settings.plugins') },
   { id: 'audioOutput', name: t('settings.playback') },
   { id: 'download', name: t('settings.download') },
+  { id: 'linkage', name: t('settings.linkage') },
   { id: 'library', name: t('settings.library') },
   { id: 'toolbox', name: t('settings.toolbox') },
   { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
@@ -467,6 +470,7 @@ const tabs = computed(() => {
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
           <SettingsAdvanced v-else-if="activeTab === 'advanced'" key="advanced" />
+          <SettingsLinkage v-else-if="activeTab === 'linkage'" key="linkage" />
           <SettingsFeedback v-else-if="activeTab === 'feedback'" key="feedback" />
           <SettingsDebug v-else-if="activeTab === 'debug'" key="debug" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />

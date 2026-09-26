@@ -1,9 +1,11 @@
 pub(crate) mod audio_head_cache;
 pub mod buffered_source;
 pub(crate) mod cenc;
+pub mod channel_downmix;
 mod commands;
 mod device;
 pub mod dsd_dop;
+pub(crate) mod dolby_bridge;
 pub mod equalizer;
 pub mod loudness;
 pub mod mv_stream_proxy;

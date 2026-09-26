@@ -564,8 +564,9 @@ const footerQualityExtraText = (key: string) => {
   if (typeof size === 'number' && size > 0) {
     return `${ext} · ${compactFileSize(size)}`;
   }
+  // 对齐移动端：探测不到体积就不显示后缀，不展示「未知体积」
   if (isFooterQualityInfoProbing.value) return `${ext} · 探测中`;
-  return `${ext} · 未知体积`;
+  return ext;
 };
 
 const probeFooterQualitySizes = async (
@@ -575,8 +576,12 @@ const probeFooterQualitySizes = async (
 ) => {
   const targets = keys.filter(k => !footerQualitySizesProbed.has(k));
   targets.forEach(k => footerQualitySizesProbed.add(k));
-  await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
+  // 只有真正拿到体积的档位才算探测完成，失败的等直链到位后重试
+  const sized = await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
     footerQualitySizes.value = { ...footerQualitySizes.value, [q]: bytes };
+  });
+  targets.forEach(k => {
+    if (!sized.has(k)) footerQualitySizesProbed.delete(k);
   });
 };
 
@@ -620,12 +625,29 @@ const ensureFooterQualityInfo = async () => {
     const shown = sharedProbeAvailable(probe);
     footerAvailableQualityKeys.value = shown;
     footerQualityUrls.value = { ...probe.resolvedUrls };
-    void ensureProbeRequestedUrls(probe, song, shown);
     const urlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
     void probeFooterQualitySizes(song, shown, urlFor);
     if (probe.done) {
       isFooterQualityInfoProbing.value = false;
-      releaseFooterSharedProbe();
+      // 主探测已收尾：等补解析与体积探测补齐后再释放订阅，
+      // 避免晚到的直链（主探测失败档位的补解析）没机会补体积
+      void (async () => {
+        try {
+          await ensureProbeRequestedUrls(probe, song, sharedProbeAvailable(probe));
+          const lateUrlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
+          await probeFooterQualitySizes(song, sharedProbeAvailable(probe), lateUrlFor);
+          // 收尾后仍无体积的档位视为假音质，从菜单剔除（保留当前播放档）
+          const keep = currentPlayingQuality.value;
+          footerAvailableQualityKeys.value = sharedProbeAvailable(probe).filter(k =>
+            k === keep
+            || (typeof footerQualitySizes.value[k] === 'number' && footerQualitySizes.value[k]! > 0),
+          );
+        } finally {
+          releaseFooterSharedProbe();
+        }
+      })();
+    } else {
+      void ensureProbeRequestedUrls(probe, song, shown);
     }
   };
 

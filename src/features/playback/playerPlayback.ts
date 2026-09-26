@@ -1461,7 +1461,9 @@ const dlnaCast = useDlnaCastStore();
               title: getSmtcTitle(song),
               artist: song.artist || 'Unknown Artist',
               album: song.album || 'Unknown Album',
-              cover: peekCoverUrl(song.path) || '',
+              // 本地歌用磁盘缩略图路径（peekCoverUrl 是 UI loopback 地址，
+              // Rust 端自抓会拿空导致渲染端封面 0 字节）
+              cover: dlnaCast.castCoverSource(song.path),
               duration: Math.floor(song.duration),
               headers: pluginHeaders,
               startOffsetMs: startOffsetMs || undefined,

@@ -123,8 +123,9 @@ const qualityExtraText = (key: QualityKey) => {
   if (typeof size === 'number' && size > 0) {
     return `${ext} · ${compactFileSize(size)}`;
   }
+  // 对齐移动端：探测不到体积就不显示后缀，不展示「未知体积」
   if (isProbing.value) return `${ext} · 探测中`;
-  return `${ext} · 未知体积`;
+  return ext;
 };
 
 const releaseDownloadProbe = () => {
@@ -141,8 +142,12 @@ const probeQualitySizesIncremental = async (
 ) => {
   const targets = keys.filter(k => !probedSizesSet.has(k));
   targets.forEach(k => probedSizesSet.add(k));
-  await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
+  // 只有真正拿到体积的档位才算探测完成，失败的等直链到位后重试
+  const sized = await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
     qualitySizes.value = { ...qualitySizes.value, [q]: bytes };
+  });
+  targets.forEach(k => {
+    if (!sized.has(k)) probedSizesSet.delete(k);
   });
 };
 
@@ -234,7 +239,6 @@ const probeQualities = async (song: Song) => {
     const shown = sharedProbeAvailable(probe);
     availableQualities.value = probe.done ? shown : null;
     probedUrls.value = { ...probe.resolvedUrls };
-    void ensureProbeRequestedUrls(probe, props.song!, shown);
     const urlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
     void probeQualitySizesIncremental(props.song!, shown, urlFor);
     if (probe.done) {
@@ -242,7 +246,27 @@ const probeQualities = async (song: Song) => {
       const avail = sharedProbeAvailable(probe);
       availableQualities.value = avail;
       ensureSelectedQualityAvailable(avail);
-      releaseDownloadProbe();
+      // 主探测已收尾：等补解析与体积探测补齐后再释放订阅，
+      // 避免晚到的直链（主探测失败档位的补解析）没机会补体积
+      void (async () => {
+        try {
+          await ensureProbeRequestedUrls(probe, props.song!, sharedProbeAvailable(probe));
+          const lateUrlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
+          await probeQualitySizesIncremental(props.song!, sharedProbeAvailable(probe), lateUrlFor);
+          // 收尾后仍无体积的档位视为假音质，从列表剔除（保留当前播放档）
+          const keep = isCurrentPlaybackSong(props.song!) ? playbackStore.currentPlayingQuality : null;
+          const sized = sharedProbeAvailable(probe).filter(k =>
+            k === keep
+            || (typeof qualitySizes.value[k] === 'number' && qualitySizes.value[k]! > 0),
+          );
+          availableQualities.value = sized;
+          ensureSelectedQualityAvailable(sized);
+        } finally {
+          releaseDownloadProbe();
+        }
+      })();
+    } else {
+      void ensureProbeRequestedUrls(probe, props.song!, shown);
     }
   };
 

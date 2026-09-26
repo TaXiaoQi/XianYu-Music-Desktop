@@ -57,7 +57,8 @@ export async function probeSizesForKeys(
   keys: QualityKey[],
   urlFor: (q: QualityKey) => string | undefined,
   onSize: (q: QualityKey, bytes: number) => void,
-): Promise<void> {
+): Promise<Set<QualityKey>> {
+  const sized = new Set<QualityKey>();
   await Promise.all(keys.map(async (q) => {
     const url = urlFor(q);
     if (url) {
@@ -65,6 +66,7 @@ export async function probeSizesForKeys(
         const info = await downloadApi.probeUrlSize(url);
         if (typeof info?.size === 'number' && info.size > 0) {
           onSize(q, info.size);
+          sized.add(q);
           return;
         }
       } catch (e: any) {
@@ -72,6 +74,10 @@ export async function probeSizesForKeys(
       }
     }
     const meta = readQualitySizeFromMeta(song, q);
-    if (meta != null) onSize(q, meta);
+    if (meta != null) {
+      onSize(q, meta);
+      sized.add(q);
+    }
   }));
+  return sized;
 }

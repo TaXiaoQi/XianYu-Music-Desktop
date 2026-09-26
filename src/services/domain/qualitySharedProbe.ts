@@ -25,6 +25,7 @@ export interface SharedQualityProbe {
   trustedDeclared?: QualityKey[];
   requestedUrls?: Partial<Record<QualityKey, string>>;
   _requestedPending?: Set<QualityKey>;
+  _requestedJob?: Promise<void>;
   _subscribers: Set<() => void>;
   _controller: AbortController;
 }
@@ -195,6 +196,10 @@ export async function ensureProbeRequestedUrls(
   song: Song,
   shown: QualityKey[],
 ): Promise<void> {
+  // 已有补解析在跑时先等它收尾，保证收尾阶段能拿到本轮解析结果
+  if (probe._requestedJob) {
+    await probe._requestedJob.catch(() => { /* 前序补解析失败不阻塞本轮 */ });
+  }
   const pending = probe._requestedPending ?? (probe._requestedPending = new Set());
   const need = shown.filter(q =>
     !probe.resolvedUrls[q]
@@ -203,41 +208,48 @@ export async function ensureProbeRequestedUrls(
   );
   if (!need.length) return;
   need.forEach(q => pending.add(q));
-  try {
-    const isPlugin = isPluginSong(song);
-    let ctx: ResolveDownloadContext | PluginResolveContext | null = null;
+  let job: Promise<void> | undefined;
+  job = (async () => {
     try {
-      ctx = isPlugin
-        ? await preparePluginResolveContext(song, '320k')
-        : await prepareResolveContext(song, '320k');
-    } catch {
-      return;
-    }
-    if (!ctx) return;
-    const queue = [...need];
-    const concurrency = 2;
-    await Promise.all(Array.from({ length: concurrency }, async () => {
-      for (;;) {
-        const q = queue.shift();
-        if (!q) return;
-        try {
-          const r = isPlugin
-            ? await resolvePluginAudioForQuality(ctx as PluginResolveContext, q)
-            : await resolveLxAudioForQuality(ctx as ResolveDownloadContext, q);
-          if (!r?.url) continue;
-          probe.requestedUrls = { ...probe.requestedUrls, [q]: r.url };
-          if (!probe.resolvedUrls[r.quality]) {
-            probe.resolvedUrls[r.quality] = r.url;
-          }
-          notifyProbeListeners(probe);
-        } catch (e: any) {
-          console.warn(`[SharedProbe] 补解析 ${q} 失败:`, e?.message || e);
-        }
+      const isPlugin = isPluginSong(song);
+      let ctx: ResolveDownloadContext | PluginResolveContext | null = null;
+      try {
+        ctx = isPlugin
+          ? await preparePluginResolveContext(song, '320k')
+          : await prepareResolveContext(song, '320k');
+      } catch {
+        return;
       }
-    }));
-  } finally {
-    need.forEach(q => pending.delete(q));
-  }
+      if (!ctx) return;
+      const queue = [...need];
+      const concurrency = 2;
+      await Promise.all(Array.from({ length: concurrency }, async () => {
+        for (;;) {
+          if (probe._controller.signal.aborted) return;
+          const q = queue.shift();
+          if (!q) return;
+          try {
+            const r = isPlugin
+              ? await resolvePluginAudioForQuality(ctx as PluginResolveContext, q)
+              : await resolveLxAudioForQuality(ctx as ResolveDownloadContext, q);
+            if (!r?.url) continue;
+            probe.requestedUrls = { ...probe.requestedUrls, [q]: r.url };
+            if (!probe.resolvedUrls[r.quality]) {
+              probe.resolvedUrls[r.quality] = r.url;
+            }
+            notifyProbeListeners(probe);
+          } catch (e: any) {
+            console.warn(`[SharedProbe] 补解析 ${q} 失败:`, e?.message || e);
+          }
+        }
+      }));
+    } finally {
+      need.forEach(q => pending.delete(q));
+      if (probe._requestedJob === job) probe._requestedJob = undefined;
+    }
+  })();
+  probe._requestedJob = job;
+  await job;
 }
 
 export function sharedProbeAwaitTop(

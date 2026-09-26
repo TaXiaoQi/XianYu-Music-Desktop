@@ -823,8 +823,12 @@ fn append_decoded_source<R>(
         if let Ok(source) = decoded {
             let rate = source.sample_rate();
             let channels = source.channels();
+            // >2 声道流（伪 6ch 全景声等）rodio 不下混会爆音，样本层降为立体声
+            let playback_channels: u32 = if channels > 2 { 2 } else { channels as u32 };
             progress.sample_rate.store(rate, Ordering::Relaxed);
-            progress.channels.store(channels as u32, Ordering::Relaxed);
+            progress
+                .channels
+                .store(playback_channels, Ordering::Relaxed);
 
             let duration_secs = source
                 .total_duration()
@@ -842,7 +846,7 @@ fn append_decoded_source<R>(
 
             let offset = start_offset.unwrap_or(Duration::ZERO);
             let skip_samples =
-                (offset.as_secs_f64() * rate as f64 * channels as f64).round() as u64;
+                (offset.as_secs_f64() * rate as f64 * playback_channels as f64).round() as u64;
             progress
                 .samples_played
                 .store(skip_samples, Ordering::Relaxed);
@@ -850,7 +854,20 @@ fn append_decoded_source<R>(
                 progress.visualizer.reset();
             }
 
-            let skipped_source = source.convert_samples::<f32>().skip_duration(offset);
+            let raw_source = source.convert_samples::<f32>();
+            let unified: Box<dyn Source<Item = f32> + Send> = if channels > 2 {
+                crate::player::dolby_bridge::log_bridge(&format!(
+                    "多声道流下混: {channels}ch → 2ch @ {rate}Hz"
+                ));
+                Box::new(crate::player::channel_downmix::DownmixSource::new(
+                    raw_source,
+                    channels,
+                ))
+            } else {
+                Box::new(raw_source)
+            };
+
+            let skipped_source = unified.skip_duration(offset);
 
             let buffered_source = crate::player::buffered_source::BufferedSource::new_tracked(
                 skipped_source,
@@ -922,6 +939,71 @@ fn open_local_audio_reader(path: &Path) -> Option<LocalAudioReader> {
     }
 }
 
+/// 本地文件杜比桥：QMC 密文先明文化再探测，明文直接探测。
+/// 命中 AC-4/EC-3 → ffmpeg 解 WAV；未命中返回 None 走常规 reader。
+pub(crate) fn bridge_local_file(
+    path: &Path,
+) -> Option<(
+    Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync + 'static>,
+    crate::player::dolby_bridge::DolbyCodec,
+)> {
+    use crate::player::dolby_bridge::{bridge_if_dolby, materialize_plain_file, PlainTransform};
+    let path_str = path.to_str()?;
+    match crate::player::qmc2::detect_qmc_crypto(path) {
+        Some(crypto) => {
+            let plain = materialize_plain_file(path_str, &PlainTransform::QmcCrypto(&crypto))
+                .ok()?;
+            let mut fr = std::fs::File::open(&plain).ok()?;
+            bridge_if_dolby(
+                &mut fr,
+                Some(plain.to_str()?),
+                path_str,
+                &PlainTransform::None,
+            )
+        }
+        None => {
+            let mut fr = std::fs::File::open(path).ok()?;
+            bridge_if_dolby(&mut fr, Some(path_str), path_str, &PlainTransform::None)
+        }
+    }
+}
+
+/// 流式临时文件的杜比桥：reader 已是解密明文流，直接探测；
+/// 命中后按 state 的加密上下文明文化给 ffmpeg。
+pub(crate) fn bridge_streaming_state(
+    state: &crate::player::stream_cache::StreamingTempFileState,
+    reader: &mut dyn crate::player::stream_cache::ReadSeek,
+) -> Option<(
+    Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync + 'static>,
+    crate::player::dolby_bridge::DolbyCodec,
+)> {
+    use crate::player::dolby_bridge::{bridge_if_dolby, PlainTransform};
+    let ekey = state.ekey();
+    let cenc_ctx: Option<(String, crate::player::cenc::CencMetadata)> =
+        if state.cenc_streaming.load(std::sync::atomic::Ordering::Relaxed) {
+            let cek = state.cek();
+            let md = state
+                .cenc_metadata
+                .lock()
+                .ok()
+                .and_then(|m| m.clone());
+            match (cek, md) {
+                (Some(c), Some(m)) => Some((c, m)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+    // transform 生命周期覆盖 bridge 调用；metadata 仅作门控（元数据解析完成前不进桥）
+    if let Some((cek, _)) = &cenc_ctx {
+        return bridge_if_dolby(reader, None, &state.path, &PlainTransform::Cenc(cek));
+    }
+    if let Some(e) = &ekey {
+        return bridge_if_dolby(reader, None, &state.path, &PlainTransform::QmcEkey(e));
+    }
+    bridge_if_dolby(reader, Some(&state.path), &state.path, &PlainTransform::None)
+}
+
 fn handle_play(
     source: AudioSource,
     output: &Option<SharedOutputBackend>,
@@ -954,9 +1036,33 @@ fn handle_play(
 
     let start_offset = start_offset_ms.map(Duration::from_millis);
 
+    crate::player::dolby_bridge::log_bridge(&format!(
+        "handle_play: source={} path={}",
+        match &source {
+            AudioSource::LocalFile(_) => "LocalFile",
+            AudioSource::RemoteWebDav(_) => "RemoteWebDav",
+            AudioSource::StreamingTempFile(_) => "StreamingTempFile",
+        },
+        source.display_path()
+    ));
+
     match source {
         AudioSource::LocalFile(path) => {
-            if let Some(reader) = open_local_audio_reader(Path::new(&path)) {
+            if let Some((wav_reader, codec)) = bridge_local_file(Path::new(&path)) {
+                append_decoded_source(
+                    wav_reader,
+                    output,
+                    current_sink,
+                    progress,
+                    start_offset,
+                    volume_balance_gain,
+                    current_normalizer_handle,
+                    equalizer_handle,
+                    sound_effect_handle,
+                    user_volume,
+                    Some(format!("dolby {} → wav", codec.as_str())),
+                );
+            } else if let Some(reader) = open_local_audio_reader(Path::new(&path)) {
                 append_decoded_source(
                     reader,
                     output,
@@ -997,7 +1103,7 @@ fn handle_play(
             }
         },
         AudioSource::StreamingTempFile(state) => match state.new_reader_with_decryption() {
-            Ok(reader) => {
+            Ok(mut reader) => {
                 let size = state.downloaded_bytes();
                 let status = if state.is_download_finished() {
                     if state.download_complete.load(Ordering::Relaxed) {
@@ -1013,19 +1119,40 @@ fn handle_play(
                 } else {
                     "下载中".to_string()
                 };
-                append_decoded_source(
-                    reader,
-                    output,
-                    current_sink,
-                    progress,
-                    start_offset,
-                    volume_balance_gain,
-                    current_normalizer_handle,
-                    equalizer_handle,
-                    sound_effect_handle,
-                    user_volume,
-                    Some(format!("已下载 {size} bytes，{status}")),
-                )
+                if let Some((wav_reader, codec)) =
+                    bridge_streaming_state(&state, &mut *reader)
+                {
+                    append_decoded_source(
+                        wav_reader,
+                        output,
+                        current_sink,
+                        progress,
+                        start_offset,
+                        volume_balance_gain,
+                        current_normalizer_handle,
+                        equalizer_handle,
+                        sound_effect_handle,
+                        user_volume,
+                        Some(format!(
+                            "dolby {} → wav，已下载 {size} bytes",
+                            codec.as_str()
+                        )),
+                    );
+                } else {
+                    append_decoded_source(
+                        reader,
+                        output,
+                        current_sink,
+                        progress,
+                        start_offset,
+                        volume_balance_gain,
+                        current_normalizer_handle,
+                        equalizer_handle,
+                        sound_effect_handle,
+                        user_volume,
+                        Some(format!("已下载 {size} bytes，{status}")),
+                    );
+                }
             }
             Err(err) => {
                 if let Ok(mut reason) = progress.start_failed_reason.lock() {
@@ -1084,19 +1211,42 @@ fn handle_seek(
                 let start_offset = Some(jump_target);
                 if let Some(state) = streaming_state {
                     match state.new_reader_with_decryption() {
-                        Ok(reader) => append_decoded_source(
-                            reader,
-                            output,
-                            current_sink,
-                            progress,
-                            start_offset,
-                            volume_balance_gain,
-                            current_normalizer_handle,
-                            equalizer_handle,
-                            sound_effect_handle,
-                            user_volume,
-                            None,
-                        ),
+                        Ok(mut reader) => {
+                            if let Some((wav_reader, codec)) =
+                                bridge_streaming_state(&state, &mut *reader)
+                            {
+                                append_decoded_source(
+                                    wav_reader,
+                                    output,
+                                    current_sink,
+                                    progress,
+                                    start_offset,
+                                    volume_balance_gain,
+                                    current_normalizer_handle,
+                                    equalizer_handle,
+                                    sound_effect_handle,
+                                    user_volume,
+                                    Some(format!(
+                                        "dolby {} → wav（seek 重建）",
+                                        codec.as_str()
+                                    )),
+                                );
+                            } else {
+                                append_decoded_source(
+                                    reader,
+                                    output,
+                                    current_sink,
+                                    progress,
+                                    start_offset,
+                                    volume_balance_gain,
+                                    current_normalizer_handle,
+                                    equalizer_handle,
+                                    sound_effect_handle,
+                                    user_volume,
+                                    None,
+                                );
+                            }
+                        }
                         Err(_) => {}
                     }
                 } else if let Some(stream) = remote_stream.cloned() {
@@ -1117,7 +1267,28 @@ fn handle_seek(
                         Err(_) => {}
                     }
                 } else if !current_path.is_empty() {
-                    if let Some(reader) = open_local_audio_reader(Path::new(current_path)) {
+                    if let Some((wav_reader, codec)) =
+                        bridge_local_file(Path::new(current_path))
+                    {
+                        append_decoded_source(
+                            wav_reader,
+                            output,
+                            current_sink,
+                            progress,
+                            start_offset,
+                            volume_balance_gain,
+                            current_normalizer_handle,
+                            equalizer_handle,
+                            sound_effect_handle,
+                            user_volume,
+                            Some(format!(
+                                "dolby {} → wav（seek 重建）",
+                                codec.as_str()
+                            )),
+                        );
+                    } else if let Some(reader) =
+                        open_local_audio_reader(Path::new(current_path))
+                    {
                         append_decoded_source(
                             reader,
                             output,

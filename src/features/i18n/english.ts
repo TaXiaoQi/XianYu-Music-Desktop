@@ -2812,10 +2812,6 @@ const dynamicEnglishTranslations: Array<{
     replace: (_m, g0) => `${g0} · probing`,
   },
   {
-    pattern: new RegExp("^(.+) · 未知体积$"),
-    replace: (_m, g0) => `${g0} · unknown size`,
-  },
-  {
     pattern: new RegExp("^已创建歌单「(.+)」，共 (.+) 首歌曲$"),
     replace: (_m, g0, g1) => `Created playlist "${g0}" with ${g1} songs`,
   },
