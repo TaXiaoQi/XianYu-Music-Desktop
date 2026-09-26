@@ -234,6 +234,9 @@ export interface LibraryScanSession {
   sourcePath?: string;
 }
 
+/** 写实唱机底座材质：浅灰（默认）/ 哑光深灰 / 橡木 / 大理石 */
+export type VinylPlinthMaterial = 'light' | 'matte' | 'oak' | 'marble';
+
 export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
   accentColor: string;
@@ -247,6 +250,8 @@ export interface ThemeSettings {
   playerDetailMeshAntiAlias: boolean;
   /** 多边形流光背景的流动速度倍率（0 为静止，1 为默认） */
   playerDetailMeshSpeed: number;
+  /** 写实唱机底座材质（浅灰 / 哑光深灰 / 橡木 / 大理石） */
+  playerDetailVinylMaterial: VinylPlinthMaterial;
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;

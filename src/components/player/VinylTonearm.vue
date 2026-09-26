@@ -1,10 +1,17 @@
 <script setup lang="ts">
 /**
- * 唱针组件（网易云播放页风格）：
- * - 臂杆为长直斜杆 + 末端短弧折向陡角，白色小圆头唱针在末端
- * - 播放：落针姿态；暂停：整臂绕枢轴向外摆起离开唱片；切歌：小幅抬针后快速回落
- * - 几何完全由下方 TONEARM_PARAMS 参数化（1 unit = 0.001 × 唱片边长），
- *   数值来自可视化调参面板实调结果（面板已移除，如需再调可临时恢复）。
+ * 唱臂总成（俯视写实布局）。
+ *
+ * 真机形态：枢轴在转盘右上方，臂管向左下方伸出，唱头落在转盘右侧的金属盘面上
+ * （封面盘只占盘心 0.47 直径，落针区在封面与盘缘之间）；暂停时唱臂摆出转盘、
+ * 停靠在臂托上；切歌时小幅抬针后快速回落。
+ *
+ * 坐标系固定 1000×1000（= 容器边长，1 unit = 0.1% 边长），与 PlayerDetailVinyl 的
+ * 转盘布局共用同一比例：转盘圆心 (460, 500)、转盘半径 430、封面盘半径 200。
+ * 几何按参考机型比例推得：枢轴到圆心 482（1.12 × 半径）、有效臂长 680（1.58 × 半径）。
+ * 基准姿态落针在半径 373（0.87R，封面外、盘缘内），相对「枢轴→圆心」连线偏 -32.1°
+ * （负号 = 沿屏幕顺时针的反向，即臂管朝下方垂落）；再偏 -9.2° 后落针到半径 450
+ * （1.05R），让开转盘，即臂托位置。改姿态只需调下面这几个数。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
@@ -18,13 +25,12 @@ const props = withDefaults(defineProps<{
 
 /**
  * 切歌动作：小幅抬针 + 快速回落。
- * 不能摆到暂停位（-46°）——那需要 1.1s 的过渡，切歌时播放已经开始，
- * 而唱针还在归位途中。
+ * 不能摆到暂停位 —— 那要 1s 以上的过渡，而切歌时播放已经开始、唱针还在归位途中。
  */
 const SWITCH_LIFT_MS = 240;
 const SWITCH_SETTLE_MS = 620;
 
-/** 切歌抬针中（旋转到 switchDeg） */
+/** 切歌抬针中 */
 const isLifting = ref(false);
 /** 整个切歌动作期间为真（含回落段），用于临时换成更短的过渡 */
 const isSwitching = ref(false);
@@ -61,234 +67,357 @@ watch(() => props.songKey, (next, prev) => {
 
 onBeforeUnmount(clearSwitchTimers);
 
-// 实调固化的几何参数（坐标系：viewBox 400×460，容器 40%×46%，1 unit = 0.001S）
+/** 几何参数（坐标系 1000×1000，与 PlayerDetailVinyl 的转盘布局对齐） */
 const TONEARM_PARAMS = {
-  pivotX: 0,
-  pivotY: 39,
-  elbowX: 283,
-  elbowY: 273,
-  tipX: 313,
-  tipY: 450,
-  bendIn: 10,
-  bendOut: 14,
-  strokeW: 35,
-  headW: 15,
-  headH: 16,
-  headRotOffset: 0,
-  downDeg: 0,
-  upDeg: -46,
-  /** 切歌时的小幅抬针角度：不整臂归位，避免播放已开始、唱针还在回摆 */
-  switchDeg: -15,
+  pivotX: 847,
+  pivotY: 212,
+  /** 有效臂长：枢轴 → 唱针 */
+  armLength: 680,
+  platterCenterX: 460,
+  platterCenterY: 500,
+  /** 基准姿态相对「枢轴→圆心」连线的偏角（负 = 朝屏幕下方垂落，落针在 0.87R） */
+  baseOffsetDeg: -32.1,
+  /** 抬臂（暂停）：再向盘外摆到臂托 —— 落针到 1.05R，让开转盘（半径 430），
+   *  臂托才不会压在盘面上 */
+  upOffsetDeg: -9.2,
+  /** 切歌：小幅抬针（落针移到 ~0.98R） */
+  switchOffsetDeg: -6,
+  /** 臂管直径（细金属管） */
+  tubeWidth: 13,
+  /** 唱头壳长度 */
+  headshellLength: 62,
+  /** 配重长度 / 直径 */
+  counterweightLength: 96,
+  counterweightWidth: 46,
+  /** 配重距枢轴中心的距离 */
+  counterweightGap: 46,
 } as const;
 
 const params = TONEARM_PARAMS;
+const VIEW = 1000;
 
-// viewBox 固定 400×460 作为坐标系
-const VIEW_W = 400;
-const VIEW_H = 460;
+const toPct = (value: number) => `${(value / VIEW * 100).toFixed(2)}%`;
 
-const norm = (dx: number, dy: number) => {
-  const len = Math.hypot(dx, dy) || 1;
-  return { x: dx / len, y: dy / len };
+const rotateVec = (v: { x: number; y: number }, deg: number) => {
+  const rad = deg * Math.PI / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return { x: v.x * cos - v.y * sin, y: v.x * sin + v.y * cos };
 };
 
-const straightDir = norm(params.elbowX - params.pivotX, params.elbowY - params.pivotY);
-const tipDir = norm(params.tipX - params.elbowX, params.tipY - params.elbowY);
+/** 枢轴 → 唱片圆心 的单位方向；抬臂偏角以此为基准 */
+const centerDir = (() => {
+  const dx = params.platterCenterX - params.pivotX;
+  const dy = params.platterCenterY - params.pivotY;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: dx / len, y: dy / len };
+})();
 
-const pathD = computed(() => {
-  const c1x = params.elbowX + straightDir.x * params.bendIn;
-  const c1y = params.elbowY + straightDir.y * params.bendIn;
-  const c2x = params.tipX - tipDir.x * params.bendOut;
-  const c2y = params.tipY - tipDir.y * params.bendOut;
-  return `M ${params.pivotX} ${params.pivotY} L ${params.elbowX} ${params.elbowY} C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${params.tipX} ${params.tipY}`;
-});
+const dirAt = (offsetDeg: number) => rotateVec(centerDir, params.baseOffsetDeg + offsetDeg);
 
-/** 与竖直方向的夹角（屏幕坐标向下为正） */
-const angleFromVertical = (dir: { x: number; y: number }) =>
-  Math.atan2(dir.x, dir.y) * 180 / Math.PI;
+/** 某个抬臂偏角下的唱针位置 */
+const stylusAt = (offsetDeg: number) => {
+  const dir = dirAt(offsetDeg);
+  return {
+    x: params.pivotX + dir.x * params.armLength,
+    y: params.pivotY + dir.y * params.armLength,
+  };
+};
 
-const headRotation = angleFromVertical(tipDir) + params.headRotOffset;
+/** 基准（落针）姿态：唱针在唱片中部凹槽，唱头壳起点沿臂管回退一个壳长 */
+const stylus = stylusAt(0);
+const baseDir = dirAt(0);
+const headshellStart = {
+  x: stylus.x - baseDir.x * params.headshellLength,
+  y: stylus.y - baseDir.y * params.headshellLength,
+};
 
-const pct = (value: number, total: number) => `${(value / total * 100).toFixed(2)}%`;
+/** 臂管：枢轴 → 唱头壳起点，带一点 S 形（真机臂管不是纯直） */
+const tubePathD = (() => {
+  const dx = headshellStart.x - params.pivotX;
+  const dy = headshellStart.y - params.pivotY;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const cx1 = params.pivotX + dx * 0.34 + nx * 4.5;
+  const cy1 = params.pivotY + dy * 0.34 + ny * 4.5;
+  const cx2 = params.pivotX + dx * 0.7 - nx * 6;
+  const cy2 = params.pivotY + dy * 0.7 - ny * 6;
+  return `M ${params.pivotX} ${params.pivotY} C ${cx1.toFixed(1)} ${cy1.toFixed(1)} ${cx2.toFixed(1)} ${cy2.toFixed(1)} ${headshellStart.x.toFixed(1)} ${headshellStart.y.toFixed(1)}`;
+})();
 
-const pivotLeft = pct(params.pivotX, VIEW_W);
-const pivotTop = pct(params.pivotY, VIEW_H);
-const headLeft = pct(params.tipX, VIEW_W);
-const headTop = pct(params.tipY, VIEW_H);
+/** 唱头壳朝向：沿臂管末端切线（直线臂 + 末端偏置角由壳内唱头表达） */
+const headshellDeg = (Math.atan2(stylus.y - headshellStart.y, stylus.x - headshellStart.x) * 180 / Math.PI);
 
-const transformOrigin = `${pivotLeft} ${pivotTop}`;
+/** 配重：枢轴后方，沿臂管反向 */
+const counterweight = (() => {
+  const dir = baseDir;
+  const offset = params.counterweightGap + params.counterweightLength / 2;
+  return {
+    x: params.pivotX - dir.x * offset,
+    y: params.pivotY - dir.y * offset,
+    deg: Math.atan2(-dir.y, -dir.x) * 180 / Math.PI,
+  };
+})();
 
-/** 暂停 = 整臂抬针；切歌 = 小幅抬针后快速回落；否则落针 */
+/** 臂托位置 = 暂停姿态下唱针的位置（+ 一点点余量） */
+const restPosition = (() => {
+  const parked = stylusAt(params.upOffsetDeg);
+  const dir = dirAt(params.upOffsetDeg);
+  return {
+    x: parked.x + dir.x * 16,
+    y: parked.y + dir.y * 16,
+  };
+})();
+
 const rotationDeg = computed(() => {
-  if (!props.isPlaying) return params.upDeg;
-  if (isLifting.value) return params.switchDeg;
-  return params.downDeg;
+  if (!props.isPlaying) return params.upOffsetDeg;
+  if (isLifting.value) return params.switchOffsetDeg;
+  return 0;
 });
+
+/** 抬臂时影子离唱片更远、更虚（离面高度的视觉线索） */
+const shadow = computed(() => {
+  const lifted = !props.isPlaying || isLifting.value;
+  return lifted
+    ? { dx: 9, dy: 16, blur: 10, opacity: 0.34 }
+    : { dx: 5, dy: 8, blur: 5, opacity: 0.5 };
+});
+
+const transformOrigin = `${toPct(params.pivotX)} ${toPct(params.pivotY)}`;
+
+const bearingStyle = {
+  left: toPct(params.pivotX),
+  top: toPct(params.pivotY),
+};
+
+const restStyle = {
+  left: toPct(restPosition.x),
+  top: toPct(restPosition.y),
+};
 </script>
 
 <template>
   <div class="pointer-events-none absolute inset-0 z-30 overflow-visible">
-    <!-- 臂杆旋转容器：坐标系 1 unit = 0.001 × 唱片边长 -->
+    <!-- 臂托：座体上的立柱，暂停时唱臂停靠其上（不随唱臂转动） -->
+    <div class="tonearm-rest absolute rounded-full" :style="restStyle">
+      <div class="tonearm-rest-clip absolute" />
+    </div>
+
+    <!-- 唱臂总成（绕枢轴旋转） -->
     <div
-      class="tonearm-swing absolute"
+      class="tonearm-swing absolute inset-0"
       :style="{
-        left: '50%',
-        top: '-14%',
-        width: '40%',
-        height: '46%',
         transformOrigin,
         transform: `rotate(${rotationDeg}deg)`,
-        // 切歌期间临时缩短过渡，保证动作在播放开始后很快结束
         transition: isSwitching
           ? 'transform 0.26s cubic-bezier(0.22, 1, 0.36, 1)'
           : undefined,
       }"
     >
-      <!-- 枢轴圆钮（多层金属 + 高光点） -->
-      <div
-        class="tonearm-pivot absolute rounded-full"
-        :style="{ left: pivotLeft, top: pivotTop }"
+      <svg
+        class="absolute inset-0 h-full w-full overflow-visible"
+        :viewBox="`0 0 ${VIEW} ${VIEW}`"
+        fill="none"
+        aria-hidden="true"
       >
-        <div class="tonearm-pivot-ring absolute inset-[8%] rounded-full" />
-        <div class="tonearm-pivot-dot absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full" />
-        <div class="tonearm-pivot-specular absolute left-[22%] top-[16%] h-[22%] w-[30%] -rotate-[30deg] rounded-full bg-white/85 blur-[1px]" />
-      </div>
-
-      <!-- 臂杆：参数化路径（暗轮廓 + 金属渐变 + 高光芯线 + 投影，营造圆柱金属质感） -->
-      <svg class="absolute inset-0 h-full w-full overflow-visible" :viewBox="`0 0 ${VIEW_W} ${VIEW_H}`" fill="none" aria-hidden="true">
         <defs>
-          <linearGradient id="tonearm-arm-gradient" gradientUnits="userSpaceOnUse" x1="30" y1="0" :x2="params.tipX + 16" :y2="params.tipY + 50">
-            <stop offset="0" stop-color="#ffffff" />
-            <stop offset="0.35" stop-color="#f4f5f8" />
-            <stop offset="0.62" stop-color="#d9dce2" />
-            <stop offset="0.85" stop-color="#aeb3bd" />
-            <stop offset="1" stop-color="#c8ccd4" />
+          <linearGradient
+            id="tonearm-tube-gradient"
+            gradientUnits="userSpaceOnUse"
+            :x1="params.pivotX - 40"
+            :y1="params.pivotY - 40"
+            :x2="stylus.x"
+            :y2="stylus.y + 30"
+          >
+            <stop offset="0" stop-color="#eef0f4" />
+            <stop offset="0.4" stop-color="#c9ccd4" />
+            <stop offset="0.72" stop-color="#9aa0aa" />
+            <stop offset="1" stop-color="#b6bac3" />
+          </linearGradient>
+          <linearGradient
+            id="tonearm-counterweight-gradient"
+            gradientUnits="userSpaceOnUse"
+            :x1="counterweight.x - 30"
+            :y1="counterweight.y - 30"
+            :x2="counterweight.x + 30"
+            :y2="counterweight.y + 30"
+          >
+            <stop offset="0" stop-color="#f5f7fa" />
+            <stop offset="0.42" stop-color="#d2d6dd" />
+            <stop offset="1" stop-color="#8f959e" />
+          </linearGradient>
+          <linearGradient
+            id="tonearm-headshell-gradient"
+            gradientUnits="userSpaceOnUse"
+            :x1="headshellStart.x"
+            :y1="headshellStart.y - 16"
+            :x2="stylus.x"
+            :y2="stylus.y + 16"
+          >
+            <stop offset="0" stop-color="#e4e6eb" />
+            <stop offset="0.5" stop-color="#b9bec6" />
+            <stop offset="1" stop-color="#8d939c" />
           </linearGradient>
           <filter id="tonearm-shadow" x="-40%" y="-40%" width="180%" height="180%">
-            <feDropShadow dx="5" dy="10" stdDeviation="7" flood-color="#000000" flood-opacity="0.45" />
+            <feDropShadow
+              :dx="shadow.dx"
+              :dy="shadow.dy"
+              :stdDeviation="shadow.blur"
+              flood-color="#000000"
+              :flood-opacity="shadow.opacity"
+            />
           </filter>
         </defs>
+
         <g filter="url(#tonearm-shadow)">
-          <!-- 底层暗轮廓（管壁背光侧） -->
+          <!-- 配重：枢轴后方，哑光金属圆柱 + 顶面背光 -->
+          <g :transform="`translate(${counterweight.x.toFixed(1)} ${counterweight.y.toFixed(1)}) rotate(${counterweight.deg.toFixed(2)})`">
+            <rect
+              :x="(-params.counterweightLength / 2).toFixed(1)"
+              :y="(-params.counterweightWidth / 2).toFixed(1)"
+              :width="params.counterweightLength"
+              :height="params.counterweightWidth"
+              rx="7"
+              fill="url(#tonearm-counterweight-gradient)"
+            />
+            <rect
+              :x="(-params.counterweightLength / 2).toFixed(1)"
+              :y="(params.counterweightWidth / 2 - 9).toFixed(1)"
+              :width="params.counterweightLength"
+              height="9"
+              rx="4.5"
+              fill="rgba(0, 0, 0, 0.4)"
+            />
+            <rect
+              :x="(-params.counterweightLength / 2 + 6).toFixed(1)"
+              :y="(-params.counterweightWidth / 2 + 2).toFixed(1)"
+              :width="(params.counterweightLength - 12)"
+              height="3"
+              rx="1.5"
+              fill="rgba(255, 255, 255, 0.16)"
+            />
+          </g>
+
+          <!-- 臂管：暗轮廓 + 金属主色 + 高光芯线 -->
           <path
-            :d="pathD"
-            stroke="rgba(20, 22, 30, 0.55)"
-            :stroke-width="params.strokeW + 7"
+            :d="tubePathD"
+            stroke="rgba(14, 16, 22, 0.72)"
+            :stroke-width="params.tubeWidth + 4"
             stroke-linecap="round"
-            stroke-linejoin="round"
           />
-          <!-- 金属主体 -->
           <path
-            :d="pathD"
-            stroke="url(#tonearm-arm-gradient)"
-            :stroke-width="params.strokeW"
+            :d="tubePathD"
+            stroke="url(#tonearm-tube-gradient)"
+            :stroke-width="params.tubeWidth"
             stroke-linecap="round"
-            stroke-linejoin="round"
           />
-          <!-- 高光芯线（圆柱受光的高反射带） -->
           <path
-            :d="pathD"
-            stroke="rgba(255, 255, 255, 0.75)"
-            :stroke-width="params.strokeW * 0.28"
+            :d="tubePathD"
+            stroke="rgba(255, 255, 255, 0.8)"
+            :stroke-width="params.tubeWidth * 0.3"
             stroke-linecap="round"
-            stroke-linejoin="round"
           />
-          <!-- 细亮缘（管壁顶部反光） -->
-          <path
-            :d="pathD"
-            stroke="rgba(255, 255, 255, 0.9)"
-            :stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            transform="translate(-2 -3)"
-            opacity="0.65"
-          />
+
+          <!-- 唱头壳 + 唱头 + 针尖 -->
+          <g :transform="`translate(${stylus.x.toFixed(1)} ${stylus.y.toFixed(1)}) rotate(${headshellDeg.toFixed(2)})`">
+            <rect
+              :x="(-params.headshellLength).toFixed(1)"
+              y="-11"
+              :width="params.headshellLength"
+              height="22"
+              rx="4.5"
+              fill="url(#tonearm-headshell-gradient)"
+            />
+            <rect :x="(-params.headshellLength + 4).toFixed(1)" y="-11" :width="params.headshellLength - 8" height="4" rx="2" fill="rgba(255, 255, 255, 0.5)" />
+            <!-- 唱头块 -->
+            <rect x="-26" y="-7.5" width="30" height="15" rx="2.5" fill="#1b1c21" />
+            <rect x="-26" y="-7.5" width="30" height="3.5" rx="1.7" fill="rgba(255, 255, 255, 0.1)" />
+            <!-- 针尖（俯视只见前端一点点） -->
+            <path d="M 4 -2.6 L 10 0 L 4 2.6 Z" fill="#e9ebef" />
+            <circle cx="9.4" cy="0" r="1.5" fill="#f7f8fa" />
+          </g>
         </g>
       </svg>
+    </div>
 
-      <!-- 唱针头：位于臂杆末端，沿末端切线方向（多层渐变 + 斜向光泽） -->
-      <div
-        class="tonearm-head absolute"
-        :style="{
-          left: headLeft,
-          top: headTop,
-          width: `${params.headW}%`,
-          height: `${params.headH}%`,
-          transform: `translate(-50%, -50%) rotate(${headRotation}deg)`,
-        }"
-      >
-        <div class="tonearm-head-sheen absolute inset-[12%] rounded-[inherit]" />
-        <div class="tonearm-head-tip absolute rounded-full" />
-      </div>
+    <!-- 枢轴轴承：静态，盖住旋转中心（臂在它内部转动） -->
+    <div class="tonearm-bearing absolute rounded-full" :style="bearingStyle">
+      <div class="tonearm-bearing-ring absolute inset-[12%] rounded-full" />
+      <div class="tonearm-bearing-cap absolute inset-[26%] rounded-full" />
+      <div class="tonearm-bearing-specular absolute rounded-full" />
     </div>
   </div>
 </template>
 
 <style scoped>
 .tonearm-swing {
-  /* 落针/抬臂绕枢轴旋转的过渡动画（内联 transform 变化时生效） */
+  /* 落针 / 抬臂绕枢轴旋转的过渡（切歌时由内联样式临时缩短） */
   transition: transform 1.1s cubic-bezier(0.34, 1.3, 0.64, 1);
   will-change: transform;
 }
-.tonearm-pivot {
-  width: 15%;
+
+/* 臂托：座体上的小立柱 + 夹口，暂停时臂管停在其上 */
+.tonearm-rest {
+  width: 3.6%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 36% 30%, #6c7078 0%, #3d4047 46%, #191a1f 100%);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.6),
+    inset 0 1px 1px rgba(255, 255, 255, 0.28);
+}
+
+/* 夹口：臂管停靠处的那道槽 */
+.tonearm-rest-clip {
+  left: 18%;
+  top: 44%;
+  width: 64%;
+  height: 12%;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.75);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.16);
+}
+
+/* 枢轴轴承：拉丝铝圆柱，左上受光 */
+.tonearm-bearing {
+  width: 7.6%;
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   background:
-    radial-gradient(circle at 32% 26%, #ffffff 0%, #f2f3f6 40%, #d5d8de 68%, #a9adb7 100%);
+    radial-gradient(circle at 34% 26%, #ffffff 0%, #e3e6ec 34%, #b3b8c1 66%, #7d828b 100%);
   box-shadow:
-    0 5px 14px rgba(0, 0, 0, 0.5),
-    0 1px 3px rgba(0, 0, 0, 0.4),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.18),
+    0 6px 16px rgba(0, 0, 0, 0.6),
+    0 1px 3px rgba(0, 0, 0, 0.5),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.22),
     inset 0 2px 3px rgba(255, 255, 255, 0.9);
-  z-index: 1;
 }
 
-/* 内圈金属环（分层车削质感） */
-.tonearm-pivot-ring {
+/* 轴承内圈（车削台阶） */
+.tonearm-bearing-ring {
   background:
-    radial-gradient(circle at 38% 32%, rgba(255, 255, 255, 0.9) 0%, rgba(235, 237, 241, 0.6) 45%, rgba(150, 154, 163, 0.55) 100%);
+    radial-gradient(circle at 38% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(226, 229, 235, 0.6) 46%, rgba(140, 145, 154, 0.6) 100%);
   box-shadow:
-    inset 0 1px 2px rgba(255, 255, 255, 0.8),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.25);
+    inset 0 1px 2px rgba(255, 255, 255, 0.85),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.3);
 }
 
-.tonearm-pivot-dot {
-  width: 30%;
-  height: 30%;
-  background: radial-gradient(circle at 38% 32%, #9a9aa2 0%, #5b5b64 55%, #2c2c33 100%);
+/* 中心轴帽 */
+.tonearm-bearing-cap {
+  background: radial-gradient(circle at 38% 32%, #9ea3ac 0%, #62666e 52%, #33363c 100%);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.6),
-    0 0 3px rgba(0, 0, 0, 0.3);
+    0 0 4px rgba(0, 0, 0, 0.35);
 }
 
-.tonearm-head {
-  border-radius: 999px;
-  background: linear-gradient(100deg, #ffffff 0%, #f0f2f5 40%, #d3d6dd 72%, #b4b8c2 100%);
-  box-shadow:
-    3px 6px 14px rgba(0, 0, 0, 0.45),
-    inset 0 1px 1px rgba(255, 255, 255, 0.95),
-    inset 0 -2px 3px rgba(0, 0, 0, 0.15);
-}
-
-/* 针头斜向光泽扫过 */
-.tonearm-head-sheen {
-  background: linear-gradient(
-    115deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(255, 255, 255, 0.25) 38%,
-    transparent 55%,
-    rgba(0, 0, 0, 0.12) 85%
-  );
-  mix-blend-mode: screen;
-}
-
-.tonearm-head-tip {
-  right: 16%;
-  bottom: 12%;
-  width: 30%;
-  height: 26%;
-  background: radial-gradient(circle at 40% 35%, #8a8a92 0%, #55555d 60%, #33333a 100%);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55);
+/* 高光点 */
+.tonearm-bearing-specular {
+  left: 24%;
+  top: 16%;
+  width: 26%;
+  height: 20%;
+  transform: rotate(-32deg);
+  background: rgba(255, 255, 255, 0.9);
+  filter: blur(1px);
 }
 </style>
