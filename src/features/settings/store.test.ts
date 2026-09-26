@@ -101,6 +101,20 @@ describe('settings store', () => {
     expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
   });
 
+  it('stores the vinyl plinth material with normalization', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('light');
+    settingsStore.patchTheme({ playerDetailVinylMaterial: 'matte' });
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('matte');
+    settingsStore.patchTheme({ playerDetailVinylMaterial: 'oak' });
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('oak');
+
+    // 非法值不得写入（回落为上一次的合法值）
+    settingsStore.patchTheme({ playerDetailVinylMaterial: 'walnut' as 'oak' });
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('oak');
+  });
+
   it('stores the polygon mesh flow speed multiplier', () => {
     const settingsStore = useSettingsStore();
 

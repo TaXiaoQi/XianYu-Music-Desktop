@@ -39,6 +39,12 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailStyleLabel: 'Page style',
   playerDetailStyleClassic: 'Classic',
   playerDetailStyleVinyl: 'Vinyl Record',
+  playerDetailVinylMaterialLabel: 'Plinth material',
+  playerDetailVinylMaterialHint: 'Base finish of the turntable plinth',
+  playerDetailVinylMaterialLight: 'Light gray',
+  playerDetailVinylMaterialMatte: 'Matte',
+  playerDetailVinylMaterialOak: 'Oak',
+  playerDetailVinylMaterialMarble: 'Marble',
   playerDetailMeshBackgroundTitle: 'Polygon Flow Background',
   playerDetailMeshBackgroundHint: 'Generate randomly-shaped drifting polygons from the cover',
   playerDetailMeshBackgroundLabel: 'Use polygon flow background',
@@ -94,6 +100,12 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailStyleLabel: '页面样式',
   playerDetailStyleClassic: '经典',
   playerDetailStyleVinyl: '黑胶唱片',
+  playerDetailVinylMaterialLabel: '底座材质',
+  playerDetailVinylMaterialHint: '写实唱机座体的饰面',
+  playerDetailVinylMaterialLight: '浅灰',
+  playerDetailVinylMaterialMatte: '哑光',
+  playerDetailVinylMaterialOak: '橡木',
+  playerDetailVinylMaterialMarble: '大理石',
   playerDetailMeshBackgroundTitle: '多边形流光背景',
   playerDetailMeshBackgroundHint: '由封面色场生成随机边数、缓慢漂移的多边形',
   playerDetailMeshBackgroundLabel: '使用多边形流光背景',
@@ -230,7 +242,9 @@ const {
   setPlayerDetailStyle,
   playerDetailMeshBackground,
   playerDetailMeshAntiAlias,
+  playerDetailVinylMaterial,
   setPlayerDetailMeshAntiAlias,
+  setPlayerDetailVinylMaterial,
   setPlayerDetailMeshBackground,
 } = useSettingsThemeControls();
 
@@ -323,6 +337,29 @@ function handleCoverSelect(value: 'show' | 'hide' | 'remember') {
 }
 
 // ---- 播放详情页样式选择（复用封面下拉的自定义弹窗模式） ----
+/** 底座材质选项：色板用 CSS 渐变近拟实物，与 PlayerDetailVinyl 里的材质样式对应 */
+const VINYL_MATERIAL_OPTIONS = computed(() => [
+  {
+    value: 'light' as const,
+    label: TEXT.value.playerDetailVinylMaterialLight,
+    swatch: 'linear-gradient(150deg, #f4f5f7 0%, #c9ccd2 100%)',
+  },
+  {
+    value: 'matte' as const,
+    label: TEXT.value.playerDetailVinylMaterialMatte,
+    swatch: 'linear-gradient(150deg, #2c2d33 0%, #17181d 100%)',
+  },
+  {
+    value: 'oak' as const,
+    label: TEXT.value.playerDetailVinylMaterialOak,
+    swatch: 'linear-gradient(150deg, #c1945c 0%, #7f5934 100%)',
+  },
+  {
+    value: 'marble' as const,
+    label: TEXT.value.playerDetailVinylMaterialMarble,
+    swatch: 'linear-gradient(150deg, #f2f0ec 0%, #c6c3bc 100%)',
+  },
+]);
 const STYLE_OPTIONS = computed<Array<{ value: 'classic' | 'vinyl'; label: string }>>(() => [
   { value: 'classic', label: TEXT.value.playerDetailStyleClassic },
   { value: 'vinyl', label: TEXT.value.playerDetailStyleVinyl },
@@ -981,6 +1018,30 @@ onUnmounted(() => {
           </Transition>
         </Teleport>
       </label>
+    <div
+      v-if="playerDetailStyle === 'vinyl'"
+      class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10"
+    >
+      <span class="min-w-0">
+        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylMaterialLabel }}</span>
+        <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailVinylMaterialHint }}</span>
+      </span>
+      <div class="grid shrink-0 grid-cols-4 gap-1.5">
+        <button
+          v-for="option in VINYL_MATERIAL_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="flex w-[62px] flex-col items-center gap-1.5 rounded-lg border px-1.5 py-1.5 transition-all"
+          :class="playerDetailVinylMaterial === option.value
+            ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+            : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
+          @click="setPlayerDetailVinylMaterial(option.value)"
+        >
+          <span class="h-4 w-4 rounded-full ring-1 ring-black/15 dark:ring-white/15" :style="{ background: option.swatch }" />
+          <span class="text-[11px] font-medium text-gray-700 dark:text-gray-200">{{ option.label }}</span>
+        </button>
+      </div>
+    </div>
     </section>
 
     <section class="space-y-3">

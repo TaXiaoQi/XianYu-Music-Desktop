@@ -6,6 +6,13 @@ import {
 } from '../../composables/lyrics/constants';
 import { playerStorage } from '../../services/storage/playerStorage';
 import type { AppSettings } from '../../types';
+import {
+  VINYL_MATERIAL_LIGHT_MIGRATION_ID,
+  markMigrationApplied,
+  migratedVinylMaterial,
+  readAppliedMigrationIds,
+  type MigrationStorage,
+} from './migrations';
 import { mergeAppSettings } from './store';
 
 const readLegacyLyricsSettings = <T extends object>(key: string): Partial<T> | null => {
@@ -57,8 +64,16 @@ export function restorePersistedAppSettings(
   currentSettings: AppSettings,
   replaceSettings: (settings: AppSettings) => void,
   readSettings: () => AppSettings | null = () => playerStorage.readSettings(),
+  migrationStorage: MigrationStorage = playerStorage,
 ) {
   const storedSettings = readSettings();
+
+  // 迁移判定必须先于写 marker，否则本次会把自己当成「已跑过」；
+  // 但即使没有存量设置也要把 id 记下：全新 profile 若在首启会话里显式选了「哑光」，
+  // 下次启动就会形成「有存量设置 + 无 marker」，被误判成旧默认值而静默改写
+  const appliedMigrationIds = readAppliedMigrationIds(migrationStorage);
+  markMigrationApplied(VINYL_MATERIAL_LIGHT_MIGRATION_ID, migrationStorage);
+
   if (!storedSettings) return;
 
   try {
@@ -90,11 +105,15 @@ export function restorePersistedAppSettings(
       ? savedTheme.windowMaterial as typeof currentSettings.theme.windowMaterial
       : currentSettings.theme.windowMaterial;
 
+    // 一次性迁移（见 migrations.ts）：存量设置里的旧默认材质 'matte' 迁到新默认 'light'
+    const migratedMaterial = migratedVinylMaterial(savedTheme.playerDetailVinylMaterial, appliedMigrationIds);
+
     replaceSettings(mergeAppSettings(currentSettings, {
       ...saved,
       ...legacyLyricsSettingsPatch,
       theme: {
         ...savedTheme,
+        playerDetailVinylMaterial: migratedMaterial ?? savedTheme.playerDetailVinylMaterial,
         windowMaterial: savedWindowMaterial,
         dynamicBgType:
           savedWindowMaterial !== 'none'
