@@ -1,8 +1,14 @@
 import { nextTick } from 'vue';
 import type { RouteLocationRaw, Router } from 'vue-router';
 
-/** 视图过渡进行中挂在 <html> 上的抑制类：用于暂停 Vue 侧 page-fade 与指示块自身的回退动画，避免和浏览器过渡双重叠加 */
-export const VIEW_TRANSITION_ACTIVE_CLASS = 'view-transition-active';
+/**
+ * 视图过渡进行中挂在 <html> 上的类：只用于暂停侧边栏指示块自身的 CSS 过渡。
+ *
+ * 指示块是共享元素（view-transition-name: nav-indicator），必须先停在旧几何位置让浏览器采到
+ * 「旧」快照；否则它的 top/height 过渡会在截图前就向新位置移动，使新旧快照几何重合、morph
+ * 距离塌缩为 0。page-fade 是页面内容自身的过渡、不参与 View Transition，不受此类影响。
+ */
+export const NAV_INDICATOR_TRANSITION_PAUSED_CLASS = 'nav-indicator-transition-paused';
 
 interface ViewTransitionLike {
   finished: Promise<void>;
@@ -39,14 +45,14 @@ const getStartViewTransition = (): StartViewTransition | undefined => {
 const markTransitionActive = () => {
   activeTransitionCount += 1;
   if (typeof document !== 'undefined') {
-    document.documentElement?.classList.add(VIEW_TRANSITION_ACTIVE_CLASS);
+    document.documentElement?.classList.add(NAV_INDICATOR_TRANSITION_PAUSED_CLASS);
   }
 };
 
 const markTransitionSettled = () => {
   activeTransitionCount = Math.max(0, activeTransitionCount - 1);
   if (activeTransitionCount === 0 && typeof document !== 'undefined') {
-    document.documentElement?.classList.remove(VIEW_TRANSITION_ACTIVE_CLASS);
+    document.documentElement?.classList.remove(NAV_INDICATOR_TRANSITION_PAUSED_CLASS);
   }
 };
 

@@ -195,9 +195,7 @@ html.theme-transitioning * {
 
   ::view-transition-group(nav-indicator),
   ::view-transition-old(nav-indicator),
-  ::view-transition-new(nav-indicator),
-  ::view-transition-old(root),
-  ::view-transition-new(root) {
+  ::view-transition-new(nav-indicator) {
     animation-duration: 0.01ms !important;
   }
 }
@@ -215,40 +213,19 @@ html.theme-transitioning * {
   animation-timing-function: var(--motion-ease-emphasized);
 }
 
-/* 根过渡保持克制：淡变 + 极小微位移，避免大面积重绘 */
-::view-transition-old(root) {
-  animation: var(--motion-dur-fast) var(--motion-ease-standard) both vt-root-fade-out;
-}
-
+/* 根元素不参与视图过渡：浏览器仍会跑一次过渡（指示块 morph 需要），但把 old/new(root) 的
+   动画全部关掉，整屏不再做交叉淡入淡出/位移——页面内容的动效只交给下方的 page-fade。 */
+::view-transition-old(root),
 ::view-transition-new(root) {
-  animation: var(--motion-dur-base) var(--motion-ease-standard) both vt-root-fade-in;
+  animation: none;
 }
 
-@keyframes vt-root-fade-out {
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes vt-root-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
-/* ---- 视图过渡进行中：浏览器接管视觉，暂停 Vue 侧 page-fade 与指示块自身过渡，避免双重动画 ----
-   page-fade 仅在「不支持 View Transitions / 减弱动效」时作为回退生效。 */
-html.view-transition-active .page-fade-enter-active,
-html.view-transition-active .page-fade-leave-active,
-html.view-transition-active .nav-indicator {
+/* ---- 视图过渡进行中：只冻结指示块自身的 CSS 过渡 ----
+   page-fade 是页面内容自身的过渡、不参与 View Transition，必须保持照常运行；
+   而指示块必须先停在旧几何位置，浏览器才能采到「旧」快照，否则元素提前移动到新位置会让
+   新旧快照几何重合、morph 距离塌缩为 0。 */
+html.nav-indicator-transition-paused .nav-indicator {
   transition: none;
-}
-
-html.view-transition-active .page-fade-enter-from,
-html.view-transition-active .page-fade-leave-to {
-  opacity: 1;
-  transform: none;
 }
 
 .modal-pop-enter-active,
