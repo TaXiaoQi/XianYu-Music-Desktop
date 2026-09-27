@@ -33,4 +33,4 @@ const build = spawnSync('npx tauri build --target aarch64-pc-windows-msvc', {
 });
 if (build.status !== 0) process.exit(build.status ?? 1);
 
-spawnSync(process.execPath, [path.join(__dirname, 'move-bundles.js')], { stdio: 'inherit' });
+spawnSync(process.execPath, [path.join(__dirname, 'move-bundles.js'), '--force'], { stdio: 'inherit' });
