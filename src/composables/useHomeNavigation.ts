@@ -1,7 +1,5 @@
 import type { RouteLocationRaw, Router } from 'vue-router';
 
-import { useViewTransitionNavigation } from './useViewTransitionNavigation';
-
 type HomeNavigationTarget =
   | { view: 'all' }
   | { view: 'artist' | 'album' | 'playlist'; filter: string }
@@ -86,11 +84,14 @@ export const buildAppLocation = (target: AppNavigationTarget): RouteLocationRaw 
 };
 
 export function useHomeNavigation(router: Router) {
-  const { navigate } = useViewTransitionNavigation(router);
-
   const openApp = async (target: AppNavigationTarget, options: { replace?: boolean } = {}) => {
     const location = buildAppLocation(target);
-    await navigate(location, options);
+    if (options.replace) {
+      await router.replace(location);
+      return;
+    }
+
+    await router.push(location);
   };
 
   const openHome = async (target: HomeNavigationTarget, options: { replace?: boolean } = {}) =>

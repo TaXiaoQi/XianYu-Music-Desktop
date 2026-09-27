@@ -647,13 +647,10 @@ onMounted(() => {
   }
 }
 
-/* ---- 路由页面切换（微上滑 + 柔和淡入淡出）----
-   仅在「不支持 View Transitions / 系统减弱动效」时作为回退生效；使用全局动效 token。 */
+/* ---- 路由页面切换（纯淡入淡出，使用全局动效 token）---- */
 .page-fade-enter-active,
 .page-fade-leave-active {
-  transition:
-    opacity var(--motion-dur-base) var(--motion-ease-emphasized),
-    transform var(--motion-dur-base) var(--motion-ease-emphasized);
+  transition: opacity var(--motion-dur-base) var(--motion-ease-standard);
 }
 
 .page-fade-leave-active {
@@ -662,11 +659,9 @@ onMounted(() => {
 
 .page-fade-enter-from {
   opacity: 0;
-  transform: translateY(8px) scale(0.996);
 }
 
 .page-fade-leave-to {
   opacity: 0;
-  transform: translateY(-6px) scale(0.996);
 }
 </style>
