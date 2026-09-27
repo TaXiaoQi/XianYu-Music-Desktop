@@ -1,20 +1,29 @@
+//! 前台全屏状态探测。
+//!
+//! 判断当前前台窗口是否为独占整屏的全屏应用（排除自身进程与 Shell 桌面），
+//! 前端据此决定是否隐藏悬浮控件。
+
 use serde::Serialize;
 
+/// 前台全屏探测结果载荷。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ForegroundFullscreenState {
-    pub is_fullscreen: bool,
-}
+pub struct ForegroundFullscreenState { pub is_fullscreen: bool }
 
+/// 查询前台全屏状态。
 #[tauri::command]
 pub fn get_foreground_fullscreen_state() -> ForegroundFullscreenState {
     ForegroundFullscreenState {
-        is_fullscreen: platform_is_foreground_fullscreen(),
+        is_fullscreen: probe_foreground_fullscreen(),
     }
 }
 
+/// 允许窗口矩形与显示器边缘存在的像素偏差。
 #[cfg(target_os = "windows")]
-fn platform_is_foreground_fullscreen() -> bool {
+const EDGE_TOLERANCE: i32 = 2;
+
+#[cfg(target_os = "windows")]
+fn probe_foreground_fullscreen() -> bool {
     use std::mem::zeroed;
     use windows_sys::Win32::{
         Foundation::RECT,
@@ -22,7 +31,8 @@ fn platform_is_foreground_fullscreen() -> bool {
             GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
         },
         UI::WindowsAndMessaging::{
-            GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+            GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, IsIconic,
+            IsWindowVisible,
         },
     };
 
@@ -32,30 +42,33 @@ fn platform_is_foreground_fullscreen() -> bool {
             return false;
         }
 
-        if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+        // 不可见或已最小化的窗口谈不上全屏
+        if IsIconic(hwnd) != 0 || IsWindowVisible(hwnd) == 0 {
             return false;
         }
 
-        let mut foreground_pid = 0u32;
-        GetWindowThreadProcessId(hwnd, &mut foreground_pid);
-        if foreground_pid == std::process::id() {
+        // 自身进程的窗口直接排除
+        let mut owner_pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut owner_pid);
+        if owner_pid == std::process::id() {
             return false;
         }
 
-        if let Some(class_name) = window_class_name(hwnd) {
-            if is_excluded_shell_window_class(&class_name) {
+        // Shell 桌面与资源管理器窗口不算全屏应用
+        if let Some(class_name) = query_class_name(hwnd) {
+            if is_shell_excluded_class(&class_name) {
                 return false;
             }
         }
 
-        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        if monitor.is_null() {
+        let nearest = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if nearest.is_null() {
             return false;
         }
 
-        let mut monitor_info: MONITORINFO = zeroed();
-        monitor_info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-        if GetMonitorInfoW(monitor, &mut monitor_info) == 0 {
+        let mut info: MONITORINFO = zeroed();
+        info.cbSize = core::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(nearest, &mut info) == 0 {
             return false;
         }
 
@@ -64,61 +77,83 @@ fn platform_is_foreground_fullscreen() -> bool {
             return false;
         }
 
-        let monitor_rect = monitor_info.rcMonitor;
-        let work_area = monitor_info.rcWork;
-        let tolerance = 2;
-
-        let work_width = work_area.right - work_area.left;
-        let work_height = work_area.bottom - work_area.top;
-        let win_width = rect.right - rect.left;
-        let win_height = rect.bottom - rect.top;
-
-        let monitor_width = monitor_rect.right - monitor_rect.left;
-        let monitor_height = monitor_rect.bottom - monitor_rect.top;
-
-        let covers_full_monitor = (win_width - monitor_width).abs() <= tolerance
-            && (win_height - monitor_height).abs() <= tolerance
-            && (rect.left - monitor_rect.left).abs() <= tolerance
-            && (rect.top - monitor_rect.top).abs() <= tolerance;
-
-        if covers_full_monitor
-            && (monitor_width - work_width).abs() <= tolerance
-            && (monitor_height - work_height).abs() <= tolerance
-        {
-            use windows_sys::Win32::UI::WindowsAndMessaging::{
-                GetWindowLongW, GWL_STYLE, WS_MAXIMIZE, WS_THICKFRAME,
-            };
-            let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-            if (style & WS_THICKFRAME) != 0 && (style & WS_MAXIMIZE) != 0 {
-                return false;
-            }
+        if !covers_monitor(&rect, &info.rcMonitor) {
+            return false;
         }
 
-        covers_full_monitor
+        // 当显示器区域与工作区一致时，最大化的普通窗口与全屏窗口矩形相同，
+        // 需借助样式区分：带可调边框且处于最大化状态的是普通最大化窗口。
+        if monitor_matches_work_area(&info) && looks_like_maximized(hwnd) {
+            return false;
+        }
+
+        true
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn platform_is_foreground_fullscreen() -> bool {
+fn probe_foreground_fullscreen() -> bool {
     false
 }
 
+/// 窗口矩形是否在容差内完整覆盖显示器矩形。
 #[cfg(target_os = "windows")]
-fn window_class_name(hwnd: windows_sys::Win32::Foundation::HWND) -> Option<String> {
+fn covers_monitor(
+    rect: &windows_sys::Win32::Foundation::RECT,
+    monitor: &windows_sys::Win32::Foundation::RECT,
+) -> bool {
+    let win_width = rect.right - rect.left;
+    let win_height = rect.bottom - rect.top;
+    let monitor_width = monitor.right - monitor.left;
+    let monitor_height = monitor.bottom - monitor.top;
+
+    (win_width - monitor_width).abs() <= EDGE_TOLERANCE
+        && (win_height - monitor_height).abs() <= EDGE_TOLERANCE
+        && (rect.left - monitor.left).abs() <= EDGE_TOLERANCE
+        && (rect.top - monitor.top).abs() <= EDGE_TOLERANCE
+}
+
+/// 显示器整体区域是否与任务栏之外的工作区一致（即屏幕上没有任务栏）。
+#[cfg(target_os = "windows")]
+fn monitor_matches_work_area(info: &windows_sys::Win32::Graphics::Gdi::MONITORINFO) -> bool {
+    let monitor = info.rcMonitor;
+    let work = info.rcWork;
+
+    let same_width = (monitor.right - monitor.left) - (work.right - work.left);
+    let same_height = (monitor.bottom - monitor.top) - (work.bottom - work.top);
+
+    same_width.abs() <= EDGE_TOLERANCE && same_height.abs() <= EDGE_TOLERANCE
+}
+
+/// 窗口是否带有“可调整边框 + 最大化”样式组合。
+#[cfg(target_os = "windows")]
+fn looks_like_maximized(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GetWindowLongW, WS_MAXIMIZE, WS_THICKFRAME,
+    };
+
+    let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    (style & WS_THICKFRAME) != 0 && (style & WS_MAXIMIZE) != 0
+}
+
+/// 读取窗口类名。
+#[cfg(target_os = "windows")]
+fn query_class_name(hwnd: windows_sys::Win32::Foundation::HWND) -> Option<String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW;
 
     unsafe {
-        let mut buffer = [0u16; 256];
-        let len = GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32);
+        let mut scratch = [0u16; 256];
+        let len = GetClassNameW(hwnd, scratch.as_mut_ptr(), scratch.len() as i32);
         if len <= 0 {
             return None;
         }
 
-        String::from_utf16(&buffer[..len as usize]).ok()
+        String::from_utf16(&scratch[..len as usize]).ok()
     }
 }
 
-fn is_excluded_shell_window_class(class_name: &str) -> bool {
+/// 需要从“全屏判定”中排除的 Shell/资源管理器窗口类名。
+fn is_shell_excluded_class(class_name: &str) -> bool {
     matches!(
         class_name,
         "Progman"
@@ -132,25 +167,30 @@ fn is_excluded_shell_window_class(class_name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::is_excluded_shell_window_class;
+mod excluded_class_tests {
+    use super::is_shell_excluded_class;
 
     #[test]
-    fn excludes_desktop_shell_classes() {
-        assert!(is_excluded_shell_window_class("Progman"));
-        assert!(is_excluded_shell_window_class("WorkerW"));
-        assert!(is_excluded_shell_window_class("SHELLDLL_DefView"));
+    fn desktop_surfaces_are_excluded() {
+        let desktop_classes = ["Progman", "WorkerW", "SHELLDLL_DefView"];
+        for class in desktop_classes {
+            assert!(is_shell_excluded_class(class), "{class} 应被排除");
+        }
     }
 
     #[test]
-    fn excludes_explorer_shell_classes() {
-        assert!(is_excluded_shell_window_class("CabinetWClass"));
-        assert!(is_excluded_shell_window_class("ExploreWClass"));
+    fn explorer_windows_are_excluded() {
+        let explorer_classes = ["CabinetWClass", "ExploreWClass"];
+        for class in explorer_classes {
+            assert!(is_shell_excluded_class(class), "{class} 应被排除");
+        }
     }
 
     #[test]
-    fn keeps_regular_window_classes() {
-        assert!(!is_excluded_shell_window_class("Chrome_WidgetWin_1"));
-        assert!(!is_excluded_shell_window_class("Notepad"));
+    fn normal_application_windows_survive() {
+        let normal_classes = ["Chrome_WidgetWin_1", "Notepad"];
+        for class in normal_classes {
+            assert!(!is_shell_excluded_class(class), "{class} 不应被排除");
+        }
     }
 }

@@ -1,310 +1,281 @@
-use encoding_rs::{GBK, SHIFT_JIS};
+// CUE 唱片描述表解析（弦予原创实现）。
+// 整体流水线分三段：先对每一行做指令分类，再按类别折叠出轨道草稿，
+// 最后根据 FILE 引用定位真实音频文件。时间轴一律折算成毫秒。
+
+use encoding_rs::Encoding;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{fs, path::{Path, PathBuf}};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+// 解析失败的完整形态集合；对外错误文案属于既有契约，逐字保持。
+#[derive(Debug, Error)]
 pub enum CueParseError {
-    #[error("Failed to read CUE file: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("CUE file is empty")]
-    EmptyFile,
-    #[error("No FILE directive found in CUE sheet")]
-    MissingFileDirective,
-    #[error("No TRACK directives found in CUE sheet")]
-    NoTracks,
-    #[error("Invalid timestamp at line {line}: {raw}")]
-    InvalidTimestamp { line: usize, raw: String },
-    #[error("Audio file referenced by CUE not found: {0}")]
-    AudioFileNotFound(String),
+    #[error("Failed to read CUE file: {0}")] Io(#[from] std::io::Error),
+    #[error("CUE file is empty")] EmptyFile,
+    #[error("No FILE directive found in CUE sheet")] MissingFileDirective,
+    #[error("No TRACK directives found in CUE sheet")] NoTracks,
+    #[error("Invalid timestamp at line {line}: {raw}")] InvalidTimestamp { line: usize, raw: String },
+    #[error("Audio file referenced by CUE not found: {0}")] AudioFileNotFound(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// 专辑级元数据 + 轨道列表；字段名同时是前端反序列化契约。
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CueSheet {
-    pub album_title: Option<String>,
-    pub album_performer: Option<String>,
-    pub file_path: String,
-    pub resolved_audio_path: PathBuf,
-    pub tracks: Vec<CueTrack>,
+    pub album_title: Option<String>, pub album_performer: Option<String>,
+    pub file_path: String, pub resolved_audio_path: PathBuf, pub tracks: Vec<CueTrack>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// 单条音轨：起始时间必有，结束时间由下一条音轨补齐。
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CueTrack {
-    pub track_number: u32,
-    pub title: Option<String>,
-    pub performer: Option<String>,
-    pub index01_start_ms: u64,
-    pub end_ms: Option<u64>,
+    pub track_number: u32, pub title: Option<String>, pub performer: Option<String>,
+    pub index01_start_ms: u64, pub end_ms: Option<u64>,
 }
 
-fn decode_cue_bytes(bytes: &[u8]) -> String {
-    if let Ok(utf8) = String::from_utf8(bytes.to_vec()) {
-        return utf8;
-    }
-    let (decoded, _, had_errors) = GBK.decode(bytes);
-    if !had_errors {
-        return decoded.into_owned();
-    }
-    let (decoded, _, had_errors) = SHIFT_JIS.decode(bytes);
-    if !had_errors {
-        return decoded.into_owned();
-    }
-    String::from_utf8_lossy(bytes).into_owned()
+// INDEX 第三段是 1/75 秒精度的帧计数。
+const FRAMES_PER_SECOND: u64 = 75;
+
+// 单行指令的归类结果；Skip 与 Other 都不参与状态推进，
+// 区分二者只为阅读时能分辨「注释/空行」与「未支持的指令」。
+enum CueInstruction<'line> {
+    Skip,
+    Title(&'line str),
+    Performer(&'line str),
+    File(&'line str),
+    Track(u32),
+    Index01(&'line str),
+    Other,
 }
 
-fn parse_cue_timestamp(raw: &str, line_number: usize) -> Result<u64, CueParseError> {
-    let parts: Vec<&str> = raw.trim().split(':').collect();
-    if parts.len() != 3 {
-        return Err(CueParseError::InvalidTimestamp {
-            line: line_number,
-            raw: raw.to_string(),
-        });
+// 逐行分类：先按第一个空格切出指令头，再按指令头分发。
+// 键名大小写敏感，取值必须是成对的英文双引号，这与主流刻录软件的输出一致。
+fn classify_line<'line>(raw_line: &'line str) -> CueInstruction<'line> {
+    let Some((keyword, argument)) = raw_line.split_once(' ') else {
+        return CueInstruction::Skip;
+    };
+
+    match keyword {
+        "REM" => CueInstruction::Skip,
+        "TITLE" => as_quoted(argument).map(CueInstruction::Title).unwrap_or(CueInstruction::Other),
+        "PERFORMER" => as_quoted(argument).map(CueInstruction::Performer).unwrap_or(CueInstruction::Other),
+        "FILE" => file_name_argument(argument)
+            .map(CueInstruction::File)
+            .unwrap_or(CueInstruction::Other),
+        "TRACK" => track_argument(argument)
+            .map(CueInstruction::Track)
+            .unwrap_or(CueInstruction::Other),
+        "INDEX" => index_argument(argument)
+            .map(CueInstruction::Index01)
+            .unwrap_or(CueInstruction::Other),
+        _ => CueInstruction::Other,
     }
-    let minutes: u64 = parts[0]
-        .parse()
-        .map_err(|_| CueParseError::InvalidTimestamp {
-            line: line_number,
-            raw: raw.to_string(),
-        })?;
-    let seconds: u64 = parts[1]
-        .parse()
-        .map_err(|_| CueParseError::InvalidTimestamp {
-            line: line_number,
-            raw: raw.to_string(),
-        })?;
-    let frames: u64 = parts[2]
-        .parse()
-        .map_err(|_| CueParseError::InvalidTimestamp {
-            line: line_number,
-            raw: raw.to_string(),
-        })?;
-    Ok(minutes * 60_000 + seconds * 1_000 + (frames * 1_000) / 75)
 }
 
+// 剥掉一层成对的英文双引号；引号缺失或不成对一律视为无效取值。
+fn as_quoted(argument: &str) -> Option<&str> {
+    let trimmed = argument.trim();
+    let opened = trimmed.strip_prefix('"')?;
+    let closed = opened.strip_suffix('"')?;
+    (closed.len() + 2 == trimmed.len()).then_some(closed)
+}
+
+// FILE 指令的文件名段：第一个参数须是双引号包裹的路径，
+// 其后的类型标记（WAVE / AIFF / MP3 等）按惯例忽略。
+fn file_name_argument(argument: &str) -> Option<&str> {
+    let trimmed = argument.trim();
+    let opened = trimmed.strip_prefix('"')?;
+    let closing = opened.find('"')?;
+    Some(&opened[..closing])
+}
+
+// TRACK 指令的编号段：取第一个空白分隔记号并按无符号整数解析。
+fn track_argument(argument: &str) -> Option<u32> {
+    argument.trim().split_whitespace().next()?.parse::<u32>().ok()
+}
+
+// INDEX 指令只认编号 01；编号后必须紧跟一个空格再接时间串，
+// 时间串本身允许带前后空白（保持与既有解析器相同的容错面）。
+fn index_argument(argument: &str) -> Option<&str> {
+    Some(argument.strip_prefix("01 ")?.trim())
+}
+
+// 轨道草稿：INDEX 01 尚未落地前不成立。
+struct DraftTrack {
+    ordinal: u32,
+    heading: Option<String>,
+    artist_name: Option<String>,
+    start_at: Option<u64>,
+}
+
+// mm:ss:ff → 毫秒。帧段按每秒 75 帧折算并向下取整。
+fn cue_time_to_millis(stamp: &str, origin: usize) -> Result<u64, CueParseError> {
+    let reject = || CueParseError::InvalidTimestamp {
+        line: origin,
+        raw: stamp.to_string(),
+    };
+
+    let mut sections = stamp.trim().split(':');
+    let (minutes_raw, seconds_raw, frames_raw) = match (
+        sections.next(),
+        sections.next(),
+        sections.next(),
+        sections.next(),
+    ) {
+        (Some(m), Some(s), Some(f), None) => (m, s, f),
+        _ => return Err(reject()),
+    };
+
+    let minutes: u64 = minutes_raw.parse().map_err(|_| reject())?;
+    let seconds: u64 = seconds_raw.parse().map_err(|_| reject())?;
+    let frames: u64 = frames_raw.parse().map_err(|_| reject())?;
+
+    let frame_millis = frames * 1000 / FRAMES_PER_SECOND;
+    Ok(minutes * 60_000 + seconds * 1_000 + frame_millis)
+}
+
+// 编码裁决顺序：UTF-8 优先，其次 GBK、Shift_JIS，
+// 两者都产生解码错误时退回 UTF-8 宽容模式（含韩文等字节的兜底路径）。
+fn decode_cue_bytes(raw: &[u8]) -> String {
+    if let Ok(text) = std::str::from_utf8(raw) {
+        return text.to_owned();
+    }
+
+    let candidates: [&Encoding; 2] = [encoding_rs::GBK, encoding_rs::SHIFT_JIS];
+    for codec in candidates {
+        // decode 的第三个返回值是 had_errors（true 表示存在坏序列）。
+        let (text, _, had_errors) = codec.decode(raw);
+        if !had_errors { return text.into_owned(); }
+    }
+
+    String::from_utf8_lossy(raw).into_owned()
+}
+
+// 入口：读文件字节 → 解码 → 组装。
 pub fn parse_cue_file(cue_path: &Path) -> Result<CueSheet, CueParseError> {
-    let bytes = fs::read(cue_path)?;
-    let content = decode_cue_bytes(&bytes);
-    parse_cue_content(&content, cue_path)
+    let raw = fs::read(cue_path)?;
+    let text = decode_cue_bytes(&raw);
+    assemble_cue_sheet(&text, cue_path)
 }
 
-fn parse_cue_content(content: &str, cue_path: &Path) -> Result<CueSheet, CueParseError> {
-    if content.trim().is_empty() {
-        return Err(CueParseError::EmptyFile);
-    }
+// 主折叠：把分类后的指令序列收敛成 CueSheet。
+fn assemble_cue_sheet(text: &str, cue_path: &Path) -> Result<CueSheet, CueParseError> {
+    if text.trim().is_empty() { return Err(CueParseError::EmptyFile); }
+    let base_dir = cue_path.parent().unwrap_or_else(|| Path::new("."));
 
-    let cue_dir = cue_path.parent().unwrap_or(Path::new("."));
+    let mut album_title = None;
+    let mut album_performer = None;
+    let mut referenced_file: Option<String> = None;
+    let mut drafts: Vec<DraftTrack> = Vec::new();
 
-    let mut album_title: Option<String> = None;
-    let mut album_performer: Option<String> = None;
-    let mut file_path: Option<String> = None;
-    let mut tracks: Vec<CueTrack> = Vec::new();
-    let mut current_track: Option<CueTrackBuilder> = None;
-
-    for (line_index, line) in content.lines().enumerate() {
-        let trimmed = line.trim();
-
-        if trimmed.starts_with("REM ") || trimmed.is_empty() {
-            continue;
-        }
-
-        if let Some(title) = extract_quoted(trimmed, "TITLE") {
-            if let Some(ref mut track) = current_track {
-                track.title = Some(title);
-            } else {
-                album_title = Some(title);
-            }
-            continue;
-        }
-
-        if let Some(performer) = extract_quoted(trimmed, "PERFORMER") {
-            if let Some(ref mut track) = current_track {
-                track.performer = Some(performer);
-            } else {
-                album_performer = Some(performer);
-            }
-            continue;
-        }
-
-        if let Some((file_name, _file_type)) = extract_file_directive(trimmed) {
-            file_path = Some(file_name);
-            continue;
-        }
-
-        if let Some(track_number) = extract_track_number(trimmed) {
-            if let Some(track) = current_track.take() {
-                if track.index01_start_ms.is_some() {
-                    tracks.push(track.into_cue_track());
+    for (offset, raw_line) in text.lines().enumerate() {
+        match classify_line(raw_line.trim()) {
+            CueInstruction::Skip | CueInstruction::Other => {}
+            CueInstruction::Title(value) => match drafts.last_mut() {
+                Some(draft) => draft.heading = Some(value.to_owned()),
+                None => album_title = Some(value.to_owned()),
+            },
+            CueInstruction::Performer(value) => match drafts.last_mut() {
+                Some(draft) => draft.artist_name = Some(value.to_owned()),
+                None => album_performer = Some(value.to_owned()),
+            },
+            CueInstruction::File(value) => referenced_file = Some(value.to_owned()),
+            CueInstruction::Track(number) => drafts.push(DraftTrack {
+                ordinal: number,
+                heading: None, artist_name: None, start_at: None,
+            }),
+            CueInstruction::Index01(stamp) => {
+                if let Some(draft) = drafts.last_mut() {
+                    draft.start_at = Some(cue_time_to_millis(stamp, offset + 1)?);
                 }
             }
-            current_track = Some(CueTrackBuilder {
-                track_number,
-                title: None,
-                performer: None,
-                index01_start_ms: None,
-            });
-            continue;
-        }
-
-        if let Some(index01_raw) = extract_index01(trimmed) {
-            if let Some(ref mut track) = current_track {
-                track.index01_start_ms = Some(parse_cue_timestamp(&index01_raw, line_index + 1)?);
-            }
         }
     }
 
-    if let Some(track) = current_track.take() {
-        if track.index01_start_ms.is_some() {
-            tracks.push(track.into_cue_track());
-        }
-    }
+    // 没等到 INDEX 01 的轨道不成立：一条 INDEX 就是一座桥，
+    // 没过桥的草稿连同它收到的字段一起丢弃。
+    drafts.retain(|draft| draft.start_at.is_some());
+    if drafts.is_empty() { return Err(CueParseError::NoTracks); }
 
-    if tracks.is_empty() {
-        return Err(CueParseError::NoTracks);
-    }
+    let referenced_file = referenced_file.ok_or(CueParseError::MissingFileDirective)?;
+    let resolved_audio_path = locate_referenced_audio(&referenced_file, base_dir)?;
 
-    let file_path = file_path.ok_or(CueParseError::MissingFileDirective)?;
-    let resolved_audio_path = resolve_audio_path(&file_path, cue_dir)?;
+    let mut tracks: Vec<CueTrack> = drafts
+        .into_iter()
+        .map(|draft| CueTrack {
+            track_number: draft.ordinal,
+            title: draft.heading,
+            performer: draft.artist_name,
+            index01_start_ms: draft.start_at.unwrap_or(0),
+            end_ms: None,
+        })
+        .collect();
 
-    for i in 0..tracks.len() {
-        if i + 1 < tracks.len() {
-            tracks[i].end_ms = Some(tracks[i + 1].index01_start_ms);
-        }
+    // 相邻音轨首尾相接：前一条的结束即后一条的起始，末轨保持开放。
+    let last_index = tracks.len().saturating_sub(1);
+    for index in 0..last_index {
+        let next_start = tracks[index + 1].index01_start_ms;
+        tracks[index].end_ms = Some(next_start);
     }
 
     Ok(CueSheet {
-        album_title,
-        album_performer,
-        file_path,
-        resolved_audio_path,
-        tracks,
+        album_title, album_performer,
+        file_path: referenced_file, resolved_audio_path, tracks,
     })
 }
 
-fn resolve_audio_path(file_path: &str, cue_dir: &Path) -> Result<PathBuf, CueParseError> {
-    let candidate = if Path::new(file_path).is_absolute() {
-        PathBuf::from(file_path)
-    } else {
-        cue_dir.join(file_path)
-    };
+// 统一经全局路径归一化，保证入库口径与缓存键一致。
+fn normalized_audio_path(path: PathBuf) -> PathBuf {
+    crate::music::utils::normalize_path(&path.to_string_lossy()).into()
+}
 
-    if candidate.exists() {
-        return Ok(crate::music::utils::normalize_path(&candidate.to_string_lossy()).into());
+// 音频文件定位：先按 CUE 内写法原样尝试（相对路径基于 CUE 所在目录），
+// 落空后退化为同目录下大小写不敏感的逐项比对，仍找不到才报缺失。
+fn locate_referenced_audio(reference: &str, cue_dir: &Path) -> Result<PathBuf, CueParseError> {
+    let direct = if Path::new(reference).is_absolute() { PathBuf::from(reference) } else { cue_dir.join(reference) };
+
+    if direct.exists() {
+        return Ok(normalized_audio_path(direct));
     }
 
-    if let Some(parent) = candidate.parent() {
-        if let Ok(entries) = fs::read_dir(parent) {
-            let file_name_lower = candidate
-                .file_name()
-                .map(|n| n.to_string_lossy().to_lowercase())
-                .unwrap_or_default();
-            for entry in entries.flatten() {
-                if entry.file_name().to_string_lossy().to_lowercase() == file_name_lower {
-                    let found = entry.path();
-                    if found.is_file() {
-                        return Ok(
-                            crate::music::utils::normalize_path(&found.to_string_lossy()).into(),
-                        );
-                    }
-                }
+    let wanted = direct.file_name().map(|name| name.to_string_lossy().to_lowercase());
+    if let (Some(parent), Some(wanted)) = (direct.parent(), wanted) {
+        let Ok(listing) = fs::read_dir(parent) else {
+            return Err(CueParseError::AudioFileNotFound(reference.to_string()));
+        };
+        for probe in listing.flatten() {
+            let candidate = probe.path();
+            let hit = candidate.file_name()
+                .map(|name| name.to_string_lossy().to_lowercase() == wanted)
+                .unwrap_or(false);
+            if hit && candidate.is_file() {
+                return Ok(normalized_audio_path(candidate));
             }
         }
     }
 
-    Err(CueParseError::AudioFileNotFound(file_path.to_string()))
+    Err(CueParseError::AudioFileNotFound(reference.to_string()))
 }
 
-struct CueTrackBuilder {
-    track_number: u32,
-    title: Option<String>,
-    performer: Option<String>,
-    index01_start_ms: Option<u64>,
-}
+#[cfg(test)] mod cue_tests {
+    use std::path::Path;
+    use super::{assemble_cue_sheet, cue_time_to_millis, decode_cue_bytes, parse_cue_file, CueParseError};
 
-impl CueTrackBuilder {
-    fn into_cue_track(self) -> CueTrack {
-        CueTrack {
-            track_number: self.track_number,
-            title: self.title,
-            performer: self.performer,
-            index01_start_ms: self.index01_start_ms.unwrap_or(0),
-            end_ms: None,
-        }
-    }
-}
-
-fn extract_quoted(line: &str, keyword: &str) -> Option<String> {
-    let prefix = format!("{} ", keyword);
-    if !line.starts_with(&prefix) {
-        return None;
-    }
-    let remainder = line[prefix.len()..].trim();
-    if remainder.starts_with('"') && remainder.ends_with('"') && remainder.len() >= 2 {
-        return Some(remainder[1..remainder.len() - 1].to_string());
-    }
-    None
-}
-
-fn extract_file_directive(line: &str) -> Option<(String, String)> {
-    let prefix = "FILE ";
-    if !line.starts_with(prefix) {
-        return None;
-    }
-    let remainder = line[prefix.len()..].trim();
-    if let Some(end_quote) = remainder[1..].find('"') {
-        let file_name = remainder[1..end_quote + 1].to_string();
-        let rest = remainder[end_quote + 2..].trim().to_string();
-        return Some((file_name, rest));
-    }
-    None
-}
-
-fn extract_track_number(line: &str) -> Option<u32> {
-    let prefix = "TRACK ";
-    if !line.starts_with(prefix) {
-        return None;
-    }
-    line[prefix.len()..]
-        .trim()
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()
-}
-
-fn extract_index01(line: &str) -> Option<String> {
-    let prefix = "INDEX 01 ";
-    if !line.starts_with(prefix) {
-        return None;
-    }
-    Some(line[prefix.len()..].trim().to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_timestamp_zero() {
-        assert_eq!(parse_cue_timestamp("00:00:00", 1).unwrap(), 0);
+    #[test] fn zero_frame_stamp_is_zero_ms() {
+        assert_eq!(cue_time_to_millis("00:00:00", 1).unwrap(), 0);
     }
 
-    #[test]
-    fn parse_timestamp_typical() {
-        let ms = parse_cue_timestamp("04:52:60", 1).unwrap();
-        assert_eq!(ms, 240000 + 52000 + 800);
+    #[test] fn frame_part_folds_into_millis() {
+        let stamp = cue_time_to_millis("04:52:60", 1).unwrap();
+        assert_eq!(stamp, 240000 + 52000 + 800);
     }
 
-    #[test]
-    fn parse_timestamp_invalid() {
-        assert!(parse_cue_timestamp("abc", 1).is_err());
-        assert!(parse_cue_timestamp("1:2", 1).is_err());
+    #[test] fn malformed_stamps_are_rejected() {
+        assert!(cue_time_to_millis("abc", 1).is_err());
+        assert!(cue_time_to_millis("1:2", 1).is_err());
     }
 
-    #[test]
-    fn parse_minimal_cue() {
-        let content = concat!(
-            "TITLE \"Test Album\"\n",
+    #[test] fn sheet_without_matching_audio_reports_missing_file() {
+        let content = concat!("TITLE \"Test Album\"\n",
             "FILE \"test.flac\" WAVE\n",
             "  TRACK 01 AUDIO\n",
             "    TITLE \"Song One\"\n",
@@ -314,15 +285,12 @@ mod tests {
             "    TITLE \"Song Two\"\n",
             "    INDEX 01 03:30:00\n",
         );
-        let cue_dir = Path::new(".");
-        let result = parse_cue_content(content, cue_dir);
+        let result = assemble_cue_sheet(content, Path::new("."));
         assert!(matches!(result, Err(CueParseError::AudioFileNotFound(_))));
     }
 
-    #[test]
-    fn extract_timestamps_from_cue() {
-        let content = concat!(
-            "TITLE \"Album\"\n",
+    #[test] fn three_track_sheet_chains_end_times() {
+        let content = concat!("TITLE \"Album\"\n",
             "FILE \"test.flac\" WAVE\n",
             "  TRACK 01 AUDIO\n",
             "    INDEX 01 00:00:00\n",
@@ -331,25 +299,26 @@ mod tests {
             "  TRACK 03 AUDIO\n",
             "    INDEX 01 08:48:20\n",
         );
-        let tmp = std::env::temp_dir();
-        std::fs::write(tmp.join("test.flac"), b"fake").ok();
-        let cue_path = tmp.join("test.cue");
-        std::fs::write(&cue_path, content).ok();
-        if let Ok(sheet) = parse_cue_file(&cue_path) {
-            assert_eq!(sheet.tracks.len(), 3);
-            assert_eq!(sheet.tracks[0].index01_start_ms, 0);
-            assert_eq!(sheet.tracks[0].end_ms, Some(292800));
-            assert_eq!(sheet.tracks[1].index01_start_ms, 292800);
-            assert_eq!(sheet.tracks[2].end_ms, None);
-        }
+        let scratch = std::env::temp_dir();
+        std::fs::write(scratch.join("test.flac"), b"fake").ok();
+        let cue_path = scratch.join("test.cue");
+        let _ = std::fs::write(&cue_path, content);
+        let sheet = match parse_cue_file(&cue_path) {
+            Ok(sheet) => sheet,
+            Err(_) => return,
+        };
+        assert_eq!(sheet.tracks.len(), 3);
+        assert_eq!(sheet.tracks[0].index01_start_ms, 0);
+        assert_eq!(sheet.tracks[0].end_ms, Some(292800));
+        assert_eq!(sheet.tracks[1].index01_start_ms, 292800);
+        assert_eq!(sheet.tracks[2].end_ms, None);
     }
 
-    #[test]
-    fn decode_gbk_cue() {
-        let gbk_bytes: &[u8] = &[
+    #[test] fn gbk_payload_survives_decoding() {
+        let gbk_payload: &[u8] = &[
             0x54, 0x49, 0x54, 0x4c, 0x45, 0x20, 0x22, 0xc0, 0xc7, 0x22, 0x0a,
         ];
-        let decoded = decode_cue_bytes(gbk_bytes);
+        let decoded = decode_cue_bytes(gbk_payload);
         assert!(decoded.contains("狼"));
     }
 }

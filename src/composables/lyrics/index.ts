@@ -1,3 +1,7 @@
+/**
+ * 歌词子系统的统一出口。
+ */
+
 export * from './types';
 export * from './constants';
 export * from './fontUtils';

@@ -225,6 +225,10 @@ pub struct StreamingTempFileState {
     pub cenc_metadata: Arc<std::sync::Mutex<Option<crate::player::cenc::CencMetadata>>>,
     pub cenc_streaming: Arc<AtomicBool>,
     pub download_error: Arc<std::sync::Mutex<Option<String>>>,
+    /// 共享总长槽位（字节，0 = 未知）：下载线程拿到 Content-Length 后实时回填。
+    /// `total_bytes` 是 Clone 时刻快照（start_streaming_download 返回时必然 None），
+    /// symphonia FLAC/MP3 demuxer 的 seek 依赖 `MediaSource::byte_len()`，必须实时可读。
+    pub content_length_shared: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for StreamingTempFileState {
@@ -324,6 +328,17 @@ impl StreamingTempFileState {
     pub fn download_error(&self) -> Option<String> {
         self.download_error.lock().ok().and_then(|e| e.clone())
     }
+
+    /// 共享总长（字节）：下载线程回填 Content-Length 后实时可读，未知返回 None。
+    /// symphonia FLAC/MP3 demuxer 的 seek 依赖 MediaSource::byte_len() 提供二分上界。
+    pub fn shared_total_bytes(&self) -> Option<u64> {
+        let v = self.content_length_shared.load(Ordering::Relaxed);
+        if v == 0 {
+            None
+        } else {
+            Some(v)
+        }
+    }
 }
 
 struct CacheEntry {
@@ -333,6 +348,9 @@ struct CacheEntry {
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
     download_failed: Arc<AtomicBool>,
+    /// 共享总长槽位（字节，0 = 未知）：下载线程回填，state/reader 实时读。
+    /// 同一 URL 的 start_streaming_download 复用路径必须拿到同一线程写的槽。
+    content_length_shared: Arc<AtomicU64>,
     _download_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -419,6 +437,7 @@ impl StreamCacheManager {
                     downloaded_bytes: Arc::new(AtomicU64::new(size)),
                     download_complete: Arc::new(AtomicBool::new(true)),
                     download_failed: Arc::new(AtomicBool::new(false)),
+                    content_length_shared: Arc::new(AtomicU64::new(size)),
                     _download_handle: None,
                 },
             );
@@ -569,6 +588,7 @@ fn start_streaming_download_inner(
                     cenc_metadata: Arc::new(std::sync::Mutex::new(None)),
                     cenc_streaming: Arc::new(AtomicBool::new(false)),
                     download_error: Arc::new(std::sync::Mutex::new(None)),
+                    content_length_shared: entry.content_length_shared.clone(),
                 });
             }
         } else {
@@ -584,6 +604,7 @@ fn start_streaming_download_inner(
                 cenc_metadata: Arc::new(std::sync::Mutex::new(None)),
                 cenc_streaming: Arc::new(AtomicBool::new(false)),
                 download_error: Arc::new(std::sync::Mutex::new(None)),
+                content_length_shared: entry.content_length_shared.clone(),
             });
         }
     }
@@ -608,6 +629,7 @@ fn start_streaming_download_inner(
         Arc::new(std::sync::Mutex::new(None));
     let cenc_metadata = Arc::new(std::sync::Mutex::new(None));
     let cenc_streaming = Arc::new(AtomicBool::new(false));
+    let content_length_shared = Arc::new(AtomicU64::new(0));
 
     let mut resume_from: u64 = 0;
     if let Some(head) = crate::player::audio_head_cache::lookup_for_inject(url) {
@@ -636,6 +658,7 @@ fn start_streaming_download_inner(
     let dl_error = download_error.clone();
     let dl_cenc_metadata = cenc_metadata.clone();
     let dl_cenc_streaming = cenc_streaming.clone();
+    let dl_content_length = content_length_shared.clone();
     let panic_failed = download_failed.clone();
     let panic_error = download_error.clone();
 
@@ -657,6 +680,7 @@ fn start_streaming_download_inner(
                 dl_error,
                 dl_cenc_metadata,
                 dl_cenc_streaming,
+                dl_content_length,
                 allow_video,
             );
         }))
@@ -679,6 +703,7 @@ fn start_streaming_download_inner(
             downloaded_bytes: downloaded_bytes.clone(),
             download_complete: download_complete.clone(),
             download_failed: download_failed.clone(),
+            content_length_shared: content_length_shared.clone(),
             _download_handle: Some(handle),
         },
     );
@@ -696,6 +721,7 @@ fn start_streaming_download_inner(
         cenc_metadata,
         cenc_streaming,
         download_error,
+        content_length_shared,
     })
 }
 
@@ -1229,6 +1255,7 @@ fn download_thread(
     download_error: Arc<std::sync::Mutex<Option<String>>>,
     cenc_metadata: Arc<std::sync::Mutex<Option<crate::player::cenc::CencMetadata>>>,
     cenc_streaming: Arc<AtomicBool>,
+    content_length_shared: Arc<AtomicU64>,
     allow_video: bool,
 ) {
     let fail_download = |reason: &str, bytes_written: u64| {
@@ -1406,6 +1433,12 @@ fn download_thread(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
 
+    // 回填共享总长槽：symphonia FLAC/MP3 demuxer 的 seek 依赖 MediaSource::byte_len()，
+    // 须在下载中（起播后控制点/用户 seek 时）即实时可读。
+    if let Some(total) = total_bytes {
+        content_length_shared.store(total, Ordering::Relaxed);
+    }
+
     let mut file = match OpenOptions::new().write(true).open(&path) {
         Ok(f) => f,
         Err(e) => {
@@ -1423,6 +1456,7 @@ fn download_thread(
             {
                 if let Some(t) = cr.rsplit('/').next().and_then(|s| s.parse::<u64>().ok()) {
                     total_bytes = Some(t);
+                    content_length_shared.store(t, Ordering::Relaxed);
                 }
             }
             if file.seek(SeekFrom::Start(resume_from)).is_err() {

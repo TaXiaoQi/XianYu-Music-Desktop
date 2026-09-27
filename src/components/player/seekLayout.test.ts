@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { getPlaybackSeekSecondsForAmlLine, syncAmlLyricSeekLayout } from './amllSeekLayout';
+import { getPlaybackSeekSecondsForLyricLine, syncWordLyricSeekLayout } from './seekLayout';
 
-describe('syncAmlLyricSeekLayout', () => {
-  it('resets manual scroll and seeks AMLL layout synchronously', () => {
+describe('syncWordLyricSeekLayout', () => {
+  it('resets manual scroll and applies the seek layout synchronously', () => {
     const calls: string[] = [];
     const player = {
       resetScroll: vi.fn(() => calls.push('resetScroll')),
@@ -17,7 +17,7 @@ describe('syncAmlLyricSeekLayout', () => {
       update: vi.fn((_delta?: number) => calls.push('update')),
     };
 
-    syncAmlLyricSeekLayout(player, 12345.9, 7);
+    syncWordLyricSeekLayout(player, 12345.9, 7);
 
     expect(player.suspendScrollForSeek).toHaveBeenCalledOnce();
     expect(player.resetScroll).toHaveBeenCalledOnce();
@@ -34,14 +34,26 @@ describe('syncAmlLyricSeekLayout', () => {
       'update',
     ]);
   });
+
+  it('still works when the renderer has no optional scroll hooks', () => {
+    const setCurrentTime = vi.fn();
+    syncWordLyricSeekLayout({
+      resetScroll: vi.fn(),
+      setCurrentTime,
+      calcLayout: vi.fn(),
+      update: vi.fn(),
+    }, -50);
+
+    expect(setCurrentTime).toHaveBeenCalledWith(0, true);
+  });
 });
 
-describe('getPlaybackSeekSecondsForAmlLine', () => {
-  it('adds lyrics audio delay to the clicked AMLL line time', () => {
-    expect(getPlaybackSeekSecondsForAmlLine(12345, 0.25)).toBe(12.595);
+describe('getPlaybackSeekSecondsForLyricLine', () => {
+  it('adds lyrics audio delay to the clicked line time', () => {
+    expect(getPlaybackSeekSecondsForLyricLine(12345, 0.25)).toBe(12.595);
   });
 
   it('clamps negative seek targets to zero', () => {
-    expect(getPlaybackSeekSecondsForAmlLine(100, -1)).toBe(0);
+    expect(getPlaybackSeekSecondsForLyricLine(100, -1)).toBe(0);
   });
 });

@@ -2,7 +2,7 @@ import type { Component } from 'vue';
 
 let preloadPromise: Promise<Component> | null = null;
 
-export const loadAmlLyricPlayer = () => import('./AmlLyricPlayer.vue');
+export const loadAmlLyricPlayer = () => import('./WordLyricPlayer.vue');
 
 export const preloadAmlLyricPlayer = () => {
   if (!preloadPromise) {

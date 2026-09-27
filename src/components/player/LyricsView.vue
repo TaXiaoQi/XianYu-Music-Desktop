@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import type { LyricLine as AmlLyricLine, LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
 import {
   convertLyricsToAmlLines,
   DEFAULT_PLAYER_ALIGNMENT,
@@ -27,6 +26,7 @@ import {
   loadSystemLyricsFonts,
   normalizeLyricsFontPreset,
   systemLyricsFontOptions,
+  type AmlPlayerLine,
   type LyricsFontPreset,
   type LyricsPlayerAlignment,
   useLyrics,
@@ -35,15 +35,16 @@ import { usePlayer } from '../../features/playback';
 import { useSettingsStore } from '../../features/settings/store';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
-const AmlLyricPlayer = defineAsyncComponent({
-  loader: () => import('./AmlLyricPlayer.vue'),
-  loadingComponent: () => h('div', { class: 'amll-loading-placeholder' }),
+const WordLyricPlayer = defineAsyncComponent({
+  loader: () => import('./WordLyricPlayer.vue'),
+  loadingComponent: () => h('div', { class: 'word-lyric-loading-placeholder' }),
   errorComponent: () =>
-    h('div', { class: 'amll-load-error' }, '歌词组件加载失败，请刷新'),
+    h('div', { class: 'word-lyric-load-error' }, '歌词组件加载失败，请刷新'),
   delay: 0,
   timeout: 10000,
 });
-import { getPlaybackSeekSecondsForAmlLine } from './amllSeekLayout';
+import { getPlaybackSeekSecondsForLyricLine } from './seekLayout';
+import type { WordLyricLineClickEvent } from './WordLyricPlayer';
 import RangeSlider from '../common/RangeSlider.vue';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
@@ -78,10 +79,10 @@ const PLAYER_ALIGNMENT_OPTIONS: Array<{ value: LyricsPlayerAlignment; label: str
 const fontPanelRef = ref<HTMLElement | null>(null);
 const fontPresetTriggerRef = ref<HTMLElement | null>(null);
 const fontPresetMenuRef = ref<HTMLElement | null>(null);
-interface AmlLyricPlayerInstance {
+interface WordLyricPlayerInstance {
   syncSeekLayout: (timeMs: number, lineIndex?: number) => void;
 }
-const amlPlayerRef = ref<AmlLyricPlayerInstance | null>(null);
+const wordPlayerRef = ref<WordLyricPlayerInstance | null>(null);
 const isFontPresetMenuOpen = ref(false);
 const fontPresetMenuStyle = ref<Record<string, string>>({});
 const fontPresetMenuTarget = ref<'unified' | 'cjk' | 'latin'>('unified');
@@ -104,7 +105,7 @@ function updateFontPanelPosition() {
   fontPanelDynamicStyle.value = getLyricsStylePanelPosition(containerRect, window.innerWidth);
 }
 
-const amllLines = computed<AmlLyricLine[]>(() => {
+const playerLines = computed<AmlPlayerLine[]>(() => {
   return convertLyricsToAmlLines(
     parsedLyrics.value,
     lyricsSettings.showTranslation,
@@ -113,11 +114,11 @@ const amllLines = computed<AmlLyricLine[]>(() => {
   );
 });
 
-const amllCurrentTime = computed(() => {
+const lyricTimeMs = computed(() => {
   return Math.max(0, Math.floor((currentTime.value - audioDelay.value) * 1000));
 });
 
-const shouldMountAmlPlayer = computed(() => amllLines.value.length > 0 && !props.disabled);
+const shouldMountWordPlayer = computed(() => playerLines.value.length > 0 && !props.disabled);
 
 const emptyStateText = computed(() => {
   if (lyricsStatus.value === 'loading') return 'Loading lyrics...';
@@ -499,11 +500,11 @@ function closeTransientPanels() {
   fontPanelDynamicStyle.value = {};
 }
 
-async function handleLineClick(event: LyricLineMouseEvent) {
-  const lineStartTimeMs = event.line.getLine().startTime;
-  amlPlayerRef.value?.syncSeekLayout(lineStartTimeMs, event.lineIndex);
+async function handleLineClick(event: WordLyricLineClickEvent) {
+  const lineStartTimeMs = event.line.startTime;
+  wordPlayerRef.value?.syncSeekLayout(lineStartTimeMs, event.lineIndex);
 
-  const targetSeconds = getPlaybackSeekSecondsForAmlLine(lineStartTimeMs, audioDelay.value);
+  const targetSeconds = getPlaybackSeekSecondsForLyricLine(lineStartTimeMs, audioDelay.value);
   const wasPaused = !isPlaying.value;
   await seekTo(targetSeconds);
 
@@ -552,7 +553,7 @@ watch(() => props.coverHidden, async () => {
 <template>
   <div class="group/lyrics-view relative h-full min-h-0 w-full min-w-0">
     <div
-      v-show="showLyricsPlayerSettingsPanel || amllLines.length > 0"
+      v-show="showLyricsPlayerSettingsPanel || playerLines.length > 0"
       ref="fontPanelRef"
       class="pointer-events-none absolute right-[100%] top-2 bottom-12 z-[85] flex min-h-0 min-w-[260px] max-w-[320px] flex-col justify-center"
       :style="fontPanelStyle"
@@ -1074,18 +1075,18 @@ watch(() => props.coverHidden, async () => {
     </div>
 
     <div
-      v-if="amllLines.length > 0"
+      v-if="playerLines.length > 0"
       class="lyrics-mask-shell h-full min-h-0 w-full min-w-0"
       :class="lyricsAlignmentClass"
       :style="lyricsPlayerStyle"
     >
       <div class="lyrics-position-frame h-full min-h-0 w-full min-w-0">
-        <AmlLyricPlayer
-          v-if="shouldMountAmlPlayer"
-          ref="amlPlayerRef"
-          class="amll-host h-full min-h-0 w-full min-w-0"
-          :lyric-lines="amllLines"
-          :current-time="amllCurrentTime"
+        <WordLyricPlayer
+          v-if="shouldMountWordPlayer"
+          ref="wordPlayerRef"
+          class="word-lyric-host h-full min-h-0 w-full min-w-0"
+          :lyric-lines="playerLines"
+          :current-time="lyricTimeMs"
           :playing="isPlaying"
           :disabled="disabled"
           :layout-version="lyricsSettings.playerFontPreset"
@@ -1195,7 +1196,7 @@ watch(() => props.coverHidden, async () => {
   mask-size: 100% 100%;
 }
 
-.amll-host {
+.word-lyric-host {
   min-width: 0;
   min-height: 0;
 }
@@ -1204,45 +1205,6 @@ watch(() => props.coverHidden, async () => {
   transform: translate3d(var(--lyrics-offset-x, 0%), var(--lyrics-offset-y, 0%), 0);
   transition: transform 180ms ease;
   will-change: transform;
-}
-
-.amll-host :deep(.amll-lyric-player) {
-  --amll-lp-color: rgba(255, 255, 255, 0.95);
-  --amll-lp-bg-color: transparent;
-  --amll-lp-font-size: calc(max(max(5vh, 2.5vw), 12px) * var(--lyrics-font-scale, 1));
-  overflow: visible !important;
-  contain: none !important;
-  font-family: var(--lyrics-font-family, system-ui, sans-serif);
-}
-
-.amll-host :deep(.amll-lyric-player [class*="_lyricLine_"]) {
-  text-align: var(--lyrics-text-align, left);
-  transform-origin: var(--lyrics-line-transform-origin, 0%) center !important;
-  display: flex;
-  flex-direction: column;
-}
-
-.amll-host :deep(.amll-lyric-player [class*="_lyricMainLine_"]) {
-  contain: none !important;
-  overflow: visible !important;
-}
-
-.lyrics-align-right :deep(.amll-lyric-player [class*="_lyricLine_"]) {
-  right: 0;
-  left: auto;
-}
-
-.amll-host :deep(.amll-lyric-player [class*="_lyricLine_"] > :nth-child(2)) {
-  order: 2;
-}
-
-.amll-host :deep(.amll-lyric-player [class*="_lyricLine_"] > :nth-child(3)) {
-  order: 1;
-}
-
-.amll-host :deep(.amll-lyric-player[class*="_hasDuetLine_"] [class*="_lyricLine_"]) {
-  padding-left: 1em;
-  padding-right: 1em;
 }
 
 .lyrics-align-left {
@@ -1258,12 +1220,6 @@ watch(() => props.coverHidden, async () => {
 .lyrics-align-right {
   --lyrics-text-align: right;
   --lyrics-line-transform-origin: 100%;
-}
-
-@media screen and (max-width: 768px) {
-  .amll-host :deep(.amll-lyric-player) {
-    --amll-lp-font-size: calc(max(8vw, 12px) * var(--lyrics-font-scale, 1));
-  }
 }
 
 .font-panel-enter-active,

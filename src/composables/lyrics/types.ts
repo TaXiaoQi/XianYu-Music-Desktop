@@ -1,3 +1,10 @@
+/**
+ * 歌词子系统数据模型契约。
+ *
+ * 本文件是对外 API 的一部分：除文末新增的内部 AML 行类型外，
+ * 所有导出的 interface / type 名称与字段形状均需保持稳定。
+ */
+
 import type {
   DesktopLyricsSettings,
   DesktopLyricsPlayerAlignment,
@@ -20,6 +27,15 @@ export type {
   LyricsSettings,
 };
 
+/* ==================== 展示层模型 ==================== */
+
+export interface LyricWord {
+  text: string;
+  start: number;
+  end: number;
+  romaji?: string;
+}
+
 export interface LyricLine {
   time: number;
   endTime: number;
@@ -35,20 +51,6 @@ export interface LyricLine {
   isDuetPartner: boolean;
 }
 
-export interface LyricsPayload {
-  rawLyrics: string;
-  document?: LyricDocument;
-  semanticLines: SemanticLine[];
-  displayLines: LyricLine[];
-}
-
-export interface LyricWord {
-  text: string;
-  start: number;
-  end: number;
-  romaji?: string;
-}
-
 export interface CurrentLyricDisplayLine {
   kind: 'main' | 'romaji' | 'translation';
   text: string;
@@ -61,7 +63,31 @@ export interface CurrentLyricDisplayState {
   displayLines: CurrentLyricDisplayLine[];
 }
 
+export interface DisplayFragment {
+  text: string;
+  startMs?: number;
+  endMs?: number;
+}
+
+export interface RenderLine {
+  startMs: number;
+  endMs: number;
+  main: DisplayFragment[];
+  translation?: DisplayFragment[];
+  roman?: DisplayFragment[];
+  secondary?: DisplayFragment[];
+}
+
 export type LyricsStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error';
+
+export interface LyricsPayload {
+  rawLyrics: string;
+  document?: LyricDocument;
+  semanticLines: SemanticLine[];
+  displayLines: LyricLine[];
+}
+
+/* ==================== 解析层模型 ==================== */
 
 export type ParsedLineSourceFormat =
   | 'lrc'
@@ -92,6 +118,8 @@ export interface ParsedLine {
   sourceIndex: number;
   explicitRole?: ExplicitLineRole;
 }
+
+/* ==================== 轨道划分与语义行 ==================== */
 
 export type ClassificationConfidence = 'explicit' | 'parser-native' | 'heuristic';
 
@@ -179,20 +207,15 @@ export interface SemanticLine {
   isDuetPartner: boolean;
 }
 
-export interface DisplayFragment {
-  text: string;
-  startMs?: number;
-  endMs?: number;
+export interface ClassifiedGroupResult {
+  main: ParsedLine;
+  translationLine: ParsedLine | null;
+  romajiLine: ParsedLine | null;
+  secondaryLines: ParsedLine[];
+  confidence: ClassificationConfidence;
 }
 
-export interface RenderLine {
-  startMs: number;
-  endMs: number;
-  main: DisplayFragment[];
-  translation?: DisplayFragment[];
-  roman?: DisplayFragment[];
-  secondary?: DisplayFragment[];
-}
+/* ==================== 文字类型分析 ==================== */
 
 export type DominantScript = 'latin' | 'han' | 'kana' | 'hangul' | 'mixed' | 'other';
 
@@ -204,10 +227,55 @@ export interface LineScriptProfile {
   dominantScript: DominantScript;
 }
 
-export interface ClassifiedGroupResult {
-  main: ParsedLine;
-  translationLine: ParsedLine | null;
-  romajiLine: ParsedLine | null;
-  secondaryLines: ParsedLine[];
-  confidence: ClassificationConfidence;
+/* ==================== 内部 AML 行类型（替代上游 wasm / core 类型） ==================== */
+
+/** 解析器内部使用的词级条目；字段允许缺省以兼容各格式产出的中间形态。 */
+export interface AmlLyricWord {
+  startTime: number;
+  endTime: number;
+  word: string;
+  romanWord?: string;
+}
+
+/** 独立的罗马音时间轴条目（播放器端 ruby 渲染用）。 */
+export interface AmlRomajiWord {
+  text: string;
+  startTime: number;
+  endTime: number;
+}
+
+/** 各格式解析器的统一中间行表示。 */
+export interface AmlLyricLine {
+  words: AmlLyricWord[];
+  translatedLyric?: string;
+  romanLyric?: string;
+  isBG?: boolean;
+  isDuet?: boolean;
+  startTime?: number;
+  endTime?: number;
+  romajiWords?: AmlRomajiWord[];
+}
+
+/**
+ * 播放器（逐字动画组件）最终消费的行结构：字段全部必填，
+ * 与 @applemusic-like-lyrics/core 的 LyricLine 保持结构兼容，
+ * 额外携带 romajiWords 时间轴。
+ */
+export interface AmlPlayerWord {
+  startTime: number;
+  endTime: number;
+  word: string;
+  romanWord: string;
+  obscene: boolean;
+}
+
+export interface AmlPlayerLine {
+  words: AmlPlayerWord[];
+  translatedLyric: string;
+  romanLyric: string;
+  startTime: number;
+  endTime: number;
+  isBG: boolean;
+  isDuet: boolean;
+  romajiWords?: AmlRomajiWord[];
 }

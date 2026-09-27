@@ -1,9 +1,14 @@
-import type {
-  LyricLine as AmlLyricLine,
-  LyricWord as AmlLyricWord,
-} from '@applemusic-like-lyrics/lyric/pkg/amll_lyric.js';
+/**
+ * 歌词解析入口：同一段源文本会按多种格式逐个尝试，
+ * 再依据"是否词级、内容得分、格式优先级"挑出最优候选。
+ *
+ * 各格式的底层解析在 formats/ 下完成，本层只负责
+ * 文本清洗、增强 LRC 的相对偏移修正、候选评测与结果装配。
+ */
 
 import type {
+  AmlLyricLine,
+  AmlLyricWord,
   ExplicitLineRole,
   ParsedLine,
   ParsedLineSourceFormat,
@@ -11,162 +16,155 @@ import type {
 } from './types';
 
 import { convertLxLyricToEnhancedLrc } from '../../services/domain/lxLyricsBuilder';
+import {
+  parseEslrcLines,
+  parseLrcLines,
+  parseLysLines,
+  parseTtmlLines,
+  parseYrcLines,
+} from './formats';
+import { decryptQrcHex, parseQrcLines } from './formats/qrc';
 
-const TIMESTAMP_BLOCK_PATTERN = /\[(\d+:\d{2}(?:\.\d+)?)]/g;
-const ADJACENT_TIMESTAMPS_BEFORE_TEXT_PATTERN = /(?:\[\d+:\d{2}(?:\.\d+)?])+(?=[^[\]\r\n])/g;
-const ESLRC_GAP_PLACEHOLDER = '\u2063';
-const ENHANCED_TIMESTAMP_PATTERN = /<(\d+:\d{2}(?:\.\d+)?)>/g;
-const ENHANCED_TIMESTAMP_TEXT_PATTERN = /<\d+:\d{2}(?:\.\d+)?>/;
-const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d+:\d{2}(?:\.\d+)?)](.*)$/;
-const ENHANCED_EMPTY_BACKWARD_TOLERANCE_MS = 5;
-const ENHANCED_TRAILING_WORD_DURATION_MS = 400;
+export { convertLxLyricToEnhancedLrc };
 
-type ParserSource = ParsedLineSourceFormat;
+// ==================== 文本清洗 ====================
 
-interface ParserCandidate {
-  source: ParserSource;
-  lines: AmlLyricLine[];
-}
-
-const PARSER_PRIORITIES: Record<ParserSource, number> = {
-  enhanced_lrc: 6,
-  ttml: 5,
-  yrc: 4,
-  qrc: 3,
-  lys: 2,
-  eslrc: 1,
-  lrc: 0,
-};
-
-const EXPLICIT_LINE_MARKERS: Array<{
-  role: ExplicitLineRole;
-  pattern: RegExp;
-}> = [
-  {
-    role: 'translation',
-    pattern: /^(?:\[(?:tr|trans|translation)\]|【(?:翻译|译文)】|(?:翻译|译文)[:：]\s*)/iu,
-  },
-  {
-    role: 'roman',
-    pattern: /^(?:\[(?:roma|romaji|roman)\]|【(?:罗马音|罗马字|音译)】|(?:罗马音|罗马字|音译)[:：]\s*)/iu,
-  },
-];
-
-let amlModule: typeof import('@applemusic-like-lyrics/lyric/pkg/amll_lyric.js') | null = null;
-
-async function getAmlModule() {
-  if (!amlModule) {
-    amlModule = await import('@applemusic-like-lyrics/lyric/pkg/amll_lyric.js');
-  }
-  return amlModule;
-}
-
+/** 去掉零宽字符与首尾的 "//" 式分隔符残留。 */
 export function sanitizeLineText(text: string): string {
-  const cleaned = text.replace(/\u200b/g, '').trim();
-  return cleaned
+  const withoutZeroWidth = text.replace(/\u200b/g, '');
+  return withoutZeroWidth
     .replace(/^\s*\/[/\\\s]+\s*/, '')
     .replace(/\s*\/[/\\\s]+$/, '')
     .trim();
 }
 
+/** 词级文本只关心零宽字符本身。 */
 export function sanitizeWordText(text: string): string {
   return text.replace(/[\u200b\u2063]/g, '');
 }
 
-export function normalizeEslrcSource(source: string): string {
-  return source.replace(ADJACENT_TIMESTAMPS_BEFORE_TEXT_PATTERN, (match) => {
-    const timestamps = [...match.matchAll(TIMESTAMP_BLOCK_PATTERN)];
-    if (timestamps.length <= 1) return match;
+// ==================== ESLRC 预处理 ====================
 
-    return timestamps
-      .map((timestamp, index) => (index === timestamps.length - 1
-        ? timestamp[0]
-        : `${timestamp[0]}${ESLRC_GAP_PLACEHOLDER}`))
+const PLAIN_TIMESTAMP_TEXT = '\\[\\d+:\\d{2}(?:\\.\\d+)?]';
+const TIMESTAMP_RUN_BEFORE_TEXT = new RegExp(`(?:${PLAIN_TIMESTAMP_TEXT})+(?=[^[\\]\\r\\n])`, 'g');
+const SINGLE_TIMESTAMP_TEXT = new RegExp(PLAIN_TIMESTAMP_TEXT, 'g');
+const WORD_GAP_MARK = '\u2063';
+
+/**
+ * ESLRC 不允许一行开头堆叠多个时间戳；遇到连续时间戳时，
+ * 在相邻时间戳之间垫一个不可见占位符，让每个时间戳都有"空词"可挂。
+ */
+export function normalizeEslrcSource(source: string): string {
+  return source.replace(TIMESTAMP_RUN_BEFORE_TEXT, (run) => {
+    const stamps = run.match(SINGLE_TIMESTAMP_TEXT);
+    if (!stamps || stamps.length <= 1) return run;
+
+    return stamps
+      .map((stamp, index) => (index === stamps.length - 1 ? stamp : `${stamp}${WORD_GAP_MARK}`))
       .join('');
   });
 }
 
+// ==================== 时间戳换算 ====================
+
+const CLOCK_PATTERN = /^(\d+):(\d{2})(?:\.(\d{1,3}))?$/;
+
+/** 接受 m:ss 或 m:ss.mmm（1~3 位小数），秒数满 60 视为非法。 */
 export function parseTimestampToMs(raw: string): number | null {
-  const match = /^(\d+):(\d{2})(?:\.(\d{1,3}))?$/.exec(raw.trim());
+  const match = CLOCK_PATTERN.exec(raw.trim());
   if (!match) return null;
 
   const minutes = Number(match[1]);
   const seconds = Number(match[2]);
-  const milliseconds = Number((match[3] ?? '').padEnd(3, '0').slice(0, 3) || '0');
+  const fraction = match[3] ?? '';
+  const milliseconds = Number(fraction.padEnd(3, '0') || '0');
 
   if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || !Number.isFinite(milliseconds)) {
     return null;
   }
   if (seconds >= 60) return null;
 
-  return (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+  return minutes * 60_000 + seconds * 1_000 + milliseconds;
 }
 
+// ==================== 增强 LRC ====================
+
+const LINE_CLOCK_TEXT = '\\[(\\d+:\\d{2}(?:\\.\\d+)?)\\]';
+const WORD_CLOCK_TEXT = '<(\\d+:\\d{2}(?:\\.\\d+)?)>';
+const LINE_CLOCK_PREFIX = new RegExp(`^${LINE_CLOCK_TEXT}(.*)$`);
+const WORD_CLOCK_MARK = new RegExp(WORD_CLOCK_TEXT, 'g');
+const ANY_WORD_CLOCK = new RegExp(WORD_CLOCK_TEXT);
+
+/** 相对偏移判定时的容差（毫秒）。 */
+const BACKWARD_EMPTY_TOLERANCE_MS = 5;
+/** 行尾无结束标记的最后一个词，按固定时长收尾。 */
+const TRAILING_WORD_DURATION_MS = 400;
+
 export function isEnhancedLrcLine(line: string): boolean {
-  const match = LRC_LINE_TIMESTAMP_PATTERN.exec(line);
+  const match = LINE_CLOCK_PREFIX.exec(line);
   if (!match) return false;
 
-  return ENHANCED_TIMESTAMP_TEXT_PATTERN.test(match[2]);
+  return ANY_WORD_CLOCK.test(match[2]);
 }
 
 export function parseEnhancedLrcLine(line: string): AmlLyricLine | null {
-  const lineMatch = LRC_LINE_TIMESTAMP_PATTERN.exec(line);
+  const lineMatch = LINE_CLOCK_PREFIX.exec(line);
   if (!lineMatch) return null;
 
   const lineStartTime = parseTimestampToMs(lineMatch[1]);
   if (lineStartTime === null) return null;
 
   const body = lineMatch[2];
-  const markers = [...body.matchAll(ENHANCED_TIMESTAMP_PATTERN)];
+  const markers = [...body.matchAll(WORD_CLOCK_MARK)];
   if (markers.length < 2) return null;
 
   const leadingText = body.slice(0, markers[0].index ?? 0);
   if (leadingText.trim().length > 0) return null;
 
-  // lrc-a2（anime 等源）的词内尖括号时间可能是相对行首的偏移（如 <00:00.16>），
-  // 误当绝对时间会把整行词时间塌缩到歌曲开头，导致歌词整体错位。
-  // 与 Rust 端同规则：词时间远小于行起点时按相对偏移加回行起点。
-  const markerTimes = markers.map((marker) => parseTimestampToMs(marker[1]));
-  if (markerTimes.some((time) => time === null)) return null;
-  const times = markerTimes as number[];
+  // 部分来源（lrc-a2 等）的词时间是相对行首的偏移：当词时间整体
+  // 远小于行起点时，把它们加回行起点，避免整行塌缩到歌曲开头。
+  const times: number[] = [];
+  for (const marker of markers) {
+    const time = parseTimestampToMs(marker[1]);
+    if (time === null) return null;
+    times.push(time);
+  }
+
   const firstWordTime = times[0];
   const lastWordTime = times[times.length - 1];
-  const relativeOffset =
-    lineStartTime > 0 &&
-    (firstWordTime <= 10 ||
-      (firstWordTime + 500 < lineStartTime && lastWordTime < lineStartTime + 500))
-      ? lineStartTime
-      : 0;
+  const looksRelative = firstWordTime <= 10
+    || (firstWordTime + 500 < lineStartTime && lastWordTime < lineStartTime + 500);
+  const relativeOffset = lineStartTime > 0 && looksRelative ? lineStartTime : 0;
 
   const words: AmlLyricWord[] = [];
   let explicitEndTime: number | null = null;
 
   for (let index = 0; index < markers.length; index += 1) {
-    const currentMarker = markers[index];
+    const marker = markers[index];
     const nextMarker = markers[index + 1];
     const currentStart = times[index] + relativeOffset;
-
-    const currentMarkerEnd = (currentMarker.index ?? 0) + currentMarker[0].length;
-    const nextMarkerIndex = nextMarker?.index ?? body.length;
-    const text = body.slice(currentMarkerEnd, nextMarkerIndex);
+    const textStart = (marker.index ?? 0) + marker[0].length;
+    const text = body.slice(textStart, nextMarker?.index ?? body.length);
 
     if (!nextMarker) {
       if (text.length > 0) {
         words.push({
           startTime: currentStart,
-          endTime: currentStart + ENHANCED_TRAILING_WORD_DURATION_MS,
+          endTime: currentStart + TRAILING_WORD_DURATION_MS,
           word: text,
           romanWord: '',
         });
-        continue;
+      } else {
+        // 末尾形如 "…<00:03.00>"：该标记表示整行的结束时间。
+        explicitEndTime = currentStart;
       }
-      explicitEndTime = currentStart;
       continue;
     }
 
     const nextStart = times[index + 1] + relativeOffset;
     if (nextStart < currentStart) {
-      if (text.length === 0 && currentStart - nextStart <= ENHANCED_EMPTY_BACKWARD_TOLERANCE_MS) {
+      // 允许结尾占位标记比前词晚点几毫秒
+      if (text.length === 0 && currentStart - nextStart <= BACKWARD_EMPTY_TOLERANCE_MS) {
         continue;
       }
       return null;
@@ -210,13 +208,29 @@ export function parseEnhancedLrc(source: string): AmlLyricLine[] {
   return lines;
 }
 
-function lineContainsEnhancedMarkup(line: AmlLyricLine): boolean {
-  if (ENHANCED_TIMESTAMP_TEXT_PATTERN.test(line.translatedLyric || '')) return true;
-  if (ENHANCED_TIMESTAMP_TEXT_PATTERN.test(line.romanLyric || '')) return true;
+function hasEmbeddedWordClocks(line: AmlLyricLine): boolean {
+  if (ANY_WORD_CLOCK.test(line.translatedLyric || '')) return true;
+  if (ANY_WORD_CLOCK.test(line.romanLyric || '')) return true;
 
-  return (line.words || []).some((word) => ENHANCED_TIMESTAMP_TEXT_PATTERN.test(word.word || ''));
+  return (line.words || []).some((word) => ANY_WORD_CLOCK.test(word.word || ''));
 }
 
+function groupLinesByStart(lines: AmlLyricLine[]): Map<number, AmlLyricLine[]> {
+  const groups = new Map<number, AmlLyricLine[]>();
+  for (const line of lines) {
+    // 缺起始时间的行归入同一桶（NaN 在 Map 键下按同值处理），与 undefined 键的分组语义一致。
+    const startKey = line.startTime ?? Number.NaN;
+    const bucket = groups.get(startKey);
+    if (bucket) bucket.push(line);
+    else groups.set(startKey, [line]);
+  }
+  return groups;
+}
+
+/**
+ * 把词级增强行按起始时间合并进基础行：同一时刻优先增强行，
+ * 基础行里仍带未解析时间标记的条目会被丢弃。
+ */
 export function mergeEnhancedLinesIntoBaseLines(
   enhancedLines: AmlLyricLine[],
   baseLines: AmlLyricLine[],
@@ -224,86 +238,168 @@ export function mergeEnhancedLinesIntoBaseLines(
   if (enhancedLines.length === 0) return baseLines;
   if (baseLines.length === 0) return enhancedLines;
 
-  const enhancedGroups = new Map<number, AmlLyricLine[]>();
-  for (const line of enhancedLines) {
-    const existingGroup = enhancedGroups.get(line.startTime);
-    if (existingGroup) {
-      existingGroup.push(line);
-    } else {
-      enhancedGroups.set(line.startTime, [line]);
-    }
-  }
+  const enhancedGroups = groupLinesByStart(enhancedLines);
+  const baseGroups = groupLinesByStart(baseLines);
 
-  const baseGroups = new Map<number, AmlLyricLine[]>();
-  for (const line of baseLines) {
-    const existingGroup = baseGroups.get(line.startTime);
-    if (existingGroup) {
-      existingGroup.push(line);
-    } else {
-      baseGroups.set(line.startTime, [line]);
-    }
-  }
+  const mergedStarts = [...new Set([...enhancedGroups.keys(), ...baseGroups.keys()])]
+    .sort((left, right) => left - right);
 
-  const times = new Set<number>([
-    ...enhancedGroups.keys(),
-    ...baseGroups.keys(),
-  ]);
+  const merged: AmlLyricLine[] = [];
+  for (const startTime of mergedStarts) {
+    const enhancedGroup = enhancedGroups.get(startTime) ?? [];
+    const baseGroup = baseGroups.get(startTime) ?? [];
 
-  return [...times]
-    .sort((a, b) => a - b)
-    .flatMap((startTime) => {
-      const mergedGroup: AmlLyricLine[] = [];
-      const enhancedGroup = enhancedGroups.get(startTime) ?? [];
-      const baseGroup = baseGroups.get(startTime) ?? [];
-
-      if (enhancedGroup.length > 0) {
-        mergedGroup.push(...enhancedGroup);
-        mergedGroup.push(...baseGroup.filter((line) => !lineContainsEnhancedMarkup(line)));
-      } else {
-        mergedGroup.push(...baseGroup);
+    if (enhancedGroup.length > 0) {
+      merged.push(...enhancedGroup);
+      for (const line of baseGroup) {
+        if (!hasEmbeddedWordClocks(line)) merged.push(line);
       }
-
-      return mergedGroup;
-    });
-}
-
-const WORD_LEVEL_SOURCES: ReadonlySet<ParserSource> = new Set([
-  'enhanced_lrc',
-  'ttml',
-  'yrc',
-  'qrc',
-]);
-
-function compareParserCandidates(left: ParserCandidate, right: ParserCandidate): number {
-  const leftWordLevel = WORD_LEVEL_SOURCES.has(left.source);
-  const rightWordLevel = WORD_LEVEL_SOURCES.has(right.source);
-  if (leftWordLevel !== rightWordLevel) {
-    return leftWordLevel ? -1 : 1;
+    } else {
+      merged.push(...baseGroup);
+    }
   }
 
-  const scoreDiff = scoreParsedLines(right.lines) - scoreParsedLines(left.lines);
-  if (scoreDiff !== 0) return scoreDiff;
-
-  const lineCountDiff = right.lines.length - left.lines.length;
-  if (lineCountDiff !== 0) return lineCountDiff;
-
-  return PARSER_PRIORITIES[right.source] - PARSER_PRIORITIES[left.source];
+  return merged;
 }
 
-function toSafeMs(value: number, fallback: number): number {
-  if (!Number.isFinite(value) || value < 0) return fallback;
+// ==================== 候选评测 ====================
+
+type CandidateSource = ParsedLineSourceFormat;
+
+const SOURCE_PRIORITY: Record<CandidateSource, number> = {
+  enhanced_lrc: 6,
+  ttml: 5,
+  yrc: 4,
+  qrc: 3,
+  lys: 2,
+  eslrc: 1,
+  lrc: 0,
+};
+
+/** 只有这些格式的候选能提供逐词时间轴。 */
+const WORD_TIMED_SOURCES = new Set<CandidateSource>(['enhanced_lrc', 'ttml', 'yrc', 'qrc']);
+
+interface SourceCandidate {
+  source: CandidateSource;
+  lines: AmlLyricLine[];
+}
+
+function rateLines(lines: AmlLyricLine[]): number {
+  let score = 0;
+  for (const line of lines) {
+    const hasWords = (line.words || []).some((word) => sanitizeWordText(word.word || '').length > 0);
+    const hasTranslation = sanitizeLineText(line.translatedLyric || '').length > 0;
+    const hasRoman = sanitizeLineText(line.romanLyric || '').length > 0;
+    score += (hasWords ? 2 : 0) + (hasTranslation ? 1 : 0) + (hasRoman ? 1 : 0);
+  }
+  return score;
+}
+
+function preferCandidate(left: SourceCandidate, right: SourceCandidate): number {
+  const leftTimed = WORD_TIMED_SOURCES.has(left.source);
+  const rightTimed = WORD_TIMED_SOURCES.has(right.source);
+  if (leftTimed !== rightTimed) return leftTimed ? -1 : 1;
+
+  const byScore = rateLines(right.lines) - rateLines(left.lines);
+  if (byScore !== 0) return byScore;
+
+  const byLineCount = right.lines.length - left.lines.length;
+  if (byLineCount !== 0) return byLineCount;
+
+  return SOURCE_PRIORITY[right.source] - SOURCE_PRIORITY[left.source];
+}
+
+async function selectBestCandidate(raw: string): Promise<SourceCandidate | null> {
+  const source = raw.replace(/^\uFEFF/, '').replace(/\r/g, '');
+  const eslrcReadySource = normalizeEslrcSource(source);
+  const candidates: SourceCandidate[] = [];
+
+  const admit = (sourceKind: CandidateSource, lines: AmlLyricLine[]) => {
+    if (Array.isArray(lines) && lines.length > 0) {
+      candidates.push({ source: sourceKind, lines });
+    }
+  };
+
+  if (/<tt[\s>]/i.test(source)) {
+    try {
+      admit('ttml', parseTtmlLines(source));
+    } catch {
+      // 交给下一个候选
+    }
+  }
+
+  const hexOnly = source.replace(/\s+/g, '');
+  if (/^[0-9a-fA-F]+$/.test(hexOnly) && hexOnly.length > 64 && hexOnly.length % 2 === 0) {
+    try {
+      admit('qrc', parseQrcLines(await decryptQrcHex(hexOnly)));
+    } catch {
+      // 交给下一个候选
+    }
+  }
+
+  const plainCandidates: Array<[CandidateSource, () => AmlLyricLine[]]> = [
+    ['yrc', () => parseYrcLines(source)],
+    ['qrc', () => parseQrcLines(source)],
+    ['lys', () => parseLysLines(source)],
+    ['eslrc', () => parseEslrcLines(eslrcReadySource)],
+    ['lrc', () => parseLrcLines(source)],
+  ];
+  for (const [sourceKind, run] of plainCandidates) {
+    try {
+      admit(sourceKind, run());
+    } catch {
+      // 交给下一个候选
+    }
+  }
+
+  const enhancedLines = parseEnhancedLrc(source);
+  if (enhancedLines.length > 0) {
+    const baseline = [...candidates]
+      .filter((candidate) => candidate.source !== 'enhanced_lrc')
+      .sort(preferCandidate)[0];
+
+    candidates.push({
+      source: 'enhanced_lrc',
+      lines: baseline
+        ? mergeEnhancedLinesIntoBaseLines(enhancedLines, baseline.lines)
+        : enhancedLines,
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort(preferCandidate);
+  return candidates[0];
+}
+
+export async function parseWithAml(raw: string): Promise<AmlLyricLine[]> {
+  const candidate = await selectBestCandidate(raw);
+  return candidate?.lines ?? [];
+}
+
+// ==================== 输出装配 ====================
+
+const ROLE_MARKERS: Array<{ role: ExplicitLineRole; pattern: RegExp }> = [
+  {
+    role: 'translation',
+    pattern: /^(?:\[(?:tr|trans|translation)\]|【(?:翻译|译文)】|(?:翻译|译文)[:：]\s*)/iu,
+  },
+  {
+    role: 'roman',
+    pattern: /^(?:\[(?:roma|romaji|roman)\]|【(?:罗马音|罗马字|音译)】|(?:罗马音|罗马字|音译)[:：]\s*)/iu,
+  },
+];
+
+const PURE_DIVIDER_TEXT = /^\s*\/[/\\\s]+\s*$/;
+
+function coerceMs(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return fallback;
   return Math.round(value);
 }
 
-function normalizeParsedWord(
-  word: AmlLyricWord,
-  fallbackStartMs: number,
-  fallbackEndMs: number,
-): ParsedWord {
-  const startMs = toSafeMs(word.startTime, fallbackStartMs);
-  const rawEndMs = toSafeMs(word.endTime, fallbackEndMs);
-  const endMs = Math.max(startMs, rawEndMs);
-
+function adaptWord(word: AmlLyricWord, startFallbackMs: number, endFallbackMs: number): ParsedWord {
+  const startMs = coerceMs(word.startTime, startFallbackMs);
+  const endMs = Math.max(startMs, coerceMs(word.endTime, endFallbackMs));
   const romanText = sanitizeWordText(word.romanWord || '');
 
   return {
@@ -314,55 +410,48 @@ function normalizeParsedWord(
   };
 }
 
-function detectExplicitRole(text: string): {
-  role?: ExplicitLineRole;
-  text: string;
-} {
-  let normalizedText = sanitizeLineText(text);
+function stripRoleMarker(text: string): { role?: ExplicitLineRole; text: string } {
+  const normalizedText = sanitizeLineText(text);
 
-  for (const marker of EXPLICIT_LINE_MARKERS) {
+  for (const marker of ROLE_MARKERS) {
     if (!marker.pattern.test(normalizedText)) continue;
-    normalizedText = sanitizeLineText(normalizedText.replace(marker.pattern, ''));
     return {
       role: marker.role,
-      text: normalizedText,
+      text: sanitizeLineText(normalizedText.replace(marker.pattern, '')),
     };
   }
 
-  return {
-    text: normalizedText,
-  };
+  return { text: normalizedText };
 }
 
-function prepareParsedLine(
+function buildParsedLine(
   line: AmlLyricLine,
   sourceFormat: ParsedLineSourceFormat,
   sourceIndex: number,
 ): ParsedLine | null {
-  const fallbackStartMs = toSafeMs(line.startTime, 0);
-  const fallbackEndMs = Math.max(fallbackStartMs + 80, toSafeMs(line.endTime, fallbackStartMs + 500));
+  const startFallbackMs = coerceMs(line.startTime, 0);
+  const endFallbackMs = Math.max(startFallbackMs + 80, coerceMs(line.endTime, startFallbackMs + 500));
 
   const words = (line.words || [])
-    .map((word) => normalizeParsedWord(word, fallbackStartMs, fallbackEndMs))
-    .filter((word) => word.text.length > 0 && !/^\s*\/[/\\\s]+\s*$/.test(word.text))
+    .map((word) => adaptWord(word, startFallbackMs, endFallbackMs))
+    .filter((word) => word.text.length > 0 && !PURE_DIVIDER_TEXT.test(word.text))
     .sort((left, right) => left.startMs - right.startMs);
 
-  const wordsText = sanitizeLineText((line.words || []).map((word) => word.word || '').join(''));
-  const rawText = wordsText || sanitizeLineText(words.map((word) => word.text).join(''));
-  const detected = detectExplicitRole(rawText);
+  const joinedWordText = sanitizeLineText((line.words || []).map((word) => word.word || '').join(''));
+  const rawText = joinedWordText || sanitizeLineText(words.map((word) => word.text).join(''));
+  const detected = stripRoleMarker(rawText);
   const translatedText = sanitizeLineText(line.translatedLyric || '');
   const romanText = sanitizeLineText(line.romanLyric || '');
 
-  const firstWordStartMs = words.length > 0 ? words[0].startMs : fallbackStartMs;
-  const lastWordEndMs = words.length > 0 ? words[words.length - 1].endMs : fallbackEndMs;
+  const firstWordStartMs = words.length > 0 ? words[0].startMs : startFallbackMs;
+  const lastWordEndMs = words.length > 0 ? words[words.length - 1].endMs : endFallbackMs;
 
-  const startMs = toSafeMs(line.startTime, firstWordStartMs);
-  const endMs = Math.max(startMs, toSafeMs(line.endTime, lastWordEndMs));
+  const startMs = coerceMs(line.startTime, firstWordStartMs);
+  const endMs = Math.max(startMs, coerceMs(line.endTime, lastWordEndMs));
 
   if (!detected.text && !translatedText && !romanText && words.length === 0) return null;
 
-  const isPureDivider = /^\s*\/[/\\\s]+\s*$/.test(detected.text);
-  if (isPureDivider && !translatedText && !romanText) return null;
+  if (PURE_DIVIDER_TEXT.test(detected.text) && !translatedText && !romanText) return null;
 
   return {
     startMs,
@@ -377,111 +466,26 @@ function prepareParsedLine(
   };
 }
 
-function normalizeParsedLineEndTimes(lines: ParsedLine[]): ParsedLine[] {
+/** 没有可靠结束时间的行，用下一行的起点（或 +5s）补齐。 */
+function closeLineEndTimes(lines: ParsedLine[]): ParsedLine[] {
   return lines.map((line, index) => {
-    if (line.endMs !== undefined && line.endMs >= line.startMs) {
-      return {
-        ...line,
-        endMs: line.endMs,
-      };
-    }
+    if (line.endMs !== undefined && line.endMs >= line.startMs) return line;
 
     const nextStartMs = lines[index + 1]?.startMs;
     const fallbackEndMs = nextStartMs !== undefined
       ? Math.max(line.startMs, nextStartMs)
       : line.startMs + 5000;
 
-    return {
-      ...line,
-      endMs: fallbackEndMs,
-    };
+    return { ...line, endMs: fallbackEndMs };
   });
 }
 
-function scoreParsedLines(lines: AmlLyricLine[]): number {
-  return lines.reduce((score, line) => {
-    const hasWords = (line.words || []).some((word) => sanitizeWordText(word.word || '').length > 0);
-    const hasTranslation = sanitizeLineText(line.translatedLyric || '').length > 0;
-    const hasRomaji = sanitizeLineText(line.romanLyric || '').length > 0;
-
-    return score + (hasWords ? 2 : 0) + (hasTranslation ? 1 : 0) + (hasRomaji ? 1 : 0);
-  }, 0);
-}
-
-async function parseWithBestCandidate(raw: string): Promise<ParserCandidate | null> {
-  const {
-    decryptQrcHex,
-    parseEslrc,
-    parseLrc,
-    parseLys,
-    parseQrc,
-    parseTTML,
-    parseYrc,
-  } = await getAmlModule();
-  const source = raw.replace(/^\uFEFF/, '').replace(/\r/g, '');
-  const normalizedEslrcSource = normalizeEslrcSource(source);
-  const candidates: ParserCandidate[] = [];
-
-  const collect = (candidateSource: ParserSource, parser: () => AmlLyricLine[]) => {
-    try {
-      const lines = parser();
-      if (Array.isArray(lines) && lines.length > 0) {
-        candidates.push({
-          source: candidateSource,
-          lines,
-        });
-      }
-    } catch {
-      // Try next parser.
-    }
-  };
-
-  if (/<tt[\s>]/i.test(source)) {
-    collect('ttml', () => parseTTML(source).lines);
-  }
-
-  const compactHex = source.replace(/\s+/g, '');
-  if (/^[0-9a-fA-F]+$/.test(compactHex) && compactHex.length > 64 && compactHex.length % 2 === 0) {
-    collect('qrc', () => parseQrc(decryptQrcHex(compactHex)));
-  }
-
-  collect('yrc', () => parseYrc(source));
-  collect('qrc', () => parseQrc(source));
-  collect('lys', () => parseLys(source));
-  collect('eslrc', () => parseEslrc(normalizedEslrcSource));
-  collect('lrc', () => parseLrc(source));
-
-  const enhancedLines = parseEnhancedLrc(source);
-  if (enhancedLines.length > 0) {
-    const baselineCandidate = [...candidates]
-      .filter((candidate) => candidate.source !== 'enhanced_lrc')
-      .sort(compareParserCandidates)[0];
-
-    candidates.push({
-      source: 'enhanced_lrc',
-      lines: baselineCandidate
-        ? mergeEnhancedLinesIntoBaseLines(enhancedLines, baselineCandidate.lines)
-        : enhancedLines,
-    });
-  }
-
-  if (candidates.length === 0) return null;
-
-  candidates.sort(compareParserCandidates);
-  return candidates[0];
-}
-
-export async function parseWithAml(raw: string): Promise<AmlLyricLine[]> {
-  const candidate = await parseWithBestCandidate(raw);
-  return candidate?.lines ?? [];
-}
-
 export async function prepareParsedLyrics(raw: string): Promise<ParsedLine[]> {
-  const candidate = await parseWithBestCandidate(raw);
+  const candidate = await selectBestCandidate(raw);
   if (!candidate) return [];
 
   const prepared = candidate.lines
-    .map((line, index) => prepareParsedLine(line, candidate.source, index))
+    .map((line, index) => buildParsedLine(line, candidate.source, index))
     .filter((line): line is ParsedLine => line !== null)
     .sort((left, right) => (
       (left.startMs - right.startMs)
@@ -489,12 +493,10 @@ export async function prepareParsedLyrics(raw: string): Promise<ParsedLine[]> {
       || ((left.endMs ?? left.startMs) - (right.endMs ?? right.startMs))
     ));
 
-  return normalizeParsedLineEndTimes(prepared);
+  return closeLineEndTimes(prepared);
 }
 
 // ==================== lx-music-desktop lxlyric 转换 ====================
-
-export { convertLxLyricToEnhancedLrc };
 
 export function buildLyricsRaw(
   lyric: string,

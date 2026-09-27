@@ -13,6 +13,7 @@ describe('settings search index', () => {
       'download',
       'toolbox',
       'library',
+      'linkage',
       'plugins',
       'shortcuts',
       'account',

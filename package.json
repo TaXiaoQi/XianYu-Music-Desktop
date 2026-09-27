@@ -31,8 +31,6 @@
     "tauri:build:store:msix": "node scripts/sync-version.js && tauri-windows-bundle build --runner \"node scripts/msix-bridge.js\" && node scripts/move-msix.js"
   },
   "dependencies": {
-    "@applemusic-like-lyrics/core": "^0.2.0",
-    "@applemusic-like-lyrics/lyric": "^0.3.0",
     "@tanstack/vue-virtual": "^3.13.13",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",

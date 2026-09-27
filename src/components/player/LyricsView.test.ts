@@ -13,7 +13,7 @@ describe('LyricsView', () => {
     expect(source).toContain(':layout-version="lyricsSettings.playerFontPreset"');
   });
 
-  it('passes playback state into AMLL so word highlighting pauses with audio', () => {
+  it('passes playback state into the word lyric player so word highlighting pauses with audio', () => {
     expect(source).toMatch(/const \{[^}]*\bisPlaying\b[^}]*\} = usePlayer\(\);/);
     expect(source).toContain(':playing="isPlaying"');
   });
@@ -27,9 +27,9 @@ describe('LyricsView', () => {
     expect(source).toContain('await seekTo(targetSeconds);');
   });
 
-  it('loads AmlLyricPlayer via defineAsyncComponent', () => {
+  it('loads WordLyricPlayer via defineAsyncComponent', () => {
     expect(source).toContain('defineAsyncComponent');
-    expect(source).toContain("import('./AmlLyricPlayer.vue')");
+    expect(source).toContain("import('./WordLyricPlayer.vue')");
   });
 
   it('toggles word effect via a button', () => {

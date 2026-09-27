@@ -1,3 +1,8 @@
+//! 自定义歌词字体管理。
+//!
+//! 把用户挑选的字体文件复制进应用数据目录统一保管，并支持把字体内容
+//! 编码为 data URL 返回给前端，供歌词渲染直接内嵌加载。
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -8,6 +13,54 @@ use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
+
+/// 支持导入的字体格式。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FontKind {
+    /// TrueType 轮廓字体（.ttf）。
+    TrueType,
+    /// OpenType 轮廓字体（.otf）。
+    OpenType,
+}
+
+impl FontKind {
+    /// 根据扩展名判定字体格式，其余格式一律拒绝。
+    fn probe(path: &Path) -> Result<Self, String> {
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("ttf") => Ok(Self::TrueType),
+            Some("otf") => Ok(Self::OpenType),
+            _ => Err("Only .ttf and .otf font files are supported".to_string()),
+        }
+    }
+
+    /// 落盘时使用的文件扩展名。
+    fn file_extension(self) -> &'static str {
+        match self {
+            Self::TrueType => "ttf",
+            Self::OpenType => "otf",
+        }
+    }
+
+    /// 返回给前端的格式描述。
+    fn format_label(self) -> &'static str {
+        match self {
+            Self::TrueType => "truetype",
+            Self::OpenType => "opentype",
+        }
+    }
+
+    /// data URL 头部使用的 MIME 类型。
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::TrueType => "font/ttf",
+            Self::OpenType => "font/otf",
+        }
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,46 +73,39 @@ pub struct ImportedLyricsFont {
     format: String,
 }
 
-fn normalize_font_extension(path: &Path) -> Result<(&'static str, &'static str), String> {
-    match path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(|extension| extension.to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("ttf") => Ok(("ttf", "truetype")),
-        Some("otf") => Ok(("otf", "opentype")),
-        _ => Err("Only .ttf and .otf font files are supported".to_string()),
+/// 取当前 Unix 毫秒时间戳，作为导入时间记录。
+fn unix_millis_now() -> Result<u64, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .map_err(|err| err.to_string())
+}
+
+/// 以文件主名作为字体展示名；主名为空时回退到默认文案。
+fn derive_display_name(source: &Path) -> String {
+    let stem = source
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::trim)
+        .filter(|stem| !stem.is_empty());
+    match stem {
+        Some(stem) => stem.to_string(),
+        None => "Custom Lyrics Font".to_string(),
     }
 }
 
-fn display_name_from_path(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|stem| stem.to_str())
-        .map(|stem| stem.trim())
-        .filter(|stem| !stem.is_empty())
-        .unwrap_or("Custom Lyrics Font")
-        .to_string()
-}
-
-fn imported_at_millis() -> Result<u64, String> {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| error.to_string())?;
-
-    Ok(duration.as_millis() as u64)
-}
-
-fn custom_fonts_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
+/// 确保应用数据下的自定义字体目录存在，并返回其路径。
+fn ensure_fonts_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app
         .path()
         .app_data_dir()
-        .map_err(|error| error.to_string())?
+        .map_err(|err| err.to_string())?
         .join("custom-lyrics-fonts");
-    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    Ok(dir)
+    fs::create_dir_all(&directory).map_err(|err| err.to_string())?;
+    Ok(directory)
 }
 
+/// 导入一个歌词字体文件：校验格式后复制到应用数据目录。
 #[tauri::command]
 pub fn import_lyrics_font(
     app: AppHandle,
@@ -70,45 +116,42 @@ pub fn import_lyrics_font(
         return Err("Selected font file does not exist".to_string());
     }
 
-    let (extension, format) = normalize_font_extension(&source)?;
-    let id = Uuid::new_v4().to_string();
-    let file_name = format!("{id}.{extension}");
-    let target_path = custom_fonts_dir(&app)?.join(file_name);
+    let kind = FontKind::probe(&source)?;
+    let font_id = Uuid::new_v4().to_string();
+    let stored_name = format!("{font_id}.{}", kind.file_extension());
+    let target = ensure_fonts_directory(&app)?.join(stored_name);
 
-    fs::copy(&source, &target_path).map_err(|error| error.to_string())?;
+    fs::copy(&source, &target).map_err(|err| err.to_string())?;
 
     Ok(ImportedLyricsFont {
-        id: id.clone(),
-        name: display_name_from_path(&source),
-        family: format!("XianYu Imported Lyrics Font {id}"),
-        file_path: target_path.to_string_lossy().to_string(),
-        imported_at: imported_at_millis()?,
-        format: format.to_string(),
+        family: format!("XianYu Imported Lyrics Font {font_id}"),
+        id: font_id,
+        name: derive_display_name(&source),
+        file_path: target.to_string_lossy().into_owned(),
+        imported_at: unix_millis_now()?,
+        format: kind.format_label().to_string(),
     })
 }
 
+/// 把已导入的字体文件读取为 base64 data URL。
+/// 出于安全考虑，仅允许读取位于自定义字体目录内的文件。
 #[tauri::command]
 pub fn read_lyrics_font_data_url(app: AppHandle, font_path: String) -> Result<String, String> {
-    let source = PathBuf::from(font_path);
-    if !source.is_file() {
+    let candidate = PathBuf::from(font_path);
+    if !candidate.is_file() {
         return Err("Imported font file does not exist".to_string());
     }
 
-    let (_, format) = normalize_font_extension(&source)?;
-    let custom_dir =
-        fs::canonicalize(custom_fonts_dir(&app)?).map_err(|error| error.to_string())?;
-    let source = fs::canonicalize(&source).map_err(|error| error.to_string())?;
+    let kind = FontKind::probe(&candidate)?;
+    let fonts_dir =
+        fs::canonicalize(ensure_fonts_directory(&app)?).map_err(|err| err.to_string())?;
+    let real_path = fs::canonicalize(&candidate).map_err(|err| err.to_string())?;
 
-    if !source.starts_with(&custom_dir) {
+    if !real_path.starts_with(&fonts_dir) {
         return Err("Imported font file is outside the custom lyrics fonts directory".to_string());
     }
 
-    let mime_type = match format {
-        "opentype" => "font/otf",
-        _ => "font/ttf",
-    };
-    let bytes = fs::read(source).map_err(|error| error.to_string())?;
+    let bytes = fs::read(real_path).map_err(|err| err.to_string())?;
     let encoded = general_purpose::STANDARD.encode(bytes);
-
-    Ok(format!("data:{mime_type};base64,{encoded}"))
+    Ok(format!("data:{};base64,{encoded}", kind.mime_type()))
 }
