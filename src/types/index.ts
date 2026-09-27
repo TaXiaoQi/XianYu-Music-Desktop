@@ -234,6 +234,19 @@ export interface LibraryScanSession {
   sourcePath?: string;
 }
 
+/** 写实唱机底座材质：浅灰（默认）/ 哑光深灰 / 橡木 / 大理石 */
+export type VinylPlinthMaterial = 'light' | 'matte' | 'oak' | 'marble';
+
+/** 睡眠定时器到点后执行的动作（与 src-tauri/src/sleep_timer.rs 的 serde snake_case 对齐） */
+export type SleepTimerAction = 'pause' | 'exit' | 'hide_to_tray';
+
+/** 睡眠定时器当前状态（Rust 侧 get_sleep_timer 回传） */
+export interface SleepTimerSnapshot {
+  action: SleepTimerAction;
+  /** 剩余秒数；后端为墙钟计时，这里只用于显示 */
+  remaining_seconds: number;
+}
+
 export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
   accentColor: string;
@@ -243,6 +256,12 @@ export interface ThemeSettings {
   playerDetailStyle: 'classic' | 'vinyl';
   /** 播放详情页多边形流光背景（Voronoi 网格：随机边数多边形缓慢漂移） */
   playerDetailMeshBackground: boolean;
+  /** 多边形流光背景的边缘抗锯齿：片元内做屏幕空间平滑，并提高渲染分辨率 */
+  playerDetailMeshAntiAlias: boolean;
+  /** 多边形流光背景的流动速度倍率（0 为静止，1 为默认） */
+  playerDetailMeshSpeed: number;
+  /** 写实唱机底座材质（浅灰 / 哑光深灰 / 橡木 / 大理石） */
+  playerDetailVinylMaterial: VinylPlinthMaterial;
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;
@@ -686,6 +705,8 @@ export interface LogSettings {
 export interface AppSettings {
   language: AppLanguage;
   closeToTray: boolean;
+  launchOnStartup: boolean;
+  launchOnStartupMinimized: boolean;
   preventSleepWhilePlaying: boolean;
   showDesktopLyrics: boolean;
   showQualityBadges: boolean;

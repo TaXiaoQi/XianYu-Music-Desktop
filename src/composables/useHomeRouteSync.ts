@@ -15,6 +15,7 @@ type SyncedHomeViewMode =
   | 'album'
   | 'playlist'
   | 'statistics'
+  | 'leaderboard'
   | 'dailyRecommend'
   | 'topLists';
 
@@ -67,6 +68,8 @@ const parseHomeRouteState = (query: LocationQuery): HomeRouteState => {
       return { viewMode: 'folder', filter: '', folder };
     case 'statistics':
       return { viewMode: 'statistics', filter: '', folder: '' };
+    case 'leaderboard':
+      return { viewMode: 'leaderboard', filter: '', folder: '' };
     case 'dailyRecommend':
       return { viewMode: 'dailyRecommend', filter: '', folder: '' };
     case 'topLists':
@@ -103,6 +106,8 @@ const buildHomeRouteQuery = (
       return filterCondition ? { view: currentViewMode, filter: filterCondition } : {};
     case 'statistics':
       return {};
+    case 'leaderboard':
+      return { view: 'leaderboard' };
     case 'dailyRecommend':
       return { view: 'dailyRecommend' };
     case 'topLists':

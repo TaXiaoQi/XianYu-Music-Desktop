@@ -62,13 +62,13 @@ fn known_content_type(url: &str) -> Option<String> {
 fn upstream_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
+        crate::netproxy::client_builder()
             .connect_timeout(Duration::from_secs(10))
             .read_timeout(Duration::from_secs(60))
             .redirect(crate::security::ssrf::ssrf_redirect_policy())
             .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
+            .unwrap_or_else(|_| crate::netproxy::client())
     })
 }
 

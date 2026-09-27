@@ -13,7 +13,7 @@ use tokio::io::AsyncWriteExt as _;
 pub(crate) fn shared_client() -> &'static Client {
     static WEBDAV_CLIENT: OnceLock<Client> = OnceLock::new();
     let initializer = || {
-        let builder = Client::builder();
+        let builder = crate::netproxy::client_builder();
         builder
             .connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(300))
             .pool_max_idle_per_host(4).redirect(crate::security::ssrf::ip_literal_redirect_policy())

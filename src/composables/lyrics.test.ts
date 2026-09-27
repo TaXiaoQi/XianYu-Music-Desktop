@@ -368,6 +368,51 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
     expect(merged[0].romaji).toBe('');
   });
 
+  it('粤拼音译行让位于中文主行，音译降为罗马音子行', () => {
+    const merged = lyrics.mergePreparedLines([
+      mergeRow({
+        startMs: 43802, endMs: 46596, text: 'man sv nei si soeng zoi ha en loi zei', sourceIndex: 0,
+        words: [
+          { text: 'man sv nei si soeng zoi', start: 43.802, end: 45.2, romaji: '' },
+          { text: 'ha en loi zei', start: 45.2, end: 46.596, romaji: '' },
+        ],
+      }),
+      mergeRow({
+        startMs: 43802, endMs: 46596, text: '听说你时常在下午 来这里寄信件', sourceIndex: 1,
+        words: [
+          { text: '听说你时常在下午', start: 43.802, end: 45.2, romaji: '' },
+          { text: '来这里寄信件', start: 45.2, end: 46.596, romaji: '' },
+        ],
+      }),
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].text).toBe('听说你时常在下午 来这里寄信件');
+    expect(merged[0].translation).toBe('');
+    expect(merged[0].romaji).toBe('man sv nei si soeng zoi ha en loi zei');
+    // 逐词高亮仍对齐：主行汉字词各自拿到对应粤拼片段
+    expect(merged[0].words?.map((word) => word.text)).toEqual([
+      '听说你时常在下午',
+      '来这里寄信件',
+    ]);
+    expect(merged[0].words?.map((word) => word.romaji)).toEqual([
+      'man sv nei si soeng zoi',
+      'ha en loi zei',
+    ]);
+  });
+
+  it('英文行带体量相近的中文翻译时保持英文为主行', () => {
+    const merged = lyrics.mergePreparedLines([
+      mergeRow({ startMs: 6000, endMs: 9000, text: 'Missing the feeling', sourceIndex: 0 }),
+      mergeRow({ startMs: 6000, endMs: 9000, text: '缺失的感觉', sourceIndex: 1 }),
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].text).toBe('Missing the feeling');
+    expect(merged[0].translation).toBe('缺失的感觉');
+    expect(merged[0].romaji).toBe('');
+  });
+
   it('中文占优的混合行在拉丁主行旁判作翻译', () => {
     const merged = lyrics.mergePreparedLines([
       mergeRow({ startMs: 74530, endMs: 78000, text: 'A-Z Looser-KrankheitWas IS das?', sourceIndex: 0 }),
@@ -784,6 +829,31 @@ describe('常见格式原始歌词样例', () => {
     expect(lines[0]).toMatchObject({
       text: 'You are my love',
       translation: '你是我的爱',
+      romaji: '',
+    });
+  });
+
+  it('显式 tr 标记的翻译行优先于罗马化启发式', async () => {
+    const [heuristic] = await rawToShownLines([
+      '[00:21.680]man sv nei si soeng zoi ha en loi zei',
+      '[00:21.680]闻说你时常在下午 来这里寄信件',
+    ].join('\n'));
+
+    // 无显式标记时启发式把中文升为主行、粤拼降为罗马音
+    expect(heuristic).toMatchObject({
+      text: '闻说你时常在下午 来这里寄信件',
+      romaji: 'man sv nei si soeng zoi ha en loi zei',
+    });
+
+    const [explicit] = await rawToShownLines([
+      '[00:21.680]man sv nei si soeng zoi ha en loi zei',
+      '[00:21.680][tr]闻说你时常在下午 来这里寄信件',
+    ].join('\n'));
+
+    // 源里显式声明为翻译时以源为准，不做交换
+    expect(explicit).toMatchObject({
+      text: 'man sv nei si soeng zoi ha en loi zei',
+      translation: '闻说你时常在下午 来这里寄信件',
       romaji: '',
     });
   });

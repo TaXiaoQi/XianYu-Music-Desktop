@@ -101,6 +101,42 @@ describe('settings store', () => {
     expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
   });
 
+  it('stores the vinyl plinth material with normalization', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('light');
+    settingsStore.patchTheme({ playerDetailVinylMaterial: 'matte' });
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('matte');
+    settingsStore.patchTheme({ playerDetailVinylMaterial: 'oak' });
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('oak');
+
+    // 非法值不得写入（回落为上一次的合法值）
+    settingsStore.patchTheme({ playerDetailVinylMaterial: 'walnut' as 'oak' });
+    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('oak');
+  });
+
+  it('stores the polygon mesh flow speed multiplier', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(1);
+    settingsStore.patchTheme({ playerDetailMeshSpeed: 2.5 });
+    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(2.5);
+
+    // 0 表示静止，是合法取值（渲染侧只做夹取，不排除 0）
+    settingsStore.patchTheme({ playerDetailMeshSpeed: 0 });
+    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(0);
+  });
+
+  it('stores the polygon mesh anti-aliasing flag with normalization', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(true);
+    settingsStore.patchTheme({ playerDetailMeshAntiAlias: false });
+    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(false);
+
+    settingsStore.patchTheme({ playerDetailMeshAntiAlias: 'yes' as unknown as boolean });
+    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(false);
+  });
   it('replaces theme through the settings domain instead of mutating ui state', () => {
     const settingsStore = useSettingsStore();
 

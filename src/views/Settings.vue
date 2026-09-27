@@ -7,6 +7,7 @@ const settingsLoaders = {
   about: () => import("../components/settings/SettingsAbout.vue").then(m => m.default),
   account: () => import("../components/settings/SettingsAccount.vue").then(m => m.default),
   desktopLyrics: () => import("../components/settings/SettingsDesktopLyrics.vue").then(m => m.default),
+  sleepTimer: () => import("../components/settings/SettingsSleepTimer.vue").then(m => m.default),
   general: () => import("../components/settings/SettingsGeneral.vue").then(m => m.default),
   library: () => import("../components/settings/SettingsLibrary.vue").then(m => m.default),
   plugins: () => import("../components/settings/SettingsPlugins.vue").then(m => m.default),
@@ -16,6 +17,7 @@ const settingsLoaders = {
   audioOutput: () => import("../components/settings/SettingsAudioOutput.vue").then(m => m.default),
   download: () => import("../components/settings/SettingsDownload.vue").then(m => m.default),
   debug: () => import("../components/settings/SettingsDebug.vue").then(m => m.default),
+  network: () => import("../components/settings/SettingsNetwork.vue").then(m => m.default),
   advanced: () => import("../components/settings/SettingsAdvanced.vue").then(m => m.default),
   linkage: () => import("../components/settings/SettingsLinkage.vue").then(m => m.default),
   feedback: () => import("../components/settings/SettingsFeedback.vue").then(m => m.default),
@@ -56,6 +58,7 @@ const SettingsToolbox = lazySettings(settingsLoaders.toolbox);
 const SettingsAudioOutput = lazySettings(settingsLoaders.audioOutput);
 const SettingsDownload = lazySettings(settingsLoaders.download);
 const SettingsDebug = lazySettings(settingsLoaders.debug);
+const SettingsNetwork = lazySettings(settingsLoaders.network);
 const SettingsAdvanced = lazySettings(settingsLoaders.advanced);
 const SettingsLinkage = lazySettings(settingsLoaders.linkage);
 const SettingsFeedback = lazySettings(settingsLoaders.feedback);
@@ -70,7 +73,7 @@ import { useI18n } from '../features/i18n';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'linkage', 'feedback', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'sleepTimer', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'network', 'advanced', 'linkage', 'feedback', 'debug', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -335,7 +338,9 @@ const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => 
   { id: 'library', name: t('settings.library') },
   { id: 'toolbox', name: t('settings.toolbox') },
   { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
+  { id: 'sleepTimer', name: t('settings.sleepTimer') },
   { id: 'shortcuts', name: t('settings.shortcuts') },
+  { id: 'network', name: t('settings.network') },
   { id: 'advanced', name: t('settings.advanced') },
   { id: 'feedback', name: t('settings.feedback') },
   { id: 'about', name: t('settings.about') },
@@ -469,6 +474,7 @@ const tabs = computed(() => {
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
+          <SettingsNetwork v-else-if="activeTab === 'network'" key="network" />
           <SettingsAdvanced v-else-if="activeTab === 'advanced'" key="advanced" />
           <SettingsLinkage v-else-if="activeTab === 'linkage'" key="linkage" />
           <SettingsFeedback v-else-if="activeTab === 'feedback'" key="feedback" />

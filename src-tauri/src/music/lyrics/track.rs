@@ -257,6 +257,34 @@ fn script_conflict_blocks_merge(group: &[LyricTrackLine], candidate: &LyricTrack
         .any(|line| line.script_profile.dominant_script == candidate.script_profile.dominant_script)
 }
 
+/// 译文行可能比主行早或晚几十到几百毫秒（不同歌词源的主行/译文先后与偏移都不一样）。
+/// 而分组容差按行距收缩（见 cluster_tolerance）：译文与主行相邻时「行距」恰好就是
+/// 那个偏移量，容差被压到偏移的 1/4，于是任何非零偏移都合不上组，译文被迫成为独立的一行
+/// ——表现为主行唱完跳到译文行再快速过一遍。
+/// 这里对「一侧是纯汉字、另一侧不是」的相邻行单独放行；谁当主行、谁当译文仍由既有角色
+/// 判定决定（与时间戳相同的形态走同一条路，实测中文在前/在后都能得到「外文主行 + 中文译文」）。
+const TRANSLATION_ATTACH_WINDOW_MS: u32 = 800;
+
+fn is_script_changed_attachment(group: &[LyricTrackLine], candidate: &LyricTrackLine) -> bool {
+    let Some(first) = group.first() else {
+        return false;
+    };
+    if candidate.start_ms.abs_diff(first.start_ms) > TRANSLATION_ATTACH_WINDOW_MS {
+        return false;
+    }
+    if matches!(candidate.explicit_role, Some(ExplicitLineRole::Translation)) {
+        return true;
+    }
+    // 候选行自身像日语（含假名）→ 更可能是「下一句歌词」，不该被当成译文
+    if kana_flavored(&candidate.script_profile) {
+        return false;
+    }
+    // 一侧是纯汉字（无假名/谚文）、另一侧不是 → 疑似「主行 + 译文」对。
+    // 罗马音（纯拉丁）刻意不在此列：合组后既有角色判定不会把文本挂回主行的 roman_text，
+    // 放行只会把罗马音行整行吞掉，故维持原行为。
+    plain_han_profile(&candidate.script_profile) != plain_han_profile(&first.script_profile)
+}
+
 fn cluster_by_timestamp(lines: &[LyricTrackLine]) -> Vec<Vec<LyricTrackLine>> {
     if lines.is_empty() {
         return Vec::new();
@@ -281,7 +309,8 @@ fn cluster_by_timestamp(lines: &[LyricTrackLine]) -> Vec<Vec<LyricTrackLine>> {
             boundary_start_beyond_window(lines, group_start_index, -1),
             boundary_start_beyond_window(lines, group_start_index, 1),
         );
-        let within_tolerance = line.start_ms.abs_diff(current_group[0].start_ms) <= tolerance;
+        let within_tolerance = line.start_ms.abs_diff(current_group[0].start_ms) <= tolerance
+            || is_script_changed_attachment(current_group, line);
 
         if within_tolerance && !script_conflict_blocks_merge(current_group, line) {
             current_group.push(line.clone());

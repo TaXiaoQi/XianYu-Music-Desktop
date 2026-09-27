@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import type { Song } from '../../types';
 import type { HomeDiscoverTab } from './HomeDiscoverTabs.vue';
 import StatisticsPage from '../statistics/StatisticsPage.vue';
+import LeaderboardPage from '../statistics/LeaderboardPage.vue';
 import DailyRecommend from '../../views/DailyRecommend.vue';
 import TopLists from '../../views/TopLists.vue';
 
@@ -94,7 +95,7 @@ const handleTableDragStart = (...args: any[]) => {
 const router = useRouter();
 
 const isDiscoverMode = computed(() =>
-  ['statistics', 'dailyRecommend', 'topLists'].includes(props.localViewMode),
+  ['statistics', 'leaderboard', 'dailyRecommend', 'topLists'].includes(props.localViewMode),
 );
 
 const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
@@ -148,6 +149,7 @@ const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
         <HomeDiscoverTabs :active-mode="localViewMode" @change="handleDiscoverTabChange" />
           <KeepAlive>
             <StatisticsPage v-if="localViewMode === 'statistics'" key="statistics" class="flex-1 min-h-0" />
+            <LeaderboardPage v-else-if="localViewMode === 'leaderboard'" key="leaderboard" class="flex-1 min-h-0" />
             <DailyRecommend v-else-if="localViewMode === 'dailyRecommend'" key="dailyRecommend" class="flex-1 min-h-0" />
             <TopLists v-else-if="localViewMode === 'topLists'" key="topLists" class="flex-1 min-h-0" />
           </KeepAlive>

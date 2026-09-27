@@ -30,6 +30,7 @@ import { usePlaylistSync } from './composables/usePlaylistSync';
 import { useAuthStore } from './features/auth/store';
 import { useDlnaCastStore } from './features/playback/castStore';
 import { useDesktopLinkStore } from './features/playback/desktopLinkStore';
+import { useSleepTimer } from './features/sleepTimer/useSleepTimer';
 
 const currentWindowLabel = (() => {
   try {
@@ -131,6 +132,14 @@ if (currentWindowLabel === 'main') {
   const leaveTraySleep = () => {
     mainWindowUiSleepRequested.value = false;
   };
+
+  // 睡眠定时：应用内活动监听 + 每秒心跳 + 后端到点事件；「隐藏到托盘」复用上面的托盘睡眠路径
+  useSleepTimer({
+    onHideToTray: () => {
+      void enterTraySleep();
+      void getCurrentWindow().hide();
+    },
+  });
 
   const leaveMainWindowSleep = () => {
     if (!isMainShellSleeping.value) return;

@@ -67,7 +67,8 @@ export function toRenderLine(line: SemanticLine, options?: {
     endMs: line.endMs,
     main: wordFragments(line.mainWords) ?? [{ text: line.mainText }],
     translation: showTranslation ? singleFragment(line.translationText || '') : undefined,
-    roman: showRomaji ? romanFragments(line) : undefined,
+    // 判定为罗马化音译的行：罗马音子行无视全局开关，始终渲染（中文大字 + 粤拼小字）。
+    roman: (showRomaji || line.isRomanized) ? romanFragments(line) : undefined,
     secondary: line.secondaryTexts?.map((text) => ({ text })),
   };
 }
@@ -143,6 +144,7 @@ export function semanticLineToLyricLine(line: SemanticLine): LyricLine {
     isBG: line.isBG,
     isDuet: line.isDuet,
     isDuetPartner: line.isDuetPartner,
+    isRomanized: line.isRomanized,
   };
 }
 
@@ -211,6 +213,8 @@ export function convertLyricsToAmlLines(
 
   return usableLines.map((line, lineIndex) => {
     const effectiveWords = enableWordEffect ? line.words : undefined;
+    // 罗马化音译行无视「显示罗马音」开关，其余行保持全局语义。
+    const showRomajiForLine = showRomaji || Boolean(line.isRomanized);
     const startTime = secondsToMs(line.time);
     const parsedEndMs = secondsToMs(line.endTime || line.time);
     const nextLine = usableLines[lineIndex + 1];
@@ -233,7 +237,7 @@ export function convertLyricsToAmlLines(
     const translationFragment: DisplayFragment[] | undefined = showTranslation && line.translation
       ? [{ text: line.translation }]
       : undefined;
-    const lineRomanFragments: DisplayFragment[] | undefined = showRomaji && line.romaji
+    const lineRomanFragments: DisplayFragment[] | undefined = showRomajiForLine && line.romaji
       ? (effectiveWords?.every((word) => Boolean(word.romaji))
         ? effectiveWords.map((word) => ({
           text: word.romaji || '',
@@ -247,7 +251,7 @@ export function convertLyricsToAmlLines(
     const orderedWords = effectiveWords
       ? [...effectiveWords].sort((left, right) => secondsToMs(left.start) - secondsToMs(right.start))
       : [];
-    const perWordRomajiReady = showRomaji
+    const perWordRomajiReady = showRomajiForLine
       && orderedWords.length > 0
       && orderedWords
         .filter(wordNeedsRomaji)
@@ -276,7 +280,7 @@ export function convertLyricsToAmlLines(
           obscene: false,
         }];
 
-    const romajiWords: AmlRomajiWord[] | undefined = showRomaji && line.romajiWords
+    const romajiWords: AmlRomajiWord[] | undefined = showRomajiForLine && line.romajiWords
       ? [...line.romajiWords]
         .sort((left, right) => secondsToMs(left.start) - secondsToMs(right.start))
         .map((word) => {
@@ -293,7 +297,7 @@ export function convertLyricsToAmlLines(
     return {
       words,
       translatedLyric: translationFragment?.[0]?.text || '',
-      romanLyric: showRomaji && !hasTimedRomaji ? (lineRomanFragments?.[0]?.text || '') : '',
+      romanLyric: showRomajiForLine && !hasTimedRomaji ? (lineRomanFragments?.[0]?.text || '') : '',
       romajiWords,
       startTime,
       endTime,
@@ -315,7 +319,10 @@ export function getCurrentLyricDisplayLines(
     text: line.text || line.words?.map((word) => word.text).join('') || '',
   }];
 
-  if (showRomaji && line.romaji) {
+  // 罗马化音译行无视「显示罗马音」开关，其余行保持全局语义。
+  const showRomajiForLine = showRomaji || Boolean(line.isRomanized);
+
+  if (showRomajiForLine && line.romaji) {
     const timedRomaji = line.romajiWords && line.romajiWords.length > 0
       ? line.romajiWords.map((word) => ({ text: word.text, start: word.start, end: word.end }))
       : (line.words ?? [])

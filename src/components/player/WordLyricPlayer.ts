@@ -13,6 +13,7 @@
  * 以纯函数导出，供单元测试直接覆盖。
  */
 import type { AmlPlayerLine, AmlPlayerWord } from '../../composables/lyrics';
+import { resolveSubLineProgressValue } from './subLineHighlight';
 
 /* ==================== 对外类型 ==================== */
 
@@ -162,6 +163,8 @@ const FLOW_STIFFNESS = 120;
 const FLOW_DAMPING = 19;
 const MIN_LAYOUT_HEIGHT = 36;
 const MAX_BLUR_PX = 32;
+/** 子行扫光进度变量：写在行元素上，由子行文本遮罩消费。 */
+const SUB_LINE_PROGRESS_VAR = '--xy-sub-line-progress';
 
 function sameIndexSet(left: number[], right: Set<number>): boolean {
   if (left.length !== right.size) return false;
@@ -576,9 +579,13 @@ export class WordLyricPlayerCore {
       if (state !== entry.visualState) {
         entry.visualState = state;
         this.applyStaticWordMasks(entry, state, fadePx);
+        this.applyStaticSubLineProgress(entry, state);
         continue;
       }
       if (state !== 'active') continue;
+
+      // 子行扫光跟着主行词级节奏推进；暂停时的突发帧也会走到这里，进度保持一致
+      entry.el.style.setProperty(SUB_LINE_PROGRESS_VAR, resolveSubLineProgressValue(this.currentTimeMs, entry.line));
 
       for (const word of entry.words) {
         const progress = wordProgress(word.word, this.currentTimeMs);
@@ -606,6 +613,11 @@ export class WordLyricPlayerCore {
         this.applyWordMask(word, 0, fadePx);
       }
     }
+  }
+
+  /** 非活动行的子行进度一次性归位：唱毕全亮、未唱全暗。 */
+  private applyStaticSubLineProgress(entry: LineEntry, state: LineVisualState) {
+    entry.el.style.setProperty(SUB_LINE_PROGRESS_VAR, state === 'past' ? '100%' : '0%');
   }
 
   private applyWordMask(word: WordEntry, progress: number, fadePx: number) {
@@ -722,13 +734,13 @@ export class WordLyricPlayerCore {
     if (line.romanLyric.trim()) {
       const romanLine = document.createElement('div');
       romanLine.className = 'wlp-line__sub wlp-line__sub--roman';
-      romanLine.textContent = line.romanLyric;
+      romanLine.appendChild(this.buildSubText(line.romanLyric));
       el.appendChild(romanLine);
     }
     if (line.translatedLyric.trim()) {
       const translation = document.createElement('div');
       translation.className = 'wlp-line__sub wlp-line__sub--translation';
-      translation.textContent = line.translatedLyric;
+      translation.appendChild(this.buildSubText(line.translatedLyric));
       el.appendChild(translation);
     }
 
@@ -770,6 +782,14 @@ export class WordLyricPlayerCore {
       dots.appendChild(dot);
     }
     this.dotsEl = dots;
+  }
+
+  /** 子行文本包裹层：遮罩挂在它上面，宽度恰好等于文本宽度。 */
+  private buildSubText(text: string): HTMLSpanElement {
+    const span = document.createElement('span');
+    span.className = 'wlp-line__sub-text';
+    span.textContent = text;
+    return span;
   }
 
   /* ---------- 滚轮 ---------- */

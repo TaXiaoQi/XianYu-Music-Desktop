@@ -22,6 +22,10 @@ const GROUP_TOLERANCE_MS = 50;
 const ROMAJI_WORD_TOLERANCE_MS = 80;
 /** 判定"主导文字"所需的最小占比。 */
 const DOMINANT_SCRIPT_RATIO = 0.7;
+// 音译与汉字通常按音节一对一：音译词数与该行汉字数之比应落在此区间；
+// 翻译与原文长度无关，因此仅靠长度无法区分，需配合下面的音译特征判定。
+const MIN_ROMAN_TOKEN_HAN_RATIO = 0.45;
+const MAX_ROMAN_TOKEN_HAN_RATIO = 2.2;
 
 /* ==================== 文字类型分析 ==================== */
 
@@ -112,6 +116,74 @@ function isChineseLike(profile: LineScriptProfile): boolean {
     && profile.hangulCount === 0;
 }
 
+// 英文功能词：出现即强烈暗示该拉丁行是英文，而非 CJK 歌词的罗马化音译。
+const ENGLISH_FUNCTION_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'if', 'is', 'are', 'was', 'were', 'be', 'been', 'am',
+  'do', 'does', 'did', 'have', 'has', 'had', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+  'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'their', 'our', 'its', 'to', 'of',
+  'in', 'on', 'at', 'for', 'with', 'from', 'by', 'as', 'not', 'that', 'this', 'these', 'those',
+  'will', 'would', 'can', 'could', 'should', 'when', 'where', 'what', 'who', 'how', 'all',
+  'just', 'only', 'than', 'then', 'there', 'here',
+]);
+
+// 典型英文词形；粤拼/拼音不会以这些字母组合结尾，出现即判定为英文而非音译。
+const ENGLISH_MORPHOLOGY_PATTERN = /(?:ing|tion|sion|ness|ment|ly|ed)$/;
+// 粤拼/港式罗马化特征：声调数字、j-/y- 声母、eo/oe/yu 韵母、-ng/-k/-t 韵尾。
+const ROMANIZATION_FINAL_PATTERN = /(?:eo|oe|yu)/;
+const ROMANIZATION_INITIAL_PATTERN = /^[jy]/;
+const ROMANIZATION_ENDING_PATTERN = /(?:ng|k|t)$/;
+
+function tokenizeLatinWords(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+/**
+ * 该拉丁行是否「像」粤拼/港式罗马化音译，而非英文。
+ * 与 Rust 侧 score_romanized_latin_text / looks_like_non_romaji_english_latin_text 同一意图：
+ * 必须带音译特征（声调数字 / 声母 / 韵母 / 韵尾），且不含英文功能词、不含典型英文词形。
+ */
+function looksLikeRomanizedLatin(text: string): boolean {
+  const tokens = tokenizeLatinWords(text);
+  if (tokens.length === 0) return false;
+
+  if (tokens.some((token) => ENGLISH_FUNCTION_WORDS.has(token))) return false;
+  if (tokens.some((token) => token.length > 3 && ENGLISH_MORPHOLOGY_PATTERN.test(token))) return false;
+
+  const lower = text.toLowerCase();
+  if (/\d/.test(text)) return true; // 声调数字，如 nei5 / soeng1
+  if (ROMANIZATION_FINAL_PATTERN.test(lower)) return true;
+  // j-/y- 声母、-ng/-k/-t 韵尾是弱特征（法语/英语单词 et、out 也会命中），
+  // 至少两个音节同时命中才判音译，避免「拉丁主行 + 中文翻译」被误交换。
+  let markerCount = 0;
+  for (const token of tokens) {
+    if (ROMANIZATION_INITIAL_PATTERN.test(token) || ROMANIZATION_ENDING_PATTERN.test(token)) {
+      markerCount += 1;
+      if (markerCount >= 2) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 拉丁行是否为该汉字行的罗马化音译（常见于粤语歌：lyric=粤拼、tlyric=中文）。
+ * 需要同时满足：组内有汉字主导行；拉丁行是纯拉丁且「像音译」；音译词数与汉字数大致对应。
+ * 结构完全相同的「英文行 + 中文翻译」会因为英文功能词/词形而在这里被排除。
+ */
+function isLatinRomanizationOf(latinLine: ParsedLine, cjkLine: ParsedLine): boolean {
+  const cjkProfile = profileOf(cjkLine);
+  if (cjkProfile.hanCount === 0 || !isChineseLike(cjkProfile)) return false;
+  if (!isPureLatin(profileOf(latinLine))) return false;
+
+  const latinText = contentTextOf(latinLine);
+  if (!looksLikeRomanizedLatin(latinText)) return false;
+
+  const tokenCount = tokenizeLatinWords(latinText).length;
+  if (tokenCount === 0) return false;
+
+  const tokenToHanRatio = tokenCount / cjkProfile.hanCount;
+  return tokenToHanRatio >= MIN_ROMAN_TOKEN_HAN_RATIO && tokenToHanRatio <= MAX_ROMAN_TOKEN_HAN_RATIO;
+}
+
 function isJapaneseLike(profile: LineScriptProfile): boolean {
   return profile.kanaCount > 0 && profile.hangulCount === 0;
 }
@@ -183,22 +255,29 @@ function carriesInlineSecondary(line: ParsedLine): boolean {
   return Boolean(line.translatedText || line.romanText || line.words?.some((word) => word.romanText));
 }
 
-/** 从一组常规行里挑出最像"原文"的那一行。 */
-function chooseMainLine(lines: ParsedLine[]): ParsedLine {
+/** 从一组常规行里挑出最像"原文"的那一行；发生拉丁音译互换时一并返回交换标记。 */
+function chooseMainLine(lines: ParsedLine[]): { mainLine: ParsedLine; romanizedSwap: boolean } {
   const japaneseLine = lines.find((line) => isJapaneseLike(profileOf(line)));
-  if (japaneseLine) return japaneseLine;
+  if (japaneseLine) return { mainLine: japaneseLine, romanizedSwap: false };
 
   const koreanLine = lines.find((line) => isKoreanLike(profileOf(line)));
-  if (koreanLine) return koreanLine;
+  if (koreanLine) return { mainLine: koreanLine, romanizedSwap: false };
 
   // 恰好两行且一行为中文时，非中文的那行更可能是原文。
   if (lines.length === 2) {
     const chineseLine = lines.find((line) => isChineseLike(profileOf(line)));
     const foreignLine = lines.find((line) => isForeignTextLine(line));
-    if (chineseLine && foreignLine) return foreignLine;
+    if (chineseLine && foreignLine) {
+      // 若拉丁行是该汉字行的罗马化音译（如粤拼），汉字行才是主行；
+      // 否则维持「外文主行 + 中文译文」的既有行为（英文歌 + 中文翻译）。
+      if (isLatinRomanizationOf(foreignLine, chineseLine)) {
+        return { mainLine: chineseLine, romanizedSwap: true };
+      }
+      return { mainLine: foreignLine, romanizedSwap: false };
+    }
   }
 
-  return lines[0];
+  return { mainLine: lines[0], romanizedSwap: false };
 }
 
 type HeuristicRole = 'translation' | 'romaji' | 'secondary';
@@ -227,8 +306,13 @@ export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
   const plainLines = group.filter((line) => !line.explicitRole);
 
   const inlineCarrier = plainLines.find((line) => carriesInlineSecondary(line));
-  const main = inlineCarrier
-    ?? chooseMainLine(plainLines.length > 0 ? plainLines : group);
+  const heuristicPick = chooseMainLine(plainLines.length > 0 ? plainLines : group);
+  const main = inlineCarrier ?? heuristicPick.mainLine;
+  // 显式标记优先：源里写了角色就不做推断，也不强制显示罗马音。
+  const isRomanized = !inlineCarrier
+    && heuristicPick.romanizedSwap
+    && markedTranslations.length === 0
+    && markedRomaji.length === 0;
 
   const leftovers = plainLines.filter((line) => line !== main);
 
@@ -262,7 +346,7 @@ export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
     confidence = 'parser-native';
   }
 
-  return { main, translationLine, romajiLine, secondaryLines, confidence };
+  return { main, translationLine, romajiLine, secondaryLines, confidence, isRomanized };
 }
 
 /* ==================== 罗马音词对齐 ==================== */
@@ -374,7 +458,7 @@ function resolveRomanWords(main: ParsedLine, romajiLine: ParsedLine | null): Sem
 export function buildSemanticLines(lines: ParsedLine[]): SemanticLine[] {
   return splitIntoGroups(lines)
     .map((group) => {
-      const { main, translationLine, romajiLine, secondaryLines, confidence } = classifyGroupLines(group);
+      const { main, translationLine, romajiLine, secondaryLines, confidence, isRomanized } = classifyGroupLines(group);
 
       const endMs = Math.max(
         main.endMs ?? main.startMs,
@@ -398,6 +482,7 @@ export function buildSemanticLines(lines: ParsedLine[]): SemanticLine[] {
         isBG: false,
         isDuet: false,
         isDuetPartner: false,
+        isRomanized: isRomanized || undefined,
       };
       return semantic;
     })

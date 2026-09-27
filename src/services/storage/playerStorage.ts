@@ -41,6 +41,8 @@ export const playerStorageKeys = {
   pluginHostRack: 'player_plugin_host_rack',
   pluginHostExtraDirs: 'player_plugin_host_extra_dirs',
   consumedInstallLanguage: 'player_consumed_install_language',
+  /** 已应用过的设置迁移 id（JSON 数组），见 features/settings/migrations.ts */
+  settingsMigrations: 'player_settings_migrations',
 } as const;
 
 const isSong = (value: unknown): value is Song =>

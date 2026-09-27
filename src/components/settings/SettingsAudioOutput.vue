@@ -671,6 +671,18 @@ onScopeDispose(() => {
             </div>
           </div>
         </div>
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">单声道合并</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">将左右声道合并为单声道输出</div>
+          </div>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': soundEffectStore.monoMergeEnabled }"
+            @click="soundEffectStore.monoMergeEnabled = !soundEffectStore.monoMergeEnabled"
+          ></button>
+        </div>
       </div>
     </section>
 

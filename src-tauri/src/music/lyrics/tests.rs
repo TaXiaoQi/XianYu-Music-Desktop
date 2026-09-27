@@ -695,3 +695,224 @@ fn parenthetical_vocal_split_requires_duet_evidence() {
     assert_eq!(parsed[3].text, "和声");
     assert!(parsed[3].is_duet_partner);
 }
+
+// ==================== 译文偏移合组与罗马化音译行判定 ====================
+
+fn lrc_line(ms: u32, text: &str) -> String {
+    format!(
+        "[{:02}:{:02}.{:03}]{text}",
+        ms / 60_000,
+        (ms / 1_000) % 60,
+        ms % 1_000
+    )
+}
+
+#[test]
+fn attaches_offset_translation_line_to_its_main_line() {
+    // 译文行常比主行晚几十到几百毫秒。分组容差按行距收缩（译文紧跟主行时行距恰好等于
+    // 那个偏移量），早期这种偏移对合不上组，译文被迫成为独立一行——表现为「主行唱完
+    // 跳到译文行再快速过一遍」。
+    for offset in [0u32, 60, 120, 300, 700] {
+        let raw = format!(
+            "{}\n{}",
+            lrc_line(12_340, "夜に駆ける"),
+            lrc_line(12_340 + offset, "奔向夜晚"),
+        );
+        let payload = build_structured_lyrics_payload(raw);
+        let lines = payload
+            .display_lines
+            .iter()
+            .map(|line| (line.text.as_str(), line.translation.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(lines.len(), 1, "译文晚 {offset}ms 时应与主行合并，实际 {lines:?}");
+        assert_eq!(lines[0].0, "夜に駆ける");
+        assert_eq!(lines[0].1, "奔向夜晚", "译文晚 {offset}ms 时应关联出译文");
+    }
+}
+
+#[test]
+fn attaches_offset_translation_line_after_latin_main_line() {
+    let raw = format!(
+        "{}\n{}",
+        lrc_line(12_340, "Running into the night"),
+        lrc_line(12_640, "奔向夜晚"),
+    );
+    let payload = build_structured_lyrics_payload(raw);
+    assert_eq!(payload.display_lines.len(), 1, "拉丁主行 + 偏移译文应合并");
+    assert_eq!(payload.display_lines[0].translation, "奔向夜晚");
+}
+
+#[test]
+fn attaches_offset_translation_line_when_translation_comes_first() {
+    // 有些歌词源把译文写在主行之前，且带几十到几百毫秒偏移
+    for offset in [0u32, 60, 200, 700] {
+        let raw = format!(
+            "{}\n{}",
+            lrc_line(12_340, "奔向夜晚"),
+            lrc_line(12_340 + offset, "Running into the night"),
+        );
+        let payload = build_structured_lyrics_payload(raw);
+        let lines = payload
+            .display_lines
+            .iter()
+            .map(|line| (line.text.as_str(), line.translation.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(lines.len(), 1, "中文在前、偏移 {offset}ms 时应合并，实际 {lines:?}");
+        assert_eq!(lines[0].0, "Running into the night", "应以外文为主行");
+        assert_eq!(lines[0].1, "奔向夜晚", "中文应作为译文");
+    }
+}
+
+#[test]
+fn keeps_same_script_pairs_separate_within_attach_window() {
+    // 同一语言的两行即使相隔几十毫秒，也不能被当成「主行 + 译文」
+    let cases: [(&str, &str, &str); 4] = [
+        ("两条中文", "奔向夜晚", "夜幕降临"),
+        ("两条英文", "Running into the night", "Only thing that is burning"),
+        ("两条日语", "夜に駆ける", "沈むように溶けてゆく"),
+        ("汉字行在前", "東京", "夜に駆ける"),
+    ];
+    for (name, first_text, second_text) in cases {
+        let raw = format!(
+            "{}\n{}",
+            lrc_line(12_340, first_text),
+            lrc_line(12_400, second_text),
+        );
+        let payload = build_structured_lyrics_payload(raw);
+        assert_eq!(payload.display_lines.len(), 2, "{name}：应保持两行独立");
+        assert!(
+            payload
+                .display_lines
+                .iter()
+                .all(|line| line.translation.is_empty()),
+            "{name}：不应产生译文"
+        );
+    }
+}
+
+#[test]
+fn keeps_same_script_lines_separate_even_when_close() {
+    // 回归保护：同一语言、相隔几十毫秒的两行不能被当成「主行 + 译文」合并
+    let raw = format!(
+        "{}\n{}",
+        lrc_line(12_340, "夜に駆ける"),
+        lrc_line(12_400, "沈むように溶けてゆく"),
+    );
+    let payload = build_structured_lyrics_payload(raw);
+    assert_eq!(payload.display_lines.len(), 2, "同为日语的两行应保持独立");
+    assert!(
+        payload
+            .display_lines
+            .iter()
+            .all(|line| line.translation.is_empty()),
+        "同语言的两行不应产生译文"
+    );
+}
+
+#[test]
+fn cantonese_romanization_swaps_chinese_to_main_and_marks_auto_show() {
+    // 插件把粤拼放进 lyric、中文放进 tlyric：源未声明角色，启发式应把中文升为主行、
+    // 粤拼降为罗马音子行，并标记 is_romanized 以无视「显示罗马音」开关显示。
+    let payload = build_structured_lyrics_payload(
+        [
+            "[00:43.802]man sv nei si soeng zoi ha en loi zei",
+            "[00:43.802]闻说你时常在下午 来这里寄信件",
+        ]
+        .join("\n"),
+    );
+
+    assert_eq!(payload.display_lines.len(), 1);
+    assert_eq!(
+        payload.display_lines[0].text,
+        "闻说你时常在下午 来这里寄信件"
+    );
+    assert_eq!(
+        payload.display_lines[0].romaji,
+        "man sv nei si soeng zoi ha en loi zei"
+    );
+    assert_eq!(payload.display_lines[0].translation, "");
+    assert!(
+        payload.display_lines[0].is_romanized,
+        "判定为罗马化音译时应标记 is_romanized 以自动显示罗马音子行"
+    );
+}
+
+#[test]
+fn structurally_similar_english_is_not_treated_as_romanization() {
+    // 长度结构与粤语用例相似，但含英文功能词 / 英文词形，必须保持「英文主行 + 中文译文」。
+    let payload = build_structured_lyrics_payload(
+        [
+            "[00:06.000]Missing the feeling",
+            "[00:06.000]缺失的感觉",
+        ]
+        .join("\n"),
+    );
+
+    assert_eq!(payload.display_lines.len(), 1);
+    assert_eq!(payload.display_lines[0].text, "Missing the feeling");
+    assert_eq!(payload.display_lines[0].translation, "缺失的感觉");
+    assert_eq!(payload.display_lines[0].romaji, "");
+    assert!(!payload.display_lines[0].is_romanized);
+}
+
+#[test]
+fn explicit_translation_marker_beats_romanization_heuristic() {
+    // 源里显式声明为翻译时以源为准，不做交换。
+    let payload = build_structured_lyrics_payload(
+        [
+            "[00:21.680]man sv nei si soeng zoi ha en loi zei",
+            "[00:21.680][tr]闻说你时常在下午 来这里寄信件",
+        ]
+        .join("\n"),
+    );
+
+    assert_eq!(payload.display_lines.len(), 1);
+    assert_eq!(
+        payload.display_lines[0].text,
+        "man sv nei si soeng zoi ha en loi zei"
+    );
+    assert_eq!(
+        payload.display_lines[0].translation,
+        "闻说你时常在下午 来这里寄信件"
+    );
+    assert_eq!(payload.display_lines[0].romaji, "");
+    assert!(!payload.display_lines[0].is_romanized);
+}
+
+#[test]
+fn japanese_romaji_plus_chinese_translation_stays_unchanged() {
+    let payload = build_structured_lyrics_payload(
+        [
+            "[00:43.792]mo u hi to tsu fu ya shi ma sho u",
+            "[00:43.792]もう一つ増やしましょう",
+            "[00:43.792]但让我们再多加一个吧",
+        ]
+        .join("\n"),
+    );
+
+    assert_eq!(payload.display_lines.len(), 1);
+    assert_eq!(payload.display_lines[0].text, "もう一つ増やしましょう");
+    assert_eq!(
+        payload.display_lines[0].romaji,
+        "mo u hi to tsu fu ya shi ma sho u"
+    );
+    assert_eq!(payload.display_lines[0].translation, "但让我们再多加一个吧");
+    assert!(!payload.display_lines[0].is_romanized);
+}
+
+#[test]
+fn korean_lyric_with_chinese_translation_stays_unchanged() {
+    let payload = build_structured_lyrics_payload(
+        [
+            "[00:12.000]그런 날이 있었지",
+            "[00:12.000]那样的日子曾经存在",
+        ]
+        .join("\n"),
+    );
+
+    assert_eq!(payload.display_lines.len(), 1);
+    assert_eq!(payload.display_lines[0].text, "그런 날이 있었지");
+    assert_eq!(payload.display_lines[0].translation, "那样的日子曾经存在");
+    assert_eq!(payload.display_lines[0].romaji, "");
+    assert!(!payload.display_lines[0].is_romanized);
+}

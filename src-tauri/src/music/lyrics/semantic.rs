@@ -11,8 +11,10 @@ use super::model::{
     PairAlignment, SemanticLine, StructuredLyricsPayload,
 };
 use super::script::{
-    english_likeness, english_phrase_like, family_of, kana_flavored, measure_script,
-    native_english_text, plain_han_profile, romanized_likeness, track_kana_flavored,
+    english_likeness, english_phrase_like, family_of, kana_flavored, latin_tokens,
+    looks_like_romanized_latin, measure_script, native_english_text, plain_han_profile,
+    romanized_likeness, track_kana_flavored, MAX_ROMAN_TOKEN_HAN_RATIO,
+    MIN_ROMAN_TOKEN_HAN_RATIO,
 };
 use super::text::{read_meta_tags, tidy_line};
 use super::track::{align_tracks, build_lyric_document};
@@ -387,6 +389,7 @@ fn semantic_from_orphans(
                 is_bg: false,
                 is_duet: false,
                 is_duet_partner: false,
+                is_romanized: false,
             }
         }
     };
@@ -405,6 +408,7 @@ fn semantic_from_orphans(
         is_bg: main_line.is_bg,
         is_duet: main_line.is_duet,
         is_duet_partner: main_line.is_duet_partner,
+        is_romanized: false,
     };
 
     for (track_index, _row, candidate_line) in group.iter() {
@@ -514,6 +518,57 @@ fn latin_only_row(line: &LyricTrackLine) -> bool {
         && line.script_profile.hangul_count == 0
 }
 
+/// 拉丁行是否为该汉字行的罗马化音译（粤语歌常见：lyric=粤拼、tlyric=中文）。
+/// 需同时满足：该行汉字主导；拉丁行纯拉丁且「像音译」；音译词数与汉字数大致对应。
+/// 结构完全相同的「英文行 + 中文翻译」会因为英文功能词/词形而在这里被排除。
+fn is_latin_romanization_of(latin_line: &LyricTrackLine, cjk_line: &LyricTrackLine) -> bool {
+    let cjk_profile = &cjk_line.script_profile;
+    if cjk_profile.han_count == 0
+        || cjk_profile.han_count <= cjk_profile.latin_count
+        || cjk_profile.kana_count > 0
+        || cjk_profile.hangul_count > 0
+    {
+        return false;
+    }
+
+    if !latin_only_row(latin_line) {
+        return false;
+    }
+    if !looks_like_romanized_latin(&latin_line.text) {
+        return false;
+    }
+
+    let token_count = latin_tokens(&latin_line.text).len() as f64;
+    if token_count == 0.0 {
+        return false;
+    }
+
+    let token_to_han_ratio = token_count / cjk_profile.han_count as f64;
+    token_to_han_ratio >= MIN_ROMAN_TOKEN_HAN_RATIO
+        && token_to_han_ratio <= MAX_ROMAN_TOKEN_HAN_RATIO
+}
+
+/// 若「汉字行 + 拉丁行」这一对是「汉字 + 其罗马化音译」（如粤拼），返回 (汉字主行, 拉丁罗马音行)。
+/// 否则返回 None，维持既有「外文主行 + 中文译文」行为（英文歌 + 中文翻译）。
+fn resolve_romanization_pair<'a>(
+    first: &'a LyricTrackLine,
+    second: &'a LyricTrackLine,
+) -> Option<(&'a LyricTrackLine, &'a LyricTrackLine)> {
+    if latin_only_row(first)
+        && han_only_row(second)
+        && is_latin_romanization_of(first, second)
+    {
+        return Some((second, first));
+    }
+    if han_only_row(first)
+        && latin_only_row(second)
+        && is_latin_romanization_of(second, first)
+    {
+        return Some((first, second));
+    }
+    None
+}
+
 fn semantic_from_roles(
     main_line: &LyricTrackLine,
     translation_line: Option<&LyricTrackLine>,
@@ -533,6 +588,7 @@ fn semantic_from_roles(
         is_bg: main_line.is_bg,
         is_duet: main_line.is_duet,
         is_duet_partner: main_line.is_duet_partner,
+        is_romanized: false,
     }
 }
 
@@ -555,6 +611,18 @@ fn assemble_fixed_roles_from_cluster(
     match rows.as_slice() {
         [main_line] => Some(semantic_from_roles(main_line, None, None)),
         [first_line, second_line] => {
+            // 粤语等：汉字行 + 其罗马化音译（源未显式声明角色）→ 汉字作主行、拉丁作罗马音子行，
+            // 与「英文主行 + 中文翻译」正好相反。显式标记优先：源里写了角色就不做推断。
+            if first_line.explicit_role.is_none() && second_line.explicit_role.is_none() {
+                if let Some((main_line, roman_line)) =
+                    resolve_romanization_pair(first_line, second_line)
+                {
+                    let mut line = semantic_from_roles(main_line, None, Some(roman_line));
+                    line.is_romanized = true;
+                    return Some(line);
+                }
+            }
+
             let (main_line, translation_line) =
                 if han_only_row(first_line) && !han_only_row(second_line) {
                     (*second_line, *first_line)
@@ -801,6 +869,7 @@ pub fn lyric_document_to_semantic_lines(document: &LyricDocument) -> Vec<Semanti
             is_bg: display_main_line.is_bg,
             is_duet: display_main_line.is_duet,
             is_duet_partner: display_main_line.is_duet_partner,
+            is_romanized: false,
         }));
         semantic_line_clusters.push(main_line.cluster_index);
     }
@@ -937,6 +1006,7 @@ pub fn semantic_line_to_lyric_line(line: &SemanticLine) -> LyricLinePayload {
         is_bg: line.is_bg,
         is_duet: line.is_duet,
         is_duet_partner: line.is_duet_partner,
+        is_romanized: line.is_romanized,
     }
 }
 

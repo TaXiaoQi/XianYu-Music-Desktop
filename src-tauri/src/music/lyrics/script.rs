@@ -338,3 +338,71 @@ pub(super) fn track_romanized_likeness(track: &LyricTrack) -> f64 {
             .collect::<Vec<_>>(),
     )
 }
+
+// ---------- 罗马化音译行的逐行判定（与 TS 侧 classifier.ts 互为镜像） ----------
+
+/// 音译与汉字通常按音节一对一：音译词数与该行汉字数之比应落在此区间；
+/// 翻译与原文长度无关，因此仅靠长度无法区分，需配合下面的音译特征判定。
+pub(super) const MIN_ROMAN_TOKEN_HAN_RATIO: f64 = 0.45;
+pub(super) const MAX_ROMAN_TOKEN_HAN_RATIO: f64 = 2.2;
+
+/// 英文功能词：出现即强烈暗示该拉丁行是英文，而非 CJK 歌词的罗马化音译。
+const ENGLISH_FUNCTION_WORDS: &[&str] = &[
+    "a", "an", "the", "and", "or", "but", "if", "is", "are", "was", "were", "be", "been", "am",
+    "do", "does", "did", "have", "has", "had", "i", "you", "he", "she", "it", "we", "they",
+    "me", "him", "her", "us", "them", "my", "your", "his", "their", "our", "its", "to", "of",
+    "in", "on", "at", "for", "with", "from", "by", "as", "not", "that", "this", "these", "those",
+    "will", "would", "can", "could", "should", "when", "where", "what", "who", "how", "all",
+    "just", "only", "than", "then", "there", "here",
+];
+
+/// 典型英文词形结尾；粤拼/拼音不会以这些字母组合结尾，出现即判定为英文而非音译。
+fn has_english_morphology(token: &str) -> bool {
+    if token.len() <= 3 {
+        return false;
+    }
+    ["ing", "tion", "sion", "ness", "ment", "ly", "ed"]
+        .iter()
+        .any(|suffix| token.ends_with(suffix))
+}
+
+/// 该拉丁行是否「像」粤拼/港式罗马化音译，而非英文：必须带音译特征
+/// （声调数字 / 声母 / 韵母 / 韵尾），且不含英文功能词、不含典型英文词形。
+pub(super) fn looks_like_romanized_latin(text: &str) -> bool {
+    let tokens = latin_tokens(text);
+    if tokens.is_empty() {
+        return false;
+    }
+
+    if tokens
+        .iter()
+        .any(|token| ENGLISH_FUNCTION_WORDS.contains(&token.as_str()))
+    {
+        return false;
+    }
+    if tokens.iter().any(|token| has_english_morphology(token)) {
+        return false;
+    }
+
+    if text.chars().any(|ch| ch.is_ascii_digit()) {
+        // 声调数字，如 nei5 / soeng1
+        return true;
+    }
+    let lower = text.to_lowercase();
+    if lower.contains("eo") || lower.contains("oe") || lower.contains("yu") {
+        return true;
+    }
+    // 粤拼/港式罗马化特征：j-/y- 声母、-ng/-k/-t 韵尾是弱特征（法语/英语单词 et、out
+    // 也会命中），至少两个音节同时命中才判音译，避免「拉丁主行 + 中文翻译」被误交换。
+    tokens
+        .iter()
+        .filter(|token| {
+            token.starts_with('j')
+                || token.starts_with('y')
+                || token.ends_with("ng")
+                || token.ends_with('k')
+                || token.ends_with('t')
+        })
+        .count()
+        >= 2
+}

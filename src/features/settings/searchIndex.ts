@@ -6,6 +6,7 @@ export type SettingsTabId =
   | 'general'
   | 'theme'
   | 'desktopLyrics'
+  | 'sleepTimer'
   | 'audioOutput'
   | 'download'
   | 'toolbox'
@@ -13,6 +14,7 @@ export type SettingsTabId =
   | 'plugins'
   | 'shortcuts'
   | 'account'
+  | 'network'
   | 'advanced'
   | 'linkage'
   | 'feedback'
@@ -45,7 +47,9 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   library: '音乐库',
   toolbox: '工具箱',
   desktopLyrics: '桌面歌词',
+  sleepTimer: '睡眠定时',
   shortcuts: '快捷按键',
+  network: '网络',
   advanced: '高级设置',
   linkage: '联动',
   feedback: '问题反馈',
@@ -147,6 +151,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '音量平衡', keywords: 'ReplayGain 响度 标准化' },
     { label: '整体增益偏移', keywords: 'ReplayGain dB 音量' },
     { label: '防削波破音保护', keywords: '峰值 clipping 音量增益' },
+    { label: '单声道合并', keywords: '声道 单声道 mono 合并 立体声 单耳 耳机' },
   ]),
   ...makeItems('audioOutput', '在线播放', [
     { label: '默认播放音质', keywords: '在线 无损 Hi-Res 320k' },
@@ -306,6 +311,13 @@ const staticItems: SettingsSearchItem[] = [
     { label: '投放到 DLNA 设备', keywords: 'DLNA 投放 电视 音箱 局域网 遥控 底栏' },
   ]),
 
+  ...makeItems('network', '网络代理', [
+    { label: '启用网络代理', keywords: 'HTTP 代理 proxy 主机 端口 账号 密码 认证' },
+    { label: '代理主机', keywords: 'HTTP 代理 host 地址 服务器' },
+    { label: '代理端口', keywords: 'HTTP 代理 port 端口' },
+    { label: '代理账号', keywords: 'HTTP 代理 认证 用户名' },
+    { label: '代理密码', keywords: 'HTTP 代理 认证 密码' },
+  ]),
   ...makeItems('feedback', '问题反馈', [
     { label: '问题反馈', keywords: '反馈 建议 提交 意见 bug 故障' },
     { label: '申请内测', keywords: '内测 beta 资格 申请' },

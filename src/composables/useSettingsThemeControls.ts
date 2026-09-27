@@ -1,5 +1,6 @@
 import { computed, onMounted, ref } from 'vue';
 
+import type { VinylPlinthMaterial } from '../types';
 import { useThemeSettings } from './useThemeSettings';
 import { useWindowMaterial, type WindowMaterialMode } from './windowMaterial';
 import { useUiStore } from '../shared/stores/ui';
@@ -75,7 +76,19 @@ export function useSettingsThemeControls() {
       patchTheme({ playerDetailMeshBackground: value });
     },
   });
+  const playerDetailMeshAntiAlias = computed({
+    get: () => theme.value.playerDetailMeshAntiAlias,
+    set: (value: boolean) => {
+      patchTheme({ playerDetailMeshAntiAlias: value });
+    },
+  });
 
+  const playerDetailVinylMaterial = computed({
+    get: () => theme.value.playerDetailVinylMaterial,
+    set: (value: VinylPlinthMaterial) => {
+      patchTheme({ playerDetailVinylMaterial: value });
+    },
+  });
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
   );
@@ -241,6 +254,13 @@ export function useSettingsThemeControls() {
     playerDetailMeshBackground.value = value;
   };
 
+  const setPlayerDetailMeshAntiAlias = (value: boolean) => {
+    playerDetailMeshAntiAlias.value = value;
+  };
+
+  const setPlayerDetailVinylMaterial = (value: VinylPlinthMaterial) => {
+    playerDetailVinylMaterial.value = value;
+  };
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -261,6 +281,7 @@ export function useSettingsThemeControls() {
     playerDetailCoverBehavior,
     playerDetailStyle,
     playerDetailMeshBackground,
+    playerDetailMeshAntiAlias,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -290,5 +311,8 @@ export function useSettingsThemeControls() {
     setPlayerDetailCoverBehavior,
     setPlayerDetailStyle,
     setPlayerDetailMeshBackground,
+    setPlayerDetailMeshAntiAlias,
+    playerDetailVinylMaterial,
+    setPlayerDetailVinylMaterial,
   };
 }

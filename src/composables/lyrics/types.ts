@@ -49,6 +49,8 @@ export interface LyricLine {
   isBG: boolean;
   isDuet: boolean;
   isDuetPartner: boolean;
+  /** 启发式判定：这一行是把 CJK 行与其罗马化音译交换后的结果，罗马音子行应无视全局开关显示。 */
+  isRomanized?: boolean;
 }
 
 export interface CurrentLyricDisplayLine {
@@ -205,6 +207,8 @@ export interface SemanticLine {
   isBG: boolean;
   isDuet: boolean;
   isDuetPartner: boolean;
+  /** 启发式判定：主行是 CJK 行、副行是其罗马化音译（如粤拼），而非「拉丁主行 + 中文翻译」。 */
+  isRomanized?: boolean;
 }
 
 export interface ClassifiedGroupResult {
@@ -213,6 +217,8 @@ export interface ClassifiedGroupResult {
   romajiLine: ParsedLine | null;
   secondaryLines: ParsedLine[];
   confidence: ClassificationConfidence;
+  /** 启发式判定：本组发生了「CJK 主行 + 拉丁音译副行」的交换（无显式标记时）。 */
+  isRomanized: boolean;
 }
 
 /* ==================== 文字类型分析 ==================== */

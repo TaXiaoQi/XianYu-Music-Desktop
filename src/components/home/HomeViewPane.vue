@@ -96,6 +96,7 @@ const songTableMemoryScopeKey = computed(() =>
           props.localFilterCondition || '',
         ].join('::');
       case 'statistics':
+      case 'leaderboard':
       case 'dailyRecommend':
       case 'topLists':
         return 'discover';
@@ -107,7 +108,7 @@ const songTableMemoryScopeKey = computed(() =>
 
 const viewInstanceKey = computed(() => {
   const mode = props.localViewMode;
-  const discoverModes = ['statistics', 'dailyRecommend', 'topLists'];
+  const discoverModes = ['statistics', 'leaderboard', 'dailyRecommend', 'topLists'];
   return [
     discoverModes.includes(mode) ? 'discover' : mode,
     props.localFilterCondition || '',

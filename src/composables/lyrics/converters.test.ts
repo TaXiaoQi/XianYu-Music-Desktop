@@ -168,6 +168,41 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
     expect(result[0]?.words.map((word) => word.romanWord || '')).toEqual(['', '', '']);
   });
 
+  it('标记为罗马化音译的行无视「显示罗马音」开关，强制渲染罗马音子行', () => {
+    const shown = semanticRow({
+      startMs: 43802, endMs: 46596,
+      mainText: '闻说你时常在下午', romanText: 'man sv nei si soeng zoi',
+      isRomanized: true,
+      confidence: 'heuristic',
+    });
+
+    const romanized = semanticLineToLyricLine(shown);
+    expect(romanized.isRomanized).toBe(true);
+
+    // 未开启「显示罗马音」也应渲染 romanLyric（中文大字 + 粤拼小字）
+    const amlLines = convertLyricsToAmlLines([romanized], true, false);
+    expect(amlLines[0]?.romanLyric).toBe('man sv nei si soeng zoi');
+
+    const displayLines = getCurrentLyricDisplayLines(romanized, true, false);
+    expect(displayLines.map((line) => line.kind)).toEqual(['main', 'romaji']);
+    expect(displayLines[1]?.text).toBe('man sv nei si soeng zoi');
+  });
+
+  it('普通行在开关关闭时仍隐藏罗马音子行', () => {
+    const shown = semanticRow({
+      startMs: 1000, endMs: 3000,
+      mainText: '普通歌词', romanText: 'pu tong ge ci',
+      confidence: 'heuristic',
+    });
+
+    const ordinary = semanticLineToLyricLine(shown);
+    const amlLines = convertLyricsToAmlLines([ordinary], true, false);
+    expect(amlLines[0]?.romanLyric).toBe('');
+
+    const displayLines = getCurrentLyricDisplayLines(ordinary, true, false);
+    expect(displayLines.map((line) => line.kind)).toEqual(['main']);
+  });
+
   it('数字主词同样参与词级罗马音模式，纯符号词留空', () => {
     const glue = '\u00a0';
     const rows = [

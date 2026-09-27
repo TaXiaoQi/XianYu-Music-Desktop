@@ -207,6 +207,11 @@ pub struct LyricDocument {
     pub display_track_id: Option<String>,
 }
 
+/// serde 跳过序列化 false 布尔字段，保持 payload 紧凑。
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SemanticLine {
@@ -229,6 +234,9 @@ pub struct SemanticLine {
     pub is_bg: bool,
     pub is_duet: bool,
     pub is_duet_partner: bool,
+    /// 启发式判定：主行是 CJK 行、副行是其罗马化音译（如粤拼），而非「拉丁主行 + 中文翻译」。
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_romanized: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -259,6 +267,9 @@ pub struct LyricLinePayload {
     pub is_bg: bool,
     pub is_duet: bool,
     pub is_duet_partner: bool,
+    /// 启发式判定：这行是把 CJK 行与其罗马化音译交换后的结果，罗马音子行应无视全局开关显示。
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_romanized: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]

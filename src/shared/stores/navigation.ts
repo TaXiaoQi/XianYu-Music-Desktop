@@ -10,6 +10,7 @@ export type NavigationViewMode =
   | 'recent'
   | 'favorites'
   | 'statistics'
+  | 'leaderboard'
   | 'dailyRecommend'
   | 'topLists';
 

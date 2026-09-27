@@ -9,6 +9,7 @@ describe('settings search index', () => {
       'general',
       'theme',
       'desktopLyrics',
+      'sleepTimer',
       'audioOutput',
       'download',
       'toolbox',
@@ -17,6 +18,7 @@ describe('settings search index', () => {
       'plugins',
       'shortcuts',
       'account',
+      'network',
       'advanced',
       'feedback',
       'about',
@@ -27,6 +29,7 @@ describe('settings search index', () => {
     expect(searchSettings('音量平衡')[0]?.label).toBe('音量平衡');
     expect(searchSettings('ReplayGain').some(item => item.label === '音量平衡')).toBe(true);
     expect(searchSettings('缓存').some(item => item.label === '播放缓存上限')).toBe(true);
+    expect(searchSettings('单声道').some(item => item.label === '单声道合并')).toBe(true);
   });
 
   it('does not expand children when a complete category name is entered', () => {
@@ -51,5 +54,8 @@ describe('settings search index', () => {
     expect(searchSettings('\u6b4c\u8bcd\u9875\u5c01\u9762')).toMatchObject([
       { kind: 'section', label: '\u6b4c\u8bcd\u9875\u5c01\u9762', tab: 'theme' },
     ]);
+  });
+  it('indexes the network proxy settings on the network page', () => {
+    expect(searchSettings('代理').some(item => item.label === '启用网络代理')).toBe(true);
   });
 });

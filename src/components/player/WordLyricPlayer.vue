@@ -453,11 +453,27 @@ watch(() => props.currentTime, (value) => {
 /* ---------- 副行（罗马音 / 翻译） ---------- */
 
 :deep(.wlp-line__sub) {
-  opacity: 0.3;
   font-size: max(0.5em, 10px);
   line-height: 1.5em;
   margin-top: 0.1em;
   white-space: pre-wrap;
+}
+
+/* 子行明暗由遮罩表达（未唱 .3、已唱全亮），进度由内核逐帧写进 --xy-sub-line-progress。
+   遮罩挂在文本包裹层上：inline-block 使其宽度恰好等于文本宽度，扫光因此正好覆盖文本、
+   与主行逐字高光同时结束，翻译比整行短也不会提前扫完。 */
+:deep(.wlp-line__sub-text) {
+  display: inline-block;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 var(--xy-sub-line-progress, 0%),
+    rgba(0, 0, 0, 0.3) var(--xy-sub-line-progress, 0%)
+  );
+  mask-image: linear-gradient(
+    90deg,
+    #000 var(--xy-sub-line-progress, 0%),
+    rgba(0, 0, 0, 0.3) var(--xy-sub-line-progress, 0%)
+  );
 }
 
 /* ---------- 间奏呼吸点 ---------- */

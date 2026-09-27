@@ -1,6 +1,7 @@
 mod app_runtime;
 mod audio_convert;
 mod audio_trim;
+mod autostart;
 mod custom_fonts;
 mod database;
 pub(crate) mod control_channel;
@@ -12,6 +13,7 @@ mod foreground_window;
 mod host_crypto;
 mod install_language;
 mod music;
+mod netproxy;
 mod player;
 mod plugin_host;
 mod plugins;
@@ -20,6 +22,7 @@ mod recognize;
 mod remote;
 mod security;
 mod skin_image;
+mod sleep_timer;
 mod statistics;
 mod system_audio;
 mod system_fonts;
@@ -35,8 +38,10 @@ mod window_z_order;
 
 use app_runtime::{
     consume_pending_deep_links, consume_pending_open_paths, exit_app, handle_single_instance,
-    open_devtools, setup_app, update_native_tray_menu,
+    open_devtools, restart_app, setup_app, update_native_tray_menu, was_launched_at_startup,
 };
+use autostart::{get_launch_on_startup, set_launch_on_startup};
+use netproxy::{get_network_proxy, set_network_proxy, test_network_proxy};
 use audio_convert::{convert_audio, detect_ffmpeg};
 use audio_trim::{probe_audio_duration, trim_audio};
 use control_channel::commands::{
@@ -108,6 +113,7 @@ use remote::{
     test_remote_source, update_remote_source,
 };
 use skin_image::import_skin_image;
+use sleep_timer::{clear_sleep_timer, get_sleep_timer, run_sleep_action, set_sleep_timer};
 use statistics::{
     add_to_history, clear_listen_stats, clear_recent_history, export_listen_snapshot,
     export_statistics_file, get_behavior_stats, get_favorite_album_catalog,
@@ -414,6 +420,10 @@ pub fn run() {
             refresh_taskbar_window_topmost,
             uninstall_taskbar_zorder_guard,
             exit_app,
+            restart_app,
+            get_network_proxy,
+            set_network_proxy,
+            test_network_proxy,
             update_native_tray_menu,
             set_gpu_acceleration,
             check_update_by_rust,
@@ -448,6 +458,13 @@ pub fn run() {
             flush_playback_session,
             get_install_language,
             set_install_language,
+            get_launch_on_startup,
+            set_launch_on_startup,
+            was_launched_at_startup,
+            set_sleep_timer,
+            clear_sleep_timer,
+            get_sleep_timer,
+            run_sleep_action,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -17,6 +17,8 @@ import type {
   SongDetail,
   SaveArtistAvatarResponse,
   ImportedLyricsFont,
+  SleepTimerAction,
+  SleepTimerSnapshot,
 } from '../../types';
 import type { AudioOutputMode } from '../../types';
 import type { LyricsPayload } from '../../composables/lyrics/types';
@@ -621,7 +623,34 @@ export interface TrimAudioResult {
   error: string | null;
 }
 
+/** 网络代理配置（对应 src-tauri/src/netproxy.rs 的 ProxyConfig，字段名与序列化一致） */
+export interface NetworkProxyConfigOptions {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+}
+
+/** 网络代理配置视图。密码不回传，只告知是否已设置。 */
+export interface NetworkProxyState {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  password_set: boolean;
+}
+
+export interface NetworkProxyTestResult {
+  success: boolean;
+  status: number | null;
+  elapsed_ms: number;
+  error: string | null;
+}
 export interface TauriCommandMap {
+  set_sleep_timer: { payload: { seconds: number; action: SleepTimerAction }; response: SleepTimerSnapshot };
+  clear_sleep_timer: { payload: undefined; response: void };
+  get_sleep_timer: { payload: undefined; response: SleepTimerSnapshot | null };
+  run_sleep_action: { payload: { action: SleepTimerAction }; response: void };
   add_library_folder: { payload: { path: string }; response: void };
   remove_library_folder: { payload: { path: string }; response: void };
   get_library_hierarchy: { payload: undefined; response: FolderNode[] };
@@ -1222,6 +1251,21 @@ export interface TauriCommandMap {
   is_store_build: { payload: undefined; response: boolean };
   // ============ 应用生命周期 ============
   exit_app: { payload: undefined; response: void };
+  // ============ 开机自启动 ============
+  set_launch_on_startup: { payload: { enabled: boolean }; response: void };
+  get_launch_on_startup: { payload: undefined; response: boolean };
+  was_launched_at_startup: { payload: undefined; response: boolean };
+  // ============ 网络代理 ============
+  get_network_proxy: { payload: undefined; response: NetworkProxyState };
+  set_network_proxy: {
+    payload: { config: NetworkProxyConfigOptions; password: string | null };
+    response: void;
+  };
+  test_network_proxy: {
+    payload: { config: NetworkProxyConfigOptions; password: string | null };
+    response: NetworkProxyTestResult;
+  };
+  restart_app: { payload: undefined; response: void };
   // ============ 安装语言 ============
   get_install_language: { payload: undefined; response: string | null };
   set_install_language: { payload: { language: string }; response: boolean };

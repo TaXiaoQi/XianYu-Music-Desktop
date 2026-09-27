@@ -2,8 +2,9 @@
 import { computed } from 'vue';
 
 import { useI18n } from '../../features/i18n';
+import { useSettings } from '../../features/settings/useSettings';
 
-export type HomeDiscoverTab = 'statistics' | 'dailyRecommend' | 'topLists';
+export type HomeDiscoverTab = 'statistics' | 'leaderboard' | 'dailyRecommend' | 'topLists';
 
 interface Props {
   activeMode: string;
@@ -16,12 +17,21 @@ const emit = defineEmits<{
 }>();
 
 const { isEnglish } = useI18n();
+const { theme } = useSettings();
 
-const tabs = computed<{ key: HomeDiscoverTab; label: string }[]>(() => [
-  { key: 'statistics', label: isEnglish.value ? 'Statistics' : '统计' },
-  { key: 'dailyRecommend', label: isEnglish.value ? 'Daily Mix' : '每日推荐' },
-  { key: 'topLists', label: isEnglish.value ? 'Charts' : '音源榜单' },
-]);
+const tabs = computed<{ key: HomeDiscoverTab; label: string }[]>(() => {
+  const items: { key: HomeDiscoverTab; label: string }[] = [
+    { key: 'statistics', label: isEnglish.value ? 'Statistics' : '统计' },
+  ];
+  if (theme.value.showLeaderboard) {
+    items.push({ key: 'leaderboard', label: isEnglish.value ? 'Leaderboard' : '排行榜' });
+  }
+  items.push(
+    { key: 'dailyRecommend', label: isEnglish.value ? 'Daily Mix' : '每日推荐' },
+    { key: 'topLists', label: isEnglish.value ? 'Charts' : '音源榜单' },
+  );
+  return items;
+});
 </script>
 
 <template>

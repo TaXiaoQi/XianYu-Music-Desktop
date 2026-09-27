@@ -101,6 +101,9 @@ export const defaultThemeSettings: ThemeSettings = {
   lastPlayerDetailCoverVisible: true,
   playerDetailStyle: 'classic',
   playerDetailMeshBackground: true,
+  playerDetailMeshAntiAlias: true,
+  playerDetailMeshSpeed: 1,
+  playerDetailVinylMaterial: 'light',
   dynamicBgType: 'none',
   windowMaterial: 'none',
   keepWindowMaterialOnBlur: true,
@@ -234,6 +237,8 @@ export const defaultLogSettings: LogSettings = {
 export const defaultAppSettings: AppSettings = {
   language: 'system',
   closeToTray: true,
+  launchOnStartup: false,
+  launchOnStartupMinimized: false,
   preventSleepWhilePlaying: true,
   showDesktopLyrics: false,
   showQualityBadges: true,
@@ -452,6 +457,17 @@ export const mergeThemeSettings = (
     typeof patch.playerDetailMeshBackground === 'boolean'
       ? patch.playerDetailMeshBackground
       : base.playerDetailMeshBackground;
+  const playerDetailMeshAntiAlias =
+    typeof patch.playerDetailMeshAntiAlias === 'boolean'
+      ? patch.playerDetailMeshAntiAlias
+      : base.playerDetailMeshAntiAlias;
+  const playerDetailVinylMaterial =
+    patch.playerDetailVinylMaterial === 'light'
+      || patch.playerDetailVinylMaterial === 'matte'
+      || patch.playerDetailVinylMaterial === 'oak'
+      || patch.playerDetailVinylMaterial === 'marble'
+      ? patch.playerDetailVinylMaterial
+      : base.playerDetailVinylMaterial;
   const mergedCustomBackground = {
     ...base.customBackground,
     ...(patch.customBackground ?? {}),
@@ -464,6 +480,8 @@ export const mergeThemeSettings = (
     playerDetailCoverBehavior,
     playerDetailStyle,
     playerDetailMeshBackground,
+    playerDetailMeshAntiAlias,
+    playerDetailVinylMaterial,
     lastPlayerDetailCoverVisible:
       typeof patch.lastPlayerDetailCoverVisible === 'boolean'
         ? patch.lastPlayerDetailCoverVisible
