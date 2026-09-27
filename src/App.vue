@@ -29,6 +29,7 @@ import { playerStorage } from './services/storage/playerStorage';
 import { usePlaylistSync } from './composables/usePlaylistSync';
 import { useAuthStore } from './features/auth/store';
 import { useDlnaCastStore } from './features/playback/castStore';
+import { useDesktopLinkStore } from './features/playback/desktopLinkStore';
 
 const currentWindowLabel = (() => {
   try {
@@ -161,6 +162,7 @@ if (currentWindowLabel === 'main') {
 
     if (currentWindowLabel === 'main') {
       void useDlnaCastStore().init();
+      void useDesktopLinkStore().init();
     }
 
     playlistSync.initAutoSync();

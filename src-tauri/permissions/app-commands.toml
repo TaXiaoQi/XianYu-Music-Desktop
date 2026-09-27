@@ -2,6 +2,13 @@
 identifier = "allow-app-commands"
 description = "Allows XianYu Music application commands used by the frontend."
 commands.allow = [
+  "control_channel_forget_device",
+  "control_channel_push_now_playing",
+  "control_channel_push_position",
+  "control_channel_push_state",
+  "control_channel_refresh_pairing_code",
+  "control_channel_set_enabled",
+  "control_channel_status",
   "scan_music_folder",
   "parse_audio_files",
   "convert_audio",

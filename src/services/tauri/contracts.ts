@@ -234,6 +234,36 @@ export interface DlnaRendererStatus {
   port: number;
 }
 
+// ===== 控制通道（桌面 TCP 遥控，与 Rust control_channel/commands.rs 对齐，serde camelCase）=====
+
+export interface ControlChannelDeviceEntry {
+  token: string;
+  deviceName: string;
+  pairedAt: number;
+}
+
+export interface ControlChannelClientEntry {
+  id: number;
+  name: string;
+}
+
+export interface ControlChannelStatus {
+  running: boolean;
+  port: number;
+  lanIp: string;
+  enabled: boolean;
+  desktopName: string;
+  pairingCode: string;
+  pairingExpiresIn: number;
+  devices: ControlChannelDeviceEntry[];
+  connected: ControlChannelClientEntry[];
+}
+
+export interface ControlPairingCodeInfo {
+  pairingCode: string;
+  expiresIn: number;
+}
+
 // ===== 音效参数（与 Rust src-tauri/src/player/sound_effect.rs 的 SoundEffectSettings 一一对应）=====
 
 export type ReverbKind = 'none' | 'algorithmic' | 'convolution';
@@ -765,6 +795,16 @@ export interface TauriCommandMap {
   dlna_enable_renderer: { payload: { friendlyName: string; udn: string }; response: number };
   dlna_disable_renderer: { payload: undefined; response: void };
   dlna_renderer_status: { payload: undefined; response: DlnaRendererStatus };
+  control_channel_status: { payload: undefined; response: ControlChannelStatus };
+  control_channel_set_enabled: { payload: { enabled: boolean }; response: void };
+  control_channel_refresh_pairing_code: { payload: undefined; response: ControlPairingCodeInfo };
+  control_channel_forget_device: { payload: { token: string }; response: boolean };
+  control_channel_push_state: { payload: { isPlaying: boolean; volume: number }; response: void };
+  control_channel_push_now_playing: {
+    payload: { id: string; title: string; artist: string; album: string; duration: number };
+    response: void;
+  };
+  control_channel_push_position: { payload: { pos: number; duration: number }; response: void };
   pause_audio: { payload: undefined; response: void };
   stop_audio: { payload: undefined; response: void };
   resume_audio: { payload: undefined; response: void };

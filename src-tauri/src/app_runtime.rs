@@ -563,7 +563,50 @@ pub(crate) fn setup_app(
         crate::webview_settings::disable_browser_accelerator_keys(&window);
     }
 
+    start_control_channel(app.handle().clone());
+
     Ok(())
+}
+
+/// 控制通道：配对鉴权 + 常驻 TCP 监听 + SSDP 通告 + 事件转发 TS。
+fn start_control_channel(handle: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let core = crate::control_channel::ControlCore::shared();
+        let config_dir = handle
+            .path()
+            .app_config_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        core.init_pairing(&config_dir);
+        match core.ensure_started().await {
+            Ok(port) => eprintln!("[control] listening on port {port}"),
+            Err(e) => eprintln!("[control] start failed: {e}"),
+        }
+        let Some(mut rx) = core.take_event_rx().await else {
+            return;
+        };
+        while let Some(evt) = rx.recv().await {
+            match evt {
+                crate::control_channel::ServerEvent::ClientConnected { id, name } => {
+                    let _ = handle.emit(
+                        "desktop-control-client",
+                        serde_json::json!({ "connected": true, "id": id, "name": name }),
+                    );
+                }
+                crate::control_channel::ServerEvent::ClientDisconnected { id, name } => {
+                    let _ = handle.emit(
+                        "desktop-control-client",
+                        serde_json::json!({ "connected": false, "id": id, "name": name }),
+                    );
+                }
+                crate::control_channel::ServerEvent::Command { id, action, arg } => {
+                    let _ = handle.emit(
+                        "desktop-control-cmd",
+                        serde_json::json!({ "id": id, "action": action, "arg": arg }),
+                    );
+                }
+            }
+        }
+    });
 }
 
 #[tauri::command]

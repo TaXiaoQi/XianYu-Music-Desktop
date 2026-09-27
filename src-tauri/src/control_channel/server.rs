@@ -47,8 +47,17 @@ pub trait HelloAuth: Send + Sync + 'static {
     ) -> AuthOutcome;
 }
 
+/// 当前在线 client 概要（状态查询用）。
+pub struct ClientSummary {
+    pub id: u64,
+    pub name: String,
+}
+
 struct ClientHandle {
+    #[allow(dead_code)] // 保留：后续按设备名上报/展示
     name: String,
+    /// 已鉴权 token（新配对时为下发值，重连时为 hello 携带值）
+    token: String,
     tx: mpsc::Sender<Vec<u8>>,
     close_tx: watch::Sender<bool>,
 }
@@ -76,8 +85,23 @@ impl ServerGuard {
         }
     }
 
+    #[allow(dead_code)] // 保留：状态上报用
     pub fn client_count(&self) -> usize {
         self.state.clients.lock().unwrap().len()
+    }
+
+    /// 当前在线 client 列表（设置页连接状态展示用）。
+    pub fn connected_clients(&self) -> Vec<ClientSummary> {
+        self.state
+            .clients
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, c)| ClientSummary {
+                id: *id,
+                name: c.name.clone(),
+            })
+            .collect()
     }
 
     /// 踢除指定 client（忘记设备用）。
@@ -85,6 +109,21 @@ impl ServerGuard {
         let client = self.state.clients.lock().unwrap().remove(&id);
         if let Some(c) = client {
             let _ = c.close_tx.send(true);
+        }
+    }
+
+    /// 踢除持有指定 token 的连接（忘记设备用）。
+    pub fn kick_by_token(&self, token: &str) {
+        let victims: Vec<u64> = {
+            let clients = self.state.clients.lock().unwrap();
+            clients
+                .iter()
+                .filter(|(_, c)| c.token == token)
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        for id in victims {
+            self.kick(id);
         }
     }
 
@@ -225,10 +264,15 @@ async fn handle_connection(
                                     .ok();
                                 authenticated = true;
                                 my_name = device_name.clone();
+                                let issued_token = token
+                                    .clone()
+                                    .or_else(|| outcome.token.clone())
+                                    .unwrap_or_default();
                                 state.clients.lock().unwrap().insert(
                                     id,
                                     ClientHandle {
                                         name: device_name,
+                                        token: issued_token,
                                         tx: tx.clone(),
                                         close_tx: close_tx.clone(),
                                     },

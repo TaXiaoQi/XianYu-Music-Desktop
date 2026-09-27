@@ -19,7 +19,7 @@ fn lan_ipv4() -> Option<Ipv4Addr> {
     }
 }
 
-fn bind_multicast_socket() -> std::io::Result<Socket> {
+pub(crate) fn bind_multicast_socket() -> std::io::Result<Socket> {
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     sock.set_reuse_address(true)?;
     #[cfg(unix)]
@@ -43,7 +43,7 @@ fn bind_multicast_socket() -> std::io::Result<Socket> {
     Ok(sock)
 }
 
-fn tokio_udp_from_socket(sock: Socket) -> std::io::Result<UdpSocket> {
+pub(crate) fn tokio_udp_from_socket(sock: Socket) -> std::io::Result<UdpSocket> {
     sock.set_nonblocking(true)?;
     let std_sock: std::net::UdpSocket = sock.into();
     UdpSocket::from_std(std_sock)

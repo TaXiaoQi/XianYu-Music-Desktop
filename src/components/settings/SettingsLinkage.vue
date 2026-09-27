@@ -3,6 +3,7 @@ import { onMounted, watch } from 'vue';
 
 import { useSettings } from '../../features/settings/useSettings';
 import { useDlnaCastStore } from '../../features/playback/castStore';
+import SettingsRemoteControl from './SettingsRemoteControl.vue';
 
 const { settings } = useSettings();
 const dlnaCast = useDlnaCastStore();
@@ -22,6 +23,8 @@ onMounted(() => {
 
 <template>
   <div class="mx-auto w-full max-w-3xl space-y-6 px-6 pb-10 pt-2">
+    <SettingsRemoteControl />
+
     <section class="space-y-3">
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">

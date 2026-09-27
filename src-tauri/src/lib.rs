@@ -39,6 +39,11 @@ use app_runtime::{
 };
 use audio_convert::{convert_audio, detect_ffmpeg};
 use audio_trim::{probe_audio_duration, trim_audio};
+use control_channel::commands::{
+    control_channel_forget_device, control_channel_push_now_playing, control_channel_push_position,
+    control_channel_push_state, control_channel_refresh_pairing_code, control_channel_set_enabled,
+    control_channel_status,
+};
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use dlna::commands::{
@@ -244,6 +249,13 @@ pub fn run() {
             dlna_enable_renderer,
             dlna_disable_renderer,
             dlna_renderer_status,
+            control_channel_status,
+            control_channel_set_enabled,
+            control_channel_refresh_pairing_code,
+            control_channel_forget_device,
+            control_channel_push_state,
+            control_channel_push_now_playing,
+            control_channel_push_position,
             pause_audio,
             stop_audio,
             resume_audio,
