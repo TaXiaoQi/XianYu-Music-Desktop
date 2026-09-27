@@ -133,6 +133,7 @@ impl DlnaCore {
         dev: &DlnaDevice,
         media: MediaPayload,
         cover: Option<MediaPayload>,
+        lyric: Option<MediaPayload>,
         title: &str,
         artist: &str,
         album: &str,
@@ -152,11 +153,19 @@ impl DlnaCore {
             }
             None => None,
         };
+        let lyric_url = match lyric {
+            Some(MediaPayload::Lyric { text }) if !text.trim().is_empty() => {
+                let t = self.registry.create(MediaPayload::Lyric { text });
+                Some(format!("{base}/media/lyric/{t}"))
+            }
+            _ => None,
+        };
 
         let duration = soap::format_upnp_time(duration_ms as f64 / 1000.0);
         let didl = build_didl(
             &media_url,
             cover_url.as_ref().map(|(u, _)| u.as_str()),
+            lyric_url.as_deref(),
             title,
             artist,
             album,
@@ -370,6 +379,7 @@ impl DlnaCore {
 fn build_didl(
     media_url: &str,
     cover_url: Option<&str>,
+    lyric_url: Option<&str>,
     title: &str,
     artist: &str,
     album: &str,
@@ -383,8 +393,12 @@ fn build_didl(
             )
         })
         .unwrap_or_default();
+    // 自定义歌词元素：仅自家渲染端（移动端 DMR）消费，经本机 httpd 伺服原文
+    let lyric = lyric_url
+        .map(|u| format!("<xianyu:lyric>{}</xianyu:lyric>", soap::xml_escape(u)))
+        .unwrap_or_default();
     format!(
-        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" restricted="1"><dc:title>{title}</dc:title><dc:creator>{artist}</dc:creator><upnp:artist>{artist}</upnp:artist><upnp:album>{album}</upnp:album><upnp:class>object.item.audioItem.musicTrack</upnp:class><res duration="{duration}">{url}</res>{cover}</item></DIDL-Lite>"#,
+        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:xianyu="urn:xianyu:media"><item id="0" restricted="1"><dc:title>{title}</dc:title><dc:creator>{artist}</dc:creator><upnp:artist>{artist}</upnp:artist><upnp:album>{album}</upnp:album><upnp:class>object.item.audioItem.musicTrack</upnp:class><res duration="{duration}">{url}</res>{cover}{lyric}</item></DIDL-Lite>"#,
         title = soap::xml_escape(title),
         artist = soap::xml_escape(artist),
         album = soap::xml_escape(album),
@@ -417,6 +431,7 @@ mod tests {
         let d = build_didl(
             "http://1.2.3.4/media/t",
             Some("http://1.2.3.4/media/cover/t"),
+            Some("http://1.2.3.4/media/lyric/t"),
             "歌名<A>",
             "歌手",
             "专辑",
@@ -426,11 +441,27 @@ mod tests {
         assert!(d.contains("歌名&lt;A&gt;"));
         assert!(d.contains("duration=\"0:03:21\""));
         assert!(d.contains("albumArtURI"));
+        assert!(d.contains("<xianyu:lyric>http://1.2.3.4/media/lyric/t</xianyu:lyric>"));
     }
 
     #[test]
     fn didl_without_cover() {
-        let d = build_didl("http://x", None, "t", "a", "b", "0:00:30");
+        let d = build_didl("http://x", None, None, "t", "a", "b", "0:00:30");
         assert!(!d.contains("albumArtURI"));
+        assert!(!d.contains("xianyu:lyric>http"));
+    }
+
+    #[test]
+    fn didl_lyric_escaped() {
+        let d = build_didl(
+            "http://x",
+            None,
+            Some("http://x/media/lyric/a<b>&c"),
+            "t",
+            "a",
+            "b",
+            "0:00:30",
+        );
+        assert!(d.contains("http://x/media/lyric/a&lt;b&gt;&amp;c"));
     }
 }

@@ -31,6 +31,9 @@ pub enum MediaPayload {
         #[serde(default)]
         headers: BTreeMap<String, String>,
     },
+    /// 歌词原文（LRC/QRC/YRC 等原始文本）：经本机 httpd 伺服给被投端
+    #[serde(rename = "lyric")]
+    Lyric { text: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -1,5 +1,5 @@
 use super::dmr;
-use super::media_server::{serve_cover, serve_media, MediaRegistry};
+use super::media_server::{serve_cover, serve_lyric, serve_media, MediaRegistry};
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -86,6 +86,7 @@ async fn not_found_handler() -> Response {
 pub async fn start(state: AppState) -> Result<HttpServer, String> {
     let media_routes = Router::new()
         .route("/media/cover/{token}", get(serve_cover))
+        .route("/media/lyric/{token}", get(serve_lyric))
         .route("/media/{token}", get(serve_media).head(serve_media))
         .with_state(state.registry.clone());
     let app = Router::new()

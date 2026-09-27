@@ -212,7 +212,8 @@ export interface DlnaDevicePayload {
 export type DlnaMediaPayload =
   | { kind: 'local'; path: string }
   | { kind: 'remote'; url: string; headers?: Record<string, string>; resolved_at_ms?: number }
-  | { kind: 'cover'; url: string; headers?: Record<string, string> };
+  | { kind: 'cover'; url: string; headers?: Record<string, string> }
+  | { kind: 'lyric'; text: string };
 
 export interface DlnaCastMediaInfo {
   media_token: string;
@@ -746,6 +747,7 @@ export interface TauriCommandMap {
       device: DlnaDevicePayload;
       media: DlnaMediaPayload;
       cover: DlnaMediaPayload | null;
+      lyric: DlnaMediaPayload | null;
       title: string;
       artist: string;
       album: string;

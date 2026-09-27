@@ -1463,10 +1463,11 @@ const dlnaCast = useDlnaCastStore();
               album: song.album || 'Unknown Album',
               // 本地歌用磁盘缩略图路径（peekCoverUrl 是 UI loopback 地址，
               // Rust 端自抓会拿空导致渲染端封面 0 字节）
-              cover: dlnaCast.castCoverSource(song.path),
+              cover: dlnaCast.castCoverSource(song.path) || (song.cover_thumb_path || '').trim(),
               duration: Math.floor(song.duration),
               headers: pluginHeaders,
               startOffsetMs: startOffsetMs || undefined,
+              lyrics: song.lyrics_raw ?? '',
             });
             return true;
           } catch (error) {
@@ -1619,6 +1620,7 @@ const dlnaCast = useDlnaCastStore();
               cover: localPlayAudioParams.cover,
               duration: localPlayAudioParams.duration,
               startOffsetMs: localPlayAudioParams.startOffsetMs,
+              lyrics: song.lyrics_raw ?? '',
             });
           } else {
             await playbackApi.playAudio(localPlayAudioParams);
@@ -1665,6 +1667,7 @@ const dlnaCast = useDlnaCastStore();
               cover: localPlayAudioParams.cover,
               duration: localPlayAudioParams.duration,
               startOffsetMs: localPlayAudioParams.startOffsetMs,
+              lyrics: song.lyrics_raw ?? '',
             });
           } else {
             await playbackApi.playAudio(localPlayAudioParams);

@@ -163,7 +163,26 @@ pub async fn serve_media(
         MediaPayload::Remote {
             url, headers: uh, ..
         } => serve_remote(&registry.client_for_remote(), &url, &uh, &headers).await,
-        MediaPayload::Cover { .. } => error_response(StatusCode::NOT_FOUND, "not a media token"),
+        MediaPayload::Cover { .. } | MediaPayload::Lyric { .. } => {
+            error_response(StatusCode::NOT_FOUND, "not a media token")
+        }
+    }
+}
+
+pub async fn serve_lyric(
+    State(registry): State<Arc<MediaRegistry>>,
+    Path(token): Path<String>,
+) -> Response {
+    let Some(entry) = registry.get(&token) else {
+        return error_response(StatusCode::NOT_FOUND, "token not found");
+    };
+    match entry.payload {
+        MediaPayload::Lyric { text } => simple_response(
+            StatusCode::OK,
+            vec![("CONTENT-TYPE", "text/plain; charset=utf-8".into())],
+            Body::from(text),
+        ),
+        _ => error_response(StatusCode::NOT_FOUND, "not a lyric token"),
     }
 }
 
@@ -179,7 +198,9 @@ pub async fn serve_cover(
         // 本地曲库歌曲的封面是磁盘图片路径，castStore 按本地载荷注册
         // （kind:'local'）；不读盘伺服会 404，被投端拿不到封面。
         MediaPayload::LocalFile { path } => serve_local_cover(&path).await,
-        MediaPayload::Remote { .. } => error_response(StatusCode::NOT_FOUND, "not a cover token"),
+        MediaPayload::Remote { .. } | MediaPayload::Lyric { .. } => {
+            error_response(StatusCode::NOT_FOUND, "not a cover token")
+        }
     }
 }
 

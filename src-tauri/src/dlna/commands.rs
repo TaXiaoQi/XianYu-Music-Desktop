@@ -81,6 +81,7 @@ pub async fn dlna_cast_set_uri(
     device: DlnaDevice,
     media: MediaPayload,
     cover: Option<MediaPayload>,
+    lyric: Option<MediaPayload>,
     title: String,
     artist: String,
     album: String,
@@ -91,7 +92,7 @@ pub async fn dlna_cast_set_uri(
         device.avt_control_url
     );
     let r = DlnaCore::shared()
-        .cast_set_uri(&device, media, cover, &title, &artist, &album, duration_ms)
+        .cast_set_uri(&device, media, cover, lyric, &title, &artist, &album, duration_ms)
         .await;
     eprintln!("[dlna] cast_set_uri <= {:?}", r.as_ref().map(|i| i.media_url.clone()));
     r

@@ -22,6 +22,7 @@ export const dlnaApi = {
     device: DlnaDevicePayload;
     media: DlnaMediaPayload;
     cover: DlnaMediaPayload | null;
+    lyric: DlnaMediaPayload | null;
     title: string;
     artist: string;
     album: string;

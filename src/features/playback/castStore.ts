@@ -107,10 +107,22 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     return null;
   }
 
+  // 歌词原文直传：非空才注册载荷（经本机 httpd 伺服，DIDL 携带 xianyu:lyric 地址）
+  function buildLyricPayload(text: string): DlnaMediaPayload | null {
+    const trimmed = (text || '').trim();
+    return trimmed ? { kind: 'lyric', text: trimmed } : null;
+  }
+
   /// 投递封面源：优先本地缩略图文件（httpd 直接读盘），其次 http 封面 URL。
   /// 不能用 peekCoverUrl——它返回 UI 层 loopback 缓存地址，Rust 端自抓会拿空。
   function castCoverSource(path: string): string {
-    return peekCoverPath(path) || peekCoverUrl(path) || '';
+    const raw = peekCoverPath(path) || peekCoverUrl(path) || '';
+    // convertFileSrc 产生的 asset 协议地址只有 webview 能解析，Rust httpd
+    // 抓不到，投出去就是坏封面，宁可不给让渲染端走占位图
+    if (!raw || /^https?:\/\/asset\.localhost\//i.test(raw) || raw.startsWith('asset://')) {
+      return '';
+    }
+    return raw;
   }
 
   /// 可直接投递的路径：http(s) 直链或本地文件。
@@ -132,6 +144,7 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
     duration: number;
     headers?: Record<string, string> | null;
     startOffsetMs?: number;
+    lyrics?: string;
   }): Promise<void> {
     const dev = device.value;
     if (!dev) throw new Error('未连接投屏设备');
@@ -154,6 +167,7 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
       device: dev,
       media: buildMediaPayload(info),
       cover: buildCoverPayload(options.cover),
+      lyric: buildLyricPayload(options.lyrics ?? ''),
       title: info.title,
       artist: info.artist,
       album: info.album,
@@ -199,6 +213,7 @@ export const useDlnaCastStore = defineStore('dlnaCast', () => {
             cover: castCoverSource(song.path),
             duration: Math.floor(song.duration || 0),
             startOffsetMs: Math.max(0, Math.round((playbackStore.currentTime || 0) * 1000)),
+            lyrics: song.lyrics_raw ?? '',
           });
         } catch (e) {
           console.warn('[dlna] 连接后续投当前曲目失败:', e);
