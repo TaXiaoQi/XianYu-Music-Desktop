@@ -426,6 +426,87 @@ describe('mergePreparedLines', async () => {
     expect(merged[0].romaji).toBe('');
   });
 
+  it('promotes the chinese line to main and demotes cantonese romanization to romaji', () => {
+    const merged = mergePreparedLines([
+      {
+        startMs: 43802,
+        endMs: 46596,
+        text: 'man sv nei si soeng zoi ha en loi zei',
+        translation: '',
+        romaji: '',
+        words: [
+          { text: 'man sv nei si soeng zoi', start: 43.802, end: 45.2, romaji: '' },
+          { text: 'ha en loi zei', start: 45.2, end: 46.596, romaji: '' },
+        ],
+        sourceIndex: 0,
+      },
+      {
+        startMs: 43802,
+        endMs: 46596,
+        text: '\u95fb\u8bf4\u4f60\u65f6\u5e38\u5728\u4e0b\u5348 \u6765\u8fd9\u91cc\u5bc4\u4fe1\u4ef6',
+        translation: '',
+        romaji: '',
+        words: [
+          { text: '\u95fb\u8bf4\u4f60\u65f6\u5e38\u5728\u4e0b\u5348', start: 43.802, end: 45.2, romaji: '' },
+          { text: '\u6765\u8fd9\u91cc\u5bc4\u4fe1\u4ef6', start: 45.2, end: 46.596, romaji: '' },
+        ],
+        sourceIndex: 1,
+      },
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].text).toBe('\u95fb\u8bf4\u4f60\u65f6\u5e38\u5728\u4e0b\u5348 \u6765\u8fd9\u91cc\u5bc4\u4fe1\u4ef6');
+    expect(merged[0].translation).toBe('');
+    expect(merged[0].romaji).toBe('man sv nei si soeng zoi ha en loi zei');
+    // 逐词高亮仍对齐：主行汉字词各自拿到对应粤拼片段
+    expect(merged[0].words?.map((word) => word.text)).toEqual([
+      '\u95fb\u8bf4\u4f60\u65f6\u5e38\u5728\u4e0b\u5348',
+      '\u6765\u8fd9\u91cc\u5bc4\u4fe1\u4ef6',
+    ]);
+    expect(merged[0].words?.map((word) => word.romaji)).toEqual([
+      'man sv nei si soeng zoi',
+      'ha en loi zei',
+    ]);
+  });
+
+  it('keeps english lyrics with a similarly sized chinese translation as the main line', () => {
+    const merged = mergePreparedLines([
+      {
+        startMs: 6000,
+        endMs: 9000,
+        text: 'Missing the feeling',
+        translation: '',
+        romaji: '',
+        words: [{
+          text: 'Missing the feeling',
+          start: 6,
+          end: 9,
+          romaji: '',
+        }],
+        sourceIndex: 0,
+      },
+      {
+        startMs: 6000,
+        endMs: 9000,
+        text: '\u7f3a\u5931\u7684\u611f\u89c9',
+        translation: '',
+        romaji: '',
+        words: [{
+          text: '\u7f3a\u5931\u7684\u611f\u89c9',
+          start: 6,
+          end: 9,
+          romaji: '',
+        }],
+        sourceIndex: 1,
+      },
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].text).toBe('Missing the feeling');
+    expect(merged[0].translation).toBe('\u7f3a\u5931\u7684\u611f\u89c9');
+    expect(merged[0].romaji).toBe('');
+  });
+
   it('classifies chinese-dominant mixed lines as translations for latin main lines', () => {
     const merged = mergePreparedLines([
       {
@@ -1261,6 +1342,31 @@ describe('raw lyrics samples from the common formats checklist', async () => {
     expect(lines[0]).toMatchObject({
       text: 'You are my love',
       translation: '你是我的爱',
+      romaji: '',
+    });
+  });
+
+  it('keeps explicit chinese translation markers authoritative over the romanization heuristic', async () => {
+    const [heuristic] = await parseRawToLyricLines([
+      '[00:21.680]man sv nei si soeng zoi ha en loi zei',
+      '[00:21.680]闻说你时常在下午 来这里寄信件',
+    ].join('\n'));
+
+    // 无显式标记时启发式把中文升为主行、粤拼降为罗马音
+    expect(heuristic).toMatchObject({
+      text: '闻说你时常在下午 来这里寄信件',
+      romaji: 'man sv nei si soeng zoi ha en loi zei',
+    });
+
+    const [explicit] = await parseRawToLyricLines([
+      '[00:21.680]man sv nei si soeng zoi ha en loi zei',
+      '[00:21.680][tr]闻说你时常在下午 来这里寄信件',
+    ].join('\n'));
+
+    // 源里显式声明为翻译时以源为准，不做交换
+    expect(explicit).toMatchObject({
+      text: 'man sv nei si soeng zoi ha en loi zei',
+      translation: '闻说你时常在下午 来这里寄信件',
       romaji: '',
     });
   });

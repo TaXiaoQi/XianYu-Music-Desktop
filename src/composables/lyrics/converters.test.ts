@@ -155,6 +155,43 @@ describe('convertLyricsToAmlLines', () => {
     expect(amlLines[0]?.words.map((word) => word.romanWord || '')).toEqual(['', '', '']);
   });
 
+  it('forces the romaji sub-line for lines flagged as romanization even when the switch is off', () => {
+    const romanized = semanticLineToLyricLine({
+      startMs: 43802,
+      endMs: 46596,
+      mainText: '闻说你时常在下午',
+      romanText: 'man sv nei si soeng zoi',
+      isRomanized: true,
+      confidence: 'heuristic',
+    } as SemanticLine);
+
+    expect(romanized.isRomanized).toBe(true);
+
+    // 未开启「显示罗马音」也应渲染 romanLyric（中文大字 + 粤拼小字）
+    const amlLines = convertLyricsToAmlLines([romanized], true, false);
+    expect(amlLines[0]?.romanLyric).toBe('man sv nei si soeng zoi');
+
+    const displayLines = getCurrentLyricDisplayLines(romanized, true, false);
+    expect(displayLines.map((line) => line.kind)).toEqual(['main', 'romaji']);
+    expect(displayLines[1]?.text).toBe('man sv nei si soeng zoi');
+  });
+
+  it('still hides the romaji sub-line for ordinary lines when the switch is off', () => {
+    const ordinary = semanticLineToLyricLine({
+      startMs: 1000,
+      endMs: 3000,
+      mainText: '普通歌词',
+      romanText: 'pu tong ge ci',
+      confidence: 'heuristic',
+    } as SemanticLine);
+
+    const amlLines = convertLyricsToAmlLines([ordinary], true, false);
+    expect(amlLines[0]?.romanLyric).toBe('');
+
+    const displayLines = getCurrentLyricDisplayLines(ordinary, true, false);
+    expect(displayLines.map((line) => line.kind)).toEqual(['main']);
+  });
+
   it('keeps numeric main words in per-word romaji mode', () => {
     const separator = '\u00a0';
     const lines = [

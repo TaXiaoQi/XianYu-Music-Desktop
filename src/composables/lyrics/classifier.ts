@@ -9,6 +9,10 @@ import type {
 
 const MAX_GROUP_TOLERANCE_MS = 50;
 const ROMAN_ALIGNMENT_TOLERANCE_MS = 80;
+// 音译与汉字通常按音节一对一：音译词数与该行汉字数之比应落在此区间；
+// 翻译与原文长度无关，因此仅靠长度无法区分，需配合下面的音译特征判定。
+const MIN_ROMAN_TOKEN_HAN_RATIO = 0.45;
+const MAX_ROMAN_TOKEN_HAN_RATIO = 2.2;
 
 function resolveDominantScript(profile: Omit<LineScriptProfile, 'dominantScript'>): DominantScript {
   const counts = [
@@ -104,6 +108,67 @@ function isForeignLanguageLine(line: ParsedLine): boolean {
     && /\p{Letter}/u.test(getContentText(line));
 }
 
+// 英文功能词：出现即强烈暗示该拉丁行是英文，而非 CJK 歌词的罗马化音译。
+const ENGLISH_FUNCTION_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'if', 'is', 'are', 'was', 'were', 'be', 'been', 'am',
+  'do', 'does', 'did', 'have', 'has', 'had', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+  'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'their', 'our', 'its', 'to', 'of',
+  'in', 'on', 'at', 'for', 'with', 'from', 'by', 'as', 'not', 'that', 'this', 'these', 'those',
+  'will', 'would', 'can', 'could', 'should', 'when', 'where', 'what', 'who', 'how', 'all',
+  'just', 'only', 'than', 'then', 'there', 'here',
+]);
+
+// 典型英文词形；粤拼/拼音不会以这些字母组合结尾，出现即判定为英文而非音译。
+const ENGLISH_MORPHOLOGY_PATTERN = /(?:ing|tion|sion|ness|ment|ly|ed)$/;
+// 粤拼/港式罗马化特征：声调数字、j-/y- 声母、eo/oe/yu 韵母、-ng/-k/-t 韵尾。
+const ROMANIZATION_FINAL_PATTERN = /(?:eo|oe|yu)/;
+const ROMANIZATION_INITIAL_PATTERN = /^[jy]/;
+const ROMANIZATION_ENDING_PATTERN = /(?:ng|k|t)$/;
+
+function tokenizeLatinWords(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+/**
+ * 该拉丁行是否「像」粤拼/港式罗马化音译，而非英文。
+ * 镜像 Rust 侧 score_romanized_latin_text / looks_like_non_romaji_english_latin_text 的意图：
+ * 必须带音译特征（声调数字 / 声母 / 韵母 / 韵尾），且不含英文功能词、不含典型英文词形。
+ */
+function looksLikeRomanizedLatin(text: string): boolean {
+  const tokens = tokenizeLatinWords(text);
+  if (tokens.length === 0) return false;
+
+  if (tokens.some((token) => ENGLISH_FUNCTION_WORDS.has(token))) return false;
+  if (tokens.some((token) => token.length > 3 && ENGLISH_MORPHOLOGY_PATTERN.test(token))) return false;
+
+  const lower = text.toLowerCase();
+  if (/\d/.test(text)) return true; // 声调数字，如 nei5 / soeng1
+  if (ROMANIZATION_FINAL_PATTERN.test(lower)) return true;
+  return tokens.some((token) => (
+    ROMANIZATION_INITIAL_PATTERN.test(token) || ROMANIZATION_ENDING_PATTERN.test(token)
+  ));
+}
+
+/**
+ * 拉丁行是否为该汉字行的罗马化音译（常见于粤语歌：lyric=粤拼、tlyric=中文）。
+ * 需要同时满足：组内有汉字主导行；拉丁行是纯拉丁且「像音译」；音译词数与汉字数大致对应。
+ * 结构完全相同的「英文行 + 中文翻译」会因为英文功能词/词形而在这里被排除。
+ */
+function isLatinRomanizationOf(latinLine: ParsedLine, cjkLine: ParsedLine): boolean {
+  const cjkProfile = getContentProfile(cjkLine);
+  if (cjkProfile.hanCount === 0 || !isChineseDominantLine(cjkProfile)) return false;
+  if (!isPureLatin(getContentProfile(latinLine))) return false;
+
+  const latinText = getContentText(latinLine);
+  if (!looksLikeRomanizedLatin(latinText)) return false;
+
+  const tokenCount = tokenizeLatinWords(latinText).length;
+  if (tokenCount === 0) return false;
+
+  const tokenToHanRatio = tokenCount / cjkProfile.hanCount;
+  return tokenToHanRatio >= MIN_ROMAN_TOKEN_HAN_RATIO && tokenToHanRatio <= MAX_ROMAN_TOKEN_HAN_RATIO;
+}
+
 function isJapaneseLike(profile: LineScriptProfile): boolean {
   return profile.kanaCount > 0
     && profile.hangulCount === 0;
@@ -193,20 +258,27 @@ function groupParsedLines(lines: ParsedLine[]): ParsedLine[][] {
   return groups;
 }
 
-function selectHeuristicMainLine(lines: ParsedLine[]): ParsedLine {
+function selectHeuristicMainLine(lines: ParsedLine[]): { main: ParsedLine; isRomanizedSwap: boolean } {
   const japaneseLine = lines.find((line) => isJapaneseLike(getContentProfile(line)));
-  if (japaneseLine) return japaneseLine;
+  if (japaneseLine) return { main: japaneseLine, isRomanizedSwap: false };
 
   const koreanLine = lines.find((line) => isKoreanLike(getContentProfile(line)));
-  if (koreanLine) return koreanLine;
+  if (koreanLine) return { main: koreanLine, isRomanizedSwap: false };
 
   if (lines.length === 2) {
     const chineseLine = lines.find((line) => isChineseDominantLine(getContentProfile(line)));
     const foreignLine = lines.find((line) => isForeignLanguageLine(line));
-    if (foreignLine && chineseLine) return foreignLine;
+    if (foreignLine && chineseLine) {
+      // 若拉丁行是该汉字行的罗马化音译（如粤拼），汉字行才是主行；
+      // 否则维持「外文主行 + 中文译文」的既有行为（英文歌 + 中文翻译）。
+      if (isLatinRomanizationOf(foreignLine, chineseLine)) {
+        return { main: chineseLine, isRomanizedSwap: true };
+      }
+      return { main: foreignLine, isRomanizedSwap: false };
+    }
   }
 
-  return lines[0];
+  return { main: lines[0], isRomanizedSwap: false };
 }
 
 function classifyHeuristicRole(
@@ -238,8 +310,13 @@ export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
   const regularLines = group.filter((line) => !line.explicitRole);
 
   const parserNativeMain = regularLines.find((line) => hasParserNativeSecondary(line));
-  const main = parserNativeMain
-    ?? selectHeuristicMainLine(regularLines.length > 0 ? regularLines : group);
+  const heuristicMain = selectHeuristicMainLine(regularLines.length > 0 ? regularLines : group);
+  const main = parserNativeMain ?? heuristicMain.main;
+  // 显式标记优先：源里写了角色就不做推断，也不强制显示罗马音。
+  const isRomanized = !parserNativeMain
+    && heuristicMain.isRomanizedSwap
+    && explicitTranslationLines.length === 0
+    && explicitRomajiLines.length === 0;
 
   const remainingRegularLines = regularLines.filter((line) => line !== main);
 
@@ -279,6 +356,7 @@ export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
     romajiLine,
     secondaryLines,
     confidence,
+    isRomanized,
   };
 }
 
@@ -372,6 +450,7 @@ export function buildSemanticLines(lines: ParsedLine[]): SemanticLine[] {
         romajiLine,
         secondaryLines,
         confidence,
+        isRomanized,
       } = classifyGroupLines(group);
       const endMs = Math.max(
         main.endMs ?? main.startMs,
@@ -396,6 +475,7 @@ export function buildSemanticLines(lines: ParsedLine[]): SemanticLine[] {
         isBG: false,
         isDuet: false,
         isDuetPartner: false,
+        isRomanized: isRomanized || undefined,
       } satisfies SemanticLine;
     })
     .filter((line) => line.mainText.length > 0 || line.translationText || line.romanText);
