@@ -3,6 +3,7 @@ mod audio_convert;
 mod audio_trim;
 mod custom_fonts;
 mod database;
+pub(crate) mod control_channel;
 pub(crate) mod dlna;
 pub mod error;
 mod fallback_verify;
