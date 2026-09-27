@@ -20,6 +20,12 @@ input::-ms-clear {
   --favorite-color: #EC4142;
   --scrollbar-thumb-rgb: 0, 0, 0;
   --scrollbar-thumb-max-alpha: 0.38;
+  /* ---- 动效 token（由仓库现有过渡值归纳：时长集中在 140–300ms，缓动为这两条曲线） ---- */
+  --motion-dur-fast: 140ms;
+  --motion-dur-base: 200ms;
+  --motion-dur-slow: 280ms;
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   font-family: "Inter", system-ui, sans-serif;
   overflow: hidden;
 }
@@ -170,6 +176,79 @@ html.theme-transitioning * {
   html.theme-transitioning *:not(svg):not(svg *) {
     transition-duration: 0ms;
   }
+
+  /* ---- 本特性相关：减弱动态效果时，指示块与 page-fade 回退直接切换、不做位移/强闪 ---- */
+  .nav-indicator {
+    transition: none !important;
+  }
+
+  .page-fade-enter-active,
+  .page-fade-leave-active {
+    transition: none !important;
+  }
+
+  .page-fade-enter-from,
+  .page-fade-leave-to {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  ::view-transition-group(nav-indicator),
+  ::view-transition-old(nav-indicator),
+  ::view-transition-new(nav-indicator),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ---- 侧边栏共享元素过渡（View Transitions）---- */
+/* 指示块：让浏览器把它的旧位置/尺寸补间到新位置/尺寸 */
+::view-transition-group(nav-indicator) {
+  animation-duration: var(--motion-dur-base);
+  animation-timing-function: var(--motion-ease-emphasized);
+}
+
+::view-transition-old(nav-indicator),
+::view-transition-new(nav-indicator) {
+  animation-duration: var(--motion-dur-base);
+  animation-timing-function: var(--motion-ease-emphasized);
+}
+
+/* 根过渡保持克制：淡变 + 极小微位移，避免大面积重绘 */
+::view-transition-old(root) {
+  animation: var(--motion-dur-fast) var(--motion-ease-standard) both vt-root-fade-out;
+}
+
+::view-transition-new(root) {
+  animation: var(--motion-dur-base) var(--motion-ease-standard) both vt-root-fade-in;
+}
+
+@keyframes vt-root-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-root-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---- 视图过渡进行中：浏览器接管视觉，暂停 Vue 侧 page-fade 与指示块自身过渡，避免双重动画 ----
+   page-fade 仅在「不支持 View Transitions / 减弱动效」时作为回退生效。 */
+html.view-transition-active .page-fade-enter-active,
+html.view-transition-active .page-fade-leave-active,
+html.view-transition-active .nav-indicator {
+  transition: none;
+}
+
+html.view-transition-active .page-fade-enter-from,
+html.view-transition-active .page-fade-leave-to {
+  opacity: 1;
+  transform: none;
 }
 
 .modal-pop-enter-active,

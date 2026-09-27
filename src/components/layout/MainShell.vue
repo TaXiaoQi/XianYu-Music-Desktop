@@ -413,38 +413,6 @@ onMounted(() => {
 </template>
 
 <style>
-.page-fade-enter-active,
-.page-fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.page-fade-leave-active {
-  pointer-events: none;
-}
-
-.page-fade-enter-from {
-  opacity: 0;
-  transform: translateY(6px);
-}
-
-.page-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
-}
-
-.page-enter-enter-active {
-  animation: page-enter-in 0.22s ease;
-}
-
-@keyframes page-enter-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 .footer-slide-enter-active,
 .footer-slide-leave-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -679,11 +647,17 @@ onMounted(() => {
   }
 }
 
-/* ---- 左侧边栏/路由页面切换（微上滑 + 柔和淡入淡出动画） ---- */
+/* ---- 路由页面切换（微上滑 + 柔和淡入淡出）----
+   仅在「不支持 View Transitions / 系统减弱动效」时作为回退生效；使用全局动效 token。 */
 .page-fade-enter-active,
 .page-fade-leave-active {
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    opacity var(--motion-dur-base) var(--motion-ease-emphasized),
+    transform var(--motion-dur-base) var(--motion-ease-emphasized);
+}
+
+.page-fade-leave-active {
+  pointer-events: none;
 }
 
 .page-fade-enter-from {
@@ -694,15 +668,5 @@ onMounted(() => {
 .page-fade-leave-to {
   opacity: 0;
   transform: translateY(-6px) scale(0.996);
-}
-
-.page-enter-active {
-  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
 }
 </style>
