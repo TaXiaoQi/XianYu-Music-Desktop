@@ -1,770 +1,649 @@
-import { reactive } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { reactive } from 'vue';
+
 import { fileApi } from '../services/tauri/fileApi';
 import { MemoryCache } from '../utils/MemoryCache';
 
 type CoverKind = 'thumbnail' | 'full';
 type PreloadPriority = 'priority' | 'background';
 
-const THUMBNAIL_CACHE_LIMIT = 64;
-const FULL_COVER_CACHE_LIMIT = 4;
-const THUMBNAIL_CACHE_TTL_MS = 5 * 60 * 1000;
-const FULL_COVER_CACHE_TTL_MS = 2 * 60 * 1000;
-const HIDDEN_THUMBNAIL_CACHE_LIMIT = 12;
-const PRELOAD_CONCURRENCY = 4;
-const BACKGROUND_PRELOAD_CONCURRENCY = 1;
-const BACKGROUND_FULL_PRELOAD_CONCURRENCY = 1;
-const FAILURE_RETRY_MS = 10_000;
+// —— 各类缓存的容量与时效参数（取值即行为规格） ——
+const KIND_LIMITS: Record<CoverKind, number> = {
+  thumbnail: 64,
+  full: 4,
+};
+const KIND_TTL_MS: Record<CoverKind, number> = {
+  thumbnail: 5 * 60 * 1000,
+  full: 2 * 60 * 1000,
+};
+const HIDDEN_THUMBNAIL_LIMIT = 12;
+const PRIORITY_PRELOAD_SLOTS = 4;
+const BACKGROUND_PRELOAD_SLOTS = 1;
+const BACKGROUND_FULL_PRELOAD_SLOTS = 1;
+const FAILURE_COOLDOWN_MS = 10_000;
 
-const thumbnailCache = reactive(new Map<string, string>());
-const fullCoverCache = reactive(new Map<string, string>());
-const thumbnailPathCache = new Map<string, string>();
-const fullCoverPathCache = new Map<string, string>();
-const thumbnailCacheExpiry = new Map<string, number>();
-const fullCoverCacheExpiry = new Map<string, number>();
-const loadingSet = reactive(new Set<string>());
-const inFlightRequests = new Map<string, Promise<string>>();
-const recentFailureCache = new MemoryCache<string, true>({
+// 缩略图 URL 的内存 LRU（图片文件本身在磁盘上），键为歌曲路径。
+const thumbUrlCache = reactive(new Map<string, string>());
+const fullUrlCache = reactive(new Map<string, string>());
+const thumbSourcePathCache = new Map<string, string>();
+const fullSourcePathCache = new Map<string, string>();
+const thumbExpiryMap = new Map<string, number>();
+const fullExpiryMap = new Map<string, number>();
+const activeLoadKeys = reactive(new Set<string>());
+const pendingRequests = new Map<string, Promise<string>>();
+const failureCooldowns = new MemoryCache<string, true>({
   maxEntries: 256,
-  ttlMs: FAILURE_RETRY_MS,
+  ttlMs: FAILURE_COOLDOWN_MS,
 });
-const priorityPreloadQueue: string[] = [];
-const backgroundPreloadQueue: string[] = [];
-const queuedPathPriority = new Map<string, PreloadPriority>();
-const backgroundFullPreloadQueue: string[] = [];
-const queuedBackgroundFullPaths = new Set<string>();
-let activeBackgroundFullPreloadCount = 0;
-let backgroundPreloadTimer: ReturnType<typeof setTimeout> | null = null;
-let backgroundPreloadIdleId: number | null = null;
-let cachePruneTimer: number | null = null;
-let hasRegisteredVisibilityCleanup = false;
-const cacheEpochs: Record<CoverKind, number> = {
+const priorityQueue: string[] = [];
+const backgroundQueue: string[] = [];
+const queuedPriorities = new Map<string, PreloadPriority>();
+const fullPreloadQueue: string[] = [];
+const queuedFullPreloads = new Set<string>();
+let runningFullPreloads = 0;
+let backgroundFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let backgroundIdleHandle: number | null = null;
+let pruneTimer: number | null = null;
+let visibilityHookInstalled = false;
+// 缓存纪元：失效/清空时递增，用于丢弃旧纪元发出的在途请求结果。
+const epochCounters: Record<CoverKind, number> = {
   thumbnail: 0,
   full: 0,
 };
-const invalidatedRequestKeys = new Set<string>();
+const staleRequestKeys = new Set<string>();
 
 const isDocumentHidden = () =>
   typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
-const getCacheForKind = (kind: CoverKind) =>
-  kind === 'full' ? fullCoverCache : thumbnailCache;
-const getPathCacheForKind = (kind: CoverKind) =>
-  kind === 'full' ? fullCoverPathCache : thumbnailPathCache;
-const getCacheExpiryForKind = (kind: CoverKind) =>
-  kind === 'full' ? fullCoverCacheExpiry : thumbnailCacheExpiry;
-const getCacheLimitForKind = (kind: CoverKind) =>
-  kind === 'full' ? FULL_COVER_CACHE_LIMIT : THUMBNAIL_CACHE_LIMIT;
-const getCacheTtlForKind = (kind: CoverKind) =>
-  kind === 'full' ? FULL_COVER_CACHE_TTL_MS : THUMBNAIL_CACHE_TTL_MS;
+// —— 按 CoverKind 取对应存储的访问器 ——
 
-const buildCacheKey = (path: string, kind: CoverKind) => `${kind}:${path}`;
-const isThumbnailRequestKey = (requestKey: string) => requestKey.startsWith('thumbnail:');
+const urlCacheOf = (kind: CoverKind) => (kind === 'full' ? fullUrlCache : thumbUrlCache);
+const sourcePathCacheOf = (kind: CoverKind) =>
+  kind === 'full' ? fullSourcePathCache : thumbSourcePathCache;
+const expiryMapOf = (kind: CoverKind) => (kind === 'full' ? fullExpiryMap : thumbExpiryMap);
+const limitOf = (kind: CoverKind) => KIND_LIMITS[kind];
+const ttlOf = (kind: CoverKind) => KIND_TTL_MS[kind];
 
-const deleteCacheEntry = (
-  cache: Map<string, string>,
-  expiry: Map<string, number>,
-  pathCache: Map<string, string>,
-  path: string,
-) => {
-  cache.delete(path);
-  expiry.delete(path);
-  pathCache.delete(path);
-};
+const requestKeyOf = (path: string, kind: CoverKind) => `${kind}:${path}`;
+const isThumbKey = (requestKey: string) => requestKey.startsWith('thumbnail:');
 
-const clearCacheEntries = (
-  cache: Map<string, string>,
-  expiry: Map<string, number>,
-  pathCache: Map<string, string>,
-) => {
-  cache.clear();
-  expiry.clear();
-  pathCache.clear();
-};
+// —— 单条缓存记录的增删与淘汰 ——
 
-const retainCacheEntries = (
-  cache: Map<string, string>,
-  expiry: Map<string, number>,
-  pathCache: Map<string, string>,
-  retainedPaths: Set<string>,
-) => {
-  for (const path of cache.keys()) {
-    if (retainedPaths.has(path)) {
-      continue;
-    }
+function removeEntry(kind: CoverKind, path: string) {
+  urlCacheOf(kind).delete(path);
+  expiryMapOf(kind).delete(path);
+  sourcePathCacheOf(kind).delete(path);
+}
 
-    deleteCacheEntry(cache, expiry, pathCache, path);
+function wipeEntries(kind: CoverKind) {
+  urlCacheOf(kind).clear();
+  expiryMapOf(kind).clear();
+  sourcePathCacheOf(kind).clear();
+}
+
+function keepOnlyPaths(kind: CoverKind, survivors: Set<string>) {
+  for (const path of Array.from(urlCacheOf(kind).keys())) {
+    if (survivors.has(path)) continue;
+    removeEntry(kind, path);
   }
-};
+}
 
-const touchCacheEntry = (
-  cache: Map<string, string>,
-  expiry: Map<string, number>,
-  path: string,
-  value: string,
-  pathCache: Map<string, string>,
-  rawPath: string,
-  ttlMs: number,
-) => {
+// 重新插入以刷新 LRU 顺序，并续写过期时间。
+function writeEntry(kind: CoverKind, path: string, url: string, rawPath: string) {
+  const cache = urlCacheOf(kind);
   if (cache.has(path)) {
     cache.delete(path);
   }
-  expiry.delete(path);
-  cache.set(path, value);
-  pathCache.set(path, rawPath);
-  expiry.set(path, Date.now() + ttlMs);
-};
-
-const pruneExpiredEntries = (
-  cache: Map<string, string>,
-  expiry: Map<string, number>,
-  pathCache: Map<string, string>,
-  now: number,
-) => {
-  for (const [path, expiresAt] of expiry) {
-    if (expiresAt > now && cache.has(path)) {
-      continue;
-    }
-
-    deleteCacheEntry(cache, expiry, pathCache, path);
-  }
-};
-
-const pruneCache = (
-  cache: Map<string, string>,
-  expiry: Map<string, number>,
-  pathCache: Map<string, string>,
-  limit: number,
-) => {
-  pruneExpiredEntries(cache, expiry, pathCache, Date.now());
-
-  while (cache.size > limit) {
-    const oldestKey = cache.keys().next().value as string | undefined;
-    if (!oldestKey) {
-      break;
-    }
-    deleteCacheEntry(cache, expiry, pathCache, oldestKey);
-  }
-
-  scheduleCachePrune();
-};
-
-const scheduleCachePrune = () => {
-  if (cachePruneTimer) {
-    window.clearTimeout(cachePruneTimer);
-    cachePruneTimer = null;
-  }
-
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  let nextExpiry: number | null = null;
-  for (const expiresAt of thumbnailCacheExpiry.values()) {
-    nextExpiry = nextExpiry === null ? expiresAt : Math.min(nextExpiry, expiresAt);
-  }
-  for (const expiresAt of fullCoverCacheExpiry.values()) {
-    nextExpiry = nextExpiry === null ? expiresAt : Math.min(nextExpiry, expiresAt);
-  }
-
-  if (nextExpiry === null) {
-    return;
-  }
-
-  const delay = Math.max(0, nextExpiry - Date.now());
-  cachePruneTimer = window.setTimeout(() => {
-    cachePruneTimer = null;
-    pruneCache(thumbnailCache, thumbnailCacheExpiry, thumbnailPathCache, THUMBNAIL_CACHE_LIMIT);
-    pruneCache(fullCoverCache, fullCoverCacheExpiry, fullCoverPathCache, FULL_COVER_CACHE_LIMIT);
-  }, delay);
-};
-
-const getCachedCover = (path: string, kind: CoverKind): string | undefined => {
-  const cache = getCacheForKind(kind);
-  const pathCache = getPathCacheForKind(kind);
-  const expiry = getCacheExpiryForKind(kind);
-  const ttlMs = getCacheTtlForKind(kind);
-  pruneCache(cache, expiry, pathCache, getCacheLimitForKind(kind));
-
-  const cachedValue = cache.get(path);
-  if (cachedValue === undefined) {
-    return undefined;
-  }
-
-  const rawPath = pathCache.get(path);
-  if (!rawPath) {
-    deleteCacheEntry(cache, expiry, pathCache, path);
-    return undefined;
-  }
-
-  touchCacheEntry(cache, expiry, path, cachedValue, pathCache, rawPath, ttlMs);
-  return cachedValue;
-};
-
-const getCachedCoverPath = (path: string, kind: CoverKind): string | undefined => {
-  const cache = getCacheForKind(kind);
-  const pathCache = getPathCacheForKind(kind);
-  const expiry = getCacheExpiryForKind(kind);
-  pruneCache(cache, expiry, pathCache, getCacheLimitForKind(kind));
-
-  if (!cache.has(path)) {
-    pathCache.delete(path);
-    return undefined;
-  }
-
-  return pathCache.get(path);
-};
-
-const setCachedCover = (path: string, kind: CoverKind, value: string, rawPath: string) => {
-  const cache = getCacheForKind(kind);
-  const pathCache = getPathCacheForKind(kind);
-  const expiry = getCacheExpiryForKind(kind);
-  touchCacheEntry(cache, expiry, path, value, pathCache, rawPath, getCacheTtlForKind(kind));
-  pruneCache(cache, expiry, pathCache, getCacheLimitForKind(kind));
-};
-
-const getFailureCacheKey = (path: string, kind: CoverKind) => buildCacheKey(path, kind);
-
-const hasRecentFailure = (path: string, kind: CoverKind) => {
-  const cacheKey = getFailureCacheKey(path, kind);
-  return recentFailureCache.has(cacheKey);
-};
-
-const bumpCacheEpoch = (kind?: CoverKind) => {
-  if (kind) {
-    cacheEpochs[kind] += 1;
-    return;
-  }
-
-  cacheEpochs.thumbnail += 1;
-  cacheEpochs.full += 1;
-};
-
-const getCacheEpoch = (kind: CoverKind) => {
-  return cacheEpochs[kind];
-};
-
-const trimTransientCoverState = () => {
-  bumpCacheEpoch('thumbnail');
-  bumpCacheEpoch('full');
-  pruneCache(
-    thumbnailCache,
-    thumbnailCacheExpiry,
-    thumbnailPathCache,
-    HIDDEN_THUMBNAIL_CACHE_LIMIT,
-  );
-  clearCacheEntries(fullCoverCache, fullCoverCacheExpiry, fullCoverPathCache);
-  priorityPreloadQueue.length = 0;
-  backgroundPreloadQueue.length = 0;
-  backgroundFullPreloadQueue.length = 0;
-  queuedPathPriority.clear();
-  queuedBackgroundFullPaths.clear();
-  cancelBackgroundPreload();
-  recentFailureCache.prune();
-
-  for (const requestKey of Array.from(inFlightRequests.keys())) {
-    if (!isThumbnailRequestKey(requestKey)) {
-      invalidatedRequestKeys.add(requestKey);
-      loadingSet.delete(requestKey);
-    }
-  }
-};
-
-const handleVisibilityChange = () => {
-  if (document.visibilityState === 'hidden') {
-    trimTransientCoverState();
-  }
-};
-
-const cleanupVisibilityCleanup = () => {
-  if (!hasRegisteredVisibilityCleanup || typeof document === 'undefined') {
-    return;
-  }
-
-  document.removeEventListener('visibilitychange', handleVisibilityChange);
-  hasRegisteredVisibilityCleanup = false;
-};
-
-const registerVisibilityCleanup = () => {
-  if (hasRegisteredVisibilityCleanup || typeof document === 'undefined') {
-    return;
-  }
-
-  document.addEventListener('visibilitychange', handleVisibilityChange);
-  hasRegisteredVisibilityCleanup = true;
-};
-
-if (import.meta.hot) {
-  import.meta.hot.dispose(cleanupVisibilityCleanup);
+  expiryMapOf(kind).delete(path);
+  cache.set(path, url);
+  sourcePathCacheOf(kind).set(path, rawPath);
+  expiryMapOf(kind).set(path, Date.now() + ttlOf(kind));
 }
 
-const loadCoverInternal = (path: string, kind: CoverKind): Promise<string> => {
-  const requestKey = buildCacheKey(path, kind);
-  if (hasRecentFailure(path, kind)) {
+function evictStale(kind: CoverKind, now: number) {
+  for (const [path, expiresAt] of expiryMapOf(kind)) {
+    if (expiresAt > now && urlCacheOf(kind).has(path)) continue;
+    removeEntry(kind, path);
+  }
+}
+
+// 先剔除过期项，再按容量上限淘汰最旧的条目，最后重新调度定时清理。
+function evictCache(kind: CoverKind, limit: number) {
+  evictStale(kind, Date.now());
+
+  const cache = urlCacheOf(kind);
+  while (cache.size > limit) {
+    const eldest = cache.keys().next().value as string | undefined;
+    if (!eldest) break;
+    removeEntry(kind, eldest);
+  }
+
+  queueTimedPrune();
+}
+
+// 计算最近的过期时间点，安排一次到期的批量清理。
+function queueTimedPrune() {
+  if (pruneTimer) {
+    window.clearTimeout(pruneTimer);
+    pruneTimer = null;
+  }
+
+  if (typeof window === 'undefined') return;
+
+  let soonest: number | null = null;
+  const scan = (expiry: Map<string, number>) => {
+    for (const expiresAt of expiry.values()) {
+      soonest = soonest === null ? expiresAt : Math.min(soonest, expiresAt);
+    }
+  };
+  scan(thumbExpiryMap);
+  scan(fullExpiryMap);
+
+  if (soonest === null) return;
+
+  const delay = Math.max(0, soonest - Date.now());
+  pruneTimer = window.setTimeout(() => {
+    pruneTimer = null;
+    evictCache('thumbnail', KIND_LIMITS.thumbnail);
+    evictCache('full', KIND_LIMITS.full);
+  }, delay);
+}
+
+// —— 命中读取（命中即续期） ——
+
+function readCachedUrl(path: string, kind: CoverKind): string | undefined {
+  evictCache(kind, limitOf(kind));
+
+  const url = urlCacheOf(kind).get(path);
+  if (url === undefined) return undefined;
+
+  const rawPath = sourcePathCacheOf(kind).get(path);
+  if (!rawPath) {
+    removeEntry(kind, path);
+    return undefined;
+  }
+
+  writeEntry(kind, path, url, rawPath);
+  return url;
+}
+
+function readCachedSourcePath(path: string, kind: CoverKind): string | undefined {
+  evictCache(kind, limitOf(kind));
+
+  if (!urlCacheOf(kind).has(path)) {
+    sourcePathCacheOf(kind).delete(path);
+    return undefined;
+  }
+
+  return sourcePathCacheOf(kind).get(path);
+}
+
+function storeCachedUrl(path: string, kind: CoverKind, url: string, rawPath: string) {
+  writeEntry(kind, path, url, rawPath);
+  evictCache(kind, limitOf(kind));
+}
+
+function inFailureCooldown(path: string, kind: CoverKind) {
+  return failureCooldowns.has(requestKeyOf(path, kind));
+}
+
+function advanceEpoch(kind?: CoverKind) {
+  if (kind) {
+    epochCounters[kind] += 1;
+    return;
+  }
+  epochCounters.thumbnail += 1;
+  epochCounters.full += 1;
+}
+
+function epochOf(kind: CoverKind) {
+  return epochCounters[kind];
+}
+
+// 文档转入后台时收缩临时状态：保留少量缩略图，清空全尺寸与预加载队列。
+function shrinkToHiddenState() {
+  advanceEpoch('thumbnail');
+  advanceEpoch('full');
+  evictCache('thumbnail', HIDDEN_THUMBNAIL_LIMIT);
+  wipeEntries('full');
+  priorityQueue.length = 0;
+  backgroundQueue.length = 0;
+  fullPreloadQueue.length = 0;
+  queuedPriorities.clear();
+  queuedFullPreloads.clear();
+  cancelDeferredPreloads();
+  failureCooldowns.prune();
+
+  // 全尺寸在途请求不再可信：标记失效并停止 loading 展示。
+  for (const requestKey of Array.from(pendingRequests.keys())) {
+    if (!isThumbKey(requestKey)) {
+      staleRequestKeys.add(requestKey);
+      activeLoadKeys.delete(requestKey);
+    }
+  }
+}
+
+function onDocumentVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    shrinkToHiddenState();
+  }
+}
+
+function uninstallVisibilityHook() {
+  if (!visibilityHookInstalled || typeof document === 'undefined') return;
+
+  document.removeEventListener('visibilitychange', onDocumentVisibilityChange);
+  visibilityHookInstalled = false;
+}
+
+function installVisibilityHook() {
+  if (visibilityHookInstalled || typeof document === 'undefined') return;
+
+  document.addEventListener('visibilitychange', onDocumentVisibilityChange);
+  visibilityHookInstalled = true;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(uninstallVisibilityHook);
+}
+
+// —— 向后端请求封面并写入缓存 ——
+
+function requestCover(path: string, kind: CoverKind): Promise<string> {
+  const requestKey = requestKeyOf(path, kind);
+  if (inFailureCooldown(path, kind)) {
     return Promise.resolve('');
   }
 
-  const existingRequest = inFlightRequests.get(requestKey);
-  if (existingRequest) {
-    return existingRequest;
-  }
-  const requestEpoch = getCacheEpoch(kind);
+  const pending = pendingRequests.get(requestKey);
+  if (pending) return pending;
 
-  const request = (async () => {
-    loadingSet.add(requestKey);
+  const epochAtStart = epochOf(kind);
+
+  const promise = (async () => {
+    activeLoadKeys.add(requestKey);
     try {
-      const coverPath = kind === 'full'
+      const sourcePath = kind === 'full'
         ? await fileApi.getSongCover(path)
         : await fileApi.getSongCoverThumbnail(path);
-      if (requestEpoch !== getCacheEpoch(kind) || invalidatedRequestKeys.has(requestKey)) {
+      if (epochOf(kind) !== epochAtStart || staleRequestKeys.has(requestKey)) {
         return '';
       }
-      const finalUrl = coverPath ? convertFileSrc(coverPath) : '';
-      recentFailureCache.delete(requestKey);
-      if (finalUrl && coverPath) {
-        setCachedCover(path, kind, finalUrl, coverPath);
+      const assetUrl = sourcePath ? convertFileSrc(sourcePath) : '';
+      failureCooldowns.delete(requestKey);
+      if (assetUrl && sourcePath) {
+        storeCachedUrl(path, kind, assetUrl, sourcePath);
       }
-      return finalUrl;
+      return assetUrl;
     } catch {
-      if (requestEpoch !== getCacheEpoch(kind) || invalidatedRequestKeys.has(requestKey)) {
+      if (epochOf(kind) !== epochAtStart || staleRequestKeys.has(requestKey)) {
         return '';
       }
-      recentFailureCache.set(requestKey, true);
+      failureCooldowns.set(requestKey, true);
       return '';
     } finally {
-      loadingSet.delete(requestKey);
-      inFlightRequests.delete(requestKey);
-      invalidatedRequestKeys.delete(requestKey);
+      activeLoadKeys.delete(requestKey);
+      pendingRequests.delete(requestKey);
+      staleRequestKeys.delete(requestKey);
     }
   })();
 
-  inFlightRequests.set(requestKey, request);
-  return request;
-};
+  pendingRequests.set(requestKey, promise);
+  return promise;
+}
 
-const getActiveThumbnailLoadCount = () => {
-  let activeCount = 0;
-  for (const requestKey of loadingSet) {
-    if (isThumbnailRequestKey(requestKey)) {
-      activeCount += 1;
-    }
+function activeThumbLoadCount() {
+  let count = 0;
+  for (const requestKey of activeLoadKeys) {
+    if (isThumbKey(requestKey)) count += 1;
   }
-  return activeCount;
-};
+  return count;
+}
 
-const cancelBackgroundPreload = () => {
-  if (backgroundPreloadTimer) {
-    clearTimeout(backgroundPreloadTimer);
-    backgroundPreloadTimer = null;
+function cancelDeferredPreloads() {
+  if (backgroundFlushTimer) {
+    clearTimeout(backgroundFlushTimer);
+    backgroundFlushTimer = null;
   }
 
-  if (backgroundPreloadIdleId !== null && 'cancelIdleCallback' in window) {
-    window.cancelIdleCallback(backgroundPreloadIdleId);
-    backgroundPreloadIdleId = null;
+  if (backgroundIdleHandle !== null && 'cancelIdleCallback' in window) {
+    window.cancelIdleCallback(backgroundIdleHandle);
+    backgroundIdleHandle = null;
   }
-};
+}
 
-const dequeueNextPath = (priority: PreloadPriority) => {
-  const queue = priority === 'priority' ? priorityPreloadQueue : backgroundPreloadQueue;
+// —— 缩略图预加载调度：优先队列占满并发槽位，后台队列低频跟进 ——
+
+function takeNextQueuedPath(priority: PreloadPriority) {
+  const queue = priority === 'priority' ? priorityQueue : backgroundQueue;
 
   while (queue.length > 0) {
-    const path = queue.shift();
-    if (!path) {
-      continue;
-    }
+    const candidate = queue.shift();
+    if (!candidate) continue;
 
-    if (queuedPathPriority.get(path) !== priority) {
-      continue;
-    }
+    // 路径可能已被更高优先级重新排队，过期条目直接跳过。
+    if (queuedPriorities.get(candidate) !== priority) continue;
 
-    queuedPathPriority.delete(path);
-    return path;
+    queuedPriorities.delete(candidate);
+    return candidate;
   }
 
   return undefined;
-};
-
-const startPreload = (path: string) => {
-  if (thumbnailCache.has(path) || loadingSet.has(buildCacheKey(path, 'thumbnail'))) {
-    return;
-  }
-
-  void loadCoverInternal(path, 'thumbnail').finally(() => {
-    schedulePriorityPreload();
-    scheduleBackgroundPreload();
-  });
-};
-
-const schedulePriorityPreload = () => {
-  cancelBackgroundPreload();
-
-  while (getActiveThumbnailLoadCount() < PRELOAD_CONCURRENCY) {
-    const nextPath = dequeueNextPath('priority');
-    if (!nextPath) {
-      break;
-    }
-
-    startPreload(nextPath);
-  }
-};
-
-const flushBackgroundPreload = () => {
-  backgroundPreloadTimer = null;
-  backgroundPreloadIdleId = null;
-
-  if (priorityPreloadQueue.length > 0) {
-    schedulePriorityPreload();
-    return;
-  }
-
-  while (getActiveThumbnailLoadCount() < BACKGROUND_PRELOAD_CONCURRENCY) {
-    const nextPath = dequeueNextPath('background');
-    if (!nextPath) {
-      break;
-    }
-
-    startPreload(nextPath);
-  }
-
-  if (backgroundPreloadQueue.length > 0) {
-    scheduleBackgroundPreload();
-  }
-};
-
-function scheduleBackgroundPreload() {
-  if (
-    backgroundPreloadTimer ||
-    backgroundPreloadIdleId !== null ||
-    priorityPreloadQueue.length > 0 ||
-    backgroundPreloadQueue.length === 0 ||
-    getActiveThumbnailLoadCount() >= BACKGROUND_PRELOAD_CONCURRENCY
-  ) {
-    return;
-  }
-
-  const runBackgroundPreload = () => {
-    flushBackgroundPreload();
-  };
-
-  if ('requestIdleCallback' in window) {
-    backgroundPreloadIdleId = window.requestIdleCallback(runBackgroundPreload, { timeout: 300 });
-    return;
-  }
-
-  backgroundPreloadTimer = setTimeout(runBackgroundPreload, 160);
 }
 
-const enqueuePreload = (path: string, priority: PreloadPriority) => {
-  if (!path || thumbnailCache.has(path) || loadingSet.has(buildCacheKey(path, 'thumbnail'))) {
+function kickOffThumbnailLoad(path: string) {
+  if (thumbUrlCache.has(path) || activeLoadKeys.has(requestKeyOf(path, 'thumbnail'))) {
     return;
   }
 
-  const existingPriority = queuedPathPriority.get(path);
-  if (existingPriority === 'priority') {
+  void requestCover(path, 'thumbnail').finally(() => {
+    drainPriorityPreloads();
+    queueBackgroundPreload();
+  });
+}
+
+function drainPriorityPreloads() {
+  cancelDeferredPreloads();
+
+  while (activeThumbLoadCount() < PRIORITY_PRELOAD_SLOTS) {
+    const next = takeNextQueuedPath('priority');
+    if (!next) break;
+
+    kickOffThumbnailLoad(next);
+  }
+}
+
+function flushBackgroundPreloads() {
+  backgroundFlushTimer = null;
+  backgroundIdleHandle = null;
+
+  if (priorityQueue.length > 0) {
+    drainPriorityPreloads();
     return;
   }
+
+  while (activeThumbLoadCount() < BACKGROUND_PRELOAD_SLOTS) {
+    const next = takeNextQueuedPath('background');
+    if (!next) break;
+
+    kickOffThumbnailLoad(next);
+  }
+
+  if (backgroundQueue.length > 0) {
+    queueBackgroundPreload();
+  }
+}
+
+function queueBackgroundPreload() {
+  const blocked = backgroundFlushTimer !== null
+    || backgroundIdleHandle !== null
+    || priorityQueue.length > 0
+    || backgroundQueue.length === 0
+    || activeThumbLoadCount() >= BACKGROUND_PRELOAD_SLOTS;
+  if (blocked) return;
+
+  if ('requestIdleCallback' in window) {
+    backgroundIdleHandle = window.requestIdleCallback(flushBackgroundPreloads, { timeout: 300 });
+    return;
+  }
+
+  backgroundFlushTimer = setTimeout(flushBackgroundPreloads, 160);
+}
+
+function enqueueThumbnailPreload(path: string, priority: PreloadPriority) {
+  if (!path || thumbUrlCache.has(path) || activeLoadKeys.has(requestKeyOf(path, 'thumbnail'))) {
+    return;
+  }
+
+  const currentPriority = queuedPriorities.get(path);
+  if (currentPriority === 'priority') return;
 
   if (priority === 'priority') {
-    queuedPathPriority.set(path, 'priority');
-    priorityPreloadQueue.push(path);
+    queuedPriorities.set(path, 'priority');
+    priorityQueue.push(path);
     return;
   }
 
-  if (!existingPriority) {
-    queuedPathPriority.set(path, 'background');
-    backgroundPreloadQueue.push(path);
+  if (!currentPriority) {
+    queuedPriorities.set(path, 'background');
+    backgroundQueue.push(path);
   }
-};
+}
 
-const scheduleBackgroundFullPreload = () => {
+// —— 全尺寸封面的后台串行预加载 ——
+
+function drainFullCoverPreloads() {
   if (isDocumentHidden()) {
-    backgroundFullPreloadQueue.length = 0;
-    queuedBackgroundFullPaths.clear();
+    fullPreloadQueue.length = 0;
+    queuedFullPreloads.clear();
     return;
   }
 
   while (
-    activeBackgroundFullPreloadCount < BACKGROUND_FULL_PRELOAD_CONCURRENCY
-    && backgroundFullPreloadQueue.length > 0
+    runningFullPreloads < BACKGROUND_FULL_PRELOAD_SLOTS
+    && fullPreloadQueue.length > 0
   ) {
-    const path = backgroundFullPreloadQueue.shift();
-    if (!path) {
-      continue;
-    }
+    const path = fullPreloadQueue.shift();
+    if (!path) continue;
 
-    queuedBackgroundFullPaths.delete(path);
+    queuedFullPreloads.delete(path);
 
     if (
-      fullCoverCache.has(path)
-      || loadingSet.has(buildCacheKey(path, 'full'))
-      || hasRecentFailure(path, 'full')
+      fullUrlCache.has(path)
+      || activeLoadKeys.has(requestKeyOf(path, 'full'))
+      || inFailureCooldown(path, 'full')
     ) {
       continue;
     }
 
-    activeBackgroundFullPreloadCount += 1;
-    void loadCoverInternal(path, 'full').finally(() => {
-      activeBackgroundFullPreloadCount = Math.max(0, activeBackgroundFullPreloadCount - 1);
-      scheduleBackgroundFullPreload();
+    runningFullPreloads += 1;
+    void requestCover(path, 'full').finally(() => {
+      runningFullPreloads = Math.max(0, runningFullPreloads - 1);
+      drainFullCoverPreloads();
     });
   }
-};
+}
 
-const enqueueBackgroundFullPreload = (path: string) => {
+function enqueueFullCoverPreload(path: string) {
   if (
     !path
     || isDocumentHidden()
-    || fullCoverCache.has(path)
-    || loadingSet.has(buildCacheKey(path, 'full'))
-    || queuedBackgroundFullPaths.has(path)
-    || hasRecentFailure(path, 'full')
+    || fullUrlCache.has(path)
+    || activeLoadKeys.has(requestKeyOf(path, 'full'))
+    || queuedFullPreloads.has(path)
+    || inFailureCooldown(path, 'full')
   ) {
     return;
   }
 
-  queuedBackgroundFullPaths.add(path);
-  backgroundFullPreloadQueue.push(path);
-};
+  queuedFullPreloads.add(path);
+  fullPreloadQueue.push(path);
+}
 
 export function useCoverCache() {
-  registerVisibilityCleanup();
+  installVisibilityHook();
 
-  const peekCoverUrl = (path: string | undefined, kind: CoverKind = 'thumbnail') => {
-    if (!path) {
-      return '';
-    }
-
-    pruneCache(
-      getCacheForKind(kind),
-      getCacheExpiryForKind(kind),
-      getPathCacheForKind(kind),
-      getCacheLimitForKind(kind),
-    );
-    return getCacheForKind(kind).get(path) ?? '';
+  const pruneFor = (kind: CoverKind) => {
+    evictCache(kind, limitOf(kind));
   };
 
-  const peekCoverPath = (path: string | undefined, kind: CoverKind = 'thumbnail') => {
-    if (!path) {
-      return '';
-    }
+  const peekCachedUrl = (path: string | undefined, kind: CoverKind = 'thumbnail') => {
+    if (!path) return '';
 
-    pruneCache(
-      getCacheForKind(kind),
-      getCacheExpiryForKind(kind),
-      getPathCacheForKind(kind),
-      getCacheLimitForKind(kind),
-    );
-    return getPathCacheForKind(kind).get(path) ?? '';
+    pruneFor(kind);
+    return urlCacheOf(kind).get(path) ?? '';
   };
 
-  const touchCoverPaths = (paths: string[], kind: CoverKind = 'thumbnail') => {
-    const cache = getCacheForKind(kind);
-    const pathCache = getPathCacheForKind(kind);
-    const expiry = getCacheExpiryForKind(kind);
-    const ttlMs = getCacheTtlForKind(kind);
+  const peekCachedPath = (path: string | undefined, kind: CoverKind = 'thumbnail') => {
+    if (!path) return '';
 
-    paths.forEach((path) => {
-      if (!path) {
-        return;
-      }
-
-      const cachedValue = cache.get(path);
-      if (cachedValue === undefined) {
-        return;
-      }
-
-      const rawPath = pathCache.get(path);
-      if (!rawPath) {
-        deleteCacheEntry(cache, expiry, pathCache, path);
-        return;
-      }
-
-      touchCacheEntry(cache, expiry, path, cachedValue, pathCache, rawPath, ttlMs);
-    });
-
-    pruneCache(cache, expiry, pathCache, getCacheLimitForKind(kind));
+    pruneFor(kind);
+    return sourcePathCacheOf(kind).get(path) ?? '';
   };
 
-  const isCoverLoading = (path: string | undefined, kind: CoverKind = 'thumbnail') => {
-    if (!path) {
-      return false;
-    }
-
-    return loadingSet.has(buildCacheKey(path, kind));
-  };
-
-  const loadCover = async (path: string | undefined): Promise<string | undefined> => {
-    if (!path) {
-      return undefined;
-    }
-
-    const cachedValue = getCachedCover(path, 'thumbnail');
-    if (cachedValue !== undefined) {
-      return cachedValue;
-    }
-
-    return loadCoverInternal(path, 'thumbnail');
-  };
-
-  const loadFullCover = async (path: string | undefined): Promise<string | undefined> => {
-    if (!path) {
-      return undefined;
-    }
-
-    const cachedValue = getCachedCover(path, 'full');
-    if (cachedValue !== undefined) {
-      return cachedValue;
-    }
-
-    return loadCoverInternal(path, 'full');
-  };
-
-  const loadCoverPath = async (path: string | undefined): Promise<string | undefined> => {
-    if (!path) {
-      return undefined;
-    }
-
-    const cachedValue = getCachedCoverPath(path, 'thumbnail');
-    if (cachedValue !== undefined) {
-      return cachedValue;
-    }
-
-    await loadCoverInternal(path, 'thumbnail');
-    return getCachedCoverPath(path, 'thumbnail');
-  };
-
-  const primeCoverPath = (path: string | undefined, rawPath: string | undefined | null) => {
-    if (!path || !rawPath) {
-      return '';
-    }
-
-    const cachedValue = getCachedCover(path, 'thumbnail');
-    if (cachedValue !== undefined) {
-      return cachedValue;
-    }
-
-    const isNetworkUrl = /^https?:\/\//i.test(rawPath);
-    const finalUrl = isNetworkUrl ? rawPath : convertFileSrc(rawPath);
-    setCachedCover(path, 'thumbnail', finalUrl, rawPath);
-    return finalUrl;
-  };
-
-  const preloadCovers = (paths: string[], priority: PreloadPriority = 'background') => {
+  const touchCachedPaths = (paths: string[], kind: CoverKind = 'thumbnail') => {
     for (const path of paths) {
-      enqueuePreload(path, priority);
+      if (!path) continue;
+
+      const url = urlCacheOf(kind).get(path);
+      if (url === undefined) continue;
+
+      const rawPath = sourcePathCacheOf(kind).get(path);
+      if (!rawPath) {
+        removeEntry(kind, path);
+        continue;
+      }
+
+      writeEntry(kind, path, url, rawPath);
+    }
+
+    pruneFor(kind);
+  };
+
+  const checkCoverLoading = (path: string | undefined, kind: CoverKind = 'thumbnail') => {
+    if (!path) return false;
+
+    return activeLoadKeys.has(requestKeyOf(path, kind));
+  };
+
+  const loadThumbnailCover = async (path: string | undefined): Promise<string | undefined> => {
+    if (!path) return undefined;
+
+    const cached = readCachedUrl(path, 'thumbnail');
+    if (cached !== undefined) return cached;
+
+    return requestCover(path, 'thumbnail');
+  };
+
+  const loadLargeCover = async (path: string | undefined): Promise<string | undefined> => {
+    if (!path) return undefined;
+
+    const cached = readCachedUrl(path, 'full');
+    if (cached !== undefined) return cached;
+
+    return requestCover(path, 'full');
+  };
+
+  const loadThumbnailCoverPath = async (path: string | undefined): Promise<string | undefined> => {
+    if (!path) return undefined;
+
+    const cached = readCachedSourcePath(path, 'thumbnail');
+    if (cached !== undefined) return cached;
+
+    await requestCover(path, 'thumbnail');
+    return readCachedSourcePath(path, 'thumbnail');
+  };
+
+  // 预置封面路径（如来自扫描结果）：网络地址直接使用，本地路径转 asset 协议。
+  const primeCachedPath = (path: string | undefined, rawPath: string | undefined | null) => {
+    if (!path || !rawPath) return '';
+
+    const cached = readCachedUrl(path, 'thumbnail');
+    if (cached !== undefined) return cached;
+
+    const isRemoteUrl = /^https?:\/\//i.test(rawPath);
+    const assetUrl = isRemoteUrl ? rawPath : convertFileSrc(rawPath);
+    storeCachedUrl(path, 'thumbnail', assetUrl, rawPath);
+    return assetUrl;
+  };
+
+  const queuePreloads = (paths: string[], priority: PreloadPriority = 'background') => {
+    for (const path of paths) {
+      enqueueThumbnailPreload(path, priority);
     }
 
     if (priority === 'priority') {
-      schedulePriorityPreload();
+      drainPriorityPreloads();
       return;
     }
 
-    scheduleBackgroundPreload();
+    queueBackgroundPreload();
   };
 
-  const preloadFullCovers = (paths: string[]) => {
+  const queueFullPreloads = (paths: string[]) => {
     const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
     for (const path of uniquePaths) {
-      enqueueBackgroundFullPreload(path);
+      enqueueFullCoverPreload(path);
     }
-    scheduleBackgroundFullPreload();
+    drainFullCoverPreloads();
   };
 
-  const retainFullCoverPaths = (fullPaths: string[]) => {
-    const retainedFullPaths = new Set(fullPaths.filter(Boolean));
-    retainCacheEntries(
-      fullCoverCache,
-      fullCoverCacheExpiry,
-      fullCoverPathCache,
-      retainedFullPaths,
-    );
+  // 仅保留指定路径的全尺寸封面，其余缓存与在途/排队请求一并失效。
+  const retainLargeCoverPaths = (fullPaths: string[]) => {
+    const survivors = new Set(fullPaths.filter(Boolean));
+    keepOnlyPaths('full', survivors);
 
-    for (const requestKey of Array.from(inFlightRequests.keys())) {
-      if (isThumbnailRequestKey(requestKey)) {
-        continue;
-      }
+    for (const requestKey of Array.from(pendingRequests.keys())) {
+      if (isThumbKey(requestKey)) continue;
 
-      const path = requestKey.slice(requestKey.indexOf(':') + 1);
-      if (retainedFullPaths.has(path)) {
-        continue;
-      }
+      const requestPath = requestKey.slice(requestKey.indexOf(':') + 1);
+      if (survivors.has(requestPath)) continue;
 
-      invalidatedRequestKeys.add(requestKey);
-      inFlightRequests.delete(requestKey);
-      loadingSet.delete(requestKey);
+      staleRequestKeys.add(requestKey);
+      pendingRequests.delete(requestKey);
+      activeLoadKeys.delete(requestKey);
     }
 
-    for (const [path, priority] of Array.from(queuedPathPriority.entries())) {
-      if (priority === 'priority' || priority === 'background') {
-        continue;
-      }
+    for (const [path, priority] of Array.from(queuedPriorities.entries())) {
+      if (priority === 'priority' || priority === 'background') continue;
+      if (survivors.has(path)) continue;
 
-      if (retainedFullPaths.has(path)) {
-        continue;
-      }
-
-      queuedPathPriority.delete(path);
+      queuedPriorities.delete(path);
     }
 
-    for (const path of Array.from(queuedBackgroundFullPaths)) {
-      if (retainedFullPaths.has(path)) {
-        continue;
-      }
+    for (const path of Array.from(queuedFullPreloads)) {
+      if (survivors.has(path)) continue;
 
-      queuedBackgroundFullPaths.delete(path);
+      queuedFullPreloads.delete(path);
     }
-    backgroundFullPreloadQueue.splice(
+
+    fullPreloadQueue.splice(
       0,
-      backgroundFullPreloadQueue.length,
-      ...backgroundFullPreloadQueue.filter(path => retainedFullPaths.has(path)),
+      fullPreloadQueue.length,
+      ...fullPreloadQueue.filter((path) => survivors.has(path)),
     );
 
-    pruneCache(
-      fullCoverCache,
-      fullCoverCacheExpiry,
-      fullCoverPathCache,
-      Math.max(1, retainedFullPaths.size),
-    );
+    evictCache('full', Math.max(1, survivors.size));
   };
 
-  const clearCoverCaches = () => {
-    bumpCacheEpoch();
-    clearCacheEntries(thumbnailCache, thumbnailCacheExpiry, thumbnailPathCache);
-    clearCacheEntries(fullCoverCache, fullCoverCacheExpiry, fullCoverPathCache);
-    loadingSet.clear();
-    inFlightRequests.clear();
-    recentFailureCache.clear();
-    invalidatedRequestKeys.clear();
-    priorityPreloadQueue.length = 0;
-    backgroundPreloadQueue.length = 0;
-    backgroundFullPreloadQueue.length = 0;
-    queuedPathPriority.clear();
-    queuedBackgroundFullPaths.clear();
-    activeBackgroundFullPreloadCount = 0;
-    cancelBackgroundPreload();
-    if (cachePruneTimer) {
-      window.clearTimeout(cachePruneTimer);
-      cachePruneTimer = null;
+  const resetCoverCaches = () => {
+    advanceEpoch();
+    wipeEntries('thumbnail');
+    wipeEntries('full');
+    activeLoadKeys.clear();
+    pendingRequests.clear();
+    failureCooldowns.clear();
+    staleRequestKeys.clear();
+    priorityQueue.length = 0;
+    backgroundQueue.length = 0;
+    fullPreloadQueue.length = 0;
+    queuedPriorities.clear();
+    queuedFullPreloads.clear();
+    runningFullPreloads = 0;
+    cancelDeferredPreloads();
+    if (pruneTimer) {
+      window.clearTimeout(pruneTimer);
+      pruneTimer = null;
     }
   };
 
   return {
-    coverCache: thumbnailCache,
-    fullCoverCache,
-    loadingSet,
-    peekCoverUrl,
-    peekCoverPath,
-    getFullCoverUrl: (path: string | undefined) => peekCoverUrl(path, 'full'),
-    touchCoverPaths,
-    isCoverLoading,
-    loadCover,
-    loadCoverPath,
-    primeCoverPath,
-    loadFullCover,
-    preloadCovers,
-    preloadPriorityCovers: (paths: string[]) => preloadCovers(paths, 'priority'),
-    preloadFullCovers,
-    retainFullCoverPaths,
-    clearCoverCaches,
+    coverCache: thumbUrlCache,
+    fullCoverCache: fullUrlCache,
+    loadingSet: activeLoadKeys,
+    peekCoverUrl: peekCachedUrl,
+    peekCoverPath: peekCachedPath,
+    getFullCoverUrl: (path: string | undefined) => peekCachedUrl(path, 'full'),
+    touchCoverPaths: touchCachedPaths,
+    isCoverLoading: checkCoverLoading,
+    loadCover: loadThumbnailCover,
+    loadCoverPath: loadThumbnailCoverPath,
+    primeCoverPath: primeCachedPath,
+    loadFullCover: loadLargeCover,
+    preloadCovers: queuePreloads,
+    preloadPriorityCovers: (paths: string[]) => queuePreloads(paths, 'priority'),
+    preloadFullCovers: queueFullPreloads,
+    retainFullCoverPaths: retainLargeCoverPaths,
+    clearCoverCaches: resetCoverCaches,
   };
 }

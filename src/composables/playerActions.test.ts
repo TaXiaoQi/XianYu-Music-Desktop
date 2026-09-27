@@ -7,72 +7,56 @@ import { useLibrarySync } from '../features/library/useLibrarySync';
 import { usePlaybackActions } from '../features/playback/usePlaybackActions';
 import { useWindowActions } from './useWindowActions';
 
+// —— 测试夹具 ——
+
+// 示例歌曲：字段取值属于行为规格，保持原样
 const demoSong = {
-  path: '/music/demo.flac',
-  name: 'demo.flac',
-  title: 'Demo',
-  artist: 'Artist',
-  artist_names: ['Artist'],
-  effective_artist_names: ['Artist'],
-  album: 'Album',
-  album_artist: 'Artist',
-  album_key: 'Album::Artist',
-  is_various_artists_album: false,
-  collapse_artist_credits: false,
+  path: '/music/demo.flac', name: 'demo.flac',
+  title: 'Demo', artist: 'Artist',
+  artist_names: ['Artist'], effective_artist_names: ['Artist'],
+  album: 'Album', album_artist: 'Artist', album_key: 'Album::Artist',
+  is_various_artists_album: false, collapse_artist_credits: false,
   duration: 120,
 } satisfies Song;
 
-describe('player action hooks', () => {
-  it('forwards playback and window actions to runtime services', async () => {
-    const playSong = vi.fn();
-    const nextSong = vi.fn();
-    const toggleAlwaysOnTop = vi.fn();
-    const toggleQueue = vi.fn();
+// 每次调用生成全新的空 spy，避免用例之间互相污染
+const freshMock = () => vi.fn();
 
-    const playbackActions = usePlaybackActions({
-      currentSong: ref(demoSong),
-      playMode: ref(1),
-      getPlayerPlayback: () => ({
-        playSong,
-        pauseSong: vi.fn(),
-        togglePlay: vi.fn(),
-        seekTo: vi.fn(),
-        playAt: vi.fn(),
-        handleSeek: vi.fn(),
-        stepSeek: vi.fn(),
-      }),
-      getPlayerQueue: () => ({
-        toggleMode: vi.fn(),
-        playNext: vi.fn(),
-        nextSong,
-        prevSong: vi.fn(),
-        clearQueue: vi.fn(),
-        removeSongFromQueue: vi.fn(),
-        addSongToQueue: vi.fn(),
-        addSongsToQueue: vi.fn(),
-      }),
+describe('playerActions：动作转发到运行时服务', () => {
+  it('播放与窗口动作被转发到对应实现', async () => {
+    const playSong = freshMock();
+    const nextSong = freshMock();
+    const toggleAlwaysOnTop = freshMock();
+    const toggleQueue = freshMock();
+
+    const playback = usePlaybackActions({
+      currentSong: ref(demoSong), playMode: ref(1),
+      getPlayerPlayback() {
+        return {
+          playSong, pauseSong: freshMock(), togglePlay: freshMock(),
+          seekTo: freshMock(), playAt: freshMock(), handleSeek: freshMock(), stepSeek: freshMock(),
+        };
+      },
+      getPlayerQueue() {
+        return {
+          toggleMode: freshMock(), playNext: freshMock(), nextSong,
+          prevSong: freshMock(), clearQueue: freshMock(), removeSongFromQueue: freshMock(),
+          addSongToQueue: freshMock(), addSongsToQueue: freshMock(),
+        };
+      },
       playerUiShell: {
-        handleVolume: vi.fn(),
-        handleVolumeWheel: vi.fn(),
-        toggleMute: vi.fn(),
-        togglePlaylist: vi.fn(),
-        toggleMiniPlaylist: vi.fn(),
-        closeMiniPlaylist: vi.fn(),
-        handleScan: vi.fn(),
-        removeSongFromList: vi.fn(),
+        handleVolume: freshMock(), handleVolumeWheel: freshMock(), toggleMute: freshMock(),
+        togglePlaylist: freshMock(), toggleMiniPlaylist: freshMock(), closeMiniPlaylist: freshMock(),
+        handleScan: freshMock(), removeSongFromList: freshMock(),
       },
     });
-    const windowActions = useWindowActions({
-      playerUiShell: {
-        toggleAlwaysOnTop,
-        togglePlayerDetail: vi.fn(),
-        toggleQueue,
-      },
+    const windowApi = useWindowActions({
+      playerUiShell: { toggleAlwaysOnTop, togglePlayerDetail: freshMock(), toggleQueue },
     });
 
-    playbackActions.handleAutoNext();
-    windowActions.toggleAlwaysOnTop(true);
-    windowActions.toggleQueue();
+    playback.handleAutoNext();
+    windowApi.toggleAlwaysOnTop(true);
+    windowApi.toggleQueue();
 
     expect(playSong).toHaveBeenCalledWith(demoSong, { forceReplay: true });
     expect(nextSong).not.toHaveBeenCalled();
@@ -80,45 +64,32 @@ describe('player action hooks', () => {
     expect(toggleQueue).toHaveBeenCalledTimes(1);
   });
 
-  it('forwards collection, library, and import actions', () => {
-    const createPlaylist = vi.fn();
-    const scanLibrary = vi.fn();
-    const addFoldersFromStructure = vi.fn();
+  it('收藏、媒体库与导入动作被转发到对应实现', () => {
+    const createPlaylist = freshMock();
+    const scanLibrary = freshMock();
+    const addFoldersFromStructure = freshMock();
 
-    const collectionsActions = useCollectionsActions({
+    const collections = useCollectionsActions({
       playerPlaylist: {
-        createPlaylist,
-        deletePlaylist: vi.fn(),
-        addToPlaylist: vi.fn(),
-        removeFromPlaylist: vi.fn(),
-        addSongsToPlaylist: vi.fn(),
-        viewPlaylist: vi.fn(),
-        getSongsFromPlaylist: vi.fn(() => []),
-        openAddToPlaylistDialog: vi.fn(),
+        createPlaylist, deletePlaylist: freshMock(), addToPlaylist: freshMock(),
+        removeFromPlaylist: freshMock(), addSongsToPlaylist: freshMock(), viewPlaylist: freshMock(),
+        getSongsFromPlaylist: vi.fn(() => []), openAddToPlaylistDialog: freshMock(),
       },
     });
-    const librarySync = useLibrarySync({
-      fetchLibraryFolders: vi.fn(),
-      addLibraryFolder: vi.fn(),
-      addLibraryFolderLinked: vi.fn(),
-      removeLibraryFolder: vi.fn(),
-      removeLibraryFolderLinked: vi.fn(),
-      handleExternalPaths: vi.fn(),
-      scanLibrary,
-      addLibraryFolderPath: vi.fn(),
-      refreshFolder: vi.fn(),
-      refreshAllFolders: vi.fn(),
+    const library = useLibrarySync({
+      fetchLibraryFolders: freshMock(), addLibraryFolder: freshMock(), addLibraryFolderLinked: freshMock(),
+      removeLibraryFolder: freshMock(), removeLibraryFolderLinked: freshMock(), handleExternalPaths: freshMock(),
+      scanLibrary, addLibraryFolderPath: freshMock(),
+      refreshFolder: freshMock(), refreshAllFolders: freshMock(),
     });
-    const fileImportActions = useFileImport({
-      addFolder: vi.fn(),
-      addFoldersFromStructure,
-      getSongsInFolder: vi.fn(() => [demoSong]),
-      clearLocalMusic: vi.fn(),
+    const importer = useFileImport({
+      addFolder: freshMock(), addFoldersFromStructure,
+      getSongsInFolder: vi.fn(() => [demoSong]), clearLocalMusic: freshMock(),
     });
 
-    collectionsActions.createPlaylist('Daily Mix', [demoSong.path]);
-    librarySync.scanLibrary();
-    fileImportActions.addFoldersFromStructure();
+    collections.createPlaylist('Daily Mix', [demoSong.path]);
+    library.scanLibrary();
+    importer.addFoldersFromStructure();
 
     expect(createPlaylist).toHaveBeenCalledWith('Daily Mix', [demoSong.path]);
     expect(scanLibrary).toHaveBeenCalledTimes(1);

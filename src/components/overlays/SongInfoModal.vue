@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+// 歌曲信息窗口：详情/歌词双栏，支持元数据编辑、歌词编辑与外置 MusicTag 修正
+import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { SquarePen, Tag } from 'lucide-vue-next';
-import type { Song, SongDetail } from '../../types';
+import { Tag, SquarePen } from 'lucide-vue-next';
+import type { SongDetail, Song } from '../../types';
 import type { SongInfoDialogAction } from '../../composables/useSongInfoDialog';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { usePlayer } from '../../features/playback';
@@ -18,143 +19,140 @@ import { lyricsApi } from '../../services/tauri/lyricsApi';
 import { formatFileSize } from '../../utils/format';
 
 const props = defineProps<{
-  visible: boolean;
   song: Song | null;
+  visible: boolean;
   initialAction?: SongInfoDialogAction;
 }>();
 
-const emit = defineEmits(['close']);
+const emit = defineEmits<{ (e: 'close'): void }>();
 
-const { loadCover, clearCoverCaches } = useCoverCache();
-const { loadSongDetail } = useSongDetailCache();
-const { openInFinder } = usePlayer();
-const { isDarkTheme } = useThemeSettings();
-const { showToast } = useToast();
-const libraryStore = useLibraryStore();
+const { clearCoverCaches, loadCover } = useCoverCache();
+const { loadSongDetail: fetchSongDetail } = useSongDetailCache();
+const { openInFinder: revealInFileManager } = usePlayer(); const { isDarkTheme } = useThemeSettings();
+const { showToast } = useToast(); const libraryStore = useLibraryStore();
 
-interface SongInfoEditForm {
-  title: string;
-  artist: string;
-  album: string;
-  trackNumber: string;
-  discNumber: string;
-  year: string;
-  coverPath: string | null;
-  coverPreviewUrl: string;
+// 编辑表单的内存草稿结构
+interface ModalInfoDraft {
+  trackTitle: string;
+  artistName: string;
+  albumName: string;
+  trackNo: string;
+  discNo: string;
+  releaseYear: string;
+  newCoverPath: string | null;
+  coverPreview: string;
 }
 
-const createEmptySongInfoEditForm = (): SongInfoEditForm => ({
-  title: '',
-  artist: '',
-  album: '',
-  trackNumber: '',
-  discNumber: '',
-  year: '',
-  coverPath: null,
-  coverPreviewUrl: '',
+const makeBlankDraft = (): ModalInfoDraft => ({
+  trackTitle: '', artistName: '', albumName: '',
+  trackNo: '', discNo: '', releaseYear: '',
+  newCoverPath: null, coverPreview: '',
 });
 
-const coverUrl = ref('');
-const savedSongOverride = ref<Song | null>(null);
-const isClosing = ref(false);
-const currentSongDetail = ref<SongDetail | null>(null);
-const isSongInfoEditing = ref(false);
-const isSongInfoSaving = ref(false);
-const songInfoEditError = ref('');
-const songInfoEditForm = ref<SongInfoEditForm>(createEmptySongInfoEditForm());
-const lyricsText = ref('');
-const originalLyricsText = ref('');
-const lyricsSource = ref<LyricsStorageSource>('empty');
-const lyricsSourcePath = ref<string | null>(null);
-const isLyricsLoading = ref(false);
-const isLyricsSaving = ref(false);
-const lyricsError = ref('');
+const coverImageSrc = ref('');
+const savedSongSnapshot = ref<Song | null>(null);
+const isDismissAnimating = ref(false);
+const loadedDetail = ref<SongDetail | null>(null);
+const isInfoEditing = ref(false);
+const isInfoSaving = ref(false);
+const infoEditError = ref('');
+const infoDraft = ref<ModalInfoDraft>(makeBlankDraft());
+const lyricsDraft = ref('');
+const lyricsBaseline = ref('');
+const lyricsOrigin = ref<LyricsStorageSource>('empty');
+const lyricsOriginFile = ref<string | null>(null);
+const isLoadingLyrics = ref(false);
+const isSavingLyrics = ref(false);
+const lyricsIssue = ref('');
 const lyricsTextareaRef = ref<HTMLTextAreaElement | null>(null);
-const isSongInfoExpanded = ref(false);
-const isLyricsEditorExpanded = ref(false);
-const pendingSongInfoExpanded = ref<boolean | null>(null);
-const pendingLyricsExpanded = ref<boolean | null>(null);
-let detailRequestId = 0;
-let songInfoExpandTimer: number | null = null;
-let lyricsExpandTimer: number | null = null;
+const isInfoStretched = ref(false);
+const isLyricsStretched = ref(false);
+const pendingInfoStretch = ref<boolean | null>(null);
+const pendingLyricsStretch = ref<boolean | null>(null);
+let latestFetchId = 0;
+let infoStretchTimer: number | null = null;
+let lyricsStretchTimer: number | null = null;
 
-const clearSongInfoExpandTimers = () => {
-  if (songInfoExpandTimer !== null) {
-    window.clearTimeout(songInfoExpandTimer);
-    songInfoExpandTimer = null;
+const stopInfoStretchTimer = () => {
+  if (infoStretchTimer !== null) {
+    window.clearTimeout(infoStretchTimer);
+    infoStretchTimer = null;
   }
 };
 
-const clearLyricsExpandTimers = () => {
-  if (lyricsExpandTimer !== null) {
-    window.clearTimeout(lyricsExpandTimer);
-    lyricsExpandTimer = null;
+const stopLyricsStretchTimer = () => {
+  if (lyricsStretchTimer !== null) {
+    window.clearTimeout(lyricsStretchTimer);
+    lyricsStretchTimer = null;
   }
 };
 
-const handleClose = () => {
-  if (isClosing.value) return;
-  isClosing.value = true;
-  setTimeout(() => {
+// 先播放 200ms 退场动画再通知父级关闭
+const requestDismiss = () => {
+  if (isDismissAnimating.value) return;
+  isDismissAnimating.value = true;
+  window.setTimeout(() => {
     emit('close');
-    isClosing.value = false;
+    isDismissAnimating.value = false;
   }, 200);
 };
 
 watch(
   [() => props.visible, () => props.song?.path ?? ''],
-  async ([visible, path]) => {
-    const requestId = ++detailRequestId;
+  async ([shown, path]) => {
+    const fetchId = ++latestFetchId;
 
-    if (!visible || !path) {
-      clearSongInfoExpandTimers();
-      clearLyricsExpandTimers();
-      currentSongDetail.value = null;
-      savedSongOverride.value = null;
-      isSongInfoEditing.value = false;
-      isSongInfoSaving.value = false;
-      songInfoEditError.value = '';
-      songInfoEditForm.value = createEmptySongInfoEditForm();
-      lyricsText.value = '';
-      originalLyricsText.value = '';
-      lyricsSource.value = 'empty';
-      lyricsSourcePath.value = null;
-      lyricsError.value = '';
-      isLyricsLoading.value = false;
-      isLyricsSaving.value = false;
-      isSongInfoExpanded.value = false;
-      isLyricsEditorExpanded.value = false;
-      pendingSongInfoExpanded.value = null;
-      pendingLyricsExpanded.value = null;
-      setTimeout(() => {
-        if (requestId === detailRequestId) {
-          coverUrl.value = '';
+    if (!shown || !path) {
+      // 弹窗收起：清空所有临时状态，封面延迟释放避免闪黑
+      stopInfoStretchTimer();
+      stopLyricsStretchTimer();
+      loadedDetail.value = null;
+      savedSongSnapshot.value = null;
+      isInfoEditing.value = false;
+      isInfoSaving.value = false;
+      infoEditError.value = '';
+      infoDraft.value = makeBlankDraft();
+      lyricsDraft.value = '';
+      lyricsBaseline.value = '';
+      lyricsOrigin.value = 'empty';
+      lyricsOriginFile.value = null;
+      lyricsIssue.value = '';
+      isLoadingLyrics.value = false;
+      isSavingLyrics.value = false;
+      isInfoStretched.value = false;
+      isLyricsStretched.value = false;
+      pendingInfoStretch.value = null;
+      pendingLyricsStretch.value = null;
+      window.setTimeout(() => {
+        if (fetchId === latestFetchId) {
+          coverImageSrc.value = '';
         }
       }, 200);
       return;
     }
 
-    clearSongInfoExpandTimers();
-    clearLyricsExpandTimers();
-    isClosing.value = false;
-    savedSongOverride.value = null;
-    isSongInfoEditing.value = false;
-    isSongInfoSaving.value = false;
-    songInfoEditError.value = '';
-    songInfoEditForm.value = createEmptySongInfoEditForm();
-    isLyricsLoading.value = true;
-    isLyricsSaving.value = false;
-    lyricsSource.value = 'empty';
-    lyricsSourcePath.value = null;
-    lyricsError.value = '';
-    isSongInfoExpanded.value = false;
-    isLyricsEditorExpanded.value = false;
-    pendingSongInfoExpanded.value = null;
-    pendingLyricsExpanded.value = null;
+    // 切换目标歌曲：复位编辑态后并行拉取封面、详情与歌词
+    stopInfoStretchTimer();
+    stopLyricsStretchTimer();
+    isDismissAnimating.value = false;
+    savedSongSnapshot.value = null;
+    isInfoEditing.value = false;
+    isInfoSaving.value = false;
+    infoEditError.value = '';
+    infoDraft.value = makeBlankDraft();
+    isLoadingLyrics.value = true;
+    isSavingLyrics.value = false;
+    lyricsOrigin.value = 'empty';
+    lyricsOriginFile.value = null;
+    lyricsIssue.value = '';
+    isInfoStretched.value = false;
+    isLyricsStretched.value = false;
+    pendingInfoStretch.value = null;
+    pendingLyricsStretch.value = null;
 
-    const [url, detail, lyricsResult] = await Promise.all([
+    const [fetchedCover, fetchedDetail, lyricsResult] = await Promise.all([
       loadCover(path),
-      loadSongDetail(path).catch(() => null),
+      fetchSongDetail(path).catch(() => null),
       lyricsApi.getSongLyricsForEdit(path)
         .then((lyrics) => ({ ...lyrics, error: '' }))
         .catch((error) => ({
@@ -165,100 +163,137 @@ watch(
         })),
     ]);
 
-    if (requestId !== detailRequestId || !props.visible || path !== (props.song?.path ?? '')) {
+    // 请求已过期或弹窗已切走时丢弃结果
+    if (fetchId !== latestFetchId || !props.visible || path !== (props.song?.path ?? '')) {
       return;
     }
 
-    coverUrl.value = url || '';
-    currentSongDetail.value = detail;
-    lyricsText.value = lyricsResult.lyrics;
-    originalLyricsText.value = lyricsResult.lyrics;
-    lyricsSource.value = lyricsResult.source;
-    lyricsSourcePath.value = lyricsResult.sourcePath;
-    lyricsError.value = lyricsResult.error;
-    isLyricsLoading.value = false;
+    coverImageSrc.value = fetchedCover || '';
+    loadedDetail.value = fetchedDetail;
+    lyricsDraft.value = lyricsResult.lyrics;
+    lyricsBaseline.value = lyricsResult.lyrics;
+    lyricsOrigin.value = lyricsResult.source;
+    lyricsOriginFile.value = lyricsResult.sourcePath;
+    lyricsIssue.value = lyricsResult.error;
+    isLoadingLyrics.value = false;
     await nextTick();
-    await applyInitialAction(path);
+    await runInitialAction(path);
   },
   { immediate: true },
 );
 
-const hasLyricsChanged = computed(() => lyricsText.value !== originalLyricsText.value);
-const isSongInfoVisuallyExpanded = computed(
-  () => pendingSongInfoExpanded.value ?? isSongInfoExpanded.value,
-);
-const isLyricsEditorVisuallyExpanded = computed(
-  () => pendingLyricsExpanded.value ?? isLyricsEditorExpanded.value,
-);
+const lyricsDirty = computed(() => lyricsDraft.value !== lyricsBaseline.value);
+const infoStretchVisual = computed(() => pendingInfoStretch.value ?? isInfoStretched.value);
+const lyricsStretchVisual = computed(() => pendingLyricsStretch.value ?? isLyricsStretched.value);
 
-const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && props.visible) {
-    handleClose();
+// 舞台容器的过渡状态类（展开/收起进行中 vs 稳态）
+const stageStateClass = computed(() => [
+  isDismissAnimating.value ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 -translate-y-3',
+  isInfoStretched.value ? 'song-info-stage--song-expanded' : '',
+  isLyricsStretched.value ? 'song-info-stage--lyrics-expanded' : '',
+  pendingInfoStretch.value === true ? 'song-info-stage--song-expanding' : '',
+  pendingInfoStretch.value === false ? 'song-info-stage--song-collapsing' : '',
+  pendingLyricsStretch.value === true ? 'song-info-stage--lyrics-expanding' : '',
+  pendingLyricsStretch.value === false ? 'song-info-stage--lyrics-collapsing' : '',
+]);
+
+// 展示用歌曲对象：以扫描详情补全基础曲库记录
+const presentedSong = computed(() => {
+  if (!props.song) {
+    return null;
   }
-};
 
-onMounted(() => window.addEventListener('keydown', handleKeydown));
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown);
-  clearSongInfoExpandTimers();
-  clearLyricsExpandTimers();
+  const baseSong = savedSongSnapshot.value?.path === props.song.path ? savedSongSnapshot.value : props.song;
+
+  return {
+    ...baseSong,
+    genre: loadedDetail.value?.genre ?? baseSong.genre,
+    year: loadedDetail.value?.year ?? baseSong.year,
+    container: loadedDetail.value?.container ?? baseSong.container,
+    codec: loadedDetail.value?.codec ?? baseSong.codec,
+    file_size: loadedDetail.value?.file_size ?? baseSong.file_size,
+    track_number: loadedDetail.value?.track_number,
+    disc_number: loadedDetail.value?.disc_number,
+  };
 });
 
-const handleOpenFolder = () => {
-  if (props.song?.path) {
-    void openInFinder(props.song.path);
-    handleClose();
+const presentedTitle = computed(() => {
+  const song = presentedSong.value;
+  return song ? song.title || song.name : '';
+});
+
+const coverDisplaySrc = computed(() => infoDraft.value.coverPreview || coverImageSrc.value);
+
+const onGlobalKey = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && props.visible) {
+    requestDismiss();
   }
 };
 
-const ensureMusicTagPath = async (): Promise<string | null> => {
-  const MUSICTAG_PATH_KEY = 'toolbox_musictag_path';
-  let path = localStorage.getItem(MUSICTAG_PATH_KEY);
+onMounted(() => window.addEventListener('keydown', onGlobalKey));
+onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKey);
+  stopInfoStretchTimer();
+  stopLyricsStretchTimer();
+});
 
-  if (path) {
-    const exists = await downloadApi.fileExists(path);
-    if (!exists) {
-      localStorage.removeItem(MUSICTAG_PATH_KEY);
+const revealSongFolder = () => {
+  if (props.song?.path) {
+    void revealInFileManager(props.song.path);
+    requestDismiss();
+  }
+};
+
+const MUSICTAG_PATH_STORAGE_KEY = 'toolbox_musictag_path';
+
+// 定位 MusicTag 可执行程序：优先复用本地记录，失效则引导重新登记
+const locateMusicTagBinary = async (): Promise<string | null> => {
+  let storedPath = localStorage.getItem(MUSICTAG_PATH_STORAGE_KEY);
+
+  if (storedPath) {
+    const stillOnDisk = await downloadApi.fileExists(storedPath);
+    if (!stillOnDisk) {
+      localStorage.removeItem(MUSICTAG_PATH_STORAGE_KEY);
       showToast('MusicTag 路径无效，请重新选择', 'error');
-      path = null;
+      storedPath = null;
     }
   }
 
-  if (!path) {
-    const selected = await appApi.registerExternalProgram();
+  if (!storedPath) {
+    const registered = await appApi.registerExternalProgram();
 
-    if (!selected) {
+    if (!registered) {
       showToast('已取消选择 MusicTag', 'info');
       return null;
     }
 
-    localStorage.setItem(MUSICTAG_PATH_KEY, selected);
-    path = selected;
+    localStorage.setItem(MUSICTAG_PATH_STORAGE_KEY, registered);
+    storedPath = registered;
   }
 
-  return path;
+  return storedPath;
 };
 
-const handleOpenInMusicTag = async () => {
+const sendSongToMusicTag = async () => {
   const songPath = props.song?.path;
   if (!songPath) {
     showToast('当前歌曲文件路径无效', 'error');
     return;
   }
 
-  const songExists = await downloadApi.fileExists(songPath);
-  if (!songExists) {
+  const songOnDisk = await downloadApi.fileExists(songPath);
+  if (!songOnDisk) {
     showToast('当前歌曲文件路径无效', 'error');
     return;
   }
 
-  const musicTagPath = await ensureMusicTagPath();
-  if (!musicTagPath) {
+  const musicTagBinary = await locateMusicTagBinary();
+  if (!musicTagBinary) {
     return;
   }
 
   try {
-    await appApi.openExternalProgram(musicTagPath, [songPath]);
+    await appApi.openExternalProgram(musicTagBinary, [songPath]);
     showToast('已在 MusicTag 中打开当前歌曲', 'success');
   } catch (error) {
     console.error('Failed to open MusicTag:', error);
@@ -266,128 +301,105 @@ const handleOpenInMusicTag = async () => {
   }
 };
 
-const handleSaveLyrics = async () => {
-  if (!props.song?.path || isLyricsSaving.value) return;
+const commitLyrics = async () => {
+  if (!props.song?.path || isSavingLyrics.value) return;
 
-  isLyricsSaving.value = true;
-  lyricsError.value = '';
+  isSavingLyrics.value = true;
+  lyricsIssue.value = '';
 
   try {
-    const savedLyrics = await lyricsApi.saveSongLyrics(
+    const saved = await lyricsApi.saveSongLyrics(
       props.song.path,
-      lyricsText.value,
-      lyricsSource.value,
-      lyricsSourcePath.value,
+      lyricsDraft.value,
+      lyricsOrigin.value,
+      lyricsOriginFile.value,
     );
-    originalLyricsText.value = lyricsText.value;
-    lyricsSource.value = savedLyrics.source;
-    lyricsSourcePath.value = savedLyrics.sourcePath;
+    lyricsBaseline.value = lyricsDraft.value;
+    lyricsOrigin.value = saved.source;
+    lyricsOriginFile.value = saved.sourcePath;
   } catch (error) {
-    lyricsError.value = String(error);
+    lyricsIssue.value = String(error);
   } finally {
-    isLyricsSaving.value = false;
+    isSavingLyrics.value = false;
   }
 };
 
-const toggleSongInfoExpanded = () => {
-  clearSongInfoExpandTimers();
+// 展开另一栏时立即收起本栏的对侧，动画结束后落定真实状态
+const switchInfoStretch = () => {
+  stopInfoStretchTimer();
+  const target = !isInfoStretched.value;
+  pendingInfoStretch.value = target;
 
-  const nextExpanded = !isSongInfoExpanded.value;
-  pendingSongInfoExpanded.value = nextExpanded;
-
-  if (nextExpanded) {
-    clearLyricsExpandTimers();
-    isLyricsEditorExpanded.value = false;
-    pendingLyricsExpanded.value = null;
+  if (target) {
+    stopLyricsStretchTimer();
+    isLyricsStretched.value = false;
+    pendingLyricsStretch.value = null;
   }
 
-  songInfoExpandTimer = window.setTimeout(() => {
-    isSongInfoExpanded.value = nextExpanded;
-    pendingSongInfoExpanded.value = null;
-    songInfoExpandTimer = null;
+  infoStretchTimer = window.setTimeout(() => {
+    isInfoStretched.value = target;
+    pendingInfoStretch.value = null;
+    infoStretchTimer = null;
   }, 360);
 };
 
-const toggleLyricsEditorExpanded = () => {
-  clearLyricsExpandTimers();
+const switchLyricsStretch = () => {
+  stopLyricsStretchTimer();
+  const target = !isLyricsStretched.value;
+  pendingLyricsStretch.value = target;
 
-  const nextExpanded = !isLyricsEditorExpanded.value;
-  pendingLyricsExpanded.value = nextExpanded;
-
-  if (nextExpanded) {
-    clearSongInfoExpandTimers();
-    isSongInfoExpanded.value = false;
-    pendingSongInfoExpanded.value = null;
+  if (target) {
+    stopInfoStretchTimer();
+    isInfoStretched.value = false;
+    pendingInfoStretch.value = null;
   }
 
-  lyricsExpandTimer = window.setTimeout(() => {
-    isLyricsEditorExpanded.value = nextExpanded;
-    pendingLyricsExpanded.value = null;
-    lyricsExpandTimer = null;
+  lyricsStretchTimer = window.setTimeout(() => {
+    isLyricsStretched.value = target;
+    pendingLyricsStretch.value = null;
+    lyricsStretchTimer = null;
   }, 360);
 };
 
-const displaySong = computed(() => {
-  if (!props.song) {
-    return null;
-  }
-
-  const baseSong = savedSongOverride.value?.path === props.song.path
-    ? savedSongOverride.value
-    : props.song;
-
-  return {
-    ...baseSong,
-    genre: currentSongDetail.value?.genre ?? baseSong.genre,
-    year: currentSongDetail.value?.year ?? baseSong.year,
-    container: currentSongDetail.value?.container ?? baseSong.container,
-    codec: currentSongDetail.value?.codec ?? baseSong.codec,
-    file_size: currentSongDetail.value?.file_size ?? baseSong.file_size,
-    track_number: currentSongDetail.value?.track_number,
-    disc_number: currentSongDetail.value?.disc_number,
-  };
-});
-
-const populateSongInfoEditForm = () => {
-  const song = displaySong.value;
+const fillDraftFromSong = () => {
+  const song = presentedSong.value;
   if (!song) {
-    songInfoEditForm.value = createEmptySongInfoEditForm();
+    infoDraft.value = makeBlankDraft();
     return;
   }
 
-  songInfoEditForm.value = {
-    title: song.title || song.name || '',
-    artist: song.artist || '',
-    album: song.album || '',
-    trackNumber: song.track_number || '',
-    discNumber: song.disc_number || '',
-    year: song.year || '',
-    coverPath: null,
-    coverPreviewUrl: '',
+  infoDraft.value = {
+    trackTitle: song.title || song.name || '',
+    artistName: song.artist || '',
+    albumName: song.album || '',
+    trackNo: song.track_number || '',
+    discNo: song.disc_number || '',
+    releaseYear: song.year || '',
+    newCoverPath: null,
+    coverPreview: '',
   };
 };
 
-const beginSongInfoEdit = () => {
-  songInfoEditError.value = '';
-  populateSongInfoEditForm();
-  isSongInfoEditing.value = true;
+const enterInfoEdit = () => {
+  infoEditError.value = '';
+  fillDraftFromSong();
+  isInfoEditing.value = true;
 };
 
-const cancelSongInfoEdit = () => {
-  if (isSongInfoSaving.value) return;
-  songInfoEditError.value = '';
-  isSongInfoEditing.value = false;
-  populateSongInfoEditForm();
+const leaveInfoEdit = () => {
+  if (isInfoSaving.value) return;
+  infoEditError.value = '';
+  isInfoEditing.value = false;
+  fillDraftFromSong();
 };
 
-const normalizeFormValue = (value: string) => value.trim() || null;
+const trimToNull = (value: string) => value.trim() || null;
 
 const handleChooseCover = async () => {
-  if (!isSongInfoEditing.value) return;
+  if (!isInfoEditing.value) return;
 
-  const selected = await open({
-    multiple: false,
-    directory: false,
+  const picked = await open({
+    multiple: false, directory: false,
     title: '选择歌曲封面',
     filters: [
       {
@@ -397,107 +409,104 @@ const handleChooseCover = async () => {
     ],
   });
 
-  if (!selected || Array.isArray(selected)) {
+  if (!picked || Array.isArray(picked)) {
     return;
   }
 
-  songInfoEditForm.value.coverPath = selected;
-  songInfoEditForm.value.coverPreviewUrl = convertFileSrc(selected);
+  infoDraft.value.newCoverPath = picked;
+  infoDraft.value.coverPreview = convertFileSrc(picked);
 };
 
-const applyInitialAction = async (path: string) => {
+// 按外部指定的入口动作直接落到对应编辑态
+const runInitialAction = async (path: string) => {
   if (!props.visible || props.song?.path !== path) return;
 
   if (props.initialAction === 'cover') {
-    beginSongInfoEdit();
-    isSongInfoExpanded.value = true;
-    isLyricsEditorExpanded.value = false;
+    enterInfoEdit();
+    isInfoStretched.value = true;
+    isLyricsStretched.value = false;
     await nextTick();
     await handleChooseCover();
     return;
   }
 
   if (props.initialAction === 'lyrics') {
-    isSongInfoExpanded.value = false;
-    isLyricsEditorExpanded.value = true;
+    isInfoStretched.value = false;
+    isLyricsStretched.value = true;
     await nextTick();
     lyricsTextareaRef.value?.focus();
   }
 };
 
-const handleSaveSongInfo = async () => {
+const commitSongInfo = async () => {
   const songPath = props.song?.path;
-  if (!songPath || isSongInfoSaving.value) return;
+  if (!songPath || isInfoSaving.value) return;
 
-  const title = songInfoEditForm.value.title.trim();
-  if (!title) {
-    songInfoEditError.value = '歌名不能为空';
+  const nextTitle = infoDraft.value.trackTitle.trim();
+  if (!nextTitle) {
+    infoEditError.value = '歌名不能为空';
     return;
   }
 
-  isSongInfoSaving.value = true;
-  songInfoEditError.value = '';
+  isInfoSaving.value = true;
+  infoEditError.value = '';
 
   try {
     const result = await lyricsApi.saveSongInfo(songPath, {
-      title,
-      artist: songInfoEditForm.value.artist.trim(),
-      album: songInfoEditForm.value.album.trim(),
-      trackNumber: normalizeFormValue(songInfoEditForm.value.trackNumber),
-      discNumber: normalizeFormValue(songInfoEditForm.value.discNumber),
-      year: normalizeFormValue(songInfoEditForm.value.year),
-      coverPath: songInfoEditForm.value.coverPath,
+      title: nextTitle,
+      artist: infoDraft.value.artistName.trim(),
+      album: infoDraft.value.albumName.trim(),
+      trackNumber: trimToNull(infoDraft.value.trackNo),
+      discNumber: trimToNull(infoDraft.value.discNo),
+      year: trimToNull(infoDraft.value.releaseYear),
+      coverPath: infoDraft.value.newCoverPath,
     });
 
-    savedSongOverride.value = result.song;
-    currentSongDetail.value = result.detail;
+    savedSongSnapshot.value = result.song;
+    loadedDetail.value = result.detail;
     libraryStore.setSongRecord(result.song);
 
-    if (songInfoEditForm.value.coverPath) {
+    if (infoDraft.value.newCoverPath) {
       await appApi.clearCoverCache();
       clearCoverCaches();
-      coverUrl.value = (await loadCover(songPath)) || '';
+      coverImageSrc.value = (await loadCover(songPath)) || '';
     }
 
-    isSongInfoEditing.value = false;
-    populateSongInfoEditForm();
+    isInfoEditing.value = false;
+    fillDraftFromSong();
     showToast('歌曲信息已保存', 'success');
   } catch (error) {
     const message = String(error);
-    songInfoEditError.value = message;
+    infoEditError.value = message;
     showToast(`保存歌曲信息失败: ${message}`, 'error');
   } finally {
-    isSongInfoSaving.value = false;
+    isInfoSaving.value = false;
   }
 };
 
-const formatSize = (bytes?: number) => {
-  if (bytes === undefined || bytes <= 0) return '无';
+const describeFileSize = (bytes?: number) => {
+  if (bytes === undefined || bytes <= 0) { return '无'; }
   return formatFileSize(bytes);
 };
 
-const formatDuration = (seconds?: number) => {
-  if (!seconds) return '无';
-  const totalSeconds = Math.floor(seconds);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+const describeDuration = (seconds?: number) => {
+  if (!seconds) { return '无'; }
+  const wholeSeconds = Math.floor(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const restSeconds = wholeSeconds % 60;
+  return `${minutes}:${restSeconds.toString().padStart(2, '0')}`;
 };
 
-const formatBitrate = (bitrate?: number) => {
-  if (!bitrate) return '待扫描';
-  return `${Math.round(bitrate)} kbps`;
-};
+const describeBitrate = (bitrate?: number) =>
+  (!bitrate ? '待扫描' : `${Math.round(bitrate)} kbps`);
 
-const formatSampleRate = (rate?: number) => {
-  if (!rate) return '无';
-  return `${(rate / 1000).toFixed(1)} kHz`;
-};
+const describeSampleRate = (rate?: number) =>
+  (!rate ? '无' : `${(rate / 1000).toFixed(1)} kHz`);
 
-const formatTime = (timestampSeconds?: number) => {
-  if (!timestampSeconds) return '无';
-  const date = new Date(timestampSeconds * 1000);
-  return date.toLocaleString();
+const describeTimestamp = (timestampSeconds?: number) => {
+  if (!timestampSeconds) { return '无'; }
+  const at = new Date(timestampSeconds * 1000);
+  return at.toLocaleString();
 };
 </script>
 
@@ -505,41 +514,32 @@ const formatTime = (timestampSeconds?: number) => {
   <Teleport to="body">
     <div
       v-if="visible"
-      class="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6"
-      :class="{'pointer-events-none': isClosing}"
+      class="z-[10000] fixed inset-0 flex items-center justify-center p-4 sm:p-6"
+      :class="{'pointer-events-none': isDismissAnimating}"
     >
       <div
-        class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
-        :class="isClosing ? 'opacity-0' : 'opacity-100'"
-        @click="handleClose"
+        class="inset-0 absolute bg-black/40 backdrop-blur-sm duration-300 ease-out transition-opacity"
+        :class="isDismissAnimating ? 'opacity-0' : 'opacity-100'"
+        @click="requestDismiss"
       ></div>
 
-      <div class="song-info-window-drag-strip" data-tauri-drag-region></div>
+      <div data-tauri-drag-region class="song-info-window-drag-strip"></div>
 
       <div
         class="song-info-stage"
-        :class="[
-          isClosing ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 -translate-y-3',
-          isDarkTheme ? 'song-info-stage--dark' : '',
-          isSongInfoExpanded ? 'song-info-stage--song-expanded' : '',
-          isLyricsEditorExpanded ? 'song-info-stage--lyrics-expanded' : '',
-          pendingSongInfoExpanded === true ? 'song-info-stage--song-expanding' : '',
-          pendingSongInfoExpanded === false ? 'song-info-stage--song-collapsing' : '',
-          pendingLyricsExpanded === true ? 'song-info-stage--lyrics-expanding' : '',
-          pendingLyricsExpanded === false ? 'song-info-stage--lyrics-collapsing' : '',
-        ]"
+        :class="[stageStateClass, isDarkTheme ? 'song-info-stage--dark' : '']"
       >
         <section class="song-info-column">
-          <div class="modal-external-header song-info-header">
+          <div class="song-info-header modal-external-header">
             <div class="song-info-header-title">
-              <h2 class="text-lg font-bold text-gray-900 dark:text-white">歌曲信息</h2>
+              <h2 class="text-lg font-bold dark:text-white text-gray-900">歌曲信息</h2>
               <button
                 type="button"
                 class="song-info-edit-toggle"
-                :class="isSongInfoEditing ? 'song-info-edit-toggle--active' : ''"
-                :title="isSongInfoEditing ? '取消编辑歌曲信息' : '编辑歌曲信息'"
-                :aria-label="isSongInfoEditing ? '取消编辑歌曲信息' : '编辑歌曲信息'"
-                @click="isSongInfoEditing ? cancelSongInfoEdit() : beginSongInfoEdit()"
+                :class="isInfoEditing ? 'song-info-edit-toggle--active' : ''"
+                :aria-label="isInfoEditing ? '取消编辑歌曲信息' : '编辑歌曲信息'"
+                :title="isInfoEditing ? '取消编辑歌曲信息' : '编辑歌曲信息'"
+                @click="isInfoEditing ? leaveInfoEdit() : enterInfoEdit()"
               >
                 <SquarePen class="h-4 w-4" :stroke-width="2.2" />
               </button>
@@ -547,45 +547,50 @@ const formatTime = (timestampSeconds?: number) => {
             <button
               type="button"
               class="lyrics-editor-expand-button"
-              :title="isSongInfoVisuallyExpanded ? '还原歌曲信息' : '放大歌曲信息'"
-              @click="toggleSongInfoExpanded"
+              :title="infoStretchVisual ? '还原歌曲信息' : '放大歌曲信息'"
+              @click="switchInfoStretch"
             >
-              <svg v-if="!isSongInfoVisuallyExpanded" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+              <svg v-if="!infoStretchVisual" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              <svg v-else class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+              <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
           </div>
 
           <div
-            class="song-info-main relative w-full bg-white/85 dark:bg-gray-900/90 backdrop-blur-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-white/40 dark:border-white/10"
+            class="song-info-main relative w-full dark:bg-gray-900/90 bg-white/85 backdrop-blur-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col dark:border-white/10 border border-white/40"
           >
-            <div v-if="displaySong" class="song-info-content p-6 overflow-y-auto custom-scrollbar">
-              <div class="song-info-hero flex flex-col sm:flex-row gap-6 mb-4">
+            <div v-if="presentedSong" class="song-info-content p-6 custom-scrollbar overflow-y-auto">
+              <div class="song-info-hero flex flex-col sm:flex-row mb-4 gap-6">
                 <button
                   type="button"
-                  class="song-info-cover w-32 h-32 shrink-0 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-md border border-gray-200/50 dark:border-gray-700/50 flex items-center justify-center"
-                  :class="isSongInfoEditing ? 'song-info-cover--editable' : ''"
-                  :disabled="!isSongInfoEditing"
+                  class="song-info-cover w-32 h-32 shrink-0 rounded-xl overflow-hidden dark:bg-gray-800 bg-gray-100 shadow-md dark:border-gray-700/50 border border-gray-200/50 flex items-center justify-center"
+                  :class="isInfoEditing ? 'song-info-cover--editable' : ''"
+                  :disabled="!isInfoEditing"
                   @click="handleChooseCover"
                 >
-                  <img v-if="songInfoEditForm.coverPreviewUrl || coverUrl" :src="songInfoEditForm.coverPreviewUrl || coverUrl" class="w-full h-full object-cover" draggable="false" decoding="async" />
-                  <svg v-else class="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  <img v-if="coverDisplaySrc" decoding="async" draggable="false" class="object-cover h-full w-full" :src="coverDisplaySrc" />
+                  <svg v-else class="w-12 h-12 dark:text-gray-600 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path
+                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
                   </svg>
-                  <span v-if="isSongInfoEditing" class="song-info-cover-overlay">更换封面</span>
+                  <span v-if="isInfoEditing" class="song-info-cover-overlay">更换封面</span>
                 </button>
 
                 <div class="flex-1 min-w-0 flex flex-col justify-center">
-                  <template v-if="isSongInfoEditing">
+                  <template v-if="isInfoEditing">
                     <div class="song-info-edit-wrapper">
                       <label class="song-info-edit-label" for="song-info-title-input">歌名</label>
                       <input
                         id="song-info-title-input"
-                        v-model="songInfoEditForm.title"
-                        class="song-info-edit-input song-info-edit-input--title song-info-edit-input--with-label"
+                        v-model="infoDraft.trackTitle"
+                        class="song-info-edit-input--title song-info-edit-input--with-label song-info-edit-input"
                         placeholder="请输入歌名"
                       />
                     </div>
@@ -593,8 +598,8 @@ const formatTime = (timestampSeconds?: number) => {
                       <label class="song-info-edit-label" for="song-info-artist-input">歌手</label>
                       <input
                         id="song-info-artist-input"
-                        v-model="songInfoEditForm.artist"
-                        class="song-info-edit-input song-info-edit-input--artist song-info-edit-input--with-label"
+                        v-model="infoDraft.artistName"
+                        class="song-info-edit-input--artist song-info-edit-input--with-label song-info-edit-input"
                         placeholder="请输入歌手名"
                       />
                     </div>
@@ -602,171 +607,176 @@ const formatTime = (timestampSeconds?: number) => {
                       <label class="song-info-edit-label" for="song-info-album-input">专辑</label>
                       <input
                         id="song-info-album-input"
-                        v-model="songInfoEditForm.album"
-                        class="song-info-edit-input song-info-edit-input--with-label"
+                        v-model="infoDraft.albumName"
+                        class="song-info-edit-input--with-label song-info-edit-input"
                         placeholder="请输入专辑名"
                       />
                     </div>
                   </template>
                   <template v-else>
-                    <h3 class="song-info-name text-3xl font-bold text-gray-900 dark:text-white truncate" :title="displaySong.title || displaySong.name">{{ displaySong.title || displaySong.name }}</h3>
-                    <p class="text-lg text-gray-600 dark:text-gray-300 mt-3 truncate" :title="displaySong.artist">{{ displaySong.artist }}</p>
-                    <p class="text-base text-gray-500 dark:text-gray-400 mt-2 truncate" :title="displaySong.album">专辑：{{ displaySong.album }}</p>
+                    <h3 class="song-info-name text-3xl font-bold dark:text-white truncate text-gray-900" :title="presentedTitle">{{ presentedTitle }}</h3>
+                    <p class="text-lg mt-3 truncate dark:text-gray-300 text-gray-600" :title="presentedSong.artist">{{ presentedSong.artist }}</p>
+                    <p class="text-base mt-2 truncate dark:text-gray-400 text-gray-500" :title="presentedSong.album">专辑：{{ presentedSong.album }}</p>
                   </template>
 
-                  <div v-if="displaySong.is_various_artists_album" class="flex flex-wrap gap-2 mt-4">
-                    <span class="px-2 py-0.5 text-xs font-semibold rounded bg-blue-100/80 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50">
+                  <div v-if="presentedSong.is_various_artists_album" class="flex gap-2 flex-wrap mt-4">
+                    <span class="px-2 py-0.5 text-xs font-semibold rounded dark:bg-blue-900/30 bg-blue-100/80 dark:text-blue-300 text-blue-700 dark:border-blue-800/50 border border-blue-200">
                       群星合辑
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div v-if="songInfoEditError" class="song-info-edit-error">{{ songInfoEditError }}</div>
+              <div v-if="infoEditError" class="song-info-edit-error">{{ infoEditError }}</div>
 
               <div class="flex flex-col gap-4">
-                <div class="song-info-detail-grid bg-gray-50/50 dark:bg-white/5 rounded-xl p-4 border border-gray-100 dark:border-gray-800 grid grid-cols-3 gap-y-6 gap-x-4">
+                <div class="song-info-detail-grid dark:bg-white/5 bg-gray-50/50 rounded-xl p-4 dark:border-gray-800 border border-gray-100 grid grid-cols-3 gap-y-6 gap-x-4">
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">音轨号</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">音轨号</div>
                     <input
-                      v-if="isSongInfoEditing"
-                      v-model="songInfoEditForm.trackNumber"
+                      v-if="isInfoEditing"
+                      v-model="infoDraft.trackNo"
                       class="song-info-edit-input song-info-edit-input--compact"
                       placeholder="无"
                     />
-                    <div v-else class="text-sm text-gray-800 dark:text-gray-200">{{ displaySong.track_number || '无' }}</div>
+                    <div v-else class="text-sm dark:text-gray-200 text-gray-800">{{ presentedSong.track_number || '无' }}</div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">碟号</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">碟号</div>
                     <input
-                      v-if="isSongInfoEditing"
-                      v-model="songInfoEditForm.discNumber"
+                      v-if="isInfoEditing"
+                      v-model="infoDraft.discNo"
                       class="song-info-edit-input song-info-edit-input--compact"
                       placeholder="无"
                     />
-                    <div v-else class="text-sm text-gray-800 dark:text-gray-200">{{ displaySong.disc_number || '无' }}</div>
+                    <div v-else class="text-sm dark:text-gray-200 text-gray-800">{{ presentedSong.disc_number || '无' }}</div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">年份</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">年份</div>
                     <input
-                      v-if="isSongInfoEditing"
-                      v-model="songInfoEditForm.year"
+                      v-if="isInfoEditing"
+                      v-model="infoDraft.releaseYear"
                       class="song-info-edit-input song-info-edit-input--compact"
                       placeholder="无"
                     />
-                    <div v-else class="text-sm text-gray-800 dark:text-gray-200">{{ displaySong.year || '无' }}</div>
+                    <div v-else class="text-sm dark:text-gray-200 text-gray-800">{{ presentedSong.year || '无' }}</div>
                   </div>
 
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">音乐时长</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200">{{ formatDuration(displaySong.duration) }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">音乐时长</div>
+                    <div class="text-sm dark:text-gray-200 text-gray-800">{{ describeDuration(presentedSong.duration) }}</div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">文件大小</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200">{{ formatSize(displaySong.file_size) }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">文件大小</div>
+                    <div class="text-sm dark:text-gray-200 text-gray-800">{{ describeFileSize(presentedSong.file_size) }}</div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">格式</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200 uppercase">{{ displaySong.format || displaySong.container || '无' }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">格式</div>
+                    <div class="text-sm uppercase dark:text-gray-200 text-gray-800">{{ presentedSong.format || presentedSong.container || '无' }}</div>
                   </div>
 
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">位深</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200">{{ displaySong.bit_depth ? displaySong.bit_depth + ' bit' : '无' }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">位深</div>
+                    <div class="text-sm dark:text-gray-200 text-gray-800">{{ presentedSong.bit_depth ? presentedSong.bit_depth + ' bit' : '无' }}</div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">采样率</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200">{{ formatSampleRate(displaySong.sample_rate) }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">采样率</div>
+                    <div class="text-sm dark:text-gray-200 text-gray-800">{{ describeSampleRate(presentedSong.sample_rate) }}</div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">比特率</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200">{{ formatBitrate(displaySong.bitrate) }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">比特率</div>
+                    <div class="text-sm dark:text-gray-200 text-gray-800">{{ describeBitrate(presentedSong.bitrate) }}</div>
                   </div>
                 </div>
 
-                <div class="bg-gray-50/50 dark:bg-white/5 rounded-xl p-4 border border-gray-100 dark:border-gray-800">
-                  <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1 no-text-select">文件路径</div>
-                  <div class="text-sm text-gray-800 dark:text-gray-200 break-all leading-snug selectable-text">{{ displaySong.path }}</div>
+                <div class="dark:bg-white/5 bg-gray-50/50 rounded-xl p-4 dark:border-gray-800 border border-gray-100">
+                  <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 no-text-select text-gray-400 dark:text-gray-500">文件路径</div>
+                  <div class="text-sm break-all leading-snug selectable-text dark:text-gray-200 text-gray-800">{{ presentedSong.path }}</div>
                 </div>
 
-                <div class="song-info-time-grid bg-gray-50/50 dark:bg-white/5 rounded-xl p-4 border border-gray-100 dark:border-gray-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="song-info-time-grid dark:bg-white/5 bg-gray-50/50 rounded-xl p-4 dark:border-gray-800 border border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">添加时间</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200">{{ formatTime(displaySong.added_at) }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">添加时间</div>
+                    <div class="text-sm dark:text-gray-200 text-gray-800">{{ describeTimestamp(presentedSong.added_at) }}</div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">文件修改时间</div>
-                    <div class="text-sm text-gray-800 dark:text-gray-200">{{ formatTime(displaySong.file_modified_at) }}</div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider mb-1 text-gray-400 dark:text-gray-500">文件修改时间</div>
+                    <div class="text-sm dark:text-gray-200 text-gray-800">{{ describeTimestamp(presentedSong.file_modified_at) }}</div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="song-info-footer modal-external-actions">
+          <div class="modal-external-actions song-info-footer">
             <button
-              v-if="!isSongInfoEditing"
-              @click="handleOpenFolder"
-              class="modal-action-button modal-action-button--wide"
+              v-if="!isInfoEditing"
+              class="modal-action-button--wide modal-action-button"
+              @click="revealSongFolder"
             >
-              <svg class="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+              <svg class="w-4 h-4 mr-2 dark:text-gray-400 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               打开文件所在目录
             </button>
             <button
-              v-if="!isSongInfoEditing"
-              @click="handleOpenInMusicTag"
+              v-if="!isInfoEditing"
+              class="modal-action-button--wide modal-action-button"
               :disabled="!props.song?.path"
-              class="modal-action-button modal-action-button--wide"
+              @click="sendSongToMusicTag"
             >
-              <Tag class="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
+              <Tag class="w-4 h-4 mr-2 dark:text-gray-400 text-gray-500" />
               用 MusicTag 修正标签
             </button>
             <template v-else>
               <button
                 type="button"
                 class="modal-action-button"
-                :disabled="isSongInfoSaving"
-                @click="cancelSongInfoEdit"
+                :disabled="isInfoSaving"
+                @click="leaveInfoEdit"
               >
                 取消
               </button>
               <button
                 type="button"
-                class="modal-action-button modal-action-button--primary"
-                :disabled="isSongInfoSaving"
-                @click="handleSaveSongInfo"
+                class="modal-action-button--primary modal-action-button"
+                :disabled="isInfoSaving"
+                @click="commitSongInfo"
               >
-                {{ isSongInfoSaving ? '保存中' : '保存信息' }}
+                {{ isInfoSaving ? '保存中' : '保存信息' }}
               </button>
             </template>
           </div>
         </section>
 
-        <section class="lyrics-editor-column" :class="isLyricsEditorVisuallyExpanded ? 'lyrics-editor-column--expanded' : ''">
-          <div class="modal-external-header lyrics-editor-header">
+        <section class="lyrics-editor-column" :class="lyricsStretchVisual ? 'lyrics-editor-column--expanded' : ''">
+          <div class="lyrics-editor-header modal-external-header">
             <div class="lyrics-editor-heading">
-              <div class="lyrics-editor-title" :class="isLyricsEditorVisuallyExpanded ? 'lyrics-editor-title--expanded' : ''">
+              <div class="lyrics-editor-title" :class="lyricsStretchVisual ? 'lyrics-editor-title--expanded' : ''">
                 编辑歌词
               </div>
               <div
-                v-if="displaySong"
+                v-if="presentedSong"
                 class="lyrics-editor-inline-song"
-                :class="isLyricsEditorVisuallyExpanded ? '' : 'lyrics-editor-inline-song--hidden'"
+                :class="lyricsStretchVisual ? '' : 'lyrics-editor-inline-song--hidden'"
               >
                 <div class="lyrics-editor-cover">
-                  <img v-if="coverUrl" :src="coverUrl" alt="" draggable="false" decoding="async" />
-                  <svg v-else class="h-5 w-5 text-gray-400 dark:text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  <img v-if="coverImageSrc" alt="" decoding="async" draggable="false" :src="coverImageSrc" />
+                  <svg v-else class="h-5 w-5 dark:text-white/40 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path
+                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
                   </svg>
                 </div>
                 <div class="min-w-0">
-                  <div class="truncate text-sm font-bold text-gray-900 dark:text-white" :title="displaySong.title || displaySong.name">
-                    {{ displaySong.title || displaySong.name }}
+                  <div class="truncate text-sm font-bold dark:text-white text-gray-900" :title="presentedTitle">
+                    {{ presentedTitle }}
                   </div>
-                  <div class="truncate text-xs text-gray-500 dark:text-white/50" :title="displaySong.artist">
-                    {{ displaySong.artist }}
+                  <div class="truncate text-xs dark:text-white/50 text-gray-500" :title="presentedSong.artist">
+                    {{ presentedSong.artist }}
                   </div>
                 </div>
               </div>
@@ -774,39 +784,39 @@ const formatTime = (timestampSeconds?: number) => {
             <button
               type="button"
               class="lyrics-editor-expand-button"
-              :title="isLyricsEditorVisuallyExpanded ? '还原歌词编辑器' : '放大歌词编辑器'"
-              @click="toggleLyricsEditorExpanded"
+              :title="lyricsStretchVisual ? '还原歌词编辑器' : '放大歌词编辑器'"
+              @click="switchLyricsStretch"
             >
-              <svg v-if="!isLyricsEditorVisuallyExpanded" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+              <svg v-if="!lyricsStretchVisual" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              <svg v-else class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+              <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
           </div>
 
-          <aside class="lyrics-editor-panel" :class="isLyricsEditorVisuallyExpanded ? 'lyrics-editor-panel--expanded' : ''">
+          <aside class="lyrics-editor-panel" :class="lyricsStretchVisual ? 'lyrics-editor-panel--expanded' : ''">
             <textarea
               ref="lyricsTextareaRef"
-              v-model="lyricsText"
-              class="lyrics-editor-textarea custom-scrollbar"
-              :placeholder="isLyricsLoading ? '正在读取歌词...' : '[00:00.00] 在这里编辑 LRC 歌词'"
-              :disabled="isLyricsLoading"
+              v-model="lyricsDraft"
+              class="custom-scrollbar lyrics-editor-textarea"
+              :placeholder="isLoadingLyrics ? '正在读取歌词...' : '[00:00.00] 在这里编辑 LRC 歌词'"
+              :disabled="isLoadingLyrics"
               spellcheck="false"
             ></textarea>
 
-            <div v-if="lyricsError" class="lyrics-editor-error">{{ lyricsError }}</div>
+            <div v-if="lyricsIssue" class="lyrics-editor-error">{{ lyricsIssue }}</div>
           </aside>
 
-          <div class="lyrics-editor-actions modal-external-actions">
+          <div class="modal-external-actions lyrics-editor-actions">
             <button
               type="button"
-              class="modal-action-button modal-action-button--primary"
-              :disabled="!hasLyricsChanged || isLyricsSaving"
-              @click="handleSaveLyrics"
+              class="modal-action-button--primary modal-action-button"
+              :disabled="!lyricsDirty || isSavingLyrics"
+              @click="commitLyrics"
             >
-              {{ isLyricsSaving ? '保存中' : '保存' }}
+              {{ isSavingLyrics ? '保存中' : '保存' }}
             </button>
           </div>
         </section>
@@ -816,901 +826,294 @@ const formatTime = (timestampSeconds?: number) => {
 </template>
 
 <style scoped>
-.cubic-bezier {
-  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
-}
+/* 动画曲线工具类 */
+.cubic-bezier { transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1); }
 
 .song-info-stage {
-  --song-info-footer-height: clamp(44px, 5.8vh, 52px);
-  --song-info-footer-gap: clamp(10px, 1.2vh, 14px);
-  --song-info-page-gap: clamp(12px, 1.3vw, 18px);
-  --song-info-viewport-x: clamp(360px, 26vw, 520px);
-  --song-info-viewport-y: clamp(120px, 14vh, 190px);
-  --lyrics-panel-width: clamp(340px, 32vw, 460px);
-  --song-info-main-width: min(680px, calc(100% - var(--lyrics-panel-width) - var(--song-info-page-gap)));
+  /* 面板尺寸与布局节奏相关的全部调节变量 */
+  --song-info-footer-height: clamp(44px, 5.8vh, 52px); --song-info-footer-gap: clamp(10px, 1.2vh, 14px); --song-info-page-gap: clamp(12px, 1.3vw, 18px);
+  --song-info-viewport-x: clamp(360px, 26vw, 520px); --song-info-viewport-y: clamp(120px, 14vh, 190px);
+  --lyrics-panel-width: clamp(340px, 32vw, 460px); --song-info-main-width: min(680px, calc(100% - var(--lyrics-panel-width) - var(--song-info-page-gap)));
   --lyrics-editor-panel-bg: rgba(255, 255, 255, 0.82);
-  --lyrics-editor-panel-border: rgba(255, 255, 255, 0.38);
-  --lyrics-editor-panel-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
-  --modal-external-header-bg: rgba(255, 255, 255, 0.62);
-  --modal-external-header-border: rgba(255, 255, 255, 0.42);
-  --modal-external-header-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
-  --lyrics-editor-title-color: rgb(17 24 39);
-  --lyrics-editor-text-color: rgb(31 41 55);
-  --lyrics-editor-placeholder-color: rgb(156 163 175);
-  --lyrics-editor-button-bg: rgba(255, 255, 255, 0.72);
-  --lyrics-editor-button-border: rgba(148, 163, 184, 0.26);
-  --lyrics-editor-button-color: rgb(55 65 81);
-  --lyrics-editor-button-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
-  --lyrics-editor-expand-bg: rgba(255, 255, 255, 0.68);
-  --lyrics-editor-expand-border: rgba(148, 163, 184, 0.22);
-  --lyrics-editor-expand-color: rgb(75 85 99);
-  position: relative;
-  z-index: 2;
-  display: flex;
+  --lyrics-editor-panel-border: rgba(255, 255, 255, 0.38); --lyrics-editor-panel-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+  --modal-external-header-bg: rgba(255, 255, 255, 0.62); --modal-external-header-border: rgba(255, 255, 255, 0.42); --modal-external-header-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  --lyrics-editor-title-color: rgb(17 24 39); --lyrics-editor-text-color: rgb(31 41 55); --lyrics-editor-placeholder-color: rgb(156 163 175);
+  --lyrics-editor-button-bg: rgba(255, 255, 255, 0.72); --lyrics-editor-button-border: rgba(148, 163, 184, 0.26); --lyrics-editor-button-color: rgb(55 65 81);
+  --lyrics-editor-button-shadow: 0 4px 12px rgba(15, 23, 42, 0.08); --lyrics-editor-expand-bg: rgba(255, 255, 255, 0.68); --lyrics-editor-expand-border: rgba(148, 163, 184, 0.22); --lyrics-editor-expand-color: rgb(75 85 99);
+  position: relative; z-index: 2; display: flex;
   gap: var(--song-info-page-gap);
   width: min(1360px, calc(100vw - var(--song-info-viewport-x)));
-  height: min(1040px, calc(100dvh - var(--song-info-viewport-y)));
-  max-height: min(1040px, calc(100dvh - var(--song-info-viewport-y)));
-  -webkit-user-select: text;
-  user-select: text;
+  height: min(1040px, calc(100dvh - var(--song-info-viewport-y))); max-height: min(1040px, calc(100dvh - var(--song-info-viewport-y)));
+  -webkit-user-select: text; user-select: text;
   transform-origin: center center;
-  transition:
-    gap 360ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 300ms ease,
-    transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: gap 360ms cubic-bezier(0.4, 0, 0.2, 1), opacity 300ms ease, transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .song-info-stage--dark {
   --lyrics-editor-panel-bg: rgba(15, 23, 42, 0.92);
-  --lyrics-editor-panel-border: rgba(255, 255, 255, 0.1);
-  --lyrics-editor-panel-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  --lyrics-editor-panel-border: rgba(255, 255, 255, 0.1); --lyrics-editor-panel-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
   --modal-external-header-bg: rgba(15, 23, 42, 0.72);
-  --modal-external-header-border: rgba(255, 255, 255, 0.1);
-  --modal-external-header-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
-  --lyrics-editor-title-color: rgb(248 250 252);
-  --lyrics-editor-text-color: rgba(255, 255, 255, 0.86);
-  --lyrics-editor-placeholder-color: rgba(148, 163, 184, 0.72);
+  --modal-external-header-border: rgba(255, 255, 255, 0.1); --modal-external-header-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+  --lyrics-editor-title-color: rgb(248 250 252); --lyrics-editor-text-color: rgba(255, 255, 255, 0.86); --lyrics-editor-placeholder-color: rgba(148, 163, 184, 0.72);
   --lyrics-editor-button-bg: rgba(255, 255, 255, 0.06);
-  --lyrics-editor-button-border: rgba(255, 255, 255, 0.1);
-  --lyrics-editor-button-color: rgba(255, 255, 255, 0.82);
-  --lyrics-editor-button-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
-  --lyrics-editor-expand-bg: rgba(255, 255, 255, 0.06);
-  --lyrics-editor-expand-border: rgba(255, 255, 255, 0.1);
-  --lyrics-editor-expand-color: rgba(255, 255, 255, 0.68);
+  --lyrics-editor-button-border: rgba(255, 255, 255, 0.1); --lyrics-editor-button-color: rgba(255, 255, 255, 0.82); --lyrics-editor-button-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  --lyrics-editor-expand-bg: rgba(255, 255, 255, 0.06); --lyrics-editor-expand-border: rgba(255, 255, 255, 0.1); --lyrics-editor-expand-color: rgba(255, 255, 255, 0.68);
 }
 
 .song-info-window-drag-strip {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 1;
-  height: clamp(56px, 9vh, 92px);
-  cursor: default;
+  position: absolute; top: 0; right: 0; left: 0; z-index: 1;
+  height: clamp(56px, 9vh, 92px); cursor: default;
 }
 
-.song-info-content {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: clamp(18px, 2.2vw, 24px);
-}
+.song-info-content { flex: 1 1 auto; min-height: 0; padding: clamp(18px, 2.2vw, 24px); }
 
-.song-info-hero {
-  gap: clamp(16px, 2vw, 24px);
-}
+.song-info-hero { gap: clamp(16px, 2vw, 24px); }
 
-.song-info-cover {
-  width: clamp(96px, 10vw, 128px);
-  height: clamp(96px, 10vw, 128px);
-}
+.song-info-cover { width: clamp(96px, 10vw, 128px); height: clamp(96px, 10vw, 128px); }
 
-.song-info-name {
-  font-size: clamp(22px, 2.8vw, 30px);
-  line-height: 1.18;
-}
+.song-info-name { font-size: clamp(22px, 2.8vw, 30px); line-height: 1.18; }
 
-.song-info-detail-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(14px, 1.8vw, 24px) clamp(12px, 1.6vw, 16px);
-}
+.song-info-detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 1.8vw, 24px) clamp(12px, 1.6vw, 16px); }
 
-.song-info-stage--lyrics-expanded,
-.song-info-stage--lyrics-expanding,
-.song-info-stage--song-expanded,
-.song-info-stage--song-expanding {
-  gap: 0;
-}
+.song-info-stage--song-expanding, .song-info-stage--song-expanded, .song-info-stage--lyrics-expanding, .song-info-stage--lyrics-expanded { gap: 0; }
 
-.song-info-stage--lyrics-collapsing,
-.song-info-stage--song-collapsing {
-  gap: var(--song-info-page-gap);
-}
+.song-info-stage--song-collapsing, .song-info-stage--lyrics-collapsing { gap: var(--song-info-page-gap); }
 
-.song-info-stage--lyrics-expanded .song-info-column,
-.song-info-stage--lyrics-expanding .song-info-column {
-  flex-basis: 0;
-  width: 0;
-  opacity: 0;
-  transform: translateX(-18px);
-  pointer-events: none;
-}
+.song-info-stage--lyrics-expanding .song-info-column, .song-info-stage--lyrics-expanded .song-info-column { flex-basis: 0; width: 0; opacity: 0; transform: translateX(-18px); pointer-events: none; }
 
-.song-info-stage--lyrics-collapsing .song-info-column {
-  flex-basis: var(--song-info-main-width);
-  width: auto;
-  opacity: 1;
-  transform: translateX(0);
-  pointer-events: auto;
-}
+.song-info-stage--lyrics-collapsing .song-info-column { flex-basis: var(--song-info-main-width); width: auto; opacity: 1; transform: translateX(0); pointer-events: auto; }
 
-.song-info-stage--song-expanded .song-info-column,
-.song-info-stage--song-expanding .song-info-column {
-  flex-basis: 100%;
-}
+.song-info-stage--song-expanding .song-info-column, .song-info-stage--song-expanded .song-info-column { flex-basis: 100%; }
 
-.song-info-stage--song-collapsing .song-info-column {
-  flex-basis: var(--song-info-main-width);
-}
+.song-info-stage--song-collapsing .song-info-column { flex-basis: var(--song-info-main-width); }
 
-.song-info-stage--lyrics-expanded .lyrics-editor-column,
-.song-info-stage--lyrics-expanding .lyrics-editor-column {
-  flex-basis: 100%;
-}
+.song-info-stage--lyrics-expanding .lyrics-editor-column, .song-info-stage--lyrics-expanded .lyrics-editor-column { flex-basis: 100%; }
 
-.song-info-stage--song-expanded .lyrics-editor-column,
-.song-info-stage--song-expanding .lyrics-editor-column {
-  flex-basis: 0;
-  min-width: 0;
-  width: 0;
-  opacity: 0;
-  transform: translateX(18px);
-  pointer-events: none;
-}
+.song-info-stage--song-expanding .lyrics-editor-column, .song-info-stage--song-expanded .lyrics-editor-column { flex-basis: 0; min-width: 0; width: 0; opacity: 0; transform: translateX(18px); pointer-events: none; }
 
-.song-info-stage--lyrics-collapsing .lyrics-editor-column {
-  flex-basis: var(--lyrics-panel-width);
-}
+.song-info-stage--lyrics-collapsing .lyrics-editor-column { flex-basis: var(--lyrics-panel-width); }
 
-.song-info-stage--song-collapsing .lyrics-editor-column {
-  flex-basis: var(--lyrics-panel-width);
-  opacity: 1;
-  transform: translateX(0);
-  pointer-events: auto;
-}
+.song-info-stage--song-collapsing .lyrics-editor-column { flex-basis: var(--lyrics-panel-width); opacity: 1; transform: translateX(0); pointer-events: auto; }
 
-.song-info-stage--lyrics-expanding .lyrics-editor-textarea,
-.song-info-stage--lyrics-collapsing .lyrics-editor-textarea,
-.song-info-stage--song-expanding .song-info-content,
-.song-info-stage--song-collapsing .song-info-content {
-  scrollbar-width: none;
-}
+.song-info-stage--lyrics-expanding .lyrics-editor-textarea, .song-info-stage--lyrics-collapsing .lyrics-editor-textarea, .song-info-stage--song-expanding .song-info-content, .song-info-stage--song-collapsing .song-info-content { scrollbar-width: none; }
 
-.song-info-stage--lyrics-expanding .lyrics-editor-textarea::-webkit-scrollbar,
-.song-info-stage--lyrics-collapsing .lyrics-editor-textarea::-webkit-scrollbar,
-.song-info-stage--song-expanding .song-info-content::-webkit-scrollbar,
-.song-info-stage--song-collapsing .song-info-content::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
+.song-info-stage--lyrics-expanding .lyrics-editor-textarea::-webkit-scrollbar, .song-info-stage--lyrics-collapsing .lyrics-editor-textarea::-webkit-scrollbar, .song-info-stage--song-expanding .song-info-content::-webkit-scrollbar, .song-info-stage--song-collapsing .song-info-content::-webkit-scrollbar { width: 0; height: 0; }
 
-.song-info-column,
-.lyrics-editor-column {
-  position: relative;
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  max-height: min(860px, calc(100dvh - var(--song-info-viewport-y)));
-  flex-direction: column;
-  transition:
-    flex-basis 360ms cubic-bezier(0.4, 0, 0.2, 1),
-    width 360ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 360ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 360ms cubic-bezier(0.4, 0, 0.2, 1),
-    max-height 360ms cubic-bezier(0.4, 0, 0.2, 1);
-}
+.song-info-column, .lyrics-editor-column { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; max-height: min(860px, calc(100dvh - var(--song-info-viewport-y))); transition: flex-basis 360ms cubic-bezier(0.4, 0, 0.2, 1), width 360ms cubic-bezier(0.4, 0, 0.2, 1), opacity 360ms cubic-bezier(0.4, 0, 0.2, 1), transform 360ms cubic-bezier(0.4, 0, 0.2, 1), max-height 360ms cubic-bezier(0.4, 0, 0.2, 1); }
 
-.song-info-main,
-.lyrics-editor-panel {
-  flex: 1 1 0;
-  min-height: 0;
-  height: auto;
-  max-height: min(860px, calc(100dvh - var(--song-info-viewport-y)));
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    max-height 360ms cubic-bezier(0.4, 0, 0.2, 1);
-}
+.song-info-main, .lyrics-editor-panel { flex: 1 1 0; min-height: 0; height: auto; max-height: min(860px, calc(100dvh - var(--song-info-viewport-y))); transition: border-color 160ms ease, background-color 160ms ease, max-height 360ms cubic-bezier(0.4, 0, 0.2, 1); }
 
 .song-info-column {
-  flex: 0 1 var(--song-info-main-width);
-  min-width: 0;
-  animation: song-info-column-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  flex: 0 1 var(--song-info-main-width); min-width: 0;
+  animation: info-column-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.song-info-main {
-  overflow: hidden;
-}
+.song-info-main { overflow: hidden; }
 
 .lyrics-editor-column {
-  flex: 1 1 var(--lyrics-panel-width);
-  min-width: min(320px, 100%);
-  animation: lyrics-editor-column-in 560ms cubic-bezier(0.16, 1, 0.3, 1) 40ms both;
+  flex: 1 1 var(--lyrics-panel-width); min-width: min(320px, 100%);
+  animation: lyrics-column-enter 560ms cubic-bezier(0.16, 1, 0.3, 1) 40ms both;
 }
 
-.song-info-stage--lyrics-expanded .lyrics-editor-column {
-  max-height: min(860px, calc(100dvh - var(--song-info-viewport-y)));
-  height: min(860px, calc(100dvh - var(--song-info-viewport-y)));
-}
+.song-info-stage--lyrics-expanded .lyrics-editor-column { max-height: min(860px, calc(100dvh - var(--song-info-viewport-y))); height: min(860px, calc(100dvh - var(--song-info-viewport-y))); }
 
-.lyrics-editor-panel {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--lyrics-editor-panel-border);
-  border-radius: 22px;
-  background: var(--lyrics-editor-panel-bg);
-  box-shadow: var(--lyrics-editor-panel-shadow);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  transform: translateX(0) scale(1);
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease;
-}
+.lyrics-editor-panel { position: relative; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--lyrics-editor-panel-border); border-radius: 22px; background: var(--lyrics-editor-panel-bg); box-shadow: var(--lyrics-editor-panel-shadow); backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%); transform: translateX(0) scale(1); transition: border-color 160ms ease, background-color 160ms ease; }
 
-.lyrics-editor-panel--expanded {
-  transform: translateX(0) scale(1);
-}
+.lyrics-editor-panel--expanded { transform: translateX(0) scale(1); }
 
-.modal-external-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 52px;
-  padding: 6px 18px;
-  margin-bottom: 10px;
-  border: 1px solid var(--modal-external-header-border);
-  border-radius: 16px;
-  background: var(--modal-external-header-bg);
-  box-shadow: var(--modal-external-header-shadow);
-  backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  flex-shrink: 0;
-}
+.modal-external-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 6px 18px; margin-bottom: 10px; border: 1px solid var(--modal-external-header-border); border-radius: 16px; background: var(--modal-external-header-bg); box-shadow: var(--modal-external-header-shadow); backdrop-filter: blur(18px) saturate(145%); -webkit-backdrop-filter: blur(18px) saturate(145%); flex-shrink: 0; }
 
-.song-info-header-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
+.song-info-header-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
-.song-info-edit-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  padding: 0;
-  color: var(--lyrics-editor-button-color);
-  line-height: 1;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease;
-}
+.song-info-edit-toggle { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0; border: 0; border-radius: 8px; background: transparent; padding: 0; color: var(--lyrics-editor-button-color); line-height: 1; transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease; }
 
-.song-info-edit-toggle:hover,
-.song-info-edit-toggle--active {
-  background: transparent;
-  color: #ec4141;
-}
+.song-info-edit-toggle:hover, .song-info-edit-toggle--active { background: transparent; color: #ec4141; }
 
-.song-info-cover {
-  position: relative;
-  padding: 0;
-  color: inherit;
-  cursor: default;
-  transform: translateZ(0);
-  border-radius: 12px;
-  overflow: hidden;
-}
+/* 提升为独立合成层，规避圆角裁剪在 Chromium 下的溢出缺陷 */
+.song-info-cover { position: relative; padding: 0; color: inherit; cursor: default; transform: translateZ(0); border-radius: 12px; overflow: hidden; }
 
-.song-info-cover:disabled {
-  opacity: 1;
-}
+.song-info-cover:disabled { opacity: 1; }
 
-.song-info-cover--editable {
-  cursor: pointer;
-}
+.song-info-cover--editable { cursor: pointer; }
 
-.song-info-cover--editable:hover {
-  border-color: rgba(236, 65, 65, 0.35);
-}
+.song-info-cover--editable:hover { border-color: rgba(236, 65, 65, 0.35); }
 
-.song-info-cover-overlay {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 32px;
-  background: rgba(15, 23, 42, 0.62);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-radius: 0 0 12px 12px;
-}
+/* 底部圆角与外层容器对齐，保证覆盖层不出现直角 */
+.song-info-cover-overlay { position: absolute; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; min-height: 32px; background: rgba(15, 23, 42, 0.62); color: #fff; font-size: 12px; font-weight: 800; line-height: 1; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 0 0 12px 12px; }
 
-.song-info-edit-input {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.64);
-  padding: 9px 11px;
-  color: rgb(17 24 39);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.2;
-  outline: none;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease;
-}
+.song-info-edit-input { width: 100%; min-width: 0; border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 10px; background: rgba(255, 255, 255, 0.64); padding: 9px 11px; color: rgb(17 24 39); font-size: 14px; font-weight: 700; line-height: 1.2; outline: none; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; }
 
-.song-info-edit-input:focus {
-  border-color: rgba(236, 65, 65, 0.45);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.1);
-}
+.song-info-edit-input:focus { border-color: rgba(236, 65, 65, 0.45); background: rgba(255, 255, 255, 0.9); box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.1); }
 
-.song-info-edit-input--title {
-  padding: 10px 12px;
-  font-size: clamp(21px, 2.6vw, 28px);
-  font-weight: 800;
-}
+.song-info-edit-input--title { padding: 10px 12px; font-size: clamp(21px, 2.6vw, 28px); font-weight: 800; }
 
-.song-info-edit-input--artist {
-  font-size: 16px;
-}
+.song-info-edit-input--artist { font-size: 16px; }
 
-.song-info-edit-input--compact {
-  height: 32px;
-  padding: 6px 8px;
-  font-size: 13px;
-}
+.song-info-edit-input--compact { height: 32px; padding: 6px 8px; font-size: 13px; }
 
 .song-info-edit-error {
   margin-bottom: 14px;
-  border: 1px solid rgba(236, 65, 65, 0.22);
-  border-radius: 12px;
-  background: rgba(236, 65, 65, 0.08);
-  padding: 10px 12px;
-  color: #ec4141;
-  font-size: 12px;
-  line-height: 1.5;
+  border: 1px solid rgba(236, 65, 65, 0.22); border-radius: 12px;
+  background: rgba(236, 65, 65, 0.08); padding: 10px 12px;
+  color: #ec4141; font-size: 12px; line-height: 1.5;
 }
 
-.song-info-stage--dark .song-info-edit-input {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-}
+.song-info-stage--dark .song-info-edit-input { border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.9); }
 
-.song-info-stage--dark .song-info-edit-input:focus {
-  border-color: rgba(236, 65, 65, 0.42);
-  background: rgba(255, 255, 255, 0.1);
-}
+.song-info-stage--dark .song-info-edit-input:focus { border-color: rgba(236, 65, 65, 0.42); background: rgba(255, 255, 255, 0.1); }
 
-.lyrics-editor-header {
-  padding-right: 18px;
-}
+.lyrics-editor-header { padding-right: 18px; }
 
-.lyrics-editor-heading {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-width: 0;
-}
+.lyrics-editor-heading { display: flex; align-items: center; gap: 18px; min-width: 0; }
 
-.lyrics-editor-expand-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--lyrics-editor-expand-color);
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease;
-}
+.lyrics-editor-expand-button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; border: 0; border-radius: 10px; background: transparent; color: var(--lyrics-editor-expand-color); transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease; }
 
-.lyrics-editor-expand-button:hover {
-  background: transparent;
-  color: #ec4141;
-}
+.lyrics-editor-expand-button:hover { background: transparent; color: #ec4141; }
 
-.song-info-stage--dark .lyrics-editor-expand-button:hover {
-  border-color: rgba(236, 65, 65, 0.4);
-  color: #ff8b8b;
-}
+.song-info-stage--dark .lyrics-editor-expand-button:hover { border-color: rgba(236, 65, 65, 0.4); color: #ff8b8b; }
 
-.lyrics-editor-title {
-  flex-shrink: 0;
-  color: var(--lyrics-editor-title-color);
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.2;
-}
+.lyrics-editor-title { flex-shrink: 0; color: var(--lyrics-editor-title-color); font-size: 18px; font-weight: 800; line-height: 1.2; }
 
-.lyrics-editor-inline-song {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  animation: lyrics-summary-in 160ms ease both;
-}
+.lyrics-editor-inline-song { display: flex; align-items: center; gap: 12px; animation: lyrics-summary-enter 160ms ease both; }
 
-.lyrics-editor-inline-song--hidden {
-  opacity: 0;
-  visibility: hidden;
-}
+.lyrics-editor-inline-song--hidden { opacity: 0; visibility: hidden; }
 
-.lyrics-editor-cover {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  flex-shrink: 0;
-  overflow: hidden;
-  border-radius: 10px;
-  background: rgba(148, 163, 184, 0.14);
-}
+.lyrics-editor-cover { display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; flex-shrink: 0; overflow: hidden; border-radius: 10px; background: rgba(148, 163, 184, 0.14); }
 
-.lyrics-editor-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+.lyrics-editor-cover img { width: 100%; height: 100%; object-fit: cover; }
 
-.lyrics-editor-textarea {
-  flex: 1;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 420px;
-  resize: none;
-  border: 0;
-  background: transparent;
-  padding: 18px;
-  color: var(--lyrics-editor-text-color);
-  font-family: "Sarasa Gothic SC", "Sarasa Mono SC", "Sarasa Gothic", "Sarasa Mono", sans-serif;
-  font-size: 13px;
-  line-height: 1.7;
-  outline: none;
-}
+.lyrics-editor-textarea { flex: 1; box-sizing: border-box; width: 100%; min-height: 420px; resize: none; border: 0; background: transparent; padding: 18px; color: var(--lyrics-editor-text-color); font-family: "Sarasa Gothic SC", "Sarasa Mono SC", "Sarasa Gothic", "Sarasa Mono", sans-serif; font-size: 13px; line-height: 1.7; outline: none; }
 
-.lyrics-editor-panel--expanded .lyrics-editor-textarea {
-  min-height: 0;
-}
+.lyrics-editor-panel--expanded .lyrics-editor-textarea { min-height: 0; }
 
-.modal-action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 88px;
-  height: 44px;
-  border: 1px solid var(--lyrics-editor-button-border);
-  border-radius: 10px;
-  background: var(--lyrics-editor-button-bg);
-  box-shadow: var(--lyrics-editor-button-shadow);
-  padding: 0 16px;
-  color: var(--lyrics-editor-button-color);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  backdrop-filter: blur(16px) saturate(145%);
-  -webkit-backdrop-filter: blur(16px) saturate(145%);
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease;
-}
+.modal-action-button { display: inline-flex; align-items: center; justify-content: center; min-width: 88px; height: 44px; border: 1px solid var(--lyrics-editor-button-border); border-radius: 10px; background: var(--lyrics-editor-button-bg); box-shadow: var(--lyrics-editor-button-shadow); padding: 0 16px; color: var(--lyrics-editor-button-color); font-size: 14px; font-weight: 700; line-height: 1; backdrop-filter: blur(16px) saturate(145%); -webkit-backdrop-filter: blur(16px) saturate(145%); transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease; }
 
-@keyframes lyrics-summary-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
+@keyframes lyrics-summary-enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+@keyframes info-column-enter { from { transform: translateX(-24px); } to { transform: translateX(0); } }
 
-@keyframes song-info-column-in {
-  from {
-    transform: translateX(-24px);
-  }
-
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes lyrics-editor-column-in {
-  from {
-    transform: translateX(24px);
-  }
-
-  to {
-    transform: translateX(0);
-  }
-}
+@keyframes lyrics-column-enter { from { transform: translateX(24px); } to { transform: translateX(0); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .song-info-stage,
-  .song-info-column,
-  .lyrics-editor-column,
-  .lyrics-editor-panel {
-    transition-duration: 0ms;
-  }
+  .song-info-stage, .song-info-column, .lyrics-editor-column, .lyrics-editor-panel { transition-duration: 0ms; }
 
-  .song-info-column,
-  .lyrics-editor-column,
-  .lyrics-editor-inline-song {
-    animation: none;
-  }
+  .song-info-column, .lyrics-editor-column, .lyrics-editor-inline-song { animation: none; }
 }
 
-.lyrics-editor-textarea::placeholder {
-  color: var(--lyrics-editor-placeholder-color);
-}
+.lyrics-editor-textarea::placeholder { color: var(--lyrics-editor-placeholder-color); }
 
-.lyrics-editor-error {
-  margin: 0 18px 12px;
-  border: 1px solid rgba(236, 65, 65, 0.22);
-  border-radius: 12px;
-  background: rgba(236, 65, 65, 0.08);
-  padding: 10px 12px;
-  color: #ec4141;
-  font-size: 12px;
-  line-height: 1.5;
-}
+.lyrics-editor-error { margin: 0 18px 12px; border: 1px solid rgba(236, 65, 65, 0.22); border-radius: 12px; background: rgba(236, 65, 65, 0.08); padding: 10px 12px; color: #ec4141; font-size: 12px; line-height: 1.5; }
 
-.modal-external-actions {
-  position: absolute;
-  top: calc(100% + var(--song-info-footer-gap));
-  right: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: var(--song-info-footer-height);
-  background: transparent;
-  pointer-events: auto;
-}
+.modal-external-actions { position: absolute; right: 0; left: 0; top: calc(100% + var(--song-info-footer-gap)); display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--song-info-footer-height); background: transparent; pointer-events: auto; }
 
-.lyrics-editor-actions {
-  gap: clamp(10px, 1.4vw, 20px);
-}
+.lyrics-editor-actions { gap: clamp(10px, 1.4vw, 20px); }
 
-.modal-action-button--wide {
-  min-width: 184px;
-}
+.modal-action-button--wide { min-width: 184px; }
 
-.modal-action-button:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.38);
-  color: #ec4141;
-}
+.modal-action-button:hover:not(:disabled) { border-color: rgba(236, 65, 65, 0.38); color: #ec4141; }
 
-.modal-action-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
+.modal-action-button:disabled { cursor: not-allowed; opacity: 0.48; }
 
-.modal-action-button--primary {
-  border-color: transparent;
-  background: #ec4141;
-  color: #fff;
-}
+.modal-action-button--primary { border-color: transparent; background: #ec4141; color: #fff; }
 
-.song-info-stage--dark .modal-action-button--primary {
-  background: #ec4141;
-  color: #fff;
-}
+.song-info-stage--dark .modal-action-button--primary { background: #ec4141; color: #fff; }
 
 @media (max-width: 1100px) {
-  .song-info-stage {
-    --song-info-footer-height: clamp(42px, 6vh, 48px);
-    --song-info-footer-gap: 10px;
-    --song-info-viewport-x: clamp(180px, 24vw, 280px);
-    --song-info-viewport-y: clamp(120px, 20vh, 190px);
-    flex-direction: column;
-    overflow-y: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    width: min(100%, calc(100vw - var(--song-info-viewport-x)));
-    height: calc(100dvh - var(--song-info-viewport-y));
-    max-height: calc(100dvh - var(--song-info-viewport-y));
-  }
+  .song-info-stage { --song-info-footer-height: clamp(42px, 6vh, 48px); --song-info-footer-gap: 10px; --song-info-viewport-x: clamp(180px, 24vw, 280px); --song-info-viewport-y: clamp(120px, 20vh, 190px); flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; width: min(100%, calc(100vw - var(--song-info-viewport-x))); height: calc(100dvh - var(--song-info-viewport-y)); max-height: calc(100dvh - var(--song-info-viewport-y)); }
 
-  .song-info-stage::-webkit-scrollbar {
-    display: none;
-    width: 0;
-    height: 0;
-  }
+  .song-info-stage::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
-  .modal-external-actions {
-    position: static;
-    justify-content: center;
-    margin-top: var(--song-info-footer-gap);
-  }
+  .modal-external-actions { position: static; justify-content: center; margin-top: var(--song-info-footer-gap); }
 
-  .song-info-stage--lyrics-expanded .song-info-column,
-  .song-info-stage--lyrics-expanding .song-info-column {
-    position: absolute;
-    inset: 0;
-  }
+  .song-info-stage--lyrics-expanding .song-info-column, .song-info-stage--lyrics-expanded .song-info-column { position: absolute; inset: 0; }
 
-  .song-info-column,
-  .lyrics-editor-column,
-  .song-info-main,
-  .lyrics-editor-panel {
-    max-height: none;
-  }
+  .song-info-column, .lyrics-editor-column, .song-info-main, .lyrics-editor-panel { max-height: none; }
 
-  .song-info-column,
-  .song-info-stage--lyrics-collapsing .song-info-column {
-    flex: 0 0 auto;
-    width: 100%;
-    height: auto;
-  }
+  .song-info-main { flex: 0 0 auto; height: auto; overflow: visible; }
 
-  .song-info-main {
-    flex: 0 0 auto;
-    height: auto;
-    overflow: visible;
-  }
+  .song-info-content { overflow: visible; }
 
-  .song-info-content {
-    overflow: visible;
-  }
+  .song-info-column, .song-info-stage--lyrics-collapsing .song-info-column { flex: 0 0 auto; width: 100%; height: auto; }
 
-  .lyrics-editor-column,
-  .song-info-stage--lyrics-collapsing .lyrics-editor-column {
-    flex: 0 0 min(440px, calc(100dvh - var(--song-info-viewport-y)));
-    width: 100%;
-    min-width: 0;
-    min-height: 360px;
-  }
+  .lyrics-editor-column, .song-info-stage--lyrics-collapsing .lyrics-editor-column { flex: 0 0 min(440px, calc(100dvh - var(--song-info-viewport-y))); width: 100%; min-width: 0; min-height: 360px; }
 
-  .song-info-stage--lyrics-expanded .lyrics-editor-column,
-  .song-info-stage--lyrics-expanding .lyrics-editor-column {
-    flex-basis: auto;
-    max-height: calc(100dvh - var(--song-info-viewport-y));
-    height: calc(100dvh - var(--song-info-viewport-y));
-  }
+  .song-info-stage--lyrics-expanding .lyrics-editor-column, .song-info-stage--lyrics-expanded .lyrics-editor-column { flex-basis: auto; max-height: calc(100dvh - var(--song-info-viewport-y)); height: calc(100dvh - var(--song-info-viewport-y)); }
 
-  .lyrics-editor-textarea {
-    min-height: 280px;
-  }
+  .lyrics-editor-textarea { min-height: 280px; }
 
-  .lyrics-editor-panel--expanded .lyrics-editor-textarea {
-    min-height: 0;
-  }
+  .lyrics-editor-panel--expanded .lyrics-editor-textarea { min-height: 0; }
 
-  .lyrics-editor-heading {
-    gap: 12px;
-  }
+  .lyrics-editor-heading { gap: 12px; }
 }
 
 @media (max-width: 760px) {
-  .song-info-stage {
-    --song-info-viewport-x: clamp(96px, 20vw, 132px);
-    --song-info-viewport-y: clamp(72px, 16vh, 112px);
-    --song-info-footer-height: 42px;
-    border-radius: 18px;
-  }
+  .song-info-stage { --song-info-viewport-x: clamp(96px, 20vw, 132px); --song-info-viewport-y: clamp(72px, 16vh, 112px); --song-info-footer-height: 42px; border-radius: 18px; }
 
-  .song-info-hero {
-    flex-direction: row;
-    align-items: center;
-    gap: 14px;
-  }
+  .song-info-hero { flex-direction: row; align-items: center; gap: 14px; }
 
-  .song-info-cover {
-    width: 84px;
-    height: 84px;
-  }
+  .song-info-cover { width: 84px; height: 84px; }
 
-  .song-info-name {
-    font-size: 22px;
-  }
+  .song-info-name { font-size: 22px; }
 
-  .song-info-detail-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  .song-info-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  .song-info-footer,
-  .lyrics-editor-actions {
-    gap: 8px;
-  }
+  .song-info-footer, .lyrics-editor-actions { gap: 8px; }
 
-  .modal-action-button {
-    min-width: 76px;
-    height: 38px;
-    padding-inline: 11px;
-    font-size: 13px;
-  }
+  .modal-action-button { min-width: 76px; height: 38px; padding-inline: 11px; font-size: 13px; }
 
-  .modal-action-button--wide {
-    min-width: 152px;
-  }
+  .modal-action-button--wide { min-width: 152px; }
 }
 
 @media (max-width: 520px) {
-  .song-info-stage {
-    --song-info-viewport-x: 64px;
-    --song-info-viewport-y: 56px;
-    --song-info-footer-height: 42px;
-    border-radius: 16px;
-  }
+  .song-info-stage { --song-info-viewport-x: 64px; --song-info-viewport-y: 56px; --song-info-footer-height: 42px; border-radius: 16px; }
 
-  .song-info-content {
-    padding: 12px;
-  }
+  .song-info-content { padding: 12px; }
 
-  .song-info-hero {
-    gap: 10px;
-  }
+  .song-info-hero { gap: 10px; }
 
-  .song-info-cover {
-    width: 64px;
-    height: 64px;
-  }
+  .song-info-cover { width: 64px; height: 64px; }
 
-  .song-info-detail-grid,
-  .song-info-time-grid {
-    grid-template-columns: 1fr;
-  }
+  .song-info-detail-grid, .song-info-time-grid { grid-template-columns: 1fr; }
 
-  .modal-action-button--wide {
-    min-width: 0;
-  }
+  .modal-action-button--wide { min-width: 0; }
 
-  .modal-external-header {
-    min-height: 48px;
-    padding: 5px 14px;
-  }
+  .modal-external-header { min-height: 48px; padding: 5px 14px; }
 
-  .lyrics-editor-expand-button {
-    width: 32px;
-    height: 32px;
-  }
+  .lyrics-editor-expand-button { width: 32px; height: 32px; }
 }
 
 @media (max-height: 720px) {
-  .song-info-stage {
-    --song-info-footer-height: 42px;
-    --song-info-viewport-y: clamp(88px, 18vh, 140px);
-  }
+  .song-info-stage { --song-info-footer-height: 42px; --song-info-viewport-y: clamp(88px, 18vh, 140px); }
 
-  .modal-external-header {
-    min-height: 48px;
-    padding-block: 5px;
-  }
+  .modal-external-header { min-height: 48px; padding-block: 5px; }
 
-  .lyrics-editor-textarea {
-    min-height: 220px;
-    padding-block: 14px;
-  }
+  .lyrics-editor-textarea { min-height: 220px; padding-block: 14px; }
 
-  .song-info-cover {
-    width: clamp(84px, 12vh, 112px);
-    height: clamp(84px, 12vh, 112px);
-  }
+  .song-info-cover { width: clamp(84px, 12vh, 112px); height: clamp(84px, 12vh, 112px); }
 }
 
-.song-info-edit-wrapper {
-  position: relative;
-  width: 100%;
-}
+.song-info-edit-wrapper { position: relative; width: 100%; }
 
-.song-info-edit-label {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  font-weight: 700;
-  color: #94a3b8;
-  letter-spacing: 0.05em;
-  pointer-events: none;
-  user-select: none;
-  transition:
-    color 160ms ease,
-    opacity 160ms ease;
-  z-index: 1;
-}
+.song-info-edit-label { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: 0.05em; pointer-events: none; user-select: none; transition: color 160ms ease, opacity 160ms ease; z-index: 1; }
 
-.song-info-edit-wrapper:focus-within .song-info-edit-label {
-  color: #ec4141;
-}
+.song-info-edit-wrapper:focus-within .song-info-edit-label { color: #ec4141; }
 
-.song-info-edit-input--with-label {
-  padding-left: 56px;
-}
+.song-info-edit-input--with-label { padding-left: 56px; }
 
-.song-info-stage--dark .song-info-edit-label {
-  color: rgba(255, 255, 255, 0.4);
-}
+.song-info-stage--dark .song-info-edit-label { color: rgba(255, 255, 255, 0.4); }
 
-.song-info-stage--dark .song-info-edit-wrapper:focus-within .song-info-edit-label {
-  color: #ec4141;
-}
+.song-info-stage--dark .song-info-edit-wrapper:focus-within .song-info-edit-label { color: #ec4141; }
 
-.no-text-select {
-  -webkit-user-select: none;
-  user-select: none;
-}
+/* 文本选中与图片拖拽行为的细化控制 */
+.no-text-select { -webkit-user-select: none; user-select: none; }
 
-.selectable-text {
-  -webkit-user-select: text;
-  user-select: text;
-}
+.selectable-text { -webkit-user-select: text; user-select: text; }
 
-.modal-external-header,
-.song-info-header-title,
-.song-info-edit-toggle,
-.lyrics-editor-expand-button,
-.lyrics-editor-inline-song,
-.song-info-cover,
-.song-info-cover-overlay,
-.song-info-detail-grid,
-.song-info-time-grid,
-.modal-external-actions,
-.modal-action-button {
-  -webkit-user-select: none;
-  user-select: none;
-}
+.modal-external-header, .song-info-header-title, .song-info-edit-toggle, .lyrics-editor-expand-button, .lyrics-editor-inline-song, .song-info-cover, .song-info-cover-overlay, .song-info-detail-grid, .song-info-time-grid, .modal-external-actions, .modal-action-button { -webkit-user-select: none; user-select: none; }
 
-.song-info-stage input,
-.song-info-stage textarea,
-.song-info-stage [contenteditable='true'],
-.song-info-stage .selectable-text {
-  -webkit-user-select: text;
-  user-select: text;
-}
+.song-info-stage input, .song-info-stage textarea, .song-info-stage [contenteditable='true'], .song-info-stage .selectable-text { -webkit-user-select: text; user-select: text; }
 
-.song-info-cover img {
-  -webkit-user-drag: none;
-  user-drag: none;
-  border-radius: 12px;
-}
+.song-info-cover img { -webkit-user-drag: none; user-drag: none; border-radius: 12px; }
 
-.lyrics-editor-cover img {
-  -webkit-user-drag: none;
-  user-drag: none;
-}
+.lyrics-editor-cover img { -webkit-user-drag: none; user-drag: none; }
 </style>

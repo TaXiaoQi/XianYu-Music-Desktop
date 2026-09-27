@@ -1,258 +1,278 @@
+/*
+ * Settings store suite: equalizer preset lifecycle, merge semantics and
+ * currentPresetId survival. Scenarios are data-driven; behavioural coverage
+ * is unchanged.
+ */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AppSettings, AudioSettings, EqualizerPreset, EqualizerSettings } from '../../types';
 import { createPinia, setActivePinia } from 'pinia';
-
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createDefaultAudioSettings,
-  createDefaultAppSettings,
-  defaultAudioSettings,
-  mergeAppSettings,
-  mergeAudioSettings,
-  useSettingsStore,
+  createDefaultAppSettings, createDefaultAudioSettings,
+  defaultAudioSettings, mergeAppSettings,
+  mergeAudioSettings, useSettingsStore,
 } from './store';
-import type {
-  AppSettings,
-  AudioSettings,
-  EqualizerPreset,
-  EqualizerSettings,
-} from '../../types';
 
 import playerStorageSource from '../../services/storage/playerStorage.ts?raw';
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## shared scaffolding #######################################################
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+const BAND_COUNT = 10;
 
-describe('P1: settings store initializes without localStorage', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+const flatGains = (): number[] => Array<number>(BAND_COUNT).fill(0);
 
-  it('store initializes in a Node (no localStorage) environment', () => {
+const bootStore = () => {
+  setActivePinia(createPinia());
+  return useSettingsStore();
+};
+
+const eqView = (store: ReturnType<typeof useSettingsStore>) => store.settings.audio.equalizer;
+
+const audioFixture = (equalizer: EqualizerSettings): AudioSettings => ({
+  ...defaultAudioSettings,
+  equalizer,
+});
+
+const appFixture = (equalizer: EqualizerSettings): AppSettings => {
+  const seed = createDefaultAppSettings();
+  return { ...seed, audio: { ...seed.audio, equalizer } };
+};
+
+const builtinEntry = (id: string, name: string, preamp: number, gains: number[]): EqualizerPreset => ({
+  id, name, preamp, gains,
+  isBuiltin: true,
+  createdAt: 0,
+  updatedAt: 0,
+});
+
+const userEntry = (id: string, name: string): EqualizerPreset => ({
+  id, name,
+  preamp: 0,
+  gains: flatGains(),
+  isBuiltin: false,
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+});
+
+const forceEqPatch = (patch: Record<string, unknown>) => patch as unknown as EqualizerSettings;
+
+// ## P1 #######################################################################
+
+describe('P1: settings store boots cleanly without a localStorage global', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('constructs the pinia store in a bare Node-like environment', () => {
     setActivePinia(createPinia());
-    expect(() => useSettingsStore()).not.toThrow();
+    expect(() => useSettingsStore()).not.toThrowError();
   });
 
-  it('equalizerPresets starts as an empty array when localStorage is absent', () => {
-    setActivePinia(createPinia());
-    const store = useSettingsStore();
-    expect(store.equalizerPresets).toEqual([]);
+  it('preset list starts out empty when nothing was ever persisted', () => {
+    const store = bootStore();
+    expect(store.equalizerPresets).toHaveLength(0);
   });
 
-  it('userPresets computed is empty when localStorage is absent', () => {
-    setActivePinia(createPinia());
-    const store = useSettingsStore();
-    expect(store.userPresets).toEqual([]);
+  it('userPresets view starts out empty as well', () => {
+    const store = bootStore();
+    expect(store.userPresets).toHaveLength(0);
   });
 
-  it('default settings include a valid equalizer block', () => {
+  it('factory default audio block embeds a neutral equalizer', () => {
     const defaults = createDefaultAppSettings();
     expect(defaults.audio.equalizer).toEqual({
       enabled: false,
       preamp: 0.0,
-      gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      gains: flatGains(),
     });
   });
 
-  it('default equalizer currentPresetId is undefined (not set)', () => {
+  it('factory defaults leave currentPresetId unset', () => {
     const defaults = createDefaultAppSettings();
-    expect(defaults.audio.equalizer.currentPresetId ?? null).toBeNull();
+    const { currentPresetId } = defaults.audio.equalizer;
+    expect(currentPresetId ?? null).toBeNull();
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## P2: mergeAudioSettings ###################################################
 
-describe('P2: mergeAudioSettings preserves currentPresetId', () => {
-  const base: AudioSettings = {
-    ...defaultAudioSettings,
-    equalizer: {
-      enabled: true,
-      preamp: -3.0,
-      gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
-      currentPresetId: 'preset_abc',
-    },
+describe('P2: mergeAudioSettings — currentPresetId survival matrix', () => {
+  const base = audioFixture({
+    enabled: true,
+    preamp: -3.0,
+    gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
+    currentPresetId: 'preset_abc',
+  });
+
+  type MergeScenario = {
+    title: string;
+    patch: Partial<AudioSettings>;
+    verify: (merged: AudioSettings) => void;
   };
 
-  it('preserves currentPresetId when equalizer patch does not include it', () => {
-    const merged = mergeAudioSettings(base, {
-      showEqualizerInFooter: false,
-    });
-    expect(merged.equalizer.currentPresetId).toBe('preset_abc');
-  });
-
-  it('preserves currentPresetId when patching only gains', () => {
-    const merged = mergeAudioSettings(base, {
-      equalizer: { gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] } as unknown as EqualizerSettings,
-    });
-    expect(merged.equalizer.currentPresetId).toBe('preset_abc');
-    expect(merged.equalizer.gains).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-  });
-
-  it('preserves currentPresetId when patching only preamp', () => {
-    const merged = mergeAudioSettings(base, {
-      equalizer: { preamp: -5.0 } as unknown as EqualizerSettings,
-    });
-    expect(merged.equalizer.currentPresetId).toBe('preset_abc');
-    expect(merged.equalizer.preamp).toBe(-5.0);
-  });
-
-  it('preserves currentPresetId when patching only enabled', () => {
-    const merged = mergeAudioSettings(base, {
-      equalizer: { enabled: false } as unknown as EqualizerSettings,
-    });
-    expect(merged.equalizer.currentPresetId).toBe('preset_abc');
-  });
-
-  it('updates currentPresetId when explicitly provided', () => {
-    const merged = mergeAudioSettings(base, {
-      equalizer: { currentPresetId: 'preset_xyz' } as unknown as EqualizerSettings,
-    });
-    expect(merged.equalizer.currentPresetId).toBe('preset_xyz');
-  });
-
-  it('clears currentPresetId to null when explicitly set to null', () => {
-    const merged = mergeAudioSettings(base, {
-      equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
-    });
-    expect(merged.equalizer.currentPresetId).toBeNull();
-  });
-
-  it('clears currentPresetId to null when explicitly set to undefined', () => {
-    const merged = mergeAudioSettings(base, {
-      equalizer: { currentPresetId: undefined } as unknown as EqualizerSettings,
-    });
-    expect(merged.equalizer.currentPresetId).toBeNull();
-  });
-
-  it('preserves all equalizer fields together after merge', () => {
-    const merged = mergeAudioSettings(base, {
-      equalizer: {
-        enabled: false,
-        preamp: 1.5,
-        gains: [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-        currentPresetId: 'new_id',
+  const scenarios: MergeScenario[] = [
+    {
+      title: 'unrelated audio patch keeps the association',
+      patch: { showEqualizerInFooter: false },
+      verify: (merged) => {
+        expect(merged.equalizer.currentPresetId).toBe('preset_abc');
       },
-    });
-    expect(merged.equalizer).toEqual({
-      enabled: false,
-      preamp: 1.5,
-      gains: [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-      currentPresetId: 'new_id',
-    });
-  });
+    },
+    {
+      title: 'gain-table-only patch keeps the association',
+      patch: { equalizer: forceEqPatch({ gains: flatGains() }) },
+      verify: (merged) => {
+        expect(merged.equalizer.currentPresetId).toBe('preset_abc');
+        expect(merged.equalizer.gains).toEqual(flatGains());
+      },
+    },
+    {
+      title: 'preamp-only patch keeps the association',
+      patch: { equalizer: forceEqPatch({ preamp: -5.0 }) },
+      verify: (merged) => {
+        expect(merged.equalizer.currentPresetId).toBe('preset_abc');
+        expect(merged.equalizer.preamp).toBe(-5.0);
+      },
+    },
+    {
+      title: 'enabled-only patch keeps the association',
+      patch: { equalizer: forceEqPatch({ enabled: false }) },
+      verify: (merged) => {
+        expect(merged.equalizer.currentPresetId).toBe('preset_abc');
+      },
+    },
+    {
+      title: 'explicit string overrides the association',
+      patch: { equalizer: forceEqPatch({ currentPresetId: 'preset_xyz' }) },
+      verify: (merged) => {
+        expect(merged.equalizer.currentPresetId).toBe('preset_xyz');
+      },
+    },
+    {
+      title: 'explicit null clears the association',
+      patch: { equalizer: forceEqPatch({ currentPresetId: null }) },
+      verify: (merged) => {
+        expect(merged.equalizer.currentPresetId).toBeNull();
+      },
+    },
+    {
+      title: 'explicit undefined clears the association too',
+      patch: { equalizer: forceEqPatch({ currentPresetId: undefined }) },
+      verify: (merged) => {
+        expect(merged.equalizer.currentPresetId).toBeNull();
+      },
+    },
+    {
+      title: 'full equalizer patch replaces every field at once',
+      patch: {
+        equalizer: {
+          enabled: false,
+          preamp: 1.5,
+          gains: [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+          currentPresetId: 'new_id',
+        },
+      },
+      verify: (merged) => {
+        expect(merged.equalizer).toEqual({
+          enabled: false,
+          preamp: 1.5,
+          gains: [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+          currentPresetId: 'new_id',
+        });
+      },
+    },
+  ];
 
-  it('does not mutate the original gains array', () => {
-    const originalGains = [...base.equalizer.gains];
+  for (const scenario of scenarios) {
+    it(scenario.title, () => {
+      const merged = mergeAudioSettings(base, scenario.patch);
+      scenario.verify(merged);
+    });
+  }
+
+  it('source gains array is never mutated by merging', () => {
+    const snapshot = [...base.equalizer.gains];
     mergeAudioSettings(base, {
       equalizer: { gains: [9, 9, 9, 9, 9, 9, 9, 9, 9, 9] } as EqualizerSettings,
     });
-    expect(base.equalizer.gains).toEqual(originalGains);
+    expect(base.equalizer.gains).toEqual(snapshot);
   });
 
-  it('preserves volumeBalance when only equalizer is patched', () => {
-    const fullBase: AudioSettings = {
+  it('volumeBalance survives an equalizer-scoped patch', () => {
+    const richBase: AudioSettings = {
       outputMode: 'wasapiExclusive',
       volumeBalance: { enabled: true, gainOffsetDb: 3, preventClipping: false },
-      equalizer: { enabled: true, preamp: 0, gains: Array(10).fill(0), currentPresetId: 'p1' },
+      equalizer: { enabled: true, preamp: 0, gains: flatGains(), currentPresetId: 'p1' },
       showEqualizerInFooter: true,
     };
-    const merged = mergeAudioSettings(fullBase, {
-      equalizer: { currentPresetId: 'p2' } as unknown as EqualizerSettings,
+    const merged = mergeAudioSettings(richBase, {
+      equalizer: forceEqPatch({ currentPresetId: 'p2' }),
     });
     expect(merged.outputMode).toBe('wasapiExclusive');
     expect(merged.volumeBalance).toEqual({ enabled: true, gainOffsetDb: 3, preventClipping: false });
     expect(merged.equalizer.currentPresetId).toBe('p2');
   });
 
-  it('preserves outputMode when patch explicitly includes it', () => {
-    const fullBase: AudioSettings = {
+  it('outputMode survives a patch that repeats it explicitly', () => {
+    const richBase: AudioSettings = {
       outputMode: 'wasapiExclusive',
       volumeBalance: { enabled: true, gainOffsetDb: 3, preventClipping: false },
-      equalizer: { enabled: true, preamp: 0, gains: Array(10).fill(0), currentPresetId: 'p1' },
+      equalizer: { enabled: true, preamp: 0, gains: flatGains(), currentPresetId: 'p1' },
       showEqualizerInFooter: true,
     };
-    const merged = mergeAudioSettings(fullBase, {
+    const merged = mergeAudioSettings(richBase, {
       outputMode: 'wasapiExclusive',
-      equalizer: { currentPresetId: 'p2' } as unknown as EqualizerSettings,
+      equalizer: forceEqPatch({ currentPresetId: 'p2' }),
     });
     expect(merged.outputMode).toBe('wasapiExclusive');
     expect(merged.equalizer.currentPresetId).toBe('p2');
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## app-level merge ##########################################################
 
-describe('mergeAppSettings end-to-end: currentPresetId survival', () => {
-  it('preserves currentPresetId through full app settings merge', () => {
-    const base: AppSettings = {
-      ...createDefaultAppSettings(),
-      audio: {
-        ...createDefaultAppSettings().audio,
-        equalizer: {
-          enabled: true,
-          preamp: -1.0,
-          gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
-          currentPresetId: 'preset_123',
-        },
-      },
-    };
-
-    const merged = mergeAppSettings(base, {
-      audio: {
-        equalizer: { preamp: -5.0 } as unknown as EqualizerSettings,
-      },
+describe('app-level merge keeps the equalizer preset association intact', () => {
+  it('association and equalizer knobs survive mergeAppSettings', () => {
+    const base = appFixture({
+      enabled: true,
+      preamp: -1.0,
+      gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
+      currentPresetId: 'preset_123',
     });
 
-    expect(merged.audio.equalizer.currentPresetId).toBe('preset_123');
-    expect(merged.audio.equalizer.preamp).toBe(-5.0);
-    expect(merged.audio.equalizer.enabled).toBe(true);
+    const merged = mergeAppSettings(base, {
+      audio: { equalizer: forceEqPatch({ preamp: -5.0 }) },
+    });
+
+    const mergedEq = merged.audio.equalizer;
+    expect(mergedEq.currentPresetId).toBe('preset_123');
+    expect(mergedEq.preamp).toBe(-5.0);
+    expect(mergedEq.enabled).toBe(true);
   });
 
-  it('clears currentPresetId through full app settings merge', () => {
-    const base: AppSettings = {
-      ...createDefaultAppSettings(),
-      audio: {
-        ...createDefaultAppSettings().audio,
-        equalizer: {
-          enabled: false,
-          preamp: 0,
-          gains: Array(10).fill(0),
-          currentPresetId: 'preset_123',
-        },
-      },
-    };
+  it('explicit null clears the association at app level', () => {
+    const base = appFixture({
+      enabled: false,
+      preamp: 0,
+      gains: flatGains(),
+      currentPresetId: 'preset_123',
+    });
 
     const merged = mergeAppSettings(base, {
-      audio: {
-        equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
-      },
+      audio: { equalizer: forceEqPatch({ currentPresetId: null }) },
     });
 
     expect(merged.audio.equalizer.currentPresetId).toBeNull();
   });
 
-  it('preserves currentPresetId when patching unrelated audio settings', () => {
-    const base: AppSettings = {
-      ...createDefaultAppSettings(),
-      audio: {
-        ...createDefaultAppSettings().audio,
-        equalizer: {
-          enabled: false,
-          preamp: 0,
-          gains: Array(10).fill(0),
-          currentPresetId: 'preset_123',
-        },
-      },
-    };
+  it('association survives an unrelated audio-section patch', () => {
+    const base = appFixture({
+      enabled: false,
+      preamp: 0,
+      gains: flatGains(),
+      currentPresetId: 'preset_123',
+    });
 
     const merged = mergeAppSettings(base, {
-      audio: {
-        outputMode: 'wasapiExclusive',
-      },
+      audio: { outputMode: 'wasapiExclusive' },
     });
 
     expect(merged.audio.equalizer.currentPresetId).toBe('preset_123');
@@ -260,16 +280,15 @@ describe('mergeAppSettings end-to-end: currentPresetId survival', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## store CRUD ###############################################################
 
-describe('settings store: preset CRUD operations', () => {
+describe('settings store — preset CRUD contracts', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  describe('saveEqualizerPreset', () => {
-    it('creates a new user preset and adds it to the list', () => {
+  describe('saveEqualizerPreset — creation semantics', () => {
+    it('registers a brand-new user preset in the list', () => {
       const store = useSettingsStore();
       expect(store.userPresets).toHaveLength(0);
 
@@ -277,30 +296,31 @@ describe('settings store: preset CRUD operations', () => {
 
       expect(preset.name).toBe('My Preset');
       expect(preset.isBuiltin).toBe(false);
-      expect(preset.id).toMatch(/^user_/);
+      expect(preset.id.startsWith('user_')).toBe(true);
       expect(store.userPresets).toHaveLength(1);
       expect(store.userPresets[0].id).toBe(preset.id);
     });
 
-    it('captures current preamp and gains from settings', () => {
+    it('snapshots the current preamp and gain table into the preset', () => {
+      const stagedGains = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
       const store = useSettingsStore();
       store.settings.audio.equalizer.preamp = -4.5;
-      store.settings.audio.equalizer.gains = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+      store.settings.audio.equalizer.gains = stagedGains;
 
       const preset = store.saveEqualizerPreset('Captured');
 
       expect(preset.preamp).toBe(-4.5);
-      expect(preset.gains).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      expect(preset.gains).toEqual(stagedGains);
     });
 
-    it('sets currentPresetId to the newly saved preset', () => {
+    it('points currentPresetId at the freshly saved preset', () => {
       const store = useSettingsStore();
       const preset = store.saveEqualizerPreset('Auto Select');
 
-      expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
+      expect(eqView(store).currentPresetId).toBe(preset.id);
     });
 
-    it('gains are a copy, not a reference to the settings gains array', () => {
+    it('stored gains are detached from the live settings array', () => {
       const store = useSettingsStore();
       store.settings.audio.equalizer.gains = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
       const preset = store.saveEqualizerPreset('Copy Check');
@@ -309,31 +329,31 @@ describe('settings store: preset CRUD operations', () => {
       expect(preset.gains[0]).toBe(1);
     });
 
-    it('sets createdAt and updatedAt timestamps', () => {
+    it('stamps createdAt and updatedAt inside the save window', () => {
       const store = useSettingsStore();
-      const before = Date.now();
+      const startedAt = Date.now();
       const preset = store.saveEqualizerPreset('Timestamps');
-      const after = Date.now();
+      const finishedAt = Date.now();
 
-      expect(preset.createdAt).toBeGreaterThanOrEqual(before);
-      expect(preset.createdAt).toBeLessThanOrEqual(after);
-      expect(preset.updatedAt).toBeGreaterThanOrEqual(before);
-      expect(preset.updatedAt).toBeLessThanOrEqual(after);
+      expect(preset.createdAt).toBeGreaterThanOrEqual(startedAt);
+      expect(preset.createdAt).toBeLessThanOrEqual(finishedAt);
+      expect(preset.updatedAt).toBeGreaterThanOrEqual(startedAt);
+      expect(preset.updatedAt).toBeLessThanOrEqual(finishedAt);
     });
 
-    it('can save multiple presets', () => {
+    it('queues several presets in insertion order', () => {
       const store = useSettingsStore();
       store.saveEqualizerPreset('Preset A');
       store.saveEqualizerPreset('Preset B');
       store.saveEqualizerPreset('Preset C');
 
       expect(store.userPresets).toHaveLength(3);
-      expect(store.userPresets.map(p => p.name)).toEqual(['Preset A', 'Preset B', 'Preset C']);
+      expect(store.userPresets.map((p) => p.name)).toEqual(['Preset A', 'Preset B', 'Preset C']);
     });
   });
 
-  describe('updateEqualizerPreset', () => {
-    it('updates name, preamp, gains, and updatedAt of an existing user preset', () => {
+  describe('updateEqualizerPreset — mutation semantics', () => {
+    it('rewrites name and re-snapshots preamp/gains with a new updatedAt', () => {
       const store = useSettingsStore();
       const original = store.saveEqualizerPreset('Original');
 
@@ -342,14 +362,14 @@ describe('settings store: preset CRUD operations', () => {
 
       store.updateEqualizerPreset(original.id, 'Updated');
 
-      const updated = store.userPresets.find(p => p.id === original.id);
+      const updated = store.userPresets.find((p) => p.id === original.id);
       expect(updated?.name).toBe('Updated');
       expect(updated?.preamp).toBe(-6.0);
       expect(updated?.gains).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
       expect(updated?.updatedAt).toBeGreaterThanOrEqual(original.updatedAt);
     });
 
-    it('does not update a non-existent preset', () => {
+    it('unknown ids are ignored entirely', () => {
       const store = useSettingsStore();
       store.saveEqualizerPreset('Keep');
 
@@ -359,27 +379,19 @@ describe('settings store: preset CRUD operations', () => {
       expect(store.userPresets[0].name).toBe('Keep');
     });
 
-    it('does not update a builtin preset', () => {
+    it('builtin presets can never be renamed', () => {
       const store = useSettingsStore();
-      store.equalizerPresets.push({
-        id: 'builtin_flat',
-        name: 'Flat',
-        preamp: 0,
-        gains: Array(10).fill(0),
-        isBuiltin: true,
-        createdAt: 0,
-        updatedAt: 0,
-      });
+      store.equalizerPresets.push(builtinEntry('builtin_flat', 'Flat', 0, flatGains()));
 
       store.updateEqualizerPreset('builtin_flat', 'Hacked');
 
-      const builtin = store.equalizerPresets.find(p => p.id === 'builtin_flat');
+      const builtin = store.equalizerPresets.find((p) => p.id === 'builtin_flat');
       expect(builtin?.name).toBe('Flat');
     });
   });
 
-  describe('deleteEqualizerPreset', () => {
-    it('removes a user preset from the list', () => {
+  describe('deleteEqualizerPreset — removal semantics', () => {
+    it('drops a user preset from the list', () => {
       const store = useSettingsStore();
       const preset = store.saveEqualizerPreset('To Delete');
 
@@ -388,54 +400,33 @@ describe('settings store: preset CRUD operations', () => {
       expect(store.userPresets).toHaveLength(0);
     });
 
-    it('clears currentPresetId when deleting the currently active preset', () => {
+    it('clears the association when the active preset is removed', () => {
       const store = useSettingsStore();
       const preset = store.saveEqualizerPreset('Active');
-      expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
+      expect(eqView(store).currentPresetId).toBe(preset.id);
 
       store.deleteEqualizerPreset(preset.id);
-      expect(store.settings.audio.equalizer.currentPresetId).toBeNull();
+      expect(eqView(store).currentPresetId).toBeNull();
     });
 
-    it('does not clear currentPresetId when deleting a different preset', () => {
+    it('keeps the association when a different preset is removed', () => {
       const store = useSettingsStore();
-
-      const activePreset: EqualizerPreset = {
-        id: 'user_active_unique',
-        name: 'Active',
-        preamp: 0,
-        gains: Array(10).fill(0),
-        isBuiltin: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      const otherPreset: EqualizerPreset = {
-        id: 'user_other_unique',
-        name: 'Other',
-        preamp: 0,
-        gains: Array(10).fill(0),
-        isBuiltin: false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-
+      const activePreset = userEntry('user_active_unique', 'Active');
+      const otherPreset = userEntry('user_other_unique', 'Other');
       store.equalizerPresets.push(activePreset, otherPreset);
 
       store.patchSettings({
-        audio: {
-          equalizer: { currentPresetId: activePreset.id } as unknown as EqualizerSettings,
-        },
+        audio: { equalizer: forceEqPatch({ currentPresetId: activePreset.id }) },
       });
-
-      expect(store.settings.audio.equalizer.currentPresetId).toBe(activePreset.id);
+      expect(eqView(store).currentPresetId).toBe(activePreset.id);
 
       store.deleteEqualizerPreset(otherPreset.id);
-      expect(store.settings.audio.equalizer.currentPresetId).toBe(activePreset.id);
+      expect(eqView(store).currentPresetId).toBe(activePreset.id);
       expect(store.userPresets).toHaveLength(1);
       expect(store.userPresets[0].id).toBe(activePreset.id);
     });
 
-    it('does not delete a non-existent preset', () => {
+    it('unknown ids leave the list untouched', () => {
       const store = useSettingsStore();
       store.saveEqualizerPreset('Safe');
 
@@ -443,45 +434,40 @@ describe('settings store: preset CRUD operations', () => {
       expect(store.userPresets).toHaveLength(1);
     });
 
-    it('does not delete a builtin preset', () => {
+    it('builtin presets can never be removed', () => {
       const store = useSettingsStore();
-      store.equalizerPresets.push({
-        id: 'builtin_rock',
-        name: 'Rock',
-        preamp: -4.5,
-        gains: [5, 4, 2, -1, -2, -1, 1, 3, 4.5, 5],
-        isBuiltin: true,
-        createdAt: 0,
-        updatedAt: 0,
-      });
+      store.equalizerPresets.push(
+        builtinEntry('builtin_rock', 'Rock', -4.5, [5, 4, 2, -1, -2, -1, 1, 3, 4.5, 5]),
+      );
 
       store.deleteEqualizerPreset('builtin_rock');
-      expect(store.equalizerPresets.find(p => p.id === 'builtin_rock')).toBeDefined();
+      expect(store.equalizerPresets.some((p) => p.id === 'builtin_rock')).toBe(true);
     });
   });
 
-  describe('loadEqualizerPreset', () => {
-    it('loads a user preset — sets preamp, gains, currentPresetId, and enables EQ', () => {
+  describe('loadEqualizerPreset — activation semantics', () => {
+    it('applies preamp, gains, association and turns the EQ on', () => {
+      const stagedGains = [5.5, 4.5, 3, 1.5, 0, 0, 0, 0, 0, 0];
       const store = useSettingsStore();
-
       store.settings.audio.equalizer.preamp = -3.5;
-      store.settings.audio.equalizer.gains = [5.5, 4.5, 3, 1.5, 0, 0, 0, 0, 0, 0];
+      store.settings.audio.equalizer.gains = stagedGains;
       const preset = store.saveEqualizerPreset('Bass Boost');
 
       store.settings.audio.equalizer.enabled = false;
       store.settings.audio.equalizer.preamp = 0;
-      store.settings.audio.equalizer.gains = Array(10).fill(0);
+      store.settings.audio.equalizer.gains = flatGains();
       store.settings.audio.equalizer.currentPresetId = null;
 
       store.loadEqualizerPreset(preset.id);
 
-      expect(store.settings.audio.equalizer.enabled).toBe(true);
-      expect(store.settings.audio.equalizer.preamp).toBe(-3.5);
-      expect(store.settings.audio.equalizer.gains).toEqual([5.5, 4.5, 3, 1.5, 0, 0, 0, 0, 0, 0]);
-      expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
+      const eq = eqView(store);
+      expect(eq.enabled).toBe(true);
+      expect(eq.preamp).toBe(-3.5);
+      expect(eq.gains).toEqual(stagedGains);
+      expect(eq.currentPresetId).toBe(preset.id);
     });
 
-    it('enables EQ when loading a preset even if EQ was disabled', () => {
+    it('switching the EQ on is implied by loading', () => {
       const store = useSettingsStore();
       store.settings.audio.equalizer.enabled = false;
 
@@ -489,204 +475,170 @@ describe('settings store: preset CRUD operations', () => {
       store.settings.audio.equalizer.enabled = false;
 
       store.loadEqualizerPreset(preset.id);
-      expect(store.settings.audio.equalizer.enabled).toBe(true);
+      expect(eqView(store).enabled).toBe(true);
     });
 
-    it('does nothing when loading a non-existent preset', () => {
+    it('unknown ids leave the equalizer state untouched', () => {
       const store = useSettingsStore();
-      const before = { ...store.settings.audio.equalizer };
+      const snapshot = { ...eqView(store) };
 
       store.loadEqualizerPreset('does_not_exist');
 
-      expect(store.settings.audio.equalizer.enabled).toBe(before.enabled);
-      expect(store.settings.audio.equalizer.preamp).toBe(before.preamp);
-      expect(store.settings.audio.equalizer.gains).toEqual(before.gains);
+      expect(eqView(store).enabled).toBe(snapshot.enabled);
+      expect(eqView(store).preamp).toBe(snapshot.preamp);
+      expect(eqView(store).gains).toEqual(snapshot.gains);
     });
 
-    it('loaded gains are a copy, not a reference', () => {
+    it('loaded gains are detached from the live settings array', () => {
       const store = useSettingsStore();
       store.settings.audio.equalizer.gains = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
       const preset = store.saveEqualizerPreset('RefCheck');
 
       store.loadEqualizerPreset(preset.id);
-
       store.settings.audio.equalizer.gains[0] = 999;
 
-      const stored = store.userPresets.find(p => p.id === preset.id);
+      const stored = store.userPresets.find((p) => p.id === preset.id);
       expect(stored?.gains[0]).toBe(1);
     });
 
-    it('can load a builtin preset that was injected into equalizerPresets', () => {
+    it('can activate a builtin preset injected into the list', () => {
+      const jazzGains = [3.5, 2.5, 1.5, 2.0, -0.5, -1.0, 0.5, 1.5, 2.5, 3.0];
       const store = useSettingsStore();
-      store.equalizerPresets.push({
-        id: 'builtin_jazz',
-        name: 'Jazz',
-        preamp: -3.0,
-        gains: [3.5, 2.5, 1.5, 2.0, -0.5, -1.0, 0.5, 1.5, 2.5, 3.0],
-        isBuiltin: true,
-        createdAt: 0,
-        updatedAt: 0,
-      });
+      store.equalizerPresets.push(builtinEntry('builtin_jazz', 'Jazz', -3.0, jazzGains));
 
       store.loadEqualizerPreset('builtin_jazz');
 
-      expect(store.settings.audio.equalizer.enabled).toBe(true);
-      expect(store.settings.audio.equalizer.preamp).toBe(-3.0);
-      expect(store.settings.audio.equalizer.gains).toEqual([3.5, 2.5, 1.5, 2.0, -0.5, -1.0, 0.5, 1.5, 2.5, 3.0]);
-      expect(store.settings.audio.equalizer.currentPresetId).toBe('builtin_jazz');
+      const eq = eqView(store);
+      expect(eq.enabled).toBe(true);
+      expect(eq.preamp).toBe(-3.0);
+      expect(eq.gains).toEqual(jazzGains);
+      expect(eq.currentPresetId).toBe('builtin_jazz');
     });
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## selectedPresetId #########################################################
 
 describe('P2: selectedPresetId — single source of truth via computed', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('EqualizerPanel uses computed for selectedPresetId (source code check)', async () => {
-    const source = await import('./EqualizerPanel.source?raw').catch(() => null);
-    if (!source) {
+  it('EqualizerPanel derives selectedPresetId from a computed (source probe)', async () => {
+    const panelRaw = await import('./EqualizerPanel.source?raw').catch((): null => null);
+    if (!panelRaw) {
       return;
     }
   });
 
-  it('selectedPresetId automatically reflects currentPresetId changes in settings', () => {
+  it('association changes made through patchSettings stay reflected', () => {
     const store = useSettingsStore();
 
     const preset = store.saveEqualizerPreset('Auto Sync');
-    expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
+    expect(eqView(store).currentPresetId).toBe(preset.id);
 
-    store.patchSettings({
-      audio: {
-        equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
-      },
-    });
-    expect(store.settings.audio.equalizer.currentPresetId).toBeNull();
+    store.patchSettings({ audio: { equalizer: forceEqPatch({ currentPresetId: null }) } });
+    expect(eqView(store).currentPresetId).toBeNull();
 
-    store.patchSettings({
-      audio: {
-        equalizer: { currentPresetId: preset.id } as unknown as EqualizerSettings,
-      },
-    });
-    expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
+    store.patchSettings({ audio: { equalizer: forceEqPatch({ currentPresetId: preset.id }) } });
+    expect(eqView(store).currentPresetId).toBe(preset.id);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## builtin/reset interplay ##################################################
 
-describe('P2: built-in preset and reset clear custom preset association', () => {
+describe('P2: builtin selection and reset drop custom associations', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('patchSettings with currentPresetId: null propagates to settings', () => {
+  it('patching a null association propagates into the settings tree', () => {
     const store = useSettingsStore();
     store.settings.audio.equalizer.currentPresetId = 'preset_xyz';
 
-    store.patchSettings({
-      audio: {
-        equalizer: { currentPresetId: null } as unknown as EqualizerSettings,
-      },
-    });
+    store.patchSettings({ audio: { equalizer: forceEqPatch({ currentPresetId: null }) } });
 
-    expect(store.settings.audio.equalizer.currentPresetId).toBeNull();
+    expect(eqView(store).currentPresetId).toBeNull();
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## enable-on-load ###########################################################
 
-describe('P2: loading a custom preset enables EQ', () => {
+describe('P2: loading any custom preset switches the EQ on', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('loadEqualizerPreset sets enabled: true', () => {
+  it('loadEqualizerPreset forces enabled to true', () => {
+    const stagedGains = [1, 2, 3, 4, 5, 5, 4, 3, 2, 1];
     const store = useSettingsStore();
     store.settings.audio.equalizer.enabled = false;
 
     store.settings.audio.equalizer.preamp = -2.0;
-    store.settings.audio.equalizer.gains = [1, 2, 3, 4, 5, 5, 4, 3, 2, 1];
+    store.settings.audio.equalizer.gains = stagedGains;
     const preset = store.saveEqualizerPreset('EQ Enable Test');
 
     store.settings.audio.equalizer.enabled = false;
 
     store.loadEqualizerPreset(preset.id);
 
-    expect(store.settings.audio.equalizer.enabled).toBe(true);
-    expect(store.settings.audio.equalizer.preamp).toBe(-2.0);
-    expect(store.settings.audio.equalizer.gains).toEqual([1, 2, 3, 4, 5, 5, 4, 3, 2, 1]);
+    const eq = eqView(store);
+    expect(eq.enabled).toBe(true);
+    expect(eq.preamp).toBe(-2.0);
+    expect(eq.gains).toEqual(stagedGains);
   });
 
-  it('loading preset from disabled state produces the same result as from enabled state', () => {
+  it('loading from a disabled state matches loading from an enabled state', () => {
+    const stagedGains = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
     const store = useSettingsStore();
     store.settings.audio.equalizer.preamp = -1.0;
-    store.settings.audio.equalizer.gains = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+    store.settings.audio.equalizer.gains = stagedGains;
     const preset = store.saveEqualizerPreset('Consistency');
 
     store.settings.audio.equalizer.enabled = false;
     store.settings.audio.equalizer.preamp = 0;
-    store.settings.audio.equalizer.gains = Array(10).fill(0);
+    store.settings.audio.equalizer.gains = flatGains();
     store.loadEqualizerPreset(preset.id);
-
-    const resultA = { ...store.settings.audio.equalizer };
+    const fromDisabled = { ...eqView(store) };
 
     store.settings.audio.equalizer.enabled = true;
     store.settings.audio.equalizer.preamp = 10;
-    store.settings.audio.equalizer.gains = Array(10).fill(10);
+    store.settings.audio.equalizer.gains = Array(BAND_COUNT).fill(10);
     store.loadEqualizerPreset(preset.id);
+    const fromEnabled = { ...eqView(store) };
 
-    const resultB = { ...store.settings.audio.equalizer };
-
-    expect(resultA.enabled).toBe(resultB.enabled);
-    expect(resultA.preamp).toBe(resultB.preamp);
-    expect(resultA.gains).toEqual(resultB.gains);
-    expect(resultA.currentPresetId).toBe(resultB.currentPresetId);
+    expect(fromDisabled.enabled).toBe(fromEnabled.enabled);
+    expect(fromDisabled.preamp).toBe(fromEnabled.preamp);
+    expect(fromDisabled.gains).toEqual(fromEnabled.gains);
+    expect(fromDisabled.currentPresetId).toBe(fromEnabled.currentPresetId);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## dead-code guards #########################################################
 
 describe('P3: unused code cleanup', () => {
-  it('playerStorage does not expose addEqualizerPreset / updateEqualizerPreset / deleteEqualizerPreset', () => {
-    expect(playerStorageSource).not.toContain('addEqualizerPreset');
-    expect(playerStorageSource).not.toContain('updateEqualizerPreset');
-    expect(playerStorageSource).not.toContain('deleteEqualizerPreset');
+  it('playerStorage source no longer ships preset CRUD helpers', () => {
+    for (const removedHelper of ['addEqualizerPreset', 'updateEqualizerPreset', 'deleteEqualizerPreset']) {
+      expect(playerStorageSource.includes(removedHelper)).toBe(false);
+    }
   });
 
-  it('settings store does not export builtinPresets computed', () => {
-    setActivePinia(createPinia());
-    const store = useSettingsStore();
-
-    expect('builtinPresets' in store).toBe(false);
+  it('settings store exposes no builtinPresets computed', () => {
+    const store = bootStore();
+    expect(Reflect.has(store, 'builtinPresets')).toBe(false);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## userPresets filter #######################################################
 
 describe('userPresets computed filters out builtin presets', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('only returns non-builtin presets', () => {
+  it('surfaces only non-builtin entries', () => {
     const store = useSettingsStore();
-
-    store.equalizerPresets.push({
-      id: 'builtin_flat',
-      name: 'Flat',
-      preamp: 0,
-      gains: Array(10).fill(0),
-      isBuiltin: true,
-      createdAt: 0,
-      updatedAt: 0,
-    });
+    store.equalizerPresets.push(builtinEntry('builtin_flat', 'Flat', 0, flatGains()));
 
     store.saveEqualizerPreset('My Custom');
 
@@ -696,17 +648,15 @@ describe('userPresets computed filters out builtin presets', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## reset / replace ##########################################################
 
-describe('replaceSettings and resetSettings preserve equalizer structure', () => {
+describe('replaceSettings and resetSettings keep the equalizer shape', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('resetSettings produces a valid default equalizer structure', () => {
+  it('resetSettings lands on a valid default equalizer structure', () => {
     const store = useSettingsStore();
-
     store.patchSettings({
       audio: {
         equalizer: {
@@ -717,9 +667,8 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
         },
       },
     });
-
-    expect(store.settings.audio.equalizer.enabled).toBe(true);
-    expect(store.settings.audio.equalizer.currentPresetId).toBe('temp_preset');
+    expect(eqView(store).enabled).toBe(true);
+    expect(eqView(store).currentPresetId).toBe('temp_preset');
 
     const cleanDefaults = createDefaultAppSettings();
     store.replaceSettings({
@@ -729,22 +678,21 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
         equalizer: {
           enabled: false,
           preamp: 0.0,
-          gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          gains: flatGains(),
           currentPresetId: null,
         },
       },
     });
 
-    const eq = store.settings.audio.equalizer;
+    const eq = eqView(store);
     expect(eq.enabled).toBe(false);
     expect(eq.preamp).toBe(0.0);
-    expect(eq.gains).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(eq.gains).toEqual(flatGains());
     expect(eq.currentPresetId ?? null).toBeNull();
   });
 
-  it('resetSettings re-applies createDefaultAppSettings (verifies function call)', () => {
+  it('resetSettings re-applies the factory defaults function', () => {
     const store = useSettingsStore();
-
     store.patchSettings({
       theme: { mode: 'custom' },
       lyrics: { showTranslation: false },
@@ -757,7 +705,7 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
     expect(store.settings.lyrics.showTranslation).toBe(true);
   });
 
-  it('replaceSettings merges persisted equalizer settings with currentPresetId', () => {
+  it('replaceSettings restores persisted equalizer data including the association', () => {
     const store = useSettingsStore();
 
     const persisted: AppSettings = {
@@ -772,39 +720,37 @@ describe('replaceSettings and resetSettings preserve equalizer structure', () =>
         },
       },
     };
-
     store.replaceSettings(persisted);
 
-    expect(store.settings.audio.equalizer.enabled).toBe(true);
-    expect(store.settings.audio.equalizer.preamp).toBe(-2.5);
-    expect(store.settings.audio.equalizer.currentPresetId).toBe('restored_preset');
+    const eq = eqView(store);
+    expect(eq.enabled).toBe(true);
+    expect(eq.preamp).toBe(-2.5);
+    expect(eq.currentPresetId).toBe('restored_preset');
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## patchSettings interplay ##################################################
 
 describe('patchSettings interaction with equalizer state', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('patching only theme does not affect equalizer state', () => {
+  it('theme-scoped patches leave the equalizer alone', () => {
     const store = useSettingsStore();
     store.settings.audio.equalizer.currentPresetId = 'my_preset';
     store.settings.audio.equalizer.enabled = true;
     store.settings.audio.equalizer.preamp = -3.0;
 
-    store.patchSettings({
-      theme: { mode: 'dark' },
-    });
+    store.patchSettings({ theme: { mode: 'dark' } });
 
-    expect(store.settings.audio.equalizer.currentPresetId).toBe('my_preset');
-    expect(store.settings.audio.equalizer.enabled).toBe(true);
-    expect(store.settings.audio.equalizer.preamp).toBe(-3.0);
+    const eq = eqView(store);
+    expect(eq.currentPresetId).toBe('my_preset');
+    expect(eq.enabled).toBe(true);
+    expect(eq.preamp).toBe(-3.0);
   });
 
-  it('patching audio without equalizer preserves equalizer state', () => {
+  it('audio patches without an equalizer section preserve it', () => {
     const store = useSettingsStore();
     store.settings.audio.equalizer.currentPresetId = 'safe_preset';
 
@@ -815,94 +761,80 @@ describe('patchSettings interaction with equalizer state', () => {
       },
     });
 
-    expect(store.settings.audio.equalizer.currentPresetId).toBe('safe_preset');
+    expect(eqView(store).currentPresetId).toBe('safe_preset');
     expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
   });
 
-  it('patching equalizer gains alone preserves currentPresetId', () => {
+  it('gain-only equalizer patches preserve the association', () => {
     const store = useSettingsStore();
     store.settings.audio.equalizer.currentPresetId = 'keep_me';
 
     store.patchSettings({
-      audio: {
-        equalizer: {
-          gains: [5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
-        } as EqualizerSettings,
-      },
+      audio: { equalizer: { gains: [5, 5, 5, 5, 5, 5, 5, 5, 5, 5] } as EqualizerSettings },
     });
 
-    expect(store.settings.audio.equalizer.currentPresetId).toBe('keep_me');
-    expect(store.settings.audio.equalizer.gains).toEqual([5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
+    expect(eqView(store).currentPresetId).toBe('keep_me');
+    expect(eqView(store).gains).toEqual([5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## data integrity ###########################################################
 
 describe('EqualizerPreset data integrity', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('saveEqualizerPreset generates IDs that all start with user_ prefix', () => {
+  it('every generated id carries the user_ prefix', () => {
     const store = useSettingsStore();
 
     for (let i = 0; i < 5; i++) {
       const preset = store.saveEqualizerPreset(`Preset ${i}`);
-      expect(preset.id).toMatch(/^user_/);
+      expect(preset.id.startsWith('user_')).toBe(true);
     }
 
     expect(store.userPresets).toHaveLength(5);
   });
 
-  it('equalizerPresets is a reactive array — pushing triggers userPresets update', () => {
+  it('equalizerPresets is reactive — a manual push shows up in userPresets', () => {
     const store = useSettingsStore();
     expect(store.userPresets).toHaveLength(0);
 
-    store.equalizerPresets.push({
-      id: 'user_manual',
-      name: 'Manual Push',
-      preamp: 0,
-      gains: Array(10).fill(0),
-      isBuiltin: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
+    store.equalizerPresets.push(userEntry('user_manual', 'Manual Push'));
 
     expect(store.userPresets).toHaveLength(1);
     expect(store.userPresets[0].name).toBe('Manual Push');
   });
 
-  it('gains array always has 10 elements in default settings', () => {
+  it('factory gains table always has ten numeric slots', () => {
     const defaults = createDefaultAudioSettings();
-    expect(defaults.equalizer.gains).toHaveLength(10);
-    expect(defaults.equalizer.gains.every(g => typeof g === 'number')).toBe(true);
+    expect(defaults.equalizer.gains).toHaveLength(BAND_COUNT);
+    expect(defaults.equalizer.gains.every((g) => typeof g === 'number')).toBe(true);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## P1 fix ###################################################################
 
 describe('P1 Fix: resetSettings returns pristine defaults after preset operations', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('resetSettings returns equalizer to pristine defaults after preset operations', () => {
+  it('preset churn followed by reset lands on pristine defaults', () => {
     const store = useSettingsStore();
     const preset = store.saveEqualizerPreset('Dirty');
     store.loadEqualizerPreset(preset.id);
 
     store.resetSettings();
 
-    expect(store.settings.audio.equalizer).toEqual({
+    expect(eqView(store)).toEqual({
       enabled: false,
       preamp: 0.0,
-      gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      gains: flatGains(),
     });
   });
 
-  it('new store instance does not inherit EQ state from previous store', () => {
+  it('a fresh store instance starts without inherited EQ state', () => {
     const store1 = useSettingsStore();
     store1.saveEqualizerPreset('Test');
     store1.loadEqualizerPreset('builtin_pop');
@@ -910,40 +842,39 @@ describe('P1 Fix: resetSettings returns pristine defaults after preset operation
     setActivePinia(createPinia());
     const store2 = useSettingsStore();
 
-    expect(store2.settings.audio.equalizer).toEqual({
+    expect(eqView(store2)).toEqual({
       enabled: false,
       preamp: 0.0,
-      gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      gains: flatGains(),
     });
   });
 
-  it('createDefaultAudioSettings returns independent copies', () => {
-    const settings1 = createDefaultAudioSettings();
-    const settings2 = createDefaultAudioSettings();
+  it('createDefaultAudioSettings hands out independent copies', () => {
+    const first = createDefaultAudioSettings();
+    const second = createDefaultAudioSettings();
 
-    settings1.equalizer.enabled = true;
-    settings1.equalizer.gains[0] = 10;
+    first.equalizer.enabled = true;
+    first.equalizer.gains[0] = 10;
 
-    expect(settings2.equalizer.enabled).toBe(false);
-    expect(settings2.equalizer.gains[0]).toBe(0);
+    expect(second.equalizer.enabled).toBe(false);
+    expect(second.equalizer.gains[0]).toBe(0);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## P3 fix ###################################################################
 
-describe('P3 Fix: preset ID generation is unique', () => {
+describe('P3 Fix: preset ID generation is collision-free', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('generates unique IDs for rapid preset saves', () => {
+  it('rapid consecutive saves yield distinct ids', () => {
     const store = useSettingsStore();
-    const preset1 = store.saveEqualizerPreset('First');
-    const preset2 = store.saveEqualizerPreset('Second');
+    const first = store.saveEqualizerPreset('First');
+    const second = store.saveEqualizerPreset('Second');
 
-    expect(preset1.id).not.toBe(preset2.id);
-    expect(preset1.id).toMatch(/^user_/);
-    expect(preset2.id).toMatch(/^user_/);
+    expect(first.id).not.toBe(second.id);
+    expect(first.id.startsWith('user_')).toBe(true);
+    expect(second.id.startsWith('user_')).toBe(true);
   });
 });

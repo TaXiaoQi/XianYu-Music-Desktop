@@ -1,5 +1,5 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { effectScope, nextTick } from 'vue';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createDesktopLyricsPlaybackClockTracker,
@@ -10,100 +10,114 @@ import {
 
 declare const require: <T = unknown>(id: string) => T;
 
+// vi.hoisted 内无法直接用静态 import，因此通过 require 拿到 vue 的 ref。
 const mocks = vi.hoisted(() => {
-  const { ref } = require('vue') as typeof import('vue');
-  const showDesktopLyrics = ref(false);
-  const parsedLyrics = ref([]);
-  const lyricsStatus = ref('idle');
-  const currentLyricLine = ref({ text: 'Instrumental / No lyrics' });
-  const currentSong = ref(null);
-  const currentTime = ref(0);
-  const isPlaying = ref(false);
-  const dominantColors = ref([]);
-  const settings = {
-    showDesktopLyrics: false,
-    customLyricsFonts: [],
-    lyricsSyncOffset: 0,
-    desktopLyrics: {
-      isAlwaysOnTop: true,
-      alwaysShowShadowBackground: false,
-      autoHideWhenFullscreen: true,
-      autoHideWhenPaused: false,
-      showDoubleLine: false,
-      enableWordEffect: true,
-      enableTextOutline: false,
-      isLocked: false,
-      persistLock: false,
-      colorScheme: 'pink',
-      customPlayedColor: '#ffffff',
-      customUnplayedColor: '#ffffff',
-      customRomajiPlayedColor: '#ffffff',
-      customRomajiUnplayedColor: '#ffffff',
-      customRomajiColor: '#ffffff',
-      customTranslationColor: '#ffffff',
-      textOpacity: 1,
-      textShadowColor: '#000000',
-      firstLineTextShadowStrength: 0,
-      secondLineTextShadowStrength: 0,
-      playerFontScale: 1,
-      playerLineGap: 1,
-      playerOffsetX: 0,
-      playerOffsetY: 0,
-      playerAlignment: 'center',
-      playerFontPreset: 'system',
-    },
+  const vueApi = require('vue') as typeof import('vue');
+  const ref = vueApi.ref;
+
+  // —— 供断言读取的响应式状态桩 ——
+  const lyricsVisible = ref(false);
+  const parsedLines = ref([]);
+  const syncStatus = ref('idle');
+  const activeLine = ref({ text: 'Instrumental / No lyrics' });
+  const activeSong = ref(null);
+  const playbackClock = ref(0);
+  const playing = ref(false);
+  const accentColors = ref([]);
+
+  // —— 设置快照（字段取值即行为规格，勿改动） ——
+  const desktopLyricsConfig = {
+    isAlwaysOnTop: true,
+    alwaysShowShadowBackground: false,
+    autoHideWhenFullscreen: true,
+    autoHideWhenPaused: false,
+    showDoubleLine: false,
+    enableWordEffect: true,
+    enableTextOutline: false,
+    isLocked: false,
+    persistLock: false,
+    colorScheme: 'pink',
+    customPlayedColor: '#ffffff',
+    customUnplayedColor: '#ffffff',
+    customRomajiPlayedColor: '#ffffff',
+    customRomajiUnplayedColor: '#ffffff',
+    customRomajiColor: '#ffffff',
+    customTranslationColor: '#ffffff',
+    textOpacity: 1,
+    textShadowColor: '#000000',
+    firstLineTextShadowStrength: 0,
+    secondLineTextShadowStrength: 0,
+    playerFontScale: 1,
+    playerLineGap: 1,
+    playerOffsetX: 0,
+    playerOffsetY: 0,
+    playerAlignment: 'center',
+    playerFontPreset: 'system',
   };
-  const lyricsSettings = {
+  const translationPrefs = {
     showTranslation: true,
     showRomaji: true,
   };
-  const desktopLyricsSettings = settings.desktopLyrics;
+  const settingsState = {
+    showDesktopLyrics: false,
+    customLyricsFonts: [],
+    lyricsSyncOffset: 0,
+    desktopLyrics: desktopLyricsConfig,
+  };
+
+  // —— 歌词窗口 WebviewWindow 桩 ——
   const targetWindow = {
     once: vi.fn(),
-    setSize: vi.fn().mockResolvedValue(undefined),
-    setPosition: vi.fn().mockResolvedValue(undefined),
-    setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
-    show: vi.fn().mockRejectedValue('window not found'),
-    destroy: vi.fn().mockResolvedValue(undefined),
+    setSize: vi.fn(() => Promise.resolve()),
+    setPosition: vi.fn(() => Promise.resolve()),
+    setAlwaysOnTop: vi.fn(() => Promise.resolve()),
+    show: vi.fn(() => Promise.reject('window not found')),
+    destroy: vi.fn(() => Promise.resolve()),
   };
-  const WebviewWindow = vi.fn(() => targetWindow) as ReturnType<typeof vi.fn> & {
+  const WebviewWindowCtor = vi.fn(() => targetWindow) as ReturnType<typeof vi.fn> & {
     getByLabel: ReturnType<typeof vi.fn>;
   };
-  WebviewWindow.getByLabel = vi.fn().mockResolvedValue(null);
+  WebviewWindowCtor.getByLabel = vi.fn(() => Promise.resolve(null));
 
   return {
-    showDesktopLyrics,
-    parsedLyrics,
-    lyricsStatus,
-    currentLyricLine,
-    currentSong,
-    currentTime,
-    isPlaying,
-    dominantColors,
-    settings,
-    lyricsSettings,
-    desktopLyricsSettings,
+    lyricsVisible,
+    parsedLines,
+    syncStatus,
+    activeLine,
+    activeSong,
+    playbackClock,
+    playing,
+    accentColors,
+    settingsState,
+    translationPrefs,
+    desktopLyricsConfig,
     targetWindow,
-    WebviewWindow,
-    patchSettings: vi.fn((patch) => {
-      Object.assign(settings, patch);
+    WebviewWindow: WebviewWindowCtor,
+    applySettingsPatch: vi.fn((patch) => {
+      Object.assign(settingsState, patch);
     }),
   };
 });
 
-vi.mock('@tauri-apps/api/dpi', () => ({
-  PhysicalPosition: class {
+vi.mock('@tauri-apps/api/dpi', () => {
+  class PhysicalPositionStub {
     constructor(public x: number, public y: number) {}
-  },
-  PhysicalSize: class {
+  }
+  class PhysicalSizeStub {
     constructor(public width: number, public height: number) {}
-  },
-}));
+  }
+  return {
+    PhysicalPosition: PhysicalPositionStub,
+    PhysicalSize: PhysicalSizeStub,
+  };
+});
 
-vi.mock('@tauri-apps/api/event', () => ({
-  emitTo: vi.fn(),
-  listen: vi.fn(),
-}));
+vi.mock('@tauri-apps/api/event', () => {
+  return {
+    emitTo: vi.fn(),
+    listen: vi.fn(),
+  };
+});
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   WebviewWindow: mocks.WebviewWindow,
@@ -112,29 +126,29 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 vi.mock('@tauri-apps/api/window', () => ({
   availableMonitors: vi.fn(),
   getCurrentWindow: vi.fn(() => ({
-    onCloseRequested: vi.fn().mockResolvedValue(() => {}),
+    onCloseRequested: vi.fn(() => Promise.resolve(() => {})),
   })),
 }));
 
 vi.mock('../features/playback/store', () => ({
   usePlaybackStore: vi.fn(() => ({
-    currentSong: mocks.currentSong,
-    currentTime: mocks.currentTime,
-    isPlaying: mocks.isPlaying,
+    currentSong: mocks.activeSong,
+    currentTime: mocks.playbackClock,
+    isPlaying: mocks.playing,
   })),
 }));
 
 vi.mock('../features/settings/store', () => ({
   useSettingsStore: vi.fn(() => ({
-    settings: mocks.settings,
-    audioDelay: mocks.currentTime,
-    patchSettings: mocks.patchSettings,
+    settings: mocks.settingsState,
+    audioDelay: mocks.playbackClock,
+    patchSettings: mocks.applySettingsPatch,
   })),
 }));
 
 vi.mock('../shared/stores/ui', () => ({
   useUiStore: vi.fn(() => ({
-    dominantColors: mocks.dominantColors,
+    dominantColors: mocks.accentColors,
   })),
 }));
 
@@ -142,43 +156,36 @@ vi.mock('./lyrics', () => ({
   createDefaultDesktopLyricsSettings: vi.fn(() => ({})),
   createDefaultLyricsSettings: vi.fn(() => ({})),
   useLyrics: vi.fn(() => ({
-    showDesktopLyrics: mocks.showDesktopLyrics,
-    parsedLyrics: mocks.parsedLyrics,
-    lyricsStatus: mocks.lyricsStatus,
-    currentLyricLine: mocks.currentLyricLine,
-    lyricsSettings: mocks.lyricsSettings,
-    desktopLyricsSettings: mocks.desktopLyricsSettings,
+    showDesktopLyrics: mocks.lyricsVisible,
+    parsedLyrics: mocks.parsedLines,
+    lyricsStatus: mocks.syncStatus,
+    currentLyricLine: mocks.activeLine,
+    lyricsSettings: mocks.translationPrefs,
+    desktopLyricsSettings: mocks.desktopLyricsConfig,
   })),
 }));
 
 vi.mock('./player', () => ({
-  usePlayer: vi.fn(() => ({
-    togglePlay: vi.fn(),
-    prevSong: vi.fn(),
-    nextSong: vi.fn(),
-  })),
+  usePlayer: vi.fn(() => ({ togglePlay: vi.fn(), prevSong: vi.fn(), nextSong: vi.fn() })),
 }));
 
 vi.mock('../features/playback/player', () => ({
-  usePlayer: vi.fn(() => ({
-    togglePlay: vi.fn(),
-    prevSong: vi.fn(),
-    nextSong: vi.fn(),
-  })),
+  usePlayer: vi.fn(() => ({ togglePlay: vi.fn(), prevSong: vi.fn(), nextSong: vi.fn() })),
 }));
 
-describe('desktop lyrics window bridge', () => {
+describe('useDesktopLyricsWindowBridge', () => {
   beforeEach(() => {
-    mocks.showDesktopLyrics.value = false;
-    mocks.settings.showDesktopLyrics = false;
-    mocks.patchSettings.mockClear();
+    mocks.lyricsVisible.value = false;
+    mocks.settingsState.showDesktopLyrics = false;
+    mocks.applySettingsPatch.mockClear();
     mocks.targetWindow.once.mockImplementation((event: string, handler: () => void) => {
+      // 仅让 tauri://created 立即触发，模拟窗口创建成功。
       if (event === 'tauri://created') {
         queueMicrotask(handler);
       }
       return Promise.resolve(() => {});
     });
-    mocks.targetWindow.show.mockRejectedValue('window not found');
+    mocks.targetWindow.show.mockImplementation(() => Promise.reject('window not found'));
     mocks.WebviewWindow.mockClear();
     mocks.WebviewWindow.getByLabel.mockResolvedValue(null);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -189,11 +196,13 @@ describe('desktop lyrics window bridge', () => {
     vi.restoreAllMocks();
   });
 
-  it('creates the desktop lyrics window without stealing main window focus', () => {
-    expect(createDesktopLyricsWindowOptions({
+  it('builds window options that never steal focus from the main window', () => {
+    const options = createDesktopLyricsWindowOptions({
       alwaysOnTop: true,
       hasStoredBounds: false,
-    })).toMatchObject({
+    });
+
+    expect(options).toMatchObject({
       alwaysOnTop: true,
       center: true,
       focus: false,
@@ -202,46 +211,48 @@ describe('desktop lyrics window bridge', () => {
     });
   });
 
-  it('timestamps playback payloads at the last currentTime sample instead of send time', () => {
-    let now = 1_000;
-    const tracker = createDesktopLyricsPlaybackClockTracker(() => now);
+  it('stamps playback payloads with the last currentTime sample instead of the send moment', () => {
+    const clockNow = { value: 1_000 };
+    const tracker = createDesktopLyricsPlaybackClockTracker(() => clockNow.value);
 
     tracker.markPlaybackTimeSample(11.35);
-    now += 650;
+    clockNow.value += 650;
 
     expect(tracker.resolveSyncedAt(11.35)).toBe(1_000);
     expect(tracker.resolveSyncedAt(12)).toBe(1_650);
   });
 
-  it('waits until the desktop lyrics window reports ready', async () => {
+  it('holds the ready gate closed until the lyrics window reports readiness', async () => {
     vi.useFakeTimers();
     const gate = createDesktopLyricsReadyGate(1000);
-    let didResolve = false;
+    let released = false;
 
-    const waitPromise = gate.wait().then(() => {
-      didResolve = true;
+    const waiting = gate.wait().then(() => {
+      released = true;
     });
 
     await Promise.resolve();
-    expect(didResolve).toBe(false);
+    expect(released).toBe(false);
 
     gate.markReady();
-    await waitPromise;
+    await waiting;
 
-    expect(didResolve).toBe(true);
+    expect(released).toBe(true);
   });
 
-  it('rolls back desktop lyrics visibility when opening the window fails', async () => {
+  it('rolls the visibility flag back when the lyrics window cannot be opened', async () => {
     const scope = effectScope();
     scope.run(() => useDesktopLyricsWindowBridge());
 
-    mocks.showDesktopLyrics.value = true;
+    mocks.lyricsVisible.value = true;
     await nextTick();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise<void>((done) => {
+      setTimeout(done, 0);
+    });
     await nextTick();
 
-    expect(mocks.showDesktopLyrics.value).toBe(false);
-    expect(mocks.patchSettings).toHaveBeenCalledWith({ showDesktopLyrics: false });
+    expect(mocks.lyricsVisible.value).toBe(false);
+    expect(mocks.applySettingsPatch).toHaveBeenCalledWith({ showDesktopLyrics: false });
 
     scope.stop();
   });

@@ -1,751 +1,596 @@
 <script setup lang="ts">
-defineOptions({ name: 'Artists' });
-
-import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { useRoute, useRouter } from 'vue-router';
-import { artistHeaderCache, artistViewportCoverSnapshotCache } from '../caches/imageCaches';
-import { dragSession } from '../composables/dragState';
-import { useCoverCache } from '../composables/useCoverCache';
-import { useHomeNavigation } from '../composables/useHomeNavigation';
-import { useListScrollMemory } from '../composables/useListScrollMemory';
-import SortModeIcon from '../components/common/SortModeIcon.vue';
-import DragGhost from '../components/common/DragGhost.vue';
-import { useLibraryBrowse } from '../features/library/useLibraryBrowse';
-import type { ArtistListItem } from '../features/library/playerLibraryViewShared';
-import { getAlphabetIndexKey } from '../utils/alphabetIndex';
-
-const { filteredArtistList, artistSortMode, updateArtistOrder, searchQuery } = useLibraryBrowse();
-const router = useRouter();
-const route = useRoute();
-const { openHomeArtist } = useHomeNavigation(router);
-const isSearchActive = computed(() => searchQuery.value.trim().length > 0);
-const { coverCache, loadCover, touchCoverPaths, isCoverLoading, preloadPriorityCovers } = useCoverCache();
-
-const showSortMenu = ref(false);
-const dragOverName = ref<string | null>(null);
-const containerRef = ref<HTMLElement | null>(null);
-const containerScrollTop = ref(0);
-const containerHeight = ref(720);
-const displayedCoverUrls = reactive(new Map<string, string>());
-let coverObserver: IntersectionObserver | null = null;
-let containerResizeObserver: ResizeObserver | null = null;
-let visibleCoverPaths = new Set<string>();
-const VIEWPORT_SNAPSHOT_KEY = 'artists-current';
-const VIEWPORT_SNAPSHOT_LIMIT = 72;
-const ARTIST_GRID_GAP_Y = 16;
-const ARTIST_SECTION_GAP_Y = 8;
-const ARTIST_ITEM_HEIGHT = 72;
-const ARTIST_ROW_SPAN = ARTIST_ITEM_HEIGHT + ARTIST_GRID_GAP_Y;
-const ARTIST_SECTION_HEADER_HEIGHT = 24;
-const ARTIST_OVERSCAN_ROWS = 2;
-
-const handleArtistClick = (artist: ArtistListItem) => {
-  const avatarUrl = getArtistAvatarUrl(artist);
-  if (avatarUrl) {
-    artistHeaderCache.set(artist.name, avatarUrl);
-  }
-  void openHomeArtist(artist.name);
-};
-
-const handleSortChange = (mode: 'count' | 'name' | 'custom') => {
-  artistSortMode.value = mode;
-  showSortMenu.value = false;
-};
-
-const getArtistGridColumns = () => {
-  if (window.innerWidth >= 1536) {
-    return 5;
-  }
-
-  if (window.innerWidth >= 1280) {
-    return 4;
-  }
-
-  if (window.innerWidth >= 1024) {
-    return 3;
-  }
-
-  return 2;
-};
-
-const artistGridColumns = ref(getArtistGridColumns());
-
-const updateViewportMetrics = () => {
-  if (containerRef.value) {
-    containerHeight.value = containerRef.value.clientHeight;
-  }
-
-  artistGridColumns.value = getArtistGridColumns();
-};
-
-const handleContainerScroll = (event: Event) => {
-  containerScrollTop.value = (event.target as HTMLElement).scrollTop;
-};
-
-const getDisplayedCoverUrl = (path: string | undefined) => {
-  if (!path) {
-    return '';
-  }
-
-  return displayedCoverUrls.get(path) ?? coverCache.get(path) ?? '';
-};
-
-const getArtistAvatarUrl = (artist: ArtistListItem) => {
-  if (artist.avatarPath) {
-    return convertFileSrc(artist.avatarPath);
-  }
-  return getDisplayedCoverUrl(artist.firstSongPath);
-};
-
-const isArtistAvatarLoading = (artist: ArtistListItem) => {
-  if (artist.avatarPath) {
-    return false;
-  }
-  return isCoverLoading(artist.firstSongPath);
-};
-
-const restoreViewportCoverSnapshot = () => {
-  const snapshot = artistViewportCoverSnapshotCache.get(VIEWPORT_SNAPSHOT_KEY);
-  if (!snapshot || snapshot.length === 0) {
-    return;
-  }
-
-  displayedCoverUrls.clear();
-  snapshot
-    .filter(entry => !!entry.path && !!entry.url)
-    .forEach((entry) => {
-      displayedCoverUrls.set(entry.path, entry.url);
-    });
-  preloadPriorityCovers(snapshot.map(entry => entry.path));
-};
-
-const saveViewportCoverSnapshot = () => {
-  if (!containerRef.value) {
-    return;
-  }
-
-  const containerRect = containerRef.value.getBoundingClientRect();
-  const viewportBuffer = containerRef.value.clientHeight;
-  const snapshotTop = containerRect.top - viewportBuffer;
-  const snapshotBottom = containerRect.bottom + viewportBuffer;
-  const snapshot: Array<{ path: string; url: string }> = [];
-  const seenPaths = new Set<string>();
-
-  containerRef.value.querySelectorAll<HTMLElement>('[data-cover-path]').forEach((element) => {
-    if (snapshot.length >= VIEWPORT_SNAPSHOT_LIMIT) {
-      return;
-    }
-
-    const path = element.dataset.coverPath;
-    if (!path || seenPaths.has(path)) {
-      return;
-    }
-
-    const rect = element.getBoundingClientRect();
-    if (rect.bottom < snapshotTop || rect.top > snapshotBottom) {
-      return;
-    }
-
-    const url = getDisplayedCoverUrl(path);
-    if (!url) {
-      return;
-    }
-
-    seenPaths.add(path);
-    snapshot.push({ path, url });
-  });
-
-  if (snapshot.length > 0) {
-    artistViewportCoverSnapshotCache.set(VIEWPORT_SNAPSHOT_KEY, snapshot);
-    return;
-  }
-
-  artistViewportCoverSnapshotCache.delete(VIEWPORT_SNAPSHOT_KEY);
-};
-
-restoreViewportCoverSnapshot();
-
-const syncVisibleCoverUrls = (paths: string[]) => {
-  const nextVisiblePaths = new Set(paths.filter(Boolean));
-  visibleCoverPaths = nextVisiblePaths;
-
-  for (const path of Array.from(displayedCoverUrls.keys())) {
-    if (!nextVisiblePaths.has(path)) {
-      displayedCoverUrls.delete(path);
-    }
-  }
-
-  const nextPaths = Array.from(nextVisiblePaths);
-  touchCoverPaths(nextPaths);
-
-  nextPaths.forEach((path) => {
-    const cachedUrl = coverCache.get(path);
-    if (cachedUrl) {
-      displayedCoverUrls.set(path, cachedUrl);
-      return;
-    }
-
-    if (displayedCoverUrls.has(path)) {
-      return;
-    }
-
-    void loadCover(path).then((coverUrl) => {
-      if (!coverUrl || !visibleCoverPaths.has(path)) {
-        return;
-      }
-
-      displayedCoverUrls.set(path, coverUrl);
-    });
-  });
-};
-
-const artistSections = computed(() => {
-  const sections: Array<{
-    key: string;
-    items: Array<{ artist: ArtistListItem; index: number }>;
-  }> = [];
-
-  filteredArtistList.value.forEach((artist, index) => {
-    const key = getAlphabetIndexKey(artist.name);
-    const lastSection = sections[sections.length - 1];
-
-    if (!lastSection || lastSection.key !== key) {
-      sections.push({
-        key,
-        items: [{ artist, index }],
-      });
-      return;
-    }
-
-    lastSection.items.push({ artist, index });
-  });
-
-  return sections;
+// 歌手视图：首字母分组 + 固定行高的虚拟滚动，头像按需加载并缓存分组标题用图。
+defineOptions({
+  name: 'Artists',
 });
 
-type ArtistSectionEntry = { artist: ArtistListItem; index: number };
-type ArtistVirtualHeaderRow = { type: 'header'; key: string; title: string };
-type ArtistVirtualItemsRow = { type: 'items'; key: string; items: ArtistSectionEntry[]; bottomGap: number };
-type ArtistVirtualRow = ArtistVirtualHeaderRow | ArtistVirtualItemsRow;
-type MeasuredArtistVirtualHeaderRow = ArtistVirtualHeaderRow & { top: number; height: number };
-type MeasuredArtistVirtualItemsRow = ArtistVirtualItemsRow & { top: number; height: number };
-type MeasuredArtistVirtualRow = MeasuredArtistVirtualHeaderRow | MeasuredArtistVirtualItemsRow;
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount, onUnmounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+import { convertFileSrc as toFileSrc } from '@tauri-apps/api/core';
+import { default as SortModeIcon } from '../components/common/SortModeIcon.vue';
+import DragGhost from '../components/common/DragGhost.vue';
+import { artistHeaderCache as headerPosterCache, artistViewportCoverSnapshotCache as viewportSnapshotCache } from '../caches/imageCaches';
+import { dragSession as pointerDragState } from '../composables/dragState';
+import { useCoverCache as createCoverManager } from '../composables/useCoverCache';
+import { useHomeNavigation as createHomeNavigator } from '../composables/useHomeNavigation';
+import { useListScrollMemory as rememberScrollPosition } from '../composables/useListScrollMemory';
+import { useLibraryBrowse as createLibraryBrowser } from '../features/library/useLibraryBrowse';
+import { type ArtistListItem } from '../features/library/playerLibraryViewShared';
+import { getAlphabetIndexKey as letterKeyOf } from '../utils/alphabetIndex';
 
-const groupedArtistRows = computed<ArtistVirtualRow[]>(() => {
-  const rows: ArtistVirtualRow[] = [];
+const libraryBrowser = createLibraryBrowser();
+const visibleArtists = libraryBrowser.filteredArtistList;
+const artistSortMode = libraryBrowser.artistSortMode;
+const reorderArtists = libraryBrowser.updateArtistOrder;
+const searchKeyword = libraryBrowser.searchQuery;
 
-  artistSections.value.forEach((section) => {
-    rows.push({
-      type: 'header',
-      key: `header::${section.key}`,
-      title: section.key,
+const gotoArtist = createHomeNavigator(useRouter()).openHomeArtist;
+const pageRoute = useRoute();
+
+const searchFilterOn = computed(() => searchKeyword.value.trim().length > 0);
+
+const coverManager = createCoverManager();
+const cachedCovers = coverManager.coverCache;
+const fetchCover = coverManager.loadCover;
+const markCoversUsed = coverManager.touchCoverPaths;
+const coverLoadingNow = coverManager.isCoverLoading;
+const warmPriorityCovers = coverManager.preloadPriorityCovers;
+
+// —— 界面状态 ——
+const sortMenuOpen = ref(false);
+const dropTargetName = ref<string | null>(null);
+const scrollBoxRef = ref<HTMLElement | null>(null);
+const currentScrollTop = ref(0);
+const viewportHeight = ref(720);
+const coverUrlMap = reactive(new Map<string, string>());
+
+let coverWatcher: IntersectionObserver | null = null;
+let layoutResizeObserver: ResizeObserver | null = null;
+let trackedCoverPaths = new Set<string>();
+
+const SNAPSHOT_CACHE_KEY = 'artists-current';
+const SNAPSHOT_MAX_COUNT = 72;
+const ROW_GAP_Y = 16;
+const GROUP_GAP_Y = 8;
+const AVATAR_BLOCK_HEIGHT = 72;
+const ROW_SPAN = AVATAR_BLOCK_HEIGHT + ROW_GAP_Y;
+const GROUP_TITLE_HEIGHT = 24;
+const OVERSCAN_ROW_COUNT = 2;
+
+// 断点与列数对应表（与模板中的响应式栅格类一致）。
+const COLUMN_BREAKPOINTS: ReadonlyArray<readonly [number, number]> = [
+  [1536, 5],
+  [1280, 4],
+  [1024, 3],
+];
+
+function resolveColumnCount(): number {
+  for (const [minWidth, columns] of COLUMN_BREAKPOINTS) {
+    if (window.innerWidth >= minWidth) return columns;
+  }
+  return 2;
+}
+
+const columnCount = ref(resolveColumnCount());
+
+function syncLayoutMetrics() {
+  const box = scrollBoxRef.value;
+  if (box) viewportHeight.value = box.clientHeight;
+  columnCount.value = resolveColumnCount();
+}
+
+function onScrollCapture(event: Event) {
+  currentScrollTop.value = (event.target as HTMLElement).scrollTop;
+}
+
+function resolveCoverSrc(path: string | undefined): string {
+  if (!path) return '';
+  return coverUrlMap.get(path) ?? cachedCovers.get(path) ?? '';
+}
+
+// 头像地址：独立头像文件走本地文件协议，否则退回首歌封面。
+function avatarFor(artist: ArtistListItem): string {
+  if (artist.avatarPath) return toFileSrc(artist.avatarPath);
+  return resolveCoverSrc(artist.firstSongPath);
+}
+
+function avatarPending(artist: ArtistListItem): boolean {
+  if (artist.avatarPath) return false;
+  return coverLoadingNow(artist.firstSongPath);
+}
+
+function onArtistCardClick(artist: ArtistListItem) {
+  const avatar = avatarFor(artist);
+  if (avatar) headerPosterCache.set(artist.name, avatar);
+  void gotoArtist(artist.name);
+}
+
+// 回到本页时用快照直接回填封面 URL，并预热对应路径。
+function restoreSnapshotCovers() {
+  const snapshot = viewportSnapshotCache.get(SNAPSHOT_CACHE_KEY);
+  if (!snapshot || snapshot.length === 0) return;
+
+  coverUrlMap.clear();
+  for (const entry of snapshot) {
+    if (entry.path && entry.url) coverUrlMap.set(entry.path, entry.url);
+  }
+  warmPriorityCovers(snapshot.map((entry) => entry.path));
+}
+
+// 离开前保存视口附近已就绪的 { path, url } 对，上限 SNAPSHOT_MAX_COUNT 条。
+function persistSnapshotCovers() {
+  const box = scrollBoxRef.value;
+  if (!box) return;
+
+  const boxRect = box.getBoundingClientRect();
+  const buffer = box.clientHeight;
+  const upperEdge = boxRect.top - buffer;
+  const lowerEdge = boxRect.bottom + buffer;
+  const picked: Array<{ path: string; url: string }> = [];
+  const seen = new Set<string>();
+
+  for (const element of Array.from(box.querySelectorAll<HTMLElement>('[data-cover-path]'))) {
+    if (picked.length >= SNAPSHOT_MAX_COUNT) break;
+
+    const path = element.dataset.coverPath;
+    if (!path || seen.has(path)) continue;
+
+    const rect = element.getBoundingClientRect();
+    if (rect.bottom < upperEdge || rect.top > lowerEdge) continue;
+
+    const url = resolveCoverSrc(path);
+    if (!url) continue;
+
+    seen.add(path);
+    picked.push({ path, url });
+  }
+
+  if (picked.length > 0) viewportSnapshotCache.set(SNAPSHOT_CACHE_KEY, picked);
+  else viewportSnapshotCache.delete(SNAPSHOT_CACHE_KEY);
+}
+
+restoreSnapshotCovers();
+
+// 同步可见路径对应的封面表：清理、命中缓存直接回填、未命中异步加载。
+function applyVisibleCovers(paths: string[]) {
+  const nextPaths = new Set(paths.filter(Boolean));
+  trackedCoverPaths = nextPaths;
+
+  Array.from(coverUrlMap.keys()).forEach((path) => {
+    if (!nextPaths.has(path)) coverUrlMap.delete(path);
+  });
+
+  const orderedPaths = Array.from(nextPaths);
+  markCoversUsed(orderedPaths);
+
+  for (const path of orderedPaths) {
+    const readyUrl = cachedCovers.get(path);
+    if (readyUrl) {
+      coverUrlMap.set(path, readyUrl);
+      continue;
+    }
+    if (coverUrlMap.has(path)) continue;
+
+    void fetchCover(path).then((fetchedUrl) => {
+      if (!fetchedUrl || !trackedCoverPaths.has(path)) return;
+      coverUrlMap.set(path, fetchedUrl);
     });
+  }
+}
 
-    for (let start = 0; start < section.items.length; start += artistGridColumns.value) {
-      const isLastRowInSection = start + artistGridColumns.value >= section.items.length;
+interface ArtistEntry { artist: ArtistListItem; index: number }
+interface TitleRow { type: 'header'; key: string; title: string }
+interface AvatarRow { type: 'items'; key: string; items: ArtistEntry[]; bottomGap: number }
+type GroupRow = TitleRow | AvatarRow;
+type MeasuredTitleRow = TitleRow & { top: number; height: number };
+type MeasuredAvatarRow = AvatarRow & { top: number; height: number };
+type MeasuredGroupRow = MeasuredTitleRow | MeasuredAvatarRow;
+
+// 依据首字母把歌手列表切成连续分组。
+const letterGroups = computed(() => {
+  const groups: Array<{ key: string; entries: ArtistEntry[] }> = [];
+
+  visibleArtists.value.forEach((artist, index) => {
+    const letter = letterKeyOf(artist.name);
+    const tail = groups[groups.length - 1];
+
+    if (tail && tail.key === letter) tail.entries.push({ artist, index });
+    else groups.push({ key: letter, entries: [{ artist, index }] });
+  });
+
+  return groups;
+});
+
+// 展开为 header / items 交替的虚拟行序列。
+const sectionRows = computed<GroupRow[]>(() => {
+  const rows: GroupRow[] = [];
+  const cols = columnCount.value;
+
+  for (const group of letterGroups.value) {
+    rows.push({ type: 'header', title: group.key, key: ['header', group.key].join('::') });
+
+    for (let offset = 0; offset < group.entries.length; offset += cols) {
+      const groupTail = offset + cols >= group.entries.length;
       rows.push({
         type: 'items',
-        key: `items::${section.key}::${start}`,
-        items: section.items.slice(start, start + artistGridColumns.value),
-        bottomGap: isLastRowInSection ? ARTIST_SECTION_GAP_Y : ARTIST_GRID_GAP_Y,
+        key: ['items', group.key, String(offset)].join('::'),
+        items: group.entries.slice(offset, offset + cols),
+        bottomGap: groupTail ? GROUP_GAP_Y : ROW_GAP_Y,
       });
     }
-  });
+  }
 
   return rows;
 });
 
-const measuredGroupedArtistRows = computed<MeasuredArtistVirtualRow[]>(() => {
-  let totalHeight = 0;
+// 行高固定：标题行为 GROUP_TITLE_HEIGHT，内容行为头像块 + 行距。
+const measuredSectionRows = computed<MeasuredGroupRow[]>(() => {
+  let cursor = 0;
 
-  return groupedArtistRows.value.map((row) => {
-    const height = row.type === 'header' ? ARTIST_SECTION_HEADER_HEIGHT : ARTIST_ITEM_HEIGHT + row.bottomGap;
-    const measuredRow = {
-      ...row,
-      top: totalHeight,
-      height,
-    };
-    totalHeight += height;
-    return measuredRow;
+  return sectionRows.value.map((row) => {
+    const height = row.type === 'header' ? GROUP_TITLE_HEIGHT : AVATAR_BLOCK_HEIGHT + row.bottomGap;
+    const placed = { ...row, top: cursor, height };
+    cursor += height;
+    return placed;
   });
 });
 
-const groupedArtistVirtualState = computed(() => {
-  const overscanPx = ARTIST_ROW_SPAN * ARTIST_OVERSCAN_ROWS;
-  const startBoundary = Math.max(0, containerScrollTop.value - overscanPx);
-  const endBoundary = containerScrollTop.value + containerHeight.value + overscanPx;
+// 分组模式下的可视窗口（含 overscan）与上下占位。
+const groupedViewState = computed(() => {
+  const overscanPx = ROW_SPAN * OVERSCAN_ROW_COUNT;
+  const viewTop = currentScrollTop.value;
+  const lowerEdge = Math.max(0, viewTop - overscanPx);
+  const upperEdge = viewTop + viewportHeight.value + overscanPx;
 
-  let totalHeight = 0;
-  let startIndex = 0;
-  let endIndex = groupedArtistRows.value.length;
-  const measuredRows = measuredGroupedArtistRows.value;
-  totalHeight = measuredRows.reduce((sum, row) => sum + row.height, 0);
+  const allRows = measuredSectionRows.value;
+  const totalHeight = allRows.reduce((sum, row) => sum + row.height, 0);
 
-  while (
-    startIndex < measuredRows.length
-    && measuredRows[startIndex].top + measuredRows[startIndex].height <= startBoundary
-  ) {
-    startIndex += 1;
+  let firstIndex = 0;
+  while (firstIndex < allRows.length && allRows[firstIndex].top + allRows[firstIndex].height <= lowerEdge) {
+    firstIndex += 1;
   }
 
-  endIndex = startIndex;
-  while (endIndex < measuredRows.length && measuredRows[endIndex].top < endBoundary) {
-    endIndex += 1;
+  let lastIndex = firstIndex;
+  while (lastIndex < allRows.length && allRows[lastIndex].top < upperEdge) {
+    lastIndex += 1;
   }
 
-  const visibleRows = measuredRows.slice(startIndex, endIndex);
-  const firstTop = visibleRows[0]?.top ?? 0;
-  const lastBottom = visibleRows.length > 0
-    ? visibleRows[visibleRows.length - 1].top + visibleRows[visibleRows.length - 1].height
+  const windowRows = allRows.slice(firstIndex, lastIndex);
+  const headTop = windowRows[0]?.top ?? 0;
+  const tailBottom = windowRows.length > 0
+    ? windowRows[windowRows.length - 1].top + windowRows[windowRows.length - 1].height
     : 0;
 
   return {
-    rows: visibleRows,
-    paddingTop: `${firstTop}px`,
-    paddingBottom: `${Math.max(0, totalHeight - lastBottom)}px`,
+    rows: windowRows,
+    paddingTop: `${headTop}px`,
+    paddingBottom: `${Math.max(0, totalHeight - tailBottom)}px`,
   };
 });
 
-const stickyArtistHeader = computed(() => {
-  if (artistSortMode.value !== 'name') {
-    return null;
-  }
+// 吸顶字母标题：定位当前分组并计算与下一分组相撞时的位移。
+const floatingGroupTitle = computed(() => {
+  if (artistSortMode.value !== 'name') return null;
 
-  const headerRows = measuredGroupedArtistRows.value.filter(
-    (row): row is MeasuredArtistVirtualHeaderRow => row.type === 'header',
-  );
+  const titleRows = measuredSectionRows.value.filter((row): row is MeasuredTitleRow => row.type === 'header');
+  if (titleRows.length === 0) return null;
 
-  if (headerRows.length === 0) {
-    return null;
-  }
-
-  const scrollTop = containerScrollTop.value;
+  const scrollTop = currentScrollTop.value;
   let activeIndex = 0;
-
-  for (let index = 0; index < headerRows.length; index += 1) {
-    if (headerRows[index].top <= scrollTop) {
-      activeIndex = index;
-      continue;
-    }
-    break;
+  for (let i = 0; i < titleRows.length; i += 1) {
+    if (titleRows[i].top > scrollTop) break;
+    activeIndex = i;
   }
 
-  const activeHeader = headerRows[activeIndex];
-  const nextHeader = headerRows[activeIndex + 1];
-  const offset = nextHeader
-    ? Math.min(0, nextHeader.top - scrollTop - activeHeader.height)
-    : 0;
+  const activeRow = titleRows[activeIndex];
+  const followingRow = titleRows[activeIndex + 1];
+  const shift = followingRow ? Math.min(0, followingRow.top - scrollTop - activeRow.height) : 0;
 
   return {
-    key: activeHeader.key,
-    title: activeHeader.title,
-    offset: `${offset}px`,
-    shouldHideSourceRow: activeHeader.top <= scrollTop,
+    key: activeRow.key,
+    title: activeRow.title,
+    offset: `${shift}px`,
+    shouldHideSourceRow: activeRow.top <= scrollTop,
   };
 });
 
-const isStickyArtistHeaderRow = (rowKey: string, rowTop: number) => {
-  const stickyHeader = stickyArtistHeader.value;
-  if (!stickyHeader) {
-    return false;
-  }
+function shouldFadeSourceHeader(rowKey: string, rowTop: number): boolean {
+  const floating = floatingGroupTitle.value;
+  if (!floating) return false;
+  return floating.key === rowKey && floating.shouldHideSourceRow && rowTop <= currentScrollTop.value;
+}
 
-  return stickyHeader.key === rowKey && stickyHeader.shouldHideSourceRow && rowTop <= containerScrollTop.value;
-};
-
-const flatArtistVirtualState = computed(() => {
-  const totalRows = Math.ceil(filteredArtistList.value.length / artistGridColumns.value);
-  const startRow = Math.max(0, Math.floor(containerScrollTop.value / ARTIST_ROW_SPAN) - ARTIST_OVERSCAN_ROWS);
-  const endRow = Math.min(
-    totalRows,
-    Math.ceil((containerScrollTop.value + containerHeight.value) / ARTIST_ROW_SPAN) + ARTIST_OVERSCAN_ROWS,
-  );
-  const startIndex = startRow * artistGridColumns.value;
-  const endIndex = Math.min(filteredArtistList.value.length, endRow * artistGridColumns.value);
+// 非字母排序下的平铺虚拟列表。
+const flatViewState = computed(() => {
+  const total = visibleArtists.value.length;
+  const cols = columnCount.value;
+  const totalRows = Math.ceil(total / cols);
+  const firstRow = Math.max(0, Math.floor(currentScrollTop.value / ROW_SPAN) - OVERSCAN_ROW_COUNT);
+  const lastRow = Math.min(totalRows, Math.ceil((currentScrollTop.value + viewportHeight.value) / ROW_SPAN) + OVERSCAN_ROW_COUNT);
+  const firstIndex = firstRow * cols;
+  const lastIndex = Math.min(total, lastRow * cols);
 
   return {
-    items: filteredArtistList.value.slice(startIndex, endIndex).map((artist, offset) => ({
-      artist,
-      index: startIndex + offset,
-    })),
-    paddingTop: `${startRow * ARTIST_ROW_SPAN}px`,
-    paddingBottom: `${Math.max(0, (totalRows - endRow) * ARTIST_ROW_SPAN)}px`,
+    items: visibleArtists.value.slice(firstIndex, lastIndex).map((artist, offset) => ({ artist, index: firstIndex + offset })),
+    paddingTop: `${firstRow * ROW_SPAN}px`,
+    paddingBottom: `${Math.max(0, (totalRows - lastRow) * ROW_SPAN)}px`,
   };
 });
 
-const visibleArtistCoverPaths = computed(() => {
-  if (artistSortMode.value === 'name') {
-    return groupedArtistVirtualState.value.rows.flatMap((row) => {
-      if (row.type !== 'items') {
-        return [];
-      }
+// 需要展示歌曲封面的路径（有独立头像的歌手不参与）。
+const coverPathsInView = computed(() => {
+  const fromGrouped = () =>
+    groupedViewState.value.rows.flatMap((row) =>
+      row.type === 'items'
+        ? row.items
+            .filter((entry) => !entry.artist.avatarPath)
+            .map((entry) => entry.artist.firstSongPath)
+            .filter((path): path is string => !!path)
+        : [],
+    );
+  const fromFlat = () =>
+    flatViewState.value.items
+      .filter((entry) => !entry.artist.avatarPath)
+      .map((entry) => entry.artist.firstSongPath)
+      .filter((path): path is string => !!path);
 
-      return row.items
-        .filter(item => !item.artist.avatarPath)
-        .map(item => item.artist.firstSongPath)
-        .filter((path): path is string => !!path);
-    });
-  }
-
-  return flatArtistVirtualState.value.items
-    .filter(item => !item.artist.avatarPath)
-    .map(item => item.artist.firstSongPath)
-    .filter((path): path is string => !!path);
+  return artistSortMode.value === 'name' ? fromGrouped() : fromFlat();
 });
 
-const initCoverObserver = async () => {
+// 每次刷新都重建观察器：先断开旧的，再观察当前所有封面元素。
+async function setupCoverObserver() {
   await nextTick();
+  if (coverWatcher) coverWatcher.disconnect();
+  const box = scrollBoxRef.value;
+  if (!box) return;
 
-  if (coverObserver) {
-    coverObserver.disconnect();
-  }
+  coverWatcher = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const element = entry.target as HTMLElement;
+      const path = element.dataset.coverPath;
+      if (path) warmPriorityCovers([path]);
+      coverWatcher?.unobserve(element);
+    }
+  }, { root: box, rootMargin: '200px 0px' });
 
-  if (!containerRef.value) {
-    return;
-  }
-
-  coverObserver = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) {
-          return;
-        }
-
-        const target = entry.target as HTMLElement;
-        const path = target.dataset.coverPath;
-        if (path) {
-          preloadPriorityCovers([path]);
-        }
-        coverObserver?.unobserve(target);
-      });
-    },
-    {
-      root: containerRef.value,
-      rootMargin: '200px 0px',
-    },
-  );
-
-  containerRef.value.querySelectorAll<HTMLElement>('[data-cover-path]').forEach((element) => {
-    coverObserver?.observe(element);
+  box.querySelectorAll<HTMLElement>('[data-cover-path]').forEach((element) => {
+    coverWatcher?.observe(element);
   });
-};
+}
 
-const scrollMemoryKey = computed(
-  () => ['artists-view', route.path, artistSortMode.value, searchQuery.value.trim()].join('::'),
+const scrollCacheKey = computed(
+  () => ['artists-view', pageRoute.path, artistSortMode.value, searchKeyword.value.trim()].join('::'),
 );
 
-useListScrollMemory(scrollMemoryKey, containerRef);
+rememberScrollPosition(scrollCacheKey, scrollBoxRef);
 
-watch(
-  [visibleArtistCoverPaths, artistSortMode],
-  ([paths]) => {
-    syncVisibleCoverUrls(paths);
-    preloadPriorityCovers(paths);
-    void initCoverObserver();
-  },
-  { immediate: true, flush: 'post' },
-);
+watch([coverPathsInView, artistSortMode], ([paths]) => {
+  applyVisibleCovers(paths);
+  warmPriorityCovers(paths);
+  void setupCoverObserver();
+}, { flush: 'post', immediate: true });
 
-const gradients = [
-  'from-pink-500 to-rose-500',
-  'from-purple-500 to-indigo-500',
-  'from-cyan-500 to-blue-500',
-  'from-emerald-400 to-teal-500',
-  'from-amber-400 to-orange-500',
-  'from-fuchsia-500 to-pink-500',
-  'from-blue-400 to-indigo-500',
-  'from-violet-500 to-purple-500',
+// 无独立头像时使用的兜底渐变底色序列（顺序固定，影响配色映射）。
+const artistGradients = [
+  'from-pink-500 to-rose-500', 'from-purple-500 to-indigo-500',
+  'from-cyan-500 to-blue-500', 'from-emerald-400 to-teal-500',
+  'from-amber-400 to-orange-500', 'from-fuchsia-500 to-pink-500',
+  'from-blue-400 to-indigo-500', 'from-violet-500 to-purple-500',
 ];
 
-const getGradientForArtist = (name: string) => {
+// 按名字哈希稳定地挑一种渐变。
+function gradientFor(name: string): string {
   let hash = 0;
-  for (let index = 0; index < name.length; index += 1) {
-    hash = name.charCodeAt(index) + ((hash << 5) - hash);
+  for (let i = 0; i < name.length; i += 1) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
+  return artistGradients[Math.abs(hash) % artistGradients.length];
+}
 
-  return gradients[Math.abs(hash) % gradients.length];
-};
+// —— 排序菜单 ——
+function toggleSortMenu() {
+  sortMenuOpen.value = !sortMenuOpen.value;
+}
 
-let pointerDownInfo: { x: number; y: number; index: number; artist: ArtistListItem } | null = null;
+function closeSortMenu() {
+  sortMenuOpen.value = false;
+}
 
-const handlePointerDown = (event: PointerEvent, index: number, artist: ArtistListItem) => {
-  if (isSearchActive.value || (event.pointerType === 'mouse' && event.button !== 0)) {
+function pickSortMode(mode: 'count' | 'name' | 'custom') {
+  artistSortMode.value = mode;
+  sortMenuOpen.value = false;
+}
+
+function sortOptionClass(mode: 'count' | 'name' | 'custom') {
+  return artistSortMode.value === mode ? 'text-[#EC4141] font-medium' : 'text-gray-700 dark:text-gray-200';
+}
+
+// —— 卡片展示辅助 ——
+function artistInitial(name: string) {
+  return name.charAt(0).toUpperCase();
+}
+
+function artistCardClass(name: string) {
+  const dragging = pointerDragState.active && pointerDragState.type === 'artist';
+  return [dragging && pointerDragState.data?.name === name ? 'opacity-50 scale-[0.97]' : ''];
+}
+
+function isDropTarget(name: string) {
+  return pointerDragState.active && pointerDragState.type === 'artist' && dropTargetName.value === name && pointerDragState.data?.name !== name;
+}
+
+// —— 拖拽排序手势 ——
+interface PressTracking { x: number; y: number; index: number; artist: ArtistListItem }
+let pressTracking: PressTracking | null = null;
+
+function onCardPress(event: PointerEvent, index: number, artist: ArtistListItem) {
+  if (searchFilterOn.value) return;
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  pressTracking = { x: event.clientX, y: event.clientY, index, artist };
+}
+
+function onWindowPointerMove(event: PointerEvent) {
+  if (pointerDragState.active) {
+    pointerDragState.mouseX = event.clientX;
+    pointerDragState.mouseY = event.clientY;
     return;
   }
+  if (!pressTracking) return;
 
-  pointerDownInfo = { x: event.clientX, y: event.clientY, index, artist };
-};
+  if (event.pointerType !== 'mouse') event.preventDefault();
 
-const handleGlobalPointerMove = (event: PointerEvent) => {
-  if (dragSession.active) {
-    dragSession.mouseX = event.clientX;
-    dragSession.mouseY = event.clientY;
-    return;
+  const moved = Math.hypot(event.clientX - pressTracking.x, event.clientY - pressTracking.y);
+  if (moved <= 5) return;
+
+  pointerDragState.active = true;
+  pointerDragState.type = 'artist';
+  pointerDragState.data = { index: pressTracking.index, name: pressTracking.artist.name };
+  pointerDragState.showGhost = true;
+  pointerDragState.mouseX = event.clientX;
+  pointerDragState.mouseY = event.clientY;
+}
+
+function clearDragState() {
+  pressTracking = null;
+  if (pointerDragState.type === 'artist') {
+    pointerDragState.active = false;
+    pointerDragState.showGhost = false;
+    pointerDragState.type = 'song';
+    pointerDragState.data = null;
+    dropTargetName.value = null;
   }
+}
 
-  if (!pointerDownInfo) {
-    return;
-  }
+function finishPointerGesture(cancelled = false) {
+  const dropping = !cancelled && pointerDragState.active && pointerDragState.type === 'artist' && dropTargetName.value && pressTracking;
+  if (dropping && pressTracking) {
+    const fromIndex = pressTracking.index;
+    const targetIndex = visibleArtists.value.findIndex((artist) => artist.name === dropTargetName.value);
 
-  if (event.pointerType !== 'mouse') {
-    event.preventDefault();
-  }
-
-  const dist = Math.hypot(event.clientX - pointerDownInfo.x, event.clientY - pointerDownInfo.y);
-  if (dist <= 5) {
-    return;
-  }
-
-  dragSession.active = true;
-  dragSession.type = 'artist';
-  dragSession.data = { index: pointerDownInfo.index, name: pointerDownInfo.artist.name };
-  dragSession.showGhost = true;
-  dragSession.mouseX = event.clientX;
-  dragSession.mouseY = event.clientY;
-};
-
-const resetArtistDrag = () => {
-  pointerDownInfo = null;
-  if (dragSession.type === 'artist') {
-    dragSession.active = false;
-    dragSession.showGhost = false;
-    dragSession.type = 'song';
-    dragSession.data = null;
-    dragOverName.value = null;
-  }
-};
-
-const handleGlobalPointerEnd = (cancelled = false) => {
-  if (!cancelled && dragSession.active && dragSession.type === 'artist' && dragOverName.value && pointerDownInfo) {
-    const fromIndex = pointerDownInfo.index;
-    const toIndex = filteredArtistList.value.findIndex((artist) => artist.name === dragOverName.value);
-
-    if (toIndex !== -1 && fromIndex !== toIndex) {
-      const list = [...filteredArtistList.value];
-      const [removed] = list.splice(fromIndex, 1);
-      if (removed) {
-        list.splice(toIndex, 0, removed);
-        updateArtistOrder(list.map((artist) => artist.name));
+    if (targetIndex !== -1 && targetIndex !== fromIndex) {
+      const reordered = [...visibleArtists.value];
+      const [movedArtist] = reordered.splice(fromIndex, 1);
+      if (movedArtist) {
+        reordered.splice(targetIndex, 0, movedArtist);
+        reorderArtists(reordered.map((artist) => artist.name));
       }
     }
   }
 
-  resetArtistDrag();
-};
+  clearDragState();
+}
 
-const handleGlobalPointerUp = () => handleGlobalPointerEnd(false);
-const handleGlobalPointerCancel = () => handleGlobalPointerEnd(true);
+const onWindowPointerUp = () => finishPointerGesture(false);
+const onWindowPointerCancel = () => finishPointerGesture(true);
 
-const handleItemPointerMove = (_event: PointerEvent, artistName: string) => {
-  if (dragSession.active && dragSession.type === 'artist') {
-    dragOverName.value = artistName;
-  }
-};
+function onCardPointerMove(_event: PointerEvent, artistName: string) {
+  if (pointerDragState.active && pointerDragState.type === 'artist') dropTargetName.value = artistName;
+}
 
-const closeMenu = (event: MouseEvent) => {
+function onDocClick(event: MouseEvent) {
   const target = event.target as HTMLElement;
-  if (!target.closest('.relative.z-50')) {
-    showSortMenu.value = false;
-  }
-};
+  if (!target.closest('.relative.z-50')) sortMenuOpen.value = false;
+}
 
 onMounted(() => {
-  updateViewportMetrics();
-  window.addEventListener('pointermove', handleGlobalPointerMove);
-  window.addEventListener('pointerup', handleGlobalPointerUp);
-  window.addEventListener('pointercancel', handleGlobalPointerCancel);
-  window.addEventListener('click', closeMenu);
-  window.addEventListener('resize', updateViewportMetrics);
-  if (containerRef.value) {
-    containerResizeObserver = new ResizeObserver(() => {
-      updateViewportMetrics();
-    });
-    containerResizeObserver.observe(containerRef.value);
+  syncLayoutMetrics();
+  window.addEventListener('pointermove', onWindowPointerMove);
+  window.addEventListener('pointerup', onWindowPointerUp);
+  window.addEventListener('pointercancel', onWindowPointerCancel);
+  window.addEventListener('click', onDocClick);
+  window.addEventListener('resize', syncLayoutMetrics);
+
+  const box = scrollBoxRef.value;
+  if (box) {
+    layoutResizeObserver = new ResizeObserver(() => { syncLayoutMetrics(); });
+    layoutResizeObserver.observe(box);
   }
-  requestAnimationFrame(() => {
-    void initCoverObserver();
-  });
+
+  requestAnimationFrame(() => { void setupCoverObserver(); });
 });
 
-onBeforeUnmount(() => {
-  saveViewportCoverSnapshot();
-});
+onBeforeUnmount(() => { persistSnapshotCovers(); });
 
 onUnmounted(() => {
-  window.removeEventListener('pointermove', handleGlobalPointerMove);
-  window.removeEventListener('pointerup', handleGlobalPointerUp);
-  window.removeEventListener('pointercancel', handleGlobalPointerCancel);
-  window.removeEventListener('click', closeMenu);
-  window.removeEventListener('resize', updateViewportMetrics);
-  if (containerResizeObserver) {
-    containerResizeObserver.disconnect();
-    containerResizeObserver = null;
-  }
-  if (coverObserver) {
-    coverObserver.disconnect();
-    coverObserver = null;
-  }
-  displayedCoverUrls.clear();
-  visibleCoverPaths = new Set<string>();
+  window.removeEventListener('pointermove', onWindowPointerMove);
+  window.removeEventListener('pointerup', onWindowPointerUp);
+  window.removeEventListener('pointercancel', onWindowPointerCancel);
+  window.removeEventListener('click', onDocClick);
+  window.removeEventListener('resize', syncLayoutMetrics);
+
+  layoutResizeObserver?.disconnect();
+  layoutResizeObserver = null;
+  coverWatcher?.disconnect();
+  coverWatcher = null;
+
+  coverUrlMap.clear();
+  trackedCoverPaths = new Set<string>();
 });
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col overflow-hidden bg-transparent h-full min-h-0" @click="showSortMenu = false">
+  <div class="flex-1 flex flex-col overflow-hidden bg-transparent h-full min-h-0" @click="closeSortMenu">
     <header class="h-auto px-6 pt-2 pb-3 shrink-0 select-none flex flex-col justify-center z-10 relative">
       <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2 pb-1">
-          <h2 class="text-xl font-bold text-gray-900 dark:text-white">歌手列表</h2>
-        </div>
+        <div class="flex items-center gap-2 pb-1"><h2 class="text-xl font-bold text-gray-900 dark:text-white">歌手列表</h2></div>
 
         <div class="relative z-50 flex items-center gap-2">
-          <button
-            title="排序方式"
-            class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-            @click.stop="showSortMenu = !showSortMenu"
-          >
+          <button title="排序方式" @click.stop="toggleSortMenu" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
             <SortModeIcon class="h-4 w-4" />
           </button>
 
-          <div v-if="showSortMenu" class="absolute right-0 top-full mt-2 w-48 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md rounded-xl shadow-xl border border-gray-100 dark:border-white/10 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+          <div v-if="sortMenuOpen" class="absolute right-0 top-full mt-2 w-48 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md rounded-xl shadow-xl border border-gray-100 dark:border-white/10 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
             <div class="py-1">
-              <button
-                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"
-                :class="artistSortMode === 'name' ? 'text-[#EC4141] font-medium' : 'text-gray-700 dark:text-gray-200'"
-                @click="handleSortChange('name')"
-              >
-                <span>按名称排序 (A-Z)</span>
-                <svg v-if="artistSortMode === 'name'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-              </button>
-              <button
-                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"
-                :class="artistSortMode === 'count' ? 'text-[#EC4141] font-medium' : 'text-gray-700 dark:text-gray-200'"
-                @click="handleSortChange('count')"
-              >
-                <span>按数量排序 (多->少)</span>
-                <svg v-if="artistSortMode === 'count'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-              </button>
-              <button
-                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between cursor-default"
-                :class="artistSortMode === 'custom' ? 'text-[#EC4141] font-medium' : 'text-gray-700 dark:text-gray-200'"
-              >
-                <span>自定义排序 (拖拽触发)</span>
-                <svg v-if="artistSortMode === 'custom'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-              </button>
+              <button @click="pickSortMode('name')" :class="sortOptionClass('name')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"><span>按名称排序 (A-Z)</span><svg v-if="artistSortMode === 'name'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
+              <button @click="pickSortMode('count')" :class="sortOptionClass('count')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"><span>按数量排序 (多->少)</span><svg v-if="artistSortMode === 'count'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
+              <button :class="sortOptionClass('custom')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between cursor-default"><span>自定义排序 (拖拽触发)</span><svg v-if="artistSortMode === 'custom'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
             </div>
           </div>
         </div>
       </div>
     </header>
 
-    <section ref="containerRef" class="artists-scroll-container flex-1 overflow-y-auto px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3 lg:px-8 lg:pb-8 lg:pt-3 custom-scrollbar relative z-0" @scroll="handleContainerScroll">
-      <div
-        v-if="stickyArtistHeader"
-        class="pointer-events-none sticky top-0 z-20"
-        :style="{ height: `${ARTIST_SECTION_HEADER_HEIGHT}px`, marginBottom: `-${ARTIST_SECTION_HEADER_HEIGHT}px` }"
-        aria-hidden="true"
-      >
-        <div
-          class="h-6 flex items-end gap-3 pb-0"
-          :style="{ transform: `translateY(${stickyArtistHeader.offset})`, willChange: 'transform' }"
-        >
-          <div class="text-xl md:text-2xl font-black tracking-[0.2em] text-gray-900 dark:text-white/90">
-            {{ stickyArtistHeader.title }}
-          </div>
+    <section ref="scrollBoxRef" @scroll="onScrollCapture" class="artists-scroll-container flex-1 overflow-y-auto px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3 lg:px-8 lg:pb-8 lg:pt-3 custom-scrollbar relative z-0">
+      <div v-if="floatingGroupTitle" aria-hidden="true" class="pointer-events-none sticky top-0 z-20" :style="{ height: `${GROUP_TITLE_HEIGHT}px`, marginBottom: `-${GROUP_TITLE_HEIGHT}px` }">
+        <div class="h-6 flex items-end gap-3 pb-0" :style="{ transform: `translateY(${floatingGroupTitle.offset})`, willChange: 'transform' }">
+          <div class="text-xl md:text-2xl font-black tracking-[0.2em] text-gray-900 dark:text-white/90">{{ floatingGroupTitle.title }}</div>
         </div>
       </div>
 
-      <div
-        v-if="artistSortMode === 'name'"
-        :style="{ paddingTop: groupedArtistVirtualState.paddingTop, paddingBottom: groupedArtistVirtualState.paddingBottom }"
-      >
-        <template v-for="row in groupedArtistVirtualState.rows" :key="row.key">
-          <div
-            v-if="row.type === 'header'"
-            class="h-6 flex items-end gap-3 pb-0 transition-opacity duration-150"
-            :class="{ 'opacity-0': isStickyArtistHeaderRow(row.key, row.top) }"
-          >
-            <div class="text-xl md:text-2xl font-black tracking-[0.2em] text-gray-900 dark:text-white/90">
-              {{ row.title }}
-            </div>
+      <div v-if="artistSortMode === 'name'" :style="{ paddingTop: groupedViewState.paddingTop, paddingBottom: groupedViewState.paddingBottom }">
+        <template v-for="row in groupedViewState.rows" :key="row.key">
+          <div v-if="row.type === 'header'" :class="{ 'opacity-0': shouldFadeSourceHeader(row.key, row.top) }" class="h-6 flex items-end gap-3 pb-0 transition-opacity duration-150">
+            <div class="text-xl md:text-2xl font-black tracking-[0.2em] text-gray-900 dark:text-white/90">{{ row.title }}</div>
           </div>
 
-          <div
-            v-else
-            class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6"
-            :style="{ paddingBottom: `${row.bottomGap}px` }"
-          >
-            <div
-              v-for="item in row.items"
-              :key="item.artist.name"
-              class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]"
-              :class="[
-                dragSession.active && dragSession.type === 'artist' && dragSession.data?.name === item.artist.name ? 'opacity-50 scale-[0.97]' : '',
-              ]"
-              @pointerdown="handlePointerDown($event, item.index, item.artist)"
-              @pointermove="handleItemPointerMove($event, item.artist.name)"
-              @click="handleArtistClick(item.artist)"
-            >
-              <div
-                class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200"
-                :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath"
-                :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
-              >
+          <div v-else class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6" :style="{ paddingBottom: `${row.bottomGap}px` }">
+            <div v-for="item in row.items" :key="item.artist.name" @pointerdown="onCardPress($event, item.index, item.artist)" @pointermove="onCardPointerMove($event, item.artist.name)" @click="onArtistCardClick(item.artist)" :class="artistCardClass(item.artist.name)" class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]">
+              <div class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200" :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath" :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': isDropTarget(item.artist.name) }">
                 <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center">
-                  <img v-if="getArtistAvatarUrl(item.artist)" :src="getArtistAvatarUrl(item.artist)" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="item.artist.name">
-                  <div v-else class="w-full h-full flex items-center justify-center text-lg md:text-xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300" :class="[getGradientForArtist(item.artist.name), { 'animate-pulse': isArtistAvatarLoading(item.artist) }]">
-                    {{ item.artist.name.charAt(0).toUpperCase() }}
-                  </div>
+                  <img v-if="avatarFor(item.artist)" :src="avatarFor(item.artist)" :alt="item.artist.name" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false">
+                  <div v-else :class="[gradientFor(item.artist.name), { 'animate-pulse': avatarPending(item.artist) }]" class="w-full h-full flex items-center justify-center text-lg md:text-xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300">{{ artistInitial(item.artist.name) }}</div>
                   <div class="absolute inset-0 bg-white/0 group-hover:bg-white/10 dark:bg-black/5 dark:group-hover:bg-transparent transition-colors duration-300"></div>
                 </div>
               </div>
 
-              <div class="flex-1 min-w-0">
-                <h3 class="font-medium text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-snug">
-                  {{ item.artist.name }}
-                </h3>
-              </div>
+              <div class="flex-1 min-w-0"><h3 class="font-medium text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-snug">{{ item.artist.name }}</h3></div>
             </div>
           </div>
         </template>
       </div>
 
-      <div
-        v-else
-        class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6 gap-y-4"
-        :style="{ paddingTop: flatArtistVirtualState.paddingTop, paddingBottom: flatArtistVirtualState.paddingBottom }"
-      >
-        <div
-          v-for="item in flatArtistVirtualState.items"
-          :key="item.artist.name"
-          class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]"
-          :class="[
-            dragSession.active && dragSession.type === 'artist' && dragSession.data?.name === item.artist.name ? 'opacity-50 scale-[0.97]' : '',
-          ]"
-          @pointerdown="handlePointerDown($event, item.index, item.artist)"
-          @pointermove="handleItemPointerMove($event, item.artist.name)"
-          @click="handleArtistClick(item.artist)"
-        >
-          <div
-            class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200"
-            :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath"
-            :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
-          >
+      <div v-else class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6 gap-y-4" :style="{ paddingTop: flatViewState.paddingTop, paddingBottom: flatViewState.paddingBottom }">
+        <div v-for="item in flatViewState.items" :key="item.artist.name" @pointerdown="onCardPress($event, item.index, item.artist)" @pointermove="onCardPointerMove($event, item.artist.name)" @click="onArtistCardClick(item.artist)" :class="artistCardClass(item.artist.name)" class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]">
+          <div class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200" :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath" :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': isDropTarget(item.artist.name) }">
             <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center">
-              <img v-if="getArtistAvatarUrl(item.artist)" :src="getArtistAvatarUrl(item.artist)" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="item.artist.name">
-              <div v-else class="w-full h-full flex items-center justify-center text-lg md:text-xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300" :class="[getGradientForArtist(item.artist.name), { 'animate-pulse': isArtistAvatarLoading(item.artist) }]">
-                {{ item.artist.name.charAt(0).toUpperCase() }}
-              </div>
+              <img v-if="avatarFor(item.artist)" :src="avatarFor(item.artist)" :alt="item.artist.name" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false">
+              <div v-else :class="[gradientFor(item.artist.name), { 'animate-pulse': avatarPending(item.artist) }]" class="w-full h-full flex items-center justify-center text-lg md:text-xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300">{{ artistInitial(item.artist.name) }}</div>
               <div class="absolute inset-0 bg-white/0 group-hover:bg-white/10 dark:bg-black/5 dark:group-hover:bg-transparent transition-colors duration-300"></div>
             </div>
           </div>
 
-          <div class="flex-1 min-w-0">
-            <h3 class="font-medium text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-snug">
-              {{ item.artist.name }}
-            </h3>
-          </div>
+          <div class="flex-1 min-w-0"><h3 class="font-medium text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-snug">{{ item.artist.name }}</h3></div>
         </div>
       </div>
     </section>
@@ -754,7 +599,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.artists-scroll-container {
-  overflow-anchor: none;
-}
+/* 关闭滚动锚定，避免虚拟列表占位高度变化时浏览器自行调整滚动位置。 */
+.artists-scroll-container { overflow-anchor: none; }
 </style>

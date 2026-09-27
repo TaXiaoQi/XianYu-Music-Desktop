@@ -8,8 +8,8 @@ describe('folder navigation layout', () => {
   it('shows user-added root folders in the left tree instead of the top header', () => {
     expect(foldersHeaderSource).not.toContain('v-for="rootNode in folderTree"');
     expect(foldersHeaderSource).toContain('文件夹');
-    expect(masterPanelSource).toContain('const visibleTreeNodes = computed(() => folderTree.value);');
-    expect(masterPanelSource).toContain('v-for="node in visibleTreeNodes"');
+    expect(masterPanelSource).toContain('const shownNodes = computed(() => folderTree.value);');
+    expect(masterPanelSource).toContain('v-for="node in shownNodes"');
     expect(masterPanelSource).toContain(':isRoot="true"');
   });
 

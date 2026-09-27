@@ -1,64 +1,62 @@
+/*
+ * localStore suite: behaviour without a browser localStorage global plus
+ * round-trips when one is available. Behavioural coverage is unchanged.
+ */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { localStore } from './localStore';
 import localStoreSource from './localStore.ts?raw';
+import { localStore } from './localStore';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-describe('localStore: non-browser environment safety', () => {
+const GUARD_SNIPPET = "typeof localStorage === 'undefined'";
+
+const stubLiveStorage = () => {
+  const backing: Record<string, string> = {};
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => (key in backing ? backing[key] : null),
+    setItem: (key: string, value: string) => { backing[key] = value; },
+    removeItem: (key: string) => { delete backing[key]; },
+    clear: () => { Object.keys(backing).forEach((k) => delete backing[k]); },
+    get length() { return Object.keys(backing).length; },
+    key: (index: number) => Object.keys(backing)[index] ?? null,
+  });
+};
+
+describe('localStore — behaviour without a localStorage global', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('getString returns null when localStorage is undefined', () => {
-    vi.stubGlobal('localStorage', undefined);
-    expect(localStore.getString('key')).toBeNull();
-  });
+  type GuardScenario = { title: string; exercise: () => unknown; degradesTo: unknown };
 
-  it('setString does not throw when localStorage is undefined', () => {
-    vi.stubGlobal('localStorage', undefined);
-    expect(() => localStore.setString('key', 'value')).not.toThrow();
-  });
+  const scenarios: GuardScenario[] = [
+    { title: 'getString degrades to null', exercise: () => localStore.getString('key'), degradesTo: null },
+    { title: 'setString stays silent', exercise: () => localStore.setString('key', 'value'), degradesTo: undefined },
+    { title: 'remove stays silent', exercise: () => localStore.remove('key'), degradesTo: undefined },
+    { title: 'clear stays silent', exercise: () => localStore.clear(), degradesTo: undefined },
+    { title: 'getJson degrades to null', exercise: () => localStore.getJson('key'), degradesTo: null },
+    { title: 'setJson stays silent', exercise: () => localStore.setJson('key', { data: true }), degradesTo: undefined },
+  ];
 
-  it('remove does not throw when localStorage is undefined', () => {
-    vi.stubGlobal('localStorage', undefined);
-    expect(() => localStore.remove('key')).not.toThrow();
-  });
+  for (const scenario of scenarios) {
+    it(scenario.title, () => {
+      vi.stubGlobal('localStorage', undefined);
+      expect(scenario.exercise()).toBe(scenario.degradesTo);
+    });
+  }
 
-  it('clear does not throw when localStorage is undefined', () => {
-    vi.stubGlobal('localStorage', undefined);
-    expect(() => localStore.clear()).not.toThrow();
-  });
-
-  it('getJson returns null when localStorage is undefined', () => {
-    vi.stubGlobal('localStorage', undefined);
-    expect(localStore.getJson('key')).toBeNull();
-  });
-
-  it('setJson does not throw when localStorage is undefined', () => {
-    vi.stubGlobal('localStorage', undefined);
-    expect(() => localStore.setJson('key', { data: true })).not.toThrow();
-  });
-
-  it('typeof localStorage === "undefined" check is used (source code verification)', () => {
-    const guardCount = (localStoreSource.match(/typeof localStorage === 'undefined'/g) || []).length;
-    expect(guardCount).toBeGreaterThanOrEqual(6);
+  it('source keeps the typeof localStorage guard in place', () => {
+    const guardOccurrences = localStoreSource.split(GUARD_SNIPPET).length - 1;
+    expect(guardOccurrences).toBeGreaterThanOrEqual(6);
   });
 });
 
-describe('localStore: with localStorage available', () => {
+describe('localStore — with a localStorage global available', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('round-trips complex JSON objects', () => {
-    const storage: Record<string, string> = {};
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => storage[key] ?? null,
-      setItem: (key: string, value: string) => { storage[key] = value; },
-      removeItem: (key: string) => { delete storage[key]; },
-      clear: () => { Object.keys(storage).forEach(k => delete storage[k]); },
-      get length() { return Object.keys(storage).length; },
-      key: (i: number) => Object.keys(storage)[i] ?? null,
-    });
+  it('round-trips complex JSON structures', () => {
+    stubLiveStorage();
 
     const complexData = {
       presets: [
@@ -69,27 +67,21 @@ describe('localStore: with localStorage available', () => {
     };
 
     localStore.setJson('complex', complexData);
-    const result = localStore.getJson<typeof complexData>('complex');
-    expect(result).toEqual(complexData);
+    const restored = localStore.getJson<typeof complexData>('complex');
+    expect(restored).toEqual(complexData);
   });
 
-  it('handles concurrent writes and reads', () => {
-    const storage: Record<string, string> = {};
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => storage[key] ?? null,
-      setItem: (key: string, value: string) => { storage[key] = value; },
-      removeItem: (key: string) => { delete storage[key]; },
-      clear: () => { Object.keys(storage).forEach(k => delete storage[k]); },
-      get length() { return Object.keys(storage).length; },
-      key: (i: number) => Object.keys(storage)[i] ?? null,
-    });
+  it('copes with many interleaved writes and reads', () => {
+    stubLiveStorage();
 
     for (let i = 0; i < 100; i++) {
-      localStore.setJson(`key_${i}`, { index: i });
+      const storageKey = `key_${i}`;
+      localStore.setJson(storageKey, { index: i });
     }
 
     for (let i = 0; i < 100; i++) {
-      expect(localStore.getJson<{ index: number }>(`key_${i}`)).toEqual({ index: i });
+      const storageKey = `key_${i}`;
+      expect(localStore.getJson<{ index: number }>(storageKey)).toEqual({ index: i });
     }
   });
 });

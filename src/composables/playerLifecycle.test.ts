@@ -10,194 +10,140 @@ import { useUiStore } from '../shared/stores/ui';
 import { createPlayerLifecycle } from '../features/playback/playerLifecycle';
 import * as colorExtraction from './colorExtraction';
 
-const mocks = vi.hoisted(() => ({
+// —— 提升到文件顶部的 API 打桩 ——
+
+const apiSpies = vi.hoisted(() => ({
   listen: vi.fn(),
-  setVolume: vi.fn().mockResolvedValue(undefined),
-  setOutputDevice: vi.fn().mockResolvedValue(undefined),
-  setAudioOutputMode: vi.fn().mockResolvedValue(undefined),
-  updateLoudnessSettings: vi.fn().mockResolvedValue(undefined),
+  setVolume: vi.fn().mockResolvedValue(undefined), setOutputDevice: vi.fn().mockResolvedValue(undefined),
+  setAudioOutputMode: vi.fn().mockResolvedValue(undefined), updateLoudnessSettings: vi.fn().mockResolvedValue(undefined),
   getRemoteSources: vi.fn().mockResolvedValue([]),
-  syncRemoteSource: vi.fn().mockResolvedValue(undefined),
-  precacheRemoteSong: vi.fn().mockResolvedValue(undefined),
+  syncRemoteSource: vi.fn().mockResolvedValue(undefined), precacheRemoteSong: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
-  convertFileSrc: (path: string) => `asset://${path}`,
+  convertFileSrc: (filePath: string) => `asset://${filePath}`,
 }));
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: mocks.listen,
-}));
+vi.mock('@tauri-apps/api/event', () => ({ listen: apiSpies.listen }));
 
 vi.mock('../services/tauri/playbackApi', () => ({
   playbackApi: {
-    setVolume: mocks.setVolume,
-    setOutputDevice: mocks.setOutputDevice,
-    setAudioOutputMode: mocks.setAudioOutputMode,
-    updateLoudnessSettings: mocks.updateLoudnessSettings,
+    setVolume: apiSpies.setVolume, setOutputDevice: apiSpies.setOutputDevice,
+    setAudioOutputMode: apiSpies.setAudioOutputMode, updateLoudnessSettings: apiSpies.updateLoudnessSettings,
     setPreventSleep: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
 vi.mock('../services/tauri/remoteLibraryApi', () => ({
   remoteLibraryApi: {
-    getRemoteSources: mocks.getRemoteSources,
-    syncRemoteSource: mocks.syncRemoteSource,
-    precacheRemoteSong: mocks.precacheRemoteSong,
+    getRemoteSources: apiSpies.getRemoteSources,
+    syncRemoteSource: apiSpies.syncRemoteSource, precacheRemoteSong: apiSpies.precacheRemoteSong,
   },
 }));
 
 vi.mock('./colorExtraction', () => ({
-  clearPaletteCache: vi.fn(),
-  extractDominantColors: vi.fn().mockResolvedValue([]),
+  clearPaletteCache: vi.fn(), extractDominantColors: vi.fn().mockResolvedValue([]),
 }));
 
-const makeSong = (overrides: Partial<Song> = {}): Song => ({
-  path: 'remote://source/demo.mp3',
-  name: 'demo.mp3',
-  title: 'Demo',
-  artist: '未知歌手',
-  artist_names: ['未知歌手'],
-  effective_artist_names: ['未知歌手'],
-  album: '未知专辑',
-  album_artist: '未知歌手',
-  album_key: '未知专辑::未知歌手',
-  is_various_artists_album: false,
-  collapse_artist_credits: false,
-  duration: 0,
-  bitrate: 0,
-  sample_rate: 0,
-  format: 'mp3',
-  source_type: 'remote',
-  remote_source_id: 'source',
+/** 歌曲夹具：默认字段值属于行为规格，保持不变 */
+const buildSong = (overrides: Partial<Song> = {}): Song => ({
+  path: 'remote://source/demo.mp3', name: 'demo.mp3', title: 'Demo',
+  artist: '未知歌手', artist_names: ['未知歌手'], effective_artist_names: ['未知歌手'],
+  album: '未知专辑', album_artist: '未知歌手', album_key: '未知专辑::未知歌手',
+  is_various_artists_album: false, collapse_artist_credits: false,
+  duration: 0, bitrate: 0, sample_rate: 0,
+  format: 'mp3', source_type: 'remote', remote_source_id: 'source',
   ...overrides,
 });
 
-const createLifecycleDeps = (loadLyrics = vi.fn()) => ({
+/** 生命周期初始化依赖：默认全部空实现，测试按需覆写 */
+const buildLifecycleDeps = (loadLyrics = vi.fn()) => ({
   bootstrapLibrary: vi.fn().mockResolvedValue(undefined),
-  togglePlay: vi.fn(),
-  nextSong: vi.fn(),
-  prevSong: vi.fn(),
-  seekTo: vi.fn(),
-  stopPlayback: vi.fn(),
-  applyLibraryScanBatch: vi.fn(),
-  flushBufferedLibraryScanBatch: vi.fn(),
-  handleSeekCompleted: vi.fn(),
-  schedulePersistedState: vi.fn(),
-  flushPersistedState: vi.fn().mockResolvedValue(undefined),
-  restorePathBackedState: vi.fn().mockResolvedValue(undefined),
-  restoreRecentHistory: vi.fn().mockResolvedValue(undefined),
-  refreshStateSongReferences: vi.fn(),
-  loadLyrics,
-  disposePlayerPlayback: vi.fn(),
-  disposeLibraryRuntime: vi.fn(),
-  disposePlayerPersistence: vi.fn(),
-  disposeLibraryBatch: vi.fn(),
-  lastSongPathKey: 'last-song-path',
-  legacyLastSongKey: 'last-song',
+  togglePlay: vi.fn(), nextSong: vi.fn(), prevSong: vi.fn(), seekTo: vi.fn(), stopPlayback: vi.fn(),
+  applyLibraryScanBatch: vi.fn(), flushBufferedLibraryScanBatch: vi.fn(), handleSeekCompleted: vi.fn(),
+  schedulePersistedState: vi.fn(), flushPersistedState: vi.fn().mockResolvedValue(undefined),
+  restorePathBackedState: vi.fn().mockResolvedValue(undefined), restoreRecentHistory: vi.fn().mockResolvedValue(undefined),
+  refreshStateSongReferences: vi.fn(), loadLyrics,
+  disposePlayerPlayback: vi.fn(), disposeLibraryRuntime: vi.fn(), disposePlayerPersistence: vi.fn(), disposeLibraryBatch: vi.fn(),
+  lastSongPathKey: 'last-song-path', legacyLastSongKey: 'last-song',
 });
 
-let consoleWarnSpy: ReturnType<typeof vi.spyOn> | null = null;
+let warnSpy: ReturnType<typeof vi.spyOn> | null = null;
 
-describe('player lifecycle', () => {
+describe('playerLifecycle：播放器生命周期', () => {
   beforeEach(() => {
-    setActivePinia(createPinia());
-    vi.clearAllMocks();
-    mocks.listen.mockResolvedValue(vi.fn());
-    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    setActivePinia(createPinia()); vi.clearAllMocks();
+    apiSpies.listen.mockResolvedValue(vi.fn());
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    consoleWarnSpy?.mockRestore();
-    consoleWarnSpy = null;
+    warnSpy?.mockRestore();
+    warnSpy = null;
   });
 
-  it('extracts cover colors for desktop lyrics auto scheme when flow background is disabled', async () => {
+  it('关闭动态背景且桌面歌词为自动配色时，从封面提取主色', async () => {
     const playbackStore = usePlaybackStore();
     const settingsStore = useSettingsStore();
     const uiStore = useUiStore();
     const extractDominantColors = vi.mocked(colorExtraction.extractDominantColors);
     extractDominantColors.mockResolvedValueOnce(['#111111', '#222222', '#333333', '#444444']);
 
-    settingsStore.settings.theme.dynamicBgType = 'none';
-    settingsStore.settings.desktopLyrics.colorScheme = 'auto';
-    createPlayerLifecycle(createLifecycleDeps()).init();
+    settingsStore.settings.theme.dynamicBgType = 'none'; settingsStore.settings.desktopLyrics.colorScheme = 'auto';
+    createPlayerLifecycle(buildLifecycleDeps()).init();
     playbackStore.currentCover = 'http://asset.localhost/cover-thumb.png';
 
     await nextTick();
     await Promise.resolve();
 
-    expect(extractDominantColors).toHaveBeenCalledWith(
-      'http://asset.localhost/cover-thumb.png',
-      4,
-      { colorBoost: 25, depth: 30 },
-    );
+    expect(extractDominantColors).toHaveBeenCalledWith('http://asset.localhost/cover-thumb.png', 4, { colorBoost: 25, depth: 30 });
     expect(uiStore.dominantColors).toEqual(['#111111', '#222222', '#333333', '#444444']);
   });
 
-  it('patches current remote song metadata when the backend finishes caching it', async () => {
-    const callbacks = new Map<string, (event: { payload: unknown }) => void>();
-    mocks.listen.mockImplementation((eventName: string, callback: (event: { payload: unknown }) => void) => {
-      callbacks.set(eventName, callback);
+  it('后端完成远端歌曲缓存后，回填当前歌曲的元数据', async () => {
+    const handlers = new Map<string, (event: { payload: unknown }) => void>();
+    apiSpies.listen.mockImplementation((eventName: string, handler: (event: { payload: unknown }) => void) => {
+      handlers.set(eventName, handler);
       return Promise.resolve(vi.fn());
     });
     const libraryStore = useLibraryStore();
     const playbackStore = usePlaybackStore();
-    const staleSong = makeSong();
-    const parsedSong = makeSong({
-      title: '一个像夏天一个像秋天',
-      artist: '范玮琪',
-      artist_names: ['范玮琪'],
-      effective_artist_names: ['范玮琪'],
-      album: '我们的纪念日',
-      album_artist: '范玮琪',
-      album_key: '我们的纪念日::范玮琪',
-      duration: 249,
-      bitrate: 320,
-      sample_rate: 44100,
+    const staleSong = buildSong();
+    const parsedSong = buildSong({
+      title: '一个像夏天一个像秋天', artist: '范玮琪',
+      artist_names: ['范玮琪'], effective_artist_names: ['范玮琪'],
+      album: '我们的纪念日', album_artist: '范玮琪', album_key: '我们的纪念日::范玮琪',
+      duration: 249, bitrate: 320, sample_rate: 44100,
     });
-    libraryStore.setSourceSongs([staleSong]);
-    playbackStore.currentSong = staleSong;
+    libraryStore.setSourceSongs([staleSong]); playbackStore.currentSong = staleSong;
     const loadLyrics = vi.fn();
 
-    createPlayerLifecycle(createLifecycleDeps(loadLyrics)).init();
+    createPlayerLifecycle(buildLifecycleDeps(loadLyrics)).init();
 
-    callbacks.get('remote-lyrics-cache-ready')?.({
-      payload: {
-        uri: parsedSong.path,
-        song: parsedSong,
-      },
-    });
+    handlers.get('remote-lyrics-cache-ready')?.({ payload: { uri: parsedSong.path, song: parsedSong } });
 
     expect(playbackStore.currentSong?.artist).toBe('范玮琪');
-    expect(playbackStore.currentSong?.album).toBe('我们的纪念日');
-    expect(playbackStore.currentSong?.duration).toBe(249);
+    expect(playbackStore.currentSong?.album).toBe('我们的纪念日'); expect(playbackStore.currentSong?.duration).toBe(249);
     expect(loadLyrics).toHaveBeenCalledTimes(1);
   });
 
-  it('sends current song context when loudness settings change', async () => {
+  it('响度设置变化时携带当前歌曲上下文', async () => {
     const playbackStore = usePlaybackStore();
     const settingsStore = useSettingsStore();
-    playbackStore.currentSong = makeSong({
-      id: 42,
-      path: 'C:\\Music\\album.cue::track01',
-      cue_source_path: 'C:\\Music\\album.flac',
+    playbackStore.currentSong = buildSong({
+      id: 42, path: 'C:\\Music\\album.cue::track01', cue_source_path: 'C:\\Music\\album.flac',
     });
 
-    createPlayerLifecycle(createLifecycleDeps()).init();
+    createPlayerLifecycle(buildLifecycleDeps()).init();
     settingsStore.settings.audio.volumeBalance.enabled = true;
-    settingsStore.settings.audio.volumeBalance.gainOffsetDb = -2;
-    settingsStore.settings.audio.volumeBalance.preventClipping = false;
+    settingsStore.settings.audio.volumeBalance.gainOffsetDb = -2; settingsStore.settings.audio.volumeBalance.preventClipping = false;
 
     await nextTick();
     await Promise.resolve();
 
-    expect(mocks.updateLoudnessSettings).toHaveBeenLastCalledWith({
-      enabled: true,
-      songId: 42,
-      songPath: 'C:\\Music\\album.flac',
-      gainOffsetDb: -2,
-      preventClipping: false,
+    expect(apiSpies.updateLoudnessSettings).toHaveBeenLastCalledWith({
+      enabled: true, songId: 42, songPath: 'C:\\Music\\album.flac',
+      gainOffsetDb: -2, preventClipping: false,
     });
   });
 });

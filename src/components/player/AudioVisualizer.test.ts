@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import source from './AudioVisualizer.vue?raw';
 
-describe('AudioVisualizer low power rendering', () => {
-  it('does not fetch or animate samples while main window rendering is low power', () => {
-    expect(source).toContain('useRenderingPower');
-    expect(source).toContain('!isMainWindowLowPower.value');
-    expect(source).toContain('props.active && props.isPlaying && !isMainWindowLowPower.value');
-    expect(source).toContain('watch(() => [props.active, props.isPlaying, isMainWindowLowPower.value] as const');
+// 组件源码中必须存在的关键片段（低功耗时不取样本、不驱动动画，逐字匹配）
+const requiredSnippets = [
+  'useRenderingPower',
+  '!isMainWindowLowPower.value',
+  'props.active && props.isPlaying && !isMainWindowLowPower.value',
+  'watch(() => [props.active, props.isPlaying, isMainWindowLowPower.value] as const',
+];
+
+describe('AudioVisualizer 低功耗渲染约定', () => {
+  it('主窗口低功耗时停止采样拉取与动画', () => {
+    requiredSnippets.forEach((snippet) => {
+      expect(source).toContain(snippet);
+    });
   });
 });

@@ -11,108 +11,113 @@ import {
 } from './playerLibraryViewShared';
 
 interface FolderListItem {
-  path: string;
-  name: string;
-  count: number;
-  firstSongPath: string;
+  path: string; name: string;
+  count: number; firstSongPath: string;
 }
 
-interface UseLibraryFolderSelectorsOptions {
-  watchedFolders: Ref<string[]>;
-  sourceSongPaths: Ref<string[]>;
-  songLookup: ComputedRef<Map<string, Song>>;
-  currentFolderFilter: Ref<string>;
-  folderSortMode: Ref<FolderSortMode>;
+interface FolderSelectorDeps {
+  watchedFolders: Ref<string[]>; sourceSongPaths: Ref<string[]>; songLookup: ComputedRef<Map<string, Song>>;
+  currentFolderFilter: Ref<string>; folderSortMode: Ref<FolderSortMode>;
   folderCustomOrder: Ref<Record<string, string[]>>;
 }
 
-export function useLibraryFolderSelectors({
-  watchedFolders,
-  sourceSongPaths,
-  songLookup,
-  currentFolderFilter,
-  folderSortMode,
-  folderCustomOrder,
-}: UseLibraryFolderSelectorsOptions) {
-  const sourceSongs = computed(() =>
-    sourceSongPaths.value
-      .map(path => songLookup.value.get(path))
-      .filter((song): song is Song => !!song),
-  );
+// 单个文件夹条目：路径、展示名、直属歌曲数与首个歌曲路径。
+const buildFolderListItem = (folderPath: string, containedPaths: string[]): FolderListItem => ({
+  name: (folderPath.split(/[/\\]/).pop() || folderPath),
+  firstSongPath: containedPaths.length > 0 ? containedPaths[0] : '',
+  path: folderPath,
+  count: containedPaths.length,
+});
 
-  const currentFolderSongPaths = computed(() => {
-    if (!currentFolderFilter.value) {
+// 依据当前排序模式整理文件夹直属歌曲路径列表；未识别模式保持原有顺序。
+const sortFolderPaths = (
+  mode: FolderSortMode,
+  paths: string[],
+  lookup: Map<string, Song>,
+  folderFilter: string,
+  customOrderByFolder: Record<string, string[]>,
+): string[] => {
+  const pickSong = (path: string) => lookup.get(path);
+
+  if (mode === 'title') {
+    return sortItemsByAlphabetIndex(
+      paths.filter(path => lookup.has(path)),
+      path => getSongTitleLabel(lookup.get(path)!),
+    );
+  }
+
+  if (mode === 'name') {
+    return sortItemsByAlphabetIndex(
+      paths.filter(path => lookup.has(path)),
+      path => getSongFileNameLabel(lookup.get(path)!),
+    );
+  }
+
+  if (mode === 'artist') {
+    return [...paths].sort((x, y) =>
+      (pickSong(x)?.artist || '').localeCompare(pickSong(y)?.artist || '', 'zh-CN'),
+    );
+  }
+
+  if (mode === 'added_at') {
+    return [...paths].sort((x, y) => (pickSong(y)?.added_at || 0) - (pickSong(x)?.added_at || 0));
+  }
+
+  if (mode === 'track_number') {
+    return [...paths].sort((x, y) => compareSongPathsByTrackNumber(x, y, lookup));
+  }
+
+  if (mode === 'custom') {
+    const order = customOrderByFolder[folderFilter] || [];
+    if (order.length > 0) {
+      const rank = new Map(order.map((path, index) => [path, index] as const));
+      return [...paths].sort((x, y) =>
+        (rank.has(x) ? rank.get(x)! : Number.MAX_SAFE_INTEGER)
+        - (rank.has(y) ? rank.get(y)! : Number.MAX_SAFE_INTEGER),
+      );
+    }
+  }
+
+  return [...paths];
+};
+
+export function useLibraryFolderSelectors(deps: FolderSelectorDeps) {
+  const { watchedFolders, sourceSongPaths, songLookup, currentFolderFilter, folderSortMode, folderCustomOrder } = deps;
+
+  // 把路径序列展开为歌曲列表，跳过查不到的路径。
+  const toSongs = (paths: string[]) =>
+    paths.flatMap(path => {
+      const song = songLookup.value.get(path);
+      return song ? [song] : [];
+    });
+
+  const sourceSongs = computed(() => toSongs(sourceSongPaths.value));
+
+  const currentFolderSongPaths = computed<string[]>(() => {
+    const folderFilter = currentFolderFilter.value;
+    if (!folderFilter) {
       return [];
     }
 
-    const paths = sourceSongPaths.value.filter(path => isDirectParent(currentFolderFilter.value, path));
+    const directChildren = sourceSongPaths.value.filter(path =>
+      isDirectParent(folderFilter, path),
+    );
 
-    if (folderSortMode.value === 'title') {
-      return sortItemsByAlphabetIndex(paths.filter(path => songLookup.value.has(path)), (path) => getSongTitleLabel(songLookup.value.get(path)!));
-    }
-
-    if (folderSortMode.value === 'name') {
-      return sortItemsByAlphabetIndex(paths.filter(path => songLookup.value.has(path)), (path) => getSongFileNameLabel(songLookup.value.get(path)!));
-    }
-
-    if (folderSortMode.value === 'artist') {
-      return [...paths].sort((left, right) =>
-        (songLookup.value.get(left)?.artist || '').localeCompare(songLookup.value.get(right)?.artist || '', 'zh-CN'),
-      );
-    }
-
-    if (folderSortMode.value === 'added_at') {
-      return [...paths].sort((left, right) =>
-        (songLookup.value.get(right)?.added_at || 0) - (songLookup.value.get(left)?.added_at || 0),
-      );
-    }
-
-    if (folderSortMode.value === 'track_number') {
-      const sortedPaths = [...paths];
-      sortedPaths.sort((left, right) =>
-        compareSongPathsByTrackNumber(left, right, songLookup.value),
-      );
-      return sortedPaths;
-    }
-
-    if (folderSortMode.value === 'custom') {
-      const customOrder = folderCustomOrder.value[currentFolderFilter.value] || [];
-      if (customOrder.length > 0) {
-        const orderMap = new Map(customOrder.map((path, index) => [path, index]));
-        return [...paths].sort((left, right) => {
-          const leftIndex = orderMap.has(left) ? orderMap.get(left)! : Number.MAX_SAFE_INTEGER;
-          const rightIndex = orderMap.has(right) ? orderMap.get(right)! : Number.MAX_SAFE_INTEGER;
-          return leftIndex - rightIndex;
-        });
-      }
-    }
-
-    return paths;
+    return sortFolderPaths(
+      folderSortMode.value,
+      directChildren,
+      songLookup.value,
+      folderFilter,
+      folderCustomOrder.value,
+    );
   });
 
-  const folderList = computed<FolderListItem[]>(() =>
-    watchedFolders.value.map(folderPath => {
-      const songsInFolder = sourceSongPaths.value.filter(path => isDirectParent(folderPath, path));
+  const folderList = computed<FolderListItem[]>(() => watchedFolders.value.map((folderPath) => {
+    const contained = sourceSongPaths.value.filter(path => isDirectParent(folderPath, path));
+    return buildFolderListItem(folderPath, contained);
+  }));
 
-      return {
-        path: folderPath,
-        name: folderPath.split(/[/\\]/).pop() || folderPath,
-        count: songsInFolder.length,
-        firstSongPath: songsInFolder.length > 0 ? songsInFolder[0] : '',
-      };
-    }),
-  );
+  const currentFolderSongs = computed(() => toSongs(currentFolderSongPaths.value));
 
-  const currentFolderSongs = computed(() =>
-    currentFolderSongPaths.value
-      .map(path => songLookup.value.get(path))
-      .filter((song): song is Song => !!song),
-  );
-
-  return {
-    folderList,
-    currentFolderSongPaths,
-    currentFolderSongs,
-    sourceSongs,
-  };
+  return { folderList, currentFolderSongPaths, currentFolderSongs, sourceSongs };
 }

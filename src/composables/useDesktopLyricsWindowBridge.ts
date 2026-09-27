@@ -2,7 +2,7 @@ import { emitTo, listen } from '@tauri-apps/api/event';
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
-import { nextTick, onMounted, onUnmounted, watch, toRaw } from 'vue';
+import { toRaw, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 
@@ -17,164 +17,145 @@ import {
   persistDesktopLyricsVisibilityPreference,
 } from '../features/desktopLyrics/visibilityPreference';
 import {
-  createDesktopLyricsSongSnapshot,
-  DESKTOP_LYRICS_ACTION_EVENT,
-  DESKTOP_LYRICS_BOUNDS_EVENT,
-  DESKTOP_LYRICS_BOUNDS_KEY,
-  DESKTOP_LYRICS_PLAYBACK_EVENT,
-  DESKTOP_LYRICS_READY_EVENT,
-  DESKTOP_LYRICS_RESET_BOUNDS_EVENT,
-  DESKTOP_LYRICS_REVEAL_SURFACE_EVENT,
-  DESKTOP_LYRICS_REQUEST_STATE_EVENT,
-  DESKTOP_LYRICS_STATE_EVENT,
-  DESKTOP_LYRICS_VISIBILITY_EVENT,
-  DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT,
-  DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
-  DESKTOP_LYRICS_WINDOW_LABEL,
-  DESKTOP_LYRICS_WINDOW_MIN_HEIGHT,
-  DESKTOP_LYRICS_WINDOW_MIN_WIDTH,
-  restoreDesktopLyricsBounds,
-  resolveDesktopLyricsWorkArea,
-  type DesktopLyricsAction,
-  type DesktopLyricsPlaybackPayload,
-  type DesktopLyricsStatePayload,
-  type DesktopLyricsWorkArea,
-  type DesktopLyricsWindowBounds,
+  DESKTOP_LYRICS_ACTION_EVENT, DESKTOP_LYRICS_BOUNDS_EVENT, DESKTOP_LYRICS_BOUNDS_KEY,
+  DESKTOP_LYRICS_PLAYBACK_EVENT, DESKTOP_LYRICS_READY_EVENT, DESKTOP_LYRICS_RESET_BOUNDS_EVENT,
+  DESKTOP_LYRICS_REVEAL_SURFACE_EVENT, DESKTOP_LYRICS_REQUEST_STATE_EVENT, DESKTOP_LYRICS_STATE_EVENT,
+  DESKTOP_LYRICS_VISIBILITY_EVENT, DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT, DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
+  DESKTOP_LYRICS_WINDOW_LABEL, DESKTOP_LYRICS_WINDOW_MIN_HEIGHT, DESKTOP_LYRICS_WINDOW_MIN_WIDTH,
+  createDesktopLyricsSongSnapshot, resolveDesktopLyricsWorkArea, restoreDesktopLyricsBounds,
+  type DesktopLyricsAction, type DesktopLyricsPlaybackPayload, type DesktopLyricsStatePayload,
+  type DesktopLyricsWorkArea, type DesktopLyricsWindowBounds,
 } from '../features/desktopLyrics/shared';
 import { normalizeLyricsSyncOffsetSeconds } from '../features/settings/lyricsSyncOffset';
 
-let desktopLyricsWindowPromise: Promise<WebviewWindow> | null = null;
-const DESKTOP_LYRICS_PLAYBACK_SYNC_INTERVAL_MS = 400;
-const DESKTOP_LYRICS_READY_TIMEOUT_MS = 1200;
+// 主窗口侧的桌面歌词桥：负责歌词窗口的创建/销毁、边界持久化与状态推送。
 
-function logDesktopLyricsBridgeError(action: string, error: unknown) {
-  console.warn(`Failed to ${action} desktop lyrics window:`, error);
+let pendingWindowCreation: Promise<WebviewWindow> | null = null;
+
+const PLAYBACK_TICK_INTERVAL_MS = 400;
+const READY_WAIT_TIMEOUT_MS = 1200;
+const STATE_EMIT_COOLDOWN_MS = 30;
+
+function reportBridgeFailure(what: string, cause: unknown) {
+  console.warn(`Failed to ${what} desktop lyrics window:`, cause);
 }
 
+// 以“最近一次 currentTime 采样”的时间戳标记播放载荷，避免歌词窗口用发送时刻补偿进度。
 export function createDesktopLyricsPlaybackClockTracker(now = () => Date.now()) {
-  let sampledPlaybackTime: number | null = null;
-  let sampledAt = now();
+  let lastSampledTime: number | null = null;
+  let lastSampledStamp = now();
 
-  const markPlaybackTimeSample = (playbackTime: number) => {
-    if (!Number.isFinite(playbackTime)) return;
-
-    sampledPlaybackTime = Math.max(0, playbackTime);
-    sampledAt = now();
-  };
-
-  const resolveSyncedAt = (playbackTime: number) => {
-    if (
-      sampledPlaybackTime === null
-      || !Number.isFinite(playbackTime)
-      || Math.abs(playbackTime - sampledPlaybackTime) > 0.000_001
-    ) {
-      markPlaybackTimeSample(playbackTime);
-    }
-
-    return sampledAt;
-  };
+  function captureSample(time: number) {
+    if (!Number.isFinite(time)) return;
+    lastSampledTime = Math.max(0, time);
+    lastSampledStamp = now();
+  }
 
   return {
-    markPlaybackTimeSample,
-    resolveSyncedAt,
+    markPlaybackTimeSample: captureSample,
+    resolveSyncedAt(time: number) {
+      const drifted = lastSampledTime === null
+        || !Number.isFinite(time)
+        || Math.abs(time - lastSampledTime) > 0.000_001;
+      if (drifted) {
+        captureSample(time);
+      }
+      return lastSampledStamp;
+    },
   };
 }
 
-export function createDesktopLyricsReadyGate(timeoutMs = DESKTOP_LYRICS_READY_TIMEOUT_MS) {
-  let isReady = false;
-  let readyPromise: Promise<void> | null = null;
-  let resolveReady: (() => void) | null = null;
-  let readyTimeout: ReturnType<typeof setTimeout> | null = null;
+// 就绪闸门：歌词窗口上报就绪后放行；超时兜底放行，避免界面永久挂起。
+export function createDesktopLyricsReadyGate(timeoutMs = READY_WAIT_TIMEOUT_MS) {
+  let ready = false;
+  let pendingWait: Promise<void> | null = null;
+  let notifyWaiter: (() => void) | null = null;
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
-  const resolve = () => {
-    resolveReady?.();
-    resolveReady = null;
-    readyPromise = null;
-    if (readyTimeout) {
-      clearTimeout(readyTimeout);
-      readyTimeout = null;
+  function releaseWaiters() {
+    notifyWaiter?.();
+  }
+
+  function discardWaiter() {
+    notifyWaiter = null;
+    pendingWait = null;
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+      timeoutHandle = null;
     }
-  };
+  }
 
   return {
     markReady() {
-      isReady = true;
-      resolve();
+      ready = true;
+      releaseWaiters();
+      discardWaiter();
     },
     reset() {
-      isReady = false;
-      resolveReady = null;
-      readyPromise = null;
-      if (readyTimeout) {
-        clearTimeout(readyTimeout);
-        readyTimeout = null;
-      }
+      ready = false;
+      discardWaiter();
     },
     wait() {
-      if (isReady) {
+      if (ready) {
         return Promise.resolve();
       }
 
-      if (!readyPromise) {
-        readyPromise = new Promise<void>((resolvePromise) => {
-          resolveReady = resolvePromise;
-          readyTimeout = setTimeout(resolve, timeoutMs);
+      if (!pendingWait) {
+        pendingWait = new Promise<void>((wake) => {
+          notifyWaiter = wake;
+          timeoutHandle = setTimeout(() => {
+            releaseWaiters();
+            discardWaiter();
+          }, timeoutMs);
         });
       }
 
-      return readyPromise;
+      return pendingWait;
     },
   };
 }
 
-const desktopLyricsReadyGate = createDesktopLyricsReadyGate();
+const readyGate = createDesktopLyricsReadyGate();
 
-function readDesktopLyricsBounds(): DesktopLyricsWindowBounds | null {
+// —— 歌词窗口边界（位置/尺寸）在 localStorage 中的读写 ——
+
+function readPersistedBounds(): DesktopLyricsWindowBounds | null {
   if (typeof localStorage === 'undefined') return null;
+  const raw = localStorage.getItem(DESKTOP_LYRICS_BOUNDS_KEY);
+  if (!raw) return null;
 
-  const stored = localStorage.getItem(DESKTOP_LYRICS_BOUNDS_KEY);
-  if (!stored) return null;
-
+  let parsed: Partial<DesktopLyricsWindowBounds>;
   try {
-    const parsed = JSON.parse(stored) as Partial<DesktopLyricsWindowBounds>;
-    if (!Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) {
-      return null;
-    }
-
-    return {
-      x: Math.round(parsed.x as number),
-      y: Math.round(parsed.y as number),
-      width: Math.max(
-        DESKTOP_LYRICS_WINDOW_MIN_WIDTH,
-        Math.round(
-          Number.isFinite(parsed.width)
-            ? (parsed.width as number)
-            : DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
-        ),
-      ),
-      height: Math.max(
-        DESKTOP_LYRICS_WINDOW_MIN_HEIGHT,
-        Math.round(
-          Number.isFinite(parsed.height)
-            ? (parsed.height as number)
-            : DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT,
-        ),
-      ),
-    };
+    parsed = JSON.parse(raw) as Partial<DesktopLyricsWindowBounds>;
   } catch {
     return null;
   }
+
+  if (!Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) {
+    return null;
+  }
+
+  // 宽高缺省时回退到默认值，且不允许低于窗口最小尺寸。
+  const clampSide = (value: unknown, fallback: number, minimum: number) =>
+    Math.max(minimum, Math.round(Number.isFinite(value as number) ? (value as number) : fallback));
+
+  return {
+    x: Math.round(parsed.x as number),
+    y: Math.round(parsed.y as number),
+    width: clampSide(parsed.width, DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH, DESKTOP_LYRICS_WINDOW_MIN_WIDTH),
+    height: clampSide(parsed.height, DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT, DESKTOP_LYRICS_WINDOW_MIN_HEIGHT),
+  };
 }
 
-function writeDesktopLyricsBounds(bounds: DesktopLyricsWindowBounds) {
+function persistBounds(bounds: DesktopLyricsWindowBounds) {
   if (typeof localStorage === 'undefined') return;
-
-  localStorage.setItem(DESKTOP_LYRICS_BOUNDS_KEY, JSON.stringify({
+  const rounded = {
     x: Math.round(bounds.x),
     y: Math.round(bounds.y),
     width: Math.round(bounds.width),
     height: Math.round(bounds.height),
-  }));
+  };
+  localStorage.setItem(DESKTOP_LYRICS_BOUNDS_KEY, JSON.stringify(rounded));
 }
 
 export function clearDesktopLyricsStoredBounds() {
@@ -182,36 +163,36 @@ export function clearDesktopLyricsStoredBounds() {
   localStorage.removeItem(DESKTOP_LYRICS_BOUNDS_KEY);
 }
 
-async function resolveDesktopLyricsBounds(centerHorizontally: boolean) {
-  const bounds = readDesktopLyricsBounds();
-  if (!bounds) return null;
+// 结合显示器工作区还原边界；可选择在所在工作区内水平居中。
+async function computeRestoredBounds(shouldCenter: boolean) {
+  const stored = readPersistedBounds();
+  if (!stored) return null;
 
   try {
-    const workAreas: DesktopLyricsWorkArea[] = (await availableMonitors()).map((monitor) => ({
-      x: monitor.workArea.position.x,
-      y: monitor.workArea.position.y,
-      width: monitor.workArea.size.width,
-      height: monitor.workArea.size.height,
+    const monitors = await availableMonitors();
+    const workAreas: DesktopLyricsWorkArea[] = monitors.map((item) => ({
+      x: item.workArea.position.x,
+      y: item.workArea.position.y,
+      width: item.workArea.size.width,
+      height: item.workArea.size.height,
     }));
 
-    if (workAreas.length === 0) {
-      return bounds;
-    }
+    if (workAreas.length === 0) return stored;
 
-    const restored = restoreDesktopLyricsBounds(bounds, workAreas);
-    if (restored && centerHorizontally) {
-      const workArea = resolveDesktopLyricsWorkArea(workAreas, restored);
-      if (workArea) {
-        restored.x = workArea.x + Math.round((workArea.width - restored.width) / 2);
+    const restored = restoreDesktopLyricsBounds(stored, workAreas);
+    if (restored && shouldCenter) {
+      const area = resolveDesktopLyricsWorkArea(workAreas, restored);
+      if (area) {
+        restored.x = area.x + Math.round((area.width - restored.width) / 2);
       }
     }
     return restored;
   } catch {
-    return bounds;
+    return stored;
   }
 }
 
-async function getDesktopLyricsWindow() {
+function findLyricsWindow() {
   return WebviewWindow.getByLabel(DESKTOP_LYRICS_WINDOW_LABEL);
 }
 
@@ -221,71 +202,74 @@ export function createDesktopLyricsWindowOptions({
   alwaysOnTop: boolean;
   hasStoredBounds: boolean;
 }) {
+  // 窗口初始不可见且透明，等状态就绪后再展示，避免白屏闪烁。
   return {
     url: '/',
     title: 'XianYu Music Desktop Lyrics',
-    width: DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
-    height: DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT,
-    minWidth: DESKTOP_LYRICS_WINDOW_MIN_WIDTH,
-    minHeight: DESKTOP_LYRICS_WINDOW_MIN_HEIGHT,
     visible: false,
     decorations: false,
     transparent: true,
     shadow: false,
     skipTaskbar: true,
-    alwaysOnTop: true,
-    focus: false,
     focusable: true,
+    focus: false,
     minimizable: false,
     maximizable: false,
+    alwaysOnTop: true,
     center: !hasStoredBounds,
+    width: DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
+    height: DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT,
+    minWidth: DESKTOP_LYRICS_WINDOW_MIN_WIDTH,
+    minHeight: DESKTOP_LYRICS_WINDOW_MIN_HEIGHT,
   };
 }
 
-async function ensureDesktopLyricsWindow(alwaysOnTop: boolean, centerHorizontally: boolean) {
-  const existing = await getDesktopLyricsWindow();
+async function acquireLyricsWindow(alwaysOnTop: boolean, centerHorizontally: boolean) {
+  const existing = await findLyricsWindow();
   if (existing) return existing;
 
-  if (!desktopLyricsWindowPromise) {
-    desktopLyricsReadyGate.reset();
-    const bounds = await resolveDesktopLyricsBounds(centerHorizontally);
-    const windowInstance = new WebviewWindow(DESKTOP_LYRICS_WINDOW_LABEL, createDesktopLyricsWindowOptions({
-      alwaysOnTop,
-      hasStoredBounds: !!bounds,
-    }));
-
-    desktopLyricsWindowPromise = new Promise<WebviewWindow>((resolve, reject) => {
-      let settled = false;
-
-      void windowInstance.once('tauri://created', async () => {
-        if (settled) return;
-
-        try {
-          if (bounds) {
-            await windowInstance.setSize(new PhysicalSize(bounds.width, bounds.height));
-            await windowInstance.setPosition(new PhysicalPosition(bounds.x, bounds.y));
-          }
-
-          settled = true;
-          desktopLyricsWindowPromise = null;
-          resolve(windowInstance);
-        } catch (error) {
-          settled = true;
-          desktopLyricsWindowPromise = null;
-          reject(error);
-        }
-      });
-
-      void windowInstance.once('tauri://error', (event) => {
-        if (settled) return;
-        settled = true;
-        desktopLyricsWindowPromise = null;
-        reject(event.payload);
-      });
-    });
+  if (pendingWindowCreation) {
+    return pendingWindowCreation;
   }
 
-  return desktopLyricsWindowPromise;
+  readyGate.reset();
+  const bounds = await computeRestoredBounds(centerHorizontally);
+  const created = new WebviewWindow(DESKTOP_LYRICS_WINDOW_LABEL, createDesktopLyricsWindowOptions({
+    alwaysOnTop,
+    hasStoredBounds: bounds !== null,
+  }));
+
+  pendingWindowCreation = new Promise<WebviewWindow>((resolve, reject) => {
+    let finalized = false;
+
+    const settleCreation = () => {
+      finalized = true;
+      pendingWindowCreation = null;
+    };
+
+    void created.once('tauri://created', async () => {
+      if (finalized) return;
+      try {
+        if (bounds) {
+          await created.setSize(new PhysicalSize(bounds.width, bounds.height));
+          await created.setPosition(new PhysicalPosition(bounds.x, bounds.y));
+        }
+        settleCreation();
+        resolve(created);
+      } catch (error) {
+        settleCreation();
+        reject(error);
+      }
+    });
+
+    void created.once('tauri://error', (event) => {
+      if (finalized) return;
+      settleCreation();
+      reject(event.payload);
+    });
+  });
+
+  return pendingWindowCreation;
 }
 
 export function useDesktopLyricsWindowBridge() {
@@ -306,171 +290,187 @@ export function useDesktopLyricsWindowBridge() {
   const { currentSong, currentTime, isPlaying } = storeToRefs(playbackStore);
   const { audioDelay } = storeToRefs(settingsStore);
   const { dominantColors } = storeToRefs(uiStore);
-  const playbackClockTracker = createDesktopLyricsPlaybackClockTracker();
   const { isMainWindowLowPower } = useRenderingPower();
+  const clock = createDesktopLyricsPlaybackClockTracker();
 
-  let isMainWindowClosing = false;
-  let syncIntervalId: ReturnType<typeof setInterval> | null = null;
-  const unlisteners: Array<() => void> = [];
+  let mainWindowClosing = false;
+  let tickLoopHandle: ReturnType<typeof setInterval> | null = null;
+  const disposers: Array<() => void> = [];
+  const trackDisposer = (dispose: () => void) => {
+    disposers.push(dispose);
+  };
 
-  const createStatePayload = (): DesktopLyricsStatePayload => ({
-    song: createDesktopLyricsSongSnapshot(currentSong.value),
-    parsedLyrics: toRaw(parsedLyrics.value) as DesktopLyricsStatePayload['parsedLyrics'],
-    lyricsStatus: lyricsStatus.value,
-    fallbackText: currentLyricLine.value.text,
+  // —— 发往歌词窗口的载荷构造 ——
+
+  const buildStatePayload = (): DesktopLyricsStatePayload => {
+    const song = currentSong.value;
+    const desktop = desktopLyricsSettings;
+    const lyricPrefs = lyricsSettings;
+
+    return {
+      song: createDesktopLyricsSongSnapshot(song),
+      parsedLyrics: toRaw(parsedLyrics.value) as DesktopLyricsStatePayload['parsedLyrics'],
+      lyricsStatus: lyricsStatus.value,
+      fallbackText: currentLyricLine.value.text,
+      playbackTime: currentTime.value,
+      syncedAt: clock.resolveSyncedAt(currentTime.value),
+      isPlaying: isPlaying.value,
+      isFavorite: song ? isFavorite(song) : false,
+      audioDelay: audioDelay.value,
+      settings: {
+        showTranslation: lyricPrefs.showTranslation,
+        showRomaji: lyricPrefs.showRomaji,
+        isAlwaysOnTop: desktop.isAlwaysOnTop,
+        alwaysShowShadowBackground: desktop.alwaysShowShadowBackground,
+        autoHideWhenFullscreen: desktop.autoHideWhenFullscreen,
+        autoHideWhenPaused: desktop.autoHideWhenPaused,
+        showDoubleLine: desktop.showDoubleLine,
+        enableWordEffect: desktop.enableWordEffect,
+        enableTextOutline: desktop.enableTextOutline,
+        textOutlineWidth: desktop.textOutlineWidth,
+        textOutlineColor: desktop.textOutlineColor,
+        isLocked: desktop.isLocked,
+        persistLock: desktop.persistLock,
+        colorScheme: desktop.colorScheme,
+        customPlayedColor: desktop.customPlayedColor,
+        customUnplayedColor: desktop.customUnplayedColor,
+        customRomajiPlayedColor: desktop.customRomajiPlayedColor,
+        customRomajiUnplayedColor: desktop.customRomajiUnplayedColor,
+        customRomajiColor: desktop.customRomajiColor,
+        customTranslationColor: desktop.customTranslationColor,
+        textOpacity: desktop.textOpacity,
+        textShadowColor: desktop.textShadowColor,
+        firstLineTextShadowStrength: desktop.firstLineTextShadowStrength,
+        secondLineTextShadowStrength: desktop.secondLineTextShadowStrength,
+        playerFontScale: desktop.playerFontScale,
+        subFontScale: desktop.subFontScale,
+        playerLineGap: desktop.playerLineGap,
+        playerOffsetX: desktop.playerOffsetX,
+        playerOffsetY: desktop.playerOffsetY,
+        playerAlignment: desktop.playerAlignment,
+        playerFontPreset: desktop.playerFontPreset,
+        centerHorizontally: desktop.centerHorizontally,
+      },
+      customLyricsFonts: [...settingsStore.settings.customLyricsFonts],
+      themeColors: [...dominantColors.value],
+    };
+  };
+
+  const buildPlaybackPayload = (): DesktopLyricsPlaybackPayload => ({
     playbackTime: currentTime.value,
-    syncedAt: playbackClockTracker.resolveSyncedAt(currentTime.value),
+    syncedAt: clock.resolveSyncedAt(currentTime.value),
     isPlaying: isPlaying.value,
-    isFavorite: currentSong.value ? isFavorite(currentSong.value) : false,
     audioDelay: audioDelay.value,
-    settings: {
-      showTranslation: lyricsSettings.showTranslation,
-      showRomaji: lyricsSettings.showRomaji,
-      isAlwaysOnTop: desktopLyricsSettings.isAlwaysOnTop,
-      alwaysShowShadowBackground: desktopLyricsSettings.alwaysShowShadowBackground,
-      autoHideWhenFullscreen: desktopLyricsSettings.autoHideWhenFullscreen,
-      autoHideWhenPaused: desktopLyricsSettings.autoHideWhenPaused,
-      showDoubleLine: desktopLyricsSettings.showDoubleLine,
-      enableWordEffect: desktopLyricsSettings.enableWordEffect,
-      enableTextOutline: desktopLyricsSettings.enableTextOutline,
-      textOutlineWidth: desktopLyricsSettings.textOutlineWidth,
-      textOutlineColor: desktopLyricsSettings.textOutlineColor,
-      isLocked: desktopLyricsSettings.isLocked,
-      persistLock: desktopLyricsSettings.persistLock,
-      colorScheme: desktopLyricsSettings.colorScheme,
-      customPlayedColor: desktopLyricsSettings.customPlayedColor,
-      customUnplayedColor: desktopLyricsSettings.customUnplayedColor,
-      customRomajiPlayedColor: desktopLyricsSettings.customRomajiPlayedColor,
-      customRomajiUnplayedColor: desktopLyricsSettings.customRomajiUnplayedColor,
-      customRomajiColor: desktopLyricsSettings.customRomajiColor,
-      customTranslationColor: desktopLyricsSettings.customTranslationColor,
-      textOpacity: desktopLyricsSettings.textOpacity,
-      textShadowColor: desktopLyricsSettings.textShadowColor,
-      firstLineTextShadowStrength: desktopLyricsSettings.firstLineTextShadowStrength,
-      secondLineTextShadowStrength: desktopLyricsSettings.secondLineTextShadowStrength,
-      playerFontScale: desktopLyricsSettings.playerFontScale,
-      subFontScale: desktopLyricsSettings.subFontScale,
-      playerLineGap: desktopLyricsSettings.playerLineGap,
-      playerOffsetX: desktopLyricsSettings.playerOffsetX,
-      playerOffsetY: desktopLyricsSettings.playerOffsetY,
-      playerAlignment: desktopLyricsSettings.playerAlignment,
-      playerFontPreset: desktopLyricsSettings.playerFontPreset,
-      centerHorizontally: desktopLyricsSettings.centerHorizontally,
-    },
-    customLyricsFonts: [...settingsStore.settings.customLyricsFonts],
-    themeColors: [...dominantColors.value],
   });
 
-  const createPlaybackPayload = (): DesktopLyricsPlaybackPayload => ({
-    playbackTime: currentTime.value,
-    syncedAt: playbackClockTracker.resolveSyncedAt(currentTime.value),
-    isPlaying: isPlaying.value,
-    audioDelay: audioDelay.value,
-  });
+  // —— 全量状态推送（带 30ms 冷却；immediate 表示跳过冷却立即发送） ——
 
-  let isEmitStateThrottled = false;
-  let hasPendingEmitState = false;
-  let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+  let stateEmitCoolingDown = false;
+  let stateEmitQueued = false;
+  let cooldownTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const emitStateToDesktopLyrics = async (immediate = false) => {
-    const targetWindow = await getDesktopLyricsWindow();
-    if (!targetWindow) return;
+  function clearStateEmitCooldown() {
+    if (cooldownTimer) {
+      clearTimeout(cooldownTimer);
+      cooldownTimer = null;
+    }
+    stateEmitCoolingDown = false;
+    stateEmitQueued = false;
+  }
+
+  async function pushFullState(immediate = false) {
+    const target = await findLyricsWindow();
+    if (!target) return;
 
     if (immediate) {
-      if (throttleTimer) {
-        clearTimeout(throttleTimer);
-        throttleTimer = null;
-      }
-      isEmitStateThrottled = false;
-      hasPendingEmitState = false;
-    }
-
-    if (isEmitStateThrottled) {
-      hasPendingEmitState = true;
+      clearStateEmitCooldown();
+    } else if (stateEmitCoolingDown) {
+      stateEmitQueued = true;
       return;
-    }
-
-    if (!immediate) {
-      isEmitStateThrottled = true;
+    } else {
+      stateEmitCoolingDown = true;
     }
 
     try {
       await emitTo<DesktopLyricsStatePayload>(
         DESKTOP_LYRICS_WINDOW_LABEL,
         DESKTOP_LYRICS_STATE_EVENT,
-        createStatePayload(),
+        buildStatePayload(),
       );
     } finally {
       if (!immediate) {
-        throttleTimer = setTimeout(() => {
-          isEmitStateThrottled = false;
-          throttleTimer = null;
-          if (hasPendingEmitState) {
-            hasPendingEmitState = false;
-            void emitStateToDesktopLyrics(false);
+        cooldownTimer = setTimeout(() => {
+          cooldownTimer = null;
+          stateEmitCoolingDown = false;
+          if (stateEmitQueued) {
+            stateEmitQueued = false;
+            void pushFullState(false);
           }
-        }, 30);
+        }, STATE_EMIT_COOLDOWN_MS);
       }
     }
-  };
+  }
 
-  const emitPlaybackToDesktopLyrics = async () => {
-    const targetWindow = await getDesktopLyricsWindow();
-    if (!targetWindow) return;
+  async function pushPlaybackTick() {
+    const target = await findLyricsWindow();
+    if (!target) return;
 
     await emitTo<DesktopLyricsPlaybackPayload>(
       DESKTOP_LYRICS_WINDOW_LABEL,
       DESKTOP_LYRICS_PLAYBACK_EVENT,
-      createPlaybackPayload(),
+      buildPlaybackPayload(),
     );
-  };
+  }
 
-  const revealDesktopLyricsSurface = async () => {
-    const targetWindow = await getDesktopLyricsWindow();
-    if (!targetWindow) return;
+  async function revealSurface() {
+    const target = await findLyricsWindow();
+    if (!target) return;
 
     await emitTo(DESKTOP_LYRICS_WINDOW_LABEL, DESKTOP_LYRICS_REVEAL_SURFACE_EVENT);
-  };
+  }
 
-  const syncWindowFlags = async () => {
-    const targetWindow = await getDesktopLyricsWindow();
-    if (!targetWindow) return;
+  async function applyWindowFlags() {
+    const target = await findLyricsWindow();
+    if (!target) return;
 
-    await targetWindow.setAlwaysOnTop(desktopLyricsSettings.isAlwaysOnTop);
-  };
+    await target.setAlwaysOnTop(desktopLyricsSettings.isAlwaysOnTop);
+  }
 
-  const openDesktopLyricsWindow = async () => {
-    const targetWindow = await ensureDesktopLyricsWindow(
+  async function openLyricsWindow() {
+    const target = await acquireLyricsWindow(
       desktopLyricsSettings.isAlwaysOnTop,
       desktopLyricsSettings.centerHorizontally,
     );
-    await desktopLyricsReadyGate.wait();
-    await syncWindowFlags();
-    await emitStateToDesktopLyrics(true);
-    await emitPlaybackToDesktopLyrics();
-    await targetWindow.show();
-    await revealDesktopLyricsSurface();
-    startSyncLoop();
-  };
+    await readyGate.wait();
+    await applyWindowFlags();
+    await pushFullState(true);
+    await pushPlaybackTick();
+    await target.show();
+    await revealSurface();
+    launchTickLoop();
+  }
 
-  const stopSyncLoop = () => {
-    if (syncIntervalId !== null) {
-      clearInterval(syncIntervalId);
-      syncIntervalId = null;
-    }
-  };
+  // —— 播放进度定时推送循环 ——
 
-  const startSyncLoop = () => {
-    stopSyncLoop();
-    syncIntervalId = setInterval(() => {
+  function haltTickLoop() {
+    if (tickLoopHandle === null) return;
+    clearInterval(tickLoopHandle);
+    tickLoopHandle = null;
+  }
+
+  function launchTickLoop() {
+    haltTickLoop();
+    tickLoopHandle = setInterval(() => {
       if (!showDesktopLyrics.value) return;
-      void emitPlaybackToDesktopLyrics().catch((error) => {
-        logDesktopLyricsBridgeError('sync playback to', error);
+      void pushPlaybackTick().catch((error) => {
+        reportBridgeFailure('sync playback to', error);
       });
-    }, DESKTOP_LYRICS_PLAYBACK_SYNC_INTERVAL_MS);
-  };
+    }, PLAYBACK_TICK_INTERVAL_MS);
+  }
 
-  const handleAction = async (action: DesktopLyricsAction) => {
+  // —— 处理来自歌词窗口的动作指令 ——
+
+  async function applyLyricsAction(action: DesktopLyricsAction) {
     switch (action.type) {
       case 'toggle-play':
         await togglePlay();
@@ -484,7 +484,7 @@ export function useDesktopLyricsWindowBridge() {
       case 'toggle-favorite':
         if (currentSong.value) toggleFavorite(currentSong.value);
         await nextTick();
-        await emitStateToDesktopLyrics(true);
+        await pushFullState(true);
         break;
       case 'open-settings': {
         uiStore.mainWindowUiSleepRequested = false;
@@ -494,9 +494,9 @@ export function useDesktopLyricsWindowBridge() {
         break;
       }
       case 'adjust-offset': {
-        const currentOffset = settingsStore.settings.lyricsSyncOffset;
+        const base = settingsStore.settings.lyricsSyncOffset;
         settingsStore.settings.lyricsSyncOffset = normalizeLyricsSyncOffsetSeconds(
-          currentOffset + action.delta,
+          base + action.delta,
         );
         break;
       }
@@ -524,85 +524,84 @@ export function useDesktopLyricsWindowBridge() {
       default:
         break;
     }
-  };
+  }
 
-  const destroyDesktopLyricsWindow = async () => {
-    const targetWindow = await getDesktopLyricsWindow();
-    if (!targetWindow) return;
+  async function closeLyricsWindow() {
+    const target = await findLyricsWindow();
+    if (!target) return;
 
     try {
-      await targetWindow.destroy();
+      await target.destroy();
     } catch (error) {
       console.warn('Failed to destroy desktop lyrics window during shutdown:', error);
     } finally {
-      desktopLyricsWindowPromise = null;
-      desktopLyricsReadyGate.reset();
+      pendingWindowCreation = null;
+      readyGate.reset();
     }
-  };
+  }
 
   onMounted(async () => {
+    // 未开启“记住锁定状态”时，每次启动都解除锁定。
     if (!desktopLyricsSettings.persistLock && desktopLyricsSettings.isLocked) {
       desktopLyricsSettings.isLocked = false;
     }
 
-    unlisteners.push(await mainWindow.onCloseRequested(async (event) => {
+    trackDisposer(await mainWindow.onCloseRequested(async (event) => {
       if (settingsStore.settings.closeToTray) return;
-      if (isMainWindowClosing) return;
+      if (mainWindowClosing) return;
 
-      isMainWindowClosing = true;
+      mainWindowClosing = true;
       event.preventDefault();
-      stopSyncLoop();
-      await destroyDesktopLyricsWindow();
+      haltTickLoop();
+      await closeLyricsWindow();
       await mainWindow.close();
     }));
 
-    unlisteners.push(await listen(DESKTOP_LYRICS_REQUEST_STATE_EVENT, () => {
-      void emitStateToDesktopLyrics(true).catch((error) => {
-        logDesktopLyricsBridgeError('sync state to', error);
+    trackDisposer(await listen(DESKTOP_LYRICS_REQUEST_STATE_EVENT, () => {
+      void pushFullState(true).catch((error) => {
+        reportBridgeFailure('sync state to', error);
       });
-      void emitPlaybackToDesktopLyrics().catch((error) => {
-        logDesktopLyricsBridgeError('sync playback to', error);
-      });
-    }));
-
-    unlisteners.push(await listen(DESKTOP_LYRICS_READY_EVENT, () => {
-      desktopLyricsReadyGate.markReady();
-    }));
-
-    unlisteners.push(await listen<DesktopLyricsAction>(DESKTOP_LYRICS_ACTION_EVENT, (event) => {
-      void handleAction(event.payload).catch((error) => {
-        logDesktopLyricsBridgeError('handle action from', error);
+      void pushPlaybackTick().catch((error) => {
+        reportBridgeFailure('sync playback to', error);
       });
     }));
 
-    unlisteners.push(await listen<{ visible: boolean }>(DESKTOP_LYRICS_VISIBILITY_EVENT, (event) => {
-      if (isMainWindowClosing) return;
+    trackDisposer(await listen(DESKTOP_LYRICS_READY_EVENT, () => {
+      readyGate.markReady();
+    }));
+
+    trackDisposer(await listen<DesktopLyricsAction>(DESKTOP_LYRICS_ACTION_EVENT, (event) => {
+      void applyLyricsAction(event.payload).catch((error) => {
+        reportBridgeFailure('handle action from', error);
+      });
+    }));
+
+    trackDisposer(await listen<{ visible: boolean }>(DESKTOP_LYRICS_VISIBILITY_EVENT, (event) => {
+      if (mainWindowClosing) return;
       showDesktopLyrics.value = event.payload.visible;
     }));
 
-    unlisteners.push(await listen<DesktopLyricsWindowBounds>(DESKTOP_LYRICS_BOUNDS_EVENT, (event) => {
-      writeDesktopLyricsBounds(event.payload);
+    trackDisposer(await listen<DesktopLyricsWindowBounds>(DESKTOP_LYRICS_BOUNDS_EVENT, (event) => {
+      persistBounds(event.payload);
     }));
 
-    unlisteners.push(await listen(DESKTOP_LYRICS_RESET_BOUNDS_EVENT, async () => {
+    trackDisposer(await listen(DESKTOP_LYRICS_RESET_BOUNDS_EVENT, async () => {
       clearDesktopLyricsStoredBounds();
+      if (!showDesktopLyrics.value) return;
 
-      if (!showDesktopLyrics.value) {
-        return;
-      }
-
-      stopSyncLoop();
-      await destroyDesktopLyricsWindow();
-      await openDesktopLyricsWindow().catch((error) => {
-        logDesktopLyricsBridgeError('reopen', error);
+      // 重建窗口以应用重置后的边界。
+      haltTickLoop();
+      await closeLyricsWindow();
+      await openLyricsWindow().catch((error) => {
+        reportBridgeFailure('reopen', error);
         showDesktopLyrics.value = false;
       });
     }));
   });
 
   onUnmounted(() => {
-    stopSyncLoop();
-    unlisteners.splice(0).forEach((unlisten) => unlisten());
+    haltTickLoop();
+    disposers.splice(0).forEach((dispose) => dispose());
   });
 
   watch(showDesktopLyrics, async (visible) => {
@@ -612,28 +611,28 @@ export function useDesktopLyricsWindowBridge() {
       visible,
     );
 
-    if (visible) {
-      try {
-        await openDesktopLyricsWindow();
-      } catch (error) {
-        logDesktopLyricsBridgeError('open', error);
-        stopSyncLoop();
-        desktopLyricsWindowPromise = null;
-        desktopLyricsReadyGate.reset();
-        showDesktopLyrics.value = false;
-      }
+    if (!visible) {
+      haltTickLoop();
+      await closeLyricsWindow();
       return;
     }
 
-    stopSyncLoop();
-    await destroyDesktopLyricsWindow();
+    try {
+      await openLyricsWindow();
+    } catch (error) {
+      reportBridgeFailure('open', error);
+      haltTickLoop();
+      pendingWindowCreation = null;
+      readyGate.reset();
+      showDesktopLyrics.value = false;
+    }
   });
 
   watch(isMainWindowLowPower, (lowPower) => {
     if (lowPower) {
-      stopSyncLoop();
+      haltTickLoop();
     } else if (showDesktopLyrics.value) {
-      startSyncLoop();
+      launchTickLoop();
     }
   });
 
@@ -641,18 +640,23 @@ export function useDesktopLyricsWindowBridge() {
     currentTime,
     (time) => {
       if (!showDesktopLyrics.value) return;
-      playbackClockTracker.markPlaybackTimeSample(time);
+      clock.markPlaybackTimeSample(time);
     },
     { immediate: true },
   );
 
   watch(
     () => settingsStore.settings.showDesktopLyrics,
-    (preferredVisible) => {
-      applyDesktopLyricsVisibilityPreference(showDesktopLyrics, preferredVisible);
+    (preferred) => {
+      applyDesktopLyricsVisibilityPreference(showDesktopLyrics, preferred);
     },
     { immediate: true },
   );
+
+  // 歌词内容 / 歌曲信息 / 歌词偏好等任一变化时，向歌词窗口同步最新状态。
+  // 数组前 9 个为核心数据源：其中任一变化都绕过冷却立即推送。
+  const ds = desktopLyricsSettings;
+  const ls = lyricsSettings;
 
   watch(
     [
@@ -665,57 +669,52 @@ export function useDesktopLyricsWindowBridge() {
       () => currentSong.value?.duration,
       isPlaying,
       audioDelay,
-      () => lyricsSettings.showTranslation,
-      () => lyricsSettings.showRomaji,
-      () => desktopLyricsSettings.isAlwaysOnTop,
-      () => desktopLyricsSettings.alwaysShowShadowBackground,
-      () => desktopLyricsSettings.autoHideWhenFullscreen,
-      () => desktopLyricsSettings.autoHideWhenPaused,
-      () => desktopLyricsSettings.showDoubleLine,
-      () => desktopLyricsSettings.enableWordEffect,
-      () => desktopLyricsSettings.isLocked,
-      () => desktopLyricsSettings.persistLock,
-      () => desktopLyricsSettings.centerHorizontally,
-      () => desktopLyricsSettings.colorScheme,
-      () => desktopLyricsSettings.customPlayedColor,
-      () => desktopLyricsSettings.customUnplayedColor,
-      () => desktopLyricsSettings.customRomajiPlayedColor,
-      () => desktopLyricsSettings.customRomajiUnplayedColor,
-      () => desktopLyricsSettings.customRomajiColor,
-      () => desktopLyricsSettings.customTranslationColor,
-      () => desktopLyricsSettings.textOpacity,
-      () => desktopLyricsSettings.textShadowColor,
-      () => desktopLyricsSettings.firstLineTextShadowStrength,
-      () => desktopLyricsSettings.secondLineTextShadowStrength,
-      () => desktopLyricsSettings.playerFontScale,
-      () => desktopLyricsSettings.subFontScale,
-      () => desktopLyricsSettings.playerLineGap,
-      () => desktopLyricsSettings.playerOffsetX,
-      () => desktopLyricsSettings.playerOffsetY,
-      () => desktopLyricsSettings.playerAlignment,
-      () => desktopLyricsSettings.playerFontPreset,
+      () => ls.showTranslation,
+      () => ls.showRomaji,
+      () => ds.isAlwaysOnTop,
+      () => ds.alwaysShowShadowBackground,
+      () => ds.autoHideWhenFullscreen,
+      () => ds.autoHideWhenPaused,
+      () => ds.showDoubleLine,
+      () => ds.enableWordEffect,
+      () => ds.isLocked,
+      () => ds.persistLock,
+      () => ds.centerHorizontally,
+      () => ds.colorScheme,
+      () => ds.customPlayedColor,
+      () => ds.customUnplayedColor,
+      () => ds.customRomajiPlayedColor,
+      () => ds.customRomajiUnplayedColor,
+      () => ds.customRomajiColor,
+      () => ds.customTranslationColor,
+      () => ds.textOpacity,
+      () => ds.textShadowColor,
+      () => ds.firstLineTextShadowStrength,
+      () => ds.secondLineTextShadowStrength,
+      () => ds.playerFontScale,
+      () => ds.subFontScale,
+      () => ds.playerLineGap,
+      () => ds.playerOffsetX,
+      () => ds.playerOffsetY,
+      () => ds.playerAlignment,
+      () => ds.playerFontPreset,
       () => settingsStore.settings.customLyricsFonts,
       dominantColors,
     ],
-    (newValue, oldValue) => {
+    (next, prev) => {
       if (!showDesktopLyrics.value) return;
 
-      let isImmediateChange = false;
-      if (oldValue) {
-        const keyIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-        isImmediateChange = keyIndices.some(idx => newValue[idx] !== oldValue[idx]);
-      } else {
-        isImmediateChange = true;
-      }
+      const coreIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      const immediate = !prev || coreIndices.some((index) => next[index] !== prev[index]);
 
-      void emitStateToDesktopLyrics(isImmediateChange).catch((error) => {
-        logDesktopLyricsBridgeError('sync state to', error);
+      void pushFullState(immediate).catch((error) => {
+        reportBridgeFailure('sync state to', error);
       });
-      void emitPlaybackToDesktopLyrics().catch((error) => {
-        logDesktopLyricsBridgeError('sync playback to', error);
+      void pushPlaybackTick().catch((error) => {
+        reportBridgeFailure('sync playback to', error);
       });
-      void syncWindowFlags().catch((error) => {
-        logDesktopLyricsBridgeError('sync flags for', error);
+      void applyWindowFlags().catch((error) => {
+        reportBridgeFailure('sync flags for', error);
       });
     },
   );

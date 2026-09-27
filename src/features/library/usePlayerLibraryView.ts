@@ -10,127 +10,90 @@ import { useLibraryCurrentViewSongs } from './useLibraryCurrentViewSongs';
 import { useLibraryFolderSelectors } from './useLibraryFolderSelectors';
 export type { AlbumListItem, ArtistListItem } from './playerLibraryViewShared';
 
+// 这些视图模式都属于本地曲库范畴。
+const LOCAL_MUSIC_MODES: readonly string[] = ['all', 'artist', 'album'];
+
 export function usePlayerLibraryView() {
-  const collectionsStore = useCollectionsStore();
-  const libraryStore = useLibraryStore();
-  const navigationStore = useNavigationStore();
+  const navRefs = storeToRefs(useNavigationStore());
+  const libRefs = storeToRefs(useLibraryStore());
+  const collectionRefs = storeToRefs(useCollectionsStore());
 
-  const {
-    activeRootPath,
-    currentAlbumFilter,
-    currentArtistFilter,
-    currentFolderFilter,
-    currentViewMode,
-    favTab,
-    filterCondition,
-    localMusicTab,
+  const currentViewMode = navRefs.currentViewMode;
+  const searchQuery = navRefs.searchQuery;
+
+  const isLocalMusic = computed(() => LOCAL_MUSIC_MODES.includes(currentViewMode.value));
+  const isFolderMode = computed(() => currentViewMode.value === ('folder'));
+
+  const catalog = useLibraryCatalogSelectors({
+    artistCatalog: libRefs.artistCatalog,
+    albumCatalog: libRefs.albumCatalog,
     searchQuery,
-  } = storeToRefs(navigationStore);
-  const {
-    libraryHierarchy,
-    libraryFolders,
-    artistCatalog,
-    albumCatalog,
-    canonicalSongs,
-    canonicalSongPaths,
-    songLookup,
-    sourceSongs,
-    sourceSongPaths,
-    watchedFolders,
-    artistSortMode,
-    albumSortMode,
-    artistCustomOrder,
-    albumCustomOrder,
-    folderSortMode,
-    folderCustomOrder,
-    localSortMode,
-    albumDetailSortMode,
-    localCustomOrder,
-  } = storeToRefs(libraryStore);
-  const { favoritePaths, playlists, recentSongs, playlistSortMode } = storeToRefs(collectionsStore);
-
-  const isLocalMusic = computed(() =>
-    currentViewMode.value === 'all' ||
-    currentViewMode.value === 'artist' ||
-    currentViewMode.value === 'album',
-  );
-
-  const isFolderMode = computed(() => currentViewMode.value === 'folder');
-
-  const catalogSelectors = useLibraryCatalogSelectors({
-    artistCatalog,
-    albumCatalog,
-    searchQuery,
-    artistSortMode,
-    albumSortMode,
-    artistCustomOrder,
-    albumCustomOrder,
+    artistSortMode: libRefs.artistSortMode,
+    albumSortMode: libRefs.albumSortMode,
+    artistCustomOrder: libRefs.artistCustomOrder,
+    albumCustomOrder: libRefs.albumCustomOrder,
   });
 
-  const folderSelectors = useLibraryFolderSelectors({
-    watchedFolders,
-    sourceSongPaths,
-    songLookup,
-    currentFolderFilter,
-    folderSortMode,
-    folderCustomOrder,
+  const folders = useLibraryFolderSelectors({
+    watchedFolders: libRefs.watchedFolders,
+    sourceSongPaths: libRefs.sourceSongPaths,
+    songLookup: libRefs.songLookup,
+    currentFolderFilter: navRefs.currentFolderFilter,
+    folderSortMode: libRefs.folderSortMode,
+    folderCustomOrder: libRefs.folderCustomOrder,
   });
 
-  const collectionSelectors = useLibraryCollectionSelectors({
-    favoritePaths,
-    songLookup,
+  const collections = useLibraryCollectionSelectors({
+    favoritePaths: collectionRefs.favoritePaths,
+    songLookup: libRefs.songLookup,
   });
 
-  const {
-    currentViewSongPaths,
-    currentViewSongCount,
-    currentViewSongs,
-    resolveSongByPath,
-  } = useLibraryCurrentViewSongs({
-    canonicalSongPaths,
-    playlists,
-    recentSongs,
-    songLookup,
-    favoriteSongPaths: collectionSelectors.favoriteSongPaths,
-    currentFolderSongPaths: folderSelectors.currentFolderSongPaths,
+  const currentView = useLibraryCurrentViewSongs({
+    canonicalSongPaths: libRefs.canonicalSongPaths,
+    playlists: collectionRefs.playlists,
+    recentSongs: collectionRefs.recentSongs,
+    songLookup: libRefs.songLookup,
+    favoriteSongPaths: collections.favoriteSongPaths,
+    currentFolderSongPaths: folders.currentFolderSongPaths,
     currentViewMode,
     searchQuery,
-    localMusicTab,
-    currentArtistFilter,
-    currentAlbumFilter,
-    currentFolderFilter,
-    filterCondition,
-    favTab,
-    folderSortMode,
-    localSortMode,
-    albumDetailSortMode,
-    localCustomOrder,
-    playlistSortMode,
+    localMusicTab: navRefs.localMusicTab,
+    currentArtistFilter: navRefs.currentArtistFilter,
+    currentAlbumFilter: navRefs.currentAlbumFilter,
+    currentFolderFilter: navRefs.currentFolderFilter,
+    filterCondition: navRefs.filterCondition,
+    favTab: navRefs.favTab,
+    folderSortMode: libRefs.folderSortMode,
+    localSortMode: libRefs.localSortMode,
+    albumDetailSortMode: libRefs.albumDetailSortMode,
+    localCustomOrder: libRefs.localCustomOrder,
+    playlistSortMode: collectionRefs.playlistSortMode,
   });
 
   return {
-    activeRootPath,
-    albumList: catalogSelectors.albumList,
-    artistList: catalogSelectors.artistList,
-    canonicalSongs,
-    currentViewSongCount,
-    currentViewSongPaths,
-    currentFolderSongs: folderSelectors.currentFolderSongs,
-    currentViewSongs,
-    favoriteSongList: collectionSelectors.favoriteSongList,
-    filteredAlbumList: catalogSelectors.filteredAlbumList,
-    filteredArtistList: catalogSelectors.filteredArtistList,
-    folderList: folderSelectors.folderList,
+    activeRootPath: navRefs.activeRootPath,
+    albumList: catalog.albumList,
+    artistList: catalog.artistList,
+    canonicalSongs: libRefs.canonicalSongs,
+    currentViewSongCount: currentView.currentViewSongCount,
+    currentViewSongPaths: currentView.currentViewSongPaths,
+    currentFolderSongs: folders.currentFolderSongs,
+    currentViewSongs: currentView.currentViewSongs,
+    favoriteSongList: collections.favoriteSongList,
+    filteredAlbumList: catalog.filteredAlbumList,
+    filteredArtistList: catalog.filteredArtistList,
+    folderList: folders.folderList,
     isFolderMode,
     isLocalMusic,
-    libraryFolders,
-    libraryHierarchy,
-    resolveSongByPath,
+    libraryFolders: libRefs.libraryFolders,
+    libraryHierarchy: libRefs.libraryHierarchy,
+    resolveSongByPath: currentView.resolveSongByPath,
     searchQuery,
-    sourceSongs,
-    displaySongList: currentViewSongs,
-    folderTree: libraryHierarchy,
-    librarySongs: canonicalSongs,
-    songList: sourceSongs,
+    sourceSongs: libRefs.sourceSongs,
+    // 旧调用方使用的兼容别名。
+    displaySongList: currentView.currentViewSongs,
+    folderTree: libRefs.libraryHierarchy,
+    librarySongs: libRefs.canonicalSongs,
+    songList: libRefs.sourceSongs,
   };
 }

@@ -3,7 +3,7 @@ import { computed, watch, type Ref } from 'vue';
 import type { Song } from '../types';
 import { compareByAlphabetIndex } from '../utils/alphabetIndex';
 
-interface ArtistAlbumItem {
+interface AlbumEntry {
   key: string;
   name: string;
   count: number;
@@ -20,46 +20,50 @@ interface UseHomeArtistAlbumsOptions {
   preloadCovers: (paths: string[]) => void;
 }
 
-const songHasArtistName = (song: Song, artistName: string) =>
-  (
-    song.effective_artist_names?.length
-      ? song.effective_artist_names
-      : song.artist_names || [song.artist]
-  ).includes(artistName);
+/** 取歌曲实际归属的歌手名集合：优先用清洗后的多名信息，否则回退到原始歌手字段 */
+function resolveArtistNames(song: Song): string[] {
+  const explicitNames = song.effective_artist_names;
+  if (explicitNames && explicitNames.length > 0) {
+    return explicitNames;
+  }
+  return song.artist_names || [song.artist];
+}
 
-export function useHomeArtistAlbums({
-  localFilterCondition,
-  filterCondition,
-  librarySongs,
-  albumSortMode,
-  albumCustomOrder,
-  preloadCovers,
-}: UseHomeArtistAlbumsOptions) {
-  const artistAlbumList = computed<ArtistAlbumItem[]>(() => {
-    const artistName = localFilterCondition.value || filterCondition.value;
-    if (!artistName) {
-      return [];
-    }
+export function useHomeArtistAlbums(options: UseHomeArtistAlbumsOptions) {
+  const {
+    localFilterCondition,
+    filterCondition,
+    librarySongs,
+    albumSortMode,
+    albumCustomOrder,
+    preloadCovers,
+  } = options;
 
-    const albumMap = new Map<string, ArtistAlbumItem>();
+  type EntryComparator = (left: AlbumEntry, right: AlbumEntry) => number;
 
-    librarySongs.value.forEach(song => {
-      if (!songHasArtistName(song, artistName)) {
+  /**
+   * 把曲库中属于指定歌手的歌曲按专辑聚合：
+   * 以 album_key 为唯一标识，缺失时用"专辑名::专辑歌手"拼接兜底。
+   */
+  const collectAlbumEntries = (artistName: string): AlbumEntry[] => {
+    const grouped = new Map<string, AlbumEntry>();
+
+    librarySongs.value.forEach((song) => {
+      if (!resolveArtistNames(song).includes(artistName)) {
         return;
       }
 
-      const albumKey =
-        song.album_key ||
-        `${song.album || 'Unknown'}::${song.album_artist || song.artist || 'Unknown'}`;
-      const existing = albumMap.get(albumKey);
-
-      if (existing) {
-        existing.count += 1;
+      const entryKey =
+        song.album_key
+        || `${song.album || 'Unknown'}::${song.album_artist || song.artist || 'Unknown'}`;
+      const existed = grouped.get(entryKey);
+      if (existed) {
+        existed.count += 1;
         return;
       }
 
-      albumMap.set(albumKey, {
-        key: albumKey,
+      grouped.set(entryKey, {
+        key: entryKey,
         name: song.album || 'Unknown',
         count: 1,
         artist: song.album_artist || song.artist || 'Unknown',
@@ -67,42 +71,50 @@ export function useHomeArtistAlbums({
       });
     });
 
-    const albums = Array.from(albumMap.values());
+    return Array.from(grouped.values());
+  };
 
-    if (albumSortMode.value === 'name') {
-      albums.sort((left, right) => compareByAlphabetIndex(left.name, right.name));
-    } else if (albumSortMode.value === 'custom') {
-      const orderMap = new Map(albumCustomOrder.value.map((key, index) => [key, index]));
-      albums.sort((left, right) => {
-        const leftIndex = orderMap.has(left.key)
-          ? orderMap.get(left.key)!
-          : Number.MAX_SAFE_INTEGER;
-        const rightIndex = orderMap.has(right.key)
-          ? orderMap.get(right.key)!
-          : Number.MAX_SAFE_INTEGER;
-        return leftIndex - rightIndex;
-      });
-    } else if (albumSortMode.value === 'artist') {
-      albums.sort((left, right) => {
-        const artistDiff = compareByAlphabetIndex(left.artist, right.artist);
-        return artistDiff !== 0
-          ? artistDiff
-          : compareByAlphabetIndex(left.name, right.name);
-      });
-    } else {
-      albums.sort(
-        (left, right) =>
-          right.count - left.count || compareByAlphabetIndex(left.artist, right.artist),
-      );
+  /** 依据当前排序模式返回相应的比较器，未识别的模式按播放数量降序处理 */
+  const pickComparator = (mode: string): EntryComparator => {
+    switch (mode) {
+      case 'name':
+        return (left, right) => compareByAlphabetIndex(left.name, right.name);
+      case 'custom': {
+        const rankOfKey = new Map(albumCustomOrder.value.map((key, index) => [key, index]));
+        const rankOf = (entry: AlbumEntry): number =>
+          rankOfKey.get(entry.key) ?? Number.MAX_SAFE_INTEGER;
+        return (left, right) => rankOf(left) - rankOf(right);
+      }
+      case 'artist': {
+        const byArtist = (left: AlbumEntry, right: AlbumEntry): number => {
+          const diff = compareByAlphabetIndex(left.artist, right.artist);
+          return diff !== 0 ? diff : compareByAlphabetIndex(left.name, right.name);
+        };
+        return byArtist;
+      }
+      default:
+        return (left, right) =>
+          right.count - left.count || compareByAlphabetIndex(left.artist, right.artist);
+    }
+  };
+
+  const artistAlbumList = computed<AlbumEntry[]>(() => {
+    const activeArtist = localFilterCondition.value || filterCondition.value;
+    if (!activeArtist) {
+      return [] as AlbumEntry[];
     }
 
-    return albums;
+    const entries = collectAlbumEntries(activeArtist);
+    entries.sort(pickComparator(albumSortMode.value));
+    return entries;
   });
 
+  // 专辑列表一旦变化，就预加载各专辑封面的首曲路径
   watch(
     artistAlbumList,
-    albums => {
-      preloadCovers(albums.map(album => album.firstSongPath).filter(Boolean));
+    (albums) => {
+      const coverPaths = albums.map((album) => album.firstSongPath).filter(Boolean);
+      preloadCovers(coverPaths);
     },
     { immediate: true },
   );

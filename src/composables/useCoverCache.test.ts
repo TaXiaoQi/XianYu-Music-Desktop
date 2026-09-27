@@ -1,106 +1,103 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const coreMocks = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  convertFileSrc: vi.fn((path: string) => `asset://${path}`),
-}));
+// @tauri-apps/api/core 的桩：fileApi 底层经 tauriInvoke 转发到这里的 invoke。
+const coreModuleStubs = vi.hoisted(() => {
+  const invoke = vi.fn();
+  const convertFileSrc = vi.fn((path: string) => `asset://${path}`);
+  return { invoke, convertFileSrc };
+});
 
-vi.mock('@tauri-apps/api/core', () => coreMocks);
+vi.mock('@tauri-apps/api/core', () => coreModuleStubs);
 
-const createDeferred = <T>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve;
-    reject = promiseReject;
+function makeDeferred<T>() {
+  let release!: (value: T) => void;
+  let fail!: (error: unknown) => void;
+  const promise = new Promise<T>((done, abort) => {
+    release = done;
+    fail = abort;
   });
 
-  return { promise, resolve, reject };
+  return { promise, resolve: release, reject: fail };
+}
+
+// 每个用例前都 resetModules，这里封装“动态加载模块并创建缓存实例”的公共步骤。
+const loadCoverCache = async () => {
+  const cacheModule = await import('./useCoverCache');
+  return cacheModule.useCoverCache();
 };
 
-describe('cover cache', () => {
+describe('useCoverCache', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    coreMocks.convertFileSrc.mockImplementation((path: string) => `asset://${path}`);
+    coreModuleStubs.convertFileSrc.mockImplementation((path: string) => `asset://${path}`);
   });
 
   it('keeps retained in-flight full cover requests valid', async () => {
     const path = '/music/current.flac';
     const coverPath = 'C:\\covers\\current.png';
-    const pendingCover = createDeferred<string>();
-    coreMocks.invoke.mockReturnValueOnce(pendingCover.promise);
+    const pending = makeDeferred<string>();
+    coreModuleStubs.invoke.mockReturnValueOnce(pending.promise);
 
-    const { useCoverCache } = await import('./useCoverCache');
-    const coverCache = useCoverCache();
+    const coverCache = await loadCoverCache();
     const request = coverCache.loadFullCover(path);
 
     coverCache.retainFullCoverPaths([path]);
-    pendingCover.resolve(coverPath);
+    pending.resolve(coverPath);
 
     await expect(request).resolves.toBe(`asset://${coverPath}`);
     expect(coverCache.getFullCoverUrl(path)).toBe(`asset://${coverPath}`);
   });
 
-  it('invalidates in-flight full cover requests outside the retained paths', async () => {
-    const oldPath = '/music/old.flac';
-    const currentPath = '/music/current.flac';
-    const pendingCover = createDeferred<string>();
-    coreMocks.invoke.mockReturnValueOnce(pendingCover.promise);
+  it('drops in-flight full cover requests whose paths fall outside the retained set', async () => {
+    const stalePath = '/music/old.flac';
+    const keptPath = '/music/current.flac';
+    const pending = makeDeferred<string>();
+    coreModuleStubs.invoke.mockReturnValueOnce(pending.promise);
 
-    const { useCoverCache } = await import('./useCoverCache');
-    const coverCache = useCoverCache();
-    const request = coverCache.loadFullCover(oldPath);
+    const coverCache = await loadCoverCache();
+    const request = coverCache.loadFullCover(stalePath);
 
-    coverCache.retainFullCoverPaths([currentPath]);
-    pendingCover.resolve('C:\\covers\\old.png');
+    coverCache.retainFullCoverPaths([keptPath]);
+    pending.resolve('C:\\covers\\old.png');
 
     await expect(request).resolves.toBe('');
-    expect(coverCache.getFullCoverUrl(oldPath)).toBe('');
+    expect(coverCache.getFullCoverUrl(stalePath)).toBe('');
   });
 
-  it('runs background full cover preloads one at a time', async () => {
-    const firstCover = createDeferred<string>();
-    const secondCover = createDeferred<string>();
-    coreMocks.invoke
-      .mockReturnValueOnce(firstCover.promise)
-      .mockReturnValueOnce(secondCover.promise);
+  it('runs queued full cover preloads strictly one at a time', async () => {
+    const first = makeDeferred<string>();
+    const second = makeDeferred<string>();
+    coreModuleStubs.invoke
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
 
-    const { useCoverCache } = await import('./useCoverCache');
-    const coverCache = useCoverCache();
+    const coverCache = await loadCoverCache();
 
-    coverCache.preloadFullCovers([
-      '/music/first.flac',
-      '/music/second.flac',
-    ]);
+    coverCache.preloadFullCovers(['/music/first.flac', '/music/second.flac']);
 
-    expect(coreMocks.invoke).toHaveBeenCalledTimes(1);
-    expect(coreMocks.invoke).toHaveBeenLastCalledWith('get_song_cover', {
-      path: '/music/first.flac',
-    });
+    expect(coreModuleStubs.invoke).toHaveBeenCalledTimes(1);
+    expect(coreModuleStubs.invoke).toHaveBeenLastCalledWith('get_song_cover', { path: '/music/first.flac' });
 
-    firstCover.resolve('C:\\covers\\first.png');
-    await firstCover.promise;
+    first.resolve('C:\\covers\\first.png');
+    await first.promise;
     await Promise.resolve();
 
-    expect(coreMocks.invoke).toHaveBeenCalledTimes(2);
-    expect(coreMocks.invoke).toHaveBeenLastCalledWith('get_song_cover', {
-      path: '/music/second.flac',
-    });
+    expect(coreModuleStubs.invoke).toHaveBeenCalledTimes(2);
+    expect(coreModuleStubs.invoke).toHaveBeenLastCalledWith('get_song_cover', { path: '/music/second.flac' });
 
-    secondCover.resolve('C:\\covers\\second.png');
-    await secondCover.promise;
+    second.resolve('C:\\covers\\second.png');
+    await second.promise;
   });
 
-  it('uses a primed thumbnail path without invoking the backend', async () => {
+  it('serves a primed thumbnail path without hitting the backend', async () => {
     const path = '/music/current.flac';
     const coverPath = 'C:\\covers\\current-thumb.jpg';
 
-    const { useCoverCache } = await import('./useCoverCache');
-    const coverCache = useCoverCache();
+    const coverCache = await loadCoverCache();
 
     expect(coverCache.primeCoverPath(path, coverPath)).toBe(`asset://${coverPath}`);
     await expect(coverCache.loadCover(path)).resolves.toBe(`asset://${coverPath}`);
-    expect(coreMocks.invoke).not.toHaveBeenCalled();
+    expect(coreModuleStubs.invoke).not.toHaveBeenCalled();
   });
 });

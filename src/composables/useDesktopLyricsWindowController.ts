@@ -1,7 +1,7 @@
-import { emitTo, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow, availableMonitors, currentMonitor, cursorPosition } from '@tauri-apps/api/window';
+import { listen, emitTo } from '@tauri-apps/api/event';
+import { cursorPosition, currentMonitor, availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { PhysicalPosition } from '@tauri-apps/api/dpi';
-import { computed, onMounted, onUnmounted, ref, watch, type CSSProperties, type Ref } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, type Ref, type CSSProperties } from 'vue';
 
 import { loadSystemLyricsFonts } from './lyrics';
 import {
@@ -20,28 +20,32 @@ import {
 import { windowApi } from '../services/tauri/windowApi';
 import { sessionApi, type PlaybackSessionChangedPayload } from '../services/tauri/sessionApi';
 
-const FULLSCREEN_POLL_INTERVAL_MS = 300;
-const RESIZE_VISIBILITY_HOLD_MS = 1200;
+const FULLSCREEN_PROBE_MS = 300;
+const RESIZE_HOLD_MS = 1200;
+const CENTER_DEBOUNCE_MS = 300;
+const CENTER_SETTLE_MS = 300;
+const LOCK_WATCH_MS = 80;
+const LOCK_PROBE_HEIGHT_PX = 80;
+const LOCK_PROBE_HALF_WIDTH_PX = 56;
+const DRAG_SHADOW_LINGER_MS = 1500;
+const SURFACE_LEAVE_DELAY_MS = 180;
 
-export function shouldAutoHideDesktopLyrics({
-  autoHideWhenFullscreen,
-  autoHideWhenPaused,
-  isForegroundFullscreen,
-  isPlaying,
-  isResizeInteractionActive,
-}: {
-  autoHideWhenFullscreen: boolean;
-  autoHideWhenPaused: boolean;
-  isForegroundFullscreen: boolean;
-  isPlaying: boolean;
+// 自动隐藏判定：缩放交互期间永不隐藏；否则按全屏/暂停两个开关分别判断。
+type AutoHideDecision = {
+  autoHideWhenFullscreen: boolean; autoHideWhenPaused: boolean;
+  isForegroundFullscreen: boolean; isPlaying: boolean;
   isResizeInteractionActive: boolean;
-}) {
-  if (isResizeInteractionActive) {
+};
+
+export function shouldAutoHideDesktopLyrics(input: AutoHideDecision) {
+  if (input.isResizeInteractionActive) {
     return false;
   }
 
-  return (autoHideWhenFullscreen && isForegroundFullscreen)
-    || (autoHideWhenPaused && !isPlaying);
+  const hideOnFullscreen = input.autoHideWhenFullscreen && input.isForegroundFullscreen;
+  const hideOnPause = input.autoHideWhenPaused && !input.isPlaying;
+
+  return hideOnFullscreen || hideOnPause;
 }
 
 export function useDesktopLyricsWindowController(options: {
@@ -61,230 +65,182 @@ export function useDesktopLyricsWindowController(options: {
     handlePlaybackPayload,
   } = options;
 
-  const appWindow = getCurrentWindow();
-  let isApplyingCenterPosition = false;
-  let centerPositionFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-  let centerPositionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const lyricsWindow = getCurrentWindow();
 
-  // --- 窗口隐藏时暂停资源 ---
-  let isWindowHidden = false;
+  // —— 水平居中的并发保护： setPosition 触发 onMoved，需要短暂抑制回环 ——
+  let centeringInProgress = false;
+  let centerSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  let centerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function handleVisibilityChange() {
-    const hidden = document.hidden;
-    if (hidden === isWindowHidden) return;
-    isWindowHidden = hidden;
+  // —— 文档隐藏时暂停本窗口内的各类定时器 ——
+  let documentHidden = false;
 
-    if (hidden) {
-      stopPlaybackClock();
-      stopAutoHideLoop();
-      stopLockPolling();
-    } else {
-      startPlaybackClock();
-      startAutoHideLoop();
-      if (settings.value.isLocked && !isAutoHidden.value) {
-        startLockPolling();
-      }
-    }
-  }
+  const isFullscreenObscured = ref(false);
+  const pointerOverSurface = ref(false);
+  const isResizing = ref(false);
+  const cursorOnLockHandle = ref(false);
 
-  async function forceCenterHorizontally() {
-    if (isApplyingCenterPosition) return;
-    try {
-      let monitor = await currentMonitor();
-      if (!monitor) {
-        const monitors = await availableMonitors();
-        if (monitors.length > 0) {
-          monitor = monitors[0];
-        }
-      }
-      if (!monitor) return;
+  let lockWatchTimer: ReturnType<typeof setInterval> | null = null;
+  let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let fullscreenProbeTimer: ReturnType<typeof setInterval> | null = null;
+  let resizeHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  let rafHandle = 0;
+  let shadowTimer: ReturnType<typeof setTimeout> | null = null;
+  let detachState: (() => void) | null = null;
+  let detachPlayback: (() => void) | null = null;
+  let detachReveal: (() => void) | null = null;
+  let detachClose: (() => void) | null = null;
+  let detachMoved: (() => void) | null = null;
+  let detachResized: (() => void) | null = null;
+  let detachSession: (() => void) | null = null;
 
-      const workArea = monitor.workArea;
-      const size = await appWindow.outerSize();
-      const position = await appWindow.outerPosition();
-      const targetX = workArea.position.x + Math.round((workArea.size.width - size.width) / 2);
-
-      if (Math.abs(position.x - targetX) > 1) {
-        isApplyingCenterPosition = true;
-        if (centerPositionFallbackTimer) {
-          clearTimeout(centerPositionFallbackTimer);
-        }
-        centerPositionFallbackTimer = setTimeout(() => {
-          isApplyingCenterPosition = false;
-          centerPositionFallbackTimer = null;
-        }, 300);
-
-        try {
-          await appWindow.setPosition(new PhysicalPosition(targetX, position.y));
-        } catch (err) {
-          console.warn('Failed to call setPosition:', err);
-          isApplyingCenterPosition = false;
-          if (centerPositionFallbackTimer) {
-            clearTimeout(centerPositionFallbackTimer);
-            centerPositionFallbackTimer = null;
-          }
-        }
-
-        await emitWindowBounds({
-          x: targetX,
-          y: position.y,
-          width: size.width,
-          height: size.height,
-        });
-      }
-    } catch (error) {
-      console.warn('Failed to force center horizontally:', error);
-      isApplyingCenterPosition = false;
-      if (centerPositionFallbackTimer) {
-        clearTimeout(centerPositionFallbackTimer);
-        centerPositionFallbackTimer = null;
-      }
-    }
-  }
-  const isSystemHidden = ref(false);
-  const isPointerInside = ref(false);
-  const isResizeInteractionActive = ref(false);
-  const isCursorOverLockButton = ref(false);
-  let lockPollingTimer: ReturnType<typeof setInterval> | null = null;
-
-  const isAutoHidden = computed(() => shouldAutoHideDesktopLyrics({
+  const autoHiddenNow = computed(() => shouldAutoHideDesktopLyrics({
     autoHideWhenFullscreen: settings.value.autoHideWhenFullscreen,
     autoHideWhenPaused: settings.value.autoHideWhenPaused,
-    isForegroundFullscreen: isSystemHidden.value,
+    isForegroundFullscreen: isFullscreenObscured.value,
     isPlaying: isPlaying.value,
-    isResizeInteractionActive: isResizeInteractionActive.value,
+    isResizeInteractionActive: isResizing.value,
   }));
 
-  const isSurfaceVisible = computed(() => {
+  // 锁定时表面整体隐藏，仅靠悬停检测的锁定按钮保持可点。
+  const surfaceShown = computed(() => {
     if (settings.value.isLocked) return false;
-    return isPointerInside.value
+    return pointerOverSurface.value
       || showDragShadow.value
-      || isResizeInteractionActive.value
+      || isResizing.value
       || settings.value.alwaysShowShadowBackground;
   });
 
-  let toolbarHideTimer: ReturnType<typeof setTimeout> | null = null;
-  let autoHideTimer: ReturnType<typeof setInterval> | null = null;
-  let resizeVisibilityTimer: ReturnType<typeof setTimeout> | null = null;
-  let frameId = 0;
-  let dragShadowTimer: ReturnType<typeof setTimeout> | null = null;
-  let unlistenState: (() => void) | null = null;
-  let unlistenPlayback: (() => void) | null = null;
-  let unlistenRevealSurface: (() => void) | null = null;
-  let unlistenCloseRequested: (() => void) | null = null;
-  let unlistenMoved: (() => void) | null = null;
-  let unlistenResized: (() => void) | null = null;
-  let unlistenSessionChanged: (() => void) | null = null;
+  function onDocumentVisibilityChange() {
+    const hidden = document.hidden;
+    if (hidden === documentHidden) return;
+    documentHidden = hidden;
 
-  function startPlaybackClock() {
-    stopPlaybackClock();
+    if (hidden) {
+      haltClock();
+      haltFullscreenWatch();
+      endLockWatch();
+      return;
+    }
 
-    let lastTime = performance.now();
-    const tick = (now: number) => {
-      if (isPlaying.value) {
-        playbackTime.value += (now - lastTime) / 1000;
-      }
-
-      lastTime = now;
-      frameId = requestAnimationFrame(tick);
-    };
-
-    frameId = requestAnimationFrame(tick);
-  }
-
-  function stopPlaybackClock() {
-    if (frameId !== 0) {
-      cancelAnimationFrame(frameId);
-      frameId = 0;
+    startClock();
+    startFullscreenWatch();
+    if (settings.value.isLocked && !autoHiddenNow.value) {
+      beginLockWatch();
     }
   }
 
-  function startAutoHideLoop() {
-    stopAutoHideLoop();
+  // —— 播放时钟：用 requestAnimationFrame 推进本地播放进度 ——
 
-    const pollForegroundFullscreen = async () => {
-      if (isResizeInteractionActive.value) {
-        isSystemHidden.value = false;
-        return;
+  function startClock() {
+    haltClock();
+
+    let lastStamp = performance.now();
+    const step = (now: number) => {
+      const elapsedSeconds = (now - lastStamp) / 1000;
+      lastStamp = now;
+      if (isPlaying.value) {
+        playbackTime.value += elapsedSeconds;
       }
+      rafHandle = requestAnimationFrame(step);
+    };
 
-      if (!settings.value.autoHideWhenFullscreen) {
-        isSystemHidden.value = false;
+    rafHandle = requestAnimationFrame(step);
+  }
+
+  function haltClock() {
+    if (rafHandle !== 0) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = 0;
+    }
+  }
+
+  // —— 前台全屏探测轮询 ——
+
+  function startFullscreenWatch() {
+    haltFullscreenWatch();
+
+    const probe = async () => {
+      if (isResizing.value || !settings.value.autoHideWhenFullscreen) {
+        isFullscreenObscured.value = false;
         return;
       }
 
       try {
         const state = await windowApi.getForegroundFullscreenState();
-        isSystemHidden.value = state.isFullscreen;
+        isFullscreenObscured.value = state.isFullscreen;
       } catch {
-        isSystemHidden.value = false;
+        isFullscreenObscured.value = false;
       }
     };
 
-    autoHideTimer = setInterval(async () => {
-      await pollForegroundFullscreen();
-    }, FULLSCREEN_POLL_INTERVAL_MS);
+    fullscreenProbeTimer = setInterval(() => {
+      void probe();
+    }, FULLSCREEN_PROBE_MS);
 
-    void pollForegroundFullscreen();
+    void probe();
   }
 
-  function stopAutoHideLoop() {
-    if (autoHideTimer) {
-      clearInterval(autoHideTimer);
-      autoHideTimer = null;
+  function haltFullscreenWatch() {
+    if (fullscreenProbeTimer) {
+      clearInterval(fullscreenProbeTimer);
+      fullscreenProbeTimer = null;
     }
   }
 
-  async function checkLockCursorProximity() {
+  // —— 锁定态下探测光标是否落在锁按钮热区 ——
+
+  async function pollLockProximity() {
     if (!settings.value.isLocked) return;
+
     try {
-      const position = await cursorPosition();
-      const winPos = await appWindow.outerPosition();
-      const size = await appWindow.outerSize();
-      const scaleFactor = await appWindow.scaleFactor();
+      const cursor = await cursorPosition();
+      const origin = await lyricsWindow.outerPosition();
+      const box = await lyricsWindow.outerSize();
+      const scale = await lyricsWindow.scaleFactor();
 
-      const W = size.width;
-      const x = position.x - winPos.x;
-      const y = position.y - winPos.y;
+      const localX = cursor.x - origin.x;
+      const localY = cursor.y - origin.y;
+      const hitHeight = LOCK_PROBE_HEIGHT_PX * scale;
+      const hitHalfWidth = LOCK_PROBE_HALF_WIDTH_PX * scale;
+      const midX = box.width / 2;
+      const hoveringHandle = localY >= 0
+        && localY <= hitHeight
+        && localX >= midX - hitHalfWidth
+        && localX <= midX + hitHalfWidth;
 
-      const toleranceY = 80 * scaleFactor;
-      const toleranceX = 56 * scaleFactor;
-
-      const centerX = W / 2;
-      const isOver = y >= 0 && y <= toleranceY && x >= centerX - toleranceX && x <= centerX + toleranceX;
-
-      if (isOver !== isCursorOverLockButton.value) {
-        isCursorOverLockButton.value = isOver;
-        await applyTransientWindowFlags();
+      if (hoveringHandle !== cursorOnLockHandle.value) {
+        cursorOnLockHandle.value = hoveringHandle;
+        await syncCursorPassthrough();
       }
     } catch (err) {
       console.warn('Failed to check cursor proximity:', err);
     }
   }
 
-  function startLockPolling() {
-    stopLockPolling();
-    lockPollingTimer = setInterval(() => {
-      void checkLockCursorProximity();
-    }, 80);
+  function beginLockWatch() {
+    endLockWatch();
+    lockWatchTimer = setInterval(() => {
+      void pollLockProximity();
+    }, LOCK_WATCH_MS);
   }
 
-  function stopLockPolling() {
-    if (lockPollingTimer) {
-      clearInterval(lockPollingTimer);
-      lockPollingTimer = null;
+  function endLockWatch() {
+    if (lockWatchTimer) {
+      clearInterval(lockWatchTimer);
+      lockWatchTimer = null;
     }
-    isCursorOverLockButton.value = false;
+    cursorOnLockHandle.value = false;
   }
 
-  async function applyTransientWindowFlags() {
-    const shouldIgnoreCursor = (settings.value.isLocked && !isCursorOverLockButton.value) || isAutoHidden.value;
-    await appWindow.setIgnoreCursorEvents(shouldIgnoreCursor);
-    await appWindow.setFocusable(!shouldIgnoreCursor);
+  async function syncCursorPassthrough() {
+    const ignoreCursor = (settings.value.isLocked && !cursorOnLockHandle.value) || autoHiddenNow.value;
+    await lyricsWindow.setIgnoreCursorEvents(ignoreCursor);
+    await lyricsWindow.setFocusable(!ignoreCursor);
   }
 
-  async function applyAlwaysOnTopState(enabled: boolean) {
-    await appWindow.setAlwaysOnTop(enabled);
+  async function pushTopmostState(enabled: boolean) {
+    await lyricsWindow.setAlwaysOnTop(enabled);
     await windowApi.refreshCurrentWindowTopmost(enabled);
 
     if (enabled) {
@@ -295,225 +251,269 @@ export function useDesktopLyricsWindowController(options: {
     await windowApi.stopTopmostGuard();
   }
 
-  function clearToolbarHideTimer() {
-    if (toolbarHideTimer) {
-      clearTimeout(toolbarHideTimer);
-      toolbarHideTimer = null;
+  function clearLeaveTimer() {
+    if (leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
     }
   }
 
-  function clearResizeVisibilityTimer() {
-    if (resizeVisibilityTimer) {
-      clearTimeout(resizeVisibilityTimer);
-      resizeVisibilityTimer = null;
+  function clearResizeHoldTimer() {
+    if (resizeHoldTimer) {
+      clearTimeout(resizeHoldTimer);
+      resizeHoldTimer = null;
     }
   }
 
-  function holdVisibleForResize() {
-    clearResizeVisibilityTimer();
-    clearToolbarHideTimer();
-
-    isResizeInteractionActive.value = true;
-    isSystemHidden.value = false;
-    revealDragShadow();
-
-    resizeVisibilityTimer = setTimeout(() => {
-      isResizeInteractionActive.value = false;
-      resizeVisibilityTimer = null;
-    }, RESIZE_VISIBILITY_HOLD_MS);
+  function clearCenterSettleTimer() {
+    centeringInProgress = false;
+    if (centerSettleTimer) {
+      clearTimeout(centerSettleTimer);
+      centerSettleTimer = null;
+    }
   }
 
-  function hideSurfaceAfterLeave(delay = 180) {
-    clearToolbarHideTimer();
+  function armCenterSettle() {
+    if (centerSettleTimer) {
+      clearTimeout(centerSettleTimer);
+    }
+    centerSettleTimer = setTimeout(() => {
+      centeringInProgress = false;
+      centerSettleTimer = null;
+    }, CENTER_SETTLE_MS);
+  }
 
-    toolbarHideTimer = setTimeout(() => {
-      isPointerInside.value = false;
-      toolbarHideTimer = null;
+  function scheduleCenterDebounce() {
+    if (centerDebounceTimer) {
+      clearTimeout(centerDebounceTimer);
+    }
+    centerDebounceTimer = setTimeout(() => {
+      centerDebounceTimer = null;
+      void snapToHorizontalCenter();
+    }, CENTER_DEBOUNCE_MS);
+  }
+
+  // —— 缩放进行中：强制保持可见并展示拖拽阴影 ——
+
+  function extendResizeVisibility() {
+    clearResizeHoldTimer();
+    clearLeaveTimer();
+
+    isResizing.value = true;
+    isFullscreenObscured.value = false;
+    flashDragShadow();
+
+    resizeHoldTimer = setTimeout(() => {
+      isResizing.value = false;
+      resizeHoldTimer = null;
+    }, RESIZE_HOLD_MS);
+  }
+
+  function scheduleSurfaceHide(delay = SURFACE_LEAVE_DELAY_MS) {
+    clearLeaveTimer();
+
+    leaveTimer = setTimeout(() => {
+      pointerOverSurface.value = false;
+      leaveTimer = null;
     }, delay);
   }
 
-  function revealDragShadow() {
+  function flashDragShadow() {
     showDragShadow.value = true;
 
-    if (dragShadowTimer) {
-      clearTimeout(dragShadowTimer);
+    if (shadowTimer) {
+      clearTimeout(shadowTimer);
     }
 
-    dragShadowTimer = setTimeout(() => {
+    shadowTimer = setTimeout(() => {
       showDragShadow.value = false;
-      dragShadowTimer = null;
-    }, 1500);
+      shadowTimer = null;
+    }, DRAG_SHADOW_LINGER_MS);
   }
 
   function handlePointerEnter() {
-    if (settings.value.isLocked) {
-      return;
-    }
-    clearToolbarHideTimer();
-    isPointerInside.value = true;
+    if (settings.value.isLocked) return;
+    clearLeaveTimer();
+    pointerOverSurface.value = true;
   }
 
   function handlePointerMove() {
-    if (settings.value.isLocked) {
-      return;
-    }
-
-    clearToolbarHideTimer();
-    isPointerInside.value = true;
+    if (settings.value.isLocked) return;
+    clearLeaveTimer();
+    pointerOverSurface.value = true;
   }
 
   function handlePointerLeave() {
-    if (settings.value.isLocked) {
-      return;
-    }
-
-    if (isResizeInteractionActive.value) {
-      return;
-    }
-
-    hideSurfaceAfterLeave();
+    if (settings.value.isLocked) return;
+    if (isResizing.value) return;
+    scheduleSurfaceHide();
   }
 
   async function startWindowDrag(event: MouseEvent) {
-    if (settings.value.isLocked || isAutoHidden.value) return;
-    if ((event.target as HTMLElement).closest('button, .settings-menu')) return;
+    if (settings.value.isLocked || autoHiddenNow.value) return;
+    const hit = (event.target as HTMLElement).closest('button, .settings-menu');
+    if (hit) return;
 
-    revealDragShadow();
-    await appWindow.startDragging();
+    flashDragShadow();
+    await lyricsWindow.startDragging();
   }
 
-  async function emitWindowBounds(bounds: DesktopLyricsWindowBounds) {
+  async function publishBounds(bounds: DesktopLyricsWindowBounds) {
     await emitTo<DesktopLyricsWindowBounds>('main', DESKTOP_LYRICS_BOUNDS_EVENT, bounds);
   }
 
   const widgetShellStyle = computed<CSSProperties>(() => ({
-    opacity: isAutoHidden.value ? '0' : '1',
-    transform: isAutoHidden.value ? 'scale(0.96)' : 'scale(1)',
-    pointerEvents: isAutoHidden.value ? 'none' : 'auto',
+    opacity: autoHiddenNow.value ? '0' : '1',
+    transform: autoHiddenNow.value ? 'scale(0.96)' : 'scale(1)',
+    pointerEvents: autoHiddenNow.value ? 'none' : 'auto',
   }));
 
-  onMounted(async () => {
-    startPlaybackClock();
-    startAutoHideLoop();
-    void loadSystemLyricsFonts();
+  // —— 水平居中：把窗口 x 调到当前工作区中线（仅当偏差超过 1px） ——
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+  async function resolveActiveMonitor() {
+    const focused = await currentMonitor();
+    if (focused) return focused;
+
+    const all = await availableMonitors();
+    return all.length > 0 ? all[0] : undefined;
+  }
+
+  async function snapToHorizontalCenter() {
+    if (centeringInProgress) return;
 
     try {
-      await appWindow.setBackgroundColor([0, 0, 0, 0]);
+      const monitor = await resolveActiveMonitor();
+      if (!monitor) return;
+
+      const area = monitor.workArea;
+      const box = await lyricsWindow.outerSize();
+      const origin = await lyricsWindow.outerPosition();
+      const targetX = area.position.x + Math.round((area.size.width - box.width) / 2);
+
+      if (Math.abs(origin.x - targetX) <= 1) return;
+
+      centeringInProgress = true;
+      armCenterSettle();
+
+      try {
+        await lyricsWindow.setPosition(new PhysicalPosition(targetX, origin.y));
+      } catch (err) {
+        console.warn('Failed to call setPosition:', err);
+        clearCenterSettleTimer();
+      }
+
+      await publishBounds({
+        x: targetX,
+        y: origin.y,
+        width: box.width,
+        height: box.height,
+      });
+    } catch (error) {
+      console.warn('Failed to force center horizontally:', error);
+      clearCenterSettleTimer();
+    }
+  }
+
+  onMounted(async () => {
+    startClock();
+    startFullscreenWatch();
+    void loadSystemLyricsFonts();
+
+    document.addEventListener('visibilitychange', onDocumentVisibilityChange);
+
+    try {
+      await lyricsWindow.setBackgroundColor([0, 0, 0, 0]);
     } catch (error) {
       console.warn('Failed to force transparent background for desktop lyrics window:', error);
     }
 
-    unlistenState = await appWindow.listen<DesktopLyricsStatePayload>(DESKTOP_LYRICS_STATE_EVENT, (event) => {
+    detachState = await lyricsWindow.listen<DesktopLyricsStatePayload>(DESKTOP_LYRICS_STATE_EVENT, (event) => {
       handlePayload(event.payload);
     });
 
-    unlistenPlayback = await appWindow.listen<DesktopLyricsPlaybackPayload>(DESKTOP_LYRICS_PLAYBACK_EVENT, (event) => {
+    detachPlayback = await lyricsWindow.listen<DesktopLyricsPlaybackPayload>(DESKTOP_LYRICS_PLAYBACK_EVENT, (event) => {
       handlePlaybackPayload(event.payload);
     });
 
-    unlistenRevealSurface = await appWindow.listen(DESKTOP_LYRICS_REVEAL_SURFACE_EVENT, () => {
-      revealDragShadow();
+    detachReveal = await lyricsWindow.listen(DESKTOP_LYRICS_REVEAL_SURFACE_EVENT, () => {
+      flashDragShadow();
     });
 
-    revealDragShadow();
+    flashDragShadow();
 
-    unlistenCloseRequested = await appWindow.onCloseRequested(async (event) => {
+    detachClose = await lyricsWindow.onCloseRequested(async (event) => {
       event.preventDefault();
-      await appWindow.hide();
+      await lyricsWindow.hide();
       await emitTo('main', DESKTOP_LYRICS_VISIBILITY_EVENT, { visible: false });
     });
 
-    unlistenMoved = await appWindow.onMoved(async ({ payload }) => {
-      revealDragShadow();
+    detachMoved = await lyricsWindow.onMoved(async ({ payload }) => {
+      flashDragShadow();
 
-      if (isApplyingCenterPosition) {
-        isApplyingCenterPosition = false;
-        if (centerPositionFallbackTimer) {
-          clearTimeout(centerPositionFallbackTimer);
-          centerPositionFallbackTimer = null;
-        }
-        const size = await appWindow.outerSize();
-        await emitWindowBounds({
+      // 居中流程引发的移动事件：直接上报结果位置，不再触发居中去抖。
+      if (centeringInProgress) {
+        clearCenterSettleTimer();
+        const box = await lyricsWindow.outerSize();
+        await publishBounds({
           x: payload.x,
           y: payload.y,
-          width: size.width,
-          height: size.height,
+          width: box.width,
+          height: box.height,
         });
         return;
       }
 
-      const size = await appWindow.outerSize();
-      let x = payload.x;
-
+      const box = await lyricsWindow.outerSize();
       if (settings.value.centerHorizontally) {
-        if (centerPositionDebounceTimer) {
-          clearTimeout(centerPositionDebounceTimer);
-        }
-        centerPositionDebounceTimer = setTimeout(async () => {
-          centerPositionDebounceTimer = null;
-          await forceCenterHorizontally();
-        }, 300);
+        scheduleCenterDebounce();
       }
 
-      await emitWindowBounds({
-        x,
+      await publishBounds({
+        x: payload.x,
         y: payload.y,
-        width: size.width,
-        height: size.height,
+        width: box.width,
+        height: box.height,
       });
     });
 
-    unlistenResized = await appWindow.onResized(async ({ payload }) => {
-      holdVisibleForResize();
+    detachResized = await lyricsWindow.onResized(async ({ payload }) => {
+      extendResizeVisibility();
 
-      if (isApplyingCenterPosition) {
-        isApplyingCenterPosition = false;
-        if (centerPositionFallbackTimer) {
-          clearTimeout(centerPositionFallbackTimer);
-          centerPositionFallbackTimer = null;
-        }
-        const position = await appWindow.outerPosition();
-        await emitWindowBounds({
-          x: position.x,
-          y: position.y,
+      if (centeringInProgress) {
+        clearCenterSettleTimer();
+        const origin = await lyricsWindow.outerPosition();
+        await publishBounds({
+          x: origin.x,
+          y: origin.y,
           width: payload.width,
           height: payload.height,
         });
         return;
       }
 
-      const position = await appWindow.outerPosition();
-      let x = position.x;
-
+      const origin = await lyricsWindow.outerPosition();
       if (settings.value.centerHorizontally) {
-        if (centerPositionDebounceTimer) {
-          clearTimeout(centerPositionDebounceTimer);
-        }
-        centerPositionDebounceTimer = setTimeout(async () => {
-          centerPositionDebounceTimer = null;
-          await forceCenterHorizontally();
-        }, 300);
+        scheduleCenterDebounce();
       }
 
-      await emitWindowBounds({
-        x,
-        y: position.y,
+      await publishBounds({
+        x: origin.x,
+        y: origin.y,
         width: payload.width,
         height: payload.height,
       });
     });
 
+    // 从持久化会话恢复播放状态，失败则等待主窗口的全量状态推送。
     try {
       const session = await sessionApi.getPlaybackSession();
       if (session && session.currentSongPath) {
         isPlaying.value = session.isPlaying;
         playbackTime.value = session.currentPositionSecs;
       }
-    } catch { /* ignore - emitTo will provide full state */ }
+    } catch { /* 静默：状态推送会补齐 */ }
 
-    unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
+    detachSession = await listen<PlaybackSessionChangedPayload>(
       'playback:session-changed',
       (event) => {
         const data = event.payload;
@@ -531,52 +531,49 @@ export function useDesktopLyricsWindowController(options: {
   });
 
   onUnmounted(() => {
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    stopLockPolling();
-    stopPlaybackClock();
-    stopAutoHideLoop();
-    clearToolbarHideTimer();
-    clearResizeVisibilityTimer();
-    unlistenState?.();
-    unlistenPlayback?.();
-    unlistenRevealSurface?.();
-    unlistenCloseRequested?.();
-    unlistenMoved?.();
-    unlistenResized?.();
-    unlistenSessionChanged?.();
+    document.removeEventListener('visibilitychange', onDocumentVisibilityChange);
+    endLockWatch();
+    haltClock();
+    haltFullscreenWatch();
+    clearLeaveTimer();
+    clearResizeHoldTimer();
+    detachState?.();
+    detachPlayback?.();
+    detachReveal?.();
+    detachClose?.();
+    detachMoved?.();
+    detachResized?.();
+    detachSession?.();
     void windowApi.stopTopmostGuard();
 
-    if (centerPositionFallbackTimer) {
-      clearTimeout(centerPositionFallbackTimer);
-      centerPositionFallbackTimer = null;
+    clearCenterSettleTimer();
+
+    if (centerDebounceTimer) {
+      clearTimeout(centerDebounceTimer);
+      centerDebounceTimer = null;
     }
 
-    if (centerPositionDebounceTimer) {
-      clearTimeout(centerPositionDebounceTimer);
-      centerPositionDebounceTimer = null;
-    }
-
-    if (dragShadowTimer) {
-      clearTimeout(dragShadowTimer);
-      dragShadowTimer = null;
+    if (shadowTimer) {
+      clearTimeout(shadowTimer);
+      shadowTimer = null;
     }
   });
 
   watch(
-    () => [settings.value.isLocked, isAutoHidden.value],
+    () => [settings.value.isLocked, autoHiddenNow.value],
     () => {
       if (settings.value.isLocked) {
-        clearToolbarHideTimer();
-        isPointerInside.value = false;
-        if (!isAutoHidden.value) {
-          startLockPolling();
+        clearLeaveTimer();
+        pointerOverSurface.value = false;
+        if (autoHiddenNow.value) {
+          endLockWatch();
         } else {
-          stopLockPolling();
+          beginLockWatch();
         }
       } else {
-        stopLockPolling();
+        endLockWatch();
       }
-      void applyTransientWindowFlags();
+      void syncCursorPassthrough();
     },
     { immediate: true },
   );
@@ -585,7 +582,7 @@ export function useDesktopLyricsWindowController(options: {
     () => settings.value.autoHideWhenFullscreen,
     (enabled) => {
       if (!enabled) {
-        isSystemHidden.value = false;
+        isFullscreenObscured.value = false;
       }
     },
   );
@@ -593,7 +590,7 @@ export function useDesktopLyricsWindowController(options: {
   watch(
     () => settings.value.isAlwaysOnTop,
     (enabled) => {
-      void applyAlwaysOnTopState(enabled);
+      void pushTopmostState(enabled);
     },
     { immediate: true },
   );
@@ -602,16 +599,16 @@ export function useDesktopLyricsWindowController(options: {
     () => settings.value.centerHorizontally,
     (enabled) => {
       if (enabled) {
-        void forceCenterHorizontally();
+        void snapToHorizontalCenter();
       }
     },
   );
 
   return {
     showDragShadow,
-    isSystemHidden,
-    isSurfaceVisible,
-    isCursorOverLockButton,
+    isSystemHidden: isFullscreenObscured,
+    isSurfaceVisible: surfaceShown,
+    isCursorOverLockButton: cursorOnLockHandle,
     widgetShellStyle,
     handlePointerEnter,
     handlePointerMove,

@@ -29,31 +29,26 @@ import {
 import type { SyncDeleteScope } from './SyncDeleteScopeModal.vue';
 import type { Song } from '../../types';
 
-type SongMenuAction =
-  | 'play'
-  | 'playNext'
-  | 'addToQueueTail'
-  | 'downloadToLocal'
-  | 'addAlbumToQueueTail'
-  | 'favorite'
-  | 'addToPlaylist'
-  | 'viewArtist'
-  | 'viewAlbum'
-  | 'openFolder'
-  | 'viewSongInfo'
-  | 'removeFromList'
-  | 'deleteFromDisk'
-  | 'viewLeaderboardUser';
+/**
+ * 歌曲右键菜单：动作分发、艺术家子菜单、在线/本地双模式、已同步歌单的删除范围弹窗。
+ * 桌面端独立实现，对外 props/emits 契约与旧版一致。
+ */
 
-type SongMenuEntry =
+// ==================== 本地类型 ====================
+type MenuActionKind =
+  | 'play' | 'playNext' | 'addToQueueTail' | 'downloadToLocal' | 'addAlbumToQueueTail'
+  | 'favorite' | 'addToPlaylist' | 'viewArtist' | 'viewAlbum' | 'openFolder'
+  | 'viewSongInfo' | 'removeFromList' | 'deleteFromDisk' | 'viewLeaderboardUser';
+
+type MenuEntryDef =
   | { type: 'divider'; key: string }
-  | { type: 'action'; key: SongMenuAction; label: string; danger?: boolean };
+  | { type: 'action'; key: MenuActionKind; label: string; danger?: boolean };
 
-type SongMenuRenderEntry =
+type MenuEntryWithMotion =
   | ({ type: 'divider'; key: string; motionIndex: number })
-  | ({ type: 'action'; key: SongMenuAction; label: string; danger?: boolean; motionIndex: number });
+  | ({ type: 'action'; key: MenuActionKind; label: string; danger?: boolean; motionIndex: number });
 
-interface SongMenuIcon {
+interface MenuIconDef {
   fill?: boolean;
   viewBox?: string;
   paths: Array<{
@@ -63,227 +58,136 @@ interface SongMenuIcon {
   }>;
 }
 
-interface LeaderboardUserSummary {
+interface RankUserBrief {
   username: string;
   nickname: string;
   avatar?: string;
 }
 
+// ==================== 对外契约 ====================
 const props = defineProps<{
   visible: boolean;
+  song: Song | null;
   x: number;
   y: number;
-  song: Song | null;
   isPlaylistView: boolean;
   isFolderView?: boolean;
   isManagementMode?: boolean;
   isOnlineSearch?: boolean;
   onlineDetailType?: 'artist' | 'album' | 'playlist' | 'user';
   resolvedFilePath?: string;
-  leaderboardEntry?: LeaderboardUserSummary | null;
+  leaderboardEntry?: RankUserBrief | null;
 }>();
 
 const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk', 'view-online-artist', 'view-online-album', 'view-leaderboard-user']);
 
+// ==================== 依赖 ====================
 const route = useRoute();
 const router = useRouter();
 const { showToast } = useToast();
-const { playSong, playNext, addSongToQueue, addAlbumToQueueTail, removeSongFromList, openInFinder, currentViewMode } = usePlayer();
-const { removeFromPlaylist, isFavorite, toggleFavorite } = useLibraryCollections();
+const {
+  playSong, playNext, addSongToQueue, addAlbumToQueueTail,
+  removeSongFromList, openInFinder, currentViewMode,
+} = usePlayer();
+const {
+  removeFromPlaylist: pruneFromPlaylist,
+  isFavorite: checkFavorite,
+  toggleFavorite: flipFavorite,
+} = useLibraryCollections();
 const { filterCondition } = usePlayerViewState();
 const { openSongInfo } = useSongInfoDialog();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
+const { openDownloadDialog } = useDownloadDialog();
 
-const menuRef = ref<HTMLElement | null>(null);
-const viewArtistTriggerRef = ref<HTMLElement | null>(null);
-const artistSubmenuRef = ref<HTMLElement | null>(null);
-const menuSize = ref({ width: 0, height: 0 });
-const artistSubmenuSize = ref({ width: 0, height: 0 });
-const showArtistSubmenu = ref(false);
+// ==================== 菜单几何状态 ====================
+const menuEl = ref<HTMLElement | null>(null);
+const artistTriggerEl = ref<HTMLElement | null>(null);
+const submenuEl = ref<HTMLElement | null>(null);
+const menuBox = ref({ width: 0, height: 0 });
+const submenuBox = ref({ width: 0, height: 0 });
+const submenuOpen = ref(false);
 
-const showDeleteFromDisk = computed(() => Boolean(props.isFolderView && props.isManagementMode));
+// 是否展示“从本地移除”（仅文件夹管理态）
+const wipeVisible = computed(() => Boolean(props.isFolderView && props.isManagementMode));
 
-const menuIcons: Record<SongMenuAction, SongMenuIcon> = {
-  play: {
-    fill: true,
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M8 5.5v13l10.5-6.5z',
-      },
-    ],
-  },
-  playNext: {
-    fill: true,
-    viewBox: '0 0 24 24',
-    paths: [
-      {
-        d: 'M4.8 7.1c0-.95 1.06-1.52 1.86-1l5.04 3.36c.72.48.72 1.56 0 2.04L6.66 14.86c-.8.53-1.86-.05-1.86-1V7.1zm7.5 0c0-.95 1.06-1.52 1.86-1l5.04 3.36c.72.48.72 1.56 0 2.04l-5.04 3.36c-.8.53-1.86-.05-1.86-1V7.1z',
-      },
-    ],
-  },
-  addToQueueTail: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M5 7.5h14' },
-      { d: 'M5 12h14' },
-      { d: 'M5 16.5h14' },
-    ],
-  },
-  downloadToLocal: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M12 4v11' },
-      { d: 'M8 11l4 4 4-4' },
-      { d: 'M5 19h14' },
-    ],
-  },
-addAlbumToQueueTail: {
-  fill: false,
-  viewBox: '0 0 24 24',
-  paths: [
-    { d: 'M 2,12 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0' },
-    { d: 'M 5.5,12 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0' },
+// 距屏幕边缘的最小留白
+const EDGE_GAP = 8;
 
-    { d: 'M14.75 8.5H19.25' },
-    { d: 'M14.75 12H20.25' },
-    { d: 'M14.75 15.5H21.25' },
-  ],
-},
-  addToPlaylist: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M12 5.5v13' },
-      { d: 'M5.5 12h13' },
-    ],
-  },
-  favorite: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' },
-    ],
-  },
-  viewArtist: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M12 11a3 3 0 100-6 3 3 0 000 6z' },
-      { d: 'M6.5 18.5a5.5 5.5 0 0111 0' },
-    ],
-  },
-  viewAlbum: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M12 18.5a6.5 6.5 0 100-13 6.5 6.5 0 000 13z' },
-      { d: 'M12 13.75a1.75 1.75 0 100-3.5 1.75 1.75 0 000 3.5z' },
-    ],
-  },
-  openFolder: {
-    fill: true,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M3.5 8.25A2.25 2.25 0 015.75 6h4.07c.48 0 .93.19 1.27.53l1.02 1.02c.34.34.79.53 1.27.53h4.87a2.25 2.25 0 012.25 2.25v5.42A2.25 2.25 0 0118.25 18H5.75A2.25 2.25 0 013.5 15.75v-7.5z' },
-    ],
-  },
-  viewSongInfo: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M12 10.5v4.75' },
-      { d: 'M12 8h.01' },
-      { d: 'M12 19a7 7 0 100-14 7 7 0 000 14z' },
-    ],
-  },
-  removeFromList: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M7 7l10 10' },
-      { d: 'M17 7L7 17' },
-    ],
-  },
-  deleteFromDisk: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M5 7h14' },
-      { d: 'M9 7V5.75A1.75 1.75 0 0110.75 4h2.5A1.75 1.75 0 0115 5.75V7' },
-      { d: 'M8 10.5v5.5' },
-      { d: 'M12 10.5v5.5' },
-      { d: 'M16 10.5v5.5' },
-      { d: 'M6.5 7l.7 10.3A2 2 0 009.2 19h5.6a2 2 0 001.99-1.7L17.5 7' },
-    ],
-  },
-  viewLeaderboardUser: {
-    fill: false,
-    viewBox: '0 0 24 24',
-    paths: [
-      { d: 'M12 11a3 3 0 100-6 3 3 0 000 6z' },
-      { d: 'M6.5 18.5a5.5 5.5 0 0111 0' },
-    ],
-  },
+// ==================== 图标定义（仅本文件内使用） ====================
+const iconTable: Record<MenuActionKind, MenuIconDef> = {
+  play: { fill: true, viewBox: '0 0 24 24', paths: [{ d: 'M8 5.5v13l10.5-6.5z' }] },
+  playNext: { fill: true, viewBox: '0 0 24 24', paths: [{ d: 'M4.8 7.1c0-.95 1.06-1.52 1.86-1l5.04 3.36c.72.48.72 1.56 0 2.04L6.66 14.86c-.8.53-1.86-.05-1.86-1V7.1zm7.5 0c0-.95 1.06-1.52 1.86-1l5.04 3.36c.72.48.72 1.56 0 2.04l-5.04 3.36c-.8.53-1.86-.05-1.86-1V7.1z' }] },
+  addToQueueTail: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M5 7.5h14' }, { d: 'M5 12h14' }, { d: 'M5 16.5h14' }] },
+  downloadToLocal: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 4v11' }, { d: 'M8 11l4 4 4-4' }, { d: 'M5 19h14' }] },
+  addAlbumToQueueTail: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M 2,12 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0' }, { d: 'M 5.5,12 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0' }, { d: 'M14.75 8.5H19.25' }, { d: 'M14.75 12H20.25' }, { d: 'M14.75 15.5H21.25' }] },
+  addToPlaylist: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 5.5v13' }, { d: 'M5.5 12h13' }] },
+  favorite: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' }] },
+  viewArtist: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 11a3 3 0 100-6 3 3 0 000 6z' }, { d: 'M6.5 18.5a5.5 5.5 0 0111 0' }] },
+  viewAlbum: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 18.5a6.5 6.5 0 100-13 6.5 6.5 0 000 13z' }, { d: 'M12 13.75a1.75 1.75 0 100-3.5 1.75 1.75 0 000 3.5z' }] },
+  openFolder: { fill: true, viewBox: '0 0 24 24', paths: [{ d: 'M3.5 8.25A2.25 2.25 0 015.75 6h4.07c.48 0 .93.19 1.27.53l1.02 1.02c.34.34.79.53 1.27.53h4.87a2.25 2.25 0 012.25 2.25v5.42A2.25 2.25 0 0118.25 18H5.75A2.25 2.25 0 013.5 15.75v-7.5z' }] },
+  viewSongInfo: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 10.5v4.75' }, { d: 'M12 8h.01' }, { d: 'M12 19a7 7 0 100-14 7 7 0 000 14z' }] },
+  removeFromList: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M7 7l10 10' }, { d: 'M17 7L7 17' }] },
+  deleteFromDisk: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M5 7h14' }, { d: 'M9 7V5.75A1.75 1.75 0 0110.75 4h2.5A1.75 1.75 0 0115 5.75V7' }, { d: 'M8 10.5v5.5' }, { d: 'M12 10.5v5.5' }, { d: 'M16 10.5v5.5' }, { d: 'M6.5 7l.7 10.3A2 2 0 009.2 19h5.6a2 2 0 001.99-1.7L17.5 7' }] },
+  viewLeaderboardUser: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 11a3 3 0 100-6 3 3 0 000 6z' }, { d: 'M6.5 18.5a5.5 5.5 0 0111 0' }] },
 };
 
-const menuEntries = computed<SongMenuEntry[]>(() => {
+const activeIcon = (key: MenuActionKind) => iconTable[key];
+
+// ==================== 菜单项组装 ====================
+const entryDefs = computed<MenuEntryDef[]>(() => {
+  // 排行榜场景只留一个入口
   if (props.leaderboardEntry) {
     return [{ type: 'action', key: 'viewLeaderboardUser', label: '查看' }];
   }
 
   const online = props.isOnlineSearch;
-  const isFavorited = props.song ? isFavorite(props.song) : false;
-  const favoriteLabel = isFavorited ? '取消收藏' : '收藏歌曲';
+  const favLabel = props.song && checkFavorite(props.song) ? '取消收藏' : '收藏歌曲';
+  const list: MenuEntryDef[] = [];
+  const add = (...items: MenuEntryDef[]) => list.push(...items);
 
-  const entries: SongMenuEntry[] = [
+  // 第一组：播放相关
+  add(
     { type: 'action', key: 'play', label: '播放' },
     { type: 'action', key: 'playNext', label: '下一首播放' },
     { type: 'action', key: 'addToQueueTail', label: '添加到队尾' },
-  ];
+  );
 
+  // 在线歌曲可下载时追加下载项
   if (online && props.song && isDownloadableOnlineSong(props.song)) {
-    entries.push({ type: 'action', key: 'downloadToLocal', label: '下载至本地' });
+    add({ type: 'action', key: 'downloadToLocal', label: '下载至本地' });
   }
 
+  // 本地歌曲有专辑元数据时支持整张入队
   if (!online && !props.isPlaylistView && props.song && hasSongAlbumMetadata(props.song)) {
-    entries.push({ type: 'action', key: 'addAlbumToQueueTail', label: '整张专辑添加到队尾' });
+    add({ type: 'action', key: 'addAlbumToQueueTail', label: '整张专辑添加到队尾' });
   }
 
   if (online) {
-    const hideViewNavigation = props.onlineDetailType === 'artist' || props.onlineDetailType === 'album';
-
-    if (!hideViewNavigation) {
-      entries.push(
+    // 在线歌手/专辑详情页内隐藏二次跳转入口
+    const skipNav = props.onlineDetailType === 'artist' || props.onlineDetailType === 'album';
+    if (!skipNav) {
+      add(
         { type: 'divider', key: 'divider-primary' },
         { type: 'action', key: 'viewArtist', label: '查看歌手' },
         { type: 'action', key: 'viewAlbum', label: '查看专辑' },
       );
     }
-
-    entries.push(
+    add(
       { type: 'divider', key: 'divider-secondary' },
-      { type: 'action', key: 'favorite', label: favoriteLabel },
+      { type: 'action', key: 'favorite', label: favLabel },
     );
-
-    if (props.isPlaylistView) {
-      entries.push({ type: 'action', key: 'removeFromList', label: '从歌单中移除' });
-    } else {
-      entries.push({ type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
-    }
+    add(props.isPlaylistView
+      ? { type: 'action', key: 'removeFromList', label: '从歌单中移除' }
+      : { type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
   } else {
-    entries.push(
+    add(
       { type: 'divider', key: 'divider-primary' },
-      { type: 'action', key: 'favorite', label: favoriteLabel },
+      { type: 'action', key: 'favorite', label: favLabel },
     );
-
     if (!props.isPlaylistView) {
-      entries.push({ type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
+      add({ type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
     }
-
-    entries.push(
+    add(
       { type: 'action', key: 'viewArtist', label: '查看歌手' },
       { type: 'action', key: 'viewAlbum', label: '查看专辑' },
       { type: 'divider', key: 'divider-secondary' },
@@ -292,151 +196,152 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
       { type: 'divider', key: 'divider-danger' },
       { type: 'action', key: 'removeFromList', label: props.isPlaylistView ? '从歌单中移除' : '从列表移除' },
     );
-
-    if (showDeleteFromDisk.value) {
-      entries.push({ type: 'action', key: 'deleteFromDisk', label: '从本地移除', danger: true });
+    if (wipeVisible.value) {
+      add({ type: 'action', key: 'deleteFromDisk', label: '从本地移除', danger: true });
     }
   }
 
-  return entries;
+  return list;
 });
 
-const renderEntries = computed<SongMenuRenderEntry[]>(() =>
-  menuEntries.value.map((entry, motionIndex) => ({ ...entry, motionIndex })),
-);
+// 附加级联序号用于入场动效
+const motionList = computed<MenuEntryWithMotion[]>(() =>
+  entryDefs.value.map((item, motionIndex) => ({ ...item, motionIndex })));
+
+// ==================== 尺寸测量与定位 ====================
+const readBox = (el: HTMLElement) => ({
+  width: el.offsetWidth,
+  height: el.offsetHeight,
+});
 
 watch(
   () => props.visible,
-  async (visible) => {
-    if (visible) {
+  async (shown) => {
+    if (shown) {
       await nextTick();
-      if (menuRef.value) {
-        menuSize.value = {
-          width: menuRef.value.offsetWidth,
-          height: menuRef.value.offsetHeight,
-        };
+      if (menuEl.value) {
+        menuBox.value = readBox(menuEl.value);
       }
       return;
     }
 
-    menuSize.value = { width: 0, height: 0 };
-    artistSubmenuSize.value = { width: 0, height: 0 };
-    showArtistSubmenu.value = false;
+    menuBox.value = { width: 0, height: 0 };
+    submenuBox.value = { width: 0, height: 0 };
+    submenuOpen.value = false;
   },
   { immediate: true },
 );
 
-watch(showArtistSubmenu, async (visible) => {
-  if (visible) {
+watch(submenuOpen, async (shown) => {
+  if (shown) {
     await nextTick();
-    if (artistSubmenuRef.value) {
-      artistSubmenuSize.value = {
-        width: artistSubmenuRef.value.offsetWidth,
-        height: artistSubmenuRef.value.offsetHeight,
-      };
+    if (submenuEl.value) {
+      submenuBox.value = readBox(submenuEl.value);
     }
     return;
   }
 
-  artistSubmenuSize.value = { width: 0, height: 0 };
+  submenuBox.value = { width: 0, height: 0 };
 });
 
-const menuStyle = computed<CSSProperties>(() => {
+// 主菜单：优先放右下，放不下则向上/向左翻转
+const popoverStyle = computed<CSSProperties>(() => {
   if (!props.visible) {
     return {};
   }
 
   let top = props.y;
   let left = props.x;
-  let verticalOrigin = 'top';
-  let horizontalOrigin = 'left';
+  let vOrigin = 'top';
+  let hOrigin = 'left';
 
-  if (top + menuSize.value.height > window.innerHeight) {
-    top = props.y - menuSize.value.height;
-    verticalOrigin = 'bottom';
+  if (top + menuBox.value.height > window.innerHeight) {
+    top = props.y - menuBox.value.height;
+    vOrigin = 'bottom';
   }
 
-  if (left + menuSize.value.width > window.innerWidth) {
-    left = props.x - menuSize.value.width;
-    horizontalOrigin = 'right';
+  if (left + menuBox.value.width > window.innerWidth) {
+    left = props.x - menuBox.value.width;
+    hOrigin = 'right';
   }
 
   return {
-    left: `${Math.max(8, left)}px`,
-    top: `${Math.max(8, top)}px`,
-    visibility: menuSize.value.height === 0 ? 'hidden' : 'visible',
-    transformOrigin: `${horizontalOrigin} ${verticalOrigin}`,
+    left: `${Math.max(EDGE_GAP, left)}px`,
+    top: `${Math.max(EDGE_GAP, top)}px`,
+    visibility: menuBox.value.height === 0 ? 'hidden' : 'visible',
+    transformOrigin: `${hOrigin} ${vOrigin}`,
   };
 });
 
-const handleGlobalClick = (event: MouseEvent) => {
+// 点击菜单外部关闭（子菜单也算内部）
+const onOutsidePress = (event: MouseEvent) => {
   const target = event.target as Node;
-  const clickedInsideMenu = Boolean(menuRef.value?.contains(target));
-  const clickedInsideSubmenu = Boolean(artistSubmenuRef.value?.contains(target));
+  const insideMenu = Boolean(menuEl.value?.contains(target));
+  const insideSubmenu = Boolean(submenuEl.value?.contains(target));
 
-  if (props.visible && !clickedInsideMenu && !clickedInsideSubmenu) {
+  if (props.visible && !insideMenu && !insideSubmenu) {
     emit('close');
   }
 };
 
-onMounted(() => window.addEventListener('mousedown', handleGlobalClick));
-onUnmounted(() => window.removeEventListener('mousedown', handleGlobalClick));
+onMounted(() => window.addEventListener('mousedown', onOutsidePress));
+onUnmounted(() => window.removeEventListener('mousedown', onOutsidePress));
 
-const artistSubmenuOptions = computed(() =>
-  props.song ? resolveArtistSubmenuOptions(props.song) : [],
-);
+// ==================== 艺术家子菜单 ====================
+const submenuArtists = computed(() =>
+  props.song ? resolveArtistSubmenuOptions(props.song) : []);
 
-const hasArtistSubmenu = computed(() => artistSubmenuOptions.value.length > 1);
+const hasArtistMore = computed(() => submenuArtists.value.length > 1);
 
-watch(artistSubmenuOptions, (options) => {
+watch(submenuArtists, (options) => {
   if (options.length <= 1) {
-    showArtistSubmenu.value = false;
+    submenuOpen.value = false;
   }
 });
 
-const artistSubmenuStyle = computed<CSSProperties>(() => {
-  if (!showArtistSubmenu.value || !viewArtistTriggerRef.value) {
+// 子菜单：贴着触发项右侧展开，空间不足时翻到左侧/上方
+const submenuStyle = computed<CSSProperties>(() => {
+  if (!submenuOpen.value || !artistTriggerEl.value) {
     return {};
   }
 
-  const triggerRect = viewArtistTriggerRef.value.getBoundingClientRect();
-  let top = triggerRect.top - 6;
-  let left = triggerRect.right + 8;
-  let verticalOrigin = 'top';
-  let horizontalOrigin = 'left';
+  const box = artistTriggerEl.value.getBoundingClientRect();
+  let top = box.top - 6;
+  let left = box.right + 8;
+  let vOrigin = 'top';
+  let hOrigin = 'left';
 
-  if (left + artistSubmenuSize.value.width > window.innerWidth) {
-    left = triggerRect.left - artistSubmenuSize.value.width - 8;
-    horizontalOrigin = 'right';
+  if (left + submenuBox.value.width > window.innerWidth) {
+    left = box.left - submenuBox.value.width - 8;
+    hOrigin = 'right';
   }
 
-  if (top + artistSubmenuSize.value.height > window.innerHeight) {
-    top = window.innerHeight - artistSubmenuSize.value.height - 8;
-    verticalOrigin = 'bottom';
+  if (top + submenuBox.value.height > window.innerHeight) {
+    top = window.innerHeight - submenuBox.value.height - 8;
+    vOrigin = 'bottom';
   }
 
   return {
-    left: `${Math.max(8, left)}px`,
-    top: `${Math.max(8, top)}px`,
-    visibility: artistSubmenuSize.value.height === 0 ? 'hidden' : 'visible',
-    transformOrigin: `${horizontalOrigin} ${verticalOrigin}`,
+    left: `${Math.max(EDGE_GAP, left)}px`,
+    top: `${Math.max(EDGE_GAP, top)}px`,
+    visibility: submenuBox.value.height === 0 ? 'hidden' : 'visible',
+    transformOrigin: `${hOrigin} ${vOrigin}`,
   };
 });
 
-const closeArtistSubmenu = () => {
-  showArtistSubmenu.value = false;
+const collapseSubmenu = () => {
+  submenuOpen.value = false;
 };
 
-const openArtistSubmenu = () => {
-  if (!hasArtistSubmenu.value) {
-    showArtistSubmenu.value = false;
+const expandSubmenu = () => {
+  if (!hasArtistMore.value) {
+    submenuOpen.value = false;
     return;
   }
-
-  showArtistSubmenu.value = true;
+  submenuOpen.value = true;
 };
 
-const navigateToArtist = (artistName: string) => {
+const gotoArtistPage = (artistName: string) => {
   if (!isMeaningfulMetadataValue(artistName)) {
     showToast('当前歌曲缺少歌手信息', 'info');
     return;
@@ -446,30 +351,32 @@ const navigateToArtist = (artistName: string) => {
   emit('close');
 };
 
-const handleRemoveFromList = () => {
+// ==================== 从列表移除 ====================
+const removeFromCurrentList = () => {
   if (!props.song) {
     return;
   }
 
+  // 歌单视图：已同步到云端的歌单需要先询问删除范围
   if (props.isPlaylistView) {
     const collectionsStore = useCollectionsStore();
     const playlist = collectionsStore.getPlaylistById(filterCondition.value);
     const cloudId = playlist?.cloudId || '';
     if (playlist && cloudId) {
-      const payloadJson = JSON.stringify(songToSyncPayload(props.song));
-      pendingRemove.value = {
+      stagedRemoval.value = {
         playlistId: filterCondition.value,
         path: props.song.path,
         cloudId,
-        payloadJson,
+        payloadJson: JSON.stringify(songToSyncPayload(props.song)),
       };
-      showDeleteScopeModal.value = true;
+      scopeDialogOpen.value = true;
       return;
     }
-    removeFromPlaylist(filterCondition.value, props.song.path);
+    pruneFromPlaylist(filterCondition.value, props.song.path);
     return;
   }
 
+  // 收藏 / 最近播放 / 全部歌曲视图：直接从列表移除
   if (route.path === '/favorites' || route.path === '/recent' || currentViewMode.value === 'all') {
     void removeSongFromList(props.song);
     return;
@@ -478,61 +385,61 @@ const handleRemoveFromList = () => {
   showToast('当前页面暂不支持从列表移除', 'info');
 };
 
-// ==================== 已同步歌单移除单曲：删除范围三选一 ====================
+// ==================== 已同步歌单：删除范围三选一 ====================
 
-const SyncDeleteScopeModal = defineAsyncComponent(() => import('./SyncDeleteScopeModal.vue'));
+const SyncScopeDialog = defineAsyncComponent(() => import('./SyncDeleteScopeModal.vue'));
 
-const showDeleteScopeModal = ref(false);
-const pendingRemove = ref<{ playlistId: string; path: string; cloudId: string; payloadJson: string } | null>(null);
+const scopeDialogOpen = ref(false);
+const stagedRemoval = ref<{ playlistId: string; path: string; cloudId: string; payloadJson: string } | null>(null);
 
-const handleRemoveScope = (scope: SyncDeleteScope) => {
-  const target = pendingRemove.value;
-  showDeleteScopeModal.value = false;
-  pendingRemove.value = null;
+// 把歌曲从本地歌单元数据中剔除（保留至少一首时更新数组，否则清空）
+const prunePlaylistSongs = (playlist: { songs?: Array<{ path: string }> }, removedPath: string) => {
+  const list = playlist.songs;
+  if (!list?.length) {
+    return;
+  }
+  const remaining = list.filter(s => s.path !== removedPath);
+  if (remaining.length !== list.length) {
+    playlist.songs = remaining.length > 0 ? remaining : undefined;
+  }
+};
+
+const applyRemoveScope = (scope: SyncDeleteScope) => {
+  const target = stagedRemoval.value;
+  scopeDialogOpen.value = false;
+  stagedRemoval.value = null;
   if (!target) return;
 
   const collectionsStore = useCollectionsStore();
   const playlist = collectionsStore.getPlaylistById(target.playlistId);
   if (!playlist) return;
 
-  const pruneMeta = () => {
-    if (playlist.songs?.length) {
-      const kept = playlist.songs.filter(s => s.path !== target.path);
-      if (kept.length !== playlist.songs.length) {
-        playlist.songs = kept.length > 0 ? kept : undefined;
-      }
-    }
-  };
-
   if (scope === 'local') {
+    // 仅从本地歌单移除，云端保留
     addCloudKeepSongs(target.cloudId, [{ path: target.path, payloadJson: target.payloadJson }]);
-    removeFromPlaylist(target.playlistId, target.path);
-    pruneMeta();
+    pruneFromPlaylist(target.playlistId, target.path);
+    prunePlaylistSongs(playlist, target.path);
   } else if (scope === 'all') {
+    // 本地与云端一并删除
     addPendingDeletedSongs(target.cloudId, [target.path]);
-    removeFromPlaylist(target.playlistId, target.path);
-    pruneMeta();
+    pruneFromPlaylist(target.playlistId, target.path);
+    prunePlaylistSongs(playlist, target.path);
   } else {
+    // 云端删除、本地保留
     addLocalOnlySongs(target.cloudId, [target.path]);
   }
 };
 
-const handleEntryMouseEnter = (action: SongMenuAction) => {
+// ==================== 动作分发 ====================
+const onItemHover = (action: MenuActionKind) => {
   if (action === 'viewArtist') {
-    openArtistSubmenu();
+    expandSubmenu();
     return;
   }
-
-  closeArtistSubmenu();
+  collapseSubmenu();
 };
 
-const { openDownloadDialog } = useDownloadDialog();
-
-const handleDownloadToLocal = (song: Song) => {
-  openDownloadDialog(song);
-};
-
-const handleAction = (action: SongMenuAction) => {
+const runMenuAction = (action: MenuActionKind) => {
   if (action === 'viewLeaderboardUser') {
     emit('view-leaderboard-user');
     emit('close');
@@ -542,91 +449,100 @@ const handleAction = (action: SongMenuAction) => {
   if (!props.song) {
     return;
   }
+  const song = props.song;
 
   switch (action) {
-    case 'play':
-      void launchFlyingCover(
-        props.song.path,
-        props.song.cover_thumb_path && /^https?:\/\//.test(props.song.cover_thumb_path)
-          ? props.song.cover_thumb_path
-          : '',
-      );
-      void playSong(props.song);
+    case 'play': {
+      // 在线封面直接起飞，本地封面交给飞行动画自行取
+      const remoteCover = song.cover_thumb_path && /^https?:\/\//.test(song.cover_thumb_path)
+        ? song.cover_thumb_path
+        : '';
+      void launchFlyingCover(song.path, remoteCover);
+      void playSong(song);
       break;
+    }
     case 'playNext':
-      playNext(props.song);
+      playNext(song);
       break;
     case 'addToQueueTail':
-      addSongToQueue(props.song);
+      addSongToQueue(song);
       break;
     case 'downloadToLocal':
-      void handleDownloadToLocal(props.song);
+      void openDownloadDialog(song);
       break;
     case 'addAlbumToQueueTail':
-      addAlbumToQueueTail(props.song);
+      addAlbumToQueueTail(song);
       break;
     case 'favorite':
-      showToast(toggleFavorite(props.song) ? '已收藏' : '已取消收藏', 'info');
+      showToast(flipFavorite(song) ? '已收藏' : '已取消收藏', 'info');
       break;
     case 'addToPlaylist':
       emit('add-to-playlist');
       break;
-    case 'viewArtist':
+    case 'viewArtist': {
       if (props.isOnlineSearch) {
-        emit('view-online-artist', props.song);
+        emit('view-online-artist', song);
         emit('close');
         return;
       }
-      if (!hasSongArtistMetadata(props.song)) {
+      if (!hasSongArtistMetadata(song)) {
         showToast('当前歌曲缺少歌手信息', 'info');
         break;
       }
-      if (hasArtistSubmenu.value) {
-        openArtistSubmenu();
+      if (hasArtistMore.value) {
+        expandSubmenu();
         return;
       }
-      navigateToArtist(resolvePrimaryArtistName(props.song));
+      gotoArtistPage(resolvePrimaryArtistName(song));
       return;
-    case 'viewAlbum':
+    }
+    case 'viewAlbum': {
       if (props.isOnlineSearch) {
-        emit('view-online-album', props.song);
+        emit('view-online-album', song);
         emit('close');
         return;
       }
-      if (!hasSongAlbumMetadata(props.song)) {
+      if (!hasSongAlbumMetadata(song)) {
         showToast('当前歌曲缺少专辑信息', 'info');
         break;
       }
-      void openHomeAlbum(getSongAlbumKey(props.song));
+      void openHomeAlbum(getSongAlbumKey(song));
       break;
+    }
     case 'openFolder':
-      void openInFinder(props.resolvedFilePath ?? props.song.path);
+      void openInFinder(props.resolvedFilePath ?? song.path);
       break;
     case 'viewSongInfo':
-      openSongInfo(props.resolvedFilePath ? { ...props.song, path: props.resolvedFilePath } : props.song);
+      openSongInfo(props.resolvedFilePath ? { ...song, path: props.resolvedFilePath } : song);
       break;
     case 'removeFromList':
-      handleRemoveFromList();
+      removeFromCurrentList();
       break;
     case 'deleteFromDisk':
-      emit('delete-disk', props.song);
+      emit('delete-disk', song);
       break;
   }
 
   emit('close');
 };
 
-const setViewArtistTriggerRef = (element: Element | ComponentPublicInstance | null) => {
+// 兼容普通元素与组件实例两种 ref 目标
+const bindArtistTrigger = (element: Element | ComponentPublicInstance | null) => {
   if (element instanceof HTMLElement) {
-    viewArtistTriggerRef.value = element;
+    artistTriggerEl.value = element;
     return;
   }
 
-  viewArtistTriggerRef.value =
+  artistTriggerEl.value =
     element && '$el' in element && element.$el instanceof HTMLElement
       ? element.$el
       : null;
 };
+
+// 菜单项入场动效的级联延迟
+const itemDelayStyle = (motionIndex: number) => ({
+  '--menu-item-delay': `${motionIndex * 14}ms`,
+});
 </script>
 
 <template>
@@ -634,39 +550,39 @@ const setViewArtistTriggerRef = (element: Element | ComponentPublicInstance | nu
     <Transition name="song-menu-pop" appear>
       <div
         v-if="visible"
-        ref="menuRef"
-        class="fixed z-[9999] min-w-[220px] select-none rounded-[18px] border border-white/65 bg-white/78 py-1.5 text-sm text-gray-700 shadow-[0_20px_45px_rgba(15,23,42,0.16),0_6px_18px_rgba(15,23,42,0.08)] backdrop-blur-[22px] supports-[backdrop-filter]:bg-white/72"
-        :style="menuStyle"
+        ref="menuEl"
+        class="fixed z-[9999] select-none min-w-[220px] rounded-[18px] border border-white/65 bg-white/78 py-1.5 text-sm text-gray-700 backdrop-blur-[22px] supports-[backdrop-filter]:bg-white/72 shadow-[0_20px_45px_rgba(15,23,42,0.16),0_6px_18px_rgba(15,23,42,0.08)]"
+        :style="popoverStyle"
         @contextmenu.prevent
       >
-        <template v-for="entry in renderEntries" :key="entry.key">
+        <template v-for="entry in motionList" :key="entry.key">
           <div
             v-if="entry.type === 'divider'"
             class="song-menu-divider"
-            :style="{ '--menu-item-delay': `${entry.motionIndex * 14}ms` }"
+            :style="itemDelayStyle(entry.motionIndex)"
           ></div>
           <div
             v-else
             class="song-menu-item flex cursor-pointer items-center px-4 py-2.5 transition-colors"
             :class="entry.danger ? 'text-[#EC4141] hover:text-[#d73a3a]' : ''"
-            :style="{ '--menu-item-delay': `${entry.motionIndex * 14}ms` }"
-            :ref="entry.key === 'viewArtist' ? setViewArtistTriggerRef : undefined"
-            @mouseenter="handleEntryMouseEnter(entry.key)"
-            @click="handleAction(entry.key)"
+            :style="itemDelayStyle(entry.motionIndex)"
+            :ref="entry.key === 'viewArtist' ? bindArtistTrigger : undefined"
+            @click="runMenuAction(entry.key)"
+            @mouseenter="onItemHover(entry.key)"
           >
             <div class="mr-3 flex h-5 w-5 shrink-0 items-center justify-center text-[#6b778c]">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
+                :viewBox="activeIcon(entry.key).viewBox || '0 0 24 24'"
                 class="h-5 w-5"
-                :viewBox="menuIcons[entry.key].viewBox || '0 0 24 24'"
-                :fill="menuIcons[entry.key].fill ? 'currentColor' : 'none'"
-                :stroke="menuIcons[entry.key].fill ? 'none' : 'currentColor'"
-                :stroke-width="menuIcons[entry.key].fill ? undefined : '1.7'"
+                :fill="activeIcon(entry.key).fill ? 'currentColor' : 'none'"
+                :stroke="activeIcon(entry.key).fill ? 'none' : 'currentColor'"
+                :stroke-width="activeIcon(entry.key).fill ? undefined : '1.7'"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
                 <path
-                  v-for="(path, pathIndex) in menuIcons[entry.key].paths"
+                  v-for="(path, pathIndex) in activeIcon(entry.key).paths"
                   :key="`${entry.key}-${pathIndex}`"
                   :d="path.d"
                   :fill-rule="path.fillRule"
@@ -676,13 +592,13 @@ const setViewArtistTriggerRef = (element: Element | ComponentPublicInstance | nu
             </div>
             <span class="min-w-0 flex-1 truncate">{{ entry.label }}</span>
             <div
-              v-if="entry.key === 'viewArtist' && hasArtistSubmenu"
+              v-if="entry.key === 'viewArtist' && hasArtistMore"
               class="ml-3 flex h-4 w-4 shrink-0 items-center justify-center text-[#8b97aa]"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                class="h-4 w-4"
                 viewBox="0 0 24 24"
+                class="h-4 w-4"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.8"
@@ -697,65 +613,52 @@ const setViewArtistTriggerRef = (element: Element | ComponentPublicInstance | nu
       </div>
     </Transition>
 
+    <!-- 多歌手子菜单 -->
     <Transition name="song-menu-pop" appear>
       <div
-        v-if="visible && showArtistSubmenu && hasArtistSubmenu"
-        ref="artistSubmenuRef"
-        class="fixed z-[10000] min-w-[200px] max-w-[280px] select-none rounded-[18px] border border-white/65 bg-white/78 py-1.5 text-sm text-gray-700 shadow-[0_20px_45px_rgba(15,23,42,0.16),0_6px_18px_rgba(15,23,42,0.08)] backdrop-blur-[22px] supports-[backdrop-filter]:bg-white/72"
-        :style="artistSubmenuStyle"
+        v-if="visible && submenuOpen && hasArtistMore"
+        ref="submenuEl"
+        class="fixed z-[10000] select-none min-w-[200px] max-w-[280px] rounded-[18px] border border-white/65 bg-white/78 py-1.5 text-sm text-gray-700 backdrop-blur-[22px] supports-[backdrop-filter]:bg-white/72 shadow-[0_20px_45px_rgba(15,23,42,0.16),0_6px_18px_rgba(15,23,42,0.08)]"
+        :style="submenuStyle"
         @contextmenu.prevent
       >
         <div
-          v-for="artistName in artistSubmenuOptions"
+          v-for="artistName in submenuArtists"
           :key="artistName"
           class="song-menu-item flex cursor-pointer items-center px-4 py-2.5 transition-colors"
-          @click="navigateToArtist(artistName)"
+          @click="gotoArtistPage(artistName)"
         >
           <span class="min-w-0 flex-1 truncate">{{ artistName }}</span>
         </div>
       </div>
     </Transition>
 
-    <SyncDeleteScopeModal
-      :visible="showDeleteScopeModal"
-      title="歌曲已同步到云端"
-      description="请选择删除范围"
+    <!-- 已同步歌单的删除范围选择 -->
+    <SyncScopeDialog
+      :visible="scopeDialogOpen"
+      :title="'歌曲已同步到云端'"
+      :description="'请选择删除范围'"
       can-delete-cloud
-      @scope="handleRemoveScope"
-      @cancel="showDeleteScopeModal = false"
+      @scope="applyRemoveScope"
+      @cancel="scopeDialogOpen = false"
     />
   </Teleport>
 </template>
 
 <style scoped>
-.song-menu-item {
-  margin: 0 0.375rem;
-  border-radius: 12px;
-}
-
-.song-menu-item:hover {
-  background: rgba(15, 23, 42, 0.055);
-}
-
+/* ===== 菜单项与分隔线 ===== */
+.song-menu-item { margin: 0 .375rem; border-radius: 12px; }
+.song-menu-item:hover { background: rgba(15,23,42,.055); }
 .song-menu-divider {
-  height: 1px;
-  margin: 0.34rem 0.85rem;
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0), rgba(148, 163, 184, 0.34), rgba(148, 163, 184, 0));
+  height: 1px; margin: .34rem .85rem;
+  background: linear-gradient(90deg, rgba(148,163,184,0), rgba(148,163,184,.34), rgba(148,163,184,0));
 }
 
+/* ===== 弹出/收起过渡 ===== */
 .song-menu-pop-enter-active,
-.song-menu-pop-leave-active {
-  will-change: opacity, transform;
-}
-
-.song-menu-pop-enter-active {
-  animation: song-menu-enter 240ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.song-menu-pop-leave-active {
-  animation: song-menu-leave 140ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
+.song-menu-pop-leave-active { will-change: opacity, transform; }
+.song-menu-pop-enter-active { animation: song-menu-enter 240ms cubic-bezier(0.16, 1, 0.3, 1); }
+.song-menu-pop-leave-active { animation: song-menu-leave 140ms cubic-bezier(0.4, 0, 0.2, 1); }
 .song-menu-pop-enter-active .song-menu-item,
 .song-menu-pop-enter-active .song-menu-divider {
   animation: song-menu-item-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -763,43 +666,18 @@ const setViewArtistTriggerRef = (element: Element | ComponentPublicInstance | nu
 }
 
 @keyframes song-menu-enter {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.965);
-  }
-
-  72% {
-    opacity: 1;
-    transform: translateY(-1px) scale(1.008);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  0% { opacity: 0; transform: translateY(10px) scale(0.965); }
+  72% { opacity: 1; transform: translateY(-1px) scale(1.008); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes song-menu-leave {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(4px) scale(0.985);
-  }
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(4px) scale(0.985); }
 }
 
 @keyframes song-menu-item-in {
-  0% {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 </style>

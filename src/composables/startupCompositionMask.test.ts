@@ -1,72 +1,68 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { releaseStartupCompositionMask } from './startupCompositionMask';
-import { waitForStartupRevealReadiness } from './startupCompositionMask';
+import { releaseStartupCompositionMask, waitForStartupRevealReadiness } from './startupCompositionMask';
 
-describe('startup composition mask', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
+// 遮罩时长参数（毫秒）：这些数值属于行为规格，保持不变
+const MIN_VISIBLE_MS = 160;
+const MAX_VISIBLE_MS = 420;
+
+/** 推进假时钟的简写 */
+const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+
+/** 组装 releaseStartupCompositionMask 的注入参数 */
+const buildReleaseOptions = (overrides: {
+  startedAt: number;
+  now: () => number;
+  hide: ReturnType<typeof vi.fn>;
+}) => ({
+  startedAt: overrides.startedAt,
+  now: overrides.now,
+  minVisibleMs: MIN_VISIBLE_MS,
+  maxVisibleMs: MAX_VISIBLE_MS,
+  waitForStablePaint: async (): Promise<void> => undefined,
+  hide: overrides.hide,
+});
+
+describe('startup composition mask：启动遮罩释放时机', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('稳定绘制完成后仍需满足最小可见时长才隐藏遮罩', async () => {
+    const hideMask = vi.fn();
+    const releaseMask = releaseStartupCompositionMask(buildReleaseOptions({ startedAt: 100, now: () => 180, hide: hideMask }));
+
+    await tick(79);
+    expect(hideMask).not.toHaveBeenCalled();
+
+    await tick(1);
+    await releaseMask;
+
+    expect(hideMask).toHaveBeenCalledOnce();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it('遮罩显示已超过最大时长时立即隐藏，不再等待', async () => {
+    const hideMask = vi.fn();
+    const releaseMask = releaseStartupCompositionMask(buildReleaseOptions({ startedAt: 100, now: () => 600, hide: hideMask }));
+
+    await tick(0);
+    await releaseMask;
+
+    expect(hideMask).toHaveBeenCalledOnce();
   });
 
-  it('waits for stable paint and keeps the mask visible for the minimum duration', async () => {
-    const hide = vi.fn();
-    const release = releaseStartupCompositionMask({
-      startedAt: 100,
-      now: () => 180,
-      minVisibleMs: 160,
-      maxVisibleMs: 420,
-      waitForStablePaint: async () => undefined,
-      hide,
-    });
+  it('启动揭示需同时等待稳定绘制与最小延迟完成', async () => {
+    const stablePaintProbe = vi.fn(async (): Promise<void> => undefined);
+    const revealReadiness = waitForStartupRevealReadiness({ minDelayMs: 120, waitForStablePaint: stablePaintProbe });
 
-    await vi.advanceTimersByTimeAsync(79);
-    expect(hide).not.toHaveBeenCalled();
+    await tick(119);
+    let hasSettled = false;
+    void revealReadiness.then(() => { hasSettled = true; });
+    await tick(0);
+    expect(hasSettled).toBe(false);
 
-    await vi.advanceTimersByTimeAsync(1);
-    await release;
+    await tick(1);
+    await revealReadiness;
 
-    expect(hide).toHaveBeenCalledOnce();
-  });
-
-  it('does not wait once the mask has already exceeded the maximum duration', async () => {
-    const hide = vi.fn();
-    const release = releaseStartupCompositionMask({
-      startedAt: 100,
-      now: () => 600,
-      minVisibleMs: 160,
-      maxVisibleMs: 420,
-      waitForStablePaint: async () => undefined,
-      hide,
-    });
-
-    await vi.advanceTimersByTimeAsync(0);
-    await release;
-
-    expect(hide).toHaveBeenCalledOnce();
-  });
-
-  it('delays startup reveal until stable paint and the minimum hidden wait have completed', async () => {
-    const waitForStablePaint = vi.fn(async () => undefined);
-    const readiness = waitForStartupRevealReadiness({
-      minDelayMs: 120,
-      waitForStablePaint,
-    });
-
-    await vi.advanceTimersByTimeAsync(119);
-    let settled = false;
-    void readiness.then(() => {
-      settled = true;
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(settled).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(1);
-    await readiness;
-
-    expect(waitForStablePaint).toHaveBeenCalledOnce();
+    expect(stablePaintProbe).toHaveBeenCalledOnce();
   });
 });

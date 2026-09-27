@@ -29,68 +29,107 @@ import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
 import { getSongSourceLabel } from '../../utils/remoteSong';
 
-const isOnlineSong = (song: Song) => {
-  const path = song?.path ?? '';
-  return path.startsWith('lx://') || path.startsWith('plugin://');
+/**
+ * 歌曲表格主组件
+ * —— 虚拟滚动渲染、分段懒加载、封面/评论/下载标记、字母索引导航、拖拽排序位移动画。
+ * 本文件为桌面端独立实现：对外 props/emits/expose 契约保持不变。
+ */
+
+// ==================== 空态与扫描英雄卡的固定文案 ====================
+const HERO_TITLE_INTERRUPTED = '\u8fd9\u6bb5\u97f3\u4e50\u4e4b\u65c5\u6682\u65f6\u88ab\u6253\u65ad\u4e86';
+const HERO_TITLE_DONE = '\u4e07\u7c41\u4ff1\u5bc2\uff0c\u9759\u5f85\u4e50\u8d77\u3002';
+const HERO_TITLE_NO_SONGS = '\u8fd9\u6b21\u6ca1\u6709\u53d1\u73b0\u53ef\u5bfc\u5165\u7684\u6b4c\u66f2';
+const HERO_TITLE_PENDING = '\u5373\u5c06\u5f00\u59cb\u7f8e\u5999\u7684\u97f3\u4e50\u4e4b\u65c5...';
+const HERO_NOTE_NO_SONGS = '\u672a\u53d1\u73b0\u6b4c\u66f2';
+const HERO_NOTE_INTERRUPTED = '\u5bfc\u5165\u5df2\u4e2d\u65ad';
+const HERO_DETAIL_DONE = '\u73b0\u5728\u53ef\u4ee5\u5f00\u59cb\u6d4f\u89c8\u3001\u641c\u7d22\u548c\u64ad\u653e';
+const HERO_DETAIL_ERROR = '\u91cd\u65b0\u626b\u63cf\u540e\u4f1a\u7ee7\u7eed\u5efa\u7acb\u97f3\u4e50\u5e93';
+const HERO_DETAIL_PREP = '\u6b63\u5728\u51c6\u5907\u5bfc\u5165';
+const ONBOARDING_HINT = '\u97f3\u4e50\u5e93\u7a7a\u7a7a\u5982\u4e5f\uff0c\u5feb\u53bb\u6dfb\u52a0\u4f60\u7684\u672c\u5730\u97f3\u4e50\u5427';
+const CHECKING_TITLE = '\u6b63\u5728\u68c0\u67e5\u4f60\u7684\u97f3\u4e50\u5e93...';
+const CHECKING_DESC = '\u542f\u52a8\u540e\u4f1a\u5728\u540e\u53f0\u5feb\u901f\u6838\u5bf9\u76ee\u5f55\u53d8\u5316\uff0c\u4e0d\u4f1a\u6253\u65ad\u5f53\u524d\u6d4f\u89c8\u3002';
+const SCAN_FAIL_TITLE = '\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\u4f60\u7684\u97f3\u4e50\u5e93';
+const SCAN_EMPTY_TITLE = '\u672a\u5728\u5f53\u524d\u97f3\u4e50\u5e93\u4e2d\u53d1\u73b0\u53ef\u5bfc\u5165\u97f3\u9891';
+const SCAN_FAIL_DESC = '\u4f60\u53ef\u4ee5\u524d\u5f80\u8bbe\u7f6e\u4e2d\u7684\u97f3\u4e50\u5e93\u9875\u91cd\u65b0\u626b\u63cf\uff0c\u6216\u68c0\u67e5\u76ee\u5f55\u662f\u5426\u4ecd\u7136\u53ef\u8bbf\u95ee\u3002';
+const SCAN_EMPTY_DESC = '\u53ef\u4ee5\u5c1d\u8bd5\u91cd\u65b0\u9009\u62e9\u6587\u4ef6\u5939\uff0c\u6216\u786e\u8ba4\u76ee\u5f55\u4e2d\u5305\u542b\u53d7\u652f\u6301\u7684\u97f3\u9891\u6587\u4ef6\u3002';
+const LIB_COUNT_SUFFIX = '\u9996\u5df2\u5165\u5e93';
+
+// ==================== 布局与滚动参数 ====================
+const ROW_PX = 72;                 // 单行固定高度（像素）
+const RENDER_OVERSCAN_ROWS = 20;   // 视口上下额外预渲染的行数
+const SEG_PAD_ROWS = 4;            // 每个分段在视口容量之外再补的行数
+const SEG_MIN_BATCH = 20;          // 分段加载的单批下限
+const LOAD_MORE_TRIGGER_ROWS = 10; // 距离底部多少行时触发追加分段
+const SNAPSHOT_MAX_PATHS = 72;     // 封面快照最多记录多少条路径
+
+// ==================== 在线歌曲下载状态 ====================
+const savedStreamPaths = ref<Set<string>>(new Set());
+const savedStreamFormats = ref<Map<string, string>>(new Map());
+let savedQueryTicket = 0;
+
+const isStreamSong = (song: Song) => {
+  const p = song?.path ?? '';
+  return p.startsWith('lx://') || p.startsWith('plugin://');
 };
 
-const downloadedOnlinePaths = ref<Set<string>>(new Set());
-const downloadedLocalFormats = ref<Map<string, string>>(new Map());
-let downloadedPathsRequestId = 0;
-const refreshDownloadedPaths = async (songs: Song[]) => {
-  const requestId = ++downloadedPathsRequestId;
+// 从文件名末尾取扩展名（大写）
+const extOfLocalFile = (fileName: string) => {
+  const dot = fileName.lastIndexOf('.');
+  if (dot < 0 || dot === fileName.length - 1) return '';
+  return fileName.slice(dot + 1).toUpperCase();
+};
+
+// 重新汇总已下载的在线歌曲（带请求票号防竞态）
+const refreshSavedDownloads = async (rows: Song[]) => {
+  const ticket = ++savedQueryTicket;
   await loadDownloadHistory();
-  if (requestId !== downloadedPathsRequestId) return;
+  if (ticket !== savedQueryTicket) return;
 
-  const set = new Set<string>();
-  const formats = new Map<string, string>();
-  for (const song of songs) {
-    if (!isOnlineSong(song)) continue;
-    const record = getDownloadRecord(song.path);
-    if (!record) continue;
-    set.add(song.path);
-    const fileName = record.fileName ?? (record as { localPath?: string }).localPath ?? '';
-    const ext = localMusicFormatOf(fileName);
-    if (ext) formats.set(song.path, ext);
-  }
-  downloadedOnlinePaths.value = set;
-  downloadedLocalFormats.value = formats;
+  const saved = new Set<string>();
+  const exts = new Map<string, string>();
+  rows.forEach((row) => {
+    if (!isStreamSong(row)) return;
+    const rec = getDownloadRecord(row.path);
+    if (!rec) return;
+    saved.add(row.path);
+    const file = rec.fileName ?? (rec as { localPath?: string }).localPath ?? '';
+    const ext = extOfLocalFile(file);
+    if (ext) exts.set(row.path, ext);
+  });
+  savedStreamPaths.value = saved;
+  savedStreamFormats.value = exts;
 };
 
-const localMusicFormatOf = (name: string) => {
-  const idx = name.lastIndexOf('.');
-  if (idx < 0 || idx === name.length - 1) return '';
-  return name.slice(idx + 1).toUpperCase();
+// 从歌曲名 / 路径里解析音频扩展名
+const extFromName = (value: string | undefined) => {
+  if (!value) return '';
+  const base = value.split(/[\\/]/).pop() ?? '';
+  const hit = /\.([A-Za-z0-9]+)$/.exec(base);
+  return hit?.[1] ?? '';
 };
 
-const displayedFormat = (song: Song) => {
-  if (props.downloadCompletedAsLocal && downloadedOnlinePaths.value.has(song.path)) {
-    return downloadedLocalFormats.value.get(song.path) || getSongExtension(song);
-  }
-  return getSongExtension(song);
+const extLabelOf = (song: Song) => {
+  const raw = song.format?.trim() || extFromName(song.name) || extFromName(song.path);
+  return raw ? raw.replace(/^\./, '').toUpperCase() : '';
 };
 
-const downloadStore = useDownloadStore();
-const isSongDownloading = (song: Song) =>
-  downloadStore.isDownloading && downloadStore.downloadingSongPath === song.path;
-
-const handleDownloadClick = (song: Song) => {
-  if (!isDownloadableOnlineSong(song)) return;
-  void downloadToLocal(song);
-};
-
-const { settings } = useSettings();
-const songClickAction = computed(() => settings.value.songClickAction || 'double');
+// ==================== 全局 store / 组合式依赖 ====================
+const { settings: appPrefs } = useSettings();
+const clickToPlayMode = computed(() => appPrefs.value.songClickAction || 'double');
 const libraryStore = useLibraryStore();
-const { libraryScanProgress, lastLibraryScanError } = storeToRefs(libraryStore);
-const { currentSong, isPlaying, formatDuration } = usePlaybackController();
+const {
+  libraryScanProgress: scanProgress, lastLibraryScanError: lastScanError,
+} = storeToRefs(libraryStore);
+const {
+  currentSong, isPlaying, formatDuration,
+} = usePlaybackController();
 
 const props = defineProps<{
+  selectedPaths: Set<string>;
   songs: Song[];
   songPaths?: string[];
   resolveSongByPath?: (path: string) => Song | null;
   isBatchMode: boolean;
-  selectedPaths: Set<string>;
   memoryScopeKey: string;
   pageScrollMode?: boolean;
   scrollContainerRef?: HTMLElement | null;
@@ -98,7 +137,7 @@ const props = defineProps<{
   downloadCompletedAsLocal?: boolean;
   indexOffset?: number;
   songReasons?: Map<string, string>;
-}>(); 
+}>();
 
 const emit = defineEmits<{
   (e: 'play', song: Song): void;
@@ -109,65 +148,55 @@ const emit = defineEmits<{
 }>();
 
 const {
-  currentViewMode,
-  localSortMode,
-  folderSortMode,
-  activeRootPath,
-  currentFolderFilter,
+  currentViewMode, localSortMode, folderSortMode, activeRootPath, currentFolderFilter,
 } = usePlayerViewState();
 const {
-  folderTree,
-  searchQuery,
-  librarySongs,
+  folderTree, searchQuery: libSearchText, librarySongs: libSongs,
 } = usePlayerLibraryView();
-const {
-  addLibraryFolder,
-  scanLibrary,
-  refreshFolder,
-  expandFolderPath,
-} = useLibraryRuntimeActions();
+const { addLibraryFolder, scanLibrary, refreshFolder, expandFolderPath } = useLibraryRuntimeActions();
 const { isFavorite, toggleFavorite } = useLibraryCollections();
 const router = useRouter();
 const route = useRoute();
 const { openHomeArtist } = useHomeNavigation(router);
-const { coverCache, loadCover, touchCoverPaths, preloadPriorityCovers, primeCoverPath } = useCoverCache();
+const {
+  coverCache, loadCover, touchCoverPaths, preloadPriorityCovers, primeCoverPath,
+} = useCoverCache();
 const { loadSongDetail } = useSongDetailCache();
 
-const ROW_HEIGHT = 72;
-const OVERSCAN = 20;
-const SEGMENT_BUFFER_ROWS = 4;
-const MIN_SEGMENT_BATCH_SIZE = 20;
-const SCROLL_TRIGGER_ROWS = 10;
-const VIEWPORT_SNAPSHOT_LIMIT = 72;
-const rootRef = ref<HTMLElement | null>(null);
-const containerRef = ref<HTMLElement | null>(null);
-const scrollTop = ref(0);
-const containerHeight = ref(600);
-const activeScrollContainer = computed(() =>
-  props.pageScrollMode ? (props.scrollContainerRef ?? null) : containerRef.value,
-);
-const listOffsetTop = ref(0);
-const updateListOffsetTop = () => {
-  const root = containerRef.value;
-  const outer = activeScrollContainer.value;
-  if (props.pageScrollMode && root && outer && root !== outer) {
-    listOffsetTop.value = Math.max(0, root.getBoundingClientRect().top - outer.getBoundingClientRect().top);
-  } else {
-    listOffsetTop.value = 0;
-  }
+const dlStore = useDownloadStore();
+const isFetchingSong = (song: Song) =>
+  dlStore.isDownloading && dlStore.downloadingSongPath === song.path;
+
+const startSongDownload = (song: Song) => {
+  if (!isDownloadableOnlineSong(song)) return;
+  void downloadToLocal(song);
 };
-const loadedSongCount = ref(0);
-const isScrollbarHot = ref(false);
-const isScrollbarScrolling = ref(false);
-const isScrollbarActive = computed(() => isScrollbarHot.value || isScrollbarScrolling.value);
-const displayedCoverUrls = reactive(new Map<string, string>());
-const songCommentCache = reactive(new Map<string, string>());
-const loadingSongCommentPaths = new Set<string>();
-let visibleCoverPaths = new Set<string>();
-let scrollbarActiveTimer: number | null = null;
-const resolveListRoutePath = (path: string) =>
+
+// ==================== 核心状态 ====================
+const tableRootEl = ref<HTMLElement | null>(null);
+const scrollBodyEl = ref<HTMLElement | null>(null);
+const scrollPos = ref(0);
+const viewportH = ref(600);
+const hostOffset = ref(0);
+const segRenderedRows = ref(0);
+const scrollbarHot = ref(false);
+const scrollbarBusy = ref(false);
+const scrollbarAwake = computed(() => scrollbarHot.value || scrollbarBusy.value);
+const coverUrlMap = reactive(new Map<string, string>());
+const commentMemo = reactive(new Map<string, string>());
+const pendingCommentPaths = new Set<string>();
+let activeCoverPaths = new Set<string>();
+let scrollbarHideTimer: number | null = null;
+
+// 页面滚动模式下，实际滚动宿主可能是外层容器
+const scrollHost = computed(() =>
+  props.pageScrollMode ? (props.scrollContainerRef ?? null) : scrollBodyEl.value,
+);
+
+// 仅记忆三类路由的滚动位置
+const normalizeMemoryRoute = (path: string) =>
   ['/', '/favorites', '/recent'].includes(path) ? path : '/';
-const listRoutePath = ref(resolveListRoutePath(route.path));
+const memoryRoute = ref(normalizeMemoryRoute(route.path));
 
 watch(
   () => route.path,
@@ -175,415 +204,402 @@ watch(
     if (!['/', '/favorites', '/recent'].includes(path)) {
       return;
     }
-
-    listRoutePath.value = path;
+    memoryRoute.value = path;
   },
   { immediate: true },
 );
 
-const getViewportPageSize = () => Math.max(
+// 视口容量 → 分段批量
+const rowsPerViewport = () => Math.max(
   1,
-  Math.ceil(containerHeight.value / ROW_HEIGHT) + SEGMENT_BUFFER_ROWS,
+  Math.ceil(viewportH.value / ROW_PX) + SEG_PAD_ROWS,
+);
+const segBatchRows = () => Math.max(
+  SEG_MIN_BATCH,
+  rowsPerViewport(),
 );
 
-const getSegmentBatchSize = () => Math.max(
-  MIN_SEGMENT_BATCH_SIZE,
-  getViewportPageSize(),
-);
-
-const sourceSongCount = computed(() => props.songPaths?.length ?? props.songs.length);
-
-const tableViewportKey = computed(() =>
+// 滚动记忆键：路由 + 作用域 + 排序方式
+const scrollMemoryKey = computed(() =>
   [
     'song-table',
-    listRoutePath.value,
+    memoryRoute.value,
     props.memoryScopeKey,
     localSortMode.value,
     folderSortMode.value,
   ].join('::'),
 );
 
-const resetLoadedSongCount = () => {
-  loadedSongCount.value = Math.min(sourceSongCount.value, getSegmentBatchSize());
-  scrollTop.value = 0;
-  if (props.pageScrollMode && listScrollCache.get(tableViewportKey.value) !== undefined) {
+// 回卷到首个分段
+const rewindSegment = () => {
+  segRenderedRows.value = Math.min(totalRows.value, segBatchRows());
+  scrollPos.value = 0;
+  // 页面滚动模式下若已有历史滚动缓存，则不强制归零
+  if (props.pageScrollMode && listScrollCache.get(scrollMemoryKey.value) !== undefined) {
     return;
   }
-  if (activeScrollContainer.value) {
-    activeScrollContainer.value.scrollTop = 0;
+  if (scrollHost.value) {
+    scrollHost.value.scrollTop = 0;
   }
 };
 
-const loadNextSongSegment = () => {
-  if (loadedSongCount.value >= sourceSongCount.value) return;
-  loadedSongCount.value = Math.min(
-    sourceSongCount.value,
-    loadedSongCount.value + getSegmentBatchSize(),
+// 追加一个分段
+const growSegment = () => {
+  if (segRenderedRows.value >= totalRows.value) return;
+  segRenderedRows.value = Math.min(
+    totalRows.value,
+    segRenderedRows.value + segBatchRows(),
   );
 };
 
-const ensureViewportSegmentFilled = () => {
-  if (loadedSongCount.value === 0 && sourceSongCount.value > 0) {
-    resetLoadedSongCount();
+// 保证至少铺满一个分段
+const fillSegmentFloor = () => {
+  if (segRenderedRows.value === 0 && totalRows.value > 0) {
+    rewindSegment();
     return;
   }
-
-  if (loadedSongCount.value < getSegmentBatchSize()) {
-    loadedSongCount.value = Math.min(sourceSongCount.value, getSegmentBatchSize());
+  if (segRenderedRows.value < segBatchRows()) {
+    segRenderedRows.value = Math.min(totalRows.value, segBatchRows());
   }
 };
 
-const segmentedSongs = computed(() => {
-  if (sourceSongCount.value === 0) return [];
-  const limit = loadedSongCount.value || getViewportPageSize();
-  const sliceEnd = Math.min(sourceSongCount.value, limit);
+// 数据源总行数（优先使用路径列表）
+const totalRows = computed(() => props.songPaths?.length ?? props.songs.length);
+
+// 当前已渲染分段对应的歌曲数组
+const segSongs = computed<Song[]>(() => {
+  if (totalRows.value === 0) return [];
+  const limit = segRenderedRows.value || rowsPerViewport();
+  const cut = Math.min(totalRows.value, limit);
 
   if (props.songPaths && props.resolveSongByPath) {
     return props.songPaths
-      .slice(0, sliceEnd)
+      .slice(0, cut)
       .map(path => props.resolveSongByPath?.(path) ?? null)
       .filter((song): song is Song => !!song);
   }
-
-  return props.songs.slice(0, sliceEnd);
+  return props.songs.slice(0, cut);
 });
 
-let prevSongsLen = -1;
-let prevFirstPath = '';
-let prevLastPath = '';
-watch(() => props.songPaths ?? props.songs, (items) => {
-  const len = items.length;
-  const firstItem = len > 0 ? items[0] : '';
-  const lastItem = len > 0 ? items[len - 1] : '';
-  const firstPath = typeof firstItem === 'string' ? firstItem : firstItem?.path ?? '';
-  const lastPath = typeof lastItem === 'string' ? lastItem : lastItem?.path ?? '';
+// 监听数据源变化：识别“追加”与“重置”两种形态
+let lastLen = -1;
+let lastHead = '';
+let lastTail = '';
+watch(() => props.songPaths ?? props.songs, (rows) => {
+  const len = rows.length;
+  const headRaw = len > 0 ? rows[0] : '';
+  const tailRaw = len > 0 ? rows[len - 1] : '';
+  const headKey = typeof headRaw === 'string' ? headRaw : headRaw?.path ?? '';
+  const tailKey = typeof tailRaw === 'string' ? tailRaw : tailRaw?.path ?? '';
 
-  if (len === prevSongsLen && firstPath === prevFirstPath && lastPath === prevLastPath) {
+  if (len === lastLen && headKey === lastHead && tailKey === lastTail) {
     return;
   }
 
-  const isAppend = len > prevSongsLen && firstPath === prevFirstPath && prevSongsLen >= 0;
+  const appending = len > lastLen && headKey === lastHead && lastLen >= 0;
+  lastLen = len;
+  lastHead = headKey;
+  lastTail = tailKey;
 
-  prevSongsLen = len;
-  prevFirstPath = firstPath;
-  prevLastPath = lastPath;
-  if (isAppend) {
-    loadedSongCount.value = Math.min(sourceSongCount.value, Math.max(loadedSongCount.value, getSegmentBatchSize()));
+  if (appending) {
+    segRenderedRows.value = Math.min(totalRows.value, Math.max(segRenderedRows.value, segBatchRows()));
   } else {
-    resetLoadedSongCount();
+    rewindSegment();
   }
-  downloadedOnlinePaths.value = new Set();
-  downloadedLocalFormats.value = new Map();
+  savedStreamPaths.value = new Set();
+  savedStreamFormats.value = new Map();
 }, { immediate: true });
 
-const getDisplayedCoverUrl = (path: string | undefined) => {
+// ==================== 封面 / 评论 / 推荐理由 ====================
+const coverUrlFor = (path: string | undefined) => {
   if (!path) {
     return '';
   }
-
-  const raw = displayedCoverUrls.get(path) ?? coverCache.get(path) ?? '';
+  const raw = coverUrlMap.get(path) ?? coverCache.get(path) ?? '';
   if (!raw) {
     return '';
   }
-
   return getDisplayCoverUrl(raw, (dataUrl) => {
-    displayedCoverUrls.set(path, dataUrl);
+    coverUrlMap.set(path, dataUrl);
   });
 };
 
-const getSongComment = (song: Song) => (
-  song.comment?.trim() || songCommentCache.get(song.path)?.trim() || ''
-);
+const commentOf = (song: Song) =>
+  song.comment?.trim() || commentMemo.get(song.path)?.trim() || '';
 
-const hasVisibleSongComment = (song: Song) => settings.value.showSongComments && getSongComment(song).length > 0;
+const showsComment = (song: Song) =>
+  appPrefs.value.showSongComments && commentOf(song).length > 0;
 
-const getSongReason = (song: Song) => props.songReasons?.get(song.path)?.trim() || '';
+const reasonOf = (song: Song) => props.songReasons?.get(song.path)?.trim() || '';
 
-const extractExtension = (value: string | undefined) => {
-  if (!value) {
-    return '';
-  }
-
-  const fileName = value.split(/[\\/]/).pop() ?? '';
-  const matched = /\.([A-Za-z0-9]+)$/.exec(fileName);
-  return matched?.[1] ?? '';
-};
-
-const getSongExtension = (song: Song) => {
-  const raw = song.format?.trim() || extractExtension(song.name) || extractExtension(song.path);
-  return raw ? raw.replace(/^\./, '').toUpperCase() : '';
-};
-
-const loadVisibleSongComments = (songs: Song[]) => {
-  if (!settings.value.showSongComments) {
+// 预取视口内歌曲的详情评论
+const prefetchComments = (rows: Song[]) => {
+  if (!appPrefs.value.showSongComments) {
     return;
   }
-
-  songs.forEach((song) => {
-    if (!song.path || song.comment?.trim() || songCommentCache.has(song.path) || loadingSongCommentPaths.has(song.path)) {
+  rows.forEach((song) => {
+    const p = song.path;
+    if (!p || song.comment?.trim() || commentMemo.has(p) || pendingCommentPaths.has(p)) {
       return;
     }
-
-    loadingSongCommentPaths.add(song.path);
-    void loadSongDetail(song.path)
+    pendingCommentPaths.add(p);
+    void loadSongDetail(p)
       .then((detail) => {
-        songCommentCache.set(song.path, detail?.comment?.trim() ?? '');
+        commentMemo.set(p, detail?.comment?.trim() ?? '');
       })
       .catch(() => {
-        songCommentCache.set(song.path, '');
+        commentMemo.set(p, '');
       })
       .finally(() => {
-        loadingSongCommentPaths.delete(song.path);
+        pendingCommentPaths.delete(p);
       });
   });
 };
 
-const syncScrollTopFromContainer = () => {
-  if (activeScrollContainer.value) {
-    scrollTop.value = activeScrollContainer.value.scrollTop;
+const readScrollTop = () => {
+  if (scrollHost.value) {
+    scrollPos.value = scrollHost.value.scrollTop;
   }
 };
 
-const updateContainerHeight = () => {
-  if (activeScrollContainer.value) {
-    containerHeight.value = activeScrollContainer.value.clientHeight;
+const measureViewport = () => {
+  if (scrollHost.value) {
+    viewportH.value = scrollHost.value.clientHeight;
   }
-  ensureViewportSegmentFilled();
+  fillSegmentFloor();
 };
 
-const restoreViewportCoverSnapshot = (key = tableViewportKey.value) => {
+// 页面滚动模式下测量列表相对滚动宿主的偏移
+const trackHostOffset = () => {
+  const inner = scrollBodyEl.value;
+  const outer = scrollHost.value;
+  if (props.pageScrollMode && inner && outer && inner !== outer) {
+    hostOffset.value = Math.max(0, inner.getBoundingClientRect().top - outer.getBoundingClientRect().top);
+  } else {
+    hostOffset.value = 0;
+  }
+};
+
+// 重放已缓存的视口封面快照
+const replayCoverSnapshot = (key = scrollMemoryKey.value) => {
   if (!key) {
     return;
   }
-
-  const snapshot = songTableViewportCoverSnapshotCache.get(key);
-  if (!snapshot || snapshot.length === 0) {
+  const snap = songTableViewportCoverSnapshotCache.get(key);
+  if (!snap || snap.length === 0) {
     return;
   }
-
-  preloadPriorityCovers(snapshot);
+  preloadPriorityCovers(snap);
 };
 
-const syncVisibleCoverUrls = (songs: Song[]) => {
-  const nextVisiblePaths = new Set(songs.map(song => song.path).filter(Boolean));
-  visibleCoverPaths = nextVisiblePaths;
+// 同步可见行的封面地址（缓存 → 持久化 → 异步加载）
+const applyCoverUrls = (rows: Song[]) => {
+  const live = new Set(rows.map(song => song.path).filter(Boolean));
+  activeCoverPaths = live;
 
-  for (const path of Array.from(displayedCoverUrls.keys())) {
-    if (!nextVisiblePaths.has(path)) {
-      displayedCoverUrls.delete(path);
+  Array.from(coverUrlMap.keys()).forEach((p) => {
+    if (!live.has(p)) {
+      coverUrlMap.delete(p);
     }
-  }
+  });
 
-  const visiblePaths = Array.from(nextVisiblePaths);
-  touchCoverPaths(visiblePaths);
+  touchCoverPaths(Array.from(live));
 
-  songs.forEach((song) => {
-    const path = song.path;
-    if (!path) {
+  rows.forEach((song) => {
+    const p = song.path;
+    if (!p) {
       return;
     }
-
-    const cachedUrl = coverCache.get(path);
-    if (cachedUrl) {
-      displayedCoverUrls.set(path, cachedUrl);
+    const hit = coverCache.get(p);
+    if (hit) {
+      coverUrlMap.set(p, hit);
       return;
     }
-
-    const persistedCoverUrl = primeCoverPath(path, song.cover_thumb_path || (song as any).coverUrl);
-    if (persistedCoverUrl) {
-      displayedCoverUrls.set(path, persistedCoverUrl);
+    const seeded = primeCoverPath(p, song.cover_thumb_path || (song as any).coverUrl);
+    if (seeded) {
+      coverUrlMap.set(p, seeded);
       return;
     }
-
-    void loadCover(path).then((coverUrl) => {
-      if (!coverUrl || !visibleCoverPaths.has(path)) {
+    void loadCover(p).then((url) => {
+      if (!url || !activeCoverPaths.has(p)) {
         return;
       }
-
-      displayedCoverUrls.set(path, coverUrl);
+      coverUrlMap.set(p, url);
     });
   });
 };
 
-const preloadVirtualViewportCovers = () => {
-  syncVisibleCoverUrls(virtualItems.value);
-  const paths = virtualItems.value.map(song => song.path);
-  preloadPriorityCovers(paths);
+const warmViewportCovers = () => {
+  applyCoverUrls(rowsForRender.value);
+  preloadPriorityCovers(rowsForRender.value.map(song => song.path));
 };
 
-const restoreActiveViewportCovers = async () => {
-  await restoreScrollPosition();
+// 恢复滚动位置后重放封面与量高（含一帧后的二次校准）
+const resumeViewportState = async () => {
+  await regainScrollPos();
   await nextTick();
-  syncScrollTopFromContainer();
-  updateContainerHeight();
-  restoreViewportCoverSnapshot();
-  preloadVirtualViewportCovers();
+  readScrollTop();
+  measureViewport();
+  replayCoverSnapshot();
+  warmViewportCovers();
 
   requestAnimationFrame(() => {
-    syncScrollTopFromContainer();
-    updateContainerHeight();
-    restoreViewportCoverSnapshot();
-    preloadVirtualViewportCovers();
+    readScrollTop();
+    measureViewport();
+    replayCoverSnapshot();
+    warmViewportCovers();
   });
 };
 
-const saveViewportCoverSnapshot = (key = tableViewportKey.value) => {
-  if (!key || !activeScrollContainer.value) {
+// 记录当前视口（含上下缓冲一屏）内的封面路径快照
+const stashCoverSnapshot = (key = scrollMemoryKey.value) => {
+  if (!key || !scrollHost.value) {
     return;
   }
+  const host = scrollHost.value;
+  const box = host.getBoundingClientRect();
+  const pad = host.clientHeight;
+  const topEdge = box.top - pad;
+  const bottomEdge = box.bottom + pad;
+  const picked: string[] = [];
+  const seen = new Set<string>();
 
-  const containerRect = activeScrollContainer.value.getBoundingClientRect();
-  const viewportBuffer = activeScrollContainer.value.clientHeight;
-  const snapshotTop = containerRect.top - viewportBuffer;
-  const snapshotBottom = containerRect.bottom + viewportBuffer;
-  const snapshot: string[] = [];
-  const seenPaths = new Set<string>();
-
-  activeScrollContainer.value.querySelectorAll<HTMLElement>('[data-cover-path]').forEach((element) => {
-    if (snapshot.length >= VIEWPORT_SNAPSHOT_LIMIT) {
+  host.querySelectorAll<HTMLElement>('[data-cover-path]').forEach((el) => {
+    if (picked.length >= SNAPSHOT_MAX_PATHS) {
       return;
     }
-
-    const path = element.dataset.coverPath;
-    if (!path || seenPaths.has(path)) {
+    const p = el.dataset.coverPath;
+    if (!p || seen.has(p)) {
       return;
     }
-
-    const rect = element.getBoundingClientRect();
-    if (rect.bottom < snapshotTop || rect.top > snapshotBottom) {
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom < topEdge || rect.top > bottomEdge) {
       return;
     }
-
-    if (!displayedCoverUrls.get(path) && !coverCache.get(path)) {
+    if (!coverUrlMap.get(p) && !coverCache.get(p)) {
       return;
     }
-
-    seenPaths.add(path);
-    snapshot.push(path);
+    seen.add(p);
+    picked.push(p);
   });
 
-  if (snapshot.length > 0) {
-    songTableViewportCoverSnapshotCache.set(key, snapshot);
+  if (picked.length > 0) {
+    songTableViewportCoverSnapshotCache.set(key, picked);
     return;
   }
-
   songTableViewportCoverSnapshotCache.delete(key);
 };
 
+// 滚动位置记忆
 const {
-  saveScrollPosition,
-  restoreScrollPosition,
-} = useListScrollMemory(tableViewportKey, activeScrollContainer, { disabled: props.disableScrollMemory });
+  saveScrollPosition: stashScrollPos,
+  restoreScrollPosition: regainScrollPos,
+} = useListScrollMemory(scrollMemoryKey, scrollHost, { disabled: props.disableScrollMemory });
 
+// 页面滚动模式下，数据就绪后尝试恢复历史滚动位置
 watch(
-  () => (props.pageScrollMode ? sourceSongCount.value : -1),
+  () => (props.pageScrollMode ? totalRows.value : -1),
   (count) => {
-    if (props.pageScrollMode && count > 0 && listScrollCache.get(tableViewportKey.value) !== undefined) {
-      void restoreScrollPosition();
+    if (props.pageScrollMode && count > 0 && listScrollCache.get(scrollMemoryKey.value) !== undefined) {
+      void regainScrollPos();
     }
   },
 );
 
-const virtualData = computed(() => {
-  const songs = Array.isArray(segmentedSongs.value) ? segmentedSongs.value : [];
-  const total = songs.length;
-  const start = Math.floor(scrollTop.value / ROW_HEIGHT);
-  const visibleCount = Math.ceil(containerHeight.value / ROW_HEIGHT);
-  const renderStart = Math.max(0, start - OVERSCAN);
-  const renderEnd = Math.min(total, start + visibleCount + OVERSCAN);
+// ==================== 虚拟滚动窗口计算 ====================
+const viewportData = computed(() => {
+  const rows = Array.isArray(segSongs.value) ? segSongs.value : [];
+  const count = rows.length;
+  const first = Math.floor(scrollPos.value / ROW_PX);
+  const visible = Math.ceil(viewportH.value / ROW_PX);
+  const from = Math.max(0, first - RENDER_OVERSCAN_ROWS);
+  const to = Math.min(count, first + visible + RENDER_OVERSCAN_ROWS);
 
   return {
-    items: songs.slice(renderStart, renderEnd).map((song, index) => ({
+    items: rows.slice(from, to).map((song, i) => ({
       ...song,
-      virtualIndex: renderStart + index + (props.indexOffset ?? 0),
+      virtualIndex: from + i + (props.indexOffset ?? 0),
     })),
-    paddingTop: renderStart * ROW_HEIGHT,
-    paddingBottom: (total - renderEnd) * ROW_HEIGHT,
+    paddingTop: from * ROW_PX,
+    paddingBottom: (count - to) * ROW_PX,
   };
 });
 
-const virtualPaddingTop = computed(() => `${virtualData.value?.paddingTop ?? 0}px`);
-const virtualPaddingBottom = computed(() => `${virtualData.value?.paddingBottom ?? 0}px`);
-const virtualItems = computed(() => virtualData.value?.items ?? []);
+const virtualPadTop = computed(() => `${viewportData.value?.paddingTop ?? 0}px`);
+const virtualPadBottom = computed(() => `${viewportData.value?.paddingBottom ?? 0}px`);
+const rowsForRender = computed(() => viewportData.value?.items ?? []);
 
-const clearScrollbarActiveTimer = () => {
-  if (scrollbarActiveTimer !== null) {
-    window.clearTimeout(scrollbarActiveTimer);
-    scrollbarActiveTimer = null;
+// ==================== 滚动条热区与滚动联动 ====================
+const stopScrollbarTimer = () => {
+  if (scrollbarHideTimer !== null) {
+    window.clearTimeout(scrollbarHideTimer);
+    scrollbarHideTimer = null;
   }
 };
 
-const showScrollbarDuringScroll = () => {
-  isScrollbarScrolling.value = true;
-  clearScrollbarActiveTimer();
-  scrollbarActiveTimer = window.setTimeout(() => {
-    isScrollbarScrolling.value = false;
-    scrollbarActiveTimer = null;
+const wakeScrollbar = () => {
+  scrollbarBusy.value = true;
+  stopScrollbarTimer();
+  scrollbarHideTimer = window.setTimeout(() => {
+    scrollbarBusy.value = false;
+    scrollbarHideTimer = null;
   }, 900);
 };
 
-const syncScrollbarHotZone = (event: MouseEvent | PointerEvent) => {
-  if (!activeScrollContainer.value) {
-    isScrollbarHot.value = false;
+const probeScrollbarZone = (event: MouseEvent | PointerEvent) => {
+  if (!scrollHost.value) {
+    scrollbarHot.value = false;
     return;
   }
-
-  const rect = activeScrollContainer.value.getBoundingClientRect();
-  isScrollbarHot.value = isPointerNearVerticalScrollbar(event.clientX, rect, DEFAULT_SCROLLBAR_HOT_ZONE_PX);
+  scrollbarHot.value = isPointerNearVerticalScrollbar(
+    event.clientX,
+    scrollHost.value.getBoundingClientRect(),
+    DEFAULT_SCROLLBAR_HOT_ZONE_PX,
+  );
 };
 
-const handleSongTablePointerMove = (event: PointerEvent) => {
-  handleRootMouseMove(event);
-  syncScrollbarHotZone(event);
-};
-
-const handleSongTableMouseLeave = () => {
-  handleRootMouseLeave();
-  isScrollbarHot.value = false;
-  isScrollbarScrolling.value = false;
-  clearScrollbarActiveTimer();
-};
-
-const onScroll = (event: Event) => {
-  const target = event.target as HTMLElement;
-  scrollTop.value = target.scrollTop;
-  updateListOffsetTop();
-  if (target.scrollTop + target.clientHeight >= target.scrollHeight - ROW_HEIGHT * SCROLL_TRIGGER_ROWS) {
-    loadNextSongSegment();
-    if (loadedSongCount.value >= sourceSongCount.value) {
+const handleScrollEvent = (event: Event) => {
+  const el = event.target as HTMLElement;
+  scrollPos.value = el.scrollTop;
+  trackHostOffset();
+  // 接近底部时先补分段，分段耗尽再请求外部加载更多
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - ROW_PX * LOAD_MORE_TRIGGER_ROWS) {
+    growSegment();
+    if (segRenderedRows.value >= totalRows.value) {
       emit('load-more');
     }
   }
-  showScrollbarDuringScroll();
+  wakeScrollbar();
 };
 
+// ==================== 字母索引导航 ====================
 const {
-  showAlphabetIndex,
-  firstSongIndexByKey,
-  activeIndexKey,
-  indexBarRef,
-  isIndexDragging,
-  dragIndexKey,
-  hoverIndexKey,
-  isIndexBarVisible,
-  canLocateCurrentSong,
-  showLocateCurrentSongButton,
-  showScrollToTopButton,
-  handleIndexHotspotEnter,
-  handleIndexHotspotMove,
-  handleIndexHotspotLeave,
-  handleRootMouseMove,
-  handleRootMouseLeave,
-  handleIndexPointerDown,
-  showIndexBar,
-  scrollToCurrentSong,
-  scrollToTop,
+  showAlphabetIndex: showAlphaRail,
+  firstSongIndexByKey: railFirstKeys,
+  activeIndexKey: railActiveKey,
+  indexBarRef: railBarRef,
+  isIndexDragging: railDragging,
+  dragIndexKey: railDragKey,
+  hoverIndexKey: railHoverKey,
+  isIndexBarVisible: railShown,
+  canLocateCurrentSong: canLocateNow,
+  showLocateCurrentSongButton: showLocateFab,
+  showScrollToTopButton: showTopFab,
+  handleIndexHotspotEnter: onRailHotspotEnter,
+  handleIndexHotspotMove: onRailHotspotMove,
+  handleIndexHotspotLeave: onRailHotspotLeave,
+  handleRootMouseMove: onRootMouseMove,
+  handleRootMouseLeave: onRootMouseLeave,
+  handleIndexPointerDown: onRailPointerDown,
+  showIndexBar: wakeRail,
+  scrollToCurrentSong: jumpToNowPlaying,
+  scrollToTop: jumpToTop,
 } = useSongTableAlphabetIndex({
-  songs: segmentedSongs,
-  scrollTop,
-  containerHeight,
-  containerRef: activeScrollContainer,
-  rootRef,
+  songs: segSongs,
+  scrollTop: scrollPos,
+  containerHeight: viewportH,
+  containerRef: scrollHost,
+  rootRef: tableRootEl,
   routePath: computed(() => route.path),
   currentViewMode,
   localSortMode,
@@ -593,418 +609,488 @@ const {
   folderTree,
   refreshFolder,
   expandFolderPath,
-  listOffsetTop,
+  listOffsetTop: hostOffset,
 });
 
+const railFloatClass = computed(() => (railShown.value
+  ? 'opacity-100 translate-x-0 pointer-events-auto'
+  : 'opacity-0 translate-x-2 pointer-events-none'));
+
+const onTablePointerMove = (event: PointerEvent) => {
+  onRootMouseMove(event);
+  probeScrollbarZone(event);
+};
+
+const onTableMouseLeave = () => {
+  onRootMouseLeave();
+  scrollbarHot.value = false;
+  scrollbarBusy.value = false;
+  stopScrollbarTimer();
+};
+
+// 外层滚动容器切换时重挂滚动监听
 watch(
   () => props.scrollContainerRef,
   (el, oldEl) => {
-    if (oldEl) oldEl.removeEventListener('scroll', onScroll);
+    if (oldEl) oldEl.removeEventListener('scroll', handleScrollEvent);
     if (el) {
-      el.addEventListener('scroll', onScroll, { passive: true });
-      updateListOffsetTop();
+      el.addEventListener('scroll', handleScrollEvent, { passive: true });
+      trackHostOffset();
     }
   },
   { immediate: true },
 );
 
+// 视口行变化 → 同步封面 / 预取 / 预热 / 下载标记
 watch(
-  () => virtualData.value.items,
-  (newItems) => {
-    syncVisibleCoverUrls(newItems);
-    const paths = newItems.map(song => song.path);
-    preloadPriorityCovers(paths);
-    loadVisibleSongComments(newItems);
-    void refreshDownloadedPaths(newItems);
+  () => viewportData.value.items,
+  (items) => {
+    applyCoverUrls(items);
+    preloadPriorityCovers(items.map(song => song.path));
+    prefetchComments(items);
+    void refreshSavedDownloads(items);
   },
   { immediate: true },
 );
 
+// 打开评论展示开关时补拉一次
 watch(
-  () => settings.value.showSongComments,
-  (showSongComments) => {
-    if (showSongComments) {
-      loadVisibleSongComments(virtualItems.value);
+  () => appPrefs.value.showSongComments,
+  (enabled) => {
+    if (enabled) {
+      prefetchComments(rowsForRender.value);
     }
   },
 );
 
+// 记忆键切换：存旧快照、取新快照
 watch(
-  tableViewportKey,
+  scrollMemoryKey,
   (newKey, oldKey) => {
     if (oldKey && oldKey !== newKey) {
-      saveViewportCoverSnapshot(oldKey);
+      stashCoverSnapshot(oldKey);
     }
-
-    restoreViewportCoverSnapshot(newKey);
+    replayCoverSnapshot(newKey);
   },
   { immediate: true },
 );
 
-const handlePlayClick = (song: Song) => {
+// ==================== 行为处理 ====================
+const triggerPlay = (song: Song) => {
   if (currentSong.value?.path === song.path && isPlaying.value) {
     return;
   }
-
-  void launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
+  void launchFlyingCover(song.path, coverUrlFor(song.path));
   emit('play', song);
 };
 
-const handlePointerDown = (event: PointerEvent, song: Song, index: number) => {
+const onRowClick = (song: Song) => {
+  if (!props.isBatchMode && clickToPlayMode.value === 'single') {
+    triggerPlay(song);
+  }
+};
+
+const onRowDblClick = (song: Song) => {
+  if (!props.isBatchMode && clickToPlayMode.value !== 'single') {
+    triggerPlay(song);
+  }
+};
+
+const onRowContext = (event: MouseEvent, song: Song) => {
+  emit('contextmenu', event, song);
+};
+
+const onRowPointerDown = (event: PointerEvent, song: Song, index: number) => {
   if (event.pointerType === 'mouse' && event.button !== 0) {
     return;
   }
   emit('drag-start', { event, song, index });
 };
 
-const showDragIcon = computed(() => {
+// 仅部分视图允许拖拽排序
+const dragChipVisible = computed(() => {
   if (route.path === '/search' || route.path === '/online-detail') return false;
   return ['folder', 'playlist', 'all', 'artist', 'album', 'genre', 'year'].includes(currentViewMode.value);
 });
+
 const {
-  showHeroScanCard,
-  hasSearchQuery,
-  showLibraryOnboarding,
-  showFolderEmpty,
-  showLibraryChecking,
-  showLibraryEmptyResult,
-  libraryScanPercent,
-  libraryScanPhaseLabel,
-  libraryScanFolderLabel,
-  heroScanStatus,
-  emptyStateMessage,
-  retryHeroLibraryScan,
+  showHeroScanCard: heroCardVisible,
+  hasSearchQuery: queryActive,
+  showLibraryOnboarding: needOnboarding,
+  showFolderEmpty: folderIsEmpty,
+  showLibraryChecking: scanChecking,
+  showLibraryEmptyResult: scanEmptyResult,
+  libraryScanPercent: scanPercentRaw,
+  libraryScanPhaseLabel: heroPhaseLabel,
+  libraryScanFolderLabel: scanFolderHint,
+  heroScanStatus: scanStatus,
+  emptyStateMessage: emptyStateText,
+  retryHeroLibraryScan: redoScan,
 } = useSongTableLibraryState({
   currentViewMode,
-  searchQuery,
-  librarySongs,
+  searchQuery: libSearchText,
+  librarySongs: libSongs,
   addLibraryFolder,
   scanLibrary,
 });
 
-const displayHeroTitle = computed(() => {
-  if (heroScanStatus.value === 'error') {
-    return '\u8fd9\u6bb5\u97f3\u4e50\u4e4b\u65c5\u6682\u65f6\u88ab\u6253\u65ad\u4e86';
+// 英雄卡文案与百分比
+const heroTitle = computed(() => {
+  if (scanStatus.value === 'error') {
+    return HERO_TITLE_INTERRUPTED;
   }
-  if (heroScanStatus.value === 'success') {
-    return librarySongs.value.length > 0
-      ? '\u4e07\u7c41\u4ff1\u5bc2\uff0c\u9759\u5f85\u4e50\u8d77\u3002'
-      : '\u8fd9\u6b21\u6ca1\u6709\u53d1\u73b0\u53ef\u5bfc\u5165\u7684\u6b4c\u66f2';
+  if (scanStatus.value === 'success') {
+    return libSongs.value.length > 0 ? HERO_TITLE_DONE : HERO_TITLE_NO_SONGS;
   }
-  return '\u5373\u5c06\u5f00\u59cb\u7f8e\u5999\u7684\u97f3\u4e50\u4e4b\u65c5...';
+  return HERO_TITLE_PENDING;
 });
 
-const heroPercentValue = computed(() => {
-  if (heroScanStatus.value === 'success') {
+const heroPercent = computed(() => {
+  if (scanStatus.value === 'success') {
     return 100;
   }
-
-  return Math.round(libraryScanPercent.value);
+  return Math.round(scanPercentRaw.value);
 });
 
-const heroPercentText = computed(() => `${heroPercentValue.value}%`);
+const heroPercentLabel = computed(() => `${heroPercent.value}%`);
 
-const displayHeroProgressNote = computed(() => {
-  const progress = libraryScanProgress.value;
+const heroNote = computed(() => {
+  const progress = scanProgress.value;
   if (progress && progress.total > 0) {
     return `${progress.current} / ${progress.total}`;
   }
-  if (heroScanStatus.value === 'success') {
-    return librarySongs.value.length > 0 ? `${librarySongs.value.length} \u9996\u5df2\u5165\u5e93` : '\u672a\u53d1\u73b0\u6b4c\u66f2';
+  if (scanStatus.value === 'success') {
+    return libSongs.value.length > 0 ? `${libSongs.value.length} ${LIB_COUNT_SUFFIX}` : HERO_NOTE_NO_SONGS;
   }
-  if (heroScanStatus.value === 'error') {
-    return '\u5bfc\u5165\u5df2\u4e2d\u65ad';
+  if (scanStatus.value === 'error') {
+    return HERO_NOTE_INTERRUPTED;
   }
-  return libraryScanPhaseLabel.value;
+  return heroPhaseLabel.value;
 });
 
-const displayHeroProgressDetail = computed(() => {
-  const progress = libraryScanProgress.value;
+const heroDetail = computed(() => {
+  const progress = scanProgress.value;
   if (progress && progress.total > 0) {
     const folderPath = progress.folder_path?.trim();
-    return folderPath || libraryScanPhaseLabel.value;
+    return folderPath || heroPhaseLabel.value;
   }
-  if (heroScanStatus.value === 'success') {
-    return '\u73b0\u5728\u53ef\u4ee5\u5f00\u59cb\u6d4f\u89c8\u3001\u641c\u7d22\u548c\u64ad\u653e';
+  if (scanStatus.value === 'success') {
+    return HERO_DETAIL_DONE;
   }
-  if (heroScanStatus.value === 'error') {
-    return '\u91cd\u65b0\u626b\u63cf\u540e\u4f1a\u7ee7\u7eed\u5efa\u7acb\u97f3\u4e50\u5e93';
+  if (scanStatus.value === 'error') {
+    return HERO_DETAIL_ERROR;
   }
-  return libraryScanFolderLabel.value || '\u6b63\u5728\u51c6\u5907\u5bfc\u5165';
+  return scanFolderHint.value || HERO_DETAIL_PREP;
 });
 
-const onboardingMessage = computed(() =>
-  showLibraryOnboarding.value
-    ? '\u97f3\u4e50\u5e93\u7a7a\u7a7a\u5982\u4e5f\uff0c\u5feb\u53bb\u6dfb\u52a0\u4f60\u7684\u672c\u5730\u97f3\u4e50\u5427'
-    : emptyStateMessage.value,
-);
-const libraryCheckingTitle = '\u6b63\u5728\u68c0\u67e5\u4f60\u7684\u97f3\u4e50\u5e93...';
-const libraryCheckingDescription = '\u542f\u52a8\u540e\u4f1a\u5728\u540e\u53f0\u5feb\u901f\u6838\u5bf9\u76ee\u5f55\u53d8\u5316\uff0c\u4e0d\u4f1a\u6253\u65ad\u5f53\u524d\u6d4f\u89c8\u3002';
-const emptyLibraryResultTitle = computed(() =>
-  lastLibraryScanError.value
-    ? '\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\u4f60\u7684\u97f3\u4e50\u5e93'
-    : '\u672a\u5728\u5f53\u524d\u97f3\u4e50\u5e93\u4e2d\u53d1\u73b0\u53ef\u5bfc\u5165\u97f3\u9891',
-);
-const emptyLibraryResultDescription = computed(() =>
-  lastLibraryScanError.value
-    ? '\u4f60\u53ef\u4ee5\u524d\u5f80\u8bbe\u7f6e\u4e2d\u7684\u97f3\u4e50\u5e93\u9875\u91cd\u65b0\u626b\u63cf\uff0c\u6216\u68c0\u67e5\u76ee\u5f55\u662f\u5426\u4ecd\u7136\u53ef\u8bbf\u95ee\u3002'
-    : '\u53ef\u4ee5\u5c1d\u8bd5\u91cd\u65b0\u9009\u62e9\u6587\u4ef6\u5939\uff0c\u6216\u786e\u8ba4\u76ee\u5f55\u4e2d\u5305\u542b\u53d7\u652f\u6301\u7684\u97f3\u9891\u6587\u4ef6\u3002',
-);
-const getClickableArtistNames = (song: Song) =>
+// 空态文案
+const emptyHint = computed(() =>
+  needOnboarding.value ? ONBOARDING_HINT : emptyStateText.value);
+const checkingTitle = CHECKING_TITLE;
+const checkingDesc = CHECKING_DESC;
+const emptyScanTitle = computed(() =>
+  lastScanError.value ? SCAN_FAIL_TITLE : SCAN_EMPTY_TITLE);
+const emptyScanDesc = computed(() =>
+  lastScanError.value ? SCAN_FAIL_DESC : SCAN_EMPTY_DESC);
+
+// 歌手名集合：优先使用拆分后的多歌手字段
+const artistChips = (song: Song) =>
   (Array.isArray(song.artist_names) && song.artist_names.length > 0 ? song.artist_names : [song.artist]).filter(Boolean);
 
-const handleArtistClick = (artistName: string) => {
+const gotoArtist = (artistName: string) => {
   void openHomeArtist(artistName);
 };
 
+// 行内格式列文案：已下载为本地时显示真实容器格式
+const formatCellOf = (song: Song) => {
+  if (props.downloadCompletedAsLocal && savedStreamPaths.value.has(song.path)) {
+    return savedStreamFormats.value.get(song.path) || extLabelOf(song);
+  }
+  return extLabelOf(song);
+};
+
+// 下载图标悬浮文案
+const downloadingTitle = () => `下载中 ${Math.floor(dlStore.progress)}%`;
+const savedTitleOf = (song: Song) => `已下载：${song.title || song.name}`;
+const fetchTitleOf = (song: Song) => `下载：${song.title || song.name}`;
+
+// 标题列：无 title 时回退到去除扩展名的文件名
+const titleTextOf = (song: Song) => song.title || song.name.replace(/\.[^/.]+$/, '');
+
+// 序号不足两位时补 0
+const padRowIndex = (idx: number) => (idx + 1 < 10 ? `0${idx + 1}` : idx + 1);
+
+// ==================== 生命周期 ====================
 onMounted(() => {
-  window.addEventListener('resize', updateContainerHeight);
-  updateContainerHeight();
-  ensureViewportSegmentFilled();
-  void restoreActiveViewportCovers();
+  window.addEventListener('resize', measureViewport);
+  measureViewport();
+  fillSegmentFloor();
+  void resumeViewportState();
 });
 
 onActivated(() => {
-  ensureViewportSegmentFilled();
-  void restoreActiveViewportCovers();
+  fillSegmentFloor();
+  void resumeViewportState();
 });
 
 onDeactivated(() => {
-  saveScrollPosition();
-  saveViewportCoverSnapshot();
+  stashScrollPos();
+  stashCoverSnapshot();
 });
 
 onBeforeUnmount(() => {
-  const scrollEl = activeScrollContainer.value;
-  if (!(props.pageScrollMode && scrollEl && scrollEl.scrollTop === 0)) {
-    saveScrollPosition();
+  const host = scrollHost.value;
+  // 页面滚动模式下宿主已回到顶部时无需重复记忆
+  if (!(props.pageScrollMode && host && host.scrollTop === 0)) {
+    stashScrollPos();
   }
-  saveViewportCoverSnapshot();
-  clearScrollbarActiveTimer();
-  displayedCoverUrls.clear();
-  songCommentCache.clear();
-  loadingSongCommentPaths.clear();
-  visibleCoverPaths = new Set<string>();
+  stashCoverSnapshot();
+  stopScrollbarTimer();
+  coverUrlMap.clear();
+  commentMemo.clear();
+  pendingCommentPaths.clear();
+  activeCoverPaths = new Set<string>();
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', updateContainerHeight);
+  window.removeEventListener('resize', measureViewport);
 });
 
-defineExpose({ containerRef });
+defineExpose({ containerRef: scrollBodyEl });
 
-const dragSourcePath = computed(() => {
+// ==================== 拖拽排序的行位移动画 ====================
+const draggingPath = computed(() => {
   if (!dragSession.active || !dragSession.songs.length) return '';
   return dragSession.songs[0]?.path ?? '';
 });
-const dragIndex = computed(() => {
-  if (!dragSourcePath.value) return -1;
+
+const draggingPos = computed(() => {
+  if (!draggingPath.value) return -1;
   if (props.songPaths) {
-    return props.songPaths.findIndex(path => path === dragSourcePath.value);
+    return props.songPaths.findIndex(p => p === draggingPath.value);
   }
-  return props.songs.findIndex(song => song.path === dragSourcePath.value);
+  return props.songs.findIndex(song => song.path === draggingPath.value);
 });
 
-const getRowStyle = (songIndex: number, songPath: string) => {
-  const baseStyle: Record<string, string | number> = { height: `${ROW_HEIGHT}px` };
+const DRAG_EASE = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+
+const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string | number> => {
+  const base: Record<string, string | number> = { height: `${ROW_PX}px` };
 
   if (!dragSession.active || dragSession.insertIndex === -1) {
-    return baseStyle;
+    return base;
   }
 
-  const currentDragIndex = dragIndex.value;
-  const targetIndex = dragSession.insertIndex;
+  const fromIdx = draggingPos.value;
+  const toIdx = dragSession.insertIndex;
 
-  if (songPath === dragSourcePath.value) {
-    const diff = targetIndex - currentDragIndex;
+  // 被拖拽行本身：按插入点位移并隐藏
+  if (rowPath === draggingPath.value) {
     return {
-      ...baseStyle,
-      transform: `translateY(${diff * 100}%)`,
-      transition: 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)',
+      ...base,
+      transform: `translateY(${(toIdx - fromIdx) * 100}%)`,
+      transition: DRAG_EASE,
       opacity: 0,
       zIndex: 0,
     };
   }
 
-  let translateY = 0;
-
-  if (targetIndex > currentDragIndex) {
-    if (songIndex > currentDragIndex && songIndex <= targetIndex) {
-      translateY = -100;
-    }
-  } else if (targetIndex < currentDragIndex) {
-    if (songIndex >= targetIndex && songIndex < currentDragIndex) {
-      translateY = 100;
-    }
+  // 其余行：落在受影响区间内的让出位置
+  let shift = 0;
+  if (toIdx > fromIdx && rowIdx > fromIdx && rowIdx <= toIdx) {
+    shift = -100;
+  }
+  if (toIdx < fromIdx && rowIdx >= toIdx && rowIdx < fromIdx) {
+    shift = 100;
   }
 
-  if (translateY !== 0) {
+  if (shift !== 0) {
     return {
-      ...baseStyle,
-      transform: `translateY(${translateY}%)`,
-      transition: 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)',
+      ...base,
+      transform: `translateY(${shift}%)`,
+      transition: DRAG_EASE,
       zIndex: 1,
     };
   }
 
   return {
-    ...baseStyle,
-    transition: 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)',
+    ...base,
+    transition: DRAG_EASE,
   };
 };
 </script>
 
 <template>
   <div
-    ref="rootRef"
-    class="min-w-0 relative overflow-x-auto"
+    ref="tableRootEl"
+    class="relative min-w-0 overflow-x-auto"
     :class="{ 'flex-1 min-h-0': !pageScrollMode }"
-    @pointermove="handleSongTablePointerMove"
-    @mouseleave="handleSongTableMouseLeave"
+    @mouseleave="onTableMouseLeave"
+    @pointermove="onTablePointerMove"
   >
     <div
-      ref="containerRef"
-      class="overflow-x-auto pl-2.5 pb-8 custom-scrollbar song-list-scroll-container"
+      ref="scrollBodyEl"
+      class="overflow-x-auto pb-8 pl-2.5 custom-scrollbar song-list-scroll-container"
       :class="{
+        'song-list-scrollbar-active': scrollbarAwake,
         'h-full overflow-y-auto': !pageScrollMode,
-        'song-list-scrollbar-active': isScrollbarActive,
       }"
-      @scroll="onScroll"
+      @scroll="handleScrollEvent"
     >
-      <div class="w-full relative">
-        <div :style="{ height: virtualPaddingTop }"></div>
+      <div class="relative w-full">
+        <div :style="{ height: virtualPadTop }"></div>
 
         <div
-          v-for="song in virtualItems"
+          v-for="song in rowsForRender"
           :key="song.path"
-          :data-index="song.virtualIndex"
-          @pointerdown="handlePointerDown($event, song, song.virtualIndex)"
-          @click="!isBatchMode && songClickAction === 'single' && handlePlayClick(song)"
-          @dblclick="!isBatchMode && songClickAction !== 'single' && handlePlayClick(song)"
-          @contextmenu.prevent="emit('contextmenu', $event, song)"
-          @dragstart.prevent
-          class="group w-full min-w-[580px] border-b border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 select-none cursor-default relative flex items-center pl-2 pr-6 gap-3 [touch-action:none]"
+          class="group relative flex w-full min-w-[580px] items-center gap-3 border-b border-black/5 pl-2 pr-6 [touch-action:none] select-none cursor-default hover:bg-black/5 dark:border-white/5 dark:hover:bg-white/5"
           :class="{ 'bg-red-500/10 dark:bg-red-500/20': selectedPaths.has(song.path) }"
-          :style="getRowStyle(song.virtualIndex, song.path)"
+          :style="rowShiftStyle(song.virtualIndex, song.path)"
+          :data-index="song.virtualIndex"
+          @pointerdown="onRowPointerDown($event, song, song.virtualIndex)"
+          @click="onRowClick(song)"
+          @dblclick="onRowDblClick(song)"
+          @contextmenu.prevent="onRowContext($event, song)"
+          @dragstart.prevent
         >
-          <div class="w-10 shrink-0 flex items-center justify-center">
+          <!-- 序号 / 播放状态 / 批量勾选 -->
+          <div class="w-10 flex shrink-0 items-center justify-center">
             <div v-if="isBatchMode" class="flex items-center justify-center">
-              <input type="checkbox" :checked="selectedPaths.has(song.path)" class="rounded text-[#EC4141] focus:ring-[#EC4141] pointer-events-none" />
+              <input
+                type="checkbox"
+                class="rounded text-[#EC4141] focus:ring-[#EC4141] pointer-events-none"
+                :checked="selectedPaths.has(song.path)"
+              />
             </div>
-            <div v-else-if="currentSong?.path === song.path && isPlaying" class="flex items-center justify-center gap-[3px] w-5 h-5">
-              <span class="spectrum-bar w-[3px] rounded-full bg-[#EC4141]" style="animation-delay: 0s"></span>
-              <span class="spectrum-bar w-[3px] rounded-full bg-[#EC4141]" style="animation-delay: 0.2s"></span>
-              <span class="spectrum-bar w-[3px] rounded-full bg-[#EC4141]" style="animation-delay: 0.4s"></span>
+            <div v-else-if="currentSong?.path === song.path && isPlaying" class="flex w-5 h-5 items-center justify-center gap-[3px]">
+              <span style="animation-delay: 0s" class="spectrum-bar w-[3px] rounded-full bg-[#EC4141]"></span>
+              <span style="animation-delay: 0.2s" class="spectrum-bar w-[3px] rounded-full bg-[#EC4141]"></span>
+              <span style="animation-delay: 0.4s" class="spectrum-bar w-[3px] rounded-full bg-[#EC4141]"></span>
             </div>
-            <div v-else-if="currentSong?.path === song.path && !isPlaying" class="flex items-center justify-center gap-[3px] w-5 h-5">
-              <span class="w-[3px] h-[6px] rounded-full bg-[#EC4141]/60"></span>
-              <span class="w-[3px] h-[10px] rounded-full bg-[#EC4141]/60"></span>
-              <span class="w-[3px] h-[4px] rounded-full bg-[#EC4141]/60"></span>
+            <div v-else-if="currentSong?.path === song.path && !isPlaying" class="flex w-5 h-5 items-center justify-center gap-[3px]">
+              <span class="w-[3px] rounded-full h-[6px] bg-[#EC4141]/60"></span>
+              <span class="w-[3px] rounded-full h-[10px] bg-[#EC4141]/60"></span>
+              <span class="w-[3px] rounded-full h-[4px] bg-[#EC4141]/60"></span>
             </div>
-            <div v-else class="relative flex items-center justify-center w-5 h-5">
-              <span class="absolute inset-0 flex items-center justify-center text-xs font-mono text-gray-400 dark:text-white/40 transition-opacity duration-150 group-hover:opacity-0">
-                {{ song.virtualIndex + 1 < 10 ? '0' + (song.virtualIndex + 1) : song.virtualIndex + 1 }}
+            <div v-else class="relative flex w-5 h-5 items-center justify-center">
+              <span class="absolute inset-0 flex items-center justify-center text-xs font-mono text-gray-400 transition-opacity duration-150 group-hover:opacity-0 dark:text-white/40">
+                {{ padRowIndex(song.virtualIndex) }}
               </span>
               <div class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                <span v-if="showDragIcon" class="text-gray-500 dark:text-white/60 active:text-[#EC4141] cursor-grab">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <span v-if="dragChipVisible" class="text-gray-500 cursor-grab active:text-[#EC4141] dark:text-white/60">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </span>
-                <span v-else class="text-gray-500 dark:text-white/60 cursor-pointer hover:text-[#EC4141]" @click.stop="handlePlayClick(song)" @dblclick.stop.prevent>
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                <span v-else class="text-gray-500 cursor-pointer hover:text-[#EC4141] dark:text-white/60" @click.stop="triggerPlay(song)" @dblclick.stop.prevent>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" class="h-5 w-5" fill="currentColor">
+                    <path clip-rule="evenodd" fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" />
                   </svg>
                 </span>
               </div>
             </div>
           </div>
 
-          <div class="w-12 h-12 rounded-lg bg-gray-200/50 dark:bg-white/5 flex items-center justify-center shrink-0 overflow-hidden text-gray-400 dark:text-white/40 relative border border-black/5 dark:border-white/5" :data-cover-path="song.path">
-            <img v-if="getDisplayedCoverUrl(song.path)" :src="getDisplayedCoverUrl(song.path)" class="w-full h-full object-cover transition-opacity duration-300" alt="Cover" decoding="async" />
-            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-40 absolute inset-0 m-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          <!-- 封面 -->
+          <div
+            class="w-12 h-12 flex items-center justify-center shrink-0 overflow-hidden rounded-lg bg-gray-200/50 relative border border-black/5 text-gray-400 dark:bg-white/5 dark:text-white/40 dark:border-white/5"
+            :data-cover-path="song.path"
+          >
+            <img
+              v-if="coverUrlFor(song.path)"
+              :src="coverUrlFor(song.path)"
+              class="w-full h-full object-cover transition-opacity duration-300"
+              alt="Cover"
+              decoding="async"
+            />
+            <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5 opacity-40 absolute inset-0 m-auto" fill="none" stroke="currentColor">
+              <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
             </svg>
           </div>
 
-          <div class="flex-[1_1_40%] max-w-[44%] min-w-[100px] flex flex-col justify-center gap-0.5">
-            <div class="min-w-0 flex items-baseline gap-1.5 leading-snug">
-              <span class="min-w-0 truncate text-[15px] text-gray-900 dark:text-gray-100 font-semibold">{{ song.title || song.name.replace(/\.[^/.]+$/, '') }}</span>
+          <!-- 标题 + 评论 + 推荐理由 + 歌手 -->
+          <div class="flex-[1_1_40%] flex max-w-[44%] min-w-[100px] flex-col justify-center gap-0.5">
+            <div class="flex min-w-0 items-baseline gap-1.5 leading-snug">
+              <span class="truncate min-w-0 text-[15px] text-gray-900 font-semibold dark:text-gray-100">{{ titleTextOf(song) }}</span>
               <span
-                v-if="hasVisibleSongComment(song)"
+                v-if="showsComment(song)"
                 class="max-w-[42%] shrink-0 truncate text-xs font-medium text-gray-500 dark:text-white/45"
-                :title="getSongComment(song)"
-              >（{{ getSongComment(song) }}）</span>
+                :title="commentOf(song)"
+              >（{{ commentOf(song) }}）</span>
               <span
-                v-if="getSongReason(song)"
+                v-if="reasonOf(song)"
                 class="max-w-[42%] shrink-0 truncate text-xs font-medium text-[#EC4141]/75 dark:text-[#EC4141]/60"
-                :title="getSongReason(song)"
-              >（{{ getSongReason(song) }}）</span>
+                :title="reasonOf(song)"
+              >（{{ reasonOf(song) }}）</span>
             </div>
-            <div class="flex items-center gap-1.5 text-xs text-gray-900 dark:text-gray-100 leading-snug">
-              <span v-if="currentViewMode === 'album'" class="truncate flex items-center gap-1 flex-wrap" :title="song.artist">
-                <template v-for="(artistName, artistIndex) in getClickableArtistNames(song)" :key="`${song.path}-${artistName}`">
-                  <button type="button" class="truncate hover:text-[#EC4141] transition-colors" @click.stop="handleArtistClick(artistName)">
-                    {{ artistName }}
-                  </button>
-                  <span v-if="artistIndex < getClickableArtistNames(song).length - 1" class="opacity-60">/</span>
+            <div class="flex items-center gap-1.5 text-xs text-gray-900 leading-snug dark:text-gray-100">
+              <span v-if="currentViewMode === 'album'" class="truncate flex flex-wrap items-center gap-1" :title="song.artist">
+                <template v-for="(artistName, artistIndex) in artistChips(song)" :key="`${song.path}-${artistName}`">
+                  <button type="button" class="truncate transition-colors hover:text-[#EC4141]" @click.stop="gotoArtist(artistName)">{{ artistName }}</button>
+                  <span v-if="artistIndex < artistChips(song).length - 1" class="opacity-60">/</span>
                 </template>
               </span>
               <span v-else class="truncate" :title="song.artist">{{ song.artist }}</span>
             </div>
           </div>
 
-          <div class="flex-1 min-w-[9rem] truncate text-xs text-gray-900 dark:text-gray-100" :title="song.album">
-            {{ song.album }}
-          </div>
+          <!-- 专辑 -->
+          <div :title="song.album" class="truncate flex-1 min-w-[9rem] text-xs text-gray-900 dark:text-gray-100">{{ song.album }}</div>
 
-          <div class="w-16 shrink-0 flex items-center justify-center gap-1 text-center text-xs font-mono text-gray-500 dark:text-white/50">
-            <span class="min-w-0 truncate" :title="displayedFormat(song)">{{ displayedFormat(song) }}</span>
-            <template v-if="isOnlineSong(song)">
+          <!-- 格式 + 下载状态 -->
+          <div class="w-16 flex shrink-0 items-center justify-center gap-1 text-center text-xs font-mono text-gray-500 dark:text-white/50">
+            <span class="truncate min-w-0" :title="formatCellOf(song)">{{ formatCellOf(song) }}</span>
+            <template v-if="isStreamSong(song)">
               <div
-                v-if="isSongDownloading(song)"
-                class="relative h-5 w-5 shrink-0 text-[#EC4141]"
-                :title="`下载中 ${Math.floor(downloadStore.progress)}%`"
+                v-if="isFetchingSong(song)"
+                class="relative w-5 h-5 shrink-0 text-[#EC4141]"
+                :title="downloadingTitle()"
               >
-                <svg class="h-full w-full -rotate-90" viewBox="0 0 20 20">
+                <svg class="w-full h-full -rotate-90" viewBox="0 0 20 20">
                   <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-opacity="0.15" stroke-width="4" />
                   <circle
                     cx="10" cy="10" r="7" fill="none" stroke="currentColor"
                     stroke-width="4" stroke-linecap="round"
                     :stroke-dasharray="43.98"
-                    :stroke-dashoffset="43.98 * (1 - downloadStore.progress / 100)"
+                    :stroke-dashoffset="43.98 * (1 - dlStore.progress / 100)"
                     class="transition-[stroke-dashoffset] duration-150"
                   />
                 </svg>
               </div>
               <CircleCheck
-                v-else-if="!downloadCompletedAsLocal && downloadedOnlinePaths.has(song.path)"
-                class="h-4 w-4 shrink-0 text-emerald-500"
-                :title="`已下载：${song.title || song.name}`"
+                v-else-if="!downloadCompletedAsLocal && savedStreamPaths.has(song.path)"
+                class="w-4 h-4 shrink-0 text-emerald-500"
+                :title="savedTitleOf(song)"
               />
               <button
-                v-else-if="!downloadedOnlinePaths.has(song.path)"
+                v-else-if="!savedStreamPaths.has(song.path)"
                 type="button"
-                class="shrink-0 text-gray-400 dark:text-white/40 hover:text-[#EC4141] transition-colors cursor-pointer"
-                :title="`下载：${song.title || song.name}`"
-                @click.stop="handleDownloadClick(song)"
+                class="shrink-0 text-gray-400 transition-colors cursor-pointer hover:text-[#EC4141] dark:text-white/40"
+                :title="fetchTitleOf(song)"
+                @click.stop="startSongDownload(song)"
               >
-                <Download class="h-3.5 w-3.5" />
+                <Download class="w-3.5 h-3.5" />
               </button>
             </template>
           </div>
 
-          <div class="shrink-0 flex items-center gap-3 text-xs font-mono text-gray-900 dark:text-gray-100" :class="{ 'opacity-20 pointer-events-none': dragSession.active }">
-            <button v-if="!isBatchMode" @click.stop="toggleFavorite(song)" class="focus:outline-none">
-              <svg v-if="isFavorite(song)" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[color:var(--favorite-color)]" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white opacity-0 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
+          <!-- 收藏 + 时长 -->
+          <div class="flex shrink-0 items-center gap-3 text-xs font-mono text-gray-900 dark:text-gray-100" :class="{ 'pointer-events-none opacity-20': dragSession.active }">
+            <button v-if="!isBatchMode" class="focus:outline-none" @click.stop="toggleFavorite(song)">
+              <svg v-if="isFavorite(song)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" class="h-4 w-4 text-[color:var(--favorite-color)]" fill="currentColor">
+                <path clip-rule="evenodd" fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" />
+              </svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-gray-600 dark:text-white/40 dark:hover:text-white" fill="none" stroke="currentColor">
+                <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
+              </svg>
             </button>
             <span class="w-10 text-right">{{ formatDuration(song.duration) }}</span>
           </div>
 
-          <div class="w-16 shrink-0 flex items-center justify-center">
+          <!-- 来源标签 -->
+          <div class="w-16 flex shrink-0 items-center justify-center">
             <span
-              v-if="isOnlineSong(song) && !(downloadCompletedAsLocal && downloadedOnlinePaths.has(song.path))"
+              v-if="isStreamSong(song) && !(downloadCompletedAsLocal && savedStreamPaths.has(song.path))"
               class="max-w-full truncate rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
               :title="getSongSourceLabel(song)"
             >{{ getSongSourceLabel(song) }}</span>
@@ -1015,78 +1101,76 @@ const getRowStyle = (songIndex: number, songPath: string) => {
           </div>
         </div>
 
-        <div :style="{ height: virtualPaddingBottom }"></div>
+        <div :style="{ height: virtualPadBottom }"></div>
       </div>
 
-      <div v-if="sourceSongCount === 0" class="py-20 flex flex-col justify-center items-center select-none text-gray-500 dark:text-white/60">
-        <template v-if="showLibraryOnboarding || showFolderEmpty || hasSearchQuery">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      <!-- 空态 -->
+      <div v-if="totalRows === 0" class="py-20 flex flex-col justify-center items-center select-none text-gray-500 dark:text-white/60">
+        <template v-if="needOnboarding || folderIsEmpty || queryActive">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
             <path d="M4 7.25a2 2 0 012-2h3.35c.52 0 1.02.2 1.4.56l1.1 1.04c.38.36.88.56 1.4.56H18a2 2 0 012 2v7.35a2 2 0 01-2 2H6a2 2 0 01-2-2V7.25z" />
             <path d="M14.5 13.2V9.8l3.4-.7v3.4" />
-            <circle cx="12.8" cy="13.6" r="1.45" />
-            <circle cx="16.2" cy="12.9" r="1.45" />
+            <circle r="1.45" cx="12.8" cy="13.6" />
+            <circle r="1.45" cx="16.2" cy="12.9" />
           </svg>
-          <p class="mb-6 text-[15px]">{{ onboardingMessage }}</p>
-          <button v-if="showLibraryOnboarding" @click="addLibraryFolder" class="flex items-center gap-2 px-6 py-2.5 bg-[#EC4141] text-white hover:bg-[#b92f2f] rounded-full text-[14px] font-medium transition-colors shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            &#28155;&#21152;&#26412;&#22320;&#38899;&#20048;
-          </button>
+          <p class="mb-6 text-[15px]">{{ emptyHint }}</p>
+          <button v-if="needOnboarding" class="flex items-center gap-2 px-6 py-2.5 bg-[#EC4141] text-white hover:bg-[#b92f2f] rounded-full text-[14px] font-medium transition-colors shadow-sm" @click="addLibraryFolder">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            &#28155;&#21152;&#26412;&#22320;&#38899;&#20048;</button>
         </template>
-        <template v-else-if="showLibraryChecking">
+        <template v-else-if="scanChecking">
           <div class="flex h-14 w-14 items-center justify-center rounded-full bg-white/70 shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:bg-white/10">
             <div class="h-6 w-6 rounded-full border-2 border-[#ec4141]/25 border-t-[#ec4141] scan-spinner"></div>
           </div>
-          <p class="mt-5 text-[15px] font-medium text-gray-700 dark:text-white/80">{{ libraryCheckingTitle }}</p>
-          <p class="mt-2 text-[13px] opacity-70">{{ libraryCheckingDescription }}</p>
+          <p class="mt-5 text-[15px] font-medium text-gray-700 dark:text-white/80">{{ checkingTitle }}</p>
+          <p class="mt-2 text-[13px] opacity-70">{{ checkingDesc }}</p>
         </template>
-        <template v-else-if="showLibraryEmptyResult">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <template v-else-if="scanEmptyResult">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
             <path d="M4 7.25a2 2 0 012-2h3.35c.52 0 1.02.2 1.4.56l1.1 1.04c.38.36.88.56 1.4.56H18a2 2 0 012 2v7.35a2 2 0 01-2 2H6a2 2 0 01-2-2V7.25z" />
             <path d="M14.5 13.2V9.8l3.4-.7v3.4" />
-            <circle cx="12.8" cy="13.6" r="1.45" />
-            <circle cx="16.2" cy="12.9" r="1.45" />
+            <circle r="1.45" cx="12.8" cy="13.6" />
+            <circle r="1.45" cx="16.2" cy="12.9" />
           </svg>
-          <p class="mb-2 text-[15px]">{{ emptyLibraryResultTitle }}</p>
+          <p class="mb-2 text-[15px]">{{ emptyScanTitle }}</p>
           <p class="text-[13px] opacity-70">
-            {{ emptyLibraryResultDescription }}
+            {{ emptyScanDesc }}
           </p>
         </template>
         <template v-else-if="currentViewMode === 'playlist'">
-          <p>{{ emptyStateMessage }}</p>
+          <p>{{ emptyStateText }}</p>
         </template>
         <template v-else>
-          <p>{{ emptyStateMessage }}</p>
+          <p>{{ emptyStateText }}</p>
         </template>
       </div>
     </div>
 
+    <!-- 扫描英雄卡 -->
     <Teleport to="body">
       <transition name="library-hero">
-        <div
-          v-if="showHeroScanCard"
-          class="library-hero-overlay"
-        >
-          <div class="library-hero-backdrop"></div>
+        <div v-if="heroCardVisible" class="library-hero-overlay">
+          <div :class="'library-hero-backdrop'"></div>
 
-          <div class="library-hero-card" :class="`library-hero-card-${heroScanStatus}`">
-            <p class="library-hero-phase">{{ libraryScanPhaseLabel }}</p>
-            <h3 class="library-hero-title">{{ displayHeroTitle }}</h3>
+          <div class="library-hero-card" :class="`library-hero-card-${scanStatus}`">
+            <p class="library-hero-phase">{{ heroPhaseLabel }}</p>
+            <h3 class="library-hero-title">{{ heroTitle }}</h3>
 
             <div class="library-hero-progress-track">
               <div
                 class="library-hero-progress-fill"
-                :class="{ 'scan-progress-indeterminate': libraryScanProgress && libraryScanProgress.total <= 0 && heroScanStatus === 'scanning' }"
-                :style="{ width: `${heroPercentValue}%` }"
+                :class="{ 'scan-progress-indeterminate': scanProgress && scanProgress.total <= 0 && scanStatus === 'scanning' }"
+                :style="{ width: `${heroPercent}%` }"
               ></div>
             </div>
 
             <div class="library-hero-progress-meta">
-              <span class="library-hero-progress-note" :title="displayHeroProgressDetail">{{ displayHeroProgressDetail }}</span>
-              <span class="library-hero-progress-value">{{ displayHeroProgressNote }} &middot; {{ heroPercentText }}</span>
+              <span class="library-hero-progress-note" :title="heroDetail">{{ heroDetail }}</span>
+              <span class="library-hero-progress-value">{{ heroNote }} &middot; {{ heroPercentLabel }}</span>
             </div>
 
-            <div v-if="heroScanStatus === 'error'" class="library-hero-actions">
-              <button type="button" class="hero-primary-btn" @click="retryHeroLibraryScan">&#37325;&#26032;&#25195;&#25551;</button>
+            <div v-if="scanStatus === 'error'" class="library-hero-actions">
+              <button type="button" class="hero-primary-btn" @click="redoScan">&#37325;&#26032;&#25195;&#25551;</button>
               <button type="button" class="hero-secondary-btn" @click="addLibraryFolder">&#37325;&#26032;&#36873;&#25321;&#25991;&#20214;&#22841;</button>
             </div>
           </div>
@@ -1094,19 +1178,17 @@ const getRowStyle = (songIndex: number, songPath: string) => {
       </transition>
     </Teleport>
 
-    <div
-      v-if="showAlphabetIndex"
-      class="absolute inset-y-0 right-0 z-20 flex items-center justify-end w-16 pr-3 pointer-events-none"
-    >
+    <!-- 字母索引导航 -->
+    <div v-if="showAlphaRail" class="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-16 items-center justify-end pr-3">
       <div
         class="flex flex-col items-center gap-2 transition-all duration-300 ease-out"
-        :class="isIndexBarVisible ? 'opacity-100 translate-x-0 pointer-events-auto' : 'opacity-0 translate-x-2 pointer-events-none'"
-        @mouseenter="handleIndexHotspotEnter"
-        @mousemove="handleIndexHotspotMove"
-        @mouseleave="handleIndexHotspotLeave"
+        :class="railFloatClass"
+        @mouseenter="onRailHotspotEnter"
+        @mousemove="onRailHotspotMove"
+        @mouseleave="onRailHotspotLeave"
       >
         <div
-          ref="indexBarRef"
+          ref="railBarRef"
           class="flex flex-col items-center gap-[1px] rounded-full bg-white px-1 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:bg-black"
         >
           <button
@@ -1115,41 +1197,37 @@ const getRowStyle = (songIndex: number, songPath: string) => {
             type="button"
             class="index-nav-item"
             :class="{
-              'index-nav-item-active': activeIndexKey === key,
-              'index-nav-item-hover': hoverIndexKey === key && activeIndexKey !== key && dragIndexKey !== key,
-              'index-nav-item-drag': dragIndexKey === key && activeIndexKey !== key,
-              'index-nav-item-disabled': !firstSongIndexByKey.has(key),
+              'index-nav-item-active': railActiveKey === key,
+              'index-nav-item-hover': railHoverKey === key && railActiveKey !== key && railDragKey !== key,
+              'index-nav-item-drag': railDragKey === key && railActiveKey !== key,
+              'index-nav-item-disabled': !railFirstKeys.has(key),
             }"
-            :disabled="!firstSongIndexByKey.has(key)"
-            @mouseenter="hoverIndexKey = key; showIndexBar()"
-            @mouseleave="hoverIndexKey = null"
-            @pointerdown="handleIndexPointerDown($event, key)"
-          >
-            {{ key }}
-          </button>
+            :disabled="!railFirstKeys.has(key)"
+            @mouseenter="railHoverKey = key; wakeRail()"
+            @mouseleave="railHoverKey = null"
+            @pointerdown="onRailPointerDown($event, key)"
+          >{{ key }}</button>
         </div>
       </div>
     </div>
 
+    <!-- 回顶 / 定位悬浮按钮 -->
     <Teleport
       :disabled="!pageScrollMode || !scrollContainerRef"
       :to="scrollContainerRef"
     >
-      <div
-        class="grid grid-cols-[36px_36px] gap-3"
-        :class="pageScrollMode ? 'sticky bottom-6 z-[60] ml-auto mr-6 w-fit' : 'absolute right-6 bottom-6 z-30'"
-      >
+      <div class="grid grid-cols-[36px_36px] gap-3" :class="pageScrollMode ? 'sticky bottom-6 z-[60] ml-auto mr-6 w-fit' : 'absolute right-6 bottom-6 z-30'">
         <div class="h-9 w-9">
           <transition name="locate-fab">
             <button
-              v-if="settings.enableScrollToTopButton && showScrollToTopButton"
+              v-if="appPrefs.enableScrollToTopButton && showTopFab"
               type="button"
-              class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:text-[#ec4141] hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] dark:hover:bg-gray-800 dark:hover:text-[#ec4141]"
               title="回到顶部"
-              @click="scrollToTop"
+              class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:text-[#ec4141] hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] dark:hover:bg-gray-800 dark:hover:text-[#ec4141]"
+              @click="jumpToTop"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12l7-7 7 7M12 5v14" />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-[18px] w-[18px]" fill="none" stroke="currentColor">
+                <path d="M5 12l7-7 7 7M12 5v14" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
               </svg>
             </button>
           </transition>
@@ -1158,17 +1236,17 @@ const getRowStyle = (songIndex: number, songPath: string) => {
         <div class="h-9 w-9">
           <transition name="locate-fab">
             <button
-              v-if="showLocateCurrentSongButton"
+              v-if="showLocateFab"
               type="button"
-              class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
-              :class="canLocateCurrentSong ? 'hover:bg-white dark:hover:bg-gray-800 hover:text-[#ec4141] dark:hover:text-[#ec4141] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer' : 'opacity-40 cursor-not-allowed'"
-              :disabled="!canLocateCurrentSong"
+              :disabled="!canLocateNow"
               title="定位当前播放歌曲"
-              @click="scrollToCurrentSong"
+              class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+              :class="canLocateNow ? 'hover:bg-white hover:text-[#ec4141] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer dark:hover:bg-gray-800 dark:hover:text-[#ec4141]' : 'cursor-not-allowed opacity-40'"
+              @click="jumpToNowPlaying"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
-                <circle cx="12" cy="12" r="3.25" stroke-width="1.8" />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-[18px] w-[18px]" fill="none" stroke="currentColor">
+                <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+                <circle r="3.25" cx="12" cy="12" stroke-width="1.8" />
               </svg>
             </button>
           </transition>
@@ -1176,12 +1254,11 @@ const getRowStyle = (songIndex: number, songPath: string) => {
       </div>
     </Teleport>
 
+    <!-- 拖拽索引气泡 -->
     <Teleport to="body">
       <transition name="index-bubble">
-        <div v-if="isIndexDragging && dragIndexKey" class="fixed inset-0 z-[9998] pointer-events-none flex items-center justify-center">
-          <div class="rounded-[28px] bg-black/72 px-7 py-5 text-5xl font-bold tracking-[0.12em] text-white shadow-2xl backdrop-blur-xl dark:bg-black/78">
-            {{ dragIndexKey }}
-          </div>
+        <div v-if="railDragging && railDragKey" class="pointer-events-none fixed inset-0 z-[9998] flex items-center justify-center">
+          <div class="rounded-[28px] bg-black/72 px-7 py-5 text-5xl font-bold tracking-[0.12em] text-white shadow-2xl backdrop-blur-xl dark:bg-black/78">{{ railDragKey }}</div>
         </div>
       </transition>
     </Teleport>
@@ -1189,403 +1266,123 @@ const getRowStyle = (songIndex: number, songPath: string) => {
 </template>
 
 <style scoped>
-.song-list-scroll-container {
-  overflow-anchor: none;
-}
-
-.song-list-scroll-container::-webkit-scrollbar {
-  width: 10px;
-}
-
-.song-list-scroll-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+/* ===== 滚动容器与滚动条 ===== */
+.song-list-scroll-container { overflow-anchor: none; }
+.song-list-scroll-container::-webkit-scrollbar { width: 10px; }
+.song-list-scroll-container::-webkit-scrollbar-track { background: transparent; }
 .song-list-scroll-container::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
-  border-radius: 9999px;
-  background-color: rgba(0, 0, 0, 0.14);
-  background-clip: content-box;
+  border: 3px solid transparent; background-color: rgba(0,0,0,.14); background-clip: content-box; border-radius: 9999px;
 }
+.song-list-scroll-container::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: rgba(236,65,65,.68); }
+:global(.dark) .song-list-scroll-container::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,.22); }
+:global(.dark) .song-list-scroll-container.song-list-scrollbar-active::-webkit-scrollbar-thumb { background-color: rgba(236,65,65,.72); }
+:global(.dark) .song-list-scroll-container::-webkit-scrollbar-thumb:hover { background-color: rgba(236,65,65,.82); }
 
-.song-list-scroll-container::-webkit-scrollbar-thumb:hover {
-  border-width: 2px;
-  background-color: rgba(236, 65, 65, 0.68);
-}
+/* ===== 播放频谱与扫描动画 ===== */
+.spectrum-bar { animation: spectrum 1s ease-in-out infinite; }
+.scan-spinner { animation: scan-spin .9s linear infinite; }
 
-:global(.dark) .song-list-scroll-container::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.22);
-}
-
-:global(.dark) .song-list-scroll-container.song-list-scrollbar-active::-webkit-scrollbar-thumb {
-  background-color: rgba(236, 65, 65, 0.72);
-}
-
-:global(.dark) .song-list-scroll-container::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(236, 65, 65, 0.82);
-}
-
-.spectrum-bar {
-  animation: spectrum 1s ease-in-out infinite;
-}
-
-.scan-spinner {
-  animation: scan-spin 0.9s linear infinite;
-}
-
-.library-hero-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 170;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-}
-
-.library-hero-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(244, 246, 250, 0.72);
-  backdrop-filter: blur(4px);
-}
-
+/* ===== 扫描英雄卡 ===== */
+.library-hero-overlay { position: fixed; inset: 0; z-index: 170; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+.library-hero-backdrop { position: absolute; inset: 0; background: rgba(244,246,250,.72); backdrop-filter: blur(4px); }
 .library-hero-card {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 500px);
-  overflow: hidden;
-  padding: 1.55rem 1.6rem 1.2rem;
-  border: 1px solid rgba(255, 255, 255, 0.68);
-  border-radius: 20px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 250, 252, 0.8));
-  box-shadow:
-    0 16px 40px rgba(15, 23, 42, 0.12),
-    0 2px 12px rgba(15, 23, 42, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  position: relative; z-index: 1; width: min(100%, 500px); overflow: hidden;
+  padding: 1.55rem 1.6rem 1.2rem; border: 1px solid rgba(255,255,255,.68); border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,.76), rgba(248,250,252,.8));
+  box-shadow: 0 16px 40px rgba(15,23,42,.12), 0 2px 12px rgba(15,23,42,.05), inset 0 1px 0 rgba(255,255,255,.92);
   backdrop-filter: blur(30px) saturate(1.04);
 }
-
-.library-hero-card-success {
-  background: linear-gradient(180deg, rgba(247, 252, 249, 0.8), rgba(242, 249, 245, 0.82));
-}
-
-.library-hero-card-error {
-  background: linear-gradient(180deg, rgba(255, 248, 248, 0.82), rgba(253, 243, 243, 0.84));
-}
-
-.library-hero-phase {
-  margin: 0 0 0.55rem;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(79, 92, 112, 0.78);
-}
-
-.library-hero-card-success .library-hero-phase {
-  color: rgba(6, 95, 70, 0.78);
-}
-
-.library-hero-card-error .library-hero-phase {
-  color: rgba(185, 28, 28, 0.78);
-}
-
-.library-hero-title {
-  margin: 0;
-  font-size: clamp(1.58rem, 2.7vw, 2.02rem);
-  line-height: 1.16;
-  letter-spacing: -0.025em;
-  color: rgb(15, 23, 42);
-}
-
-.library-hero-progress-track {
-  overflow: hidden;
-  height: 0.52rem;
-  border-radius: 9999px;
-  background: rgba(15, 23, 42, 0.08);
-  margin-top: 1rem;
-}
-
-.library-hero-progress-fill {
-  position: relative;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0a66ff 0%, #3b82f6 100%);
-  transition: width 0.3s ease-out;
-}
-
-.library-hero-card-success .library-hero-progress-fill {
-  background: linear-gradient(90deg, #059669 0%, #10b981 100%);
-}
-
-.library-hero-card-error .library-hero-progress-fill {
-  background: linear-gradient(90deg, #dc2626 0%, #f87171 100%);
-}
-
-.library-hero-progress-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: 0.6rem;
-  font-size: 0.78rem;
-  color: rgba(71, 85, 105, 0.78);
-}
-
-.library-hero-progress-note {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.library-hero-progress-value {
-  flex-shrink: 0;
-  color: rgba(15, 23, 42, 0.56);
-}
-
-.library-hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-  margin-top: 0.9rem;
-}
-
+.library-hero-card-success { background: linear-gradient(180deg, rgba(247,252,249,.8), rgba(242,249,245,.82)); }
+.library-hero-card-error { background: linear-gradient(180deg, rgba(255,248,248,.82), rgba(253,243,243,.84)); }
+.library-hero-phase { margin: 0 0 .55rem; font-size: .74rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(79,92,112,.78); }
+.library-hero-card-success .library-hero-phase { color: rgba(6,95,70,.78); }
+.library-hero-card-error .library-hero-phase { color: rgba(185,28,28,.78); }
+.library-hero-title { margin: 0; font-size: clamp(1.58rem, 2.7vw, 2.02rem); line-height: 1.16; letter-spacing: -.025em; color: rgb(15,23,42); }
+.library-hero-progress-track { overflow: hidden; height: .52rem; border-radius: 9999px; background: rgba(15,23,42,.08); margin-top: 1rem; }
+.library-hero-progress-fill { position: relative; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #0a66ff 0%, #3b82f6 100%); transition: width .3s ease-out; }
+.library-hero-card-success .library-hero-progress-fill { background: linear-gradient(90deg, #059669 0%, #10b981 100%); }
+.library-hero-card-error .library-hero-progress-fill { background: linear-gradient(90deg, #dc2626 0%, #f87171 100%); }
+.library-hero-progress-meta { display: flex; justify-content: space-between; gap: .75rem; margin-top: .6rem; font-size: .78rem; color: rgba(71,85,105,.78); }
+.library-hero-progress-note { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-hero-progress-value { flex-shrink: 0; color: rgba(15,23,42,.56); }
+.library-hero-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: .9rem; }
 .hero-primary-btn,
 .hero-secondary-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 132px;
-  border-radius: 9999px;
-  padding: 0.82rem 1.3rem;
-  font-size: 0.94rem;
-  font-weight: 700;
-  transition:
-    transform 0.18s ease,
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
+  display: inline-flex; align-items: center; justify-content: center; min-width: 132px; border-radius: 9999px;
+  padding: .82rem 1.3rem; font-size: .94rem; font-weight: 700;
+  transition: transform .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
 }
-
-.hero-primary-btn {
-  color: white;
-  background: linear-gradient(180deg, #1677ff, #0a66ff);
-  box-shadow: 0 10px 20px rgba(10, 102, 255, 0.18);
-}
-
-.hero-primary-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 24px rgba(10, 102, 255, 0.22);
-}
-
-.hero-secondary-btn {
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  background: rgba(255, 255, 255, 0.72);
-  color: rgb(31, 41, 55);
-}
-
-.hero-secondary-btn:hover {
-  transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.94);
-}
+.hero-primary-btn { color: white; background: linear-gradient(180deg, #1677ff, #0a66ff); box-shadow: 0 10px 20px rgba(10,102,255,.18); }
+.hero-primary-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 24px rgba(10,102,255,.22); }
+.hero-secondary-btn { border: 1px solid rgba(15,23,42,.1); background: rgba(255,255,255,.72); color: rgb(31,41,55); }
+.hero-secondary-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.94); }
 
 @media (max-width: 720px) {
-  .library-hero-overlay {
-    padding: 1rem;
-  }
-
-  .library-hero-card {
-    padding: 1.45rem 1.2rem 1.15rem;
-  }
-
-  .library-hero-progress-meta {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+  .library-hero-overlay { padding: 1rem; }
+  .library-hero-card { padding: 1.45rem 1.2rem 1.15rem; }
+  .library-hero-progress-meta { flex-direction: column; align-items: flex-start; }
 }
 
+/* ===== 字母索引导航 ===== */
 .index-nav-item {
-  width: 1.05rem;
-  height: 0.78rem;
-  border-radius: 9999px;
-  font-size: 0.58rem;
-  line-height: 1;
-  color: rgba(75, 85, 99, 0.85);
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
+  width: 1.05rem; height: .78rem; border-radius: 9999px; font-size: .58rem; line-height: 1;
+  color: rgba(75,85,99,.85);
+  transition: background-color .18s ease, color .18s ease, transform .18s ease;
 }
+.index-nav-item:hover { background: rgba(15,23,42,.08); color: rgb(17,24,39); }
+.index-nav-item-active { background: rgba(236,65,65,.18); color: #ec4141; transform: scale(1.06); }
+.index-nav-item-hover { background: rgba(15,23,42,.08); color: rgb(17,24,39); }
+.index-nav-item-drag { background: rgba(15,23,42,.12); color: rgb(17,24,39); transform: scale(1.04); }
+.index-nav-item-disabled { opacity: .25; cursor: not-allowed; pointer-events: none; }
 
-.index-nav-item:hover {
-  background: rgba(15, 23, 42, 0.08);
-  color: rgb(17, 24, 39);
-}
-
-.index-nav-item-active {
-  background: rgba(236, 65, 65, 0.18);
-  color: #ec4141;
-  transform: scale(1.06);
-}
-
-.index-nav-item-hover {
-  background: rgba(15, 23, 42, 0.08);
-  color: rgb(17, 24, 39);
-}
-
-.index-nav-item-drag {
-  background: rgba(15, 23, 42, 0.12);
-  color: rgb(17, 24, 39);
-  transform: scale(1.04);
-}
-
-.index-nav-item-disabled {
-  opacity: 0.25;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-
-:global(.dark) .library-hero-backdrop {
-  background: rgba(2, 6, 23, 0.68);
-  backdrop-filter: blur(4px);
-}
-
+/* ===== 英雄卡暗色模式 ===== */
+:global(.dark) .library-hero-backdrop { background: rgba(2,6,23,.68); backdrop-filter: blur(4px); }
 :global(.dark) .library-hero-card {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(12, 18, 28, 0.8), rgba(10, 16, 25, 0.84));
-  box-shadow:
-    0 18px 44px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-color: rgba(255,255,255,.08);
+  background: linear-gradient(180deg, rgba(12,18,28,.8), rgba(10,16,25,.84));
+  box-shadow: 0 18px 44px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
 }
-
-:global(.dark) .library-hero-card-success {
-  background: linear-gradient(180deg, rgba(7, 46, 39, 0.84), rgba(8, 58, 47, 0.86));
-}
-
-:global(.dark) .library-hero-card-error {
-  background: linear-gradient(180deg, rgba(67, 13, 13, 0.84), rgba(82, 18, 18, 0.86));
-}
-
+:global(.dark) .library-hero-card-success { background: linear-gradient(180deg, rgba(7,46,39,.84), rgba(8,58,47,.86)); }
+:global(.dark) .library-hero-card-error { background: linear-gradient(180deg, rgba(67,13,13,.84), rgba(82,18,18,.86)); }
 :global(.dark) .library-hero-title,
-:global(.dark) .library-hero-progress-value {
-  color: rgba(255, 255, 255, 0.96);
-}
-
-:global(.dark) .library-hero-phase {
-  color: rgba(191, 201, 216, 0.8);
-}
-
-:global(.dark) .library-hero-card-success .library-hero-phase {
-  color: rgba(110, 231, 183, 0.82);
-}
-
-:global(.dark) .library-hero-card-error .library-hero-phase {
-  color: rgba(252, 165, 165, 0.88);
-}
-
+:global(.dark) .library-hero-progress-value { color: rgba(255,255,255,.96); }
+:global(.dark) .library-hero-phase { color: rgba(191,201,216,.8); }
+:global(.dark) .library-hero-card-success .library-hero-phase { color: rgba(110,231,183,.82); }
+:global(.dark) .library-hero-card-error .library-hero-phase { color: rgba(252,165,165,.88); }
 :global(.dark) .library-hero-progress-meta,
-:global(.dark) .library-hero-progress-note {
-  color: rgba(226, 232, 240, 0.72);
-}
+:global(.dark) .library-hero-progress-note { color: rgba(226,232,240,.72); }
 
-:global(.dark) .index-nav-item {
-  color: rgba(255, 255, 255, 0.72);
-}
+/* ===== 字母索引暗色模式 ===== */
+:global(.dark) .index-nav-item { color: rgba(255,255,255,.72); }
+:global(.dark) .index-nav-item:hover { background: rgba(255,255,255,.1); color: rgba(255,255,255,.96); }
+:global(.dark) .index-nav-item-active { background: rgba(236,65,65,.24); color: #fda4af; }
+:global(.dark) .index-nav-item-hover { background: rgba(255,255,255,.1); color: rgba(255,255,255,.96); }
+:global(.dark) .index-nav-item-drag { background: rgba(255,255,255,.14); color: rgba(255,255,255,.98); }
 
-:global(.dark) .index-nav-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.96);
-}
-
-:global(.dark) .index-nav-item-active {
-  background: rgba(236, 65, 65, 0.24);
-  color: #fda4af;
-}
-
-:global(.dark) .index-nav-item-hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.96);
-}
-
-:global(.dark) .index-nav-item-drag {
-  background: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.98);
-}
-
-
+/* ===== 过渡动画 ===== */
 .index-bubble-enter-active,
-.index-bubble-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
-}
-
+.index-bubble-leave-active { transition: opacity .18s ease, transform .18s ease; }
 .index-bubble-enter-from,
-.index-bubble-leave-to {
-  opacity: 0;
-  transform: scale(0.92);
-}
+.index-bubble-leave-to { opacity: 0; transform: scale(.92); }
 
 .locate-fab-enter-active,
-.locate-fab-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
-}
-
+.locate-fab-leave-active { transition: opacity .18s ease, transform .18s ease; }
 .locate-fab-enter-from,
-.locate-fab-leave-to {
-  opacity: 0;
-  transform: translateY(8px) scale(0.94);
-}
+.locate-fab-leave-to { opacity: 0; transform: translateY(8px) scale(.94); }
 
 .library-hero-enter-active,
-.library-hero-leave-active {
-  transition: opacity 0.22s ease, transform 0.22s ease;
-}
-
+.library-hero-leave-active { transition: opacity .22s ease, transform .22s ease; }
 .library-hero-enter-from,
-.library-hero-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
-}
+.library-hero-leave-to { opacity: 0; transform: scale(.98); }
 
-.scan-progress-indeterminate {
-  min-width: 28%;
-  animation: scan-progress-indeterminate 1.1s ease-in-out infinite alternate;
-}
-
-@keyframes scan-progress-indeterminate {
-  from {
-    transform: translateX(-14%);
-  }
-
-  to {
-    transform: translateX(14%);
-  }
-}
-
-@keyframes scan-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-:global(.dark) .hero-secondary-btn {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-:global(.dark) .hero-secondary-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
+/* ===== 关键帧 ===== */
+.scan-progress-indeterminate { min-width: 28%; animation: scan-progress-indeterminate 1.1s ease-in-out infinite alternate; }
+@keyframes scan-progress-indeterminate { from { transform: translateX(-14%); } to { transform: translateX(14%); } }
+@keyframes scan-spin { to { transform: rotate(360deg); } }
+:global(.dark) .hero-secondary-btn { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: rgba(255,255,255,.9); }
+:global(.dark) .hero-secondary-btn:hover { background: rgba(255,255,255,.12); }
 @keyframes spectrum {
-  0%, 100% { height: 4px; }
+  0%,100% { height: 4px; }
   25% { height: 14px; }
   50% { height: 6px; }
   75% { height: 12px; }

@@ -1,166 +1,160 @@
+/*
+ * playerStorage suite: equalizer preset serialization, malformed-entry
+ * filtering and behaviour when localStorage is unavailable.
+ * Behavioural coverage is unchanged.
+ */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { playerStorage, playerStorageKeys } from './playerStorage';
 import type { EqualizerPreset } from '../../types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { playerStorage, playerStorageKeys } from './playerStorage';
 
-type StorageMap = Record<string, string>;
+// ## scaffolding ##############################################################
 
-const createLocalStorageMock = () => {
-  let storage: StorageMap = {};
+const PRESET_KEY = playerStorageKeys.equalizerPresets;
 
+const freshStorageMock = () => {
+  const backing: Record<string, string> = {};
   return {
-    clear: vi.fn(() => {
-      storage = {};
-    }),
-    getItem: vi.fn((key: string) => (key in storage ? storage[key] : null)),
-    removeItem: vi.fn((key: string) => {
-      delete storage[key];
-    }),
-    setItem: vi.fn((key: string, value: string) => {
-      storage[key] = value;
-    }),
-    get length() {
-      return Object.keys(storage).length;
-    },
-    key: vi.fn((index: number) => Object.keys(storage)[index] ?? null),
+    clear: (): void => { Object.keys(backing).forEach((k) => delete backing[k]); },
+    getItem: (key: string): string | null => (key in backing ? backing[key] : null),
+    removeItem: (key: string): void => { delete backing[key]; },
+    setItem: (key: string, value: string): void => { backing[key] = value; },
+    get length(): number { return Object.keys(backing).length; },
+    key: (index: number): string | null => Object.keys(backing)[index] ?? null,
   };
 };
 
-const makePreset = (overrides: Partial<EqualizerPreset> = {}): EqualizerPreset => ({
-  id: `user_test_${Math.random().toString(36).slice(2)}`,
-  name: 'Test Preset',
-  preamp: -2.0,
-  gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
-  isBuiltin: false,
-  createdAt: 1000,
-  updatedAt: 2000,
-  ...overrides,
-});
+const buildPreset = (overrides: Partial<EqualizerPreset> = {}): EqualizerPreset => {
+  const randomSuffix = Math.random().toString(36).slice(2);
+  return {
+    id: `user_test_${randomSuffix}`,
+    name: 'Test Preset',
+    preamp: -2.0,
+    gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
+    isBuiltin: false,
+    createdAt: 1000,
+    updatedAt: 2000,
+    ...overrides,
+  };
+};
 
-describe('playerStorage: equalizer preset I/O', () => {
+const seedStorage = (payload: unknown) => {
+  localStorage.setItem(PRESET_KEY, JSON.stringify(payload));
+};
+
+const readBack = () => playerStorage.readEqualizerPresets();
+
+// ## round-trips ##############################################################
+
+describe('playerStorage — equalizer preset persistence contract', () => {
   beforeEach(() => {
-    const mock = createLocalStorageMock();
-    vi.stubGlobal('localStorage', mock);
+    vi.stubGlobal('localStorage', freshStorageMock());
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  // -----------------------------------------------------------------------
-  // -----------------------------------------------------------------------
-
-  it('writes and reads back an empty preset array', () => {
+  it('round-trips an empty preset list', () => {
     playerStorage.writeEqualizerPresets([]);
-    expect(playerStorage.readEqualizerPresets()).toEqual([]);
+    const reloaded = readBack();
+    expect(reloaded).toEqual([]);
   });
 
-  it('writes and reads back a single preset', () => {
-    const preset = makePreset({ name: 'Bass Boost' });
+  it('round-trips a single preset with its fields intact', () => {
+    const preset = buildPreset({ name: 'Bass Boost' });
     playerStorage.writeEqualizerPresets([preset]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('Bass Boost');
-    expect(result[0].preamp).toBe(-2.0);
-    expect(result[0].gains).toEqual([1, 2, 3, 4, 5, 5, 4, 3, 2, 1]);
+    const reloaded = readBack();
+    expect(reloaded).toHaveLength(1);
+    expect(reloaded[0].name).toBe('Bass Boost');
+    expect(reloaded[0].preamp).toBe(-2.0);
+    expect(reloaded[0].gains).toEqual([1, 2, 3, 4, 5, 5, 4, 3, 2, 1]);
   });
 
-  it('writes and reads back multiple presets', () => {
-    const presets = [
-      makePreset({ name: 'Rock', id: 'user_rock' }),
-      makePreset({ name: 'Jazz', id: 'user_jazz' }),
-      makePreset({ name: 'Pop', id: 'user_pop' }),
-    ];
-    playerStorage.writeEqualizerPresets(presets);
+  it('round-trips several presets in order', () => {
+    playerStorage.writeEqualizerPresets([
+      buildPreset({ name: 'Rock', id: 'user_rock' }),
+      buildPreset({ name: 'Jazz', id: 'user_jazz' }),
+      buildPreset({ name: 'Pop', id: 'user_pop' }),
+    ]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toHaveLength(3);
-    expect(result.map(p => p.name)).toEqual(['Rock', 'Jazz', 'Pop']);
+    const reloaded = readBack();
+    expect(reloaded).toHaveLength(3);
+    expect(reloaded.map((p) => p.name)).toEqual(['Rock', 'Jazz', 'Pop']);
   });
 
-  it('overwrites previous presets on write', () => {
-    playerStorage.writeEqualizerPresets([makePreset({ name: 'Old' })]);
-    playerStorage.writeEqualizerPresets([makePreset({ name: 'New' })]);
+  it('a second write replaces everything from the first', () => {
+    playerStorage.writeEqualizerPresets([buildPreset({ name: 'Old' })]);
+    playerStorage.writeEqualizerPresets([buildPreset({ name: 'New' })]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('New');
+    const reloaded = readBack();
+    expect(reloaded).toHaveLength(1);
+    expect(reloaded[0].name).toBe('New');
   });
 
-  // -----------------------------------------------------------------------
-  // -----------------------------------------------------------------------
-
-  it('uses the correct storage key', () => {
-    expect(playerStorageKeys.equalizerPresets).toBe('player_equalizer_presets');
+  it('targets the documented storage key', () => {
+    const actualKey = playerStorageKeys.equalizerPresets;
+    expect(actualKey).toBe('player_equalizer_presets');
   });
 
-  it('stores data under the expected localStorage key', () => {
-    const preset = makePreset();
+  it('lands the payload under the documented key', () => {
+    const preset = buildPreset();
     playerStorage.writeEqualizerPresets([preset]);
 
-    const raw = localStorage.getItem(playerStorageKeys.equalizerPresets);
+    const raw = localStorage.getItem(PRESET_KEY);
     expect(raw).toBeTruthy();
 
-    const parsed = JSON.parse(raw!);
+    const parsed = JSON.parse(raw as string) as Array<{ id: string }>;
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed[0].id).toBe(preset.id);
   });
 
-  // -----------------------------------------------------------------------
-  // -----------------------------------------------------------------------
-
-  it('returns empty array when storage has no equalizer presets', () => {
-    expect(playerStorage.readEqualizerPresets()).toEqual([]);
+  it('reads back an empty list when nothing was stored', () => {
+    expect(readBack()).toEqual([]);
   });
 
-  it('returns empty array when storage contains null', () => {
-    localStorage.setItem(playerStorageKeys.equalizerPresets, 'null');
-    expect(playerStorage.readEqualizerPresets()).toEqual([]);
+  it('reads back an empty list for a literal null payload', () => {
+    localStorage.setItem(PRESET_KEY, 'null');
+    expect(readBack()).toEqual([]);
   });
 
-  it('returns empty array when storage contains invalid JSON', () => {
-    localStorage.setItem(playerStorageKeys.equalizerPresets, '{broken json');
-    expect(playerStorage.readEqualizerPresets()).toEqual([]);
+  it('reads back an empty list for unparseable JSON', () => {
+    localStorage.setItem(PRESET_KEY, '{broken json');
+    expect(readBack()).toEqual([]);
   });
 
-  it('returns empty array when storage contains a non-array value', () => {
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify({ name: 'not an array' }));
-    expect(playerStorage.readEqualizerPresets()).toEqual([]);
+  it('reads back an empty list when the payload is not an array', () => {
+    localStorage.setItem(PRESET_KEY, JSON.stringify({ name: 'not an array' }));
+    expect(readBack()).toEqual([]);
   });
 
-  it('filters out items without a string id', () => {
-    const data = [
-      makePreset({ id: 'valid_1', name: 'Valid' }),
+  it('drops entries whose id is not a non-empty string', () => {
+    seedStorage([
+      buildPreset({ id: 'valid_1', name: 'Valid' }),
       { name: 'No ID' },
       { id: 123, name: 'Numeric ID' },
       { id: null, name: 'Null ID' },
       null,
       undefined,
       'string item',
-      makePreset({ id: 'valid_2', name: 'Also Valid' }),
-    ];
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify(data));
+      buildPreset({ id: 'valid_2', name: 'Also Valid' }),
+    ]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toHaveLength(2);
-    expect(result.map(p => p.name)).toEqual(['Valid', 'Also Valid']);
+    const reloaded = readBack();
+    expect(reloaded).toHaveLength(2);
+    expect(reloaded.map((p) => p.name)).toEqual(['Valid', 'Also Valid']);
   });
 
-  it('filters out null and undefined array items', () => {
-    const data = [null, undefined, makePreset({ id: 'survivor' }), 0, false, ''];
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify(data));
+  it('drops loose null/undefined/primitive entries', () => {
+    seedStorage([null, undefined, buildPreset({ id: 'survivor' }), 0, false, '']);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('survivor');
+    const reloaded = readBack();
+    expect(reloaded).toHaveLength(1);
+    expect(reloaded[0].id).toBe('survivor');
   });
 
-  // -----------------------------------------------------------------------
-  // -----------------------------------------------------------------------
-
-  it('preserves all preset fields through serialization', () => {
+  it('keeps every field of a fully populated preset', () => {
     const preset: EqualizerPreset = {
       id: 'user_full',
       name: 'Full Preset',
@@ -172,147 +166,154 @@ describe('playerStorage: equalizer preset I/O', () => {
     };
 
     playerStorage.writeEqualizerPresets([preset]);
-    const result = playerStorage.readEqualizerPresets();
+    const reloaded = readBack();
 
-    expect(result[0]).toEqual(preset);
+    expect(reloaded[0]).toEqual(preset);
   });
 
-  it('handles presets with unicode names', () => {
-    const preset = makePreset({ name: '低音增强 🎵 Ñ' });
+  it('survives unicode names', () => {
+    const preset = buildPreset({ name: '低音增强 🎵 Ñ' });
     playerStorage.writeEqualizerPresets([preset]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result[0].name).toBe('低音增强 🎵 Ñ');
+    const reloaded = readBack();
+    expect(reloaded[0].name).toBe('低音增强 🎵 Ñ');
   });
 
-  it('handles presets with empty string name', () => {
-    const preset = makePreset({ name: '' });
+  it('survives empty names', () => {
+    const preset = buildPreset({ name: '' });
     playerStorage.writeEqualizerPresets([preset]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result[0].name).toBe('');
+    const reloaded = readBack();
+    expect(reloaded[0].name).toBe('');
   });
 
-  it('handles extreme gain values', () => {
-    const preset = makePreset({
-      gains: [-12, -12, -12, -12, -12, 12, 12, 12, 12, 12],
-    });
+  it('survives extreme gain values', () => {
+    const extremeGains = [-12, -12, -12, -12, -12, 12, 12, 12, 12, 12];
+    const preset = buildPreset({ gains: extremeGains });
     playerStorage.writeEqualizerPresets([preset]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result[0].gains).toEqual([-12, -12, -12, -12, -12, 12, 12, 12, 12, 12]);
+    const reloaded = readBack();
+    expect(reloaded[0].gains).toEqual(extremeGains);
   });
 
-  it('handles zero preamp value', () => {
-    const preset = makePreset({ preamp: 0 });
+  it('survives a zero preamp', () => {
+    const preset = buildPreset({ preamp: 0 });
     playerStorage.writeEqualizerPresets([preset]);
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result[0].preamp).toBe(0);
+    const reloaded = readBack();
+    expect(reloaded[0].preamp).toBe(0);
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## no localStorage ##########################################################
 
-describe('playerStorage: equalizer preset I/O without localStorage', () => {
+describe('playerStorage — equalizer presets without a localStorage global', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('readEqualizerPresets returns empty array when localStorage is undefined', () => {
+  it('reading degrades to an empty list', () => {
     vi.stubGlobal('localStorage', undefined);
-    expect(playerStorage.readEqualizerPresets()).toEqual([]);
+    const reloaded = readBack();
+    expect(reloaded).toEqual([]);
   });
 
-  it('writeEqualizerPresets does not throw when localStorage is undefined', () => {
+  it('writing stays silent instead of throwing', () => {
     vi.stubGlobal('localStorage', undefined);
-    expect(() => {
-      playerStorage.writeEqualizerPresets([makePreset()]);
-    }).not.toThrow();
+    const attempt = () => {
+      playerStorage.writeEqualizerPresets([buildPreset()]);
+    };
+    expect(attempt).not.toThrowError();
   });
 });
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
+// ## malformed filtering ######################################################
 
-describe('P2 Fix: filters malformed equalizer presets', () => {
+describe('malformed equalizer presets are rejected during read', () => {
   beforeEach(() => {
-    vi.stubGlobal('localStorage', createLocalStorageMock());
+    vi.stubGlobal('localStorage', freshStorageMock());
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('filters presets missing required fields', () => {
-    const validPreset = makePreset();
-    const malformedData = [
-      { id: 'bad_missing_gains', name: 'Bad' },
-      { id: 'bad_missing_name', preamp: 0, gains: [0,0,0,0,0,0,0,0,0,0] },
-      { name: 'Bad', gains: [0,0,0,0,0,0,0,0,0,0] }, // missing id
-      validPreset,
-    ];
+  const flatZeroGains = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify(malformedData));
+  type MalformedScenario = { title: string; badEntries: unknown[] };
 
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toEqual([validPreset]);
-  });
+  const scenarios: MalformedScenario[] = [
+    {
+      title: 'entries missing required fields are dropped',
+      badEntries: [
+        { id: 'bad_missing_gains', name: 'Bad' },
+        { id: 'bad_missing_name', preamp: 0, gains: flatZeroGains },
+        { name: 'Bad', gains: flatZeroGains },
+      ],
+    },
+    {
+      title: 'entries with an invalid gains array are dropped',
+      badEntries: [
+        {
+          id: 'bad_gains_short', name: 'Bad', preamp: 0,
+          gains: [0, 0, 0], isBuiltin: false, createdAt: 1, updatedAt: 1,
+        },
+        {
+          id: 'bad_gains_type', name: 'Bad', preamp: 0,
+          gains: ['x', 'y', 'z', 'a', 'b', 'c', 'd', 'e', 'f', 'g'],
+          isBuiltin: false, createdAt: 1, updatedAt: 1,
+        },
+        {
+          id: 'bad_gains_nan', name: 'Bad', preamp: 0,
+          gains: [NaN, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          isBuiltin: false, createdAt: 1, updatedAt: 1,
+        },
+      ],
+    },
+    {
+      title: 'entries with non-finite numeric fields are dropped',
+      badEntries: [
+        {
+          id: 'bad_preamp', name: 'Bad', preamp: NaN, gains: flatZeroGains,
+          isBuiltin: false, createdAt: 1, updatedAt: 1,
+        },
+        {
+          id: 'bad_created', name: 'Bad', preamp: 0, gains: flatZeroGains,
+          isBuiltin: false, createdAt: NaN, updatedAt: 1,
+        },
+        {
+          id: 'bad_updated', name: 'Bad', preamp: 0, gains: flatZeroGains,
+          isBuiltin: false, createdAt: 1, updatedAt: NaN,
+        },
+      ],
+    },
+    {
+      title: 'entries with a non-boolean isBuiltin are dropped',
+      badEntries: [
+        {
+          id: 'bad_builtin', name: 'Bad', preamp: 0, gains: flatZeroGains,
+          isBuiltin: 'yes', createdAt: 1, updatedAt: 1,
+        },
+      ],
+    },
+    {
+      title: 'entries with an empty id are dropped',
+      badEntries: [
+        {
+          id: '', name: 'Bad', preamp: 0, gains: flatZeroGains,
+          isBuiltin: false, createdAt: 1, updatedAt: 1,
+        },
+      ],
+    },
+  ];
 
-  it('filters presets with invalid gains array', () => {
-    const validPreset = makePreset();
-    const malformedData = [
-      { id: 'bad_gains_short', name: 'Bad', preamp: 0, gains: [0,0,0], isBuiltin: false, createdAt: 1, updatedAt: 1 },
-      { id: 'bad_gains_type', name: 'Bad', preamp: 0, gains: ['x','y','z','a','b','c','d','e','f','g'], isBuiltin: false, createdAt: 1, updatedAt: 1 },
-      { id: 'bad_gains_nan', name: 'Bad', preamp: 0, gains: [NaN,0,0,0,0,0,0,0,0,0], isBuiltin: false, createdAt: 1, updatedAt: 1 },
-      validPreset,
-    ];
+  for (const scenario of scenarios) {
+    it(scenario.title, () => {
+      const validPreset = buildPreset();
+      seedStorage([...scenario.badEntries, validPreset]);
 
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify(malformedData));
-
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toEqual([validPreset]);
-  });
-
-  it('filters presets with invalid numeric fields', () => {
-    const validPreset = makePreset();
-    const malformedData = [
-      { id: 'bad_preamp', name: 'Bad', preamp: NaN, gains: [0,0,0,0,0,0,0,0,0,0], isBuiltin: false, createdAt: 1, updatedAt: 1 },
-      { id: 'bad_created', name: 'Bad', preamp: 0, gains: [0,0,0,0,0,0,0,0,0,0], isBuiltin: false, createdAt: NaN, updatedAt: 1 },
-      { id: 'bad_updated', name: 'Bad', preamp: 0, gains: [0,0,0,0,0,0,0,0,0,0], isBuiltin: false, createdAt: 1, updatedAt: NaN },
-      validPreset,
-    ];
-
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify(malformedData));
-
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toEqual([validPreset]);
-  });
-
-  it('filters presets with invalid boolean field', () => {
-    const validPreset = makePreset();
-    const malformedData = [
-      { id: 'bad_builtin', name: 'Bad', preamp: 0, gains: [0,0,0,0,0,0,0,0,0,0], isBuiltin: 'yes', createdAt: 1, updatedAt: 1 },
-      validPreset,
-    ];
-
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify(malformedData));
-
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toEqual([validPreset]);
-  });
-
-  it('filters presets with empty id', () => {
-    const validPreset = makePreset();
-    const malformedData = [
-      { id: '', name: 'Bad', preamp: 0, gains: [0,0,0,0,0,0,0,0,0,0], isBuiltin: false, createdAt: 1, updatedAt: 1 },
-      validPreset,
-    ];
-
-    localStorage.setItem(playerStorageKeys.equalizerPresets, JSON.stringify(malformedData));
-
-    const result = playerStorage.readEqualizerPresets();
-    expect(result).toEqual([validPreset]);
-  });
+      const reloaded = readBack();
+      expect(reloaded).toEqual([validPreset]);
+    });
+  }
 });

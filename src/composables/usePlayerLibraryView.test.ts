@@ -14,7 +14,8 @@ vi.mock('../services/tauri/invoke', () => ({
   tauriInvoke: (...args: unknown[]) => tauriInvokeMock(...args),
 }));
 
-const makeSong = (overrides: Partial<Song> = {}): Song => ({
+// 标准歌曲构造器：与后端返回的 Song 形状保持一致。
+const buildSong = (overrides: Partial<Song> = {}): Song => ({
   path: '/music/demo.flac',
   name: 'demo.flac',
   title: 'Demo',
@@ -31,594 +32,570 @@ const makeSong = (overrides: Partial<Song> = {}): Song => ({
   ...overrides,
 });
 
-const normalizeArtistNames = (song: Song) =>
-  song.effective_artist_names.length > 0
-    ? song.effective_artist_names
-    : song.artist_names.length > 0
-      ? song.artist_names
-      : [song.artist];
-
-const resolveAlbumKey = (song: Song) =>
-  song.album_key || `${song.album || 'Unknown'}::${song.album_artist || song.artist || 'Unknown'}`;
-
-const songMatchesQuery = (song: Song, query: string) => {
-  const loweredQuery = query.trim().toLowerCase();
-  if (!loweredQuery) {
-    return true;
-  }
-
-  return song.name.toLowerCase().includes(loweredQuery)
-    || song.title?.toLowerCase().includes(loweredQuery)
-    || song.artist.toLowerCase().includes(loweredQuery)
-    || song.album.toLowerCase().includes(loweredQuery)
-    || song.album_artist.toLowerCase().includes(loweredQuery)
-    || normalizeArtistNames(song).some(name => name.toLowerCase().includes(loweredQuery));
+// 依次取有效艺人名列表，逐级回退到原始字段。
+const pickArtistNames = (song: Song): string[] => {
+  if (song.effective_artist_names.length > 0) return song.effective_artist_names;
+  if (song.artist_names.length > 0) return song.artist_names;
+  return [song.artist];
 };
 
-const sortSongs = (songs: Song[], mode: string) => {
-  const sorted = [...songs];
-
-  if (mode === 'title') {
-    sorted.sort((left, right) => (left.title || left.name).localeCompare(right.title || right.name, 'zh-CN'));
-  } else if (mode === 'artist') {
-    sorted.sort((left, right) => left.artist.localeCompare(right.artist, 'zh-CN'));
-  } else if (mode === 'added_at') {
-    sorted.sort((left, right) => (right.added_at || 0) - (left.added_at || 0));
-  } else if (mode === 'added_at_asc') {
-    sorted.sort((left, right) => (left.added_at || 0) - (right.added_at || 0));
-  } else if (mode === 'file_modified_at') {
-    sorted.sort((left, right) => (right.file_modified_at || 0) - (left.file_modified_at || 0));
-  } else if (mode === 'file_modified_at_asc') {
-    sorted.sort((left, right) => (left.file_modified_at || 0) - (right.file_modified_at || 0));
-  }
-
-  return sorted;
+// 专辑聚合键：优先使用预计算值，缺失时按"专辑::艺人"拼出。
+const albumKeyOf = (song: Song): string => {
+  if (song.album_key) return song.album_key;
+  const albumPart = song.album || 'Unknown';
+  const artistPart = song.album_artist || song.artist || 'Unknown';
+  return `${albumPart}::${artistPart}`;
 };
 
-const isDirectParent = (parentPath: string, childPath: string) => {
-  const normalizedParent = parentPath.replace(/\\/g, '/').replace(/\/$/, '');
-  const normalizedChild = childPath.replace(/\\/g, '/');
-  const lastSlash = normalizedChild.lastIndexOf('/');
-
-  return lastSlash !== -1 && normalizedChild.substring(0, lastSlash) === normalizedParent;
+// 粗略复刻视图层的搜索匹配规则：命中任一文本字段即视为匹配。
+const matchesSearchText = (song: Song, query: string) => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const fields = [song.name, song.title, song.artist, song.album, song.album_artist, ...pickArtistNames(song)];
+  return fields.some(field => field?.toLowerCase().includes(needle));
 };
 
-const flushPromises = () => new Promise(resolve => setTimeout(resolve, 0));
+// 标题排序比较器（zh-CN 语序）。
+const byTitle = (a: Song, b: Song) =>
+  (a.title || a.name).localeCompare(b.title || b.name, 'zh-CN');
+
+// 各排序模式对应的比较器；未登记的模式保持原顺序。
+const SORT_COMPARATORS: Record<string, (a: Song, b: Song) => number> = {
+  title: byTitle,
+  artist: (a, b) => a.artist.localeCompare(b.artist, 'zh-CN'),
+  added_at: (a, b) => (b.added_at || 0) - (a.added_at || 0),
+  added_at_asc: (a, b) => (a.added_at || 0) - (b.added_at || 0),
+  file_modified_at: (a, b) => (b.file_modified_at || 0) - (a.file_modified_at || 0),
+  file_modified_at_asc: (a, b) => (a.file_modified_at || 0) - (b.file_modified_at || 0),
+};
+
+const applySortMode = (songs: Song[], mode: string) => {
+  const comparator = SORT_COMPARATORS[mode];
+  return comparator ? [...songs].sort(comparator) : [...songs];
+};
+
+// 判断 child 是否为 parent 文件夹的直接子项（统一分隔符后比较）。
+const isImmediateChildOf = (parentPath: string, childPath: string) => {
+  const parent = parentPath.replace(/\\/g, '/').replace(/\/$/, '');
+  const child = childPath.replace(/\\/g, '/');
+  const cut = child.lastIndexOf('/');
+  return cut > -1 && child.slice(0, cut) === parent;
+};
+
+const indexByPath = (songs: Song[]) => new Map(songs.map(item => [item.path, item] as const));
+
+// 等待一轮微任务/宏任务，让视图层的异步加载落地。
+const settleTasks = () => new Promise(resolve => setTimeout(resolve, 0));
+
+const readFavoritePaths = (payload?: Record<string, unknown>) =>
+  new Set((payload?.favoritePaths as string[] | undefined) ?? []);
+
+const pickByArtist = (songs: Song[], artistName: string) =>
+  songs.filter(item => pickArtistNames(item).includes(artistName)).sort(byTitle);
+
+interface InvokeContext {
+  songs: Song[];
+  lookup: Map<string, Song>;
+}
+
+type CommandHandler = (ctx: InvokeContext, payload?: Record<string, unknown>) => unknown;
+
+// 常规命令的本地模拟实现：语义对齐后端查询接口。
+const COMMAND_HANDLERS: Record<string, CommandHandler> = {
+  get_library_song_paths_for_all_view: ({ songs }, payload) => {
+    const query = String(payload?.query ?? '').trim().toLowerCase();
+    const artistFilter = String(payload?.artistFilter ?? '');
+    const albumFilter = String(payload?.albumFilter ?? '');
+    const sortMode = String(payload?.sortMode ?? 'title');
+    let matched = songs.filter(item => matchesSearchText(item, query));
+    if (artistFilter) {
+      matched = matched.filter(item => pickArtistNames(item).includes(artistFilter));
+    }
+    if (albumFilter) {
+      matched = matched.filter(item => albumKeyOf(item) === albumFilter);
+    }
+    return applySortMode(matched, sortMode).map(item => item.path);
+  },
+
+  get_library_song_paths_by_artist: ({ songs }, payload) =>
+    pickByArtist(songs, String(payload?.artistName ?? '')).map(item => item.path),
+
+  get_library_song_paths_by_album: ({ songs }, payload) =>
+    songs
+      .filter(item => albumKeyOf(item) === String(payload?.albumKey ?? ''))
+      .sort(byTitle)
+      .map(item => item.path),
+
+  get_favorite_artist_catalog: ({ songs }, payload) => {
+    const favorites = readFavoritePaths(payload);
+    const tally = new Map<string, { count: number; firstSongPath: string }>();
+    songs
+      .filter(item => favorites.has(item.path))
+      .forEach(item => {
+        pickArtistNames(item).forEach(name => {
+          const entry = tally.get(name) ?? { count: 0, firstSongPath: item.path };
+          entry.count += 1;
+          tally.set(name, entry);
+        });
+      });
+    return Array.from(tally.entries()).map(([name, value]) => ({ ...value, name }));
+  },
+
+  get_favorite_album_catalog: ({ songs }, payload) => {
+    const favorites = readFavoritePaths(payload);
+    const albums = new Map<string, { key: string; name: string; count: number; artist: string; firstSongPath: string }>();
+    songs
+      .filter(item => favorites.has(item.path))
+      .forEach(item => {
+        const key = albumKeyOf(item);
+        const entry = albums.get(key) ?? {
+          key,
+          name: item.album,
+          count: 0,
+          artist: item.album_artist || item.artist,
+          firstSongPath: item.path,
+        };
+        entry.count += 1;
+        albums.set(key, entry);
+      });
+    return Array.from(albums.values());
+  },
+
+  get_favorite_song_paths_view: ({ songs }, payload) => {
+    const favorites = readFavoritePaths(payload);
+    const query = String(payload?.query ?? '').trim().toLowerCase();
+    const sortMode = String(payload?.sortMode ?? 'title');
+    const detailType = payload?.detailFilterType as 'artist' | 'album' | undefined;
+    const detailValue = payload?.detailFilterValue as string | undefined;
+    let matched = songs.filter(item => favorites.has(item.path) && matchesSearchText(item, query));
+    if (detailType === 'artist' && detailValue) {
+      matched = matched.filter(item => pickArtistNames(item).includes(detailValue));
+    }
+    if (detailType === 'album' && detailValue) {
+      matched = matched.filter(item => albumKeyOf(item) === detailValue);
+    }
+    return applySortMode(matched, sortMode).map(item => item.path);
+  },
+
+  get_recent_song_paths_view: ({ lookup }, payload) => {
+    const entries = (payload?.recentEntries as { songPath: string; playedAt: number }[] | undefined) ?? [];
+    const query = String(payload?.query ?? '').trim().toLowerCase();
+    const sortMode = String(payload?.sortMode ?? 'title');
+    const matched = Array.from(new Set(entries.map(item => item.songPath)))
+      .map(path => lookup.get(path))
+      .filter((item): item is Song => !!item)
+      .filter(item => matchesSearchText(item, query));
+    return applySortMode(matched, sortMode).map(item => item.path);
+  },
+
+  get_library_song_paths_for_folder_view: ({ songs, lookup }, payload) => {
+    const folderPath = String(payload?.folderPath ?? '');
+    const query = String(payload?.query ?? '').trim().toLowerCase();
+    const sortMode = String(payload?.sortMode ?? 'title');
+    const matched = songs
+      .filter(item => isImmediateChildOf(folderPath, item.path))
+      .filter(item => matchesSearchText(item, query));
+    if (sortMode === 'track_number') {
+      return [...matched]
+        .sort((left, right) => compareSongPathsByTrackNumber(left.path, right.path, lookup))
+        .map(item => item.path);
+    }
+    return applySortMode(matched, sortMode === 'name' ? 'title' : sortMode).map(item => item.path);
+  },
+};
+
+// "all 视图缓存过期"场景专用：部分命令走特殊逻辑，其余回落到共享实现。
+interface StaleInvokeContext extends InvokeContext {
+  stalePaths: string[];
+}
+
+type StaleCommandHandler = (ctx: StaleInvokeContext, payload?: Record<string, unknown>) => unknown;
+
+const STALE_VIEW_HANDLERS: Record<string, StaleCommandHandler> = {
+  get_library_song_paths_for_all_view: ({ stalePaths }) => stalePaths,
+
+  get_favorite_song_paths_view: ({ songs }, payload) => {
+    const favorites = readFavoritePaths(payload);
+    return songs.filter(item => favorites.has(item.path)).map(item => item.path);
+  },
+
+  get_recent_song_paths_view: ({ lookup }, payload) => {
+    const entries = (payload?.recentEntries as { songPath: string; playedAt: number }[] | undefined) ?? [];
+    return entries
+      .map(item => lookup.get(item.songPath))
+      .filter((item): item is Song => !!item)
+      .map(item => item.path);
+  },
+};
+
+const defaultInvoke = async (command: string, payload?: Record<string, unknown>) => {
+  const songs = useLibraryStore().canonicalSongs;
+  const ctx: InvokeContext = { songs, lookup: indexByPath(songs) };
+  const handler = COMMAND_HANDLERS[command];
+  return handler ? handler(ctx, payload) : [];
+};
 
 describe('player library view', () => {
   beforeEach(() => {
-    tauriInvokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
-      const libraryStore = useLibraryStore();
-      const songs = libraryStore.canonicalSongs;
-      const songLookup = new Map(songs.map(song => [song.path, song] as const));
-
-      if (command === 'get_library_song_paths_for_all_view') {
-        const query = String(payload?.query ?? '').trim().toLowerCase();
-        const artistFilter = String(payload?.artistFilter ?? '');
-        const albumFilter = String(payload?.albumFilter ?? '');
-        const sortMode = String(payload?.sortMode ?? 'title');
-        let filtered = songs.filter(song => songMatchesQuery(song, query));
-
-        if (artistFilter) {
-          filtered = filtered.filter(song => normalizeArtistNames(song).includes(artistFilter));
-        }
-
-        if (albumFilter) {
-          filtered = filtered.filter(song => resolveAlbumKey(song) === albumFilter);
-        }
-
-        return sortSongs(filtered, sortMode).map(song => song.path);
-      }
-
-      if (command === 'get_library_song_paths_by_artist') {
-        const artistName = String(payload?.artistName ?? '');
-        return songs
-          .filter(song => normalizeArtistNames(song).includes(artistName))
-          .sort((left, right) => (left.title || left.name).localeCompare(right.title || right.name, 'zh-CN'))
-          .map(song => song.path);
-      }
-
-      if (command === 'get_library_song_paths_by_album') {
-        const albumKey = String(payload?.albumKey ?? '');
-        return songs
-          .filter(song => resolveAlbumKey(song) === albumKey)
-          .sort((left, right) => (left.title || left.name).localeCompare(right.title || right.name, 'zh-CN'))
-          .map(song => song.path);
-      }
-
-      if (command === 'get_favorite_artist_catalog') {
-        const favoritePaths = new Set((payload?.favoritePaths as string[] | undefined) ?? []);
-        const map = new Map<string, { count: number; firstSongPath: string }>();
-
-        songs.filter(song => favoritePaths.has(song.path)).forEach(song => {
-          normalizeArtistNames(song).forEach(name => {
-            const entry = map.get(name) ?? { count: 0, firstSongPath: song.path };
-            entry.count += 1;
-            map.set(name, entry);
-          });
-        });
-
-        return Array.from(map.entries()).map(([name, value]) => ({
-          name,
-          count: value.count,
-          firstSongPath: value.firstSongPath,
-        }));
-      }
-
-      if (command === 'get_favorite_album_catalog') {
-        const favoritePaths = new Set((payload?.favoritePaths as string[] | undefined) ?? []);
-        const map = new Map<string, { key: string; name: string; count: number; artist: string; firstSongPath: string }>();
-
-        songs.filter(song => favoritePaths.has(song.path)).forEach(song => {
-          const key = resolveAlbumKey(song);
-          const entry = map.get(key) ?? {
-            key,
-            name: song.album,
-            count: 0,
-            artist: song.album_artist || song.artist,
-            firstSongPath: song.path,
-          };
-          entry.count += 1;
-          map.set(key, entry);
-        });
-
-        return Array.from(map.values());
-      }
-
-      if (command === 'get_favorite_song_paths_view') {
-        const favoritePaths = new Set((payload?.favoritePaths as string[] | undefined) ?? []);
-        const query = String(payload?.query ?? '').trim().toLowerCase();
-        const sortMode = String(payload?.sortMode ?? 'title');
-        const detailFilterType = payload?.detailFilterType as 'artist' | 'album' | undefined;
-        const detailFilterValue = payload?.detailFilterValue as string | undefined;
-        let filtered = songs.filter(song => favoritePaths.has(song.path) && songMatchesQuery(song, query));
-
-        if (detailFilterType === 'artist' && detailFilterValue) {
-          filtered = filtered.filter(song => normalizeArtistNames(song).includes(detailFilterValue));
-        }
-
-        if (detailFilterType === 'album' && detailFilterValue) {
-          filtered = filtered.filter(song => resolveAlbumKey(song) === detailFilterValue);
-        }
-
-        return sortSongs(filtered, sortMode).map(song => song.path);
-      }
-
-      if (command === 'get_recent_song_paths_view') {
-        const recentEntries = (payload?.recentEntries as { songPath: string; playedAt: number }[] | undefined) ?? [];
-        const query = String(payload?.query ?? '').trim().toLowerCase();
-        const sortMode = String(payload?.sortMode ?? 'title');
-        const uniquePaths = Array.from(new Set(recentEntries.map(item => item.songPath)));
-        const filtered = uniquePaths
-          .map(path => songLookup.get(path))
-          .filter((song): song is Song => !!song)
-          .filter(song => songMatchesQuery(song, query));
-
-        return sortSongs(filtered, sortMode).map(song => song.path);
-      }
-
-      if (command === 'get_library_song_paths_for_folder_view') {
-        const folderPath = String(payload?.folderPath ?? '');
-        const query = String(payload?.query ?? '').trim().toLowerCase();
-        const sortMode = String(payload?.sortMode ?? 'title');
-        const filtered = songs
-          .filter(song => isDirectParent(folderPath, song.path))
-          .filter(song => songMatchesQuery(song, query));
-
-        if (sortMode === 'track_number') {
-          const sorted = [...filtered];
-          sorted.sort((left, right) => compareSongPathsByTrackNumber(left.path, right.path, songLookup));
-          return sorted.map(song => song.path);
-        }
-
-        return sortSongs(filtered, sortMode === 'name' ? 'title' : sortMode).map(song => song.path);
-      }
-
-      if (command === 'get_recent_album_catalog' || command === 'get_recent_playlist_catalog') {
-        return [];
-      }
-
-      return [];
-    });
+    tauriInvokeMock.mockImplementation(defaultInvoke);
 
     setActivePinia(createPinia());
-    const libraryStore = useLibraryStore();
-    const collectionsStore = useCollectionsStore();
-    libraryStore.artistSortMode = 'count';
-    libraryStore.albumSortMode = 'artist';
-    libraryStore.artistCustomOrder = [];
-    libraryStore.albumCustomOrder = [];
-    libraryStore.folderSortMode = 'title';
-    libraryStore.folderCustomOrder = {};
-    libraryStore.localSortMode = 'title';
-    libraryStore.localCustomOrder = [];
-    collectionsStore.playlistSortMode = 'custom';
+    Object.assign(useLibraryStore(), {
+      artistSortMode: 'count',
+      albumSortMode: 'artist',
+      artistCustomOrder: [],
+      albumCustomOrder: [],
+      folderSortMode: 'title',
+      folderCustomOrder: {},
+      localSortMode: 'title',
+      localCustomOrder: [],
+    });
+    useCollectionsStore().playlistSortMode = 'custom';
   });
 
-  it('filters folder songs to direct children and keeps custom folder order', async () => {
-    const libraryStore = useLibraryStore();
-    const navigationStore = useNavigationStore();
-    const firstSong = makeSong({ path: '/music/root/alpha.flac', title: 'Alpha', artist: 'A' });
-    const secondSong = makeSong({ path: '/music/root/beta.flac', title: 'Beta', artist: 'B' });
-    const nestedSong = makeSong({ path: '/music/root/live/gamma.flac', title: 'Gamma', artist: 'C' });
+  // 每个用例以标题为键登记，统一循环注册，保证与逐个 it 声明等价。
+  const cases: Record<string, () => Promise<void>> = {
+    'filters folder songs to direct children and keeps custom folder order': async () => {
+      const library = useLibraryStore();
+      const nav = useNavigationStore();
+      const trackA = buildSong({ path: '/music/root/alpha.flac', title: 'Alpha', artist: 'A' });
+      const trackB = buildSong({ path: '/music/root/beta.flac', title: 'Beta', artist: 'B' });
+      const nestedTrack = buildSong({ path: '/music/root/live/gamma.flac', title: 'Gamma', artist: 'C' });
 
-    libraryStore.songList = [firstSong, secondSong, nestedSong];
-    navigationStore.currentViewMode = 'folder';
-    navigationStore.currentFolderFilter = '/music/root';
-    libraryStore.folderSortMode = 'custom';
-    libraryStore.folderCustomOrder = {
-      '/music/root': [secondSong.path, firstSong.path],
-    };
+      library.songList = [trackA, trackB, nestedTrack];
+      nav.currentViewMode = 'folder';
+      nav.currentFolderFilter = '/music/root';
+      library.folderSortMode = 'custom';
+      library.folderCustomOrder = {
+        '/music/root': [trackB.path, trackA.path],
+      };
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
+      const view = usePlayerLibraryView();
+      await settleTasks();
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      secondSong.path,
-      firstSong.path,
-    ]);
-  });
+      expect(view.displaySongList.value.map(item => item.path)).toEqual([
+        trackB.path,
+        trackA.path,
+      ]);
+    },
 
-  it('lists favorite songs on the songs tab and keeps collection tabs song-free', async () => {
-    const libraryStore = useLibraryStore();
-    const collectionsStore = useCollectionsStore();
-    const navigationStore = useNavigationStore();
-    const zebra = makeSong({
-      path: '/music/zebra.flac',
-      title: 'Zebra',
-      name: 'zebra.flac',
-      artist: 'Target Artist',
-      artist_names: ['Target Artist'],
-      effective_artist_names: ['Target Artist'],
-      added_at: 2,
-    });
-    const alpha = makeSong({
-      path: '/music/alpha.flac',
-      title: 'Alpha',
-      name: 'alpha.flac',
-      artist: 'Target Artist',
-      artist_names: ['Target Artist'],
-      effective_artist_names: ['Target Artist'],
-      added_at: 3,
-    });
-    const outsider = makeSong({
-      path: '/music/other.flac',
-      title: 'Other',
-      artist: 'Other Artist',
-      artist_names: ['Other Artist'],
-      effective_artist_names: ['Other Artist'],
-      added_at: 1,
-    });
+    'lists favorite songs on the songs tab and keeps collection tabs song-free': async () => {
+      const library = useLibraryStore();
+      const collections = useCollectionsStore();
+      const nav = useNavigationStore();
+      const zebraTrack = buildSong({
+        path: '/music/zebra.flac',
+        title: 'Zebra',
+        name: 'zebra.flac',
+        artist: 'Target Artist',
+        artist_names: ['Target Artist'],
+        effective_artist_names: ['Target Artist'],
+        added_at: 2,
+      });
+      const alphaTrack = buildSong({
+        path: '/music/alpha.flac',
+        title: 'Alpha',
+        name: 'alpha.flac',
+        artist: 'Target Artist',
+        artist_names: ['Target Artist'],
+        effective_artist_names: ['Target Artist'],
+        added_at: 3,
+      });
+      const outsiderTrack = buildSong({
+        path: '/music/other.flac',
+        title: 'Other',
+        artist: 'Other Artist',
+        artist_names: ['Other Artist'],
+        effective_artist_names: ['Other Artist'],
+        added_at: 1,
+      });
 
-    libraryStore.librarySongs = [zebra, alpha, outsider];
-    collectionsStore.favoritePaths = [zebra.path, alpha.path, outsider.path];
-    navigationStore.currentViewMode = 'favorites';
-    navigationStore.favTab = 'songs';
-    libraryStore.localSortMode = 'title';
+      library.librarySongs = [zebraTrack, alphaTrack, outsiderTrack];
+      collections.favoritePaths = [zebraTrack.path, alphaTrack.path, outsiderTrack.path];
+      nav.currentViewMode = 'favorites';
+      nav.favTab = 'songs';
+      library.localSortMode = 'title';
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
+      const view = usePlayerLibraryView();
+      await settleTasks();
 
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha', 'Other', 'Zebra']);
+      expect(view.displaySongList.value.map(item => item.title)).toEqual(['Alpha', 'Other', 'Zebra']);
 
-    navigationStore.favTab = 'playlists';
-    await flushPromises();
-    expect(displaySongList.value).toEqual([]);
+      nav.favTab = 'playlists';
+      await settleTasks();
+      expect(view.displaySongList.value).toEqual([]);
 
-    navigationStore.favTab = 'albums';
-    await flushPromises();
-    expect(displaySongList.value).toEqual([]);
-  });
+      nav.favTab = 'albums';
+      await settleTasks();
+      expect(view.displaySongList.value).toEqual([]);
+    },
 
-  it('resolves recent songs from path-backed history entries', async () => {
-    const libraryStore = useLibraryStore();
-    const collectionsStore = useCollectionsStore();
-    const navigationStore = useNavigationStore();
-    const alpha = makeSong({ path: '/music/alpha.flac', title: 'Alpha', added_at: 3 });
-    const beta = makeSong({ path: '/music/beta.flac', title: 'Beta', added_at: 2 });
+    'resolves recent songs from path-backed history entries': async () => {
+      const library = useLibraryStore();
+      const collections = useCollectionsStore();
+      const nav = useNavigationStore();
+      const trackOne = buildSong({ path: '/music/alpha.flac', title: 'Alpha', added_at: 3 });
+      const trackTwo = buildSong({ path: '/music/beta.flac', title: 'Beta', added_at: 2 });
 
-    libraryStore.librarySongs = [alpha, beta];
-    collectionsStore.recentSongs = [
-      { path: beta.path, playedAt: 2 },
-      { path: '/music/missing.flac', playedAt: 3 },
-      { path: alpha.path, playedAt: 1 },
-    ];
-    navigationStore.currentViewMode = 'recent';
-    libraryStore.localSortMode = 'title';
+      library.librarySongs = [trackOne, trackTwo];
+      collections.recentSongs = [
+        { path: trackTwo.path, playedAt: 2 },
+        { path: '/music/missing.flac', playedAt: 3 },
+        { path: trackOne.path, playedAt: 1 },
+      ];
+      nav.currentViewMode = 'recent';
+      library.localSortMode = 'title';
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
+      const view = usePlayerLibraryView();
+      await settleTasks();
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      alpha.path,
-      beta.path,
-    ]);
-  });
+      expect(view.displaySongList.value.map(item => item.path)).toEqual([
+        trackOne.path,
+        trackTwo.path,
+      ]);
+    },
 
-  it('sorts local music by file modified time in both directions', async () => {
-    const libraryStore = useLibraryStore();
-    const navigationStore = useNavigationStore();
-    const oldSong = makeSong({
-      path: '/music/old.flac',
-      title: 'Old',
-      file_modified_at: 10,
-    });
-    const newSong = makeSong({
-      path: '/music/new.flac',
-      title: 'New',
-      file_modified_at: 20,
-    });
+    'sorts local music by file modified time in both directions': async () => {
+      const library = useLibraryStore();
+      const nav = useNavigationStore();
+      const olderTrack = buildSong({
+        path: '/music/old.flac',
+        title: 'Old',
+        file_modified_at: 10,
+      });
+      const newerTrack = buildSong({
+        path: '/music/new.flac',
+        title: 'New',
+        file_modified_at: 20,
+      });
 
-    libraryStore.librarySongs = [oldSong, newSong];
-    navigationStore.currentViewMode = 'all';
-    libraryStore.localSortMode = 'file_modified_at';
+      library.librarySongs = [olderTrack, newerTrack];
+      nav.currentViewMode = 'all';
+      library.localSortMode = 'file_modified_at';
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
+      const view = usePlayerLibraryView();
+      await settleTasks();
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      newSong.path,
-      oldSong.path,
-    ]);
+      expect(view.displaySongList.value.map(item => item.path)).toEqual([
+        newerTrack.path,
+        olderTrack.path,
+      ]);
 
-    libraryStore.localSortMode = 'file_modified_at_asc';
-    await flushPromises();
+      library.localSortMode = 'file_modified_at_asc';
+      await settleTasks();
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      oldSong.path,
-      newSong.path,
-    ]);
-  });
+      expect(view.displaySongList.value.map(item => item.path)).toEqual([
+        olderTrack.path,
+        newerTrack.path,
+      ]);
+    },
 
-  it('updates local music immediately after deletion even when the cached all-view paths stay stale', async () => {
-    const libraryStore = useLibraryStore();
-    const navigationStore = useNavigationStore();
-    const alpha = makeSong({ path: '/music/alpha.flac', title: 'Alpha' });
-    const beta = makeSong({ path: '/music/beta.flac', title: 'Beta' });
-    const staleAllViewPaths = [alpha.path, beta.path];
+    'updates local music immediately after deletion even when the cached all-view paths stay stale': async () => {
+      const library = useLibraryStore();
+      const nav = useNavigationStore();
+      const alpha = buildSong({ path: '/music/alpha.flac', title: 'Alpha' });
+      const beta = buildSong({ path: '/music/beta.flac', title: 'Beta' });
+      const stalePaths = [alpha.path, beta.path];
 
-    tauriInvokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
-      const songs = libraryStore.canonicalSongs;
-      const songLookup = new Map(songs.map(song => [song.path, song] as const));
+      tauriInvokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+        const songs = library.canonicalSongs;
+        const ctx: StaleInvokeContext = { songs, lookup: indexByPath(songs), stalePaths };
+        const override = STALE_VIEW_HANDLERS[command];
+        if (override) {
+          return override(ctx, payload);
+        }
+        const shared = COMMAND_HANDLERS[command];
+        return shared ? shared(ctx, payload) : [];
+      });
 
-      if (command === 'get_library_song_paths_for_all_view') {
-        return staleAllViewPaths;
+      library.librarySongs = [alpha, beta];
+      nav.currentViewMode = 'all';
+      library.localSortMode = 'title';
+
+      const view = usePlayerLibraryView();
+      await settleTasks();
+
+      expect(view.displaySongList.value.map(item => item.path)).toEqual([
+        alpha.path,
+        beta.path,
+      ]);
+
+      library.librarySongs = [alpha];
+      await settleTasks();
+
+      expect(view.displaySongList.value.map(item => item.path)).toEqual([
+        alpha.path,
+      ]);
+    },
+
+    'applies album detail sorting rules including track order': async () => {
+      const library = useLibraryStore();
+      const nav = useNavigationStore();
+      const discTwo = buildSong({
+        path: '/music/album/disc-two.flac',
+        title: 'Disc Two',
+        album: 'Detail Album',
+        album_key: 'detail-album::artist',
+        added_at: 10,
+        disc_number: '2',
+        track_number: '1',
+      });
+      const firstTrack = buildSong({
+        path: '/music/album/first-track.flac',
+        title: 'First Track',
+        album: 'Detail Album',
+        album_key: 'detail-album::artist',
+        added_at: 20,
+        disc_number: '1',
+        track_number: '1/10',
+      });
+      const secondTrack = buildSong({
+        path: '/music/album/second-track.flac',
+        title: 'Second Track',
+        album: 'Detail Album',
+        album_key: 'detail-album::artist',
+        added_at: 30,
+        disc_number: '1',
+        track_number: '2',
+      });
+
+      library.librarySongs = [discTwo, secondTrack, firstTrack];
+      nav.currentViewMode = 'album';
+      nav.filterCondition = 'detail-album::artist';
+
+      const view = usePlayerLibraryView();
+      await settleTasks();
+
+      const expectOrder = (expected: string[]) => {
+        expect(view.displaySongList.value.map(item => item.path)).toEqual(expected);
+      };
+
+      expectOrder([firstTrack.path, secondTrack.path, discTwo.path]);
+
+      // 依次切换专辑详情排序模式并核对结果顺序。
+      const modeSequence: Array<[string, string[]]> = [
+        ['track_number_desc', [discTwo.path, secondTrack.path, firstTrack.path]],
+        ['added_at', [secondTrack.path, firstTrack.path, discTwo.path]],
+        ['added_at_asc', [discTwo.path, firstTrack.path, secondTrack.path]],
+      ];
+      for (const [mode, expected] of modeSequence) {
+        library.albumDetailSortMode = mode;
+        await settleTasks();
+        expectOrder(expected);
       }
+    },
 
-      if (command === 'get_library_song_paths_by_artist') {
-        const artistName = String(payload?.artistName ?? '');
-        return songs
-          .filter(song => normalizeArtistNames(song).includes(artistName))
-          .sort((left, right) => (left.title || left.name).localeCompare(right.title || right.name, 'zh-CN'))
-          .map(song => song.path);
-      }
+    'applies folder view sorting rules including track order': async () => {
+      const library = useLibraryStore();
+      const nav = useNavigationStore();
+      const discTwo = buildSong({
+        path: '/music/folder/disc-two.flac',
+        title: 'Disc Two',
+        added_at: 10,
+        disc_number: '2',
+        track_number: '1',
+      });
+      const firstTrack = buildSong({
+        path: '/music/folder/first-track.flac',
+        title: 'First Track',
+        added_at: 20,
+        disc_number: '1',
+        track_number: '1/10',
+      });
+      const secondTrack = buildSong({
+        path: '/music/folder/second-track.flac',
+        title: 'Second Track',
+        added_at: 30,
+        disc_number: '1',
+        track_number: '2',
+      });
 
-      if (command === 'get_library_song_paths_by_album') {
-        const albumKey = String(payload?.albumKey ?? '');
-        return songs
-          .filter(song => resolveAlbumKey(song) === albumKey)
-          .sort((left, right) => (left.title || left.name).localeCompare(right.title || right.name, 'zh-CN'))
-          .map(song => song.path);
-      }
+      library.librarySongs = [discTwo, secondTrack, firstTrack];
+      nav.currentViewMode = 'folder';
+      nav.currentFolderFilter = '/music/folder';
+      library.folderSortMode = 'track_number';
 
-      if (command === 'get_favorite_song_paths_view') {
-        const favoritePaths = new Set((payload?.favoritePaths as string[] | undefined) ?? []);
-        return songs.filter(song => favoritePaths.has(song.path)).map(song => song.path);
-      }
+      const view = usePlayerLibraryView();
+      await settleTasks();
 
-      if (command === 'get_recent_song_paths_view') {
-        const recentEntries = (payload?.recentEntries as { songPath: string; playedAt: number }[] | undefined) ?? [];
-        return recentEntries
-          .map(item => songLookup.get(item.songPath))
-          .filter((song): song is Song => !!song)
-          .map(song => song.path);
-      }
+      expect(view.displaySongList.value.map(item => item.path)).toEqual([
+        firstTrack.path,
+        secondTrack.path,
+        discTwo.path,
+      ]);
+    },
 
-      return [];
-    });
+    'applies playlist view sorting rules': async () => {
+      const library = useLibraryStore();
+      const collections = useCollectionsStore();
+      const nav = useNavigationStore();
 
-    libraryStore.librarySongs = [alpha, beta];
-    navigationStore.currentViewMode = 'all';
-    libraryStore.localSortMode = 'title';
+      const alpha = buildSong({ path: '/music/alpha.flac', title: 'Alpha', added_at: 20 });
+      const beta = buildSong({ path: '/music/beta.flac', title: 'Beta', added_at: 10 });
+      const gamma = buildSong({ path: '/music/gamma.flac', title: 'Gamma', added_at: 30 });
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
+      library.librarySongs = [alpha, beta, gamma];
+      collections.playlists = [
+        {
+          id: 'test-playlist-1',
+          name: 'Test Playlist',
+          songPaths: [gamma.path, alpha.path, beta.path],
+        }
+      ];
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      alpha.path,
-      beta.path,
-    ]);
+      nav.currentViewMode = 'playlist';
+      nav.filterCondition = 'test-playlist-1';
 
-    libraryStore.librarySongs = [alpha];
-    await flushPromises();
+      const view = usePlayerLibraryView();
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      alpha.path,
-    ]);
-  });
+      const expectOrderUnder = async (mode: string, expected: string[]) => {
+        collections.playlistSortMode = mode;
+        await settleTasks();
+        expect(view.displaySongList.value.map(item => item.title)).toEqual(expected);
+      };
 
-  it('applies album detail sorting rules including track order', async () => {
-    const libraryStore = useLibraryStore();
-    const navigationStore = useNavigationStore();
-    const discTwoSong = makeSong({
-      path: '/music/album/disc-two.flac',
-      title: 'Disc Two',
-      album: 'Detail Album',
-      album_key: 'detail-album::artist',
-      added_at: 10,
-      disc_number: '2',
-      track_number: '1',
-    });
-    const firstTrack = makeSong({
-      path: '/music/album/first-track.flac',
-      title: 'First Track',
-      album: 'Detail Album',
-      album_key: 'detail-album::artist',
-      added_at: 20,
-      disc_number: '1',
-      track_number: '1/10',
-    });
-    const secondTrack = makeSong({
-      path: '/music/album/second-track.flac',
-      title: 'Second Track',
-      album: 'Detail Album',
-      album_key: 'detail-album::artist',
-      added_at: 30,
-      disc_number: '1',
-      track_number: '2',
-    });
+      await expectOrderUnder('title', ['Alpha', 'Beta', 'Gamma']);
+      await expectOrderUnder('added_at', ['Gamma', 'Alpha', 'Beta']);
+      await expectOrderUnder('custom', ['Gamma', 'Alpha', 'Beta']);
+    },
 
-    libraryStore.librarySongs = [discTwoSong, secondTrack, firstTrack];
-    navigationStore.currentViewMode = 'album';
-    navigationStore.filterCondition = 'detail-album::artist';
+    'applies playlist view sorting rules when search query is active': async () => {
+      const library = useLibraryStore();
+      const collections = useCollectionsStore();
+      const nav = useNavigationStore();
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
+      const alpha = buildSong({ path: '/music/alpha.flac', title: 'Alpha', name: 'alpha.flac', album: 'X', added_at: 20 });
+      const beta = buildSong({ path: '/music/beta.flac', title: 'Beta', name: 'beta.flac', album: 'Y', added_at: 10 });
+      const gamma = buildSong({ path: '/music/gamma.flac', title: 'Gamma', name: 'gamma.flac', album: 'Z', added_at: 30 });
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      firstTrack.path,
-      secondTrack.path,
-      discTwoSong.path,
-    ]);
+      library.librarySongs = [alpha, beta, gamma];
+      collections.playlists = [
+        {
+          id: 'test-playlist-1',
+          name: 'Test Playlist',
+          songPaths: [gamma.path, alpha.path, beta.path],
+        }
+      ];
 
-    libraryStore.albumDetailSortMode = 'track_number_desc';
-    await flushPromises();
+      nav.currentViewMode = 'playlist';
+      nav.filterCondition = 'test-playlist-1';
+      nav.searchQuery = 'alpha';
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      discTwoSong.path,
-      secondTrack.path,
-      firstTrack.path,
-    ]);
+      const view = usePlayerLibraryView();
 
-    libraryStore.albumDetailSortMode = 'added_at';
-    await flushPromises();
+      const expectOnlyAlpha = async (mode: string) => {
+        collections.playlistSortMode = mode;
+        await settleTasks();
+        expect(view.displaySongList.value.map(item => item.title)).toEqual(['Alpha']);
+      };
 
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      secondTrack.path,
-      firstTrack.path,
-      discTwoSong.path,
-    ]);
+      await expectOnlyAlpha('title');
+      await expectOnlyAlpha('added_at');
+      await expectOnlyAlpha('custom');
+    },
+  };
 
-    libraryStore.albumDetailSortMode = 'added_at_asc';
-    await flushPromises();
-
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      discTwoSong.path,
-      firstTrack.path,
-      secondTrack.path,
-    ]);
-  });
-
-  it('applies folder view sorting rules including track order', async () => {
-    const libraryStore = useLibraryStore();
-    const navigationStore = useNavigationStore();
-    const discTwoSong = makeSong({
-      path: '/music/folder/disc-two.flac',
-      title: 'Disc Two',
-      added_at: 10,
-      disc_number: '2',
-      track_number: '1',
-    });
-    const firstTrack = makeSong({
-      path: '/music/folder/first-track.flac',
-      title: 'First Track',
-      added_at: 20,
-      disc_number: '1',
-      track_number: '1/10',
-    });
-    const secondTrack = makeSong({
-      path: '/music/folder/second-track.flac',
-      title: 'Second Track',
-      added_at: 30,
-      disc_number: '1',
-      track_number: '2',
-    });
-
-    libraryStore.librarySongs = [discTwoSong, secondTrack, firstTrack];
-    navigationStore.currentViewMode = 'folder';
-    navigationStore.currentFolderFilter = '/music/folder';
-    libraryStore.folderSortMode = 'track_number';
-
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
-
-    expect(displaySongList.value.map(song => song.path)).toEqual([
-      firstTrack.path,
-      secondTrack.path,
-      discTwoSong.path,
-    ]);
-  });
-
-  it('applies playlist view sorting rules', async () => {
-    const libraryStore = useLibraryStore();
-    const collectionsStore = useCollectionsStore();
-    const navigationStore = useNavigationStore();
-
-    const alpha = makeSong({ path: '/music/alpha.flac', title: 'Alpha', added_at: 20 });
-    const beta = makeSong({ path: '/music/beta.flac', title: 'Beta', added_at: 10 });
-    const gamma = makeSong({ path: '/music/gamma.flac', title: 'Gamma', added_at: 30 });
-
-    libraryStore.librarySongs = [alpha, beta, gamma];
-    collectionsStore.playlists = [
-      {
-        id: 'test-playlist-1',
-        name: 'Test Playlist',
-        songPaths: [gamma.path, alpha.path, beta.path],
-      }
-    ];
-
-    navigationStore.currentViewMode = 'playlist';
-    navigationStore.filterCondition = 'test-playlist-1';
-    collectionsStore.playlistSortMode = 'title';
-
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
-
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha', 'Beta', 'Gamma']);
-
-    collectionsStore.playlistSortMode = 'added_at';
-    await flushPromises();
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Gamma', 'Alpha', 'Beta']);
-
-    collectionsStore.playlistSortMode = 'custom';
-    await flushPromises();
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Gamma', 'Alpha', 'Beta']);
-  });
-
-  it('applies playlist view sorting rules when search query is active', async () => {
-    const libraryStore = useLibraryStore();
-    const collectionsStore = useCollectionsStore();
-    const navigationStore = useNavigationStore();
-
-    const alpha = makeSong({ path: '/music/alpha.flac', title: 'Alpha', name: 'alpha.flac', album: 'X', added_at: 20 });
-    const beta = makeSong({ path: '/music/beta.flac', title: 'Beta', name: 'beta.flac', album: 'Y', added_at: 10 });
-    const gamma = makeSong({ path: '/music/gamma.flac', title: 'Gamma', name: 'gamma.flac', album: 'Z', added_at: 30 });
-
-    libraryStore.librarySongs = [alpha, beta, gamma];
-    collectionsStore.playlists = [
-      {
-        id: 'test-playlist-1',
-        name: 'Test Playlist',
-        songPaths: [gamma.path, alpha.path, beta.path],
-      }
-    ];
-
-    navigationStore.currentViewMode = 'playlist';
-    navigationStore.filterCondition = 'test-playlist-1';
-    navigationStore.searchQuery = 'alpha';
-    collectionsStore.playlistSortMode = 'title';
-
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
-
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha']);
-
-    collectionsStore.playlistSortMode = 'added_at';
-    await flushPromises();
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha']);
-
-    collectionsStore.playlistSortMode = 'custom';
-    await flushPromises();
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha']);
+  Object.entries(cases).forEach(([title, run]) => {
+    it(title, run);
   });
 });

@@ -11,8 +11,8 @@ import songDrag from '../composables/useSongDrag.ts?raw';
 
 describe('touch drag support', () => {
   it('uses pointer events for song table drag gestures', () => {
-    expect(songTable).toContain('@pointerdown="handlePointerDown($event, song, song.virtualIndex)"');
-    expect(songTable).toContain('@pointermove="handleSongTablePointerMove"');
+    expect(songTable).toContain('@pointerdown="onRowPointerDown($event, song, song.virtualIndex)"');
+    expect(songTable).toContain('@pointermove="onTablePointerMove"');
     expect(songDrag).toContain("window.addEventListener('pointermove'");
     expect(songDrag).toContain("window.addEventListener('pointerup'");
     expect(songDrag).toContain("window.addEventListener('pointercancel'");

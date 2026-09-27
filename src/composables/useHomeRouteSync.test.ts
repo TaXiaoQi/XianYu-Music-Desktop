@@ -1,259 +1,208 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  effectScope,
-  nextTick,
-  reactive,
-  ref,
-} from 'vue';
-import type {
-  LocationQuery,
-  RouteLocationNormalizedLoaded,
-  Router,
-} from 'vue-router';
+import { effectScope, nextTick, reactive, ref, type EffectScope, type Ref } from 'vue';
+import type { LocationQuery, RouteLocationNormalizedLoaded, Router } from 'vue-router';
 
 import type { FolderNode } from '../types';
 import { useHomeRouteSync } from './useHomeRouteSync';
 import { useHomeViewState } from './useHomeViewState';
 
-const makeFolderNode = (
-  path: string,
-  overrides: Partial<FolderNode> = {},
-): FolderNode => ({
+/** 构造目录树节点，文件名截取自路径末段 */
+const makeFolderNode = (path: string, overrides: Partial<FolderNode> = {}): FolderNode => ({
   name: path.split('/').pop() || path,
   path,
   children: [],
-  child_count: 0,
-  children_loaded: true,
-  song_count: 0,
-  cover_song_path: null,
-  is_expanded: false,
+  child_count: 0, children_loaded: true,
+  song_count: 0, cover_song_path: null, is_expanded: false,
   ...overrides,
 });
 
-const createRoute = (
+const createRoute = (path: string, query: LocationQuery = {}): RouteLocationNormalizedLoaded =>
+  reactive({ path, query }) as RouteLocationNormalizedLoaded;
+
+const makeRouterStub = (): Router =>
+  ({
+    replace: vi.fn().mockResolvedValue(undefined),
+  }) as unknown as Router;
+
+interface HomeSyncSeed {
+  routePath: string;
+  routeQuery?: LocationQuery;
+  viewMode: string;
+  filter: string;
+  folderFilter: string;
+  rootPath: string | null;
+  folders: FolderNode[];
+  query: string;
+}
+
+interface HomeSyncHarness {
+  route: RouteLocationNormalizedLoaded;
+  router: Router;
+  scope: EffectScope;
+  state: {
+    currentViewMode: Ref<string>;
+    filterCondition: Ref<string>;
+    currentFolderFilter: Ref<string>;
+    activeRootPath: Ref<string | null>;
+    folderTree: Ref<FolderNode[]>;
+    searchQuery: Ref<string>;
+  };
+}
+
+/** 在独立 effectScope 中挂载 useHomeRouteSync，并暴露各共享状态的 ref */
+const mountHomeSync = (seed: HomeSyncSeed): HomeSyncHarness => {
+  const route = createRoute(seed.routePath, seed.routeQuery);
+  const router = makeRouterStub();
+  const state = {
+    currentViewMode: ref(seed.viewMode),
+    filterCondition: ref(seed.filter),
+    currentFolderFilter: ref(seed.folderFilter),
+    activeRootPath: ref<string | null>(seed.rootPath),
+    folderTree: ref(seed.folders),
+    searchQuery: ref(seed.query),
+  };
+  const scope = effectScope();
+  scope.run(() => {
+    useHomeRouteSync({ route, router, ...state });
+  });
+  return { route, router, scope, state };
+};
+
+/** 模拟路由跳转：直接就地替换 route 的 path 与 query */
+const setRoute = (
+  route: RouteLocationNormalizedLoaded,
   path: string,
   query: LocationQuery = {},
-) => reactive({
-  path,
-  query,
-}) as RouteLocationNormalizedLoaded;
+) => {
+  Object.assign(route, { path, query });
+};
 
-describe('useHomeRouteSync', () => {
+describe('useHomeRouteSync 首页路由同步', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('keeps home state normalized while allowing kept-alive home to resume into folder mode', async () => {
-    const route = createRoute('/artists');
-    const router = {
-      replace: vi.fn().mockResolvedValue(undefined),
-    } as unknown as Router;
-
-    const currentViewMode = ref('artist');
-    const filterCondition = ref('Existing Artist');
-    const currentFolderFilter = ref('');
-    const activeRootPath = ref<string | null>(null);
-    const folderTree = ref([
-      makeFolderNode('/music/library'),
-    ]);
-    const searchQuery = ref('persistent query');
-    const isManagementMode = ref(false);
-
-    const appShellScope = effectScope();
-    appShellScope.run(() => {
-      useHomeRouteSync({
-        route,
-        router,
-        currentViewMode,
-        filterCondition,
-        currentFolderFilter,
-        activeRootPath,
-        folderTree,
-        searchQuery,
-      });
+  it('keep-alive 场景：暂停的首页恢复后能正确接管 folder 视图', async () => {
+    const harness = mountHomeSync({
+      routePath: '/artists',
+      viewMode: 'artist',
+      filter: 'Existing Artist',
+      folderFilter: '',
+      rootPath: null,
+      folders: [makeFolderNode('/music/library')],
+      query: 'persistent query',
     });
 
-    let homeState!: ReturnType<typeof useHomeViewState>;
+    let homeView!: ReturnType<typeof useHomeViewState>;
     const homeScope = effectScope();
     homeScope.run(() => {
-      homeState = useHomeViewState({
-        currentViewMode,
-        filterCondition,
-        isManagementMode,
+      homeView = useHomeViewState({
+        currentViewMode: harness.state.currentViewMode,
+        filterCondition: harness.state.filterCondition,
+        isManagementMode: ref(false),
       });
     });
 
-    expect(homeState.localViewMode.value).toBe('artist');
+    expect(homeView.localViewMode.value).toBe('artist');
 
+    // 首页组件被 keep-alive 暂停期间，路由切到了 folder 视图
     homeScope.pause();
-    Object.assign(route, {
-      path: '/',
-      query: {
-        view: 'folder',
-        folder: '/music/library/live',
-      },
-    });
+    setRoute(harness.route, '/', { view: 'folder', folder: '/music/library/live' });
 
     await nextTick();
 
-    expect(currentViewMode.value).toBe('folder');
-    expect(filterCondition.value).toBe('');
-    expect(currentFolderFilter.value).toBe('/music/library/live');
-    expect(activeRootPath.value).toBe('/music/library');
-    expect(searchQuery.value).toBe('persistent query');
-    expect(homeState.localViewMode.value).toBe('artist');
-    expect(router.replace).not.toHaveBeenCalled();
+    expect(harness.state.currentViewMode.value).toBe('folder');
+    expect(harness.state.filterCondition.value).toBe('');
+    expect(harness.state.currentFolderFilter.value).toBe('/music/library/live');
+    expect(harness.state.activeRootPath.value).toBe('/music/library');
+    expect(harness.state.searchQuery.value).toBe('persistent query');
+    expect(homeView.localViewMode.value).toBe('artist');
+    expect(harness.router.replace).not.toHaveBeenCalled();
 
     homeScope.resume();
     await nextTick();
 
-    expect(homeState.localViewMode.value).toBe('folder');
+    expect(homeView.localViewMode.value).toBe('folder');
 
     homeScope.stop();
-    appShellScope.stop();
+    harness.scope.stop();
   });
 
-  it('fills in the first root folder when folder view query omits the folder path', async () => {
-    const route = createRoute('/', { view: 'folder' });
-    const router = {
-      replace: vi.fn().mockResolvedValue(undefined),
-    } as unknown as Router;
-
-    const currentViewMode = ref('all');
-    const filterCondition = ref('');
-    const currentFolderFilter = ref('');
-    const activeRootPath = ref<string | null>(null);
-    const folderTree = ref([
-      makeFolderNode('/music/root-a'),
-      makeFolderNode('/music/root-b'),
-    ]);
-    const searchQuery = ref('persistent query');
-
-    const scope = effectScope();
-    scope.run(() => {
-      useHomeRouteSync({
-        route,
-        router,
-        currentViewMode,
-        filterCondition,
-        currentFolderFilter,
-        activeRootPath,
-        folderTree,
-        searchQuery,
-      });
+  it('folder 视图缺省 folder 参数时，自动补全第一个根目录并回写路由', async () => {
+    const harness = mountHomeSync({
+      routePath: '/',
+      routeQuery: { view: 'folder' },
+      viewMode: 'all',
+      filter: '',
+      folderFilter: '',
+      rootPath: null,
+      folders: [makeFolderNode('/music/root-a'), makeFolderNode('/music/root-b')],
+      query: 'persistent query',
     });
 
     await nextTick();
 
-    expect(currentViewMode.value).toBe('folder');
-    expect(currentFolderFilter.value).toBe('/music/root-a');
-    expect(activeRootPath.value).toBe('/music/root-a');
-    expect(searchQuery.value).toBe('persistent query');
-    expect(router.replace).toHaveBeenCalledWith({
-      path: '/',
-      query: {
-        view: 'folder',
-        folder: '/music/root-a',
-      },
-    });
+    expect(harness.state.currentViewMode.value).toBe('folder');
+    expect(harness.state.currentFolderFilter.value).toBe('/music/root-a');
+    expect(harness.state.activeRootPath.value).toBe('/music/root-a');
+    expect(harness.state.searchQuery.value).toBe('persistent query');
+    expect(harness.router.replace).toHaveBeenCalledWith({ path: '/', query: { view: 'folder', folder: '/music/root-a' } });
 
-    scope.stop();
+    harness.scope.stop();
   });
 
-  it('resets stale home state without clearing the active search when returning to plain home from a non-home route', async () => {
-    const route = createRoute('/artists');
-    const router = {
-      replace: vi.fn().mockResolvedValue(undefined),
-    } as unknown as Router;
-
-    const currentViewMode = ref('folder');
-    const filterCondition = ref('');
-    const currentFolderFilter = ref('/music/root-a/live');
-    const activeRootPath = ref<string | null>('/music/root-a');
-    const folderTree = ref([
-      makeFolderNode('/music/root-a'),
-    ]);
-    const searchQuery = ref('persistent query');
-
-    const scope = effectScope();
-    scope.run(() => {
-      useHomeRouteSync({
-        route,
-        router,
-        currentViewMode,
-        filterCondition,
-        currentFolderFilter,
-        activeRootPath,
-        folderTree,
-        searchQuery,
-      });
+  it('从非首页回到纯首页时重置陈旧状态，但不清掉进行中的搜索词', async () => {
+    const harness = mountHomeSync({
+      routePath: '/artists',
+      viewMode: 'folder',
+      filter: '',
+      folderFilter: '/music/root-a/live',
+      rootPath: '/music/root-a',
+      folders: [makeFolderNode('/music/root-a')],
+      query: 'persistent query',
     });
 
-    Object.assign(route, {
-      path: '/',
-      query: {},
-    });
+    setRoute(harness.route, '/', {});
 
     await nextTick();
 
-    expect(currentViewMode.value).toBe('statistics');
-    expect(filterCondition.value).toBe('');
-    expect(currentFolderFilter.value).toBe('/music/root-a/live');
-    expect(activeRootPath.value).toBe('/music/root-a');
-    expect(searchQuery.value).toBe('persistent query');
-    expect(router.replace).not.toHaveBeenCalled();
+    expect(harness.state.currentViewMode.value).toBe('statistics');
+    expect(harness.state.filterCondition.value).toBe('');
+    expect(harness.state.currentFolderFilter.value).toBe('/music/root-a/live');
+    expect(harness.state.activeRootPath.value).toBe('/music/root-a');
+    expect(harness.state.searchQuery.value).toBe('persistent query');
+    expect(harness.router.replace).not.toHaveBeenCalled();
 
-    scope.stop();
+    harness.scope.stop();
   });
 
-  it('maps favorites and recent routes into the shared navigation state', async () => {
-    const route = createRoute('/favorites');
-    const router = {
-      replace: vi.fn().mockResolvedValue(undefined),
-    } as unknown as Router;
-
-    const currentViewMode = ref('folder');
-    const filterCondition = ref('playlist-id');
-    const currentFolderFilter = ref('/music/root-a/live');
-    const activeRootPath = ref<string | null>('/music/root-a');
-    const folderTree = ref([
-      makeFolderNode('/music/root-a'),
-    ]);
-    const searchQuery = ref('persistent query');
-
-    const scope = effectScope();
-    scope.run(() => {
-      useHomeRouteSync({
-        route,
-        router,
-        currentViewMode,
-        filterCondition,
-        currentFolderFilter,
-        activeRootPath,
-        folderTree,
-        searchQuery,
-      });
+  it('收藏页与最近播放页映射到共享的导航状态', async () => {
+    const harness = mountHomeSync({
+      routePath: '/favorites',
+      viewMode: 'folder',
+      filter: 'playlist-id',
+      folderFilter: '/music/root-a/live',
+      rootPath: '/music/root-a',
+      folders: [makeFolderNode('/music/root-a')],
+      query: 'persistent query',
     });
 
     await nextTick();
 
-    expect(currentViewMode.value).toBe('favorites');
-    expect(filterCondition.value).toBe('');
-    expect(searchQuery.value).toBe('persistent query');
-    expect(router.replace).not.toHaveBeenCalled();
+    expect(harness.state.currentViewMode.value).toBe('favorites');
+    expect(harness.state.filterCondition.value).toBe('');
+    expect(harness.state.searchQuery.value).toBe('persistent query');
+    expect(harness.router.replace).not.toHaveBeenCalled();
 
-    Object.assign(route, {
-      path: '/recent',
-      query: {},
-    });
+    setRoute(harness.route, '/recent', {});
 
     await nextTick();
 
-    expect(currentViewMode.value).toBe('recent');
-    expect(filterCondition.value).toBe('');
-    expect(searchQuery.value).toBe('persistent query');
-    expect(router.replace).not.toHaveBeenCalled();
+    expect(harness.state.currentViewMode.value).toBe('recent');
+    expect(harness.state.filterCondition.value).toBe('');
+    expect(harness.state.searchQuery.value).toBe('persistent query');
+    expect(harness.router.replace).not.toHaveBeenCalled();
 
-    scope.stop();
+    harness.scope.stop();
   });
 });
