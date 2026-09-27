@@ -255,6 +255,9 @@ pub struct SemanticLine {
     pub is_bg: bool,
     pub is_duet: bool,
     pub is_duet_partner: bool,
+    /// 启发式判定：主行是 CJK 行、副行是其罗马化音译（如粤拼），而非「拉丁主行 + 中文翻译」。
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_romanized: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -285,6 +288,9 @@ pub struct LyricLinePayload {
     pub is_bg: bool,
     pub is_duet: bool,
     pub is_duet_partner: bool,
+    /// 启发式判定：这行是把 CJK 行与其罗马化音译交换后的结果，罗马音子行应无视全局开关显示。
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_romanized: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -349,6 +355,10 @@ struct ParserCandidate {
 struct LayoutTemplateResolution {
     display_track_index: usize,
     track_roles: Vec<Option<LyricTrackRole>>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn clamp01(value: f64) -> f64 {
@@ -3689,6 +3699,7 @@ fn build_semantic_line_from_orphan_group(
                 is_bg: false,
                 is_duet: false,
                 is_duet_partner: false,
+                is_romanized: false,
             }
         }
     };
@@ -3707,6 +3718,7 @@ fn build_semantic_line_from_orphan_group(
         is_bg: main_line.is_bg,
         is_duet: main_line.is_duet,
         is_duet_partner: main_line.is_duet_partner,
+        is_romanized: false,
     };
 
     for (track_index, _line_index, candidate_line) in group.iter() {
@@ -3800,6 +3812,119 @@ fn is_han_only_line(line: &LyricTrackLine) -> bool {
         && line.script_profile.hangul_count == 0
 }
 
+/// 音译与汉字通常按音节一对一：音译词数与该行汉字数之比应落在此区间；
+/// 翻译与原文长度无关，因此仅靠长度无法区分，需配合下面的音译特征判定。
+const MIN_ROMAN_TOKEN_HAN_RATIO: f64 = 0.45;
+const MAX_ROMAN_TOKEN_HAN_RATIO: f64 = 2.2;
+
+/// 英文功能词：出现即强烈暗示该拉丁行是英文，而非 CJK 歌词的罗马化音译。
+const ENGLISH_FUNCTION_WORDS: &[&str] = &[
+    "a", "an", "the", "and", "or", "but", "if", "is", "are", "was", "were", "be", "been", "am",
+    "do", "does", "did", "have", "has", "had", "i", "you", "he", "she", "it", "we", "they",
+    "me", "him", "her", "us", "them", "my", "your", "his", "their", "our", "its", "to", "of",
+    "in", "on", "at", "for", "with", "from", "by", "as", "not", "that", "this", "these", "those",
+    "will", "would", "can", "could", "should", "when", "where", "what", "who", "how", "all",
+    "just", "only", "than", "then", "there", "here",
+];
+
+/// 典型英文词形结尾；粤拼/拼音不会以这些字母组合结尾，出现即判定为英文而非音译。
+fn has_english_morphology(token: &str) -> bool {
+    if token.len() <= 3 {
+        return false;
+    }
+    ["ing", "tion", "sion", "ness", "ment", "ly", "ed"]
+        .iter()
+        .any(|suffix| token.ends_with(*suffix))
+}
+
+/// 该拉丁行是否「像」粤拼/港式罗马化音译，而非英文：必须带音译特征
+/// （声调数字 / 声母 / 韵母 / 韵尾），且不含英文功能词、不含典型英文词形。
+/// 镜像 TS 侧 classifier.ts 的 looksLikeRomanizedLatin。
+fn looks_like_romanized_latin(text: &str) -> bool {
+    let tokens = tokenize_latin_words(text);
+    if tokens.is_empty() {
+        return false;
+    }
+
+    if tokens
+        .iter()
+        .any(|token| ENGLISH_FUNCTION_WORDS.contains(&token.as_str()))
+    {
+        return false;
+    }
+    if tokens.iter().any(|token| has_english_morphology(token)) {
+        return false;
+    }
+
+    if text.chars().any(|ch| ch.is_ascii_digit()) {
+        // 声调数字，如 nei5 / soeng1
+        return true;
+    }
+    let lower = text.to_lowercase();
+    if lower.contains("eo") || lower.contains("oe") || lower.contains("yu") {
+        return true;
+    }
+    // 粤拼/港式罗马化特征：j-/y- 声母、-ng/-k/-t 韵尾。
+    tokens.iter().any(|token| {
+        token.starts_with('j')
+            || token.starts_with('y')
+            || token.ends_with("ng")
+            || token.ends_with('k')
+            || token.ends_with('t')
+    })
+}
+
+/// 拉丁行是否为该汉字行的罗马化音译（粤语歌常见：lyric=粤拼、tlyric=中文）。
+/// 需同时满足：该行汉字主导；拉丁行纯拉丁且「像音译」；音译词数与汉字数大致对应。
+/// 结构完全相同的「英文行 + 中文翻译」会因为英文功能词/词形而在这里被排除。
+fn is_latin_romanization_of(latin_line: &LyricTrackLine, cjk_line: &LyricTrackLine) -> bool {
+    let cjk_profile = &cjk_line.script_profile;
+    if cjk_profile.han_count == 0
+        || cjk_profile.han_count <= cjk_profile.latin_count
+        || cjk_profile.kana_count > 0
+        || cjk_profile.hangul_count > 0
+    {
+        return false;
+    }
+
+    if !is_latin_only_line(latin_line) {
+        return false;
+    }
+    if !looks_like_romanized_latin(&latin_line.text) {
+        return false;
+    }
+
+    let token_count = tokenize_latin_words(&latin_line.text).len() as f64;
+    if token_count == 0.0 {
+        return false;
+    }
+
+    let token_to_han_ratio = token_count / cjk_profile.han_count as f64;
+    token_to_han_ratio >= MIN_ROMAN_TOKEN_HAN_RATIO
+        && token_to_han_ratio <= MAX_ROMAN_TOKEN_HAN_RATIO
+}
+
+/// 若「汉字行 + 拉丁行」这一对是「汉字 + 其罗马化音译」（如粤拼），返回 (汉字主行, 拉丁罗马音行)。
+/// 否则返回 None，维持既有「外文主行 + 中文译文」行为（英文歌 + 中文翻译）。
+fn resolve_romanization_pair<'a>(
+    first: &'a LyricTrackLine,
+    second: &'a LyricTrackLine,
+) -> Option<(&'a LyricTrackLine, &'a LyricTrackLine)> {
+    if is_latin_only_line(first)
+        && is_han_only_line(second)
+        && is_latin_romanization_of(first, second)
+    {
+        return Some((second, first));
+    }
+    if is_han_only_line(first)
+        && is_latin_only_line(second)
+        && is_latin_romanization_of(second, first)
+    {
+        return Some((first, second));
+    }
+    None
+}
+
 fn is_han_latin_mixed_line(line: &LyricTrackLine) -> bool {
     line.script_profile.han_count > 0
         && line.script_profile.latin_count > 0
@@ -3833,6 +3958,7 @@ fn build_hard_role_semantic_line(
         is_bg: main_line.is_bg,
         is_duet: main_line.is_duet,
         is_duet_partner: main_line.is_duet_partner,
+        is_romanized: false,
     }
 }
 
@@ -3854,6 +3980,19 @@ fn build_hard_role_semantic_line_from_cluster(
     match lines.as_slice() {
         [main_line] => Some(build_hard_role_semantic_line(main_line, None, None)),
         [first_line, second_line] => {
+            // 粤语等：汉字行 + 其罗马化音译（源未显式声明角色）→ 汉字作主行、拉丁作罗马音子行，
+            // 与「英文主行 + 中文翻译」正好相反。显式标记优先：源里写了角色就不做推断。
+            if first_line.explicit_role.is_none() && second_line.explicit_role.is_none() {
+                if let Some((main_line, roman_line)) =
+                    resolve_romanization_pair(first_line, second_line)
+                {
+                    let mut line =
+                        build_hard_role_semantic_line(main_line, None, Some(roman_line));
+                    line.is_romanized = true;
+                    return Some(line);
+                }
+            }
+
             let (main_line, translation_line) =
                 if is_han_only_line(first_line) && !is_han_only_line(second_line) {
                     (*second_line, *first_line)
@@ -4257,6 +4396,7 @@ pub fn lyric_document_to_semantic_lines(document: &LyricDocument) -> Vec<Semanti
             is_bg: display_main_line.is_bg,
             is_duet: display_main_line.is_duet,
             is_duet_partner: display_main_line.is_duet_partner,
+            is_romanized: false,
         }));
         semantic_line_clusters.push(main_line.cluster_index);
     }
@@ -4405,6 +4545,7 @@ pub fn semantic_line_to_lyric_line(line: &SemanticLine) -> LyricLinePayload {
         is_bg: line.is_bg,
         is_duet: line.is_duet,
         is_duet_partner: line.is_duet_partner,
+        is_romanized: line.is_romanized,
     }
 }
 
@@ -5233,5 +5374,115 @@ mod tests {
         assert_eq!(parsed[2].text, "副唱");
         assert_eq!(parsed[3].text, "和声");
         assert!(parsed[3].is_duet_partner);
+    }
+
+    // ==================== 粤语等罗马化音译行的主/副行判定 ====================
+
+    #[test]
+    fn cantonese_romanization_swaps_chinese_to_main_and_marks_auto_show() {
+        // 插件把粤拼放进 lyric、中文放进 tlyric：源未声明角色，启发式应把中文升为主行、
+        // 粤拼降为罗马音子行，并标记 is_romanized 以无视「显示罗马音」开关显示。
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:43.802]man sv nei si soeng zoi ha en loi zei",
+                "[00:43.802]闻说你时常在下午 来这里寄信件",
+            ]
+            .join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        assert_eq!(
+            payload.display_lines[0].text,
+            "闻说你时常在下午 来这里寄信件"
+        );
+        assert_eq!(
+            payload.display_lines[0].romaji,
+            "man sv nei si soeng zoi ha en loi zei"
+        );
+        assert_eq!(payload.display_lines[0].translation, "");
+        assert!(
+            payload.display_lines[0].is_romanized,
+            "判定为罗马化音译时应标记 is_romanized 以自动显示罗马音子行"
+        );
+    }
+
+    #[test]
+    fn structurally_similar_english_is_not_treated_as_romanization() {
+        // 长度结构与粤语用例相似，但含英文功能词 / 英文词形，必须保持「英文主行 + 中文译文」。
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:06.000]Missing the feeling",
+                "[00:06.000]缺失的感觉",
+            ]
+            .join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        assert_eq!(payload.display_lines[0].text, "Missing the feeling");
+        assert_eq!(payload.display_lines[0].translation, "缺失的感觉");
+        assert_eq!(payload.display_lines[0].romaji, "");
+        assert!(!payload.display_lines[0].is_romanized);
+    }
+
+    #[test]
+    fn explicit_translation_marker_beats_romanization_heuristic() {
+        // 源里显式声明为翻译时以源为准，不做交换。
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:21.680]man sv nei si soeng zoi ha en loi zei",
+                "[00:21.680][tr]闻说你时常在下午 来这里寄信件",
+            ]
+            .join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        assert_eq!(
+            payload.display_lines[0].text,
+            "man sv nei si soeng zoi ha en loi zei"
+        );
+        assert_eq!(
+            payload.display_lines[0].translation,
+            "闻说你时常在下午 来这里寄信件"
+        );
+        assert_eq!(payload.display_lines[0].romaji, "");
+        assert!(!payload.display_lines[0].is_romanized);
+    }
+
+    #[test]
+    fn japanese_romaji_plus_chinese_translation_stays_unchanged() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:43.792]mo u hi to tsu fu ya shi ma sho u",
+                "[00:43.792]もう一つ増やしましょう",
+                "[00:43.792]但让我们再多加一个吧",
+            ]
+            .join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        assert_eq!(payload.display_lines[0].text, "もう一つ増やしましょう");
+        assert_eq!(
+            payload.display_lines[0].romaji,
+            "mo u hi to tsu fu ya shi ma sho u"
+        );
+        assert_eq!(payload.display_lines[0].translation, "但让我们再多加一个吧");
+        assert!(!payload.display_lines[0].is_romanized);
+    }
+
+    #[test]
+    fn korean_lyric_with_chinese_translation_stays_unchanged() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:12.000]그런 날이 있었지",
+                "[00:12.000]那样的日子曾经存在",
+            ]
+            .join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        assert_eq!(payload.display_lines[0].text, "그런 날이 있었지");
+        assert_eq!(payload.display_lines[0].translation, "那样的日子曾经存在");
+        assert_eq!(payload.display_lines[0].romaji, "");
+        assert!(!payload.display_lines[0].is_romanized);
     }
 }
