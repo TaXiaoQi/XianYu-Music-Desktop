@@ -194,6 +194,12 @@ describe('glass look gains layered glass polish (corner refraction + hover sheen
     expect(scopedStyle).not.toContain('animation');
     // 两个伪元素都绝不拦截鼠标
     expect(scopedStyle.match(/pointer-events:\s*none/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // 层序（修复"发白"）：眩光层在玻璃底色之上、内容之下——isolate 建堆叠上下文防负
+    // z-index 逃逸到祖先背景后，两个伪元素均 z-index: -1（白纱罩内容即回归）
+    expect(scopedStyle).toContain('isolation: isolate');
+    expect(scopedStyle.match(/z-index:\s*-1/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // 注意用正则而非 toContain('z-index: 1')：排行榜吸底行的 z-index: 10 会被子串误伤
+    expect(scopedStyle).not.toMatch(/z-index:\s*1(?!\d)/);
   });
 
   it('disables the hover sheen under prefers-reduced-motion', () => {

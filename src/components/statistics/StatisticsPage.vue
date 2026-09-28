@@ -952,9 +952,15 @@ watch(isGlass, (glass) => {
      位移会把光带扫出卡片外。prefers-reduced-motion 下整层禁用。
    深色档：高光/光斑 alpha 全线调低、光斑改冷白 (226,232,240)；外阴影加深在类串
    dark:shadow 里。可调点：各 rgba alpha、radial-gradient 的 at/尺寸百分比、
-   光带 background-size/时长/alpha。 */
+   光带 background-size/时长/alpha。
+   层序（73d0b63c 修复"发白"）：伪元素 z-index: -1 + .glass-card isolation: isolate——
+   眩光层画在玻璃底色之上、**卡片内容之下**，文字/图表不再被白纱罩住；isolate 建立
+   堆叠上下文，防止负 z-index 逃逸到祖先背景之后。全卡 160° 斜向渐变已调淡
+   （浅 0.10/0.06 → 0.05/0.03；深 0.05/0.03 → 0.02/0.02），四角光斑保留原值
+   （它们贴角、正是"边角折射"本体）。 */
 .glass-card {
   position: relative;
+  isolation: isolate;
 }
 
 .glass-card::before {
@@ -963,13 +969,13 @@ watch(isGlass, (glass) => {
   inset: 0;
   border-radius: 0.75rem; /* 与 rounded-xl 同步 */
   pointer-events: none;
-  z-index: 1;
+  z-index: -1;
   background:
     radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.35), transparent 55%),
     radial-gradient(100% 80% at 100% 0%, rgba(255, 255, 255, 0.20), transparent 50%),
     radial-gradient(90% 70% at 100% 100%, rgba(255, 255, 255, 0.08), transparent 45%),
     radial-gradient(90% 70% at 0% 100%, rgba(255, 255, 255, 0.05), transparent 45%),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.06));
+    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.03));
 }
 
 .dark .glass-card::before {
@@ -978,7 +984,7 @@ watch(isGlass, (glass) => {
     radial-gradient(100% 80% at 100% 0%, rgba(226, 232, 240, 0.08), transparent 50%),
     radial-gradient(90% 70% at 100% 100%, rgba(226, 232, 240, 0.04), transparent 45%),
     radial-gradient(90% 70% at 0% 100%, rgba(226, 232, 240, 0.03), transparent 45%),
-    linear-gradient(160deg, rgba(226, 232, 240, 0.05), rgba(226, 232, 240, 0) 38%, rgba(226, 232, 240, 0) 62%, rgba(226, 232, 240, 0.03));
+    linear-gradient(160deg, rgba(226, 232, 240, 0.02), rgba(226, 232, 240, 0) 38%, rgba(226, 232, 240, 0) 62%, rgba(226, 232, 240, 0.02));
 }
 
 .glass-card::after {
@@ -987,7 +993,7 @@ watch(isGlass, (glass) => {
   inset: 0;
   border-radius: 0.75rem; /* 与 rounded-xl 同步 */
   pointer-events: none;
-  z-index: 1;
+  z-index: -1;
   background-image: linear-gradient(115deg, transparent 25%, rgba(255, 255, 255, 0.25) 50%, transparent 75%);
   background-repeat: no-repeat;
   background-size: 220% 100%;
