@@ -26,7 +26,7 @@ describe('StatisticsPage style follows the appearance setting', () => {
     expect(source).toContain(':class="isGlass ? \'font-bold\' : \'font-black\'"');
     // 4) 标题 text-lg italic / text-sm
     expect(source).toContain(':class="isGlass ? \'text-lg font-bold italic\' : \'text-sm font-bold\'"');
-    // 5) 区间切换器：（逐字保留改造前那串）
+    // 5) 区间切换器：两套类串逐字保留（控件本身另由 v-if="isGlass" 限到玻璃档）
     expect(source).toContain('\'border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10\'');
   });
 
@@ -35,14 +35,52 @@ describe('StatisticsPage style follows the appearance setting', () => {
   });
 });
 
-describe('flat branch renders the pre-restyle (3110e0da^) markup verbatim', () => {
+describe('the time-range switcher is gated to the glass look', () => {
+  // 用户给的扁平档参考稿里没有「全部 / 7天 / 30天 / 今年」这一行——它由 58c03b25 引入，
+  // 当时渲染在 v-if 链之外，两种观感都会出现。这里钉住它只属于玻璃档。
+  const flatStart = source.indexOf('经典扁平模式');
+  const flat = source.slice(flatStart, source.indexOf('</template>'));
+  const glass = source.slice(0, flatStart);
+
+  it('renders the switcher only when isGlass is on', () => {
+    // 切换器整块（含外层 mb-3 包裹层）挂在 isGlass 上：扁平档连包裹层都不渲染，
+    // 因此扁平档既没有那一行按钮，也不会留下多余的 mb-3 间距。
+    expect(source).toContain('<div v-if="isGlass" class="mb-3 flex items-center justify-between gap-3">');
+    // 仍只有这一处区间控件——没被删除，也没被挪进扁平分支
+    expect(source).toContain('v-for="range in RANGES"');
+    expect(source).toContain(':aria-label="t(\'stats.rangeLabel\')"');
+    expect(glass).toContain('<div v-if="isGlass" class="mb-3 flex items-center justify-between gap-3">');
+  });
+
+  it('keeps the switcher markup, its styling and its behaviour unchanged', () => {
+    // 玻璃类串（3110e0da 引入）与扁平类串（逐字取自旧版）都还在——只加 v-if，没动样式
+    expect(source).toContain('\'border border-white/20 bg-white/40 p-0.5 backdrop-blur-md dark:bg-white/5\'');
+    expect(source).toContain('\'border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10\'');
+    // 点击与选中态绑定原样保留
+    expect(source).toContain('@click="selectRange(range.value)"');
+    expect(source).toContain(':class="range.value === selectedRange');
+    // 区间数据流仍走 store 的 refreshBehaviorOnly，没被删
+    expect(source).toContain('statisticsStore.refreshBehaviorOnly(range)');
+  });
+
+  it('leaves the flat data block untouched by the range control', () => {
+    // 扁平分支切片（数据块）里不得出现任何区间切换器相关标记
+    expect(flat).not.toContain('RANGES');
+    expect(flat).not.toContain('selectRange');
+    expect(flat).not.toContain('rangeLabel');
+    expect(flat).not.toContain('mb-3 flex items-center justify-between gap-3');
+  });
+});
+
+describe('flat branch renders the pre-restyle (58c03b25^ = 04cacc5c) markup verbatim', () => {
   // 源码级（?raw）字符串钉桩 —— 说清它能证明什么、不能证明什么：
-  // - 能证明：模板源码里「经典扁平」分支包含 / 不包含下面这些确切标记；玻璃分支仍保留
-  //   3110e0da 引入的外壳（没有被这次拆分误删）。
+  // - 能证明：模板源码里「经典扁平」分支逐字包含 58c03b25^（= 04cacc5c）那版统计页的
+  //   八项指标标记（标签绑定 + 两行四列网格类 + 数字绑定），且该分支里不再有图标方块、
+  //   卡片外壳、动画外层壳与图表；玻璃分支仍原样保留 3110e0da 的外壳。
   // - 不能证明：浏览器里的真实盒模型 / CSS 计算 / hover 观感，也不能证明 Vue 运行期
   //   确实把 isGlass=false 渲染成那条 v-else-if 分支（那要靠实机）。
-  //   但足以让“扁平分支退回改造前标记”这一具体回归无法悄悄复活。
-  // 注：改造前那个常量名叫 CARD_CLASS，本页改名为 FLAT_CARD_CLASS（字符串值一字未改）。
+  //   但足以让“扁平分支退回 3110e0da^ 的四卡看板”或“八项变四项”这类回归无法悄悄复活。
+  // 注：8 项指标的原始中文文案存在脚本里的 TEXT 表（逐字取自旧版），玻璃分支仍走 t('stats.*')。
   const flatStart = source.indexOf('经典扁平模式');
   const flat = source.slice(flatStart, source.indexOf('</template>'));
   const glass = source.slice(0, flatStart);
@@ -55,29 +93,53 @@ describe('flat branch renders the pre-restyle (3110e0da^) markup verbatim', () =
     expect(flat).not.toContain('isGlass');
   });
 
-  it('renders the original plain KPI card, with no icon box / flex wrapper', () => {
-    expect(flat).toContain('<div :class="FLAT_CARD_CLASS">');
-    expect(flat).toContain('<p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t(\'stats.listenDuration\') }}</p>');
-    // 改造引入的三层壳与图标方块在扁平分支里必须一个都不存在
-    expect(flat).not.toContain('group relative overflow-hidden');
-    expect(flat).not.toContain('relative flex items-start gap-3');
-    expect(flat).not.toContain('min-w-0');
-    for (const icon of ['<Headphones', '<Music', '<Calendar', '<Database', '<Clock', '<Play', '<TrendingUp', '<Disc3']) {
-      expect(flat).not.toContain(icon);
+  it('renders the eight metrics, each a label above a number', () => {
+    // 第一行：总歌曲 / 歌曲总时长 / 库大小 / 无损占比
+    for (const label of ['TEXT.totalSongs', 'TEXT.songTotalDuration', 'TEXT.librarySize', 'TEXT.losslessRatio']) {
+      expect(flat).toContain(`{{ ${label} }}`);
+    }
+    // 第二行：总听歌时长 / 今日听歌时长 / 播放次数 / 常听歌曲
+    for (const label of ['TEXT.totalListenDuration', 'TEXT.todayListenDuration', 'TEXT.playCount', 'TEXT.longestPlayed']) {
+      expect(flat).toContain(`{{ ${label} }}`);
     }
   });
 
-  it('keeps the entrance animation on the card section itself (no outer wrapper div)', () => {
-    expect(flat).toContain('<section :class="FLAT_CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 60ms;">');
-    expect(flat).toContain('<section :class="FLAT_CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 120ms;">');
-    expect(flat).toContain('<section :class="FLAT_CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 240ms;">');
-    expect(flat).not.toContain('<div class="animate-fade-in-up" style="animation-delay:');
+  it('keeps the original zh label text (the flat look is quoted, not reconstructed)', () => {
+    for (const entry of [
+      "totalSongs: '总歌曲',",
+      "songTotalDuration: '歌曲总时长',",
+      "librarySize: '库大小',",
+      "losslessRatio: '无损占比',",
+      "totalListenDuration: '总听歌时长',",
+      "todayListenDuration: '今日听歌时长',",
+      "playCount: '播放次数',",
+      "longestPlayed: '常听歌曲',",
+    ]) {
+      expect(source).toContain(entry);
+    }
   });
 
-  it('keeps the original heading and overview-grid markup', () => {
-    expect(flat).toContain('<h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">');
-    expect(flat).toContain('<section class="grid grid-cols-2 gap-3 md:grid-cols-4 animate-fade-in-up">');
-    expect(flat).toContain('<section class="grid grid-cols-1 gap-3 md:grid-cols-3 animate-fade-in-up" style="animation-delay: 180ms;">');
+  it('uses the original two-row four-column grid markup', () => {
+    expect(flat).toContain('<div class="grid grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr_1.3fr] gap-x-[clamp(0.75rem,2vw,2rem)] items-end">');
+    expect(flat).toContain('<div class="grid grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr_1.3fr] gap-x-[clamp(0.75rem,2vw,2rem)]">');
+    expect(flat).toContain('<section class="px-[clamp(1rem,2.5vw,3rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up">');
+    expect(flat).toContain('<section class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 100ms;">');
+  });
+
+  it('has no icon tiles, no card chrome and no charts in the flat branch', () => {
+    expect(flat).not.toContain('FLAT_CARD_CLASS');
+    expect(flat).not.toContain('HOME_CARD_CLASS');
+    // 改造引入的三层壳与图标方块在扁平分支里必须一个都不存在
+    expect(flat).not.toContain('group relative overflow-hidden');
+    expect(flat).not.toContain('relative flex items-start gap-3');
+    for (const icon of ['<Headphones', '<Music', '<Calendar', '<Database', '<Clock', '<Play', '<TrendingUp', '<Disc3']) {
+      expect(flat).not.toContain(icon);
+    }
+    // 四类图表是改造后（58c03b25）才有的，扁平档逐字还原旧版，一个都不出现
+    for (const chart of ['<StatsTrendChart', '<StatsHourChart', '<StatsTopBars', '<StatsCompositionRing']) {
+      expect(flat).not.toContain(chart);
+    }
+    expect(flat).not.toContain('<div class="animate-fade-in-up"');
   });
 
   it('leaves the glass branch wrappers intact', () => {
