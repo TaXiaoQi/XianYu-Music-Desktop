@@ -1,318 +1,238 @@
-import { computed, onMounted, ref } from 'vue';
+// 设置页主题控制中枢：把主题模式、窗口材质、动态背景、播放详情外观等
+// 控件装配成统一的读写接口。字段绑定与数值收拢的实现见 ./themeControlBindings。
+import { ref, computed, onMounted } from 'vue';
 
-import type { VinylPlinthMaterial } from '../types';
-import { useThemeSettings } from './useThemeSettings';
-import { useWindowMaterial, type WindowMaterialMode } from './windowMaterial';
 import { useUiStore } from '../shared/stores/ui';
+import type { ThemeSettings, VinylPlinthMaterial } from '../types';
 import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../utils/themeColor';
+import {
+  createThemeFieldBinding,
+  submitPercentThemeField,
+  type ThemePatchSink,
+  type ThemeSnapshotReader,
+} from './themeControlBindings';
+import { useThemeSettings as withThemeSettingsStore } from './useThemeSettings';
+import { type WindowMaterialMode, useWindowMaterial } from './windowMaterial';
 
-const clampFlowValue = (value: number) => Math.min(100, Math.max(0, Math.round(value)));
-type SelectableWindowMaterialMode = Exclude<WindowMaterialMode, 'none'>;
-type WindowMaterialDisabledReason = 'windows' | 'windows11' | 'transparency' | 'theme-conflict' | null;
+/** 用户可直接点选的窗口材质档位；none 由「关闭材质」语义独占 */
+type PickableMaterialMode = Exclude<WindowMaterialMode, 'none'>;
+/** 材质控件不可用的原因标签；null 表示当前可用 */
+type MaterialBlockerKind = 'windows' | 'windows11' | 'transparency' | 'theme-conflict' | null;
 
 export function useSettingsThemeControls() {
-  const { theme, patchTheme, setThemeMode, setDynamicBackgroundType, setWindowMaterial } = useThemeSettings();
-  const { capabilities, loadWindowMaterialCapabilities } = useWindowMaterial();
+  const themeControls = withThemeSettingsStore();
+  const {
+    theme,
+    patchTheme: submitThemePatch,
+    setThemeMode: applyThemeMode,
+    setDynamicBackgroundType: applyDynamicBgType,
+    setWindowMaterial: applyMaterialSetting,
+  } = themeControls;
+  const {
+    capabilities,
+    loadWindowMaterialCapabilities: probeMaterialCapabilities,
+  } = useWindowMaterial();
   const uiStore = useUiStore();
+
+  const readTheme: ThemeSnapshotReader = () => theme.value;
+  const writeThemePatch: ThemePatchSink = (patch) => submitThemePatch(patch);
+
+  // —— 弹窗与微调面板的可见性 ——
   const showCustomModal = computed({
     get: () => uiStore.showCustomSkinModal,
-    set: (value: boolean) => { uiStore.showCustomSkinModal = value; },
+    set: (visible: boolean) => { uiStore.showCustomSkinModal = visible; },
   });
   const showFlowTuning = ref(false);
-  const showBlurTuning = ref(false);
+  const blurTuningPanelVisible = ref(false);
 
-  const colorScheme = computed({
-    get: () => theme.value.mode,
-    set: (value: 'light' | 'dark' | 'custom' | 'system') => {
-      setThemeMode(value);
-    },
-  });
+  // —— theme 单字段绑定：读快照、写单键补丁 ——
+  const bindThemeField = <K extends Exclude<keyof ThemeSettings, 'customBackground'>>(
+    key: K,
+    absentValue?: ThemeSettings[K],
+  ) => createThemeFieldBinding(readTheme, writeThemePatch, { key, absentValue });
 
-  const materialMode = computed({
-    get: () => theme.value.windowMaterial,
-    set: (value: WindowMaterialMode) => {
-      setWindowMaterial(value);
-    },
-  });
-  const keepWindowMaterialOnBlur = computed({
-    get: () => theme.value.keepWindowMaterialOnBlur,
-    set: (value: boolean) => {
-      patchTheme({ keepWindowMaterialOnBlur: value });
-    },
-  });
-  const useCustomTrayMenu = computed({
-    get: () => theme.value.useCustomTrayMenu,
-    set: (value: boolean) => {
-      patchTheme({ useCustomTrayMenu: value });
-    },
-  });
-  const useGlassSwitch = computed({
-    get: () => theme.value.useGlassSwitch ?? false,
-    set: (value: boolean) => {
-      patchTheme({ useGlassSwitch: value });
-    },
-  });
-  const showLeaderboard = computed({
-    get: () => theme.value.showLeaderboard,
-    set: (value: boolean) => {
-      patchTheme({ showLeaderboard: value });
-    },
-  });
-  const playerDetailCoverBehavior = computed({
-    get: () => theme.value.playerDetailCoverBehavior,
-    set: (value: 'show' | 'hide' | 'remember') => {
-      patchTheme({ playerDetailCoverBehavior: value });
-    },
-  });
-  const playerDetailStyle = computed({
-    get: () => theme.value.playerDetailStyle,
-    set: (value: 'classic' | 'vinyl') => {
-      patchTheme({ playerDetailStyle: value });
-    },
-  });
-  const playerDetailMeshBackground = computed({
-    get: () => theme.value.playerDetailMeshBackground,
-    set: (value: boolean) => {
-      patchTheme({ playerDetailMeshBackground: value });
-    },
-  });
-  const playerDetailMeshAntiAlias = computed({
-    get: () => theme.value.playerDetailMeshAntiAlias,
-    set: (value: boolean) => {
-      patchTheme({ playerDetailMeshAntiAlias: value });
+  const keepWindowMaterialOnBlur = bindThemeField('keepWindowMaterialOnBlur');
+  const useCustomTrayMenu = bindThemeField('useCustomTrayMenu');
+  const useGlassSwitch = bindThemeField('useGlassSwitch', false);
+  const showLeaderboard = bindThemeField('showLeaderboard');
+  const playerDetailCoverBehavior = bindThemeField('playerDetailCoverBehavior');
+  const playerDetailStyle = bindThemeField('playerDetailStyle');
+  const playerDetailMeshBackground = bindThemeField('playerDetailMeshBackground');
+  const playerDetailMeshAntiAlias = bindThemeField('playerDetailMeshAntiAlias');
+  const playerDetailVinylMaterial = bindThemeField('playerDetailVinylMaterial');
+
+  // 主题模式走专用提交通道：system 需刷新系统探测，custom 需联动关停特效。
+  const colorScheme = computed<ThemeSettings['mode']>({
+    get: () => readTheme().mode,
+    set: (nextMode) => {
+      applyThemeMode(nextMode);
     },
   });
 
-  const playerDetailVinylMaterial = computed({
-    get: () => theme.value.playerDetailVinylMaterial,
-    set: (value: VinylPlinthMaterial) => {
-      patchTheme({ playerDetailVinylMaterial: value });
+  // 窗口材质同理：启用任何材质档位都会顺带关闭动态背景。
+  const materialMode = computed<WindowMaterialMode>({
+    get: () => readTheme().windowMaterial,
+    set: (nextMaterial: WindowMaterialMode) => {
+      applyMaterialSetting(nextMaterial);
     },
   });
-  const isWindows11 = computed(
-    () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
+
+  // —— 可用性判定链：平台门槛 → 全局阻断（系统透明度 / 主题冲突）→ 档位门禁 ——
+  const isWindows11 = computed(() => {
+    const caps = capabilities.value;
+    return caps.isWindows && (caps.windowsBuildNumber ?? 0) >= 22000;
+  });
+
+  const hasWindowMaterialSelected = computed(() => readTheme().windowMaterial !== 'none');
+
+  const themeBlocksMaterial = computed(
+    () => colorScheme.value === 'custom' || readTheme().dynamicBgType !== 'none',
   );
-  const hasWindowMaterialSelected = computed(() => materialMode.value !== 'none');
-  const hasWindowMaterialThemeConflict = computed(
-    () => colorScheme.value === 'custom' || theme.value.dynamicBgType !== 'none',
-  );
-  const windowMaterialSharedDisabledReason = computed<Exclude<WindowMaterialDisabledReason, 'windows' | 'windows11'>>(() => {
-    if (capabilities.value.systemTransparencyEnabled === false) {
-      return 'transparency';
-    }
 
-    if (hasWindowMaterialThemeConflict.value) {
-      return 'theme-conflict';
-    }
-
-    return null;
-  });
-  const windowMaterialDisabledReason = computed<WindowMaterialDisabledReason>(() => (
-    windowMaterialSharedDisabledReason.value
-      ?? (capabilities.value.isWindows ? null : 'windows')
+  // 全局阻断只看环境：系统透明度被关闭，或自定义皮肤 / 动态背景仍占用着表面。
+  const globalMaterialBlocker = computed<Exclude<MaterialBlockerKind, 'windows' | 'windows11'>>(() => (
+    capabilities.value.systemTransparencyEnabled === false
+      ? 'transparency'
+      : themeBlocksMaterial.value
+        ? 'theme-conflict'
+        : null
   ));
-  const isWindowMaterialDisabled = computed(() => windowMaterialDisabledReason.value !== null);
-  const isDynamicBgDisabled = computed(
-    () => colorScheme.value === 'custom' || hasWindowMaterialSelected.value,
-  );
 
+  const windowMaterialDisabledReason = computed<MaterialBlockerKind>(() => {
+    if (globalMaterialBlocker.value) {
+      return globalMaterialBlocker.value;
+    }
+    return capabilities.value.isWindows ? null : 'windows';
+  });
+
+  const isWindowMaterialDisabled = computed(() => Boolean(windowMaterialDisabledReason.value));
+
+  const isDynamicBgDisabled = computed(() => colorScheme.value === 'custom' || hasWindowMaterialSelected.value);
+
+  // 单个材质档位的平台门禁：mica/acrylic 仅 Win11，blur 依赖 Windows 模糊支持。
+  const materialModeBlocker = (mode: PickableMaterialMode): MaterialBlockerKind => {
+    const requiresWindows11 = mode === 'mica' || mode === 'acrylic';
+    const requiresWindowsBlur = mode === 'blur';
+    const missingPlatformSupport = (requiresWindows11 && !isWindows11.value)
+      || (requiresWindowsBlur && (!capabilities.value.isWindows || !capabilities.value.supportsBlur));
+
+    if (missingPlatformSupport) {
+      return requiresWindows11 ? 'windows11' : 'windows';
+    }
+
+    return globalMaterialBlocker.value;
+  };
+
+  const getWindowMaterialModeDisabledReason = (mode: PickableMaterialMode): MaterialBlockerKind =>
+    materialModeBlocker(mode);
+
+  const isWindowMaterialModeDisabled = (mode: PickableMaterialMode) =>
+    materialModeBlocker(mode) !== null;
+
+  const isWindowMaterialButtonDisabled = (mode: PickableMaterialMode) =>
+    materialMode.value !== mode && materialModeBlocker(mode) !== null;
+
+  // —— 动作入口 ——
   const setColorScheme = (mode: 'light' | 'dark' | 'custom' | 'system') => {
     colorScheme.value = mode;
   };
 
   const setAccentColor = (value: string) => {
-    patchTheme({ accentColor: normalizeThemeColor(value, theme.value.accentColor) });
+    submitThemePatch({ accentColor: normalizeThemeColor(value, theme.value.accentColor) });
   };
 
   const resetAccentColor = () => {
-    patchTheme({ accentColor: DEFAULT_THEME_COLOR });
+    submitThemePatch({ accentColor: DEFAULT_THEME_COLOR });
   };
 
-  const setDynamicType = (type: 'none' | 'flow' | 'blur') => {
-    if (isDynamicBgDisabled.value) {
-      return;
-    }
+  const setDynamicType = (dynamicKind: 'none' | 'flow' | 'blur') => {
+    if (isDynamicBgDisabled.value) return;
 
-    setDynamicBackgroundType(type);
-    if (type !== 'flow') {
+    applyDynamicBgType(dynamicKind);
+    // 非流光模式用不到微调面板，顺手收起。
+    if (dynamicKind !== 'flow') {
       showFlowTuning.value = false;
     }
   };
 
-  const getWindowMaterialModeDisabledReason = (mode: SelectableWindowMaterialMode): WindowMaterialDisabledReason => {
-    if ((mode === 'acrylic' || mode === 'mica') && !isWindows11.value) {
-      return 'windows11';
-    }
+  // 点击材质档位：同档位再点一次视为关闭；切档时收起毛玻璃微调面板。
+  const toggleWindowMaterial = (mode: PickableMaterialMode) => {
+    const isSelected = materialMode.value === mode;
 
-    if (mode === 'blur' && (!capabilities.value.isWindows || !capabilities.value.supportsBlur)) {
-      return 'windows';
-    }
-
-    return windowMaterialSharedDisabledReason.value;
-  };
-
-  const isWindowMaterialModeDisabled = (mode: SelectableWindowMaterialMode) => (
-    getWindowMaterialModeDisabledReason(mode) !== null
-  );
-
-  const isWindowMaterialButtonDisabled = (mode: SelectableWindowMaterialMode) => (
-    materialMode.value !== mode && isWindowMaterialModeDisabled(mode)
-  );
-
-  const toggleWindowMaterial = (mode: SelectableWindowMaterialMode) => {
-    if (materialMode.value === mode) {
-      materialMode.value = 'none';
-      if (mode === 'blur') {
-        showBlurTuning.value = false;
-      }
+    if (isSelected) {
+      applyMaterialSetting('none');
+      if (mode === 'blur') { blurTuningPanelVisible.value = false; }
       return;
     }
 
-    if (isWindowMaterialModeDisabled(mode)) {
-      return;
-    }
+    if (isWindowMaterialModeDisabled(mode)) return;
 
-    materialMode.value = mode;
-    if (mode !== 'blur') {
-      showBlurTuning.value = false;
-    }
+    applyMaterialSetting(mode);
+    if (mode !== 'blur') { blurTuningPanelVisible.value = false; }
   };
 
-  const openCustomModal = () => {
-    showCustomModal.value = true;
-  };
+  const openCustomModal = () => { showCustomModal.value = true; };
 
   const toggleFlowTuning = () => {
-    if (isDynamicBgDisabled.value) {
-      return;
+    if (isDynamicBgDisabled.value) return;
+
+    const flowAlreadyActive = readTheme().dynamicBgType === 'flow';
+    if (!flowAlreadyActive) {
+      applyDynamicBgType('flow');
     }
 
-    if (theme.value.dynamicBgType !== 'flow') {
-      setDynamicBackgroundType('flow');
-      showFlowTuning.value = true;
-      return;
+    showFlowTuning.value = flowAlreadyActive ? !showFlowTuning.value : true;
+  };
+
+  const toggleBlurPanel = () => {
+    const blurAlreadyActive = materialMode.value === 'blur';
+
+    if (!blurAlreadyActive) {
+      if (isWindowMaterialModeDisabled('blur')) return;
+      applyMaterialSetting('blur');
     }
 
-    showFlowTuning.value = !showFlowTuning.value;
+    blurTuningPanelVisible.value = blurAlreadyActive ? !blurTuningPanelVisible.value : true;
   };
 
-  const toggleBlurTuning = () => {
-    if (materialMode.value !== 'blur') {
-      if (isWindowMaterialModeDisabled('blur')) {
-        return;
-      }
+  // —— 数值滑杆：统一收拢为 0-100 整数后写入 ——
+  const setFlowColorBoost = (value: number) => submitPercentThemeField(writeThemePatch, 'flowColorBoost', value);
+  const setFlowDepth = (value: number) => submitPercentThemeField(writeThemePatch, 'flowDepth', value);
+  const setFlowSpeed = (value: number) => submitPercentThemeField(writeThemePatch, 'flowSpeed', value);
+  const setFlowTexture = (value: number) => submitPercentThemeField(writeThemePatch, 'flowTexture', value);
+  const setWindowBlurTint = (value: number) => submitPercentThemeField(writeThemePatch, 'windowBlurTint', value);
 
-      materialMode.value = 'blur';
-      showBlurTuning.value = true;
-      return;
-    }
+  // —— 布尔 / 枚举开关的命令式 setter ——
+  const setKeepWindowMaterialOnBlur = (value: boolean) => { keepWindowMaterialOnBlur.value = value; };
+  const setUseCustomTrayMenu = (value: boolean) => { useCustomTrayMenu.value = value; };
+  const setUseGlassSwitch = (value: boolean) => { useGlassSwitch.value = value; };
+  const setShowLeaderboard = (value: boolean) => { showLeaderboard.value = value; };
+  const setPlayerDetailCoverBehavior = (value: 'show' | 'hide' | 'remember') => { playerDetailCoverBehavior.value = value; };
+  const setPlayerDetailStyle = (value: 'classic' | 'vinyl') => { playerDetailStyle.value = value; };
+  const setPlayerDetailMeshBackground = (value: boolean) => { playerDetailMeshBackground.value = value; };
+  const setPlayerDetailMeshAntiAlias = (value: boolean) => { playerDetailMeshAntiAlias.value = value; };
+  const setPlayerDetailVinylMaterial = (value: VinylPlinthMaterial) => { playerDetailVinylMaterial.value = value; };
 
-    showBlurTuning.value = !showBlurTuning.value;
-  };
-
-  const setFlowColorBoost = (value: number) => {
-    patchTheme({ flowColorBoost: clampFlowValue(value) });
-  };
-
-  const setFlowDepth = (value: number) => {
-    patchTheme({ flowDepth: clampFlowValue(value) });
-  };
-
-  const setFlowSpeed = (value: number) => {
-    patchTheme({ flowSpeed: clampFlowValue(value) });
-  };
-
-  const setFlowTexture = (value: number) => {
-    patchTheme({ flowTexture: clampFlowValue(value) });
-  };
-
-  const setWindowBlurTint = (value: number) => {
-    patchTheme({ windowBlurTint: clampFlowValue(value) });
-  };
-
-  const setKeepWindowMaterialOnBlur = (value: boolean) => {
-    keepWindowMaterialOnBlur.value = value;
-  };
-
-  const setUseCustomTrayMenu = (value: boolean) => {
-    useCustomTrayMenu.value = value;
-  };
-
-  const setShowLeaderboard = (value: boolean) => {
-    showLeaderboard.value = value;
-  };
-
-  const setPlayerDetailCoverBehavior = (value: 'show' | 'hide' | 'remember') => {
-    playerDetailCoverBehavior.value = value;
-  };
-
-  const setPlayerDetailStyle = (value: 'classic' | 'vinyl') => {
-    playerDetailStyle.value = value;
-  };
-
-  const setPlayerDetailMeshBackground = (value: boolean) => {
-    playerDetailMeshBackground.value = value;
-  };
-
-  const setPlayerDetailMeshAntiAlias = (value: boolean) => {
-    playerDetailMeshAntiAlias.value = value;
-  };
-
-  const setPlayerDetailVinylMaterial = (value: VinylPlinthMaterial) => {
-    playerDetailVinylMaterial.value = value;
-  };
-  onMounted(() => {
-    void loadWindowMaterialCapabilities();
-  });
-
-  const setUseGlassSwitch = (value: boolean) => {
-    useGlassSwitch.value = value;
-  };
+  onMounted(() => void probeMaterialCapabilities());
 
   return {
     theme,
     showCustomModal,
-    colorScheme,
-    materialMode,
-    keepWindowMaterialOnBlur,
-    useCustomTrayMenu,
-    useGlassSwitch,
+    colorScheme, materialMode,
+    keepWindowMaterialOnBlur, useCustomTrayMenu, useGlassSwitch,
     showLeaderboard,
-    playerDetailCoverBehavior,
-    playerDetailStyle,
-    playerDetailMeshBackground,
-    playerDetailMeshAntiAlias,
-    isWindows11,
-    hasWindowMaterialSelected,
-    isWindowMaterialDisabled,
-    isWindowMaterialButtonDisabled,
-    getWindowMaterialModeDisabledReason,
-    windowMaterialDisabledReason,
+    playerDetailCoverBehavior, playerDetailStyle, playerDetailVinylMaterial,
+    playerDetailMeshBackground, playerDetailMeshAntiAlias,
+    isWindows11, hasWindowMaterialSelected,
+    isWindowMaterialDisabled, isWindowMaterialButtonDisabled,
+    getWindowMaterialModeDisabledReason, windowMaterialDisabledReason,
     isDynamicBgDisabled,
-    showFlowTuning,
-    showBlurTuning,
-    setColorScheme,
-    setAccentColor,
-    resetAccentColor,
-    setDynamicType,
-    setUseGlassSwitch,
-    toggleWindowMaterial,
-    openCustomModal,
-    toggleFlowTuning,
-    toggleBlurTuning,
-    setFlowColorBoost,
-    setFlowDepth,
-    setFlowSpeed,
-    setFlowTexture,
-    setWindowBlurTint,
-    setKeepWindowMaterialOnBlur,
-    setUseCustomTrayMenu,
-    setShowLeaderboard,
-    setPlayerDetailCoverBehavior,
-    setPlayerDetailStyle,
-    setPlayerDetailMeshBackground,
-    setPlayerDetailMeshAntiAlias,
-    playerDetailVinylMaterial,
-    setPlayerDetailVinylMaterial,
+    showFlowTuning, showBlurTuning: blurTuningPanelVisible,
+    setColorScheme, setAccentColor, resetAccentColor, setDynamicType, setUseGlassSwitch,
+    toggleWindowMaterial, openCustomModal, toggleFlowTuning, toggleBlurTuning: toggleBlurPanel,
+    setFlowColorBoost, setFlowDepth, setFlowSpeed, setFlowTexture, setWindowBlurTint,
+    setKeepWindowMaterialOnBlur, setUseCustomTrayMenu, setShowLeaderboard,
+    setPlayerDetailCoverBehavior, setPlayerDetailStyle,
+    setPlayerDetailMeshBackground, setPlayerDetailMeshAntiAlias, setPlayerDetailVinylMaterial,
   };
 }

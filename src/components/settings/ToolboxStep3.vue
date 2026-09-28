@@ -1,252 +1,168 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { useToast } from '../../composables/toast';
-import { toolboxApi } from '../../services/tauri/toolboxApi';
+import { computed, onMounted, ref } from 'vue';
+import { useToast as makeToast } from '../../composables/toast';
 import SettingHint from './SettingHint.vue';
+import WizardAction from './toolbox/WizardAction.vue';
+import WizardFooter from './toolbox/WizardFooter.vue';
+import WizardPane from './toolbox/WizardPane.vue';
+import { mirrorToParent, useRenameSweep, type RenameNotice } from './toolbox/wizardKit';
 
-interface RenamePreview {
-  original_path: string;
-  original_name: string;
-  new_name: string;
-  status: string;
-  error: string | null;
-}
+const notify = makeToast();
 
-const toast = useToast();
+const props = defineProps<{ targetPath: string }>();
 
-const props = defineProps<{
-  targetPath: string;
-}>();
+const emit = defineEmits<{ next: []; back: []; 'preview-change': [notice: RenameNotice] }>();
 
-const emit = defineEmits<{
-  (e: 'next'): void;
-  (e: 'back'): void;
-  (e: 'preview-change', payload: {
-    targetPath: string;
-    template: string;
-    isScanning: boolean;
-    hasScanned: boolean;
-    items: Array<{
-      originalName: string;
-      newName: string;
-    }>;
-    skippedCount: number;
-  }): void;
-}>();
+const PREF_KEY = 'toolbox_default_template';
 
-const TOOLBOX_TEMPLATE_KEY = 'toolbox_default_template';
-const customTemplate = ref('{title} - {artist}');
-const isScanning = ref(false);
-const isApplying = ref(false);
-const previewItems = ref<RenamePreview[]>([]);
-const hasScanned = ref(false);
+const draft = ref('{title} - {artist}');
 
-const presets = [
-  { label: '歌名 - 歌手', example: '七里香 - 周杰伦', value: '{title} - {artist}' },
-  { label: '歌手 - 歌名', example: '周杰伦 - 七里香', value: '{artist} - {title}' },
-  { label: '轨道. 歌名', example: '01. 七里香', value: '{track}. {title}' },
-];
-
-const variables = [
-  { code: '{title}', name: '标题' },
-  { code: '{artist}', name: '歌手' },
-  { code: '{album}', name: '专辑' },
-  { code: '{year}', name: '年份' },
-  { code: '{track}', name: '轨道号' },
-];
-
-onMounted(() => {
-  const saved = localStorage.getItem(TOOLBOX_TEMPLATE_KEY);
-  if (saved) {
-    customTemplate.value = saved;
-  }
+const sweep = useRenameSweep({
+  say: (text, tone) => notify.showToast(text, tone),
+  doneText: (n) => `成功重命名 ${n} 个文件`,
+  raceGuard: false,
+  clearOnScanError: false,
 });
+const { rows, probing, committing, probed } = sweep;
 
-const setAsDefault = () => {
-  localStorage.setItem(TOOLBOX_TEMPLATE_KEY, customTemplate.value);
-  toast.showToast('已设为默认模板', 'success');
+const presetTuples: Array<[string, string, string]> = [
+  ['歌名 - 歌手', '七里香 - 周杰伦', '{title} - {artist}'],
+  ['歌手 - 歌名', '周杰伦 - 七里香', '{artist} - {title}'],
+  ['轨道. 歌名', '01. 七里香', '{track}. {title}'],
+];
+const presets = presetTuples.map(([label, example, value]) => ({ label, example, value }));
+
+const variableTuples: Array<[string, string]> = [
+  ['{title}', '标题'],
+  ['{artist}', '歌手'],
+  ['{album}', '专辑'],
+  ['{year}', '年份'],
+  ['{track}', '轨道号'],
+];
+const variables = variableTuples.map(([code, name]) => ({ code, name }));
+
+const loadSavedTemplate = () => {
+  const stored = localStorage.getItem(PREF_KEY);
+  if (stored) {
+    draft.value = stored;
+  }
 };
 
-const insertVariable = (variable: string) => {
-  customTemplate.value += variable;
+onMounted(loadSavedTemplate);
+
+const pinDefault = () => {
+  localStorage.setItem(PREF_KEY, draft.value);
+  notify.showToast(
+    '已设为默认模板',
+    'success',
+  );
 };
 
-const validItems = computed(() =>
-  previewItems.value.filter((item) => item.status === 'tags' && !item.error),
-);
+const appendVariable = (token: string) => {
+  draft.value += token;
+};
 
-const skippedItems = computed(() =>
-  previewItems.value.filter((item) => item.status === 'skipped'),
-);
+const usable = computed(() => rows.value.filter((row) => row.status === 'tags' && !row.error));
+const parked = computed(() => rows.value.filter((row) => row.status === 'skipped'));
 
-const emitPreview = () => {
-  emit('preview-change', {
-    targetPath: props.targetPath,
-    template: customTemplate.value,
-    isScanning: isScanning.value,
-    hasScanned: hasScanned.value,
-    items: validItems.value.map((item) => ({
-      originalName: item.original_name,
-      newName: item.new_name,
-    })),
-    skippedCount: skippedItems.value.length,
+const pushSnapshot = () => {
+  const notice: RenameNotice = {
+    targetPath: props.targetPath, template: draft.value,
+    isScanning: probing.value, hasScanned: probed.value,
+    items: usable.value.map((row) => ({ originalName: row.original_name, newName: row.new_name })),
+    skippedCount: parked.value.length,
+  };
+  emit('preview-change', notice);
+};
+
+mirrorToParent([() => props.targetPath, draft, probing, probed, usable, parked], pushSnapshot, true);
+
+const runScan = async () => {
+  if (!props.targetPath?.length) {
+    return;
+  }
+
+  await sweep.sweep(props.targetPath, {
+    mode: 'tags', template: draft.value,
+    remove_track_prefix: false, remove_source_prefix: false,
   });
 };
 
-watch(
-  [() => props.targetPath, customTemplate, isScanning, hasScanned, validItems, skippedItems],
-  emitPreview,
-  { immediate: true, deep: true },
-);
+const advance = async () => {
+  if (usable.value.length === 0) { emit('next'); return; }
 
-const handleScan = async () => {
-  if (!props.targetPath) {
-    return;
-  }
-
-  isScanning.value = true;
-
-  try {
-    const config = {
-      mode: 'tags',
-      template: customTemplate.value,
-      remove_track_prefix: false,
-      remove_source_prefix: false,
-    };
-
-    const result = await toolboxApi.previewRename(props.targetPath, config);
-
-    previewItems.value = result;
-    hasScanned.value = true;
-  } catch (error) {
-    console.error(error);
-    toast.showToast(`扫描失败: ${error}`, 'error');
-  } finally {
-    isScanning.value = false;
-  }
+  await sweep.commit(usable.value, () => emit('next'));
 };
 
-const handleApply = async () => {
-  if (validItems.value.length === 0) {
-    emit('next');
-    return;
-  }
-
-  isApplying.value = true;
-
-  try {
-    const operations = validItems.value.map((item) => ({
-      original_path: item.original_path,
-      new_name: item.new_name,
-    }));
-
-    const count = await toolboxApi.applyRename(operations);
-    toast.showToast(`成功重命名 ${count} 个文件`, 'success');
-    emit('next');
-  } catch (error) {
-    console.error(error);
-    toast.showToast(`应用修改失败: ${error}`, 'error');
-  } finally {
-    isApplying.value = false;
-  }
-};
+const scanLabel = computed(() => (probing.value ? '扫描中...' : probed.value ? '重新扫描' : '扫描并预览'));
+const goLabel = computed(() => (usable.value.length > 0 ? `应用重命名 (${usable.value.length})` : '继续下一步'));
 </script>
 
 <template>
-  <div class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-
+  <WizardPane>
     <section class="toolbox-config-card space-y-4">
       <div class="flex items-center justify-between gap-4 text-sm font-semibold text-gray-800 dark:text-white">
         <span>命名模板</span>
         <SettingHint text="点击变量可将其插入到模板末尾" />
       </div>
 
-      <div class="flex flex-wrap gap-2">
-        <button
-          v-for="preset in presets"
-          :key="preset.value"
-          type="button"
+      <div class="flex gap-2 flex-wrap">
+        <button type="button"
+          v-for="row in presets"
+          :key="row.value"
           class="rounded-lg border px-3 py-2 text-xs font-medium transition"
-          :class="
-            customTemplate === preset.value
-              ? 'border-[#EC4141] bg-[#EC4141] text-white'
-              : 'border-white/10 bg-white/5 text-gray-300 hover:border-white/20'
-          "
-          @click="customTemplate = preset.value"
+          :class="draft === row.value ? 'border-[#EC4141] bg-[#EC4141] text-white' : 'border-white/10 bg-white/5 text-gray-300 hover:border-white/20'"
+          @click="draft = row.value"
         >
-          {{ preset.label }}
-          <span class="ml-1 opacity-60">({{ preset.example }})</span>
+          {{ row.label }}
+          <span class="ml-1 opacity-60">({{ row.example }})</span>
         </button>
       </div>
 
-      <div class="flex gap-3">
-        <input
-          v-model="customTemplate"
-          type="text"
-          placeholder="输入自定义模板..."
+      <div class="gap-3 flex">
+        <input v-model="draft" type="text" placeholder="输入自定义模板..."
           class="flex-1 h-8 rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-gray-100 outline-none transition placeholder:text-white/35 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10"
         />
-        <button
-          type="button"
+        <button type="button"
           class="rounded-lg bg-white/8 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-white/14 disabled:opacity-40"
-          :disabled="!customTemplate"
-          @click="setAsDefault"
-        >
-          设为默认
-        </button>
+          :disabled="!draft"
+          @click="pinDefault"
+        >设为默认</button>
       </div>
 
-      <div class="space-y-2">
-        <div class="flex flex-wrap gap-2">
-          <button
-            v-for="variable in variables"
-            :key="variable.code"
-            type="button"
+      <div class="space-y-2 mt-0">
+        <div class="flex gap-2 flex-wrap">
+          <button type="button"
+            v-for="item in variables"
+            :key="item.code"
             class="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs transition hover:border-[#EC4141]"
-            @click="insertVariable(variable.code)"
+            @click="appendVariable(item.code)"
           >
-            <span class="font-mono font-bold text-gray-200">{{ variable.code }}</span>
-            <span class="ml-1 text-gray-500">{{ variable.name }}</span>
+            <span class="font-mono font-bold text-gray-200">{{ item.code }}</span>
+            <span class="ml-1 text-gray-500">{{ item.name }}</span>
           </button>
         </div>
       </div>
     </section>
 
-    <button
-      type="button"
-      class="flex w-full items-center justify-center gap-2 rounded-xl bg-white/6 border border-white/8 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-      :disabled="!props.targetPath || isScanning"
-      @click="handleScan"
-    >
-      <svg v-if="isScanning" class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-      </svg>
-      {{ isScanning ? '扫描中...' : hasScanned ? '重新扫描' : '扫描并预览' }}
-    </button>
+    <WizardAction
+      :label="scanLabel"
+      size="md"
+      :busy="probing"
+      :disabled="!props.targetPath || probing"
+      @press="runScan"
+    />
 
-    <div class="flex gap-3 border-t border-white/6 pt-4">
-      <button
-        type="button"
-        class="flex-1 rounded-xl border border-white/10 bg-transparent px-6 py-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5"
-        @click="emit('back')"
-      >
-        返回上一步
-      </button>
-      <button
-        type="button"
-        class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#EC4141] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#d63a3a] disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="isApplying || !hasScanned"
-        @click="handleApply"
-      >
-        <svg v-if="isApplying" class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        {{ validItems.length > 0 ? `应用重命名 (${validItems.length})` : '继续下一步' }}
-      </button>
-    </div>
-  </div>
+    <WizardFooter
+      left-label="返回上一步"
+      centered
+      :right-busy="committing"
+      :right-disabled="committing || !probed"
+      :right-label="goLabel"
+      @left="emit('back')"
+      @right="advance"
+    />
+  </WizardPane>
 </template>
 
 <style scoped>

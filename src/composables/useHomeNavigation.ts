@@ -1,140 +1,110 @@
-import type { RouteLocationRaw, Router } from 'vue-router';
+import type { LocationQueryRaw, RouteLocationRaw, Router } from 'vue-router';
 
-type HomeNavigationTarget =
+/** 需要携带 filter 参数定位内容的首页视图 */
+type FilteredHomeView = 'artist' | 'album' | 'playlist';
+
+type HomeViewTarget =
   | { view: 'all' }
-  | { view: 'artist' | 'album' | 'playlist'; filter: string }
+  | { view: FilteredHomeView; filter: string }
   | { view: 'folder'; folder?: string }
   | { view: 'statistics' };
 
-type AppNavigationTarget =
-  | { section: 'home'; target: HomeNavigationTarget }
-  | { section: 'artists' }
-  | { section: 'albums' }
-  | { section: 'favorites' }
-  | { section: 'recent' }
-  | { section: 'plugins' }
-  | { section: 'settings' }
-  | { section: 'auth' };
+type ShellSection =
+  | 'home'
+  | 'artists'
+  | 'albums'
+  | 'favorites'
+  | 'recent'
+  | 'plugins'
+  | 'settings'
+  | 'auth';
 
-const buildHomeLocation = (target: HomeNavigationTarget): RouteLocationRaw => {
-  switch (target.view) {
-    case 'all':
-      return {
-        path: '/',
-        query: {
-          view: 'all',
-        },
-      };
-    case 'artist':
-    case 'album':
-    case 'playlist':
-      return {
-        path: '/',
-        query: {
-          view: target.view,
-          filter: target.filter,
-        },
-      };
-    case 'folder':
-      return {
-        path: '/',
-        query: target.folder
-          ? {
-              view: 'folder',
-              folder: target.folder,
-            }
-          : {
-              view: 'folder',
-            },
-      };
-    case 'statistics':
-      return {
-        path: '/',
-        query: {},
-      };
-    default:
-      return {
-        path: '/',
-        query: {},
-      };
-  }
+type AppTarget = { section: 'home'; target: HomeViewTarget } | { section: Exclude<ShellSection, 'home'> };
+
+export interface NavReplaceOptions {
+  replace?: boolean;
+}
+
+/** 各独立分区对应的路由路径（冻结约定，逐字不可改） */
+const SECTION_PATHS: Record<Exclude<ShellSection, 'home'>, string> = {
+  artists: '/artists',
+  albums: '/albums',
+  favorites: '/favorites',
+  recent: '/recent',
+  plugins: '/plugins',
+  settings: '/settings',
+  auth: '/auth',
 };
 
-export const buildAppLocation = (target: AppNavigationTarget): RouteLocationRaw => {
-  switch (target.section) {
-    case 'home':
-      return buildHomeLocation(target.target);
-    case 'artists':
-      return { path: '/artists' };
-    case 'albums':
-      return { path: '/albums' };
-    case 'favorites':
-      return { path: '/favorites' };
-    case 'recent':
-      return { path: '/recent' };
-    case 'plugins':
-      return { path: '/plugins' };
-    case 'settings':
-      return { path: '/settings' };
-    case 'auth':
-      return { path: '/auth' };
-    default:
-      return { path: '/' };
+const HOME_PATH = '/';
+
+const homeAt = (query: LocationQueryRaw): RouteLocationRaw => ({ path: HOME_PATH, query });
+
+const buildHomeLocation = (target: HomeViewTarget): RouteLocationRaw => {
+  if (target.view === 'all') {
+    return homeAt({ view: 'all' });
   }
+
+  if (target.view === 'folder') {
+    const query: LocationQueryRaw = { view: 'folder' };
+    if (target.folder) {
+      query.folder = target.folder;
+    }
+    return homeAt(query);
+  }
+
+  if (target.view === 'artist' || target.view === 'album' || target.view === 'playlist') {
+    return homeAt({ view: target.view, filter: target.filter });
+  }
+
+  return homeAt({});
+};
+
+export const buildAppLocation = (target: AppTarget): RouteLocationRaw => {
+  if (target.section === 'home') {
+    return buildHomeLocation(target.target);
+  }
+
+  return { path: SECTION_PATHS[target.section] ?? HOME_PATH };
 };
 
 export function useHomeNavigation(router: Router) {
-  const openApp = async (target: AppNavigationTarget, options: { replace?: boolean } = {}) => {
-    const location = buildAppLocation(target);
-    if (options.replace) {
-      await router.replace(location);
-      return;
-    }
+  const navigate = (location: RouteLocationRaw, options?: NavReplaceOptions) =>
+    options?.replace ? router.replace(location) : router.push(location);
 
-    await router.push(location);
-  };
+  const openApp = (target: AppTarget, options: NavReplaceOptions = {}) =>
+    navigate(buildAppLocation(target), options);
 
-  const openHome = async (target: HomeNavigationTarget, options: { replace?: boolean } = {}) =>
+  const openHome = (target: HomeViewTarget, options: NavReplaceOptions = {}) =>
     openApp({ section: 'home', target }, options);
 
-  const openHomeAll = (options?: { replace?: boolean }) =>
-    openHome({ view: 'all' }, options);
+  /** 生成需要 filter 参数定位内容的视图快捷入口 */
+  const filteredViewOpener = (view: FilteredHomeView) => (filterValue: string, options?: NavReplaceOptions) =>
+    openHome({ view, filter: filterValue }, options);
 
-  const openHomeArtist = (artistName: string, options?: { replace?: boolean }) =>
-    openHome({ view: 'artist', filter: artistName }, options);
+  const openHomeArtist = filteredViewOpener('artist');
+  const openHomeAlbum = filteredViewOpener('album');
+  const openHomePlaylist = filteredViewOpener('playlist');
 
-  const openHomeAlbum = (albumKey: string, options?: { replace?: boolean }) =>
-    openHome({ view: 'album', filter: albumKey }, options);
+  const openHomeAll = (options?: NavReplaceOptions) => openHome({ view: 'all' }, options);
 
-  const openHomePlaylist = (playlistId: string, options?: { replace?: boolean }) =>
-    openHome({ view: 'playlist', filter: playlistId }, options);
-
-  const openHomeFolder = (folderPath?: string, options?: { replace?: boolean }) =>
-    openHome({ view: 'folder', folder: folderPath }, options);
-
-  const openHomeStatistics = (options?: { replace?: boolean }) =>
+  const openHomeStatistics = (options?: NavReplaceOptions) =>
     openHome({ view: 'statistics' }, options);
 
-  const openArtists = (options?: { replace?: boolean }) =>
-    openApp({ section: 'artists' }, options);
+  const openHomeFolder = (folderPath?: string, options?: NavReplaceOptions) =>
+    openHome({ view: 'folder', folder: folderPath }, options);
 
-  const openAlbums = (options?: { replace?: boolean }) =>
-    openApp({ section: 'albums' }, options);
+  /** 生成非首页分区的快捷入口 */
+  const sectionOpener = (section: Exclude<ShellSection, 'home'>) => (options?: NavReplaceOptions) =>
+    navigate({ path: SECTION_PATHS[section] }, options);
 
-  const openFavorites = (options?: { replace?: boolean }) =>
-    openApp({ section: 'favorites' }, options);
-
-  const openRecent = (options?: { replace?: boolean }) =>
-    openApp({ section: 'recent' }, options);
-
-  const openPlugins = (options?: { replace?: boolean }) =>
-    openApp({ section: 'plugins' }, options);
-
-  const openSettings = (options?: { replace?: boolean }) =>
-    openApp({ section: 'settings' }, options);
-
-  const openAuth = (options?: { replace?: boolean }) =>
-    openApp({ section: 'auth' }, options);
+  const openArtists = sectionOpener('artists');
+  const openAlbums = sectionOpener('albums');
+  const openFavorites = sectionOpener('favorites');
+  const openRecent = sectionOpener('recent');
+  const openPlugins = sectionOpener('plugins');
+  const openSettings = sectionOpener('settings');
+  const openAuth = sectionOpener('auth');
 
   return {
     openApp,

@@ -1,733 +1,111 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { onUnmounted, ref } from 'vue';
 
 import { useCustomThemeModal } from '../../composables/useCustomThemeModal';
-import { calculateCoverGeometry } from '../../composables/useThemeBackgroundGeometry';
-import RangeSlider from '../common/RangeSlider.vue';
+import SkinPreviewStage from './customSkin/SkinPreviewStage.vue';
+import SkinAdjustmentPanel from './customSkin/SkinAdjustmentPanel.vue';
+import { useSkinDraftMedia } from './customSkin/useSkinDraftMedia';
 import WallpaperGallery from './WallpaperGallery.vue';
 
-const emit = defineEmits(['close']);
-const {
-  preview,
-  handleSelectImage,
-  handleSelectVideo,
-  handleCancel: discardThemeDraft,
-  handleSave: applyThemeDraft,
-} = useCustomThemeModal();
+const emit = defineEmits<{ (event: 'close'): void; }>();
 
-const foregroundOptions = [
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' },
-] as const;
+const themeModal = useCustomThemeModal();
+const preview = themeModal.preview;
+const handleSelectImage = themeModal.handleSelectImage;
+const handleSelectVideo = themeModal.handleSelectVideo;
+const discardThemeDraft = themeModal.handleCancel;
+const applyThemeDraft = themeModal.handleSave;
 
-const isDarkForeground = computed(() => preview.value.foregroundStyle === 'dark');
+const draftMedia = useSkinDraftMedia({ draft: preview, pickImage: handleSelectImage, pickVideo: handleSelectVideo });
+const adoptLocalImage = draftMedia.adoptLocalImage;
+const adoptLocalVideo = draftMedia.adoptLocalVideo;
+const applyGalleryWallpaper = draftMedia.adoptGalleryWallpaper;
 
-// --- 淡出动画 ---
-const isClosing = ref(false);
-let closeTimer: ReturnType<typeof setTimeout> | null = null;
+// —— 关闭淡出动画：先播动画再卸载 ——
+const closingOut = ref(false);
+let fadeOutTimer: ReturnType<typeof setTimeout> | null = null;
 
-const closeWithAnimation = () => {
-  if (isClosing.value) return;
-  isClosing.value = true;
-  closeTimer = setTimeout(() => {
+const beginClose = () => {
+  if (closingOut.value) { return; }
+  closingOut.value = true;
+  fadeOutTimer = setTimeout(() => {
     emit('close');
-    closeTimer = null;
+    fadeOutTimer = null;
   }, 220);
 };
 
-const handleCancel = () => {
-  discardThemeDraft();
-  closeWithAnimation();
-};
+const cancelAndClose = () => { discardThemeDraft(); beginClose(); };
+const saveAndClose = () => { applyThemeDraft(); beginClose(); };
 
-const handleSave = () => {
-  applyThemeDraft();
-  closeWithAnimation();
-};
+// —— 壁纸中心弹层 ——
+const galleryOpen = ref(false);
 
-const loadImageMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
-  const img = new Image();
+onUnmounted(() => { if (fadeOutTimer) { clearTimeout(fadeOutTimer); fadeOutTimer = null; } });
 
-  const cleanup = () => {
-    img.onload = null;
-    img.onerror = null;
-    img.src = '';
-  };
-
-  img.onload = () => {
-    const metadata = {
-      width: img.naturalWidth,
-      height: img.naturalHeight,
-    };
-    cleanup();
-    resolve(metadata);
-  };
-  img.onerror = () => {
-    cleanup();
-    reject(new Error('图片加载失败'));
-  };
-  img.src = src;
-});
-
-const loadVideoMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
-  const video = document.createElement('video');
-  video.preload = 'metadata';
-  video.muted = true;
-  video.playsInline = true;
-
-  const cleanup = () => {
-    video.onloadedmetadata = null;
-    video.onerror = null;
-    video.src = '';
-  };
-
-  video.onloadedmetadata = () => {
-    const metadata = {
-      width: video.videoWidth,
-      height: video.videoHeight,
-    };
-    cleanup();
-    resolve(metadata);
-  };
-  video.onerror = () => {
-    cleanup();
-    reject(new Error('视频加载失败'));
-  };
-  video.src = src;
-});
-
-// --- 背景物理与视口几何管理 ---
-const containerRef = ref<HTMLDivElement | null>(null);
-const isDragging = ref(false);
-let startX = 0;
-let startY = 0;
-let startTranslateX = 0;
-let startTranslateY = 0;
-
-const viewportWidth = ref(0);
-const viewportHeight = ref(0);
-const imageNaturalWidth = ref(preview.value.imageWidth || 0);
-const imageNaturalHeight = ref(preview.value.imageHeight || 0);
-
-const blurCompensation = computed(() => Math.min(0.08, (preview.value.blur || 0) * 0.002));
-const renderScale = computed(() => Math.max(1.0, (preview.value.scale || 1.0) + blurCompensation.value));
-
-const viewportGeometry = computed(() => {
-  return calculateCoverGeometry(
-    viewportWidth.value,
-    viewportHeight.value,
-    imageNaturalWidth.value,
-    imageNaturalHeight.value
-  );
-});
-
-const canDrag = computed(() => {
-  if (!preview.value.imagePath || !viewportGeometry.value || viewportWidth.value <= 0 || viewportHeight.value <= 0) return false;
-
-  const safeScale = Math.max(1.0, (preview.value.scale || 1.0) + blurCompensation.value);
-  const scaledImgW = viewportGeometry.value.width * safeScale;
-  const scaledImgH = viewportGeometry.value.height * safeScale;
-
-  const maxTxPx = Math.max(0, (scaledImgW - viewportWidth.value) / 2);
-  const maxTyPx = Math.max(0, (scaledImgH - viewportHeight.value) / 2);
-
-  return maxTxPx > 0.5 || maxTyPx > 0.5;
-});
-
-const getActualBackgroundRatio = () => {
-  const bgEl = document.querySelector('[data-global-background]');
-  if (bgEl) {
-    const rect = bgEl.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      return rect.width / rect.height;
-    }
-  }
-  return window.innerWidth / window.innerHeight;
-};
-
-const updateViewportSize = () => {
-  if (!containerRef.value) return;
-  const containerRect = containerRef.value.getBoundingClientRect();
-  const W_max = containerRect.width;
-  const H_max = containerRect.height;
-
-  if (W_max <= 0 || H_max <= 0) return;
-
-  const R_win = getActualBackgroundRatio();
-
-  let w = W_max;
-  let h = W_max / R_win;
-
-  if (h > H_max) {
-    h = H_max;
-    w = H_max * R_win;
-  }
-
-  viewportWidth.value = Math.floor(w);
-  viewportHeight.value = Math.floor(h);
-};
-
-// --- 精密防漏底边界 Clamp 函数 ---
-const getClampedTranslation = (tx: number, ty: number, scale = preview.value.scale) => {
-  if (!viewportGeometry.value) {
-    return { tx: 0, ty: 0 };
-  }
-
-  const safeScale = Math.max(1.0, scale + blurCompensation.value);
-  const scaledImgW = viewportGeometry.value.width * safeScale;
-  const scaledImgH = viewportGeometry.value.height * safeScale;
-
-  const maxTxPx = Math.max(0, (scaledImgW - viewportWidth.value) / 2);
-  const maxTyPx = Math.max(0, (scaledImgH - viewportHeight.value) / 2);
-
-  const txPx = tx * viewportWidth.value;
-  const tyPx = ty * viewportHeight.value;
-
-  const clampedTxPx = Math.max(-maxTxPx, Math.min(maxTxPx, txPx));
-  const clampedTyPx = Math.max(-maxTyPx, Math.min(maxTyPx, tyPx));
-
-  return {
-    tx: clampedTxPx / viewportWidth.value,
-    ty: clampedTyPx / viewportHeight.value,
-  };
-};
-
-// --- 拖拽与缩放事件同步 Inline 处理 ---
-const handlePointerDown = (e: PointerEvent) => {
-  if (!preview.value.imagePath || !canDrag.value) return;
-  
-  e.preventDefault();
-
-  const container = e.currentTarget as HTMLDivElement;
-  startX = e.clientX;
-  startY = e.clientY;
-  startTranslateX = preview.value.translateX || 0;
-  startTranslateY = preview.value.translateY || 0;
-  
-  container.setPointerCapture(e.pointerId);
-  isDragging.value = true;
-};
-
-const handlePointerMove = (e: PointerEvent) => {
-  if (!isDragging.value || viewportWidth.value <= 0 || viewportHeight.value <= 0) return;
-  
-  const deltaX = e.clientX - startX;
-  const deltaY = e.clientY - startY;
-  
-  const rawTx = startTranslateX + deltaX / viewportWidth.value;
-  const rawTy = startTranslateY + deltaY / viewportHeight.value;
-  
-  const clamped = getClampedTranslation(rawTx, rawTy);
-  
-  preview.value.translateX = clamped.tx;
-  preview.value.translateY = clamped.ty;
-};
-
-const endDrag = (e: PointerEvent) => {
-  if (!isDragging.value) return;
-  const container = e.currentTarget as HTMLDivElement;
-  if (container.hasPointerCapture(e.pointerId)) {
-    try {
-      container.releasePointerCapture(e.pointerId);
-    } catch {}
-  }
-  isDragging.value = false;
-};
-
-const handlePointerUp = (e: PointerEvent) => {
-  endDrag(e);
-};
-
-const handlePointerCancel = (e: PointerEvent) => {
-  endDrag(e);
-};
-
-const handleLostPointerCapture = (e: PointerEvent) => {
-  endDrag(e);
-};
-
-const handleWheel = (e: WheelEvent) => {
-  if (!preview.value.imagePath || viewportWidth.value <= 0 || viewportHeight.value <= 0) return;
-
-  e.preventDefault();
-
-  const viewportElement = document.getElementById('skin-preview-viewport');
-  if (!viewportElement) return;
-
-  const viewportRect = viewportElement.getBoundingClientRect();
-  
-  const cursorX = e.clientX - viewportRect.left - viewportWidth.value / 2;
-  const cursorY = e.clientY - viewportRect.top - viewportHeight.value / 2;
-
-  const oldScale = preview.value.scale || 1.0;
-  const oldTxPx = (preview.value.translateX || 0) * viewportWidth.value;
-  const oldTyPx = (preview.value.translateY || 0) * viewportHeight.value;
-
-  const zoomStep = 0.05;
-  const delta = e.deltaY < 0 ? zoomStep : -zoomStep;
-  let nextScale = oldScale + delta;
-  nextScale = Math.max(1.0, Math.min(2.0, nextScale));
-  nextScale = Math.round(nextScale * 100) / 100;
-
-  if (nextScale === oldScale) return;
-
-  const ratio = nextScale / oldScale;
-  const nextTxPx = cursorX - (cursorX - oldTxPx) * ratio;
-  const nextTyPx = cursorY - (cursorY - oldTyPx) * ratio;
-
-  const nextTx = nextTxPx / viewportWidth.value;
-  const nextTy = nextTyPx / viewportHeight.value;
-
-  const clamped = getClampedTranslation(nextTx, nextTy, nextScale);
-
-  preview.value.scale = nextScale;
-  preview.value.translateX = clamped.tx;
-  preview.value.translateY = clamped.ty;
-};
-
-// --- 低频安全补偿 Clamp 触发器 ---
-watch(
-  [viewportWidth, viewportHeight, imageNaturalWidth, imageNaturalHeight, () => preview.value.scale],
-  () => {
-    if (viewportWidth.value <= 0 || viewportHeight.value <= 0) return;
-    const clamped = getClampedTranslation(preview.value.translateX || 0, preview.value.translateY || 0);
-    preview.value.translateX = clamped.tx;
-    preview.value.translateY = clamped.ty;
-  }
-);
-
-// --- 挂载与销毁生命周期生命体征 ---
-let resizeObserver: ResizeObserver | null = null;
-let isUnmounted = false;
-
-onMounted(async () => {
-  updateViewportSize();
-  window.addEventListener('resize', updateViewportSize);
-
-  if (typeof ResizeObserver !== 'undefined' && containerRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      updateViewportSize();
-    });
-    resizeObserver.observe(containerRef.value);
-  }
-
-  if (preview.value.imagePath && (!imageNaturalWidth.value || !imageNaturalHeight.value)) {
-    try {
-      const metadata = await loadImageMetadata(convertFileSrc(preview.value.imagePath));
-      if (isUnmounted) return;
-
-      imageNaturalWidth.value = metadata.width;
-      imageNaturalHeight.value = metadata.height;
-      preview.value.imageWidth = metadata.width;
-      preview.value.imageHeight = metadata.height;
-    } catch {}
-  }
-});
-
-onUnmounted(() => {
-  isUnmounted = true;
-  window.removeEventListener('resize', updateViewportSize);
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
-  }
-  if (closeTimer) {
-    clearTimeout(closeTimer);
-    closeTimer = null;
-  }
-});
-
-const handleSelectNewImage = async () => {
-  const oldImagePath = preview.value.imagePath;
-  await handleSelectImage();
-  const newImagePath = preview.value.imagePath;
-
-  if (newImagePath && newImagePath !== oldImagePath) {
-    preview.value.scale = 1.0;
-    preview.value.translateX = 0;
-    preview.value.translateY = 0;
-
-    try {
-      const metadata = preview.value.mediaType === 'video'
-        ? await loadVideoMetadata(convertFileSrc(newImagePath))
-        : await loadImageMetadata(convertFileSrc(newImagePath));
-      if (isUnmounted) return;
-
-      imageNaturalWidth.value = metadata.width;
-      imageNaturalHeight.value = metadata.height;
-      preview.value.imageWidth = metadata.width;
-      preview.value.imageHeight = metadata.height;
-    } catch (err) {
-      console.error('Failed to load media size metadata', err);
-      imageNaturalWidth.value = 0;
-      imageNaturalHeight.value = 0;
-      preview.value.imageWidth = 0;
-      preview.value.imageHeight = 0;
-    }
-  }
-};
-
-const handleSelectNewVideo = async () => {
-  const oldImagePath = preview.value.imagePath;
-  await handleSelectVideo();
-  const newImagePath = preview.value.imagePath;
-
-  if (newImagePath && newImagePath !== oldImagePath) {
-    preview.value.scale = 1.0;
-    preview.value.translateX = 0;
-    preview.value.translateY = 0;
-
-    try {
-      const metadata = await loadVideoMetadata(convertFileSrc(newImagePath));
-      if (isUnmounted) return;
-
-      imageNaturalWidth.value = metadata.width;
-      imageNaturalHeight.value = metadata.height;
-      preview.value.imageWidth = metadata.width;
-      preview.value.imageHeight = metadata.height;
-    } catch (err) {
-      console.error('Failed to load video size metadata', err);
-      imageNaturalWidth.value = 0;
-      imageNaturalHeight.value = 0;
-      preview.value.imageWidth = 0;
-      preview.value.imageHeight = 0;
-    }
-  }
-};
-
-// --- 壁纸中心：从在线壁纸库下载并应用 ---
-const showWallpaperGallery = ref(false);
-
-const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'video') => {
-  preview.value.imagePath = localPath;
-  preview.value.mediaType = mediaType === 'video' ? 'video' : 'image';
-  preview.value.scale = 1.0;
-  preview.value.translateX = 0;
-  preview.value.translateY = 0;
-
-  try {
-    const metadata = mediaType === 'video'
-      ? await loadVideoMetadata(convertFileSrc(localPath))
-      : await loadImageMetadata(convertFileSrc(localPath));
-    if (isUnmounted) return;
-
-    imageNaturalWidth.value = metadata.width;
-    imageNaturalHeight.value = metadata.height;
-    preview.value.imageWidth = metadata.width;
-    preview.value.imageHeight = metadata.height;
-  } catch (err) {
-    console.error('Failed to load wallpaper size metadata', err);
-    imageNaturalWidth.value = 0;
-    imageNaturalHeight.value = 0;
-    preview.value.imageWidth = 0;
-    preview.value.imageHeight = 0;
-  }
+// 图标路径数据集中管理
+const ICON_PATHS = {
+  closeModal: 'M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z',
+  localImage: 'M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z',
 };
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      class="skin-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      :class="{ 'is-closing': isClosing }"
-    >
-      <div
-        class="skin-card flex max-h-[calc(100vh-2rem)] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
-        :class="{ 'is-closing': isClosing }"
-      >
+    <div class="skin-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" :class="{ 'is-closing': closingOut }">
+      <div class="skin-card flex max-h-[calc(100vh-2rem)] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md" :class="{ 'is-closing': closingOut }">
+        <!-- 头部：标题 + 媒体来源入口 -->
         <div class="border-b border-white/10 px-6 py-4">
           <div class="flex items-center justify-between">
-            <span class="text-base font-bold">自定义皮肤</span>
-            <button @click="handleCancel" class="text-white/50 transition hover:text-white">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-              </svg>
-            </button>
-          </div>
+            <span class="font-bold text-base">自定义皮肤</span>
+            <button class="text-white/50 transition hover:text-white" @click="cancelAndClose">
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path fill-rule="evenodd" clip-rule="evenodd" :d="ICON_PATHS.closeModal" /></svg></button></div>
           <div class="mt-3 flex gap-3">
-            <button
-              @click="handleSelectNewImage"
-              class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
-              </svg>
-              <span>选择本地图片</span>
-            </button>
-            <button
-              @click="handleSelectNewVideo"
-              class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm10.5 5.5a1 1 0 00-1.5-.87l-4 2.31a1 1 0 000 1.73l4 2.31a1 1 0 001.5-.87V8.5z" clip-rule="evenodd" />
-              </svg>
-              <span>选择本地视频</span>
-            </button>
-            <button
-              @click="showWallpaperGallery = true"
-              class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-[#EC4141]/30 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-semibold text-[#ff8a8a] backdrop-blur-md transition hover:bg-[#EC4141]/20 active:scale-95 shadow-sm cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer" @click="adoptLocalImage">
+              <svg class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path fill-rule="evenodd" clip-rule="evenodd" :d="ICON_PATHS.localImage" /></svg>
+              <span>选择本地图片</span></button>
+            <button class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer" @click="adoptLocalVideo">
+              <svg class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm10.5 5.5a1 1 0 00-1.5-.87l-4 2.31a1 1 0 000 1.73l4 2.31a1 1 0 001.5-.87V8.5z" fill-rule="evenodd" clip-rule="evenodd" /></svg>
+              <span>选择本地视频</span></button>
+            <button class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-[#EC4141]/30 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-semibold text-[#ff8a8a] backdrop-blur-md transition hover:bg-[#EC4141]/20 active:scale-95 shadow-sm cursor-pointer" @click="galleryOpen = true">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                 <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                <polyline points="21 15 16 10 5 21"></polyline>
-              </svg>
-              <span>壁纸中心</span>
-            </button>
-          </div>
-        </div>
+                <polyline points="21 15 16 10 5 21"></polyline></svg>
+              <span>壁纸中心</span></button>
+          </div></div>
 
-        <div class="flex-1 overflow-y-auto">
-          <div class="flex flex-col gap-6 p-6">
-            <div
-              ref="containerRef"
-              @pointerdown="handlePointerDown"
-              @pointermove="handlePointerMove"
-              @pointerup="handlePointerUp"
-              @pointercancel="handlePointerCancel"
-              @lostpointercapture="handleLostPointerCapture"
-              @wheel="handleWheel"
-              class="group relative h-48 w-full overflow-hidden rounded-xl border border-white/5 bg-[#262626] select-none touch-none flex items-center justify-center"
-              style="isolation: isolate;"
-              :class="{
-                'cursor-grab': canDrag && !isDragging,
-                'cursor-grabbing': canDrag && isDragging
-              }"
-            >
-              <div
-                id="skin-preview-viewport"
-                class="relative overflow-visible z-10 transition-all duration-300"
-                :style="{
-                  width: `${viewportWidth}px`,
-                  height: `${viewportHeight}px`
-                }"
-              >
-                <div v-if="preview.imagePath" class="absolute inset-0">
-                  <div
-                    v-if="viewportGeometry"
-                    class="absolute"
-                    :style="{
-                      position: 'absolute',
-                      left: '50%',
-                      top: '50%',
-                      width: `${viewportGeometry.width}px`,
-                      height: `${viewportGeometry.height}px`,
-                      transform: 'translate(-50%, -50%)',
-                    }"
-                  >
-                    <video
-                      v-if="preview.mediaType === 'video'"
-                      :src="convertFileSrc(preview.imagePath)"
-                      muted
-                      loop
-                      playsinline
-                      autoplay
-                      preload="metadata"
-                      class="absolute block max-w-none max-h-none select-none pointer-events-none"
-                      :style="{
-                        width: '100%',
-                        height: '100%',
-                        transform: `translate3d(${(preview.translateX || 0) * viewportWidth}px, ${(preview.translateY || 0) * viewportHeight}px, 0) scale(${renderScale})`,
-                        transformOrigin: 'center center',
-                        filter: `blur(${preview.blur}px)`,
-                        opacity: preview.opacity ?? 1.0,
-                      }"
-                    ></video>
-                    <img
-                      v-else
-                      :src="convertFileSrc(preview.imagePath)"
-                      class="absolute block max-w-none max-h-none select-none pointer-events-none"
-                      :style="{
-                        width: '100%',
-                        height: '100%',
-                        transform: `translate3d(${(preview.translateX || 0) * viewportWidth}px, ${(preview.translateY || 0) * viewportHeight}px, 0) scale(${renderScale})`,
-                        transformOrigin: 'center center',
-                        filter: `blur(${preview.blur}px)`,
-                        opacity: preview.opacity ?? 1.0,
-                      }"
-                    />
-                  </div>
+        <!-- 主体：预览舞台 + 参数调节 -->
+        <div class="overflow-y-auto flex-1">
+          <div class="flex flex-col p-6 gap-6">
+            <SkinPreviewStage :draft="preview" />
 
-                  <div
-                    class="absolute inset-0 z-[5] pointer-events-none"
-                    :style="{ backgroundColor: preview.maskColor, opacity: preview.maskAlpha }"
-                  ></div>
-                </div>
+            <SkinAdjustmentPanel :draft="preview" />
+          </div></div>
 
-                <div v-else class="absolute inset-0 flex flex-col items-center justify-center text-white/20 pointer-events-none bg-[#262626]">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="mb-2 h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span class="text-xs">未选择图片</span>
-                </div>
-
-                <div
-                  class="absolute inset-0 z-10 pointer-events-none border border-dashed border-white/50 rounded-[4px] transition-all duration-300"
-                  :class="{
-                    'shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]': preview.imagePath
-                  }"
-                ></div>
-
-                <div
-                  v-if="preview.imagePath"
-                  class="absolute right-2 top-2 z-20 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-medium tracking-wider text-white/40 backdrop-blur-sm transition-opacity duration-300 group-hover:opacity-0"
-                >
-                  软件背景区域
-                </div>
-
-                <div 
-                  v-if="preview.imagePath" 
-                  class="absolute inset-x-0 bottom-0 z-30 px-3 pb-3 pointer-events-none animate-in fade-in duration-300"
-                >
-                  <div class="flex items-end justify-between gap-3">
-                    <div class="min-w-0">
-                      <div
-                        class="text-[10px] font-medium uppercase tracking-[0.2em]"
-                        :class="isDarkForeground ? 'text-black/45' : 'text-white/60'"
-                      >
-                        字体预览
-                      </div>
-                      <div
-                        class="mt-1 truncate text-base font-bold"
-                        :class="isDarkForeground ? 'text-[#111111] drop-shadow-[0_1px_6px_rgba(255,255,255,0.18)]' : 'text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.4)]'"
-                      >
-                        夜航星
-                      </div>
-                      <div
-                        class="mt-1 truncate text-[12px]"
-                        :class="isDarkForeground ? 'text-black/65' : 'text-white/72'"
-                      >
-                        浅色和深色字体会直接预览在这里
-                      </div>
-                    </div>
-
-                    <div
-                      class="shrink-0 text-[11px] font-semibold"
-                      :class="isDarkForeground ? 'text-black/70' : 'text-white/85'"
-                    >
-                      {{ preview.foregroundStyle === 'light' ? '浅色字体' : '深色字体' }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="space-y-5">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between text-xs text-white/60">
-                  <span>模糊度</span>
-                  <span>{{ preview.blur }}px</span>
-                </div>
-                <RangeSlider
-                  v-model="preview.blur"
-                  :min="0"
-                  :max="50"
-                  :step="1"
-                  variant="skin"
-                  class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
-                />
-              </div>
-
-              <div class="space-y-2">
-                <div class="flex items-center justify-between text-xs text-white/60">
-                  <span>遮罩浓度</span>
-                  <span>{{ Math.round(preview.maskAlpha * 100) }}%</span>
-                </div>
-                <RangeSlider
-                  v-model="preview.maskAlpha"
-                  :min="0"
-                  :max="1"
-                  :step="0.01"
-                  variant="skin"
-                  class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
-                />
-              </div>
-
-              <div class="space-y-2">
-                <div class="flex items-center justify-between text-xs text-white/60">
-                  <span>背景亮度</span>
-                  <span>{{ Math.round(preview.opacity * 100) }}%</span>
-                </div>
-                <RangeSlider
-                  v-model="preview.opacity"
-                  :min="0.1"
-                  :max="1"
-                  :step="0.01"
-                  variant="skin"
-                  class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
-                />
-              </div>
-
-              <div class="space-y-2">
-                <div class="flex items-center justify-between text-xs text-white/60">
-                  <span>画面缩放</span>
-                  <span>{{ preview.scale.toFixed(2) }}x</span>
-                </div>
-                <RangeSlider
-                  v-model="preview.scale"
-                  :min="1"
-                  :max="2.0"
-                  :step="0.01"
-                  variant="skin"
-                  class="w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[#EC4141]"
-                />
-              </div>
-
-              <div class="space-y-2">
-                <div class="flex items-center justify-between text-xs text-white/60">
-                  <span>字体颜色</span>
-                </div>
-                <div class="flex gap-1 rounded-lg bg-white/10 p-1">
-                  <button
-                    v-for="option in foregroundOptions"
-                    :key="option.value"
-                    @click="preview.foregroundStyle = option.value"
-                    class="flex-1 rounded-md py-1.5 text-xs font-medium transition-all"
-                    :class="preview.foregroundStyle === option.value ? 'bg-[#EC4141] text-white shadow-sm' : 'text-white/60 hover:bg-white/5 hover:text-white'"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex gap-4 border-t border-white/10 bg-[#242424] px-6 py-4">
-          <button @click="handleCancel" class="flex-1 rounded-full border border-white/10 py-2.5 text-sm font-medium transition hover:bg-white/5">
-            取消
-          </button>
+        <!-- 底部：取消 / 保存 -->
+        <div class="flex gap-4 border-t bg-[#242424] border-white/10 px-6 py-4">
+          <button class="flex-1 rounded-full border border-white/10 py-2.5 text-sm font-medium transition hover:bg-white/5" @click="cancelAndClose">取消</button>
           <button
-            @click="handleSave"
+            class="rounded-full flex-1 bg-[#EC4141] py-2.5 font-bold text-sm text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#EC4141]"
             :disabled="!preview.imagePath"
-            class="flex-1 rounded-full bg-[#EC4141] py-2.5 text-sm font-bold text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#EC4141]"
-          >
-            保存并使用
-          </button>
-        </div>
-      </div>
-    </div>
+            @click="saveAndClose"
+          >保存并使用</button></div>
+      </div></div>
 
     <WallpaperGallery
-      v-if="showWallpaperGallery"
+      v-if="galleryOpen"
       :current-path="preview.imagePath"
-      @close="showWallpaperGallery = false"
-      @select="handleWallpaperSelect"
+      @close="galleryOpen = false"
+      @select="applyGalleryWallpaper"
     />
   </Teleport>
 </template>
 
 <style scoped>
-
-
-.scale-layer {
-  -webkit-user-drag: none;
-  user-select: none;
-  pointer-events: none;
-}
-
-/* ==================== 弹窗动画 ==================== */
+/* ==================== 弹窗进出场动画 ==================== */
 .skin-overlay {
   animation: skin-overlay-in 0.2s ease;
   transition: opacity 0.2s ease;
@@ -749,12 +127,10 @@ const handleWallpaperSelect = async (localPath: string, mediaType?: 'image' | 'v
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.skin-overlay.is-closing {
-  opacity: 0;
-}
+.skin-overlay.is-closing { opacity: 0; }
 
 .skin-card.is-closing {
-  opacity: 0;
   transform: scale(0.92) translateY(8px);
+  opacity: 0;
 }
 </style>

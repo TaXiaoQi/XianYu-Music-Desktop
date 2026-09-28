@@ -1,540 +1,281 @@
-import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { emitTo, listen } from '@tauri-apps/api/event';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
-import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useCoverCache } from './useCoverCache';
-import { useLyrics } from './lyrics';
-import { showDesktopLyrics } from './lyrics';
-import { usePlayer } from '../features/playback';
+import { showDesktopLyrics, useLyrics } from './lyrics';
 import { useThemeSettings } from './useThemeSettings';
-import { useSettings } from '../features/settings/useSettings';
-import { useUiStore } from '../shared/stores/ui';
-import { stateApi } from '../services/tauri/stateApi';
-import { windowApi } from '../services/tauri/windowApi';
+import { persistAnchor } from './miniPlayerBoundsMemory';
+import { restoreMainWindowFromMiniMode } from './miniPlayerMainRestore';
 import {
+  acquireMiniWindow,
+  awaitMiniStateApplied,
+  awaitMiniWindowReady,
+  confirmMiniStateApplied,
+  confirmMiniWindowReady,
+  detachMiniWindowRuntime,
+  lookupMiniWindow,
+} from './miniPlayerWindowDriver';
+import { usePlayer } from '../features/playback';
+import { useSettings } from '../features/settings/useSettings';
+import {
+  APP_SHOW_MAIN_EVENT,
   MINI_PLAYER_ACTION_EVENT,
   MINI_PLAYER_BOUNDS_EVENT,
-  MINI_PLAYER_BOUNDS_KEY,
   MINI_PLAYER_READY_EVENT,
   MINI_PLAYER_REQUEST_STATE_EVENT,
   MINI_PLAYER_STATE_APPLIED_EVENT,
   MINI_PLAYER_STATE_EVENT,
   MINI_PLAYER_VISIBILITY_EVENT,
-  MINI_PLAYER_WINDOW_BASE_HEIGHT,
-  MINI_PLAYER_WINDOW_EXPANDED_HEIGHT,
   MINI_PLAYER_WINDOW_LABEL,
-  MINI_PLAYER_WINDOW_WIDTH,
-  APP_SHOW_MAIN_EVENT,
   type MiniPlayerAction,
   type MiniPlayerStatePayload,
   type MiniPlayerWindowBounds,
 } from '../features/miniPlayer/shared';
+import { useUiStore } from '../shared/stores/ui';
 
-let miniPlayerWindowPromise: Promise<WebviewWindow> | null = null;
-let isMiniPlayerReady = false;
-let miniPlayerReadyPromise: Promise<void> | null = null;
-let resolveMiniPlayerReady: (() => void) | null = null;
-let resolveMiniPlayerStateApplied: (() => void) | null = null;
+export { restoreMainWindowFromMiniMode };
 
-let miniPlayerPrewarmTimer: number | null = null;
-
-const MINI_PLAYER_BOUNDS_STATE_KEY = 'mini_player_window_bounds';
-
-function clearMiniPlayerPrewarmTimer() {
-  if (miniPlayerPrewarmTimer !== null) {
-    window.clearTimeout(miniPlayerPrewarmTimer);
-    miniPlayerPrewarmTimer = null;
-  }
-}
-
-async function readMiniPlayerBounds(): Promise<MiniPlayerWindowBounds | null> {
-  let stored: string | null = null;
-  try {
-    stored = await stateApi.readStateJson(MINI_PLAYER_BOUNDS_STATE_KEY);
-  } catch {
-    stored = null;
-  }
-  if (!stored && typeof localStorage !== 'undefined') {
-    stored = localStorage.getItem(MINI_PLAYER_BOUNDS_KEY);
-  }
-  if (!stored) return null;
-
-  try {
-    const parsed = JSON.parse(stored) as Partial<MiniPlayerWindowBounds>;
-    if (!Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) {
-      return null;
-    }
-
-    return {
-      x: Math.round(parsed.x as number),
-      y: Math.round(parsed.y as number),
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function writeMiniPlayerBounds(bounds: MiniPlayerWindowBounds) {
-  const payload = JSON.stringify({
-    x: Math.round(bounds.x),
-    y: Math.round(bounds.y),
-  });
-  try {
-    await stateApi.writeStateJson(MINI_PLAYER_BOUNDS_STATE_KEY, payload);
-  } catch {
-    /* 磁盘写入失败时忽略，不影响使用 */
-  }
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(MINI_PLAYER_BOUNDS_KEY, payload);
-  }
-}
-
-async function normalizeMiniPlayerBounds(bounds: MiniPlayerWindowBounds | null) {
-  if (!bounds) return null;
-
-  try {
-    const workAreas = (await availableMonitors()).map((monitor) => {
-      const scaleFactor = monitor.scaleFactor || 1;
-      const position = monitor.workArea.position.toLogical(scaleFactor);
-      const size = monitor.workArea.size.toLogical(scaleFactor);
-
-      return {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
-      };
-    });
-
-    if (workAreas.length === 0) return bounds;
-
-    const width = MINI_PLAYER_WINDOW_WIDTH;
-    const height = MINI_PLAYER_WINDOW_EXPANDED_HEIGHT;
-    const boundsCenterX = bounds.x + width / 2;
-    const boundsCenterY = bounds.y + MINI_PLAYER_WINDOW_BASE_HEIGHT / 2;
-    const workArea = workAreas.reduce((best, candidate) => {
-      const bestCenterX = best.x + best.width / 2;
-      const bestCenterY = best.y + best.height / 2;
-      const candidateCenterX = candidate.x + candidate.width / 2;
-      const candidateCenterY = candidate.y + candidate.height / 2;
-      const bestDistance = (bestCenterX - boundsCenterX) ** 2 + (bestCenterY - boundsCenterY) ** 2;
-      const candidateDistance = (candidateCenterX - boundsCenterX) ** 2 + (candidateCenterY - boundsCenterY) ** 2;
-      return candidateDistance < bestDistance ? candidate : best;
-    }, workAreas[0]);
-
-    const maxX = workArea.x + Math.max(0, workArea.width - width);
-    const maxY = workArea.y + Math.max(0, workArea.height - height);
-
-    return {
-      x: Math.round(Math.min(maxX, Math.max(workArea.x, bounds.x))),
-      y: Math.round(Math.min(maxY, Math.max(workArea.y, bounds.y))),
-    };
-  } catch {
-    return bounds;
-  }
-}
-
-async function getMiniPlayerWindow() {
-  return WebviewWindow.getByLabel(MINI_PLAYER_WINDOW_LABEL);
-}
-
-async function ensureMiniPlayerWindow() {
-  const existing = await getMiniPlayerWindow();
-  if (existing) {
-    const bounds = await normalizeMiniPlayerBounds(await readMiniPlayerBounds());
-    if (bounds) {
-      await existing.setPosition(new LogicalPosition(bounds.x, bounds.y));
-    }
-    const baseSize = new LogicalSize(MINI_PLAYER_WINDOW_WIDTH, MINI_PLAYER_WINDOW_BASE_HEIGHT);
-    await existing.setMinSize(baseSize);
-    await existing.setMaxSize(baseSize);
-    await existing.setSize(baseSize);
-    return existing;
-  }
-
-  if (!miniPlayerWindowPromise) {
-    isMiniPlayerReady = false;
-    miniPlayerReadyPromise = null;
-    resolveMiniPlayerReady = null;
-
-    miniPlayerWindowPromise = (async () => {
-      const bounds = await normalizeMiniPlayerBounds(await readMiniPlayerBounds());
-      const windowInstance = new WebviewWindow(MINI_PLAYER_WINDOW_LABEL, {
-        url: '/',
-        title: 'XianYu Music Mini Player',
-        width: MINI_PLAYER_WINDOW_WIDTH,
-        height: MINI_PLAYER_WINDOW_BASE_HEIGHT,
-        minWidth: MINI_PLAYER_WINDOW_WIDTH,
-        minHeight: MINI_PLAYER_WINDOW_BASE_HEIGHT,
-        maxWidth: MINI_PLAYER_WINDOW_WIDTH,
-        maxHeight: MINI_PLAYER_WINDOW_BASE_HEIGHT,
-        visible: false,
-        decorations: false,
-        transparent: true,
-        shadow: false,
-        resizable: false,
-        skipTaskbar: true,
-        alwaysOnTop: true,
-        focusable: true,
-        center: !bounds,
-      });
-
-      return new Promise<WebviewWindow>((resolve, reject) => {
-        let settled = false;
-
-        void windowInstance.once('tauri://created', async () => {
-          if (settled) return;
-
-          try {
-            if (bounds) {
-              await windowInstance.setPosition(new LogicalPosition(bounds.x, bounds.y));
-            }
-
-            settled = true;
-            resolve(windowInstance);
-          } catch (error) {
-            settled = true;
-            reject(error);
-          }
-        });
-
-        void windowInstance.once('tauri://error', (event) => {
-          if (settled) return;
-          settled = true;
-          reject(event.payload);
-        });
-      });
-    })();
-
-    miniPlayerWindowPromise = miniPlayerWindowPromise.finally(() => {
-      miniPlayerWindowPromise = null;
-    });
-  }
-
-  return miniPlayerWindowPromise;
-}
-
-function markMiniPlayerReady() {
-  isMiniPlayerReady = true;
-  resolveMiniPlayerReady?.();
-  resolveMiniPlayerReady = null;
-  miniPlayerReadyPromise = null;
-}
-
-function waitForMiniPlayerReady(timeoutMs = 1000) {
-  if (isMiniPlayerReady) {
-    return Promise.resolve();
-  }
-
-  if (!miniPlayerReadyPromise) {
-    miniPlayerReadyPromise = new Promise<void>((resolve) => {
-      resolveMiniPlayerReady = resolve;
-      window.setTimeout(resolve, timeoutMs);
-    });
-  }
-
-  return miniPlayerReadyPromise;
-}
-
-function waitForMiniPlayerStateApplied(timeoutMs = 500) {
-  return new Promise<void>((resolve) => {
-    resolveMiniPlayerStateApplied = resolve;
-    window.setTimeout(resolve, timeoutMs);
-  });
-}
-
-export async function restoreMainWindowFromMiniMode(options: {
-  isMiniMode: Ref<boolean>;
-  hideMiniPlayerWindow: () => Promise<void>;
-  keepMiniPlayerVisible?: boolean;
-  mainWindow: {
-    unminimize: () => Promise<void>;
-    show: () => Promise<void>;
-    setFocus: () => Promise<void>;
-  };
-  isImmersiveFullscreen?: boolean;
-}) {
-  options.isMiniMode.value = false;
-  if (!options.keepMiniPlayerVisible) {
-    await options.hideMiniPlayerWindow();
-  }
-  await new Promise<void>((resolve) => setTimeout(resolve, 500));
-
-  let fadeMask: HTMLDivElement | null = null;
-  if (typeof document !== 'undefined') {
-    const isDark = document.documentElement.classList.contains('dark');
-    fadeMask = document.createElement('div');
-    fadeMask.style.cssText = `position:fixed;inset:0;z-index:99999;pointer-events:none;background-color:${isDark ? '#262626' : '#fafafa'};opacity:1;`;
-    document.body.appendChild(fadeMask);
-  }
-
-  await options.mainWindow.unminimize();
-  await options.mainWindow.show();
-  await options.mainWindow.setFocus();
-
-  if (fadeMask) {
-    requestAnimationFrame(() => {
-      fadeMask.style.transition = 'opacity 0.3s ease-out';
-      fadeMask.style.opacity = '0';
-    });
-    window.setTimeout(() => fadeMask?.remove(), 400);
-  }
-
-  if (options.isImmersiveFullscreen) {
-    try {
-      await windowApi.refreshImmersiveFullscreen();
-    } catch { /* 忽略 */ }
-  }
-
-  if (typeof window !== 'undefined') {
-    setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 0);
-    setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 100);
-  }
-}
+// 迷你窗进度条推流的节流间隔（毫秒）。
+const PROGRESS_SYNC_GAP_MS = 250;
 
 export function useMiniPlayerWindowBridge() {
-  const mainWindow = getCurrentWindow();
-  const { settings } = useSettings();
-  const uiStore = useUiStore();
+  const hostWindow = getCurrentWindow();
+  const { settings: appSettings } = useSettings();
+  const ui = useUiStore();
   const {
     currentSong,
+    currentTime,
+    isFavorite,
+    isMiniMode,
     isPlaying,
-    volume,
+    playMode,
     playQueue,
-    tempQueue,
-    songList,
-    togglePlay,
+    playSong,
     prevSong,
     nextSong,
-    handleVolume,
-    toggleMute,
-    playSong,
-    isMiniMode,
-    currentTime,
-    playMode,
     seekTo,
-    toggleMode,
-    isFavorite,
+    songList,
+    tempQueue,
+    volume,
+    handleVolume,
     toggleFavorite,
+    toggleMode,
+    toggleMute,
+    togglePlay,
   } = usePlayer();
-  const { currentLyricLine } = useLyrics();
-  const { loadCover } = useCoverCache();
-  const { isDarkTheme, theme } = useThemeSettings();
+  const { currentLyricLine: activeLyricLine } = useLyrics();
+  const { loadCover: fetchCover } = useCoverCache();
+  const { isDarkTheme: darkTheme, theme: currentTheme } = useThemeSettings();
 
-  let isMainWindowClosing = false;
-  let keepMiniPlayerVisibleOnMiniModeExit = false;
-  const isMiniPlayerWindowVisible = ref(false);
-  const unlisteners: Array<() => void> = [];
+  let mainExitHandled = false;
+  let holdMiniOnQuitMiniMode = false;
+  const miniSurfaceVisible = ref(false);
+  const disposers: Array<() => void> = [];
 
-  const createStatePayload = async (): Promise<MiniPlayerStatePayload> => {
-    const song = currentSong.value;
-    const coverUrl = song?.path ? await loadCover(song.path).catch(() => '') : '';
+  const buildStateSnapshot = async (): Promise<MiniPlayerStatePayload> => {
+    const activeSong = currentSong.value;
+    const playingNow = isPlaying.value;
+    const darkMode = darkTheme.value;
+    const currentVolume = volume.value;
+    const elapsed = currentTime.value;
+    const playbackMode = playMode.value;
+    const lyricsOnDesktop = showDesktopLyrics.value;
+    const lyricLineText = activeLyricLine.value?.text ?? '';
+    const fetchedCover = activeSong?.path ? await fetchCover(activeSong.path).catch(() => '') : '';
+    const queuedSongs =
+      playQueue.value.length + tempQueue.value.length > 0
+        ? [...tempQueue.value, ...playQueue.value]
+        : songList.value;
 
     return {
-      currentSong: song,
-      coverUrl: coverUrl || '',
-      isPlaying: isPlaying.value,
-      isDarkTheme: isDarkTheme.value,
-      volume: volume.value,
-      queue: playQueue.value.length > 0 || tempQueue.value.length > 0
-        ? [...tempQueue.value, ...playQueue.value]
-        : songList.value,
-      lyricText: currentLyricLine.value?.text ?? '',
-      windowMaterial: theme.value.windowMaterial,
-      windowBlurTint: theme.value.windowBlurTint,
-      currentTime: currentTime.value,
-      duration: song?.duration ?? 0,
-      isFavorite: song ? isFavorite(song) : false,
-      playMode: playMode.value,
-      desktopLyricsEnabled: showDesktopLyrics.value,
+      currentSong: activeSong,
+      coverUrl: fetchedCover || '',
+      isPlaying: playingNow,
+      isDarkTheme: darkMode,
+      volume: currentVolume,
+      queue: queuedSongs,
+      lyricText: lyricLineText,
+      windowMaterial: currentTheme.value.windowMaterial,
+      windowBlurTint: currentTheme.value.windowBlurTint,
+      currentTime: elapsed,
+      duration: activeSong?.duration ?? 0,
+      isFavorite: activeSong ? isFavorite(activeSong) : false,
+      playMode: playbackMode,
+      desktopLyricsEnabled: lyricsOnDesktop,
     };
   };
 
-  const emitStateToMiniPlayer = async () => {
-    const targetWindow = await getMiniPlayerWindow();
-    if (!targetWindow) return;
+  const pushStateSnapshot = async () => {
+    if ((await lookupMiniWindow()) === null) return;
 
-    const appliedPromise = waitForMiniPlayerStateApplied();
-    await emitTo<MiniPlayerStatePayload>(
-      MINI_PLAYER_WINDOW_LABEL,
-      MINI_PLAYER_STATE_EVENT,
-      await createStatePayload(),
-    );
-    await appliedPromise;
+    const appliedGate = awaitMiniStateApplied();
+    const snapshot = await buildStateSnapshot();
+    await emitTo(MINI_PLAYER_WINDOW_LABEL, MINI_PLAYER_STATE_EVENT, snapshot);
+    await appliedGate;
   };
 
-  const emitMiniPlayerVisibility = async (visible: boolean) => {
-    const targetWindow = await getMiniPlayerWindow();
-    if (!targetWindow) return;
+  const pushVisibilityFlag = async (shown: boolean) => {
+    if ((await lookupMiniWindow()) === null) return;
 
-    await emitTo(MINI_PLAYER_WINDOW_LABEL, MINI_PLAYER_VISIBILITY_EVENT, { visible });
+    await emitTo(MINI_PLAYER_WINDOW_LABEL, MINI_PLAYER_VISIBILITY_EVENT, { visible: shown });
   };
 
-  const openMiniPlayerWindow = async () => {
-    clearMiniPlayerPrewarmTimer();
-
-    uiStore.mainWindowUiSleepRequested = true;
+  const openMiniSurface = async () => {
+    ui.mainWindowUiSleepRequested = true;
     await nextTick();
-    await mainWindow.hide();
+    await hostWindow.hide();
 
-    const targetWindow = await ensureMiniPlayerWindow();
-    await waitForMiniPlayerReady();
-    await targetWindow.setAlwaysOnTop(true);
-    await emitStateToMiniPlayer();
-    isMiniPlayerWindowVisible.value = true;
-    await emitMiniPlayerVisibility(true);
-    await targetWindow.show();
+    const surface = await acquireMiniWindow();
+    await awaitMiniWindowReady();
+    await surface.setAlwaysOnTop(true);
+    await pushStateSnapshot();
+    miniSurfaceVisible.value = true;
+    await pushVisibilityFlag(true);
+    await surface.show();
+  };
+
+  const closeMiniSurface = async () => {
+    const surface = await lookupMiniWindow();
+    if (surface === null) {
+      miniSurfaceVisible.value = false;
+      return;
+    }
+
+    try {
+      await surface.destroy();
+    } catch (destroyError) {
+      console.warn('Failed to destroy mini player window:', destroyError);
+    } finally {
+      detachMiniWindowRuntime();
+      miniSurfaceVisible.value = false;
+    }
   };
 
   const hideMiniPlayerWindow = async () => {
-    await emitMiniPlayerVisibility(false);
-    await destroyMiniPlayerWindow();
+    await pushVisibilityFlag(false);
+    await closeMiniSurface();
   };
 
-  const destroyMiniPlayerWindow = async () => {
-    const targetWindow = await getMiniPlayerWindow();
-    if (!targetWindow) {
-      isMiniPlayerWindowVisible.value = false;
-      return;
-    }
-
-    try {
-      await targetWindow.destroy();
-    } catch (error) {
-      console.warn('Failed to destroy mini player window:', error);
-    } finally {
-      miniPlayerWindowPromise = null;
-      isMiniPlayerReady = false;
-      miniPlayerReadyPromise = null;
-      resolveMiniPlayerReady = null;
-      resolveMiniPlayerStateApplied = null;
-      isMiniPlayerWindowVisible.value = false;
-    }
-  };
-
-  const revealMainWindowFromTray = async () => {
-    keepMiniPlayerVisibleOnMiniModeExit = false;
-    uiStore.mainWindowUiSleepRequested = false;
-
-    await restoreMainWindowFromMiniMode({
+  const resumeFromMiniMode = (keepSurface?: boolean) =>
+    restoreMainWindowFromMiniMode({
       isMiniMode,
       hideMiniPlayerWindow,
-      keepMiniPlayerVisible: false,
-      mainWindow,
-      isImmersiveFullscreen: uiStore.isImmersiveFullscreen,
+      keepMiniPlayerVisible: keepSurface,
+      mainWindow: hostWindow,
+      isImmersiveFullscreen: ui.isImmersiveFullscreen,
     });
+
+  const wakeMainWindowFromTray = async () => {
+    holdMiniOnQuitMiniMode = false;
+    ui.mainWindowUiSleepRequested = false;
+
+    await resumeFromMiniMode(false);
   };
 
-  const handleAction = async (action: MiniPlayerAction) => {
-    switch (action.type) {
-      case 'toggle-play':
-        await togglePlay();
-        break;
-      case 'prev-song':
-        prevSong();
-        break;
-      case 'next-song':
-        nextSong();
-        break;
-      case 'set-volume':
-        await handleVolume({ target: { value: String(action.volume) } } as unknown as Event);
-        break;
-      case 'toggle-mute':
-        await toggleMute();
-        break;
-      case 'play-song':
-        await playSong(action.song);
-        break;
-      case 'restore-main':
-        uiStore.mainWindowUiSleepRequested = false;
-        await restoreMainWindowFromMiniMode({
-          isMiniMode,
-          hideMiniPlayerWindow,
-          mainWindow,
-          isImmersiveFullscreen: uiStore.isImmersiveFullscreen,
-        });
-        break;
-      case 'close':
-        isMiniMode.value = false;
-        uiStore.mainWindowUiSleepRequested = false;
-        await hideMiniPlayerWindow();
-        break;
-      case 'seek':
-        await seekTo(action.time);
-        break;
-      case 'toggle-favorite':
-        if (currentSong.value) toggleFavorite(currentSong.value);
-        break;
-      case 'cycle-play-mode':
-        toggleMode();
-        break;
-      case 'toggle-desktop-lyrics':
-        showDesktopLyrics.value = !showDesktopLyrics.value;
-        break;
-      default:
-        break;
+  const runMiniAction = async (action: MiniPlayerAction) => {
+    if (action.type === 'toggle-play') {
+      await togglePlay();
+      return;
+    }
+    if (action.type === 'prev-song') {
+      prevSong();
+      return;
+    }
+    if (action.type === 'next-song') {
+      nextSong();
+      return;
+    }
+    if (action.type === 'set-volume') {
+      const sliderEvent = { target: { value: String(action.volume) } } as unknown as Event;
+      await handleVolume(sliderEvent);
+      return;
+    }
+    if (action.type === 'toggle-mute') {
+      await toggleMute();
+      return;
+    }
+    if (action.type === 'play-song') {
+      await playSong(action.song);
+      return;
+    }
+    if (action.type === 'restore-main') {
+      ui.mainWindowUiSleepRequested = false;
+      await resumeFromMiniMode(undefined);
+      return;
+    }
+    if (action.type === 'close') {
+      isMiniMode.value = false;
+      ui.mainWindowUiSleepRequested = false;
+      await hideMiniPlayerWindow();
+      return;
+    }
+    if (action.type === 'seek') {
+      await seekTo(action.time);
+      return;
+    }
+    if (action.type === 'toggle-favorite') {
+      const targetSong = currentSong.value;
+      if (targetSong) toggleFavorite(targetSong);
+      return;
+    }
+    if (action.type === 'cycle-play-mode') {
+      toggleMode();
+      return;
+    }
+    if (action.type === 'toggle-desktop-lyrics') {
+      showDesktopLyrics.value = !showDesktopLyrics.value;
     }
   };
 
-  onMounted(async () => {
-    unlisteners.push(await mainWindow.onCloseRequested(async (event) => {
-      if (settings.value.closeToTray) return;
-      if (isMainWindowClosing) return;
+  const bindEventListeners = async () => {
+    disposers.push(
+      await hostWindow.onCloseRequested(async (event) => {
+        if (appSettings.value.closeToTray || mainExitHandled) return;
 
-      isMainWindowClosing = true;
-      event.preventDefault();
-      await destroyMiniPlayerWindow();
-      await mainWindow.close();
-    }));
+        mainExitHandled = true;
+        event.preventDefault();
+        await closeMiniSurface();
+        await hostWindow.close();
+      }),
+    );
 
-    unlisteners.push(await listen(MINI_PLAYER_REQUEST_STATE_EVENT, () => {
-      void emitStateToMiniPlayer();
-    }));
+    disposers.push(await listen(MINI_PLAYER_REQUEST_STATE_EVENT, () => void pushStateSnapshot()));
+    disposers.push(await listen(APP_SHOW_MAIN_EVENT, () => void wakeMainWindowFromTray()));
+    disposers.push(await listen(MINI_PLAYER_READY_EVENT, () => confirmMiniWindowReady()));
+    disposers.push(await listen(MINI_PLAYER_STATE_APPLIED_EVENT, () => confirmMiniStateApplied()));
+    disposers.push(
+      await listen<MiniPlayerAction>(MINI_PLAYER_ACTION_EVENT, (event) =>
+        void runMiniAction(event.payload),
+      ),
+    );
+    disposers.push(
+      await listen<MiniPlayerWindowBounds>(MINI_PLAYER_BOUNDS_EVENT, (event) =>
+        void persistAnchor(event.payload),
+      ),
+    );
+  };
 
-    unlisteners.push(await listen(APP_SHOW_MAIN_EVENT, () => {
-      void revealMainWindowFromTray();
-    }));
-
-    unlisteners.push(await listen(MINI_PLAYER_READY_EVENT, () => {
-      markMiniPlayerReady();
-    }));
-
-    unlisteners.push(await listen(MINI_PLAYER_STATE_APPLIED_EVENT, () => {
-      resolveMiniPlayerStateApplied?.();
-      resolveMiniPlayerStateApplied = null;
-    }));
-
-    unlisteners.push(await listen<MiniPlayerAction>(MINI_PLAYER_ACTION_EVENT, (event) => {
-      void handleAction(event.payload);
-    }));
-
-    unlisteners.push(await listen<MiniPlayerWindowBounds>(MINI_PLAYER_BOUNDS_EVENT, (event) => {
-      void writeMiniPlayerBounds(event.payload);
-    }));
-
+  onMounted(() => {
+    void bindEventListeners();
   });
 
   onUnmounted(() => {
-    clearMiniPlayerPrewarmTimer();
-    unlisteners.splice(0).forEach((unlisten) => unlisten());
+    while (disposers.length > 0) {
+      disposers.pop()?.();
+    }
   });
 
-  watch(isMiniMode, async (visible) => {
-    if (visible) {
-      await openMiniPlayerWindow();
+  watch(isMiniMode, async (enteringMiniMode) => {
+    if (enteringMiniMode) {
+      await openMiniSurface();
       return;
     }
 
-    uiStore.mainWindowUiSleepRequested = false;
+    ui.mainWindowUiSleepRequested = false;
 
-    if (keepMiniPlayerVisibleOnMiniModeExit) {
-      keepMiniPlayerVisibleOnMiniModeExit = false;
+    if (holdMiniOnQuitMiniMode) {
+      holdMiniOnQuitMiniMode = false;
       return;
     }
 
@@ -543,30 +284,31 @@ export function useMiniPlayerWindowBridge() {
 
   watch(
     [
-      currentSong,
       isPlaying,
+      currentSong,
       volume,
+      songList,
       playQueue,
       tempQueue,
-      songList,
-      isDarkTheme,
-      () => currentLyricLine.value?.text,
       playMode,
       showDesktopLyrics,
+      darkTheme,
+      () => activeLyricLine.value?.text,
     ],
     () => {
-      if (!isMiniPlayerWindowVisible.value) return;
-      void emitStateToMiniPlayer();
+      if (!miniSurfaceVisible.value) return;
+      void pushStateSnapshot();
     },
   );
 
-  let lastProgressEmitMs = 0;
-  const PROGRESS_EMIT_THROTTLE_MS = 250;
+  let lastProgressSyncMs = 0;
   watch(currentTime, () => {
-    if (!isMiniPlayerWindowVisible.value) return;
-    const now = performance.now();
-    if (now - lastProgressEmitMs < PROGRESS_EMIT_THROTTLE_MS) return;
-    lastProgressEmitMs = now;
-    void emitStateToMiniPlayer();
+    if (!miniSurfaceVisible.value) return;
+
+    const nowMs = performance.now();
+    if (nowMs - lastProgressSyncMs < PROGRESS_SYNC_GAP_MS) return;
+
+    lastProgressSyncMs = nowMs;
+    void pushStateSnapshot();
   });
 }

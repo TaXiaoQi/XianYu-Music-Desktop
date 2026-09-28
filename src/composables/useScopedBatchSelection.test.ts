@@ -3,18 +3,31 @@ import { effectScope, nextTick, ref } from 'vue';
 
 import { useScopedBatchSelection } from './useScopedBatchSelection';
 
-describe('useScopedBatchSelection', () => {
-  it('clears selected paths when batch mode is turned off', async () => {
-    const scopeKey = ref('home::folder::/music/live');
-    const scope = effectScope();
+const INITIAL_SCOPE = 'home::folder::/music/live';
+const SWITCHED_SCOPE = 'home::all';
 
-    let selection!: ReturnType<typeof useScopedBatchSelection>;
-    scope.run(() => {
-      selection = useScopedBatchSelection(scopeKey);
-    });
+type SelectionController = ReturnType<typeof useScopedBatchSelection>;
 
-    selection.isBatchMode.value = true;
-    selection.selectedPaths.value = new Set(['a.flac', 'b.flac']);
+/** 在独立 effectScope 内挂载批量选择状态，返回控制器与作用域 */
+const mountSelection = (initialScope: string) => {
+  const scopeKey = ref(initialScope);
+  const scope = effectScope();
+  const selection = scope.run(() => useScopedBatchSelection(scopeKey)) as SelectionController;
+  return { scopeKey, scope, selection };
+};
+
+/** 打开批量模式 */
+const enterBatchMode = (controller: SelectionController) => {
+  controller.isBatchMode.value = true;
+};
+
+describe('useScopedBatchSelection 批量选择', () => {
+  it('clears marked paths once batch mode is switched off', async () => {
+    const { scope, selection } = mountSelection(INITIAL_SCOPE);
+
+    enterBatchMode(selection);
+    const seededPaths = new Set(['a.flac', 'b.flac']);
+    selection.selectedPaths.value = seededPaths;
     selection.isBatchMode.value = false;
 
     await nextTick();
@@ -24,19 +37,13 @@ describe('useScopedBatchSelection', () => {
     scope.stop();
   });
 
-  it('exits batch mode and clears selected paths when the selection scope changes', async () => {
-    const scopeKey = ref('home::folder::/music/live');
-    const scope = effectScope();
+  it('leaves batch mode and wipes marked paths when the scope switches', async () => {
+    const { scope, scopeKey, selection } = mountSelection(INITIAL_SCOPE);
 
-    let selection!: ReturnType<typeof useScopedBatchSelection>;
-    scope.run(() => {
-      selection = useScopedBatchSelection(scopeKey);
-    });
-
-    selection.isBatchMode.value = true;
+    enterBatchMode(selection);
     selection.selectedPaths.value = new Set(['folder-song.flac']);
 
-    scopeKey.value = 'home::all';
+    scopeKey.value = SWITCHED_SCOPE;
     await nextTick();
 
     expect(selection.isBatchMode.value).toBe(false);

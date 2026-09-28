@@ -8,123 +8,107 @@ import { useNavigationStore } from '../../shared/stores/navigation';
 import { useLibraryAllSongPathCache } from '../../composables/useLibraryAllSongPathCache';
 import { usePlayerLibraryView } from './usePlayerLibraryView';
 
-const tauriInvokeMock = vi.fn();
+const invokeBridge = vi.hoisted(() => ({ tauriInvoke: vi.fn() }));
 
-vi.mock('../../services/tauri/invoke', () => ({
-  tauriInvoke: (...args: unknown[]) => tauriInvokeMock(...args),
-}));
+vi.mock('../../services/tauri/invoke', () => ({ tauriInvoke: invokeBridge.tauriInvoke }));
 
-const flushPromises = () => new Promise(resolve => setTimeout(resolve, 0));
-const deferred = <T>() => {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((innerResolve) => {
-    resolve = innerResolve;
-  });
-  return { promise, resolve };
+const settleMacroTasks = () => new Promise<void>((release) => setTimeout(release, 0));
+
+const manualPromise = <T>() => {
+  let settle!: (value: T) => void;
+  const settled = new Promise<T>((resolve) => { settle = resolve; });
+  return { settled, settle };
 };
 
-const makeSong = (overrides: Partial<Song> = {}): Song => ({
-  path: '/music/demo.flac',
-  name: 'demo.flac',
-  title: 'Demo',
-  artist: 'Artist',
-  artist_names: ['Artist'],
-  effective_artist_names: ['Artist'],
-  album: 'Album',
-  album_artist: 'Artist',
-  album_key: 'album::artist',
-  is_various_artists_album: false,
-  collapse_artist_credits: false,
-  duration: 180,
-  added_at: 1,
-  ...overrides,
-});
+function makeSong(overrides: Partial<Song> = {}): Song {
+  return {
+    path: '/music/demo.flac', name: 'demo.flac', title: 'Demo',
+    artist: 'Artist', artist_names: ['Artist'], effective_artist_names: ['Artist'],
+    album: 'Album', album_artist: 'Artist', album_key: 'album::artist',
+    is_various_artists_album: false, collapse_artist_credits: false, duration: 180,
+    added_at: 1,
+    ...overrides,
+  };
+}
 
-describe('player library view first import refresh', () => {
+const twoSongFixture = () => [
+  makeSong({ path: '/music/first.flac', title: 'First' }),
+  makeSong({ path: '/music/second.flac', title: 'Second' }),
+];
+
+const pathCacheApi = useLibraryAllSongPathCache;
+
+const openAllSongsView = () => {
+  const navigation = useNavigationStore();
+  const library = useLibraryStore();
+  navigation.currentViewMode = 'all';
+  library.localSortMode = 'title';
+  return { navigation, library };
+};
+
+describe('usePlayerLibraryView first-import refresh', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    useLibraryAllSongPathCache().clearLibraryAllSongPathCache();
+    pathCacheApi().clearLibraryAllSongPathCache();
 
-    tauriInvokeMock.mockImplementation(async (command: string) => {
-      if (command !== 'get_library_song_paths_for_all_view') {
-        return [];
+    invokeBridge.tauriInvoke.mockImplementation(async (command: string) => {
+      if (command === 'get_library_song_paths_for_all_view') {
+        return [...useLibraryStore().canonicalSongPaths];
       }
-
-      const libraryStore = useLibraryStore();
-      return [...libraryStore.canonicalSongPaths];
+      return [];
     });
   });
 
-  it('refreshes local music after songs are imported into an empty library', async () => {
-    const navigationStore = useNavigationStore();
-    const libraryStore = useLibraryStore();
+  it('refreshes the all view once songs land in a previously empty library', async () => {
+    openAllSongsView();
 
-    navigationStore.currentViewMode = 'all';
-    libraryStore.localSortMode = 'title';
+    const view = usePlayerLibraryView();
+    await settleMacroTasks();
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
-
-    expect(displaySongList.value).toEqual([]);
+    expect(view.displaySongList.value).toEqual([]);
 
     const importedSong = makeSong();
-    useLibraryAllSongPathCache().clearLibraryAllSongPathCache();
-    libraryStore.librarySongs = [importedSong];
-    await vi.waitFor(() => {
-      expect(displaySongList.value.map(song => song.path)).toEqual([importedSong.path]);
-    });
+    pathCacheApi().clearLibraryAllSongPathCache();
+    useLibraryStore().librarySongs = [importedSong];
+    await vi.waitFor(() => { expect(view.displaySongList.value.map(song => song.path)).toEqual([importedSong.path]); });
   });
 
-  it('does not apply stale all-view path results after the library changes', async () => {
-    const navigationStore = useNavigationStore();
-    const libraryStore = useLibraryStore();
-    const firstSong = makeSong({ path: '/music/first.flac', title: 'First' });
-    const secondSong = makeSong({ path: '/music/second.flac', title: 'Second' });
-    const request = deferred<string[]>();
+  it('ignores all-view path results that arrive after the library has moved on', async () => {
+    const { library } = openAllSongsView();
+    const [firstSong, secondSong] = twoSongFixture();
+    const pendingPaths = manualPromise<string[]>();
 
-    navigationStore.currentViewMode = 'all';
-    libraryStore.localSortMode = 'title';
-    libraryStore.librarySongs = [firstSong];
-    tauriInvokeMock.mockImplementationOnce(async () => request.promise);
+    library.librarySongs = [firstSong];
+    invokeBridge.tauriInvoke.mockImplementationOnce(async () => pendingPaths.settled);
 
-    const { displaySongList } = usePlayerLibraryView();
-    await flushPromises();
+    const view = usePlayerLibraryView();
+    await settleMacroTasks();
 
-    libraryStore.patchLibrarySongs({ songs: [secondSong], deleted_paths: [] });
-    request.resolve([firstSong.path]);
+    library.patchLibrarySongs({ songs: [secondSong], deleted_paths: [] });
+    pendingPaths.settle([firstSong.path]);
 
-    await vi.waitFor(() => {
-      expect(displaySongList.value.map(song => song.path)).toEqual([firstSong.path, secondSong.path]);
-    });
+    await vi.waitFor(() => { expect(view.displaySongList.value.map(song => song.path)).toEqual([firstSong.path, secondSong.path]); });
   });
 
-  it('filters stale fallback paths that no longer exist in the song lookup', async () => {
-    const navigationStore = useNavigationStore();
-    const libraryStore = useLibraryStore();
-    const firstSong = makeSong({ path: '/music/first.flac', title: 'First' });
-    const secondSong = makeSong({ path: '/music/second.flac', title: 'Second' });
-    const request = deferred<string[]>();
+  it('drops fallback paths whose songs no longer resolve in the lookup', async () => {
+    const { navigation, library } = openAllSongsView();
+    const [firstSong, secondSong] = twoSongFixture();
+    const pendingPaths = manualPromise<string[]>();
 
-    navigationStore.currentViewMode = 'all';
-    libraryStore.localSortMode = 'title';
-    libraryStore.librarySongs = [firstSong, secondSong];
-    tauriInvokeMock.mockResolvedValueOnce([firstSong.path, secondSong.path]);
+    library.librarySongs = [firstSong, secondSong];
+    invokeBridge.tauriInvoke.mockResolvedValueOnce([firstSong.path, secondSong.path]);
 
-    const { displaySongList } = usePlayerLibraryView();
-    await vi.waitFor(() => {
-      expect(displaySongList.value.map(song => song.path)).toEqual([firstSong.path, secondSong.path]);
-    });
+    const view = usePlayerLibraryView();
+    await vi.waitFor(() => { expect(view.displaySongList.value.map(song => song.path)).toEqual([firstSong.path, secondSong.path]); });
 
-    navigationStore.currentViewMode = 'statistics';
-    await nextTick();
-    tauriInvokeMock.mockImplementationOnce(async () => request.promise);
-    libraryStore.patchLibrarySongs({ songs: [], deleted_paths: [secondSong.path] });
-    navigationStore.currentViewMode = 'all';
-    await nextTick();
+    navigation.currentViewMode = 'statistics'; await nextTick();
+    invokeBridge.tauriInvoke.mockImplementationOnce(async () => pendingPaths.settled);
+    library.patchLibrarySongs({ songs: [], deleted_paths: [secondSong.path] });
+    navigation.currentViewMode = 'all'; await nextTick();
 
     await vi.waitFor(() => {
-      expect(() => displaySongList.value.map(song => song.path)).not.toThrow();
-      expect(displaySongList.value.map(song => song.path)).toEqual([firstSong.path]);
+      expect(() => view.displaySongList.value.map(song => song.path)).not.toThrow();
+      expect(view.displaySongList.value.map(song => song.path)).toEqual([firstSong.path]);
     });
   });
 });

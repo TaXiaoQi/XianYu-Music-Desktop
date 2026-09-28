@@ -1,36 +1,25 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, shallowRef } from 'vue';
 import { useRouter } from 'vue-router';
 
 import type { Song } from '../../types';
-import type { HomeDiscoverTab } from './HomeDiscoverTabs.vue';
-import StatisticsPage from '../statistics/StatisticsPage.vue';
-import LeaderboardPage from '../statistics/LeaderboardPage.vue';
-import DailyRecommend from '../../views/DailyRecommend.vue';
-import TopLists from '../../views/TopLists.vue';
-
-import AlbumDetailHeader from '../headers/AlbumDetailHeader.vue';
-import ArtistDetailHeader from '../headers/ArtistDetailHeader.vue';
-import SongTable from '../song-list/SongTable.vue';
+import { default as SongTable } from '../song-list/SongTable.vue';
+import HomeDetailHeaderArea from './panels/HomeDetailHeaderArea.vue';
+import HomeDiscoverArea from './panels/HomeDiscoverArea.vue';
+import HomeArtistAlbumArea from './panels/HomeArtistAlbumArea.vue';
 
 const MasterPanel = defineAsyncComponent(() => import('../song-list/MasterPanel.vue'));
-const HomeDiscoverTabs = defineAsyncComponent(() => import('./HomeDiscoverTabs.vue'));
-const ArtistAlbumGrid = defineAsyncComponent(() => import('./ArtistAlbumGrid.vue'));
-const HomeEmptyState = defineAsyncComponent(() => import('./HomeEmptyState.vue'));
 
-interface ArtistAlbumItem {
-  key: string;
-  name: string;
-  count: number;
-  artist: string;
-  firstSongPath: string;
-}
+type ArtistTabKey = 'songs' | 'albums' | 'details';
+type DiscoverTabKey = 'statistics' | 'leaderboard' | 'dailyRecommend' | 'topLists';
 
-interface Props {
+interface ArtistAlbumItem { key: string; name: string; count: number; artist: string; firstSongPath: string }
+
+interface HomePanelProps {
   localViewMode: string;
   isBatchMode: boolean;
   isManagementMode: boolean;
-  artistActiveTab: 'songs' | 'albums' | 'details';
+  artistActiveTab: ArtistTabKey;
   localFilterCondition: string;
   songTableMemoryScopeKey: string;
   localSongList: Song[];
@@ -45,165 +34,137 @@ interface Props {
   setSongTableRef?: (instance: any | null) => void;
 }
 
-const props = defineProps<Props>();
+const panelProps = defineProps<HomePanelProps>();
 
-const emit = defineEmits<{
-  (event: 'update:isBatchMode', value: boolean): void;
-  (event: 'update:artistActiveTab', value: 'songs' | 'albums' | 'details'): void;
-  (event: 'update:selectedPaths', value: Set<string>): void;
-  (event: 'playAll'): void;
-  (event: 'batchPlay'): void;
-  (event: 'showAddToPlaylist'): void;
-  (event: 'batchDelete'): void;
-  (event: 'batchMove'): void;
-  (event: 'playSong', song: Song): void;
-  (event: 'contextMenuSong', nativeEvent: MouseEvent, song: Song): void;
-  (event: 'tableDragStart', ...args: any[]): void;
-  (event: 'artistAlbumClick', albumKey: string): void;
-}>();
+interface HomePanelEmits {
+  (e: 'update:isBatchMode', value: boolean): void;
+  (e: 'update:artistActiveTab', value: ArtistTabKey): void;
+  (e: 'update:selectedPaths', value: Set<string>): void;
+  (e: 'playAll'): void;
+  (e: 'batchPlay'): void;
+  (e: 'showAddToPlaylist'): void;
+  (e: 'batchDelete'): void;
+  (e: 'batchMove'): void;
+  (e: 'playSong', song: Song): void;
+  (e: 'contextMenuSong', nativeEvent: MouseEvent, song: Song): void;
+  (e: 'tableDragStart', ...args: any[]): void;
+  (e: 'artistAlbumClick', albumKey: string): void;
+}
 
-const isBatchModeModel = computed({
-  get: () => props.isBatchMode,
-  set: (value: boolean) => emit('update:isBatchMode', value),
-});
+const emitEvent = defineEmits<HomePanelEmits>();
 
-const artistActiveTabModel = computed({
-  get: () => props.artistActiveTab,
-  set: (value: 'songs' | 'albums' | 'details') => emit('update:artistActiveTab', value),
-});
+const DISCOVER_PAGES: readonly string[] = ['statistics', 'leaderboard', 'dailyRecommend', 'topLists'];
 
-const localSongTableRef = ref<any>(null);
-
-watch(localSongTableRef, value => {
-  props.setSongTableRef?.(value);
-}, { immediate: true });
-
-const songTableScrollContainer = computed(() => localSongTableRef.value?.containerRef ?? null);
-
-onBeforeUnmount(() => {
-  props.setSongTableRef?.(null);
-});
-
-const handleSongContextMenu = (...args: [MouseEvent, Song]) => {
-  emit('contextMenuSong', args[0], args[1]);
-};
-
-const handleTableDragStart = (...args: any[]) => {
-  emit('tableDragStart', ...args);
-};
+const showingDiscoverPage = computed(() => DISCOVER_PAGES.includes(panelProps.localViewMode));
+const artistViewActive = computed(() => panelProps.localViewMode === 'artist');
+const albumViewActive = computed(() => panelProps.localViewMode === 'album');
+const artistSubPageShown = computed(
+  () => artistViewActive.value
+    && (panelProps.artistActiveTab === 'albums' || panelProps.artistActiveTab === 'details'),
+);
+const albumGridShown = computed(
+  () => artistViewActive.value && panelProps.artistActiveTab === 'albums',
+);
+const songListingShown = computed(() => !showingDiscoverPage.value && !artistSubPageShown.value);
 
 const router = useRouter();
 
-const isDiscoverMode = computed(() =>
-  ['statistics', 'leaderboard', 'dailyRecommend', 'topLists'].includes(props.localViewMode),
-);
-
-const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
-  if (props.localViewMode === tab) return;
+const switchDiscoverPage = (next: DiscoverTabKey) => {
+  if (panelProps.localViewMode === next) return;
   void router.replace({
     path: '/',
-    query: tab === 'statistics' ? {} : { view: tab },
+    query: next === 'statistics' ? {} : { view: next },
   });
+};
+
+const tableInstance = shallowRef<any>(null);
+
+const attachTableInstance = (instance: unknown) => {
+  tableInstance.value = instance;
+  panelProps.setSongTableRef?.((instance ?? null) as any);
+};
+
+const tableScrollArea = computed<HTMLElement | null>(() => tableInstance.value?.containerRef ?? null);
+
+const forwardTableContextMenu = (nativeEvent: MouseEvent, song: Song) => {
+  emitEvent('contextMenuSong', nativeEvent, song);
+};
+
+const forwardTableDragStart = (...args: any[]) => {
+  emitEvent('tableDragStart', ...args);
+};
+
+const detailHeaderBindings = computed(() => ({
+  mode: panelProps.localViewMode,
+  batchMode: panelProps.isBatchMode,
+  artistTab: panelProps.artistActiveTab,
+  artistName: panelProps.localFilterCondition || 'Unknown Artist',
+  albumTitle: panelProps.selectedAlbumSong?.album || 'Unknown Album',
+  albumArtistName:
+    panelProps.selectedAlbumSong?.album_artist
+    || panelProps.selectedAlbumSong?.artist
+    || 'Unknown Artist',
+  songs: panelProps.localSongList,
+  selectedCount: panelProps.selectedCount,
+  scrollArea: tableScrollArea.value,
+}));
+
+const detailHeaderListeners = {
+  'update:batchMode': (value: boolean) => emitEvent('update:isBatchMode', value),
+  'update:artistTab': (value: ArtistTabKey) => emitEvent('update:artistActiveTab', value),
+  playAll: () => emitEvent('playAll'),
+  batchPlay: () => emitEvent('batchPlay'),
+  addToPlaylist: () => emitEvent('showAddToPlaylist'),
+  batchDelete: () => emitEvent('batchDelete'),
+  batchMove: () => emitEvent('batchMove'),
 };
 </script>
 
 <template>
-  <div class="flex-1 flex overflow-hidden relative min-w-0">
+  <div class="relative flex min-w-0 flex-1 overflow-hidden">
     <MasterPanel
-      v-if="localViewMode === 'folder'"
-      :isManagementMode="isManagementMode"
+      v-if="panelProps.localViewMode === 'folder'"
+      :is-management-mode="panelProps.isManagementMode"
     />
 
-    <section class="flex-1 min-w-0 min-h-0 flex flex-col overflow-x-hidden relative">
-      <ArtistDetailHeader
-        v-if="localViewMode === 'artist'"
-        v-model:isBatchMode="isBatchModeModel"
-        v-model:activeTab="artistActiveTabModel"
-        :artistName="localFilterCondition || 'Unknown Artist'"
-        :songs="localSongList"
-        :selectedCount="selectedCount"
-        :scrollContainerRef="songTableScrollContainer"
-        @playAll="$emit('playAll')"
-        @batchPlay="$emit('batchPlay')"
-        @addToPlaylist="$emit('showAddToPlaylist')"
-        @batchDelete="$emit('batchDelete')"
-        @batchMove="$emit('batchMove')"
+    <section class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
+      <HomeDetailHeaderArea
+        v-if="artistViewActive || albumViewActive"
+        v-bind="detailHeaderBindings"
+        v-on="detailHeaderListeners"
       />
 
-      <AlbumDetailHeader
-        v-else-if="localViewMode === 'album'"
-        v-model:isBatchMode="isBatchModeModel"
-        :albumName="selectedAlbumSong?.album || 'Unknown Album'"
-        :albumArtist="selectedAlbumSong?.album_artist || selectedAlbumSong?.artist || 'Unknown Artist'"
-        :songs="localSongList"
-        :selectedCount="selectedCount"
-        :scrollContainerRef="songTableScrollContainer"
-        @playAll="$emit('playAll')"
-        @batchPlay="$emit('batchPlay')"
-        @addToPlaylist="$emit('showAddToPlaylist')"
-        @batchDelete="$emit('batchDelete')"
-        @batchMove="$emit('batchMove')"
+      <HomeDiscoverArea
+        v-if="showingDiscoverPage"
+        :active-page="panelProps.localViewMode"
+        @switch-page="switchDiscoverPage"
       />
-
-      <div v-if="isDiscoverMode" data-test="discover-container" class="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
-        <HomeDiscoverTabs :active-mode="localViewMode" @change="handleDiscoverTabChange" />
-          <KeepAlive>
-            <StatisticsPage v-if="localViewMode === 'statistics'" key="statistics" class="flex-1 min-h-0" />
-            <LeaderboardPage v-else-if="localViewMode === 'leaderboard'" key="leaderboard" class="flex-1 min-h-0" />
-            <DailyRecommend v-else-if="localViewMode === 'dailyRecommend'" key="dailyRecommend" class="flex-1 min-h-0" />
-            <TopLists v-else-if="localViewMode === 'topLists'" key="topLists" class="flex-1 min-h-0" />
-          </KeepAlive>
-      </div>
 
       <SongTable
-        v-if="!isDiscoverMode && !(localViewMode === 'artist' && (artistActiveTab === 'albums' || artistActiveTab === 'details'))"
-        ref="localSongTableRef"
-        :songs="localSongList"
-        :song-paths="localViewMode === 'playlist' ? localSongPaths : undefined"
-        :resolve-song-by-path="localViewMode === 'playlist' ? resolveSongByPath : undefined"
-        :isBatchMode="isBatchMode"
-        :selectedPaths="selectedPaths"
-        :memoryScopeKey="songTableMemoryScopeKey"
+        v-if="songListingShown"
+        :ref="attachTableInstance"
+        :songs="panelProps.localSongList"
+        :song-paths="panelProps.localViewMode === 'playlist' ? panelProps.localSongPaths : undefined"
+        :resolve-song-by-path="panelProps.localViewMode === 'playlist' ? panelProps.resolveSongByPath : undefined"
+        :isBatchMode="panelProps.isBatchMode"
+        :selectedPaths="panelProps.selectedPaths"
+        :memory-scope-key="panelProps.songTableMemoryScopeKey"
         :download-completed-as-local="true"
         class="min-h-0"
-        @play="$emit('playSong', $event)"
-        @contextmenu="handleSongContextMenu"
-        @update:selectedPaths="$emit('update:selectedPaths', $event)"
-        @drag-start="handleTableDragStart"
+        @play="emitEvent('playSong', $event)"
+        @contextmenu="forwardTableContextMenu"
+        @update:selectedPaths="emitEvent('update:selectedPaths', $event)"
+        @drag-start="forwardTableDragStart"
       />
 
-      <Transition v-if="localViewMode === 'artist' && (artistActiveTab === 'albums' || artistActiveTab === 'details')" name="tab-slide">
-        <ArtistAlbumGrid
-          v-if="localViewMode === 'artist' && artistActiveTab === 'albums'"
-          :albums="artistAlbumList"
-          :coverCache="coverCache"
-          :loadingSet="loadingSet"
-          @openAlbum="$emit('artistAlbumClick', $event)"
-        />
-
-        <HomeEmptyState
-          v-else-if="localViewMode === 'artist' && artistActiveTab === 'details'"
-          message="Artist details coming soon"
-          icon-path="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        />
-      </Transition>
+      <HomeArtistAlbumArea
+        v-if="artistSubPageShown"
+        :show-grid="albumGridShown"
+        :albums="panelProps.artistAlbumList"
+        :cover-map="panelProps.coverCache"
+        :loading-set="panelProps.loadingSet"
+        @open-album="emitEvent('artistAlbumClick', $event)"
+      />
     </section>
   </div>
 </template>
-
-<style scoped>
-.tab-slide-enter-active,
-.tab-slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-
-.tab-slide-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.tab-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-</style>

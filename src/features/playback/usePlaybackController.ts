@@ -4,62 +4,76 @@ import { usePlayerCore } from './playerCore';
 import { usePlaybackStore } from './store';
 import { useUiStore } from '../../shared/stores/ui';
 
-export function usePlaybackController() {
-  const { playbackDomain, windowDomain } = usePlayerCore();
-  const playbackStore = usePlaybackStore();
-  const uiStore = useUiStore();
-  const playbackRefs = storeToRefs(playbackStore);
-  const uiRefs = storeToRefs(uiStore);
+export const usePlaybackController = () => {
+  const coreBridges = usePlayerCore();
+  const transport = coreBridges.playbackDomain;
+  const shell = coreBridges.windowDomain;
 
-  const closePlayerDetail = () => {
-    uiRefs.showPlayerDetail.value = false;
+  const playbackVault = usePlaybackStore();
+  const uiVault = useUiStore();
+  const playbackState = storeToRefs(playbackVault);
+  const uiState = storeToRefs(uiVault);
+
+  const dismissPlayerDetail = () => { uiState.showPlayerDetail.value = false; };
+
+  // 正在播放的内容快照：曲目、封面、音质与会话级覆盖、每日推荐标记。
+  const nowPlayingSnapshot = {
+    currentSong: playbackState.currentSong,
+    currentCover: playbackState.currentCover,
+    currentCoverPath: playbackState.currentCoverPath,
+    currentCoverFull: playbackState.currentCoverFull,
+    currentAvailableQualities: playbackState.currentAvailableQualities,
+    currentPlayingQuality: playbackState.currentPlayingQuality,
+    sessionQualityOverride: playbackState.sessionQualityOverride,
+    setSessionQualityOverride: playbackVault.setSessionQualityOverride,
+    dailyRecommendPaths: playbackVault.dailyRecommendPaths,
+    markDailyRecommendPaths: playbackVault.markDailyRecommendPaths,
   };
 
-  return {
-    currentSong: playbackRefs.currentSong,
-    currentCover: playbackRefs.currentCover,
-    currentCoverPath: playbackRefs.currentCoverPath,
-    currentCoverFull: playbackRefs.currentCoverFull,
-    currentAvailableQualities: playbackRefs.currentAvailableQualities,
-    currentPlayingQuality: playbackRefs.currentPlayingQuality,
-    sessionQualityOverride: playbackRefs.sessionQualityOverride,
-    setSessionQualityOverride: playbackStore.setSessionQualityOverride,
-    dailyRecommendPaths: playbackStore.dailyRecommendPaths,
-    markDailyRecommendPaths: playbackStore.markDailyRecommendPaths,
-    isPlaying: playbackRefs.isPlaying,
-    volume: playbackRefs.volume,
-    currentTime: playbackRefs.currentTime,
-    playMode: playbackRefs.playMode,
-    activeOutputMode: playbackRefs.activeOutputMode,
-    playQueue: playbackRefs.playQueue,
-    showPlaylist: uiRefs.showPlaylist,
-    showPlayerDetail: uiRefs.showPlayerDetail,
-    showQueue: uiRefs.showQueue,
-    showComment: uiRefs.showComment,
-    dominantColors: uiRefs.dominantColors,
-    playSong: playbackDomain.playSong,
-    pauseSong: playbackDomain.pauseSong,
-    togglePlay: playbackDomain.togglePlay,
-    nextSong: playbackDomain.nextSong,
-    prevSong: playbackDomain.prevSong,
-    seekTo: playbackDomain.seekTo,
-    stepSeek: playbackDomain.stepSeek,
-    handleVolume: playbackDomain.handleVolume,
-    handleVolumeWheel: playbackDomain.handleVolumeWheel,
-    toggleMute: playbackDomain.toggleMute,
-    toggleMode: playbackDomain.toggleMode,
-    togglePlaylist: playbackDomain.togglePlaylist,
-    togglePlayerDetail: windowDomain.togglePlayerDetail,
-    closePlayerDetail,
-    toggleQueue: windowDomain.toggleQueue,
-    toggleComment: windowDomain.toggleComment,
-    toggleAlwaysOnTop: windowDomain.toggleAlwaysOnTop,
-    clearQueue: playbackDomain.clearQueue,
-    addSongToQueue: playbackDomain.addSongToQueue,
-    addSongsToQueue: playbackDomain.addSongsToQueue,
-    removeSongFromQueue: playbackDomain.removeSongFromQueue,
-    reorderQueue: playbackDomain.reorderQueue,
-    playNext: playbackDomain.playNext,
-    formatDuration: playbackDomain.formatDuration,
+  // 传输层可观察状态。
+  const transportSnapshot = {
+    isPlaying: playbackState.isPlaying,
+    volume: playbackState.volume,
+    currentTime: playbackState.currentTime,
+    playMode: playbackState.playMode,
+    activeOutputMode: playbackState.activeOutputMode,
+    playQueue: playbackState.playQueue,
   };
-}
+
+  // 界面浮层开关与取色结果。
+  const overlaySnapshot = {
+    showPlaylist: uiState.showPlaylist,
+    showPlayerDetail: uiState.showPlayerDetail,
+    showQueue: uiState.showQueue,
+    showComment: uiState.showComment,
+    dominantColors: uiState.dominantColors,
+  };
+
+  // 播放域命令转发。
+  const playbackCommands = {
+    playSong: transport.playSong, pauseSong: transport.pauseSong, togglePlay: transport.togglePlay,
+    nextSong: transport.nextSong, prevSong: transport.prevSong,
+    seekTo: transport.seekTo, stepSeek: transport.stepSeek,
+    handleVolume: transport.handleVolume, handleVolumeWheel: transport.handleVolumeWheel, toggleMute: transport.toggleMute,
+    toggleMode: transport.toggleMode, togglePlaylist: transport.togglePlaylist,
+    clearQueue: transport.clearQueue, addSongToQueue: transport.addSongToQueue, addSongsToQueue: transport.addSongsToQueue,
+    removeSongFromQueue: transport.removeSongFromQueue, reorderQueue: transport.reorderQueue,
+    playNext: transport.playNext, formatDuration: transport.formatDuration,
+  };
+
+  // 窗口域命令转发。
+  const windowCommands = {
+    togglePlayerDetail: shell.togglePlayerDetail, toggleQueue: shell.toggleQueue, toggleComment: shell.toggleComment,
+    toggleAlwaysOnTop: shell.toggleAlwaysOnTop, closePlayerDetail: dismissPlayerDetail,
+  };
+
+  const controllerApi = {
+    ...nowPlayingSnapshot,
+    ...transportSnapshot,
+    ...overlaySnapshot,
+    ...playbackCommands,
+    ...windowCommands,
+  };
+
+  return controllerApi;
+};

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch, nextTick, type Component } from 'vue';
+// 底栏歌曲右键菜单：本地歌曲走本地导航/歌曲信息，在线歌曲走插件检索打开详情页。
+// 面板外观与入场动画走 Footer 专属主题（无弹出过渡包裹，关闭即卸载）。
+import { computed, ref, type Component } from 'vue';
 import { useRouter } from 'vue-router';
 import { Disc3, FileText, Folder, Heart, Image, Info, Plus, UserRound, Video } from 'lucide-vue-next';
 
@@ -15,20 +17,9 @@ import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../s
 import { supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import type { Song } from '../../types';
 
-type FooterMenuAction =
-  | 'favorite'
-  | 'addToPlaylist'
-  | 'viewArtist'
-  | 'viewAlbum'
-  | 'viewSongInfo'
-  | 'changeCover'
-  | 'changeLyrics'
-  | 'toggleVideoBackground'
-  | 'openFolder';
-
-type FooterMenuEntry =
-  | { type: 'divider'; key: string }
-  | { type: 'action'; key: FooterMenuAction; label: string; icon: Component };
+import MenuSurface from './contextMenu/MenuSurface.vue';
+import { FOOTER_SHEET } from './contextMenu/sheetChrome';
+import { watchPointerAway } from './contextMenu/onPointerAway';
 
 const props = defineProps<{
   visible: boolean;
@@ -40,285 +31,229 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'close'): void;
-  (e: 'change-lyrics'): void;
-  (e: 'toggle-video-background'): void;
+  (ev: 'close'): void;
+  (ev: 'change-lyrics'): void;
+  (ev: 'toggle-video-background'): void;
 }>();
 
-const { openInFinder } = usePlayer();
-const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
-const { openSongInfo } = useSongInfoDialog();
-const { showToast } = useToast();
-const { isFavorite, toggleFavorite } = useLibraryCollections();
-const router = useRouter();
-const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
+const { openInFinder: revealFile } = usePlayer();
+const { openAddToPlaylistDialog: requestPlaylistPicker } = useAddToPlaylistDialog();
+const { openSongInfo: showDossier } = useSongInfoDialog();
+const { showToast: flash } = useToast();
+const { isFavorite: checkFav, toggleFavorite: flipFav } = useLibraryCollections();
+const { openHomeArtist, openHomeAlbum } = useHomeNavigation(useRouter());
 
-const menuRef = ref<HTMLElement | null>(null);
-const menuSize = ref({ width: 0, height: 0 });
+const sheet = ref<InstanceType<typeof MenuSurface> | null>(null);
 
-const isOnlineSong = computed(() => {
-  const path = props.song?.path ?? '';
-  return path.startsWith('plugin://') || path.startsWith('lx://');
-});
-
-const isBilibiliSong = computed(() => supportsMusicVideo(props.song));
-
-const menuEntries = computed<FooterMenuEntry[]>(() => {
-  const isFavorited = props.song ? isFavorite(props.song) : false;
-  const favoriteLabel = isFavorited ? '取消收藏' : '收藏歌曲';
-
-  const entries: FooterMenuEntry[] = [
-    { type: 'action', key: 'favorite', label: favoriteLabel, icon: Heart },
-    { type: 'action', key: 'addToPlaylist', label: '收藏到歌单', icon: Plus },
-    { type: 'divider', key: 'divider-1' },
-    { type: 'action', key: 'viewArtist', label: '查看歌手', icon: UserRound },
-    { type: 'action', key: 'viewAlbum', label: '查看专辑', icon: Disc3 },
-  ];
-
-  if (!isOnlineSong.value) {
-    entries.push(
-      { type: 'action', key: 'viewSongInfo', label: '查看歌曲信息', icon: Info },
-      { type: 'action', key: 'changeCover', label: '修改歌曲封面', icon: Image },
-    );
-  }
-
-  entries.push({ type: 'action', key: 'changeLyrics', label: '更改歌词 (LRC)', icon: FileText });
-
-  if (isBilibiliSong.value) {
-    entries.push({
-      type: 'action',
-      key: 'toggleVideoBackground',
-      label: props.videoBackgroundRequested ? '关闭背景视频' : '播放视频为背景',
-      icon: Video,
-    });
-  }
-
-  if (!isOnlineSong.value) {
-    entries.push(
-      { type: 'divider', key: 'divider-file' },
-      { type: 'action', key: 'openFolder', label: '打开文件所在目录', icon: Folder },
-    );
-  }
-
-  return entries;
-});
-
-watch(
-  () => props.visible,
-  async (newVal) => {
-    if (newVal) {
-      await nextTick();
-      if (menuRef.value) {
-        menuSize.value = {
-          width: menuRef.value.offsetWidth,
-          height: menuRef.value.offsetHeight,
-        };
-      }
-    }
+// 可见面且按下点在面板外时关闭
+watchPointerAway(
+  (hit) => {
+    const el = sheet.value?.shell;
+    return !!props.visible && !!el && !el.contains(hit as Node);
   },
-  { immediate: true },
+  () => emit('close'),
 );
 
-const menuStyle = computed(() => {
-  if (!props.visible) return {};
+// 插件音源路径前缀
+const REMOTE_SCHEMES = ['plugin://', 'lx://'];
+const streamed = computed(() => REMOTE_SCHEMES.some((scheme) => (props.song?.path ?? '').startsWith(scheme)));
+const videoCapable = computed(() => supportsMusicVideo(props.song));
 
-  let top = props.y;
-  let left = props.x;
+type FooterCommand =
+  | 'markFavorite'
+  | 'pickPlaylist'
+  | 'inspectArtist'
+  | 'inspectAlbum'
+  | 'songDossier'
+  | 'swapCover'
+  | 'swapLyrics'
+  | 'flipVideoBg'
+  | 'revealOnDisk';
 
-  if (top + menuSize.value.height > window.innerHeight) {
-    top = props.y - menuSize.value.height;
+interface FooterCommandRow {
+  kind: 'command';
+  id: FooterCommand;
+  caption: string;
+  glyph: Component;
+}
+
+interface FooterBreakRow {
+  kind: 'break';
+  id: string;
+}
+
+type FooterRow = FooterCommandRow | FooterBreakRow;
+
+const cmd = (id: FooterCommand, caption: string, glyph: Component): FooterCommandRow =>
+  ({ kind: 'command', id, caption, glyph });
+const brk = (id: string): FooterBreakRow => ({ kind: 'break', id });
+
+const rows = computed<FooterRow[]>(() => {
+  const favOn = props.song ? checkFav(props.song) : false;
+  const found: FooterRow[] = [
+    cmd('markFavorite', favOn ? '取消收藏' : '收藏歌曲', Heart),
+    cmd('pickPlaylist', '收藏到歌单', Plus),
+    brk('cut-nav'),
+    cmd('inspectArtist', '查看歌手', UserRound),
+    cmd('inspectAlbum', '查看专辑', Disc3),
+  ];
+
+  // 在线歌曲没有本地文件维度
+  if (!streamed.value) {
+    found.push(cmd('songDossier', '查看歌曲信息', Info), cmd('swapCover', '修改歌曲封面', Image));
   }
 
-  if (left + menuSize.value.width > window.innerWidth) {
-    left = props.x - menuSize.value.width;
+  found.push(cmd('swapLyrics', '更改歌词 (LRC)', FileText));
+
+  if (videoCapable.value) {
+    found.push(cmd('flipVideoBg', props.videoBackgroundRequested ? '关闭背景视频' : '播放视频为背景', Video));
   }
 
-  top = Math.max(8, top);
-  left = Math.max(8, left);
+  if (!streamed.value) {
+    found.push(brk('cut-file'), cmd('revealOnDisk', '打开文件所在目录', Folder));
+  }
 
-  return {
-    left: `${left}px`,
-    top: `${top}px`,
-    visibility: (menuSize.value.height === 0 ? 'hidden' : 'visible') as any,
-  };
+  return found;
 });
 
-const handleGlobalClick = (e: MouseEvent) => {
-  if (props.visible && menuRef.value && !menuRef.value.contains(e.target as Node)) {
-    emit('close');
+const locatePluginSource = (track: Song) => {
+  const sourceId = track.plugin_id || track.rawData?.pluginId;
+  if (!sourceId) {
+    return null;
   }
+  return getStoredPlugins().find((entry) => entry.id === sourceId) ?? null;
 };
 
-onMounted(() => window.addEventListener('mousedown', handleGlobalClick));
-onUnmounted(() => window.removeEventListener('mousedown', handleGlobalClick));
+type DetailFlavor = 'artist' | 'album';
 
-const resolvePluginSource = (song: Song) => {
-  const pluginId = song.plugin_id || song.rawData?.pluginId;
-  if (!pluginId) return null;
-  return getStoredPlugins().find((p) => p.id === pluginId) ?? null;
-};
+// 在线歌手/专辑共用一条检索通路，提示文案按 flavor 区分
+const openWebDetail = async (flavor: DetailFlavor, track: Song) => {
+  const forArtist = flavor === 'artist';
+  const term = forArtist
+    ? track.effective_artist_names?.[0] || track.artist_names?.[0] || track.artist || ''
+    : track.album || '';
 
-const handleOnlineViewArtist = async (song: Song) => {
-  const artistName = song.effective_artist_names?.[0]
-    || song.artist_names?.[0]
-    || song.artist
-    || '';
-  if (!artistName || artistName === '未知歌手') {
-    showToast('当前歌曲缺少歌手信息', 'info');
+  if (!term || term === (forArtist ? '未知歌手' : '未知专辑')) {
+    flash(forArtist ? '当前歌曲缺少歌手信息' : '当前歌曲缺少专辑信息', 'info');
     return;
   }
 
-  if (song.path.startsWith('lx://')) {
-    showToast('当前音源暂不支持查看歌手', 'info');
+  if (track.path.startsWith('lx://')) {
+    flash(forArtist ? '当前音源暂不支持查看歌手' : '当前音源暂不支持查看专辑', 'info');
     return;
   }
 
-  const pluginSource = resolvePluginSource(song);
-  if (!pluginSource) {
-    showToast('当前音源不支持查看歌手', 'info');
+  const source = locatePluginSource(track);
+  if (!source) {
+    flash(forArtist ? '当前音源不支持查看歌手' : '当前音源不支持查看专辑', 'info');
     return;
   }
 
   try {
-    const results = await pluginArtistSearch(pluginSource, artistName, 1);
-    if (results.length === 0) {
-      showToast('未找到该歌手', 'info');
+    if (forArtist) {
+      const hits = await pluginArtistSearch(source, term, 1);
+      if (hits.length === 0) {
+        flash('未找到该歌手', 'info');
+        return;
+      }
+      const hit = hits[0];
+      openOnlineDetail({
+        type: 'artist',
+        title: hit.name,
+        subtitle: hit.description || (hit.songCount ? `${hit.songCount} 首歌曲` : ''),
+        description: hit.description || '',
+        coverUrl: hit.avatarUrl,
+        pluginSource: source,
+        rawData: hit.rawData,
+        platformId: hit.platformId || hit.id,
+      });
       return;
     }
-    const artist = results[0];
-    openOnlineDetail({
-      type: 'artist',
-      title: artist.name,
-      subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
-      description: artist.description || '',
-      coverUrl: artist.avatarUrl,
-      pluginSource,
-      rawData: artist.rawData,
-      platformId: artist.platformId || artist.id,
-    });
-  } catch (e: any) {
-    showToast(`查看歌手失败: ${e?.message || e}`, 'error');
-  }
-};
 
-const handleOnlineViewAlbum = async (song: Song) => {
-  const albumName = song.album || '';
-  if (!albumName || albumName === '未知专辑') {
-    showToast('当前歌曲缺少专辑信息', 'info');
-    return;
-  }
-
-  if (song.path.startsWith('lx://')) {
-    showToast('当前音源暂不支持查看专辑', 'info');
-    return;
-  }
-
-  const pluginSource = resolvePluginSource(song);
-  if (!pluginSource) {
-    showToast('当前音源不支持查看专辑', 'info');
-    return;
-  }
-
-  try {
-    const results = await pluginAlbumSearch(pluginSource, albumName, 1);
-    if (results.length === 0) {
-      showToast('未找到该专辑', 'info');
+    const albums = await pluginAlbumSearch(source, term, 1);
+    if (albums.length === 0) {
+      flash('未找到该专辑', 'info');
       return;
     }
-    const album = results[0];
+    const album = albums[0];
     openOnlineDetail({
       type: 'album',
       title: album.name,
       subtitle: album.artist,
       coverUrl: album.coverUrl,
-      pluginSource,
+      pluginSource: source,
       rawData: album.rawData,
       platformId: album.platformId || album.id,
     });
-  } catch (e: any) {
-    showToast(`查看专辑失败: ${e?.message || e}`, 'error');
+  } catch (err: any) {
+    flash(`${forArtist ? '查看歌手失败' : '查看专辑失败'}: ${err?.message || err}`, 'error');
   }
 };
 
-const handleAction = (action: FooterMenuAction) => {
-  if (!props.song) return;
+const ACT: Record<FooterCommand, (track: Song) => void> = {
+  markFavorite: (track) => flash(flipFav(track) ? '已收藏' : '已取消收藏', 'info'),
+  pickPlaylist: (track) => requestPlaylistPicker(track.path, { songs: [track] }),
+  inspectArtist: (track) => {
+    if (streamed.value) {
+      void openWebDetail('artist', track);
+      return;
+    }
+    const name = resolvePrimaryArtistName(track);
+    if (!name) {
+      flash('当前歌曲缺少歌手信息', 'info');
+      return;
+    }
+    void openHomeArtist(name);
+  },
+  inspectAlbum: (track) => {
+    if (streamed.value) {
+      void openWebDetail('album', track);
+      return;
+    }
+    if (!hasSongAlbumMetadata(track)) {
+      flash('当前歌曲缺少专辑信息', 'info');
+      return;
+    }
+    void openHomeAlbum(getSongAlbumKey(track));
+  },
+  revealOnDisk: (track) => void revealFile(track.path),
+  songDossier: (track) => showDossier(track),
+  swapCover: (track) => showDossier(track, 'cover'),
+  swapLyrics: () => emit('change-lyrics'),
+  flipVideoBg: () => emit('toggle-video-background'),
+};
 
-  switch (action) {
-    case 'favorite':
-      showToast(toggleFavorite(props.song) ? '已收藏' : '已取消收藏', 'info');
-      break;
-    case 'addToPlaylist':
-      openAddToPlaylistDialog(props.song.path, { songs: [props.song] });
-      break;
-    case 'viewArtist':
-      if (isOnlineSong.value) {
-        void handleOnlineViewArtist(props.song);
-      } else {
-        const artistName = resolvePrimaryArtistName(props.song);
-        if (!artistName) {
-          showToast('当前歌曲缺少歌手信息', 'info');
-          break;
-        }
-        void openHomeArtist(artistName);
-      }
-      break;
-    case 'viewAlbum':
-      if (isOnlineSong.value) {
-        void handleOnlineViewAlbum(props.song);
-      } else {
-        if (!hasSongAlbumMetadata(props.song)) {
-          showToast('当前歌曲缺少专辑信息', 'info');
-          break;
-        }
-        void openHomeAlbum(getSongAlbumKey(props.song));
-      }
-      break;
-    case 'openFolder':
-      void openInFinder(props.song.path);
-      break;
-    case 'viewSongInfo':
-      openSongInfo(props.song);
-      break;
-    case 'changeCover':
-      openSongInfo(props.song, 'cover');
-      break;
-    case 'changeLyrics':
-      emit('change-lyrics');
-      break;
-    case 'toggleVideoBackground':
-      emit('toggle-video-background');
-      break;
+const act = (id: FooterCommand) => {
+  if (!props.song) {
+    return;
   }
-
+  ACT[id](props.song);
   emit('close');
 };
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="visible"
-      ref="menuRef"
-      class="fixed z-[9999] min-w-[210px] select-none rounded-[16px] border border-gray-200/60 dark:border-white/10 bg-white/88 dark:bg-[#1e1e20]/90 py-1.5 text-sm text-gray-700 dark:text-gray-200 shadow-xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-75"
-      :style="menuStyle"
-      @contextmenu.prevent
+    <MenuSurface
+      :shown="visible"
+      :at-x="x"
+      :at-y="y"
+      :chrome-class="FOOTER_SHEET"
+      keep-metrics
     >
-      <template v-for="entry in menuEntries" :key="entry.key">
-        <div
-          v-if="entry.type === 'divider'"
-          class="my-1 h-px bg-gray-200/70 dark:bg-white/10"
-        ></div>
+      <template v-for="row in rows" :key="row.id">
+        <div v-if="row.kind === 'break'" class="my-1 h-px bg-gray-200/70 dark:bg-white/10"></div>
         <div
           v-else
-          @click="handleAction(entry.key)"
-          class="mx-1 px-3.5 py-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg cursor-pointer flex items-center group transition-colors"
+          class="mx-1 px-3.5 py-2 rounded-lg cursor-pointer flex items-center group transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+          @click="act(row.id)"
         >
           <div class="w-5 h-5 mr-3 flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:text-gray-800 dark:group-hover:text-white">
-            <component :is="entry.icon" class="w-4 h-4" :stroke-width="1.8" />
+            <component :is="row.glyph" class="w-4 h-4" :stroke-width="1.8" />
           </div>
-          <span class="min-w-0 flex-1 truncate">{{ entry.label }}</span>
+          <span class="min-w-0 flex-1 truncate">{{ row.caption }}</span>
         </div>
       </template>
-    </div>
+    </MenuSurface>
   </Teleport>
 </template>

@@ -1,124 +1,117 @@
 import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
+import { useRoute, useRouter } from 'vue-router';
 
 import { usePlayer } from '../features/playback';
-import { useAppThemeSync } from './useAppThemeSync';
-import { useExternalPathBridge } from './useExternalPathBridge';
-import { useDeepLinkBridge } from './useDeepLinkBridge';
-import { useAppShellTheme } from './useAppShellTheme';
-import { usePerformanceMode } from './usePerformanceMode';
-import { useMiniPlayerWindowBridge } from './useMiniPlayerWindowBridge';
-import { useTaskbarPlayerBridge } from './useTaskbarPlayerBridge';
-import { useKeyboardShortcuts } from './useKeyboardShortcuts';
-import { useTrayMenuEvents } from './useTrayMenuEvents';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
-import { useHomeRouteSync } from './useHomeRouteSync';
-import { usePlayerViewState } from './usePlayerViewState';
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
-import { useRoute, useRouter } from 'vue-router';
-import { shouldShowPlayerFooter } from './appShellFooterState';
-import { runStartupRouteRepaint } from './startupRouteRepaint';
-import { releaseStartupCompositionMask, waitForStartupRevealReadiness } from './startupCompositionMask';
-import { clearStartupThemePaint } from './startupTheme';
 import { useUiStore } from '../shared/stores/ui';
-import { useMainWindowRenderingPower } from './renderingPower';
-import { useOnboarding } from './useOnboarding';
 
+import { shouldShowPlayerFooter } from './appShellFooterState';
+import { createLibraryScanStatus } from './appShellScanStatus';
+import { createStartupRevealSequence } from './appShellStartupReveal';
+import { useAppShellTheme } from './useAppShellTheme';
+import { useAppThemeSync } from './useAppThemeSync';
+import { useDeepLinkBridge } from './useDeepLinkBridge';
+import { useExternalPathBridge } from './useExternalPathBridge';
+import { useHomeRouteSync } from './useHomeRouteSync';
+import { useKeyboardShortcuts } from './useKeyboardShortcuts';
+import { useMainWindowRenderingPower } from './renderingPower';
+import { useMiniPlayerWindowBridge } from './useMiniPlayerWindowBridge';
+import { useOnboarding } from './useOnboarding';
+import { usePerformanceMode } from './usePerformanceMode';
+import { usePlayerViewState } from './usePlayerViewState';
+import { useTaskbarPlayerBridge } from './useTaskbarPlayerBridge';
+import { useTrayMenuEvents } from './useTrayMenuEvents';
+
+/**
+ * 外壳装配根：把播放器、主题材质、启动揭示、外部路径、
+ * 全局弹窗等横切关注点编排成一个供 MainShell 消费的视图模型。
+ */
 export function useAppShell() {
+  const route = useRoute();
+  const router = useRouter();
+
   const {
-    init,
-    playQueue,
-    currentSong,
-    isMiniMode,
-    showPlayerDetail,
-    handleExternalPaths,
-    libraryScanProgress,
+    init: bootstrapPlayer,
+    playQueue: queuedSongs,
+    currentSong: activeSong,
+    isMiniMode: miniModeActive,
+    showPlayerDetail: playerDetailOpen,
+    handleExternalPaths: processExternalPaths,
+    libraryScanProgress: scanProgress,
   } = usePlayer();
+
   const {
-    showAddToPlaylistModal,
-    playlistAddTargetSongs,
-    excludedPlaylistId,
-    closeAddToPlaylistDialog,
-    addSelectedSongsToPlaylist,
+    showAddToPlaylistModal: playlistDialogVisible,
+    playlistAddTargetSongs: songsQueuedForPlaylist,
+    excludedPlaylistId: playlistExclusionId,
+    closeAddToPlaylistDialog: dismissPlaylistDialog,
+    addSelectedSongsToPlaylist: pushSongsToPlaylist,
   } = useAddToPlaylistDialog();
 
   const {
-    hasWindowMaterial,
-    isMicaWindowMaterial,
-    whenInitialThemeSynced,
-    rebuildStartupMaterialBeforeShow,
+    hasWindowMaterial: windowMaterialReady,
+    isMicaWindowMaterial: micaMaterialActive,
+    whenInitialThemeSynced: afterThemeBootstrap,
+    rebuildStartupMaterialBeforeShow: refreshMaterialBeforeReveal,
   } = useAppThemeSync();
-  const { isLowPerformance } = usePerformanceMode();
-  const { isMainWindowLowPower } = useMainWindowRenderingPower();
-  const lowPerformance = computed(
-    () => isLowPerformance.value || isMainWindowLowPower.value,
+
+  const { isLowPerformance: powerSavingPreferred } = usePerformanceMode();
+  const { isMainWindowLowPower: lowPowerWindowRendering } = useMainWindowRenderingPower();
+  const cappedEffects = computed(
+    () => powerSavingPreferred.value || lowPowerWindowRendering.value,
   );
+
   const {
-    mainBlurStyle,
-    mainContainerClass,
-    footerBlurStyle,
-    footerContainerClass,
+    mainBlurStyle: backdropBlurStyle,
+    mainContainerClass: backdropContainerClass,
+    footerBlurStyle: footerBackdropStyle,
+    footerContainerClass: footerBackdropClass,
   } = useAppShellTheme({
-    showPlayerDetail,
-    hasWindowMaterial,
-    isMicaWindowMaterial,
-    lowPerformance,
+    showPlayerDetail: playerDetailOpen,
+    hasWindowMaterial: windowMaterialReady,
+    isMicaWindowMaterial: micaMaterialActive,
+    lowPerformance: cappedEffects,
   });
 
-  const route = useRoute();
-  const router = useRouter();
-  const { skipNextPageTransition, startupCompositionMaskVisible } = storeToRefs(useUiStore());
-  const { showOnboarding } = useOnboarding();
-  const { currentViewMode, filterCondition, currentFolderFilter, activeRootPath } = usePlayerViewState();
-  const { folderTree, searchQuery } = usePlayerLibraryView();
-  let startupCompositionMaskStartedAt = 0;
+  const { skipNextPageTransition: suppressNextTransition, startupCompositionMaskVisible: revealMaskActive } =
+    storeToRefs(useUiStore());
+  const { showOnboarding: onboardingFlowVisible } = useOnboarding();
 
-  const prepareStartupTransparentComposition = async () => {
-    await whenInitialThemeSynced();
-    startupCompositionMaskVisible.value = hasWindowMaterial.value && !showOnboarding.value;
-    startupCompositionMaskStartedAt = startupCompositionMaskVisible.value ? performance.now() : 0;
-    clearStartupThemePaint();
-    if (!showOnboarding.value) {
-      await runStartupRouteRepaint({
-        router,
-        hasWindowMaterial,
-        skipNextPageTransition,
-      });
-    }
-    if (hasWindowMaterial.value) {
-      await rebuildStartupMaterialBeforeShow();
-      await waitForStartupRevealReadiness();
-    }
-  };
+  const {
+    currentViewMode: homeViewMode,
+    filterCondition: homeFilterCondition,
+    currentFolderFilter: homeFolderFilter,
+    activeRootPath: homeRootPath,
+  } = usePlayerViewState();
+  const { folderTree: libraryFolderTree, searchQuery: librarySearchTerm } = usePlayerLibraryView();
 
-  const finishStartupTransparentComposition = async () => {
-    if (!startupCompositionMaskVisible.value) {
-      return;
-    }
+  const revealSequence = createStartupRevealSequence({
+    router,
+    hasWindowMaterial: windowMaterialReady,
+    skipNextPageTransition: suppressNextTransition,
+    maskVisible: revealMaskActive,
+    whenInitialThemeSynced: afterThemeBootstrap,
+    rebuildStartupMaterialBeforeShow: refreshMaterialBeforeReveal,
+    onboardingActive: () => onboardingFlowVisible.value,
+  });
 
-    void releaseStartupCompositionMask({
-      startedAt: startupCompositionMaskStartedAt,
-      hide: () => {
-        startupCompositionMaskVisible.value = false;
-      },
-    });
-  };
-
-  const { isExternalDragActive } = useExternalPathBridge({
-    handleExternalPaths,
-    beforeWindowShow: prepareStartupTransparentComposition,
-    afterWindowShow: finishStartupTransparentComposition,
+  const { isExternalDragActive: externalDropPending } = useExternalPathBridge({
+    handleExternalPaths: processExternalPaths,
+    beforeWindowShow: revealSequence.beforeWindowShow,
+    afterWindowShow: revealSequence.afterWindowShow,
   });
 
   useHomeRouteSync({
     route,
     router,
-    currentViewMode,
-    filterCondition,
-    currentFolderFilter,
-    activeRootPath,
-    folderTree,
-    searchQuery,
+    currentViewMode: homeViewMode,
+    filterCondition: homeFilterCondition,
+    currentFolderFilter: homeFolderFilter,
+    activeRootPath: homeRootPath,
+    folderTree: libraryFolderTree,
+    searchQuery: librarySearchTerm,
   });
 
   useMiniPlayerWindowBridge();
@@ -127,60 +120,37 @@ export function useAppShell() {
   useTrayMenuEvents(router);
   useDeepLinkBridge();
 
-  init();
+  bootstrapPlayer();
 
-  const isFooterVisible = computed(() => shouldShowPlayerFooter(playQueue.value, currentSong.value));
-  const libraryScanPercent = computed(() => {
-    if (!libraryScanProgress.value) return 0;
-    if (libraryScanProgress.value.total <= 0) return 8;
-    const percent = (libraryScanProgress.value.current / libraryScanProgress.value.total) * 100;
-    return Math.min(100, Math.max(6, percent));
-  });
-  const libraryScanPhaseLabel = computed(() => {
-    switch (libraryScanProgress.value?.phase) {
-      case 'collecting':
-        return '扫描文件';
-      case 'parsing':
-        return '解析元数据';
-      case 'writing':
-        return '写入音乐库';
-      case 'complete':
-        return '扫描完成';
-      case 'error':
-        return '扫描失败';
-      default:
-        return '扫描音乐库';
-    }
-  });
-  const libraryScanFolderLabel = computed(() => {
-    if (!libraryScanProgress.value || libraryScanProgress.value.folder_total <= 1) {
-      return '';
-    }
+  const footerShown = computed(() =>
+    shouldShowPlayerFooter(queuedSongs.value, activeSong.value),
+  );
+  const { percent: scanPercent, phaseLabel: scanPhaseText, folderLabel: scanFolderText } =
+    createLibraryScanStatus(scanProgress);
 
-    return `文件夹 ${libraryScanProgress.value.folder_index}/${libraryScanProgress.value.folder_total}`;
-  });
-
-  const handleGlobalAdd = (playlistId: string) => {
-    addSelectedSongsToPlaylist(playlistId);
+  const submitGlobalPlaylistAdd = (playlistId: string) => {
+    pushSongsToPlaylist(playlistId);
   };
 
-  return {
-    isMiniMode,
-    showPlayerDetail,
-    isExternalDragActive,
-    libraryScanProgress,
-    libraryScanPhaseLabel,
-    libraryScanFolderLabel,
-    libraryScanPercent,
-    isFooterVisible,
-    mainContainerClass,
-    mainBlurStyle,
-    footerContainerClass,
-    footerBlurStyle,
-    showAddToPlaylistModal,
-    playlistAddTargetSongs,
-    excludedPlaylistId,
-    closeAddToPlaylistDialog,
-    handleGlobalAdd,
+  const shellViewModel = {
+    isMiniMode: miniModeActive,
+    showPlayerDetail: playerDetailOpen,
+    isExternalDragActive: externalDropPending,
+    libraryScanProgress: scanProgress,
+    libraryScanPhaseLabel: scanPhaseText,
+    libraryScanFolderLabel: scanFolderText,
+    libraryScanPercent: scanPercent,
+    isFooterVisible: footerShown,
+    mainContainerClass: backdropContainerClass,
+    mainBlurStyle: backdropBlurStyle,
+    footerContainerClass: footerBackdropClass,
+    footerBlurStyle: footerBackdropStyle,
+    showAddToPlaylistModal: playlistDialogVisible,
+    playlistAddTargetSongs: songsQueuedForPlaylist,
+    excludedPlaylistId: playlistExclusionId,
+    closeAddToPlaylistDialog: dismissPlaylistDialog,
+    handleGlobalAdd: submitGlobalPlaylistAdd,
   };
+
+  return shellViewModel;
 }

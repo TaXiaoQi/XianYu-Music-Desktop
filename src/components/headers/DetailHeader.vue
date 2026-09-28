@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
+// 歌单/列表详情页头部：滚动收缩封面、批量工具条、排序弹出菜单
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { convertFileSrc as toAssetProtocolUrl } from '@tauri-apps/api/core';
 import type { Song } from '../../types';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
@@ -11,41 +12,7 @@ import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import SortModeIcon from '../common/SortModeIcon.vue';
 import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
-
-const { playlistSortMode, setPlaylistSortMode, currentViewMode, filterCondition } = usePlayerViewState();
-const { playlists } = useLibraryCollections();
-const libraryStore = useLibraryStore();
-
-const showSortMenu = ref(false);
-const sortMenuX = ref(0);
-const sortMenuY = ref(0);
-const sortMenuIsRightAligned = ref(false);
-
-const handleSortClick = (e: MouseEvent) => {
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const windowWidth = window.innerWidth;
-  
-  if (rect.left > windowWidth / 2) {
-    sortMenuIsRightAligned.value = true;
-    sortMenuX.value = windowWidth - rect.right;
-  } else {
-    sortMenuIsRightAligned.value = false;
-    sortMenuX.value = rect.left;
-  }
-  
-  sortMenuY.value = rect.bottom + 8;
-  showSortMenu.value = !showSortMenu.value;
-};
-
-const handleGlobalClick = (e: MouseEvent) => {
-  const target = e.target as HTMLElement;
-  if (!target.closest('.sort-menu-trigger')) {
-    showSortMenu.value = false;
-  }
-};
-
-onMounted(() => window.addEventListener('click', handleGlobalClick));
-onUnmounted(() => window.removeEventListener('click', handleGlobalClick));
+import SortOptionPopover from './sortPopover/SortOptionPopover.vue';
 
 const props = defineProps<{
   title: string;
@@ -77,221 +44,270 @@ const emit = defineEmits([
   'updateFromSource',
 ]);
 
-const isAllSelected = computed(() => {
-  const total = props.totalSongCount ?? props.songs.length;
-  return total > 0 && props.selectedCount === total;
-});
+const { playlistSortMode, setPlaylistSortMode, currentViewMode, filterCondition } = usePlayerViewState();
+const { playlists } = useLibraryCollections();
+const libraryStore = useLibraryStore();
 
-const shouldShowAddToPlaylist = computed(() => props.showAddToPlaylist !== false);
-const shouldShowHeaderAddToPlaylist = computed(() =>
-  props.showHeaderAddToPlaylist ?? shouldShowAddToPlaylist.value,
+const totalTrackAmount = computed(() => props.totalSongCount ?? props.songs.length);
+const isAllSelected = computed(() => totalTrackAmount.value > 0 && props.selectedCount === totalTrackAmount.value);
+const canBatchCollectToPlaylist = computed(() => props.showAddToPlaylist !== false);
+const canCollectFromHeader = computed(() => props.showHeaderAddToPlaylist ?? canBatchCollectToPlaylist.value);
+
+// ===== 排序弹出菜单 =====
+type PlaylistSortValue = 'title' | 'name' | 'artist' | 'added_at' | 'added_at_asc' | 'custom';
+
+interface SortEntry {
+  value: string;
+  label: string;
+}
+
+const PLAYLIST_SORT_ENTRIES: SortEntry[] = [
+  { value: 'title', label: '歌曲名' },
+  { value: 'name', label: '文件名' },
+  { value: 'artist', label: '歌手' },
+  { value: 'added_at', label: '添加时间' },
+  { value: 'custom', label: '自定义' },
+];
+
+const SORT_ARROW_ENTRIES = ['added_at'];
+
+const sortMenuShown = ref(false);
+const sortMenuPosX = ref(0);
+const sortMenuPosY = ref(0);
+const sortMenuDockRight = ref(false);
+
+const toggleSortMenu = (event: MouseEvent) => {
+  const anchorBox = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const dockToRight = anchorBox.left > window.innerWidth / 2;
+  sortMenuDockRight.value = dockToRight;
+  sortMenuPosX.value = dockToRight ? window.innerWidth - anchorBox.right : anchorBox.left;
+  sortMenuPosY.value = anchorBox.bottom + 8;
+  sortMenuShown.value = !sortMenuShown.value;
+};
+
+const closeSortMenuFromOutside = (event: MouseEvent) => {
+  if ((event.target as HTMLElement).closest('.sort-menu-trigger')) return;
+  sortMenuShown.value = false;
+};
+
+onMounted(() => window.addEventListener('click', closeSortMenuFromOutside));
+onUnmounted(() => window.removeEventListener('click', closeSortMenuFromOutside));
+
+const sortReversedEntries = computed(() =>
+  playlistSortMode.value === 'added_at_asc' ? SORT_ARROW_ENTRIES : [],
 );
 
+const applyPlaylistSort = (value: string) => {
+  if (value === 'added_at') {
+    setPlaylistSortMode(playlistSortMode.value === 'added_at' ? 'added_at_asc' : 'added_at');
+  } else {
+    setPlaylistSortMode(value as PlaylistSortValue);
+  }
+  sortMenuShown.value = false;
+};
+
+// ===== 批量工具条 =====
+type BatchIconName = 'check' | 'heart' | 'plus' | 'download' | 'trash';
+
+const BATCH_ICON_PATHS: Record<Exclude<BatchIconName, 'check'>, string> = {
+  heart: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
+  plus: 'M12 4v16m8-8H4',
+  download: 'M12 3v12m0 0l-4-4m4 4l4-4M5 21h14',
+  trash: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
+};
+
+const batchButtonClass =
+  'px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95 bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-white/10 dark:hover:bg-white/20 dark:text-gray-200';
+
+const pillButtonClass =
+  'px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 hover:border-gray-200 dark:hover:border-white/20';
+
+const batchActions = computed(() => {
+  const actions: Array<{ key: string; caption: string; icon: BatchIconName; run: () => void }> = [
+    { key: 'select-all', caption: isAllSelected.value ? '取消全选' : '全选', icon: 'check', run: () => emit('selectAll') },
+    { key: 'like', caption: '添加至我喜欢', icon: 'heart', run: () => emit('batchAddToFavorites') },
+  ];
+  if (canBatchCollectToPlaylist.value) {
+    actions.push({ key: 'collect', caption: '收藏到歌单', icon: 'plus', run: () => emit('openAddToPlaylist') });
+  }
+  actions.push(
+    { key: 'download', caption: '下载', icon: 'download', run: () => emit('batchDownload') },
+    { key: 'remove', caption: '移除', icon: 'trash', run: () => emit('batchDelete') },
+  );
+  return actions;
+});
+
+// ===== 头图封面解析 =====
 const headerCover = ref('');
 const displayedHeaderCover = ref('');
-watch(headerCover, (url) => {
-  if (!url) { displayedHeaderCover.value = ''; return; }
-  displayedHeaderCover.value = getDisplayCoverUrl(url, (dataUrl) => {
-    displayedHeaderCover.value = dataUrl;
-  });
-}, { immediate: true });
 let coverRequestId = 0;
 const { loadCover, loadFullCover, primeCoverPath } = useCoverCache();
 
-const isDirectUrl = (path: string) =>
-  /^https?:\/\//i.test(path) || path.startsWith('asset:') || path.startsWith('data:');
+watch(
+  headerCover,
+  (rawUrl) => {
+    if (!rawUrl) {
+      displayedHeaderCover.value = '';
+      return;
+    }
+    displayedHeaderCover.value = getDisplayCoverUrl(rawUrl, (decoded) => {
+      displayedHeaderCover.value = decoded;
+    });
+  },
+  { immediate: true },
+);
 
-const resolveCoverPath = (coverPath: string): string => {
-  if (!coverPath) return '';
-  return isDirectUrl(coverPath) ? coverPath : convertFileSrc(coverPath);
+const isDirectUrl = (candidate: string) => {
+  if (/^https?:\/\//i.test(candidate)) return true;
+  return candidate.startsWith('asset:') || candidate.startsWith('data:');
 };
+
+const REMOTE_TRACK_PREFIXES = ['lx://', 'plugin://', 'http://', 'https://'] as const;
+
+const isRemoteTrackPath = (candidate: string) =>
+  REMOTE_TRACK_PREFIXES.some((prefix) => candidate.startsWith(prefix));
+
+const resolveCoverPath = (coverPath: string): string =>
+  !coverPath ? '' : isDirectUrl(coverPath) ? coverPath : toAssetProtocolUrl(coverPath);
 
 const activePlaylist = computed(() =>
   currentViewMode.value === 'playlist'
-    ? playlists.value.find(p => p.id === filterCondition.value)
+    ? playlists.value.find((item) => item.id === filterCondition.value) ?? null
     : null,
 );
 
-const activePlaylistCoverKey = computed(() => {
+const playlistCoverKey = computed(() => {
   const playlist = activePlaylist.value;
   if (!playlist) return '';
-  return [
-    playlist.id,
-    playlist.coverPath ?? '',
-    playlist.songPaths[0] ?? '',
-    playlist.songPaths.length,
-  ].join('::');
+  return `${playlist.id}::${playlist.coverPath ?? ''}::${playlist.songPaths[0] ?? ''}::${playlist.songPaths.length}`;
 });
 
-const updateHeaderCover = async () => {
+const unpackLocalCover = async (trackPath: string): Promise<string | null> => {
+  try {
+    const fullArtwork = await loadFullCover(trackPath);
+    if (fullArtwork) return fullArtwork;
+
+    const thumbnail = await loadCover(trackPath);
+    if (thumbnail) return thumbnail;
+  } catch {
+    // 本地提取失败不作为致命错误，交由外层候选值兜底
+  }
+  return null;
+};
+
+const resolvePlaylistCover = async (): Promise<string> => {
+  const playlist = activePlaylist.value;
+  if (!playlist) return '';
+
+  if (playlist.coverPath) return resolveCoverPath(playlist.coverPath);
+  if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) return playlist.cloudCoverUrl;
+  if (playlist.songPaths.length === 0) return '';
+
+  const leadTrackPath = playlist.songPaths[0];
+  const metaFromPlaylist = playlist.songs?.find((item) => item.path === leadTrackPath) ?? playlist.songs?.[0];
+  const metaFromLookup = libraryStore.songLookup.get(leadTrackPath);
+  const metaFromProps = props.songs.find((item) => item.path === leadTrackPath) ?? props.songs[0];
+  const metaTrack = metaFromPlaylist ?? metaFromLookup ?? metaFromProps;
+  const onlineCover = metaTrack?.cover_thumb_path || (metaTrack as any)?.coverUrl || '';
+
+  if (onlineCover) {
+    const primed = primeCoverPath(metaTrack?.path || leadTrackPath, onlineCover);
+    if (primed || isDirectUrl(onlineCover)) return primed || onlineCover;
+  }
+
+  if (!isRemoteTrackPath(leadTrackPath)) {
+    const unpacked = await unpackLocalCover(leadTrackPath);
+    if (unpacked) return unpacked;
+  }
+
+  return onlineCover || '';
+};
+
+const resolveSongListCover = async (): Promise<string> => {
+  const leadTrack = props.songs[0];
+  const onlineCover = leadTrack.cover_thumb_path || (leadTrack as any)?.coverUrl || '';
+
+  if (onlineCover) {
+    const primed = primeCoverPath(leadTrack.path, onlineCover);
+    if (primed || isDirectUrl(onlineCover)) return primed || onlineCover;
+  }
+
+  if (!isRemoteTrackPath(leadTrack.path)) {
+    const unpacked = await unpackLocalCover(leadTrack.path);
+    if (unpacked) return unpacked;
+  }
+
+  return onlineCover || '';
+};
+
+const resolveHeaderCover = async (): Promise<string> => {
+  if (props.readOnly && props.coverUrlOverride) return props.coverUrlOverride;
+  if (currentViewMode.value === 'playlist') return resolvePlaylistCover();
+  if (props.songs.length > 0) return resolveSongListCover();
+  return '';
+};
+
+const refreshHeaderCover = async () => {
   const requestId = ++coverRequestId;
-
-  if (props.readOnly && props.coverUrlOverride) {
-    headerCover.value = props.coverUrlOverride;
-    return;
-  }
-
-  if (currentViewMode.value === 'playlist') {
-      const pl = activePlaylist.value;
-      if (pl && pl.coverPath) {
-        if (requestId !== coverRequestId) return;
-        headerCover.value = resolveCoverPath(pl.coverPath);
-        return;
-      }
-      if (pl && pl.cloudCoverUrl && /^https?:\/\//i.test(pl.cloudCoverUrl)) {
-        if (requestId !== coverRequestId) return;
-        headerCover.value = pl.cloudCoverUrl;
-        return;
-      }
-      if (pl && pl.songPaths.length > 0) {
-        const firstSongPath = pl.songPaths[0];
-
-        const songFromPl = pl.songs?.find(s => s.path === firstSongPath) ?? pl.songs?.[0];
-        const songFromLookup = libraryStore.songLookup.get(firstSongPath);
-        const songFromProps = props.songs.find(s => s.path === firstSongPath) ?? props.songs[0];
-        
-        const candidateSong = songFromPl ?? songFromLookup ?? songFromProps;
-        const onlineCoverPath = candidateSong?.cover_thumb_path || (candidateSong as any)?.coverUrl || '';
-        
-        if (onlineCoverPath) {
-          const primedUrl = primeCoverPath(candidateSong?.path || firstSongPath, onlineCoverPath);
-          if (primedUrl || isDirectUrl(onlineCoverPath)) {
-            if (requestId !== coverRequestId) return;
-            headerCover.value = primedUrl || onlineCoverPath;
-            return;
-          }
-        }
-
-        const isOnlinePath = firstSongPath.startsWith('lx://') ||
-          firstSongPath.startsWith('plugin://') ||
-          firstSongPath.startsWith('http://') ||
-          firstSongPath.startsWith('https://');
-
-        if (!isOnlinePath) {
-          try {
-            const fullCover = await loadFullCover(firstSongPath);
-            if (requestId !== coverRequestId) return;
-            if (fullCover) {
-              headerCover.value = fullCover;
-              return;
-            }
-
-            const thumbnailCover = await loadCover(firstSongPath);
-            if (requestId !== coverRequestId) return;
-            if (thumbnailCover) {
-              headerCover.value = thumbnailCover;
-              return;
-            }
-          } catch {
-            // 本地提取失败不重置 headerCover（上方可能已从网络/元数据拿到了封面）
-          }
-        }
-
-        if (requestId !== coverRequestId) return;
-        headerCover.value = onlineCoverPath || '';
-      } else {
-        if (requestId !== coverRequestId) return;
-        headerCover.value = '';
-      }
-  } else if (props.songs.length > 0) {
-    const firstSong = props.songs[0];
-    const firstSongPath = firstSong.path;
-    const onlineCoverPath = firstSong.cover_thumb_path || (firstSong as any)?.coverUrl || '';
-
-    if (onlineCoverPath) {
-      const primedUrl = primeCoverPath(firstSongPath, onlineCoverPath);
-      if (primedUrl || isDirectUrl(onlineCoverPath)) {
-        if (requestId !== coverRequestId) return;
-        headerCover.value = primedUrl || onlineCoverPath;
-        return;
-      }
-    }
-
-    const isOnlinePath = firstSongPath.startsWith('lx://') ||
-      firstSongPath.startsWith('plugin://') ||
-      firstSongPath.startsWith('http://') ||
-      firstSongPath.startsWith('https://');
-
-    if (!isOnlinePath) {
-      try {
-        const fullCover = await loadFullCover(firstSongPath);
-        if (requestId !== coverRequestId) return;
-        if (fullCover) {
-          headerCover.value = fullCover;
-          return;
-        }
-
-        const thumbnailCover = await loadCover(firstSongPath);
-        if (requestId !== coverRequestId) return;
-        if (thumbnailCover) {
-          headerCover.value = thumbnailCover;
-          return;
-        }
-      } catch {
-        // 本地解包失败忽略
-      }
-    }
-
-    if (requestId !== coverRequestId) return;
-    headerCover.value = onlineCoverPath || '';
-  } else {
-    if (requestId !== coverRequestId) return;
-    headerCover.value = '';
-  }
+  const candidate = await resolveHeaderCover();
+  if (requestId !== coverRequestId) return;
+  headerCover.value = candidate;
 };
 
 watch(
   () => [
     currentViewMode.value,
     filterCondition.value,
-    activePlaylistCoverKey.value,
+    playlistCoverKey.value,
     props.songs,
     props.coverUrlOverride,
   ],
   () => {
-    void updateHeaderCover();
+    void refreshHeaderCover();
   },
   { immediate: true },
 );
 
-const handlePlayAll = () => {
-  emit('playAll');
-};
-
-// ===== 滚动缩小封面（QQ 音乐桌面版风格）=====
+// ===== 滚动收缩（对齐 QQ 音乐桌面版的头部表现） =====
 const scrollContainer = computed(() => props.scrollContainerRef ?? null);
-const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 160);
+const { scrollProgress: shrinkRatioSource } = useScrollShrinkHeader(scrollContainer, 160);
+const shrinkRatio = computed(() => shrinkRatioSource.value);
 
-const coverSize = computed(() => `${160 - 116 * scrollProgress.value}px`);
-const columnHeight = computed(() => `${160 - 96 * scrollProgress.value}px`);
-const titleSize = computed(() => `${30 - 14 * scrollProgress.value}px`);
-const titleLineHeight = computed(() => `${36 - 18 * scrollProgress.value}px`);
-const subtitleOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 3));
-const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scrollProgress.value * 3))}px`);
+const coverSize = computed(() => `${44 + 116 * (1 - shrinkRatio.value)}px`);
+const columnHeight = computed(() => `${64 + 96 * (1 - shrinkRatio.value)}px`);
+const titleSize = computed(() => `${16 + 14 * (1 - shrinkRatio.value)}px`);
+const titleLineHeight = computed(() => `${18 + 18 * (1 - shrinkRatio.value)}px`);
+const subtitleOpacity = computed(() => Math.max(0, 1 - 3 * shrinkRatio.value));
+const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - 3 * shrinkRatio.value))}px`);
 </script>
 
 <template>
   <div class="relative z-20 w-full px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(8px,1.4vh,16px)] h-auto justify-start">
-    
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
-        <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path v-if="isAllSelected" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /><template v-else><circle cx="12" cy="12" r="9" stroke-width="2" /></template></svg>
-          {{ isAllSelected ? '取消全选' : '全选' }}
-        </button>
-        <button @click="emit('batchAddToFavorites')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-          添加至我喜欢
-        </button>
-        <button v-if="shouldShowAddToPlaylist" @click="emit('openAddToPlaylist')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg> 收藏到歌单
-        </button>
-        <button @click="emit('batchDownload')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg>
-          下载
-        </button>
-        <button @click="emit('batchDelete')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> 移除
+        <button
+          v-for="action in batchActions"
+          :key="action.key"
+          :class="batchButtonClass"
+          @click="action.run()"
+        >
+          <svg
+            v-if="action.icon === 'check'"
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path v-if="isAllSelected" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <template v-else>
+              <circle cx="12" cy="12" r="9" stroke-width="2" />
+            </template>
+          </svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="BATCH_ICON_PATHS[action.icon]" />
+          </svg>
+          {{ action.caption }}
         </button>
       </div>
       <div class="flex items-center gap-4">
@@ -299,127 +315,101 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
       </div>
     </div>
 
-    <div v-else class="flex items-center gap-6 h-auto mt-1">
-      <div :style="{ width: coverSize, height: coverSize }" class="rounded-2xl shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5">
-        <img v-if="displayedHeaderCover" :src="displayedHeaderCover" class="w-full h-full object-cover animate-in fade-in duration-300" alt="Cover" decoding="async" />
-        <div v-else class="flex flex-col items-center justify-center h-full w-full">
-           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-16 h-16 text-indigo-500/50 mb-2 drop-shadow-md"><path fill-rule="evenodd" d="M19.952 1.651a.75.75 0 01.298.599V16.303a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V6.994l-9 2.572v9.737a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V9.017c0-.528.246-1.032.67-1.371l10.038-5.996z" clip-rule="evenodd" /></svg>
+    <div v-else class="mt-1 flex items-center gap-6 h-auto">
+      <div
+        class="rounded-2xl shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5"
+        :style="{ width: coverSize, height: coverSize }"
+      >
+        <img
+          v-if="displayedHeaderCover"
+          :src="displayedHeaderCover"
+          class="w-full h-full object-cover animate-in fade-in duration-300"
+          alt="Cover"
+          decoding="async"
+        />
+        <div v-else class="h-full w-full flex flex-col items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-16 h-16 text-indigo-500/50 mb-2 drop-shadow-md"><path fill-rule="evenodd" clip-rule="evenodd" d="M19.952 1.651a.75.75 0 01.298.599V16.303a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V6.994l-9 2.572v9.737a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V9.017c0-.528.246-1.032.67-1.371l10.038-5.996z" /></svg>
         </div>
       </div>
-      
-      <div :style="{ minHeight: columnHeight }" class="flex flex-col justify-between gap-2 py-1 flex-1 min-w-0 relative z-20">
+
+      <div class="py-1 flex-1 min-w-0 relative z-20 flex flex-col justify-between gap-2" :style="{ minHeight: columnHeight }">
         <div>
-          <div class="flex items-center gap-2 mb-1">
+          <div class="mb-1 flex items-center gap-2">
             <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-800 dark:text-white truncate max-w-[500px]">{{ title }}</h1>
             <button
               v-if="showRename"
               @click="emit('rename')"
-              class="text-gray-500 dark:text-white/60 hover:text-gray-800 dark:hover:text-white transition p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 shrink-0"
               title="修改信息"
+              class="p-1.5 rounded-lg transition shrink-0 text-gray-500 hover:text-gray-800 dark:text-white/60 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 active:scale-95"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </button>
           </div>
-          
-          <div v-if="subtitle" class="text-xs text-gray-600 dark:text-gray-300 font-medium overflow-hidden" :style="{ opacity: subtitleOpacity, maxHeight: subtitleMaxHeight }">
-             {{ subtitle }}
+
+          <div
+            v-if="subtitle"
+            class="text-xs text-gray-600 dark:text-gray-300 font-medium overflow-hidden"
+            :style="{ opacity: subtitleOpacity, maxHeight: subtitleMaxHeight }"
+          >
+            {{ subtitle }}
           </div>
         </div>
 
         <div class="flex items-center gap-3">
-           <button @click="handlePlayAll" title="播放全部" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
-             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-               <path d="M9 5.5v13l10-6.5-10-6.5Z" />
-             </svg>
-             全部播放
-           </button>
+          <button :class="pillButtonClass" title="播放全部" @click="emit('playAll')">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 5.5v13l10-6.5-10-6.5Z" />
+            </svg>
+            全部播放
+          </button>
 
-           <button
-             v-if="showSourceUpdate"
-             @click="emit('updateFromSource')"
-             title="从源端更新歌单"
-             class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-           >
-             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-               <path d="M23 4v6h-6M1 20v-6h6" />
-               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-             </svg>
-             更新
-           </button>
+          <button v-if="showSourceUpdate" :class="pillButtonClass" title="从源端更新歌单" @click="emit('updateFromSource')">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 4v6h-6M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            更新
+          </button>
 
-           <button
-             v-if="shouldShowHeaderAddToPlaylist"
-             @click="emit('openAddToPlaylist')"
-             title="收藏至歌单"
-             class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-           >
-             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-             收藏至歌单
-           </button>
+          <button v-if="canCollectFromHeader" :class="pillButtonClass" title="收藏至歌单" @click="emit('openAddToPlaylist')">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            收藏至歌单
+          </button>
 
-           <CollectionFavoriteButton :entry="favoriteEntry ?? null" />
-           
-           <button
-             v-if="!readOnly"
-             @click="emit('update:isBatchMode', true)"
-             title="批量操作"
-             class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-           >
-             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-             </svg>
-           </button>
+          <CollectionFavoriteButton :entry="favoriteEntry ?? null" />
 
-           <template v-if="!readOnly">
-           <button 
-             @click.stop="handleSortClick"
-             title="排序方式"
-             class="sort-menu-trigger bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-             :class="{ 'text-blue-500 border-blue-200 bg-blue-50/50 dark:bg-blue-500/10': playlistSortMode !== 'custom' }"
-           >
-             <SortModeIcon class="h-5 w-5" />
-           </button>
+          <button v-if="!readOnly" :class="pillButtonClass" title="批量操作" @click="emit('update:isBatchMode', true)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </button>
 
-           <Teleport to="body">
-             <div 
-               v-if="showSortMenu"
-               class="fixed z-[9999] bg-white dark:bg-[#262626] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100"
-               :style="sortMenuIsRightAligned 
-                 ? { right: sortMenuX + 'px', top: sortMenuY + 'px' }
-                 : { left: sortMenuX + 'px', top: sortMenuY + 'px' }"
-             >
-               <div 
-                 v-for="mode in (['title', 'name', 'artist', 'added_at', 'custom'] as const)" 
-                 :key="mode"
-                 @click="
-                   if (mode === 'added_at') {
-                     setPlaylistSortMode(playlistSortMode === 'added_at' ? 'added_at_asc' : 'added_at');
-                   } else {
-                     setPlaylistSortMode(mode);
-                   }
-                   showSortMenu = false;
-                 "
-                 class="px-3 py-2 text-xs cursor-pointer flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                 :class="(playlistSortMode || '').startsWith(mode) ? 'text-blue-500 font-medium' : 'text-gray-600 dark:text-gray-300'"
-               >
-                 <span>{{ { title: '\u6b4c\u66f2\u540d', name: '\u6587\u4ef6\u540d', artist: '\u6b4c\u624b', added_at: '\u6dfb\u52a0\u65f6\u95f4', custom: '\u81ea\u5b9a\u4e49' }[mode] }}</span>
-                 <div v-if="(playlistSortMode || '').startsWith(mode)" class="flex items-center gap-1.5">
-                   <svg v-if="mode === 'added_at'" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform duration-200" :class="{ 'rotate-180': playlistSortMode === 'added_at_asc' }" viewBox="0 0 20 20" fill="currentColor">
-                     <path fill-rule="evenodd" d="M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l2.293-2.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                   </svg>
-                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                   </svg>
-                 </div>
-               </div>
-             </div>
-           </Teleport>
-           </template>
+          <template v-if="!readOnly">
+            <button
+              @click.stop="toggleSortMenu"
+              title="排序方式"
+              class="sort-menu-trigger px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 hover:border-gray-200 dark:hover:border-white/20"
+              :class="{ 'text-blue-500 border-blue-200 bg-blue-50/50 dark:bg-blue-500/10': playlistSortMode !== 'custom' }"
+            >
+              <SortModeIcon class="h-5 w-5" />
+            </button>
+
+            <SortOptionPopover
+              :shown="sortMenuShown"
+              :pos-x="sortMenuPosX"
+              :pos-y="sortMenuPosY"
+              :dock-right="sortMenuDockRight"
+              :options="PLAYLIST_SORT_ENTRIES"
+              :current-mode="playlistSortMode"
+              :arrow-modes="SORT_ARROW_ENTRIES"
+              :reversed-modes="sortReversedEntries"
+              @pick="applyPlaylistSort"
+            />
+          </template>
         </div>
       </div>
     </div>
-
   </div>
 </template>

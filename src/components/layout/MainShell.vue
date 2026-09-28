@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useAppShell } from '../../composables/useAppShell';
@@ -13,33 +13,32 @@ import { useListenResetNotification } from '../../composables/useListenResetNoti
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
 import { useSettingsStore } from '../../features/settings/store';
+import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
+import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { showBetaGateDialog } from '../../composables/useBanDialog';
 import { fetchBetaAccess } from '../../utils/update';
 import { appApi } from '../../services/tauri/appApi';
 import { APP_VERSION } from '../../../version';
+
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
 import GlobalBackground from './GlobalBackground.vue';
-
-const OnboardingModal = defineAsyncComponent(() => import('../onboarding/OnboardingModal.vue'));
-const PlayQueueSidebar = defineAsyncComponent(() => import('../player/PlayQueueSidebar.vue'));
-const CommentPanel = defineAsyncComponent(() => import('../overlays/CommentPanel.vue'));
-const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.vue'));
-const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToPlaylistModal.vue'));
-const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
-const SettingsConflictDialog = defineAsyncComponent(() => import('../common/SettingsConflictDialog.vue'));
-const ProfileLimitDialog = defineAsyncComponent(() => import('../common/ProfileLimitDialog.vue'));
-const BanDialog = defineAsyncComponent(() => import('../common/BanDialog.vue'));
-const CiyuanxiDialog = defineAsyncComponent(() => import('../common/CiyuanxiDialog.vue'));
-const ChangePasswordDialog = defineAsyncComponent(() => import('../common/ChangePasswordDialog.vue'));
-const DeleteAccountDialog = defineAsyncComponent(() => import('../common/DeleteAccountDialog.vue'));
-const ShareLinkDialog = defineAsyncComponent(() => import('../common/ShareLinkDialog.vue'));
-const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
-const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
-const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
-const UpdateModal = defineAsyncComponent(() => import('../overlays/UpdateModal.vue'));
-const CustomSkinModal = defineAsyncComponent(() => import('../settings/CustomSkinModal.vue'));
+import StartupCompositionMask from './shell/StartupCompositionMask.vue';
+import DragDropHint from './shell/DragDropHint.vue';
+import LibraryScanToast from './shell/LibraryScanToast.vue';
+import AnnouncementModalStack from './shell/AnnouncementModalStack.vue';
+import GlobalDialogLayer from './shell/GlobalDialogLayer.vue';
+import {
+  LazyOnboardingModal,
+  LazyPlayQueueSidebar,
+  LazyCommentPanel,
+  LazyPlayerDetail,
+  LazyAddToPlaylistModal,
+  LazySongInfoModal,
+  LazyDownloadDialog,
+  LazyUpdateModal,
+} from './shell/lazyShellOverlays';
 
 defineProps<{
   sleep?: boolean;
@@ -64,645 +63,310 @@ const {
   handleGlobalAdd,
 } = useAppShell();
 
-import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 const {
-  isSongInfoVisible,
-  currentSongInfo,
-  songInfoInitialAction,
-  closeSongInfo,
+  isSongInfoVisible: trackInfoShown,
+  currentSongInfo: trackInfoData,
+  songInfoInitialAction: trackInfoEntry,
+  closeSongInfo: dismissTrackInfo,
 } = useSongInfoDialog();
-import { useDownloadDialog } from '../../composables/useDownloadDialog';
+
 const {
-  isDownloadDialogVisible,
-  currentDownloadSong,
-  currentDownloadInitialQuality,
-  closeDownloadDialog,
+  isDownloadDialogVisible: downloadShown,
+  currentDownloadSong: downloadTarget,
+  currentDownloadInitialQuality: downloadEntry,
+  closeDownloadDialog: dismissDownload,
 } = useDownloadDialog();
-const { startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
-const uiStore = useUiStore();
-const { materialTransitionMaskVisible, materialSwitching } = useWindowMaterial();
+
+const {
+  startupCompositionMaskVisible: bootVeilShown,
+  fullscreenAnimState: routeSwapMotion,
+} = storeToRefs(useUiStore());
+const {
+  materialTransitionMaskVisible: materialVeilShown,
+  materialSwitching: materialVeilActive,
+} = useWindowMaterial();
 
 useDesktopLyricsWindowBridge();
 
 const {
-  announcementVisible,
-  currentAnnouncement,
-  checkAnnouncement,
-  closeAnnouncement,
-  handleAnnouncementAction,
+  announcementVisible: noticeShown,
+  currentAnnouncement: noticeData,
+  checkAnnouncement: pollNotice,
+  closeAnnouncement: dismissNotice,
+  handleAnnouncementAction: applyNoticeAction,
 } = useAnnouncement();
 
 const {
-  feedbackVisible,
-  currentFeedbackNotification,
-  checkFeedbackNotification,
-  closeFeedbackNotification,
+  feedbackVisible: feedbackShown,
+  currentFeedbackNotification: feedbackData,
+  checkFeedbackNotification: pollFeedback,
+  closeFeedbackNotification: dismissFeedback,
 } = useFeedbackNotification();
 
 const {
-  nicknameVisible,
-  currentNicknameNotification,
-  checkNicknameChangeNotification,
-  closeNicknameChangeNotification,
+  nicknameVisible: nicknameShown,
+  currentNicknameNotification: nicknameData,
+  checkNicknameChangeNotification: pollNickname,
+  closeNicknameChangeNotification: dismissNickname,
 } = useNicknameChangeNotification();
 
 const {
-  listenResetVisible,
-  currentListenResetNotification,
-  checkListenResetNotification,
-  closeListenResetNotification,
+  listenResetVisible: listenResetShown,
+  currentListenResetNotification: listenResetData,
+  checkListenResetNotification: pollListenReset,
+  closeListenResetNotification: dismissListenReset,
 } = useListenResetNotification();
 
 const {
-  updateVisible,
-  latestUpdate,
-  closeUpdate,
+  updateVisible: upgradeShown,
+  latestUpdate: upgradeInfo,
+  closeUpdate: dismissUpgrade,
   isDownloading,
   downloadProgress,
   downloadAndInstall,
-  checkUpdateOnStartup,
+  checkUpdateOnStartup: pollUpgradeOnStartup,
 } = useUpdateCheck();
 
-// --- 首次启动引导 ---
+/* --- 首次启动引导与启动期例行检查 --- */
 const { showOnboarding, completeOnboarding } = useOnboarding();
+const preferenceHub = useSettingsStore();
 
-const settingsStore = useSettingsStore();
+/* --- 启动时主界面外观样式（毛玻璃强度透传） --- */
+const mainSurfaceStyle = computed(() => ({ backdropFilter: mainBlurStyle.value }));
+const footerSurfaceStyle = computed(() => ({ backdropFilter: footerBlurStyle.value }));
 
-// --- 内测资格门槛（最高优先级，开屏即检查）---
-let betaGateShown = false;
-const runBetaGate = async () => {
-  if (import.meta.env.DEV || betaGateShown) return;
+/* --- 内测资格门槛（最高优先级，开屏即检查）--- */
+let betaGateSettled = false;
+
+const runBetaAccessGate = async () => {
+  if (import.meta.env.DEV || betaGateSettled) return;
   if (!/-beta/i.test(APP_VERSION)) return;
-  let access: { allowed: boolean; pending: boolean } = { allowed: true, pending: false };
+
+  let verdict: { allowed: boolean; pending: boolean } = { allowed: true, pending: false };
   try {
-    access = await fetchBetaAccess();
+    verdict = await fetchBetaAccess();
   } catch {
     return;
   }
-  if (access.allowed) return;
-  betaGateShown = true;
-  const exit = await showBetaGateDialog(access.pending);
-  if (exit) await appApi.exitApp();
+  if (verdict.allowed) return;
+
+  betaGateSettled = true;
+  const exitConfirmed = await showBetaGateDialog(verdict.pending);
+  if (exitConfirmed) await appApi.exitApp();
+};
+
+const runStartupChecks = () => {
+  pollNotice();
+  pollFeedback();
+  pollNickname();
+  pollListenReset();
+  if (preferenceHub.settings.checkUpdateOnStartup) {
+    pollUpgradeOnStartup();
+  }
 };
 
 const handleOnboardingComplete = () => {
   completeOnboarding();
-  void runBetaGate().then(() => {
-    checkAnnouncement();
-    checkFeedbackNotification();
-    checkNicknameChangeNotification();
-    checkListenResetNotification();
-    if (settingsStore.settings.checkUpdateOnStartup) {
-      checkUpdateOnStartup();
-    }
-  });
+  void runBetaAccessGate().then(runStartupChecks);
 };
 
 onMounted(() => {
   if (!showOnboarding.value) {
-    void runBetaGate().then(() => {
-      checkAnnouncement();
-      checkFeedbackNotification();
-      checkNicknameChangeNotification();
-      checkListenResetNotification();
-      if (settingsStore.settings.checkUpdateOnStartup) {
-        checkUpdateOnStartup();
-      }
-    });
+    void runBetaAccessGate().then(runStartupChecks);
   }
-  const feedbackTimer = setInterval(() => {
-    checkFeedbackNotification(announcementVisible.value);
-    checkNicknameChangeNotification(announcementVisible.value || feedbackVisible.value);
-    checkListenResetNotification(
-      announcementVisible.value || feedbackVisible.value || nicknameVisible.value,
-    );
+
+  const notificationTicker = setInterval(() => {
+    pollFeedback(noticeShown.value);
+    pollNickname(noticeShown.value || feedbackShown.value);
+    pollListenReset(noticeShown.value || feedbackShown.value || nicknameShown.value);
   }, 60_000);
-  onUnmounted(() => clearInterval(feedbackTimer));
+
+  onUnmounted(() => clearInterval(notificationTicker));
 });
 </script>
 
 <template>
   <div
-    class="flex flex-col h-screen w-full text-gray-800 dark:text-gray-200 relative overflow-hidden font-sans"
-    :class="{ 'material-switching': materialSwitching }"
+    class="relative flex h-screen w-full flex-col overflow-hidden font-sans text-gray-800 dark:text-gray-200"
+    :class="{ 'material-switching': materialVeilActive }"
   >
     <template v-if="!sleep">
-    <template v-if="showOnboarding">
-      <OnboardingModal
-        v-if="!isMiniMode"
-        visible
-        @update:visible="showOnboarding = $event"
-        @complete="handleOnboardingComplete"
-      />
-    </template>
+      <template v-if="showOnboarding">
+        <LazyOnboardingModal
+          v-if="!isMiniMode"
+          visible
+          @update:visible="showOnboarding = $event"
+          @complete="handleOnboardingComplete"
+        />
+      </template>
 
-    <template v-else>
-    <transition name="window-restore">
-      <GlobalBackground v-if="!isMiniMode" />
-    </transition>
+      <template v-else>
+        <transition
+          name="window-restore"
+        >
+          <GlobalBackground v-if="!isMiniMode" />
+        </transition>
 
-    <transition name="startup-composition-mask">
-      <div
-        v-if="startupCompositionMaskVisible && !isMiniMode"
-        class="startup-composition-mask fixed inset-0 z-[10000] pointer-events-none overflow-hidden"
-      >
-        <div class="startup-composition-mask__grain"></div>
-        <div class="startup-composition-mask__shell">
-          <div class="startup-composition-mask__sidebar">
-            <div class="startup-composition-mask__brand">
-              <div class="startup-composition-mask__brand-dot"></div>
-              <div class="startup-composition-mask__brand-line"></div>
-            </div>
-            <div class="startup-composition-mask__nav">
-              <div v-for="index in 6" :key="index" class="startup-composition-mask__nav-line"></div>
-            </div>
-          </div>
-          <div class="startup-composition-mask__main">
-            <div class="startup-composition-mask__topbar"></div>
-            <div class="startup-composition-mask__content">
-              <div class="startup-composition-mask__panel startup-composition-mask__panel--large"></div>
-              <div class="startup-composition-mask__panel"></div>
-              <div class="startup-composition-mask__panel"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </transition>
+        <transition
+          name="startup-composition-mask"
+        >
+          <StartupCompositionMask v-if="bootVeilShown && !isMiniMode" />
+        </transition>
 
-    <transition name="material-transition-mask">
-      <div
-        v-if="materialTransitionMaskVisible && !isMiniMode"
-        class="material-transition-mask fixed inset-0 z-[9999] pointer-events-none bg-white dark:bg-[#262626]"
-      ></div>
-    </transition>
-
-    <transition name="drop-overlay">
-      <div
-        v-if="isExternalDragActive && !isMiniMode"
-        class="absolute inset-0 z-[140] pointer-events-none flex items-center justify-center bg-black/15 backdrop-blur-sm"
-      >
-        <div class="rounded-[28px] border border-white/35 bg-white/75 px-8 py-6 text-center shadow-[0_24px_60px_rgba(0,0,0,0.2)] dark:border-white/10 dark:bg-black/65">
-          <div class="text-lg font-semibold text-gray-900 dark:text-white">松开即可导入或播放</div>
-          <div class="mt-2 text-sm text-gray-600 dark:text-white/70">音频文件将直接播放，文件夹将导入音乐库</div>
-        </div>
-      </div>
-    </transition>
-
-    <transition name="scan-progress">
-      <div
-        v-if="libraryScanProgress && !isMiniMode"
-        class="hidden absolute right-4 top-14 z-[145] w-[320px] overflow-hidden rounded-[22px] border border-white/45 bg-white/82 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:border-white/10 dark:bg-black/70"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="text-[13px] font-semibold uppercase tracking-[0.18em] text-[#ec4141]/80">
-              {{ libraryScanPhaseLabel }}
-            </div>
-            <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-              {{ libraryScanProgress.message || '正在处理音乐库' }}
-            </div>
-            <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500 dark:text-white/55">
-              <span v-if="libraryScanFolderLabel">{{ libraryScanFolderLabel }}</span>
-              <span v-if="libraryScanProgress.total > 0">
-                {{ libraryScanProgress.current }}/{{ libraryScanProgress.total }}
-              </span>
-              <span class="truncate max-w-[220px]" :title="libraryScanProgress.folder_path">
-                {{ libraryScanProgress.folder_path }}
-              </span>
-            </div>
-          </div>
+        <transition
+          name="material-transition-mask"
+        >
           <div
-            class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-            :class="libraryScanProgress.failed ? 'bg-rose-500' : libraryScanProgress.done ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'"
+            v-if="materialVeilShown && !isMiniMode"
+            class="material-transition-mask pointer-events-none fixed inset-0 z-[9999] bg-white dark:bg-[#262626]"
           ></div>
+        </transition>
+
+        <transition
+          name="drop-overlay"
+        >
+          <DragDropHint v-if="isExternalDragActive && !isMiniMode" />
+        </transition>
+
+        <transition
+          name="scan-progress"
+        >
+          <LibraryScanToast
+            v-if="!isMiniMode && libraryScanProgress"
+            :snapshot="libraryScanProgress"
+            :phase-label="libraryScanPhaseLabel"
+            :folder-label="libraryScanFolderLabel"
+            :percent="libraryScanPercent"
+          />
+        </transition>
+
+        <div
+          v-if="!isMiniMode"
+          class="relative z-10 flex-1 overflow-hidden transition-colors duration-500"
+          :class="[
+            mainContainerClass,
+            routeSwapMotion === 'entering' ? 'fs-entering' : '',
+            routeSwapMotion === 'exiting' ? 'fs-exiting' : '',
+          ]"
+          :style="mainSurfaceStyle"
+        >
+          <Sidebar />
+
+          <div class="flex min-w-0 flex-1 flex-col">
+            <TitleBar />
+            <main class="relative min-h-0 flex-1 overflow-hidden">
+              <router-view
+                v-slot="{ Component, route }"
+              >
+                <transition name="page-fade" :css="true" mode="out-in">
+                  <component
+                    :is="Component"
+                    :key="String(route.name ?? route.path)"
+                  />
+                </transition>
+              </router-view>
+            </main>
+          </div>
         </div>
 
-        <div class="mt-3 h-2 overflow-hidden rounded-full bg-black/8 dark:bg-white/10">
-          <div
-            class="h-full rounded-full bg-gradient-to-r from-[#ec4141] via-[#ff8364] to-[#f7b267] transition-[width] duration-300 ease-out"
-            :class="{ 'scan-progress-bar-indeterminate': libraryScanProgress.total <= 0 && !libraryScanProgress.done }"
-            :style="{ width: `${libraryScanPercent}%` }"
-          ></div>
+        <div
+          v-if="isFooterVisible && !isMiniMode"
+          class="z-[60] relative transition-colors duration-500"
+          :class="footerContainerClass"
+          :style="footerSurfaceStyle"
+        >
+          <LazyPlayerDetail />
+
+          <transition name="footer-slide">
+            <PlayerFooter />
+          </transition>
         </div>
-      </div>
-    </transition>
 
-    <div
-      v-if="!isMiniMode"
-      class="flex-1 flex overflow-hidden relative z-10 transition-colors duration-500"
-      :class="[
-        mainContainerClass,
-        fullscreenAnimState === 'entering' ? 'fs-entering' : '',
-        fullscreenAnimState === 'exiting' ? 'fs-exiting' : '',
-      ]"
-      :style="{ backdropFilter: mainBlurStyle }"
-    >
-      <Sidebar />
+        <LazyPlayQueueSidebar v-if="!isMiniMode" />
+        <LazyCommentPanel v-if="!isMiniMode" />
 
-      <div class="flex-1 flex flex-col min-w-0">
-        <TitleBar />
-        <main class="flex-1 overflow-hidden relative min-h-0">
-          <router-view v-slot="{ Component, route }">
-            <transition
-              name="page-fade"
-              :css="true"
-              mode="out-in"
-            >
-              <component
-                :is="Component"
-                :key="String(route.name ?? route.path)"
-              />
-            </transition>
-          </router-view>
-        </main>
-      </div>
-    </div>
+        <LazyAddToPlaylistModal
+          v-if="showAddToPlaylistModal && !isMiniMode"
+          :visible="showAddToPlaylistModal"
+          :selectedCount="playlistAddTargetSongs.length"
+          :excluded-playlist-id="excludedPlaylistId"
+          @close="closeAddToPlaylistDialog"
+          @add="handleGlobalAdd"
+        />
 
-    <div
-      v-if="!isMiniMode && isFooterVisible"
-      class="relative z-[60] transition-colors duration-500"
-      :class="footerContainerClass"
-      :style="{ backdropFilter: footerBlurStyle }"
-    >
-      <PlayerDetail />
+        <LazySongInfoModal
+          v-if="trackInfoShown && !isMiniMode"
+          :visible="trackInfoShown"
+          :song="trackInfoData"
+          :initial-action="trackInfoEntry"
+          @close="dismissTrackInfo"
+        />
 
-      <transition name="footer-slide">
-        <PlayerFooter />
-      </transition>
-    </div>
+        <LazyDownloadDialog
+          v-if="!isMiniMode"
+          :visible="downloadShown"
+          :song="downloadTarget"
+          :initial-quality="downloadEntry"
+          @close="dismissDownload"
+        />
 
-    <PlayQueueSidebar v-if="!isMiniMode" />
-    <CommentPanel v-if="!isMiniMode" />
+        <AnnouncementModalStack
+          v-if="!isMiniMode"
+          :announcement-visible="noticeShown"
+          :announcement-payload="noticeData"
+          :feedback-visible="feedbackShown"
+          :feedback-payload="feedbackData"
+          :nickname-visible="nicknameShown"
+          :nickname-payload="nicknameData"
+          :listen-reset-visible="listenResetShown"
+          :listen-reset-payload="listenResetData"
+          @close-announcement="dismissNotice"
+          @action-announcement="applyNoticeAction"
+          @close-feedback="dismissFeedback"
+          @close-nickname="dismissNickname"
+          @close-listen-reset="dismissListenReset"
+        />
 
-    <AddToPlaylistModal
-      v-if="!isMiniMode && showAddToPlaylistModal"
-      :visible="showAddToPlaylistModal"
-      :selectedCount="playlistAddTargetSongs.length"
-      :excluded-playlist-id="excludedPlaylistId"
-      @close="closeAddToPlaylistDialog"
-      @add="handleGlobalAdd"
-    />
-
-    <SongInfoModal
-      v-if="!isMiniMode && isSongInfoVisible"
-      :visible="isSongInfoVisible"
-      :song="currentSongInfo"
-      :initial-action="songInfoInitialAction"
-      @close="closeSongInfo"
-    />
-
-    <DownloadDialog
-      v-if="!isMiniMode"
-      :visible="isDownloadDialogVisible"
-      :song="currentDownloadSong"
-      :initial-quality="currentDownloadInitialQuality"
-      @close="closeDownloadDialog"
-    />
-
-    <AnnouncementModal
-      v-if="!isMiniMode && announcementVisible"
-      :visible="announcementVisible"
-      :announcement="currentAnnouncement"
-      @close="closeAnnouncement"
-      @action="handleAnnouncementAction"
-    />
-
-    <AnnouncementModal
-      v-if="!isMiniMode && feedbackVisible"
-      :visible="feedbackVisible"
-      :announcement="currentFeedbackNotification"
-      @close="closeFeedbackNotification"
-    />
-
-    <AnnouncementModal
-      v-if="!isMiniMode && nicknameVisible"
-      :visible="nicknameVisible"
-      :announcement="currentNicknameNotification"
-      @close="closeNicknameChangeNotification"
-    />
-
-    <AnnouncementModal
-      v-if="!isMiniMode && listenResetVisible"
-      :visible="listenResetVisible"
-      :announcement="currentListenResetNotification"
-      @close="closeListenResetNotification"
-    />
-
-    <UpdateModal
-      v-if="!isMiniMode && updateVisible"
-      :visible="updateVisible"
-      :update="latestUpdate"
-      :is-downloading="isDownloading"
-      :progress="downloadProgress"
-      @close="closeUpdate"
-      @download="downloadAndInstall"
-    />
-    </template>
+        <LazyUpdateModal
+          v-if="upgradeShown && !isMiniMode"
+          :visible="upgradeShown"
+          :update="upgradeInfo"
+          :is-downloading="isDownloading"
+          :progress="downloadProgress"
+          @close="dismissUpgrade"
+          @download="downloadAndInstall"
+        />
+      </template>
     </template>
 
-    <Toast />
-    <SettingsConflictDialog />
-    <ProfileLimitDialog />
-    <BanDialog />
-    <CiyuanxiDialog />
-    <ChangePasswordDialog />
-    <DeleteAccountDialog />
-    <ShareLinkDialog />
-    <CustomSkinModal v-if="uiStore.showCustomSkinModal" @close="uiStore.showCustomSkinModal = false" />
+    <GlobalDialogLayer />
   </div>
 </template>
 
 <style>
-.page-fade-enter-active,
-.page-fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
+/* ---- 路由页切换：微上滑 + 柔和淡入淡出（合并自原先的重复定义，取最终生效值） ---- */
+.page-fade-enter-active, .page-fade-leave-active { transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+.page-fade-leave-active { pointer-events: none; }
+.page-fade-enter-from { opacity: 0; transform: translateY(8px) scale(0.996); }
+.page-fade-leave-to { opacity: 0; transform: translateY(-6px) scale(0.996); }
 
-.page-fade-leave-active {
-  pointer-events: none;
-}
+.page-enter-enter-active { animation: page-enter-in 0.22s ease; }
+@keyframes page-enter-in { from { opacity: 0; } to { opacity: 1; } }
+.page-enter-active { transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.24s cubic-bezier(0.16, 1, 0.3, 1); }
+.page-enter-from { opacity: 0; transform: translateY(8px); }
 
-.page-fade-enter-from {
-  opacity: 0;
-  transform: translateY(6px);
-}
+.footer-slide-enter-active, .footer-slide-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; }
+.footer-slide-enter-from, .footer-slide-leave-to { transform: translateY(100%); max-height: 0 !important; opacity: 0; }
+.footer-slide-enter-to, .footer-slide-leave-from { transform: translateY(0); max-height: 80px !important; opacity: 1; }
 
-.page-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
-}
+.window-restore-enter-active { transition: opacity 0.4s ease-out, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.window-restore-leave-active { transition: none; }
+.window-restore-enter-from { opacity: 0; transform: scale(0.95); }
+.window-restore-leave-to { opacity: 0; }
 
-.page-enter-enter-active {
-  animation: page-enter-in 0.22s ease;
-}
+.material-transition-mask-enter-active { transition: none; }
+.material-transition-mask-leave-active { transition: opacity 0.2s ease; }
+.material-transition-mask-leave-to { opacity: 0; }
 
-@keyframes page-enter-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.footer-slide-enter-active,
-.footer-slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
-
-.footer-slide-enter-from,
-.footer-slide-leave-to {
-  transform: translateY(100%);
-  max-height: 0 !important;
-  opacity: 0;
-}
-
-.footer-slide-enter-to,
-.footer-slide-leave-from {
-  transform: translateY(0);
-  max-height: 80px !important;
-  opacity: 1;
-}
-
-.window-restore-enter-active {
-  transition: opacity 0.4s ease-out, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.window-restore-leave-active {
-  transition: none;
-}
-
-.window-restore-enter-from {
-  opacity: 0;
-  transform: scale(0.95);
-}
-
-.window-restore-leave-to {
-  opacity: 0;
-}
-
-.startup-composition-mask-enter-active,
-.startup-composition-mask-leave-active {
-  transition: opacity 0.22s ease;
-}
-
-.startup-composition-mask-enter-from,
-.startup-composition-mask-leave-to {
-  opacity: 0;
-}
-
-.material-transition-mask-enter-active {
-  transition: none;
-}
-
-.material-transition-mask-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.material-transition-mask-leave-to {
-  opacity: 0;
-}
-
-.material-switching,
-.material-switching *:not(.material-transition-mask) {
-  transition: none !important;
-}
-
-.startup-composition-mask {
-  background:
-    radial-gradient(circle at 18% 14%, rgba(236, 65, 65, 0.10), transparent 30%),
-    linear-gradient(135deg, #f7f7f8 0%, #eeeeef 100%);
-}
-
-:global(.dark) .startup-composition-mask {
-  background:
-    radial-gradient(circle at 18% 14%, rgba(236, 65, 65, 0.10), transparent 30%),
-    linear-gradient(135deg, #262626 0%, #2b2b2b 54%, #262626 100%);
-}
-
-.startup-composition-mask__grain {
-  position: absolute;
-  inset: 0;
-  opacity: 0.035;
-  background-image: linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px),
-    linear-gradient(rgba(255,255,255,0.10) 1px, transparent 1px);
-  background-size: 28px 28px;
-}
-
-.startup-composition-mask__shell {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  opacity: 0.58;
-}
-
-.startup-composition-mask__sidebar {
-  width: 220px;
-  border-right: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.32);
-  padding: 24px 18px;
-}
-
-:global(.dark) .startup-composition-mask__sidebar {
-  border-right-color: rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.startup-composition-mask__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 34px;
-}
-
-.startup-composition-mask__brand-dot {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgba(236, 65, 65, 0.78);
-  box-shadow: 0 12px 32px rgba(236, 65, 65, 0.22);
-}
-
-.startup-composition-mask__brand-line,
-.startup-composition-mask__nav-line,
-.startup-composition-mask__topbar,
-.startup-composition-mask__panel {
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.08);
-}
-
-:global(.dark) .startup-composition-mask__brand-line,
-:global(.dark) .startup-composition-mask__nav-line,
-:global(.dark) .startup-composition-mask__topbar,
-:global(.dark) .startup-composition-mask__panel {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.startup-composition-mask__brand-line {
-  width: 86px;
-  height: 14px;
-}
-
-.startup-composition-mask__nav {
-  display: grid;
-  gap: 14px;
-}
-
-.startup-composition-mask__nav-line {
-  width: 100%;
-  height: 34px;
-}
-
-.startup-composition-mask__nav-line:nth-child(2),
-.startup-composition-mask__nav-line:nth-child(5) {
-  width: 78%;
-}
-
-.startup-composition-mask__main {
-  flex: 1;
-  min-width: 0;
-  padding: 24px 28px;
-}
-
-.startup-composition-mask__topbar {
-  height: 34px;
-  width: min(560px, 58%);
-  margin-left: auto;
-}
-
-.startup-composition-mask__content {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  margin-top: 44px;
-}
-
-.startup-composition-mask__panel {
-  min-height: 132px;
-}
-
-.startup-composition-mask__panel--large {
-  grid-column: 1 / -1;
-  min-height: 250px;
-}
-
-@media (max-width: 760px) {
-  .startup-composition-mask__sidebar {
-    width: 72px;
-    padding-inline: 14px;
-  }
-
-  .startup-composition-mask__brand-line,
-  .startup-composition-mask__nav-line {
-    display: none;
-  }
-
-  .startup-composition-mask__content {
-    grid-template-columns: 1fr;
-  }
-}
-
-.drop-overlay-enter-active,
-.drop-overlay-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.drop-overlay-enter-from,
-.drop-overlay-leave-to {
-  opacity: 0;
-}
-
-.scan-progress-enter-active,
-.scan-progress-leave-active {
-  transition: opacity 0.22s ease, transform 0.22s ease;
-}
-
-.scan-progress-enter-from,
-.scan-progress-leave-to {
-  opacity: 0;
-  transform: translateY(-10px) scale(0.98);
-}
-
-.scan-progress-bar-indeterminate {
-  min-width: 28%;
-  animation: scan-progress-indeterminate 1.1s ease-in-out infinite alternate;
-}
-
-@keyframes scan-progress-indeterminate {
-  from {
-    transform: translateX(-14%);
-  }
-
-  to {
-    transform: translateX(14%);
-  }
-}
-
-/* ---- 左侧边栏/路由页面切换（微上滑 + 柔和淡入淡出动画） ---- */
-.page-fade-enter-active,
-.page-fade-leave-active {
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.page-fade-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.996);
-}
-
-.page-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.996);
-}
-
-.page-enter-active {
-  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
+.material-switching, .material-switching *:not(.material-transition-mask) { transition: none !important; }
 </style>

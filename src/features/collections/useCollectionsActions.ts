@@ -1,42 +1,40 @@
 import type { Song } from '../../types';
 
+/** 播放器侧暴露给收藏页的歌单操作能力集合。 */
 export interface PlayerPlaylistApi {
-  createPlaylist: (name: string, initialSongs?: string[]) => void;
-  deletePlaylist: (id: string) => void;
-  addToPlaylist: (playlistId: string, path: string) => void;
-  removeFromPlaylist: (playlistId: string, path: string) => void;
+  createPlaylist: (playlistName: string, initialSongs?: string[]) => void;
+  deletePlaylist: (playlistId: string) => void;
+  addToPlaylist: (playlistId: string, songPath: string) => void;
+  removeFromPlaylist: (playlistId: string, songPath: string) => void;
   addSongsToPlaylist: (playlistId: string, songPaths: string[], fullSongs?: Song[]) => number;
-  viewPlaylist: (id: string) => void;
+  viewPlaylist: (playlistId: string) => void;
   getSongsFromPlaylist: (playlistId: string) => Song[];
   openAddToPlaylistDialog: (songPaths: string | string[]) => void;
 }
 
-interface UseCollectionsActionsOptions {
+interface CollectionsActionDeps {
   playerPlaylist: PlayerPlaylistApi;
 }
 
-export function useCollectionsActions({
-  playerPlaylist,
-}: UseCollectionsActionsOptions) {
-  const createPlaylist = (name: string, initialSongs: string[] = []) =>
-    playerPlaylist.createPlaylist(name, initialSongs);
-  const deletePlaylist = (id: string) => playerPlaylist.deletePlaylist(id);
-  const addToPlaylist = (playlistId: string, path: string) => playerPlaylist.addToPlaylist(playlistId, path);
-  const removeFromPlaylist = (playlistId: string, path: string) => playerPlaylist.removeFromPlaylist(playlistId, path);
-  const addSongsToPlaylist = (playlistId: string, songPaths: string[], fullSongs?: Song[]) =>
-    playerPlaylist.addSongsToPlaylist(playlistId, songPaths, fullSongs);
-  const viewPlaylist = (id: string) => playerPlaylist.viewPlaylist(id);
-  const getSongsFromPlaylist = (playlistId: string) => playerPlaylist.getSongsFromPlaylist(playlistId);
-  const openAddToPlaylistDialog = (songPaths: string | string[]) => playerPlaylist.openAddToPlaylistDialog(songPaths);
+/**
+ * 收藏页的歌单动作全部转发给播放器模块执行，
+ * 本组合函数只负责收敛调用面，让视图层不必直接依赖播放器 store。
+ */
+export function useCollectionsActions({ playerPlaylist }: CollectionsActionDeps) {
+  const playlistApi = playerPlaylist;
 
   return {
-    createPlaylist,
-    deletePlaylist,
-    addToPlaylist,
-    removeFromPlaylist,
-    addSongsToPlaylist,
-    viewPlaylist,
-    getSongsFromPlaylist,
-    openAddToPlaylistDialog,
+    createPlaylist: (name: string, initialSongs: string[] = []) =>
+      playlistApi.createPlaylist(name, initialSongs),
+    deletePlaylist: (playlistId: string) => playlistApi.deletePlaylist(playlistId),
+    addToPlaylist: (playlistId: string, path: string) => playlistApi.addToPlaylist(playlistId, path),
+    removeFromPlaylist: (playlistId: string, path: string) =>
+      playlistApi.removeFromPlaylist(playlistId, path),
+    addSongsToPlaylist: (playlistId: string, songPaths: string[], fullSongs?: Song[]) =>
+      playlistApi.addSongsToPlaylist(playlistId, songPaths, fullSongs),
+    viewPlaylist: (playlistId: string) => playlistApi.viewPlaylist(playlistId),
+    getSongsFromPlaylist: (playlistId: string) => playlistApi.getSongsFromPlaylist(playlistId),
+    openAddToPlaylistDialog: (songPaths: string | string[]) =>
+      playlistApi.openAddToPlaylistDialog(songPaths),
   };
 }

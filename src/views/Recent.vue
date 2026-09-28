@@ -1,69 +1,42 @@
 <template>
-  <div class="flex flex-col h-full">
-    <RecentHeader
-      @playAll="handlePlayAll"
-      @clearHistory="handleClearHistory"
-      @addAllToQueue="handleAddAllToQueue"
-    />
+  <div class="recent-screen">
+    <RecentHeader @playAll="playEverything" @clearHistory="askClearPlayHistory"
+      @addAllToQueue="enqueueEverything" />
 
-    <div class="flex-1 flex overflow-hidden relative">
-
-      <section class="flex-1 flex overflow-hidden">
-        <SongTable
-          ref="songTableRef"
-          :songs="localSongList"
-          :isBatchMode="isBatchMode"
-          :selectedPaths="selectedPaths"
-          memoryScopeKey="recent-view"
-          :download-completed-as-local="true"
-          @play="handlePlaySong"
-          @contextmenu="handleContextMenu"
-          @drag-start="handleTableDragStart"
-        />
-      </section>
+    <div class="recent-screen__body">
+      <div class="recent-screen__tableArea">
+        <SongTable ref="tableRef" :songs="recentTracks" :isBatchMode="batchModeEnabled"
+          :selectedPaths="checkedSongPaths" memoryScopeKey="recent-view"
+          :download-completed-as-local="true" @play="playSingleTrack"
+          @contextmenu="openTrackContextMenu" @drag-start="beginTableDrag" />
+      </div>
     </div>
 
-    <DragGhost />
+    <DragGhost /> <!-- 全局拖拽悬浮预览 -->
 
-    <SongContextMenu
-      v-if="showContextMenu"
-      :visible="showContextMenu"
-      :x="contextMenuX"
-      :y="contextMenuY"
-      :song="contextMenuTargetSong"
-      :is-playlist-view="false"
-      :is-online-search="contextMenuIsOnlineSearch"
-      :resolved-file-path="contextMenuResolvedPath"
-      @close="showContextMenu = false"
-      @add-to-playlist="openAddToPlaylistSelection"
-      @view-online-artist="handleOnlineViewArtist"
-      @view-online-album="handleOnlineViewAlbum"
-    />
+    <SongContextMenu v-if="trackMenuShown" :visible="trackMenuShown"
+      :x="trackMenuLeft" :y="trackMenuTop" :song="trackMenuTarget"
+      :is-playlist-view="false" :is-online-search="trackMenuFromOnlineSearch"
+      :resolved-file-path="trackMenuResolvedPath" @close="trackMenuShown = false"
+      @add-to-playlist="sendTrackMenuSongToPlaylist" @view-online-artist="inspectOnlineArtist"
+      @view-online-album="inspectOnlineAlbum" />
 
-    <ModernModal
-      v-if="showConfirm"
-      :visible="showConfirm"
-      title="删除记录"
-      :content="confirmMessage"
-      type="danger"
-      confirm-text="删除"
-      @confirm="executeConfirmAction"
-      @cancel="showConfirm = false"
-    />
+    <ModernModal v-if="confirmDialogShown" :visible="confirmDialogShown" title="删除记录"
+      :content="confirmDialogText" type="danger" confirm-text="删除"
+      @confirm="runConfirmedAction" @cancel="confirmDialogShown = false" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref } from 'vue';
-import type { Song } from '../types';
+import { defineAsyncComponent, ref } from 'vue';
+import type { Song as MusicTrack } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
 import { useSongContextActions } from '../composables/useSongContextActions';
-import { launchFlyingCover } from '../composables/useFlyingCover';
-
 import { useSongDrag } from '../composables/useSongDrag';
+import { launchFlyingCover } from '../composables/useFlyingCover';
 
 const RecentHeader = defineAsyncComponent(() => import('../components/headers/RecentHeader.vue'));
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
@@ -71,79 +44,98 @@ const DragGhost = defineAsyncComponent(() => import('../components/common/DragGh
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
 
+// ---------- 数据源 ----------
+const { displaySongList: recentTracks, searchQuery: activeSearchText } = usePlayerLibraryView();
+const { addSongsToQueue: enqueueTracks, playSong: startPlayback } = usePlaybackController();
+const { openAddToPlaylistDialog: requestPlaylistPicker } = useAddToPlaylistDialog();
+const { clearHistory: wipeAllPlayRecords } = useLibraryCollections();
+
+// ---------- 视图状态 ----------
+const batchModeEnabled = ref(false);
+const checkedSongPaths = ref<Set<string>>(new Set());
+const tableRef = ref<any>(null);
+const confirmDialogShown = ref(false);
+const confirmDialogText = ref('');
+const pendingConfirmAction = ref<() => void>(() => {});
+
+const { handleTableDragStart: beginTableDrag } = useSongDrag(
+  recentTracks,
+  batchModeEnabled,
+  checkedSongPaths,
+  tableRef,
+);
+
 const {
-  displaySongList,
-  searchQuery,
-} = usePlayerLibraryView();
-const { playSong, addSongsToQueue } = usePlaybackController();
-const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
-const {
-  clearHistory,
-} = useLibraryCollections();
+  showContextMenu: trackMenuShown,
+  contextMenuX: trackMenuLeft,
+  contextMenuY: trackMenuTop,
+  contextMenuTargetSong: trackMenuTarget,
+  contextMenuResolvedPath: trackMenuResolvedPath,
+  contextMenuIsOnlineSearch: trackMenuFromOnlineSearch,
+  handleContextMenu: openTrackContextMenu,
+  handleOnlineViewArtist: inspectOnlineArtist,
+  handleOnlineViewAlbum: inspectOnlineAlbum,
+} = useSongContextActions({ isBatchMode: batchModeEnabled });
 
-const localSongList = computed(() => displaySongList.value);
-
-// ========== 状态管理 ==========
-const isBatchMode = ref(false);
-const selectedPaths = ref<Set<string>>(new Set());
-const songTableRef = ref<any>(null);
-
-const { handleTableDragStart } = useSongDrag(localSongList, isBatchMode, selectedPaths, songTableRef);
-
-const showConfirm = ref(false);
-const confirmMessage = ref('');
-const confirmAction = ref<() => void>(() => {});
-const {
-  showContextMenu,
-  contextMenuX,
-  contextMenuY,
-  contextMenuTargetSong,
-  contextMenuResolvedPath,
-  contextMenuIsOnlineSearch,
-  handleContextMenu,
-  handleOnlineViewArtist,
-  handleOnlineViewAlbum,
-} = useSongContextActions({ isBatchMode });
-
-// ========== 业务逻辑处理 ==========
-
-const handlePlayAll = () => {
-  if (localSongList.value.length > 0) {
-    const firstSong = localSongList.value[0];
-    void launchFlyingCover(firstSong.path, '');
-    void playSong(firstSong);
+// ---------- 播放入口 ----------
+const playEverything = () => {
+  const [leadTrack] = recentTracks.value;
+  if (!leadTrack) {
+    return;
   }
+  void launchFlyingCover(leadTrack.path, '');
+  void startPlayback(leadTrack);
 };
 
-const handlePlaySong = (song: Song) => {
-  const shouldInsertAfterCurrent = searchQuery.value.trim().length > 0;
-  void playSong(song, shouldInsertAfterCurrent ? { insertAfterCurrent: true } : undefined);
+const playSingleTrack = (track: MusicTrack) => {
+  const isFiltering = activeSearchText.value.trim().length > 0;
+  void startPlayback(track, isFiltering ? { insertAfterCurrent: true } : undefined);
 };
 
-const handleAddAllToQueue = () => {
-  addSongsToQueue(localSongList.value);
+const enqueueEverything = () => {
+  enqueueTracks(recentTracks.value);
 };
 
-const executeConfirmAction = async () => {
-  await confirmAction.value();
-  showConfirm.value = false;
+// ---------- 确认弹窗 ----------
+const runConfirmedAction = async () => {
+  await pendingConfirmAction.value();
+  confirmDialogShown.value = false;
 };
 
-const handleClearHistory = () => {
-  confirmMessage.value = "确定要清空所有播放记录吗？";
-  confirmAction.value = async () => {
-    await clearHistory();
-    showConfirm.value = false;
+const askClearPlayHistory = () => {
+  confirmDialogText.value = "确定要清空所有播放记录吗？";
+  pendingConfirmAction.value = async () => {
+    await wipeAllPlayRecords();
+    confirmDialogShown.value = false;
   };
-  showConfirm.value = true;
+  confirmDialogShown.value = true;
 };
 
-const openAddToPlaylistSelection = () => {
-  const songPaths = contextMenuTargetSong.value ? [contextMenuTargetSong.value.path] : [];
-  openAddToPlaylistDialog(songPaths);
+// ---------- 右键菜单 ----------
+const sendTrackMenuSongToPlaylist = () => {
+  const target = trackMenuTarget.value;
+  requestPlaylistPicker(target ? [target.path] : []);
 };
-
-
-
-// ========== 路由监听 ==========
 </script>
+
+<style scoped>
+/* 整页纵向弹性布局，表格区吃掉剩余高度；与原先的工具类布局等价 */
+.recent-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.recent-screen__body {
+  position: relative;
+  display: flex;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+.recent-screen__tableArea {
+  display: flex;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+</style>

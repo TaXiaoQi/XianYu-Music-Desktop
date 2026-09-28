@@ -1,52 +1,38 @@
-import { computed, ref, watch, type Ref } from 'vue';
-import { type ArtistTabId, getDefaultArtistTab } from '../utils/artistTabsOrder';
+import { computed, ref, watch } from 'vue';
+import type { Ref } from 'vue';
 
-interface UseHomeViewStateOptions {
-  currentViewMode: Ref<string>;
-  filterCondition: Ref<string>;
-  isManagementMode: Ref<boolean>;
+import { getDefaultArtistTab } from '../utils/artistTabsOrder';
+import type { ArtistTabId } from '../utils/artistTabsOrder';
+
+interface HomeViewStateInputs {
+  currentViewMode: Ref<string>,
+  filterCondition: Ref<string>,
+  isManagementMode: Ref<boolean>,
 }
 
-export function useHomeViewState({
-  currentViewMode,
-  filterCondition,
-  isManagementMode,
-}: UseHomeViewStateOptions) {
-  const localViewMode = ref(currentViewMode.value);
-  const localFilterCondition = ref(filterCondition.value);
-  const artistActiveTab = ref<ArtistTabId>(getDefaultArtistTab());
+/** 从其他视图切入歌手页时，回到默认标签 */
+const shouldResetArtistTab = (incoming: string, previous: string | undefined) =>
+  incoming === 'artist' && previous !== 'artist';
 
-  const viewTransitionKey = computed(
-    () => `${localViewMode.value}:${localFilterCondition.value}`,
-  );
+export function useHomeViewState(inputs: HomeViewStateInputs) {
+  const { currentViewMode, filterCondition, isManagementMode } = inputs;
 
-  watch(
-    currentViewMode,
-    (newMode, oldMode) => {
-      localViewMode.value = newMode;
-      if (oldMode !== 'artist' && newMode === 'artist') {
-        artistActiveTab.value = getDefaultArtistTab();
-      }
-      if (newMode !== 'folder') {
-        isManagementMode.value = false;
-      }
-    },
-    { immediate: true },
-  );
+  const localViewMode = ref<string>(currentViewMode.value);
+  const localFilterCondition = ref<string>(filterCondition.value);
+  const initialArtistTab: ArtistTabId = getDefaultArtistTab();
+  const artistActiveTab = ref<ArtistTabId>(initialArtistTab);
 
-  watch(
-    filterCondition,
-    newFilter => {
-      localFilterCondition.value = newFilter;
-    },
-    { immediate: true },
-  );
+  const viewTransitionKey = computed(() => [localViewMode.value, localFilterCondition.value].join(':'));
 
-  return {
-    localViewMode,
-    localFilterCondition,
-    artistActiveTab,
-    viewTransitionKey,
-  };
+  watch(currentViewMode, (incomingMode, previousMode) => {
+    localViewMode.value = incomingMode;
+    if (shouldResetArtistTab(incomingMode, previousMode)) { artistActiveTab.value = getDefaultArtistTab(); }
+    if (incomingMode !== 'folder') { isManagementMode.value = false; }
+  }, { immediate: true });
+
+  watch(filterCondition, incomingFilter => {
+    localFilterCondition.value = incomingFilter;
+  }, { immediate: true });
+
+  return { localViewMode, localFilterCondition, artistActiveTab, viewTransitionKey };
 }
-

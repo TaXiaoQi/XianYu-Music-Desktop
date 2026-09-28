@@ -1,41 +1,52 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const invokeMock = vi.fn();
-const isTauriMock = vi.fn().mockReturnValue(false);
+import { compareVersions, extractVersion, fetchLatestRelease } from "./update";
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: any[]) => invokeMock(...args),
-  isTauri: () => isTauriMock(),
-}));
+// —— 替身：拦截 @tauri-apps/api/core，观察 Rust 后端调用与 Tauri 环境判定 ——
+const backendInvoke = vi.hoisted(() => vi.fn());
+const inTauriEnv = vi.hoisted(() => vi.fn());
 
-import {
-  compareVersions,
-  extractVersion,
-  fetchLatestRelease
-} from "./update";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: backendInvoke, isTauri: inTauriEnv }));
 
-describe("extractVersion", () => {
-  it("extracts a semantic version from release labels", () => {
+// —— 冻结的 GitHub Release 桩数据 ——
+const GITHUB_RELEASE_PAYLOAD = {
+  tag_name: "v1.4.0",
+  html_url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
+  published_at: "2026-05-08T00:00:00Z",
+  body: "新增 GitHub 更新通道"
+};
+
+// —— 冻结的期望解析结果 ——
+const EXPECTED_RELEASE_INFO = {
+  version: "1.4.0",
+  url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
+  publishedAt: "2026-05-08T00:00:00Z",
+  notes: "新增 GitHub 更新通道",
+  source: "github"
+};
+
+describe("extractVersion：从发布标签中抽取版本", () => {
+  it("能从各类发布标签中截取语义化版本号", () => {
     expect(extractVersion("v1.2.3")).toBe("1.2.3");
     expect(extractVersion("release-2.0.1")).toBe("2.0.1");
   });
 
-  it("falls back to the trimmed input when no version pattern exists", () => {
+  it("输入不含版本模式时回退为去除首尾空白后的原文", () => {
     expect(extractVersion("  beta  ")).toBe("beta");
   });
 });
 
-describe("compareVersions", () => {
-  it("compares dotted versions numerically", () => {
+describe("compareVersions：版本号新旧比较", () => {
+  it("对点分版本号逐段做数值比较", () => {
     expect(compareVersions("1.10.0", "1.2.0")).toBe(1);
     expect(compareVersions("1.0.0", "1.0.1")).toBe(-1);
   });
 
-  it("treats missing trailing parts as zero", () => {
+  it("缺失的尾部版本段按 0 参与", () => {
     expect(compareVersions("1.2", "1.2.0")).toBe(0);
   });
 
-  it("distinguishes pre-release suffixes (beta7 > beta6)", () => {
+  it("能区分预发布后缀的新旧（beta7 > beta6）", () => {
     expect(compareVersions("2.0.0-beta5", "2.0.0-beta4")).toBe(1);
     expect(compareVersions("2.0.0-beta4", "2.0.0-beta5")).toBe(-1);
     expect(compareVersions("2.0.0", "2.0.0-beta5")).toBe(1);
@@ -43,64 +54,42 @@ describe("compareVersions", () => {
   });
 });
 
-describe("fetchLatestRelease", () => {
+describe("fetchLatestRelease：GitHub 发布信息获取", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    invokeMock.mockReset();
-    isTauriMock.mockReset().mockReturnValue(false);
+    backendInvoke.mockReset();
+    inTauriEnv.mockReset().mockReturnValue(false);
   });
 
-  it("uses Rust backend in Tauri environment for GitHub releases", async () => {
-    isTauriMock.mockReturnValue(true);
-    invokeMock.mockResolvedValue(JSON.stringify({
-      tag_name: "v1.4.0",
-      html_url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
-      published_at: "2026-05-08T00:00:00Z",
-      body: "新增 GitHub 更新通道"
-    }));
+  it("Tauri 环境下走 Rust 后端获取 GitHub 发布信息", async () => {
+    inTauriEnv.mockReturnValue(true);
+    backendInvoke.mockResolvedValue(JSON.stringify(GITHUB_RELEASE_PAYLOAD));
 
-    await expect(fetchLatestRelease("", "XianYuMusic")).resolves.toEqual({
-      version: "1.4.0",
-      url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
-      publishedAt: "2026-05-08T00:00:00Z",
-      notes: "新增 GitHub 更新通道",
-      source: "github"
-    });
-    expect(invokeMock).toHaveBeenCalledWith('check_update_by_rust', { owner: '', repo: 'XianYuMusic' });
+    await expect(fetchLatestRelease("", "XianYuMusic")).resolves.toEqual(EXPECTED_RELEASE_INFO);
+    expect(backendInvoke).toHaveBeenCalledWith('check_update_by_rust', { owner: '', repo: 'XianYuMusic' });
   });
 
-  it("does NOT fallback to browser fetch in Tauri when invoke fails for GitHub", async () => {
-    isTauriMock.mockReturnValue(true);
-    invokeMock.mockRejectedValue(new Error("GitHub API error inside Rust"));
+  it("Tauri 环境下 invoke 失败时不允许退化为浏览器 fetch", async () => {
+    inTauriEnv.mockReturnValue(true);
+    backendInvoke.mockRejectedValue(new Error("GitHub API error inside Rust"));
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
     await expect(fetchLatestRelease("", "XianYuMusic")).rejects.toThrow("[Rust Backend] GitHub API error inside Rust");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("uses browser fetch in non-Tauri environment for GitHub releases", async () => {
-    isTauriMock.mockReturnValue(false);
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        tag_name: "v1.4.0",
-        html_url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
-        published_at: "2026-05-08T00:00:00Z",
-        body: "新增 GitHub 更新通道"
-      }))
+  it("非 Tauri 环境下改用浏览器 fetch 获取 GitHub 发布信息", async () => {
+    inTauriEnv.mockReturnValue(false);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(GITHUB_RELEASE_PAYLOAD))
     );
 
-    await expect(fetchLatestRelease("", "XianYuMusic")).resolves.toEqual({
-      version: "1.4.0",
-      url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
-      publishedAt: "2026-05-08T00:00:00Z",
-      notes: "新增 GitHub 更新通道",
-      source: "github"
-    });
-    expect(fetchMock).toHaveBeenCalledWith("https://api.github.com/repos//XianYuMusic/releases/latest", {
+    await expect(fetchLatestRelease("", "XianYuMusic")).resolves.toEqual(EXPECTED_RELEASE_INFO);
+    expect(fetchSpy).toHaveBeenCalledWith("https://api.github.com/repos//XianYuMusic/releases/latest", {
       headers: {
         Accept: "application/vnd.github+json"
       }
     });
-    expect(invokeMock).not.toHaveBeenCalled();
+    expect(backendInvoke).not.toHaveBeenCalled();
   });
 });

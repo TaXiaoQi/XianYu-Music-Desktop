@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// 专辑详情头部：封面解析缓存、滚动收缩、批量工具条与专辑内排序菜单
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { albumHeaderCache } from '../../caches/imageCaches';
 import { useCoverCache } from '../../composables/useCoverCache';
@@ -8,6 +9,7 @@ import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import SortModeIcon from '../common/SortModeIcon.vue';
 import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
+import SortOptionPopover from './sortPopover/SortOptionPopover.vue';
 
 const props = defineProps<{
   albumName: string;
@@ -32,132 +34,162 @@ const emit = defineEmits([
   'selectAll',
 ]);
 
-const isAllSelected = computed(() => {
-  const total = props.totalSongCount ?? props.songs?.length ?? 0;
-  return total > 0 && (props.selectedCount ?? 0) === total;
-});
-
 const {
   albumDetailSortMode,
   setAlbumDetailSortMode,
 } = usePlayerViewState();
 
-const sortLabelMap = {
-  track_number: '音轨号',
-  title: '歌曲名',
-  artist: '歌手',
-  added_at: '添加时间',
-  file_modified_at: '修改时间',
-} as const;
+const trackAmount = computed(() => props.totalSongCount ?? props.songs?.length ?? 0);
+const isAllSelected = computed(() => trackAmount.value > 0 && (props.selectedCount ?? 0) === trackAmount.value);
 
-const showSortMenu = ref(false);
-const sortMenuX = ref(0);
-const sortMenuY = ref(0);
-const sortMenuIsRightAligned = ref(false);
+// ===== 排序弹出菜单 =====
+type AlbumSortValue =
+  | 'track_number'
+  | 'track_number_desc'
+  | 'title'
+  | 'artist'
+  | 'added_at'
+  | 'added_at_asc'
+  | 'file_modified_at'
+  | 'file_modified_at_asc';
+
+interface SortEntry {
+  value: string;
+  label: string;
+}
+
+const ALBUM_SORT_ENTRIES: SortEntry[] = [
+  { value: 'track_number', label: '音轨号' },
+  { value: 'title', label: '歌曲名' },
+  { value: 'artist', label: '歌手' },
+  { value: 'added_at', label: '添加时间' },
+  { value: 'file_modified_at', label: '修改时间' },
+];
+
+const ALBUM_ARROW_MODES = ['track_number', 'added_at', 'file_modified_at'];
+const ALBUM_DESC_MODES = ['track_number_desc', 'added_at_asc', 'file_modified_at_asc'];
+
+const sortMenuShown = ref(false);
+const sortMenuPosX = ref(0);
+const sortMenuPosY = ref(0);
+const sortMenuDockRight = ref(false);
+
+const toggleSortMenu = (event: MouseEvent) => {
+  const anchorBox = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const dockToRight = anchorBox.left > window.innerWidth / 2;
+  sortMenuDockRight.value = dockToRight;
+  sortMenuPosX.value = dockToRight ? window.innerWidth - anchorBox.right : anchorBox.left;
+  sortMenuPosY.value = anchorBox.bottom + 8;
+  sortMenuShown.value = !sortMenuShown.value;
+};
+
+const closeSortMenuFromOutside = (event: MouseEvent) => {
+  if ((event.target as HTMLElement).closest('.sort-menu-trigger')) return;
+  sortMenuShown.value = false;
+};
+
+onMounted(() => window.addEventListener('click', closeSortMenuFromOutside));
+onUnmounted(() => window.removeEventListener('click', closeSortMenuFromOutside));
+
+const sortReversedEntries = computed(() =>
+  ALBUM_DESC_MODES.includes(albumDetailSortMode.value) ? ALBUM_ARROW_MODES : [],
+);
+
+const applyAlbumSort = (value: string) => {
+  if (value === 'track_number') {
+    setAlbumDetailSortMode(albumDetailSortMode.value === 'track_number' ? 'track_number_desc' : 'track_number');
+  } else if (value === 'added_at') {
+    setAlbumDetailSortMode(albumDetailSortMode.value === 'added_at' ? 'added_at_asc' : 'added_at');
+  } else if (value === 'file_modified_at') {
+    setAlbumDetailSortMode(albumDetailSortMode.value === 'file_modified_at' ? 'file_modified_at_asc' : 'file_modified_at');
+  } else {
+    setAlbumDetailSortMode(value as AlbumSortValue);
+  }
+  sortMenuShown.value = false;
+};
+
+// ===== 封面解析 =====
+const FALLBACK_ARTIST = '未知歌手';
+const artistName = computed(() => props.albumArtist || FALLBACK_ARTIST);
+const albumCacheKey = computed(() => `${props.albumName}::${props.albumArtist || FALLBACK_ARTIST}`);
 
 const coverUrl = ref('');
 const isLoading = ref(false);
-
 const displayedCover = ref('');
-watch(coverUrl, (url) => {
-  if (!url) {
-    displayedCover.value = '';
-    return;
-  }
-  displayedCover.value = getDisplayCoverUrl(url, (dataUrl) => {
-    displayedCover.value = dataUrl;
-  });
-}, { immediate: true });
-const artistName = computed(() => props.albumArtist || '未知歌手');
-const albumCacheKey = computed(() => `${props.albumName}::${props.albumArtist || '未知歌手'}`);
-const { loadCover, peekCoverUrl } = useCoverCache();
 let coverRequestId = 0;
+const { loadCover, peekCoverUrl } = useCoverCache();
 
-const handleSortClick = (e: MouseEvent) => {
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const windowWidth = window.innerWidth;
-
-  if (rect.left > windowWidth / 2) {
-    sortMenuIsRightAligned.value = true;
-    sortMenuX.value = windowWidth - rect.right;
-  } else {
-    sortMenuIsRightAligned.value = false;
-    sortMenuX.value = rect.left;
-  }
-
-  sortMenuY.value = rect.bottom + 8;
-  showSortMenu.value = !showSortMenu.value;
+const applyCoverState = (url: string) => {
+  coverUrl.value = url;
+  isLoading.value = false;
 };
 
-const handleGlobalClick = (e: MouseEvent) => {
-  const target = e.target as HTMLElement;
-  if (!target.closest('.sort-menu-trigger')) {
-    showSortMenu.value = false;
-  }
-};
+const isStale = (requestId: number) => requestId !== coverRequestId;
 
-onMounted(() => window.addEventListener('click', handleGlobalClick));
-onUnmounted(() => window.removeEventListener('click', handleGlobalClick));
+watch(
+  coverUrl,
+  (rawUrl) => {
+    if (!rawUrl) {
+      displayedCover.value = '';
+      return;
+    }
+    displayedCover.value = getDisplayCoverUrl(rawUrl, (decoded) => {
+      displayedCover.value = decoded;
+    });
+  },
+  { immediate: true },
+);
 
-watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([cacheKey, newSongs, coverOverride]) => {
+watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([cacheKey, tracks, coverOverride]) => {
   const requestId = ++coverRequestId;
 
   if (props.readOnly && coverOverride) {
-    coverUrl.value = coverOverride;
-    isLoading.value = false;
+    applyCoverState(coverOverride);
     return;
   }
 
-  if (!newSongs || newSongs.length === 0) {
-    coverUrl.value = '';
-    isLoading.value = false;
+  const leadTrackPath = tracks?.[0]?.path;
+  if (!leadTrackPath) {
+    applyCoverState('');
     return;
   }
 
-  const firstSongPath = newSongs[0]?.path;
-  if (!firstSongPath) {
-    coverUrl.value = '';
-    isLoading.value = false;
+  const cachedHeader = albumHeaderCache.get(cacheKey);
+  if (cachedHeader) {
+    applyCoverState(cachedHeader);
     return;
   }
 
-  const cachedCover = albumHeaderCache.get(cacheKey);
-  if (cachedCover) {
-    coverUrl.value = cachedCover;
-    isLoading.value = false;
-    return;
-  }
-
-  const cachedThumbnail = peekCoverUrl(firstSongPath);
-  if (cachedThumbnail) {
-    coverUrl.value = cachedThumbnail;
-    albumHeaderCache.set(cacheKey, cachedThumbnail);
-    isLoading.value = false;
+  const cachedThumb = peekCoverUrl(leadTrackPath);
+  if (cachedThumb) {
+    albumHeaderCache.set(cacheKey, cachedThumb);
+    applyCoverState(cachedThumb);
     return;
   }
 
   isLoading.value = true;
   try {
-    const resolvedCover = await loadCover(firstSongPath);
-    if (requestId !== coverRequestId) return;
+    const resolved = await loadCover(leadTrackPath);
+    if (isStale(requestId)) return;
 
-    if (resolvedCover) {
-      coverUrl.value = resolvedCover;
-      albumHeaderCache.set(cacheKey, resolvedCover);
+    if (resolved) {
+      albumHeaderCache.set(cacheKey, resolved);
+      coverUrl.value = resolved;
     } else {
       coverUrl.value = '';
     }
   } catch {
-    if (requestId !== coverRequestId) return;
+    if (isStale(requestId)) return;
     coverUrl.value = '';
   } finally {
-    if (requestId === coverRequestId) {
+    if (!isStale(requestId)) {
       isLoading.value = false;
     }
   }
 }, { immediate: true });
 
-const gradients = [
+// 按专辑名稳定散列到一组渐变底色（无封面时的占位）
+const GRADIENT_PALETTE = [
   'from-blue-500 to-cyan-500',
   'from-purple-500 to-pink-500',
   'from-emerald-400 to-teal-500',
@@ -168,41 +200,76 @@ const gradients = [
   'from-amber-400 to-orange-500',
 ];
 
-const getGradientForAlbum = (name: string) => {
-  if (!name) return gradients[0];
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+const gradientForAlbum = (albumTitle: string) => {
+  if (!albumTitle) return GRADIENT_PALETTE[0];
+  let acc = 0;
+  for (let cursor = 0; cursor < albumTitle.length; cursor += 1) {
+    acc = albumTitle.charCodeAt(cursor) + ((acc << 5) - acc);
   }
-  return gradients[Math.abs(hash) % gradients.length];
+  return GRADIENT_PALETTE[Math.abs(acc) % GRADIENT_PALETTE.length];
 };
 
-// ===== 滚动缩小封面（QQ 音乐桌面版风格）=====
+// ===== 滚动收缩（对齐 QQ 音乐桌面版的头部表现） =====
 const scrollContainer = computed(() => props.scrollContainerRef ?? null);
-const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 144);
+const { scrollProgress: shrinkRatioSource } = useScrollShrinkHeader(scrollContainer, 144);
+const shrinkRatio = computed(() => shrinkRatioSource.value);
 
-const coverSize = computed(() => `${144 - 100 * scrollProgress.value}px`);
-const columnHeight = computed(() => `${144 - 80 * scrollProgress.value}px`);
-const titleSize = computed(() => `${32 - 16 * scrollProgress.value}px`);
-const titleLineHeight = computed(() => `${40 - 20 * scrollProgress.value}px`);
-const titleMarginBottom = computed(() => `${16 - 12 * scrollProgress.value}px`);
-const artistOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 2));
-const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scrollProgress.value * 2))}px`);
+const coverSize = computed(() => `${44 + 100 * (1 - shrinkRatio.value)}px`);
+const columnHeight = computed(() => `${64 + 80 * (1 - shrinkRatio.value)}px`);
+const titleSize = computed(() => `${16 + 16 * (1 - shrinkRatio.value)}px`);
+const titleLineHeight = computed(() => `${20 + 20 * (1 - shrinkRatio.value)}px`);
+const titleMarginBottom = computed(() => `${4 + 12 * (1 - shrinkRatio.value)}px`);
+const artistOpacity = computed(() => Math.max(0, 1 - 2 * shrinkRatio.value));
+const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - 2 * shrinkRatio.value))}px`);
+
+// ===== 批量工具条 =====
+type BatchIconName = 'check' | 'plus' | 'trash';
+
+const BATCH_ICON_PATHS: Record<Exclude<BatchIconName, 'check'>, string> = {
+  plus: 'M12 4v16m8-8H4',
+  trash: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
+};
+
+const batchButtonClass =
+  'px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95 bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-white/10 dark:hover:bg-white/20 dark:text-gray-200';
+
+const batchActions = computed(() => [
+  { key: 'select-all', caption: isAllSelected.value ? '取消全选' : '全选', icon: 'check' as const, run: () => emit('selectAll') },
+  { key: 'collect', caption: '收藏到歌单', icon: 'plus' as const, run: () => emit('addToPlaylist') },
+  { key: 'remove', caption: '删除', icon: 'trash' as const, run: () => emit('batchDelete') },
+]);
+
+const detailButtonClass =
+  'rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 hover:border-gray-200 dark:hover:border-white/20';
 </script>
 
 <template>
   <div class="px-8 shrink-0 select-none flex flex-col pt-6 pb-0 h-auto justify-start border-b border-black/5 dark:border-white/5 relative z-20 w-full bg-transparent">
     <div v-if="isBatchMode" class="flex items-center justify-between mb-4 animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
-        <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path v-if="isAllSelected" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /><template v-else><circle cx="12" cy="12" r="9" stroke-width="2" /></template></svg>
-          {{ isAllSelected ? '取消全选' : '全选' }}
-        </button>
-        <button @click="emit('addToPlaylist')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg> 收藏到歌单
-        </button>
-        <button @click="emit('batchDelete')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> 删除
+        <button
+          v-for="action in batchActions"
+          :key="action.key"
+          :class="batchButtonClass"
+          @click="action.run()"
+        >
+          <svg
+            v-if="action.icon === 'check'"
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path v-if="isAllSelected" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <template v-else>
+              <circle cx="12" cy="12" r="9" stroke-width="2" />
+            </template>
+          </svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="BATCH_ICON_PATHS[action.icon]" />
+          </svg>
+          {{ action.caption }}
         </button>
       </div>
       <div class="flex items-center gap-4">
@@ -210,52 +277,60 @@ const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scroll
       </div>
     </div>
 
-    <div v-else class="flex items-center gap-6 h-auto mt-2 mb-6">
-      <div :style="{ width: coverSize, height: coverSize }" class="rounded-lg shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+    <div v-else class="mt-2 mb-6 flex items-center gap-6 h-auto">
+      <div
+        class="rounded-lg shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10"
+        :style="{ width: coverSize, height: coverSize }"
+      >
         <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div>
-        <img v-else-if="displayedCover" :src="displayedCover" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="albumName" decoding="async" />
-        <div v-else class="w-full h-full flex items-center justify-center text-4xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300" :class="getGradientForAlbum(albumName)">
+        <img
+          v-else-if="displayedCover"
+          :src="displayedCover"
+          class="w-full h-full object-cover select-none animate-in fade-in duration-300"
+          draggable="false"
+          :alt="albumName"
+          decoding="async"
+        />
+        <div
+          v-else
+          class="w-full h-full flex items-center justify-center text-4xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300"
+          :class="gradientForAlbum(albumName)"
+        >
           ♪
         </div>
       </div>
 
-      <div :style="{ minHeight: columnHeight }" class="flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0 relative z-20">
+      <div class="pt-2 pb-1 flex-1 min-w-0 relative z-20 flex flex-col justify-start" :style="{ minHeight: columnHeight }">
         <div :style="{ marginBottom: titleMarginBottom }">
           <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight flex items-center gap-2">
             <span class="bg-[#EC4141] text-white text-[12px] px-1.5 py-0.5 rounded border border-[#EC4141] font-normal leading-none -mt-1 relative top-[1px]">专辑</span>
             {{ albumName }}
           </h1>
-          <p class="text-[14px] text-gray-500 dark:text-gray-400 mt-2 truncate w-full flex items-center gap-2 overflow-hidden" :style="{ opacity: artistOpacity, maxHeight: artistMaxHeight }">
+          <p
+            class="text-[14px] text-gray-500 dark:text-gray-400 mt-2 truncate w-full flex items-center gap-2 overflow-hidden"
+            :style="{ opacity: artistOpacity, maxHeight: artistMaxHeight }"
+          >
             <span>专辑艺人:</span>
             <span class="text-[#507DAF] dark:text-[#6a9adb]">{{ artistName }}</span>
           </p>
         </div>
 
         <div class="flex items-center gap-3 mt-auto">
-          <button @click="emit('playAll')" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-6 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
+          <button :class="detailButtonClass" class="px-6 py-2" @click="emit('playAll')">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 5.5v13l10-6.5-10-6.5Z" />
             </svg>
             全部播放
           </button>
 
-          <button
-            @click="emit('addToPlaylist')"
-            title="收藏至歌单"
-            class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-          >
+          <button :class="detailButtonClass" class="px-5 py-2" title="收藏至歌单" @click="emit('addToPlaylist')">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
             收藏至歌单
           </button>
 
           <CollectionFavoriteButton :entry="favoriteEntry ?? null" />
 
-          <button
-            v-if="!readOnly"
-            @click="emit('update:isBatchMode', true)"
-            title="批量操作"
-            class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-          >
+          <button v-if="!readOnly" :class="detailButtonClass" class="px-5 py-2" title="批量操作" @click="emit('update:isBatchMode', true)">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
@@ -263,53 +338,26 @@ const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scroll
           </button>
 
           <template v-if="!readOnly">
-          <button
-            @click.stop="handleSortClick"
-            title="排序方式"
-            class="sort-menu-trigger bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-          >
-            <SortModeIcon class="h-5 w-5" />
-            排序
-          </button>
-
-          <Teleport to="body">
-            <div
-              v-if="showSortMenu"
-              class="fixed z-[9999] bg-white dark:bg-[#262626] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100"
-              :style="sortMenuIsRightAligned
-                ? { right: sortMenuX + 'px', top: sortMenuY + 'px' }
-                : { left: sortMenuX + 'px', top: sortMenuY + 'px' }"
+            <button
+              @click.stop="toggleSortMenu"
+              title="排序方式"
+              class="sort-menu-trigger rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 hover:border-gray-200 dark:hover:border-white/20 px-5 py-2"
             >
-              <div
-                v-for="mode in (['track_number', 'title', 'artist', 'added_at', 'file_modified_at'] as const)"
-                :key="mode"
-                @click="
-                  if (mode === 'track_number') {
-                    setAlbumDetailSortMode(albumDetailSortMode === 'track_number' ? 'track_number_desc' : 'track_number');
-                  } else if (mode === 'added_at') {
-                    setAlbumDetailSortMode(albumDetailSortMode === 'added_at' ? 'added_at_asc' : 'added_at');
-                  } else if (mode === 'file_modified_at') {
-                    setAlbumDetailSortMode(albumDetailSortMode === 'file_modified_at' ? 'file_modified_at_asc' : 'file_modified_at');
-                  } else {
-                    setAlbumDetailSortMode(mode);
-                  }
-                  showSortMenu = false;
-                "
-                class="px-3 py-2 text-xs cursor-pointer flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                :class="(albumDetailSortMode || '').startsWith(mode) ? 'text-blue-500 font-medium' : 'text-gray-600 dark:text-gray-300'"
-              >
-                <span>{{ sortLabelMap[mode] }}</span>
-                <div v-if="(albumDetailSortMode || '').startsWith(mode)" class="flex items-center gap-1.5">
-                  <svg v-if="mode === 'track_number' || mode === 'added_at' || mode === 'file_modified_at'" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform duration-200" :class="{ 'rotate-180': albumDetailSortMode === 'track_number_desc' || albumDetailSortMode === 'added_at_asc' || albumDetailSortMode === 'file_modified_at_asc' }" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l2.293-2.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                  </svg>
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </Teleport>
+              <SortModeIcon class="h-5 w-5" />
+              排序
+            </button>
+
+            <SortOptionPopover
+              :shown="sortMenuShown"
+              :pos-x="sortMenuPosX"
+              :pos-y="sortMenuPosY"
+              :dock-right="sortMenuDockRight"
+              :options="ALBUM_SORT_ENTRIES"
+              :current-mode="albumDetailSortMode"
+              :arrow-modes="ALBUM_ARROW_MODES"
+              :reversed-modes="sortReversedEntries"
+              @pick="applyAlbumSort"
+            />
           </template>
         </div>
       </div>

@@ -1,7 +1,8 @@
 use crate::player::device::{default_output_device_name, emit_output_status};
 use crate::player::loudness::{VolumeNormalizer, VolumeNormalizerHandle};
-use crate::player::output::shared::progress_seconds_from_samples;
-use crate::player::output::shared::{restore_current_playback, SharedOutputBackend};
+use crate::player::output::shared::{
+    progress_seconds_from_samples, restore_current_playback, SharedOutputBackend,
+};
 #[cfg(target_os = "windows")]
 use crate::player::output::wasapi_exclusive::{ExclusivePlayRequest, WasapiExclusivePlayback};
 use crate::player::output::OutputBackend;
@@ -24,175 +25,222 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-const PLAYER_POLL_INTERVAL: Duration = Duration::from_millis(150);
-const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(500);
-const BUFFER_STARVE_BEFORE_PAUSE: Duration = Duration::from_millis(300);
-const BUFFER_RESUME_GRACE: Duration = Duration::from_millis(250);
-const OUTPUT_RECOVER_INTERVAL: Duration = Duration::from_millis(1000);
+// 播放线程空转时等待命令的节拍
+const COMMAND_WAIT_TICK: Duration = Duration::from_millis(150);
+// 进度事件两次广播之间的最小间隔
+const PROGRESS_BROADCAST_SPACING: Duration = Duration::from_millis(500);
+// 网络断流持续多久后把 sink 压停
+const STARVE_PAUSE_THRESHOLD: Duration = Duration::from_millis(300);
+// 重新来数后观察多久才放行 sink
+const RESUME_GRACE_WINDOW: Duration = Duration::from_millis(250);
+// 输出后端丢失后，多久再尝试一次自救
+const OUTPUT_RECOVERY_SPACING: Duration = Duration::from_millis(1000);
+// 远程流一次预取拉多少字节
+const STREAM_SLICE_BYTES: u64 = 2 * 1024 * 1024;
 
+// 把 panic 携带的负载转成可读文本
+fn panic_reason_text(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(borrowed) = payload.downcast_ref::<&str>() {
+        return (*borrowed).to_string();
+    }
+    if let Some(owned) = payload.downcast_ref::<String>() {
+        return owned.clone();
+    }
+    "未知 panic".to_string()
+}
+
+// 设备层操作包一层 panic 隔离：炸了只记日志，播放线程不许陪葬
 #[allow(clippy::type_complexity)]
-fn guard_device_ops<F>(ops: F) -> bool
+fn confine_device_fault<F>(device_job: F) -> bool
 where
     F: FnOnce(),
 {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(ops)) {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(device_job)) {
         Ok(()) => true,
         Err(payload) => {
-            let reason = payload
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "未知 panic".to_string());
+            let reason = panic_reason_text(payload.as_ref());
             eprintln!("[Audio][rust] 音频设备相关操作 panic，已隔离（不终止播放线程）: {reason}");
             false
         }
     }
 }
 
-fn progress_duration(progress: &Arc<SharedProgress>) -> Duration {
-    let current_samples = progress.samples_played.load(Ordering::Relaxed);
-    let rate = progress.sample_rate.load(Ordering::Relaxed);
-    let channels = progress.channels.load(Ordering::Relaxed);
-
-    Duration::from_secs_f64(progress_seconds_from_samples(
-        current_samples,
-        rate,
-        channels,
-    ))
+// 由共享进度原子量折算当前播放到的时间点
+fn elapsed_playback_time(progress: &Arc<SharedProgress>) -> Duration {
+    let played = progress.samples_played.load(Ordering::Relaxed);
+    let hz = progress.sample_rate.load(Ordering::Relaxed);
+    let lanes = progress.channels.load(Ordering::Relaxed);
+    Duration::from_secs_f64(progress_seconds_from_samples(played, hz, lanes))
 }
 
-fn reset_playback_progress(progress: &Arc<SharedProgress>) {
-    progress.samples_played.store(0, Ordering::Relaxed);
-    progress.sample_rate.store(0, Ordering::Relaxed);
-    progress.channels.store(0, Ordering::Relaxed);
-    progress.start_failed.store(false, Ordering::Relaxed);
-    if let Ok(mut reason) = progress.start_failed_reason.lock() {
-        *reason = None;
+// 把指定秒数换算成声道交织后的采样序号
+fn samples_for_position(at_seconds: f64, progress: &SharedProgress) -> u64 {
+    let hz = progress.sample_rate.load(Ordering::Relaxed);
+    let lanes = progress.channels.load(Ordering::Relaxed);
+    (at_seconds * hz as f64 * lanes as f64).round() as u64
+}
+
+// 起播/换曲前清空全部进度簿记，避免上一首的残影
+fn wipe_progress_bookkeeping(progress: &Arc<SharedProgress>) {
+    let loose = Ordering::Relaxed;
+    progress.samples_played.store(0, loose);
+    progress.sample_rate.store(0, loose);
+    progress.channels.store(0, loose);
+    progress.start_failed.store(false, loose);
+    progress.buffered.starved.store(false, loose);
+    progress.buffered.produced.store(false, loose);
+    if let Ok(mut reason_slot) = progress.start_failed_reason.lock() {
+        *reason_slot = None;
     }
-    progress.buffered.starved.store(false, Ordering::Relaxed);
-    progress.buffered.produced.store(false, Ordering::Relaxed);
     progress.visualizer.reset();
 }
 
+// 系统默认输出设备变化时是否值得整体重建输出链
 fn should_restore_for_default_device_change(
-    selected_device_name: &Option<String>,
-    last_default_device_name: &Option<String>,
-    next_default_device_name: &Option<String>,
-    _active_device_name: &Option<String>,
+    chosen_device: &Option<String>,
+    previous_default: &Option<String>,
+    refreshed_default: &Option<String>,
+    _active_label: &Option<String>,
 ) -> bool {
-    selected_device_name.is_none()
-        && next_default_device_name.is_some()
-        && next_default_device_name != last_default_device_name
-}
-
-#[cfg(target_os = "windows")]
-fn stop_exclusive_playback(exclusive_playback: &mut Option<WasapiExclusivePlayback>) {
-    if let Some(mut playback) = exclusive_playback.take() {
-        playback.stop();
+    match (chosen_device, refreshed_default) {
+        (None, Some(pending)) => previous_default.as_deref() != Some(pending.as_str()),
+        _ => false,
     }
 }
 
 #[cfg(target_os = "windows")]
-fn start_exclusive_playback(
-    path: String,
-    selected_device_name: Option<String>,
-    current_volume: f32,
-    is_playing: bool,
-    start_time: Duration,
+fn teardown_exclusive_session(session_slot: &mut Option<WasapiExclusivePlayback>) {
+    if let Some(mut session) = session_slot.take() {
+        session.stop();
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+fn launch_exclusive_session(
+    track_path: String,
+    chosen_device: Option<String>,
+    speaker_gain: f32,
+    should_resume: bool,
+    resume_from: Duration,
     progress: &Arc<SharedProgress>,
-    volume_balance_gain: f32,
-    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
-    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
-    user_volume: Arc<std::sync::atomic::AtomicU32>,
-    dsd_native_passthrough: bool,
+    balance_gain: f32,
+    equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
+    effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    master_volume: Arc<AtomicU32>,
+    dsd_passthrough: bool,
     bit_perfect: bool,
 ) -> Result<WasapiExclusivePlayback, String> {
     WasapiExclusivePlayback::start(ExclusivePlayRequest {
-        path,
-        device_name: selected_device_name,
-        volume: current_volume,
-        is_playing,
+        path: track_path,
+        device_name: chosen_device,
+        volume: speaker_gain,
+        is_playing: should_resume,
         progress: progress.clone(),
-        start_time,
-        volume_balance_gain,
-        equalizer_handle,
-        sound_effect_handle,
-        user_volume,
-        dsd_native_passthrough,
+        start_time: resume_from,
+        volume_balance_gain: balance_gain,
+        equalizer_handle: equalizer_rig,
+        sound_effect_handle: effect_rig,
+        user_volume: master_volume,
+        dsd_native_passthrough: dsd_passthrough,
         bit_perfect,
     })
     .map_err(|error| error.to_string())
 }
 
+// 统一的输出状态广播入口：先走本地快照再交由 device 模块发事件
 #[allow(clippy::too_many_arguments)]
-fn restore_preferred_output(
-    selected_device_name: &Option<String>,
-    output: &mut Option<SharedOutputBackend>,
-    host: &cpal::Host,
-    current_sink: &mut Option<Sink>,
-    #[cfg(target_os = "windows")] exclusive_playback: &mut Option<WasapiExclusivePlayback>,
-    active_device_name: &mut Option<String>,
-    active_output_mode: &mut AudioOutputMode,
-    fallback_reason: &mut Option<String>,
-    requested_output_mode: AudioOutputMode,
-    current_path: &str,
-    current_volume: f32,
-    is_playing_flag: bool,
-    progress: &Arc<SharedProgress>,
-    volume_balance_gain: f32,
-    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
-    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
-    user_volume: Arc<std::sync::atomic::AtomicU32>,
-    current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
-    current_remote_stream: Option<&RemoteStreamSource>,
-    current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
-    dsd_native_passthrough: bool,
+fn broadcast_output_state(
+    app: &AppHandle,
+    status_slot: &Arc<Mutex<AudioOutputStatus>>,
+    chosen_device: &Option<String>,
+    live_device_label: &Option<String>,
+    wanted_mode: AudioOutputMode,
+    live_mode: AudioOutputMode,
+    downgrade_note: &Option<String>,
+) {
+    emit_output_status(
+        app,
+        status_slot,
+        chosen_device.clone(),
+        live_device_label.clone(),
+        wanted_mode,
+        live_mode,
+        downgrade_note.clone(),
+    );
+}
+
+// 按当前请求的输出模式重建整条输出链（独占优先，失败回落共享）
+#[allow(clippy::too_many_arguments)]
+fn rebuild_output_stack(
+    chosen_device: &Option<String>,
+    shared_out: &mut Option<SharedOutputBackend>,
+    audio_host: &cpal::Host,
+    sink_slot: &mut Option<Sink>,
+    #[cfg(target_os = "windows")] exclusive_session: &mut Option<WasapiExclusivePlayback>,
+    live_device_label: &mut Option<String>,
+    live_mode: &mut AudioOutputMode,
+    downgrade_note: &mut Option<String>,
+    wanted_mode: AudioOutputMode,
+    active_file_path: &str,
+    speaker_gain: f32,
+    audible: bool,
+    live_progress: &Arc<SharedProgress>,
+    balance_gain: f32,
+    equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
+    effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    master_volume: Arc<AtomicU32>,
+    loudness_slot: &mut Option<VolumeNormalizerHandle>,
+    remote_feed: Option<&RemoteStreamSource>,
+    temp_file_feed: Option<&crate::player::stream_cache::StreamingTempFileState>,
+    dsd_passthrough: bool,
     bit_perfect: bool,
 ) {
-    *output = None;
-    *output = SharedOutputBackend::open(host, selected_device_name.as_deref()).ok();
-    *active_device_name = output
+    // 先把旧后端放掉再开新的，避免设备句柄残留占用
+    *shared_out = None;
+    *shared_out = SharedOutputBackend::open(audio_host, chosen_device.as_deref()).ok();
+    *live_device_label = shared_out
         .as_ref()
-        .map(|output| output.active_device_name().to_string());
+        .map(|backend| backend.active_device_name().to_string());
 
     #[cfg(target_os = "windows")]
-    if requested_output_mode == AudioOutputMode::WasapiExclusive && !current_path.is_empty() {
-        match start_exclusive_playback(
-            current_path.to_string(),
-            selected_device_name.clone(),
-            current_volume,
-            is_playing_flag,
-            progress_duration(progress),
-            progress,
-            volume_balance_gain,
-            equalizer_handle.clone(),
-            sound_effect_handle.clone(),
-            user_volume.clone(),
-            dsd_native_passthrough,
+    if wanted_mode == AudioOutputMode::WasapiExclusive && !active_file_path.is_empty() {
+        match launch_exclusive_session(
+            active_file_path.to_string(),
+            chosen_device.clone(),
+            speaker_gain,
+            audible,
+            elapsed_playback_time(live_progress),
+            live_progress,
+            balance_gain,
+            equalizer_rig.clone(),
+            effect_rig.clone(),
+            master_volume.clone(),
+            dsd_passthrough,
             bit_perfect,
         ) {
-            Ok(playback) => {
-                *active_device_name = Some(playback.active_device_name().to_string());
-                *active_output_mode = AudioOutputMode::WasapiExclusive;
-                *fallback_reason = None;
-                *exclusive_playback = Some(playback);
-                *output = None;
+            Ok(session) => {
+                *live_device_label = Some(session.active_device_name().to_string());
+                *live_mode = AudioOutputMode::WasapiExclusive;
+                *downgrade_note = None;
+                *exclusive_session = Some(session);
+                *shared_out = None;
                 return;
             }
             Err(error) => {
-                *active_output_mode = AudioOutputMode::Shared;
-                *fallback_reason = Some(error);
+                *live_mode = AudioOutputMode::Shared;
+                *downgrade_note = Some(error);
             }
         }
     } else {
-        *active_output_mode = AudioOutputMode::Shared;
-        *fallback_reason = None;
+        *live_mode = AudioOutputMode::Shared;
+        *downgrade_note = None;
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        *active_output_mode = AudioOutputMode::Shared;
-        *fallback_reason = if requested_output_mode == AudioOutputMode::WasapiExclusive {
+        *live_mode = AudioOutputMode::Shared;
+        *downgrade_note = if wanted_mode == AudioOutputMode::WasapiExclusive {
             Some("WASAPI exclusive mode is only available on Windows".to_string())
         } else {
             None
@@ -200,200 +248,198 @@ fn restore_preferred_output(
     }
 
     restore_current_playback(
-        output,
-        current_sink,
-        current_path,
-        is_playing_flag,
-        progress,
-        equalizer_handle,
-        sound_effect_handle,
-        user_volume,
-        volume_balance_gain,
-        current_normalizer_handle,
-        current_remote_stream,
-        current_streaming_state,
+        shared_out,
+        sink_slot,
+        active_file_path,
+        audible,
+        live_progress,
+        equalizer_rig,
+        effect_rig,
+        master_volume,
+        balance_gain,
+        loudness_slot,
+        remote_feed,
+        temp_file_feed,
     );
 }
 
-fn restore_shared_output(
-    selected_device_name: &Option<String>,
-    output: &mut Option<SharedOutputBackend>,
-    host: &cpal::Host,
-    current_sink: &mut Option<Sink>,
-    active_device_name: &mut Option<String>,
-    current_path: &str,
-    is_playing_flag: bool,
-    progress: &Arc<SharedProgress>,
-    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
-    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
-    user_volume: Arc<std::sync::atomic::AtomicU32>,
-    volume_balance_gain: f32,
-    current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
-    current_remote_stream: Option<&RemoteStreamSource>,
-    current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
+// 只重建共享输出链（无独占分支），供超时自救等场景复用
+#[allow(clippy::too_many_arguments)]
+fn reopen_shared_pipeline(
+    chosen_device: &Option<String>,
+    shared_out: &mut Option<SharedOutputBackend>,
+    audio_host: &cpal::Host,
+    sink_slot: &mut Option<Sink>,
+    live_device_label: &mut Option<String>,
+    active_file_path: &str,
+    audible: bool,
+    live_progress: &Arc<SharedProgress>,
+    equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
+    effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    master_volume: Arc<AtomicU32>,
+    balance_gain: f32,
+    loudness_slot: &mut Option<VolumeNormalizerHandle>,
+    remote_feed: Option<&RemoteStreamSource>,
+    temp_file_feed: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
-    *output = SharedOutputBackend::open(host, selected_device_name.as_deref()).ok();
-    *active_device_name = output
+    *shared_out = SharedOutputBackend::open(audio_host, chosen_device.as_deref()).ok();
+    *live_device_label = shared_out
         .as_ref()
-        .map(|output| output.active_device_name().to_string());
+        .map(|backend| backend.active_device_name().to_string());
     restore_current_playback(
-        output,
-        current_sink,
-        current_path,
-        is_playing_flag,
-        progress,
-        equalizer_handle,
-        sound_effect_handle,
-        user_volume,
-        volume_balance_gain,
-        current_normalizer_handle,
-        current_remote_stream,
-        current_streaming_state,
+        shared_out,
+        sink_slot,
+        active_file_path,
+        audible,
+        live_progress,
+        equalizer_rig,
+        effect_rig,
+        master_volume,
+        balance_gain,
+        loudness_slot,
+        remote_feed,
+        temp_file_feed,
     );
 }
 
+// 独占会话结束后做收尾：正常结束直接清场，异常断开则回落共享并广播
 #[cfg(target_os = "windows")]
 #[allow(clippy::too_many_arguments)]
-fn recover_from_exclusive_failure(
-    exclusive_playback: &mut Option<WasapiExclusivePlayback>,
-    selected_device_name: &Option<String>,
-    output: &mut Option<SharedOutputBackend>,
-    host: &cpal::Host,
-    current_sink: &mut Option<Sink>,
-    active_device_name: &mut Option<String>,
-    requested_output_mode: &mut AudioOutputMode,
-    active_output_mode: &mut AudioOutputMode,
-    fallback_reason: &mut Option<String>,
-    current_path: &str,
-    is_playing_flag: bool,
-    progress: &Arc<SharedProgress>,
-    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
-    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
-    user_volume: Arc<std::sync::atomic::AtomicU32>,
-    volume_balance_gain: f32,
-    current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
-    current_remote_stream: Option<&RemoteStreamSource>,
-    current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
+fn drain_finished_exclusive(
+    exclusive_session: &mut Option<WasapiExclusivePlayback>,
+    chosen_device: &Option<String>,
+    shared_out: &mut Option<SharedOutputBackend>,
+    audio_host: &cpal::Host,
+    sink_slot: &mut Option<Sink>,
+    live_device_label: &mut Option<String>,
+    wanted_mode: &mut AudioOutputMode,
+    live_mode: &mut AudioOutputMode,
+    downgrade_note: &mut Option<String>,
+    active_file_path: &str,
+    audible: bool,
+    live_progress: &Arc<SharedProgress>,
+    equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
+    effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    master_volume: Arc<AtomicU32>,
+    balance_gain: f32,
+    loudness_slot: &mut Option<VolumeNormalizerHandle>,
+    remote_feed: Option<&RemoteStreamSource>,
+    temp_file_feed: Option<&crate::player::stream_cache::StreamingTempFileState>,
     app: &AppHandle,
-    output_status: &Arc<Mutex<AudioOutputStatus>>,
-    last_default_device_name: &mut Option<String>,
+    status_slot: &Arc<Mutex<AudioOutputStatus>>,
+    prior_system_default: &mut Option<String>,
 ) -> bool {
-    let Some(result) = exclusive_playback
+    let Some(outcome) = exclusive_session
         .as_ref()
-        .and_then(|playback| playback.try_finished())
+        .and_then(|session| session.try_finished())
     else {
         return false;
     };
 
-    stop_exclusive_playback(exclusive_playback);
+    teardown_exclusive_session(exclusive_session);
 
-    if let Err(error) = result {
-        *active_output_mode = AudioOutputMode::Shared;
-        *fallback_reason = Some(format!(
+    if let Err(error) = outcome {
+        *live_mode = AudioOutputMode::Shared;
+        *downgrade_note = Some(format!(
             "WASAPI 独占模式已断开，已自动切回共享模式：{error}"
         ));
 
-        restore_shared_output(
-            selected_device_name,
-            output,
-            host,
-            current_sink,
-            active_device_name,
-            current_path,
-            is_playing_flag,
-            progress,
-            equalizer_handle,
-            sound_effect_handle,
-            user_volume,
-            volume_balance_gain,
-            current_normalizer_handle,
-            current_remote_stream,
-            current_streaming_state,
+        reopen_shared_pipeline(
+            chosen_device,
+            shared_out,
+            audio_host,
+            sink_slot,
+            live_device_label,
+            active_file_path,
+            audible,
+            live_progress,
+            equalizer_rig,
+            effect_rig,
+            master_volume,
+            balance_gain,
+            loudness_slot,
+            remote_feed,
+            temp_file_feed,
         );
-        if selected_device_name.is_none() {
-            *last_default_device_name = default_output_device_name(host);
+        if chosen_device.is_none() {
+            *prior_system_default = default_output_device_name(audio_host);
         }
 
-        emit_output_status(
+        broadcast_output_state(
             app,
-            output_status,
-            selected_device_name.clone(),
-            active_device_name.clone(),
-            *requested_output_mode,
-            *active_output_mode,
-            fallback_reason.clone(),
+            status_slot,
+            chosen_device,
+            live_device_label,
+            *wanted_mode,
+            *live_mode,
+            downgrade_note,
         );
     }
 
     true
 }
 
-fn attach_media_controls(controls: &mut MediaControls, app: &AppHandle) {
-    let app_clone = app.clone();
-    let _ = controls.attach(move |event| match event {
-        MediaControlEvent::Play => {
-            let _ = app_clone.emit("player:play", ());
+// 把系统媒体键（SMTC/MPRIS）接到前端约定的事件名上
+fn wire_media_buttons(hub: &mut MediaControls, app: &AppHandle) {
+    let event_target = app.clone();
+    let _ = hub.attach(move |button| {
+        let plain_action: Option<&str> = match button {
+            MediaControlEvent::Play => Some("player:play"),
+            MediaControlEvent::Pause => Some("player:pause"),
+            MediaControlEvent::Next => Some("player:next"),
+            MediaControlEvent::Previous => Some("player:prev"),
+            MediaControlEvent::Stop => Some("player:stop"),
+            MediaControlEvent::SetPosition(at) => {
+                let _ = event_target.emit("player:seek-to", at.0.as_secs_f64());
+                None
+            }
+            _ => None,
+        };
+        if let Some(event_name) = plain_action {
+            let _ = event_target.emit(event_name, ());
         }
-        MediaControlEvent::Pause => {
-            let _ = app_clone.emit("player:pause", ());
-        }
-        MediaControlEvent::Next => {
-            let _ = app_clone.emit("player:next", ());
-        }
-        MediaControlEvent::Previous => {
-            let _ = app_clone.emit("player:prev", ());
-        }
-        MediaControlEvent::SetPosition(pos) => {
-            let secs = pos.0.as_secs_f64();
-            let _ = app_clone.emit("player:seek-to", secs);
-        }
-        MediaControlEvent::Stop => {
-            let _ = app_clone.emit("player:stop", ());
-        }
-        _ => {}
     });
 }
 
-fn store_media_controls(controls: &Arc<Mutex<Option<MediaControls>>>, mc: MediaControls) {
-    *controls.lock().unwrap_or_else(|e| e.into_inner()) = Some(mc);
+// 把初始化好的媒体控制实例挂进全局槽位
+fn install_controls(hub: &Arc<Mutex<Option<MediaControls>>>, mounted: MediaControls) {
+    *hub.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(mounted);
 }
 
-fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>>> {
-    let controls = Arc::new(Mutex::new(None));
+fn boot_media_key_hub(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>>> {
+    let hub: Arc<Mutex<Option<MediaControls>>> = Arc::new(Mutex::new(None));
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        let config = PlatformConfig {
+        let platform = PlatformConfig {
             dbus_name: "xianyu_music",
             display_name: "XianYu Music",
             hwnd: None,
         };
 
-        match MediaControls::new(config) {
-            Ok(mut mc) => {
-                attach_media_controls(&mut mc, app);
-                store_media_controls(&controls, mc);
+        match MediaControls::new(platform) {
+            Ok(mut mounted) => {
+                wire_media_buttons(&mut mounted, app);
+                install_controls(&hub, mounted);
             }
             Err(error) => eprintln!("Error initializing MediaControls: {:?}", error),
         }
     }
 
     #[cfg(target_os = "windows")]
-    if let Some(window) = app.get_webview_window("main") {
-        if let Ok(handle) = window.window_handle() {
-            if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                let hwnd = h.hwnd.get() as *mut std::ffi::c_void;
-
-                let config = PlatformConfig {
+    if let Some(main_window) = app.get_webview_window("main") {
+        if let Ok(window_ref) = main_window.window_handle() {
+            if let RawWindowHandle::Win32(win32) = window_ref.as_raw() {
+                let platform = PlatformConfig {
                     dbus_name: "xianyu_music",
                     display_name: "XianYu Music",
-                    hwnd: Some(hwnd),
+                    hwnd: Some(win32.hwnd.get() as *mut std::ffi::c_void),
                 };
 
-                match MediaControls::new(config) {
-                    Ok(mut mc) => {
-                        attach_media_controls(&mut mc, app);
-                        store_media_controls(&controls, mc);
+                match MediaControls::new(platform) {
+                    Ok(mut mounted) => {
+                        wire_media_buttons(&mut mounted, app);
+                        install_controls(&hub, mounted);
                     }
                     Err(error) => eprintln!("Error initializing MediaControls: {:?}", error),
                 }
@@ -401,43 +447,45 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
         }
     }
 
-    controls
+    hub
 }
 
-const REMOTE_STREAM_CHUNK_BYTES: u64 = 2 * 1024 * 1024;
-
-enum PrefetchResult {
-    Bytes {
-        start: u64,
-        data: Vec<u8>,
+// 远程流一次后台预取的产出形态
+enum FetchedSlice {
+    // 命中 Range：拿到 [offset, offset+SLICE) 的分片，total 是服务器声明的总长
+    Slice {
+        offset: u64,
+        payload: Vec<u8>,
         total: Option<u64>,
     },
-    NoRange {
-        data: Vec<u8>,
+    // 服务器无视 Range，整曲一次性返回
+    WholeBody {
+        payload: Vec<u8>,
     },
-    Error {
-        start: u64,
+    // 预取失败（网络/状态码/IO）
+    Failure {
+        offset: u64,
         message: String,
     },
 }
 
 pub(crate) struct RemoteRangeReader {
-    client: reqwest::blocking::Client,
-    source: RemoteStreamSource,
-    pos: u64,
-    len: Option<u64>,
-    buffer_start: u64,
-    buffer: Vec<u8>,
-    no_range: bool,
-    full_body: Option<Vec<u8>>,
-    prefetch_state: Arc<Mutex<Option<PrefetchResult>>>,
-    prefetch_in_flight: Arc<AtomicBool>,
-    prefetch_start: u64,
+    http: reqwest::blocking::Client,
+    origin: RemoteStreamSource,
+    cursor: u64,
+    known_size: Option<u64>,
+    slice_base: u64,
+    slice: Vec<u8>,
+    rangeless: bool,
+    whole_payload: Option<Vec<u8>>,
+    queued_slice: Arc<Mutex<Option<FetchedSlice>>>,
+    slice_pending: Arc<AtomicBool>,
+    pending_base: u64,
 }
 
 impl RemoteRangeReader {
-    pub(crate) fn new(source: RemoteStreamSource) -> Result<Self, String> {
-        let client = crate::netproxy::blocking_client_builder()
+    pub(crate) fn new(origin_source: RemoteStreamSource) -> Result<Self, String> {
+        let http = crate::netproxy::blocking_client_builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .gzip(true)
@@ -448,23 +496,24 @@ impl RemoteRangeReader {
             .build()
             .map_err(|error| error.to_string())?;
         Ok(Self {
-            client,
-            source,
-            pos: 0,
-            len: None,
-            buffer_start: 0,
-            buffer: Vec::new(),
-            no_range: false,
-            full_body: None,
-            prefetch_state: Arc::new(Mutex::new(None)),
-            prefetch_in_flight: Arc::new(AtomicBool::new(false)),
-            prefetch_start: 0,
+            http,
+            origin: origin_source,
+            cursor: 0,
+            known_size: None,
+            slice_base: 0,
+            slice: Vec::new(),
+            rangeless: false,
+            whole_payload: None,
+            queued_slice: Arc::new(Mutex::new(None)),
+            slice_pending: Arc::new(AtomicBool::new(false)),
+            pending_base: 0,
         })
     }
 
-    fn download_full(&mut self) -> std::io::Result<()> {
-        let request = self.client.get(&self.source.url);
-        let mut response = Self::auth(request, &self.source)
+    // Range 被无视时的兜底：整曲拉回内存
+    fn download_entire(&mut self) -> std::io::Result<()> {
+        let request = self.http.get(&self.origin.url);
+        let mut response = Self::sign_request(request, &self.origin)
             .send()
             .map_err(std::io::Error::other)?;
         if !response.status().is_success() {
@@ -476,197 +525,207 @@ impl RemoteRangeReader {
         let content_type = response
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
+            .and_then(|value| value.to_str().ok())
             .unwrap_or("")
             .to_lowercase();
-        let is_html = content_type.contains("text/html")
+        let looks_like_page = content_type.contains("text/html")
             || content_type.contains("application/json")
             || content_type.contains("text/plain");
-        let mut bytes = Vec::new();
-        response.read_to_end(&mut bytes)?;
-        if is_html {
+        let mut payload = Vec::new();
+        response.read_to_end(&mut payload)?;
+        if looks_like_page {
             return Err(std::io::Error::other(format!(
                 "服务器返回非音频内容 (Content-Type: {})，可能需要防盗链 headers 或 URL 已失效",
                 content_type
             )));
         }
-        self.len = Some(bytes.len() as u64);
-        self.full_body = Some(bytes);
-        self.no_range = true;
+        self.known_size = Some(payload.len() as u64);
+        self.whole_payload = Some(payload);
+        self.rangeless = true;
         Ok(())
     }
 
-    fn auth(
+    // 按来源配置补齐认证、UA、防盗链与自定义头
+    fn sign_request(
         request: reqwest::blocking::RequestBuilder,
-        source: &RemoteStreamSource,
+        origin: &RemoteStreamSource,
     ) -> reqwest::blocking::RequestBuilder {
-        let mut request =
-            if let Some(username) = source.username.as_deref().filter(|value| !value.is_empty()) {
-                request.basic_auth(username.to_string(), source.password.clone())
-            } else {
-                request
-            };
-        if let Some(ua) = source
+        let mut signed = match origin
+            .username
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            Some(account) => request.basic_auth(account.to_string(), origin.password.clone()),
+            None => request,
+        };
+        if let Some(agent) = origin
             .user_agent
             .as_deref()
             .filter(|value| !value.is_empty())
         {
-            request = request.header(reqwest::header::USER_AGENT, ua);
+            signed = signed.header(reqwest::header::USER_AGENT, agent);
         }
-        if let Some(referer) = source.referer.as_deref().filter(|value| !value.is_empty()) {
-            request = request.header(reqwest::header::REFERER, referer);
+        if let Some(referrer) = origin.referer.as_deref().filter(|value| !value.is_empty()) {
+            signed = signed.header(reqwest::header::REFERER, referrer);
         }
-        if let Some(ref headers) = source.headers {
-            for (key, value) in headers {
-                if let Ok(name) = reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
-                    if let Ok(val) = reqwest::header::HeaderValue::from_str(value) {
-                        request = request.header(name, val);
-                    }
+        if let Some(extra) = &origin.headers {
+            for (key, value) in extra {
+                if let (Ok(parsed_name), Ok(parsed_value)) = (
+                    reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                    reqwest::header::HeaderValue::from_str(value),
+                ) {
+                    signed = signed.header(parsed_name, parsed_value);
                 }
             }
         }
-        request
+        signed
     }
 
-    fn content_range_total(response: &reqwest::blocking::Response) -> Option<u64> {
-        response
+    // 从 Content-Range: bytes x-y/total 中抠出总长
+    fn response_total_size(response: &reqwest::blocking::Response) -> Option<u64> {
+        let raw = response
             .headers()
-            .get(reqwest::header::CONTENT_RANGE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.rsplit('/').next())
-            .and_then(|value| value.trim().parse::<u64>().ok())
-            .filter(|len| *len > 0)
+            .get(reqwest::header::CONTENT_RANGE)?
+            .to_str()
+            .ok()?;
+        let tail = raw.rsplit('/').next()?.trim();
+        let size: u64 = tail.parse().ok()?;
+        (size > 0).then_some(size)
     }
 
-    fn start_prefetch(&mut self, start: u64) {
-        if let Some(len) = self.len {
-            if start >= len {
+    // 离当前读取位置还有半片时，后台把下一片拉好
+    fn queue_slice_prefetch(&mut self, from: u64) {
+        if let Some(size) = self.known_size {
+            if from >= size {
                 return;
             }
         }
         *self
-            .prefetch_state
+            .queued_slice
             .lock()
-            .unwrap_or_else(|e| e.into_inner()) = None;
-        self.prefetch_in_flight.store(true, Ordering::Relaxed);
-        self.prefetch_start = start;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        self.slice_pending.store(true, Ordering::Relaxed);
+        self.pending_base = from;
 
-        let client = self.client.clone();
-        let source = self.source.clone();
-        let state = self.prefetch_state.clone();
-        let in_flight = self.prefetch_in_flight.clone();
-        let end = start.saturating_add(REMOTE_STREAM_CHUNK_BYTES - 1);
+        let http = self.http.clone();
+        let origin = self.origin.clone();
+        let slot = self.queued_slice.clone();
+        let gate = self.slice_pending.clone();
+        let until = from.saturating_add(STREAM_SLICE_BYTES - 1);
 
         thread::spawn(move || {
-            let request = client
-                .get(&source.url)
-                .header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
-            let result = match Self::auth(request, &source).send() {
+            let request = http
+                .get(&origin.url)
+                .header(reqwest::header::RANGE, format!("bytes={from}-{until}"));
+            let result = match Self::sign_request(request, &origin).send() {
                 Ok(mut response) => {
                     if response.status() == reqwest::StatusCode::OK {
-                        let mut bytes = Vec::new();
-                        match response.read_to_end(&mut bytes) {
-                            Ok(_) => PrefetchResult::NoRange { data: bytes },
-                            Err(e) => PrefetchResult::Error {
-                                start,
+                        // 服务器无视 Range，整曲读回
+                        let mut payload = Vec::new();
+                        match response.read_to_end(&mut payload) {
+                            Ok(_) => FetchedSlice::WholeBody { payload },
+                            Err(e) => FetchedSlice::Failure {
+                                offset: from,
                                 message: e.to_string(),
                             },
                         }
                     } else if response.status().is_success()
                         || response.status() == reqwest::StatusCode::PARTIAL_CONTENT
                     {
-                        let total = Self::content_range_total(&response);
-                        let mut limited = response.by_ref().take(REMOTE_STREAM_CHUNK_BYTES);
-                        let mut bytes = Vec::new();
-                        match limited.read_to_end(&mut bytes) {
-                            Ok(_) => PrefetchResult::Bytes {
-                                start,
-                                data: bytes,
+                        let total = Self::response_total_size(&response);
+                        let mut capped = response.by_ref().take(STREAM_SLICE_BYTES);
+                        let mut payload = Vec::new();
+                        match capped.read_to_end(&mut payload) {
+                            Ok(_) => FetchedSlice::Slice {
+                                offset: from,
+                                payload,
                                 total,
                             },
-                            Err(e) => PrefetchResult::Error {
-                                start,
+                            Err(e) => FetchedSlice::Failure {
+                                offset: from,
                                 message: e.to_string(),
                             },
                         }
                     } else {
-                        PrefetchResult::Error {
-                            start,
+                        FetchedSlice::Failure {
+                            offset: from,
                             message: format!("HTTP {}", response.status()),
                         }
                     }
                 }
-                Err(e) => PrefetchResult::Error {
-                    start,
+                Err(e) => FetchedSlice::Failure {
+                    offset: from,
                     message: e.to_string(),
                 },
             };
-            *state.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
-            in_flight.store(false, Ordering::Relaxed);
+            *slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(result);
+            gate.store(false, Ordering::Relaxed);
         });
     }
 
-    fn try_take_prefetched(&mut self) -> Option<PrefetchResult> {
-        if self.prefetch_in_flight.load(Ordering::Relaxed) {
+    // 预取已落地就取走结果；还在路上则返回 None
+    fn collect_finished_prefetch(&mut self) -> Option<FetchedSlice> {
+        if self.slice_pending.load(Ordering::Relaxed) {
             return None;
         }
-        self.prefetch_state
+        self.queued_slice
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take()
     }
 
-    fn is_prefetch_in_flight(&self) -> bool {
-        self.prefetch_in_flight.load(Ordering::Relaxed)
+    fn prefetch_still_running(&self) -> bool {
+        self.slice_pending.load(Ordering::Relaxed)
     }
 
-    fn cancel_prefetch(&mut self) {
-        self.prefetch_in_flight.store(false, Ordering::Relaxed);
+    fn drop_queued_prefetch(&mut self) {
+        self.slice_pending.store(false, Ordering::Relaxed);
         *self
-            .prefetch_state
+            .queued_slice
             .lock()
-            .unwrap_or_else(|e| e.into_inner()) = None;
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     }
 
-    fn fetch_at(&mut self, start: u64) -> std::io::Result<()> {
-        if let Some(result) = self.try_take_prefetched() {
-            match result {
-                PrefetchResult::Bytes {
-                    start: res_start,
-                    data,
+    // 确保游标所在分片已就位：优先消费预取，落空则同步拉取
+    fn load_slice_at(&mut self, from: u64) -> std::io::Result<()> {
+        if let Some(prebuilt) = self.collect_finished_prefetch() {
+            match prebuilt {
+                FetchedSlice::Slice {
+                    offset: slice_offset,
+                    payload,
                     total,
-                } if res_start == start => {
-                    if let Some(total) = total {
-                        self.len = Some(total);
-                    } else if data.len() < REMOTE_STREAM_CHUNK_BYTES as usize {
-                        self.len = Some(start + data.len() as u64);
+                } if slice_offset == from => {
+                    if let Some(size) = total {
+                        self.known_size = Some(size);
+                    } else if payload.len() < STREAM_SLICE_BYTES as usize {
+                        self.known_size = Some(from + payload.len() as u64);
                     }
-                    self.buffer_start = start;
-                    self.buffer = data;
+                    self.slice_base = from;
+                    self.slice = payload;
                     return Ok(());
                 }
-                PrefetchResult::NoRange { data } => {
-                    self.len = Some(data.len() as u64);
-                    self.full_body = Some(data);
-                    self.no_range = true;
+                FetchedSlice::WholeBody { payload } => {
+                    self.known_size = Some(payload.len() as u64);
+                    self.whole_payload = Some(payload);
+                    self.rangeless = true;
                     return Ok(());
                 }
-                PrefetchResult::Error {
-                    start: res_start,
+                FetchedSlice::Failure {
+                    offset: failed_at,
                     message,
-                } if res_start == start => {
-                    eprintln!("[Audio][remote] 流预取失败 start={res_start}: {message}");
+                } if failed_at == from => {
+                    eprintln!("[Audio][remote] 流预取失败 start={failed_at}: {message}");
                 }
                 _ => {}
             }
         }
 
-        let end = start.saturating_add(REMOTE_STREAM_CHUNK_BYTES - 1);
+        let until = from.saturating_add(STREAM_SLICE_BYTES - 1);
         let request = self
-            .client
-            .get(&self.source.url)
-            .header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
-        let mut response = Self::auth(request, &self.source)
+            .http
+            .get(&self.origin.url)
+            .header(reqwest::header::RANGE, format!("bytes={from}-{until}"));
+        let mut response = Self::sign_request(request, &self.origin)
             .send()
             .map_err(std::io::Error::other)?;
         if !(response.status().is_success()
@@ -678,269 +737,281 @@ impl RemoteRangeReader {
             )));
         }
         if response.status() == reqwest::StatusCode::OK {
-            let mut bytes = Vec::new();
-            response.read_to_end(&mut bytes)?;
-            self.len = Some(bytes.len() as u64);
-            self.full_body = Some(bytes);
-            self.no_range = true;
+            // 没拿到 206：整曲读回后走 rangeless 通道
+            let mut payload = Vec::new();
+            response.read_to_end(&mut payload)?;
+            self.known_size = Some(payload.len() as u64);
+            self.whole_payload = Some(payload);
+            self.rangeless = true;
             return Ok(());
         }
 
-        if let Some(total) = Self::content_range_total(&response) {
-            self.len = Some(total);
+        if let Some(size) = Self::response_total_size(&response) {
+            self.known_size = Some(size);
         }
 
-        let mut limited = response.by_ref().take(REMOTE_STREAM_CHUNK_BYTES);
-        let mut bytes = Vec::new();
-        limited.read_to_end(&mut bytes)?;
-        self.buffer_start = start;
-        if self.len.is_none() && bytes.len() < REMOTE_STREAM_CHUNK_BYTES as usize {
-            self.len = Some(start + bytes.len() as u64);
+        let mut capped = response.by_ref().take(STREAM_SLICE_BYTES);
+        let mut payload = Vec::new();
+        capped.read_to_end(&mut payload)?;
+        self.slice_base = from;
+        if self.known_size.is_none() && payload.len() < STREAM_SLICE_BYTES as usize {
+            self.known_size = Some(from + payload.len() as u64);
         }
-        self.buffer = bytes;
+        self.slice = payload;
         Ok(())
     }
 
-    fn ensure_buffer(&mut self) -> std::io::Result<()> {
-        let buffer_end = self.buffer_start.saturating_add(self.buffer.len() as u64);
-        if self.pos >= self.buffer_start && self.pos < buffer_end {
-            let remaining = buffer_end - self.pos;
-            if remaining <= REMOTE_STREAM_CHUNK_BYTES / 2 && !self.is_prefetch_in_flight() {
-                self.start_prefetch(buffer_end);
+    // 读取前保证游标覆盖在有效分片内，并按余量决定是否提前 prefetch
+    fn top_up_slice(&mut self) -> std::io::Result<()> {
+        let slice_end = self.slice_base.saturating_add(self.slice.len() as u64);
+        if self.cursor >= self.slice_base && self.cursor < slice_end {
+            let left = slice_end - self.cursor;
+            if left <= STREAM_SLICE_BYTES / 2 && !self.prefetch_still_running() {
+                self.queue_slice_prefetch(slice_end);
             }
             return Ok(());
         }
-        self.fetch_at(self.pos)?;
-        let next_start = self.buffer_start.saturating_add(self.buffer.len() as u64);
-        if !self.is_prefetch_in_flight() {
-            self.start_prefetch(next_start);
+        self.load_slice_at(self.cursor)?;
+        let following_base = self.slice_base.saturating_add(self.slice.len() as u64);
+        if !self.prefetch_still_running() {
+            self.queue_slice_prefetch(following_base);
         }
         Ok(())
     }
 }
 
 impl Read for RemoteRangeReader {
-    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
-        if output.is_empty() {
+    fn read(&mut self, sink_buf: &mut [u8]) -> std::io::Result<usize> {
+        if sink_buf.is_empty() {
             return Ok(0);
         }
 
-        if self.no_range {
-            if self.full_body.is_none() {
-                self.download_full()?;
+        // rangeless 通道：直接在整曲内存体上切片
+        if self.rangeless {
+            if self.whole_payload.is_none() {
+                self.download_entire()?;
             }
-            let body = self
-                .full_body
+            let payload = self
+                .whole_payload
                 .as_ref()
                 .ok_or_else(|| std::io::Error::other("full_body not initialized"))?;
-            let pos = self.pos as usize;
-            if pos >= body.len() {
+            let at = self.cursor as usize;
+            if at >= payload.len() {
                 return Ok(0);
             }
-            let available = body.len() - pos;
-            let count = available.min(output.len());
-            output[..count].copy_from_slice(&body[pos..pos + count]);
-            self.pos = self.pos.saturating_add(count as u64);
-            return Ok(count);
+            let ready = payload.len() - at;
+            let moved = ready.min(sink_buf.len());
+            sink_buf[..moved].copy_from_slice(&payload[at..at + moved]);
+            self.cursor = self.cursor.saturating_add(moved as u64);
+            return Ok(moved);
         }
 
-        if self.len.map(|len| self.pos >= len).unwrap_or(false) {
+        if self
+            .known_size
+            .map(|size| self.cursor >= size)
+            .unwrap_or(false)
+        {
             return Ok(0);
         }
 
-        self.ensure_buffer()?;
+        self.top_up_slice()?;
 
-        if self.no_range {
-            return self.read(output);
+        // top_up 可能触发整曲下载并切回 rangeless 通道
+        if self.rangeless {
+            return self.read(sink_buf);
         }
 
-        if self.buffer.is_empty() {
+        if self.slice.is_empty() {
             return Ok(0);
         }
 
-        let offset = self.pos.saturating_sub(self.buffer_start) as usize;
-        let available = self.buffer.len().saturating_sub(offset);
-        let count = available.min(output.len());
-        output[..count].copy_from_slice(&self.buffer[offset..offset + count]);
-        self.pos = self.pos.saturating_add(count as u64);
-        Ok(count)
+        let within = self.cursor.saturating_sub(self.slice_base) as usize;
+        let ready = self.slice.len().saturating_sub(within);
+        let moved = ready.min(sink_buf.len());
+        sink_buf[..moved].copy_from_slice(&self.slice[within..within + moved]);
+        self.cursor = self.cursor.saturating_add(moved as u64);
+        Ok(moved)
     }
 }
 
 impl Seek for RemoteRangeReader {
-    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        let next = match pos {
-            SeekFrom::Start(value) => value as i128,
-            SeekFrom::Current(value) => self.pos as i128 + value as i128,
-            SeekFrom::End(value) => {
-                let len = self
-                    .len
-                    .ok_or_else(|| std::io::Error::other("远程音频长度未知，无法跳转"))?;
-                len as i128 + value as i128
+    fn seek(&mut self, anchor: SeekFrom) -> std::io::Result<u64> {
+        let resolved: i128 = match anchor {
+            SeekFrom::Start(offset) => offset as i128,
+            SeekFrom::Current(delta) => self.cursor as i128 + delta as i128,
+            SeekFrom::End(delta) => {
+                let size = match self.known_size {
+                    Some(size) => size,
+                    None => {
+                        return Err(std::io::Error::other("远程音频长度未知，无法跳转"));
+                    }
+                };
+                size as i128 + delta as i128
             }
         };
-        if next < 0 {
+        if resolved < 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "跳转位置不能小于 0",
             ));
         }
-        self.cancel_prefetch();
-        self.pos = next as u64;
-        Ok(self.pos)
+        self.drop_queued_prefetch();
+        self.cursor = resolved as u64;
+        Ok(self.cursor)
     }
 }
 
-fn append_decoded_source<R>(
+// 把 reader 走完解码链后挂上 sink：降混 → 跳过偏移 → 缓冲监视 → 响度 → EQ → 音效 → 插件 → 主音量 → 限幅 → 计量
+#[allow(clippy::too_many_arguments)]
+fn feed_decoder_chain<R>(
     reader: R,
-    output: &Option<SharedOutputBackend>,
-    current_sink: &mut Option<Sink>,
-    progress: &Arc<SharedProgress>,
-    start_offset: Option<Duration>,
-    volume_balance_gain: f32,
-    current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
-    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
-    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
-    user_volume: Arc<std::sync::atomic::AtomicU32>,
-    source_ctx: Option<String>,
+    backend: &Option<SharedOutputBackend>,
+    sink_slot: &mut Option<Sink>,
+    live_progress: &Arc<SharedProgress>,
+    resume_from: Option<Duration>,
+    balance_gain: f32,
+    loudness_slot: &mut Option<VolumeNormalizerHandle>,
+    equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
+    effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    master_volume: Arc<AtomicU32>,
+    origin_note: Option<String>,
 ) where
     R: Read + Seek + Send + Sync + 'static,
 {
-    if let Some(output) = output {
-        *current_sink = output.create_sink().ok();
+    let Some(backend) = backend else {
+        return;
+    };
+    *sink_slot = backend.create_sink().ok();
 
-        let reader = BufReader::with_capacity(512 * 1024, reader);
-        let decoded = Decoder::new(reader);
-        if let Err(e) = &decoded {
-            if let Ok(mut reason) = progress.start_failed_reason.lock() {
-                *reason = Some(match source_ctx {
-                    Some(ctx) => format!("解码器初始化失败: {e}（{ctx}）"),
-                    None => format!("解码器初始化失败: {e}"),
-                });
-            }
-            progress.start_failed.store(true, Ordering::Relaxed);
+    let buffered_reader = BufReader::with_capacity(512 * 1024, reader);
+    let decoded = Decoder::new(buffered_reader);
+    if let Err(e) = &decoded {
+        if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
+            *reason = Some(match origin_note {
+                Some(ctx) => format!("解码器初始化失败: {e}（{ctx}）"),
+                None => format!("解码器初始化失败: {e}"),
+            });
         }
-        if let Ok(source) = decoded {
-            let rate = source.sample_rate();
-            let channels = source.channels();
-            // >2 声道流（伪 6ch 全景声等）rodio 不下混会爆音，样本层降为立体声
-            let playback_channels: u32 = if channels > 2 { 2 } else { channels as u32 };
-            progress.sample_rate.store(rate, Ordering::Relaxed);
-            progress
-                .channels
-                .store(playback_channels, Ordering::Relaxed);
+        live_progress.start_failed.store(true, Ordering::Relaxed);
+    }
+    if let Ok(source) = decoded {
+        let rate = source.sample_rate();
+        let channels = source.channels();
+        // 超过双声道的流（伪 6ch 全景声之类）rodio 不会自动下混，直接播会炸音，这里在样本层折成立体声
+        let downmixed_lanes: u32 = if channels > 2 { 2 } else { channels as u32 };
+        live_progress.sample_rate.store(rate, Ordering::Relaxed);
+        live_progress
+            .channels
+            .store(downmixed_lanes, Ordering::Relaxed);
 
-            let duration_secs = source
-                .total_duration()
-                .map(|d| {
-                    if d.as_nanos() == u32::MAX as u128 {
-                        0.0
-                    } else {
-                        d.as_secs_f64()
-                    }
-                })
-                .unwrap_or(0.0);
-            progress
-                .total_duration_secs
-                .store(duration_secs.to_bits(), Ordering::Relaxed);
+        // rodio 对某些容器会给出 u32::MAX 纳秒哨兵当作"未知时长"，这里识别为 0
+        let duration_secs = source
+            .total_duration()
+            .map(|d| {
+                if d.as_nanos() == u32::MAX as u128 {
+                    0.0
+                } else {
+                    d.as_secs_f64()
+                }
+            })
+            .unwrap_or(0.0);
+        live_progress
+            .total_duration_secs
+            .store(duration_secs.to_bits(), Ordering::Relaxed);
 
-            let offset = start_offset.unwrap_or(Duration::ZERO);
-            let skip_samples =
-                (offset.as_secs_f64() * rate as f64 * playback_channels as f64).round() as u64;
-            progress
-                .samples_played
-                .store(skip_samples, Ordering::Relaxed);
-            if start_offset.is_none() {
-                progress.visualizer.reset();
-            }
+        let offset = resume_from.unwrap_or(Duration::ZERO);
+        let pre_skip =
+            (offset.as_secs_f64() * rate as f64 * downmixed_lanes as f64).round() as u64;
+        live_progress
+            .samples_played
+            .store(pre_skip, Ordering::Relaxed);
+        if resume_from.is_none() {
+            live_progress.visualizer.reset();
+        }
 
-            let raw_source = source.convert_samples::<f32>();
-            let unified: Box<dyn Source<Item = f32> + Send> = if channels > 2 {
-                crate::player::dolby_bridge::log_bridge(&format!(
-                    "多声道流下混: {channels}ch → 2ch @ {rate}Hz"
-                ));
-                Box::new(crate::player::channel_downmix::DownmixSource::new(
-                    raw_source,
-                    channels,
-                ))
-            } else {
-                Box::new(raw_source)
-            };
+        let f32_source = source.convert_samples::<f32>();
+        let unified: Box<dyn Source<Item = f32> + Send> = if channels > 2 {
+            crate::player::dolby_bridge::log_bridge(&format!(
+                "多声道流下混: {channels}ch → 2ch @ {rate}Hz"
+            ));
+            Box::new(crate::player::channel_downmix::DownmixSource::new(
+                f32_source,
+                channels,
+            ))
+        } else {
+            Box::new(f32_source)
+        };
 
-            let skipped_source = unified.skip_duration(offset);
+        let offset_applied = unified.skip_duration(offset);
 
-            let buffered_source = crate::player::buffered_source::BufferedSource::new_tracked(
-                skipped_source,
-                Some(progress.buffered.clone()),
-            );
+        let watched = crate::player::buffered_source::BufferedSource::new_tracked(
+            offset_applied,
+            Some(live_progress.buffered.clone()),
+        );
 
-            let (normalized_source, handle) =
-                VolumeNormalizer::new(buffered_source, volume_balance_gain, 100);
-            *current_normalizer_handle = Some(handle);
+        let (leveled, handle) = VolumeNormalizer::new(watched, balance_gain, 100);
+        *loudness_slot = Some(handle);
 
-            let eq_source =
-                crate::player::equalizer::Equalizer::new(normalized_source, equalizer_handle);
+        let shaped = crate::player::equalizer::Equalizer::new(leveled, equalizer_rig);
 
-            let se_source =
-                crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
+        let flavored = crate::player::sound_effect::SoundEffectSource::new(shaped, effect_rig);
 
-            let plugin_source = crate::player::plugin_host::wrap(se_source);
+        let extended = crate::player::plugin_host::wrap(flavored);
 
-            let vol_source =
-                crate::player::equalizer::UserVolumeSource::new(plugin_source, user_volume);
+        let gain_gated = crate::player::equalizer::UserVolumeSource::new(extended, master_volume);
 
-            let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
+        let safeguarded = crate::player::equalizer::ClipGuardSource::new(gain_gated);
 
-            let timed_source = TimedSource::new(
-                clip_source,
-                progress.samples_played.clone(),
-                progress.visualizer.clone(),
-            );
+        let metered = TimedSource::new(
+            safeguarded,
+            live_progress.samples_played.clone(),
+            live_progress.visualizer.clone(),
+        );
 
-            if let Some(sink) = current_sink {
-                sink.append(timed_source);
-                sink.set_volume(1.0);
-                sink.play();
-            }
+        if let Some(sink) = sink_slot {
+            sink.append(metered);
+            sink.set_volume(1.0);
+            sink.play();
         }
     }
 }
 
-enum LocalAudioReader {
-    Plain(File),
-    Encrypted(crate::player::qmc2::QmcDecryptReader<File>),
+// 本地轨道的两种打开形态：普通明文 / QMC 加密需边读边解
+enum DiskTrackHandle {
+    Raw(File),
+    Scrambled(crate::player::qmc2::QmcDecryptReader<File>),
 }
 
-impl Read for LocalAudioReader {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+impl Read for DiskTrackHandle {
+    fn read(&mut self, target: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            LocalAudioReader::Plain(file) => file.read(buf),
-            LocalAudioReader::Encrypted(reader) => reader.read(buf),
+            DiskTrackHandle::Raw(file) => file.read(target),
+            DiskTrackHandle::Scrambled(reader) => reader.read(target),
         }
     }
 }
 
-impl Seek for LocalAudioReader {
-    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+impl Seek for DiskTrackHandle {
+    fn seek(&mut self, anchor: SeekFrom) -> std::io::Result<u64> {
         match self {
-            LocalAudioReader::Plain(file) => file.seek(pos),
-            LocalAudioReader::Encrypted(reader) => reader.seek(pos),
+            DiskTrackHandle::Raw(file) => file.seek(anchor),
+            DiskTrackHandle::Scrambled(reader) => reader.seek(anchor),
         }
     }
 }
 
-fn open_local_audio_reader(path: &Path) -> Option<LocalAudioReader> {
-    let file = File::open(path).ok()?;
-    match crate::player::qmc2::detect_qmc_crypto(path) {
-        Some(crypto) => Some(LocalAudioReader::Encrypted(
-            crate::player::qmc2::QmcDecryptReader::new(file, crypto),
+fn open_disk_track(track_path: &Path) -> Option<DiskTrackHandle> {
+    let opened = File::open(track_path).ok()?;
+    match crate::player::qmc2::detect_qmc_crypto(track_path) {
+        Some(crypto) => Some(DiskTrackHandle::Scrambled(
+            crate::player::qmc2::QmcDecryptReader::new(opened, crypto),
         )),
-        None => Some(LocalAudioReader::Plain(file)),
+        None => Some(DiskTrackHandle::Raw(opened)),
     }
 }
 
-/// 本地文件杜比桥：QMC 密文先明文化再探测，明文直接探测。
-/// 命中 AC-4/EC-3 → ffmpeg 解 WAV；未命中返回 None 走常规 reader。
+/// 本地文件的杜比透传桥：QMC 加密轨道先落成明文再送探，普通明文直接送探。
+/// 探测命中 AC-4/EC-3 时交 ffmpeg 转 WAV；未命中返回 None 走常规解码路径。
 pub(crate) fn bridge_local_file(
     path: &Path,
 ) -> Option<(
@@ -948,28 +1019,33 @@ pub(crate) fn bridge_local_file(
     crate::player::dolby_bridge::DolbyCodec,
 )> {
     use crate::player::dolby_bridge::{bridge_if_dolby, materialize_plain_file, PlainTransform};
-    let path_str = path.to_str()?;
+    let track_label = path.to_str()?;
     match crate::player::qmc2::detect_qmc_crypto(path) {
         Some(crypto) => {
-            let plain = materialize_plain_file(path_str, &PlainTransform::QmcCrypto(&crypto))
-                .ok()?;
-            let mut fr = std::fs::File::open(&plain).ok()?;
+            let plain_copy =
+                materialize_plain_file(track_label, &PlainTransform::QmcCrypto(&crypto)).ok()?;
+            let mut probe_handle = std::fs::File::open(&plain_copy).ok()?;
             bridge_if_dolby(
-                &mut fr,
-                Some(plain.to_str()?),
-                path_str,
+                &mut probe_handle,
+                Some(plain_copy.to_str()?),
+                track_label,
                 &PlainTransform::None,
             )
         }
         None => {
-            let mut fr = std::fs::File::open(path).ok()?;
-            bridge_if_dolby(&mut fr, Some(path_str), path_str, &PlainTransform::None)
+            let mut probe_handle = std::fs::File::open(path).ok()?;
+            bridge_if_dolby(
+                &mut probe_handle,
+                Some(track_label),
+                track_label,
+                &PlainTransform::None,
+            )
         }
     }
 }
 
-/// 流式临时文件的杜比桥：reader 已是解密明文流，直接探测；
-/// 命中后按 state 的加密上下文明文化给 ffmpeg。
+/// 流式临时文件的杜比透传桥：reader 已携带解密后的明文流，直接送探；
+/// 命中后按 state 的加密上下文转成明文交给 ffmpeg。
 pub(crate) fn bridge_streaming_state(
     state: &crate::player::stream_cache::StreamingTempFileState,
     reader: &mut dyn crate::player::stream_cache::ReadSeek,
@@ -978,434 +1054,439 @@ pub(crate) fn bridge_streaming_state(
     crate::player::dolby_bridge::DolbyCodec,
 )> {
     use crate::player::dolby_bridge::{bridge_if_dolby, PlainTransform};
-    let ekey = state.ekey();
-    let cenc_ctx: Option<(String, crate::player::cenc::CencMetadata)> =
+    let decryption_key = state.ekey();
+    let cenc_gate: Option<(String, crate::player::cenc::CencMetadata)> =
         if state.cenc_streaming.load(std::sync::atomic::Ordering::Relaxed) {
-            let cek = state.cek();
-            let md = state
+            let metadata = state
                 .cenc_metadata
                 .lock()
                 .ok()
-                .and_then(|m| m.clone());
-            match (cek, md) {
-                (Some(c), Some(m)) => Some((c, m)),
+                .and_then(|meta| meta.clone());
+            match (state.cek(), metadata) {
+                (Some(key), Some(meta)) => Some((key, meta)),
                 _ => None,
             }
         } else {
             None
         };
-    // transform 生命周期覆盖 bridge 调用；metadata 仅作门控（元数据解析完成前不进桥）
-    if let Some((cek, _)) = &cenc_ctx {
-        return bridge_if_dolby(reader, None, &state.path, &PlainTransform::Cenc(cek));
+    // transform 的生命周期覆盖 bridge 调用；metadata 仅作门控（元数据解析完成前不进桥）
+    if let Some((key, _)) = &cenc_gate {
+        return bridge_if_dolby(reader, None, &state.path, &PlainTransform::Cenc(key));
     }
-    if let Some(e) = &ekey {
-        return bridge_if_dolby(reader, None, &state.path, &PlainTransform::QmcEkey(e));
+    if let Some(key) = &decryption_key {
+        return bridge_if_dolby(reader, None, &state.path, &PlainTransform::QmcEkey(key));
     }
     bridge_if_dolby(reader, Some(&state.path), &state.path, &PlainTransform::None)
 }
 
+// 起播：记录路径、清簿记，再按来源（本地/WebDAV/流式缓存）接上解码链
+#[allow(clippy::too_many_arguments)]
 fn handle_play(
-    source: AudioSource,
-    output: &Option<SharedOutputBackend>,
-    current_sink: &mut Option<Sink>,
-    current_path: &mut String,
-    is_playing_flag: &mut bool,
-    progress: &Arc<SharedProgress>,
-    start_offset_ms: Option<u64>,
-    volume_balance_gain: f32,
-    current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
-    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
-    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
-    user_volume: Arc<std::sync::atomic::AtomicU32>,
+    music_source: AudioSource,
+    backend: &Option<SharedOutputBackend>,
+    sink_slot: &mut Option<Sink>,
+    active_file_path: &mut String,
+    audible: &mut bool,
+    live_progress: &Arc<SharedProgress>,
+    begin_at_ms: Option<u64>,
+    balance_gain: f32,
+    loudness_slot: &mut Option<VolumeNormalizerHandle>,
+    equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
+    effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    master_volume: Arc<AtomicU32>,
 ) {
-    *current_path = source.display_path();
-    *is_playing_flag = true;
-    reset_playback_progress(progress);
+    *active_file_path = music_source.display_path();
+    *audible = true;
+    wipe_progress_bookkeeping(live_progress);
 
-    if output.is_none() {
-        if let Ok(mut reason) = progress.start_failed_reason.lock() {
+    if backend.is_none() {
+        if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
             *reason = Some("未检测到可用的音频输出设备，请检查扬声器/耳机是否已连接".to_string());
         }
-        progress.start_failed.store(true, Ordering::Relaxed);
+        live_progress.start_failed.store(true, Ordering::Relaxed);
         return;
     }
 
-    if let Some(sink) = current_sink {
+    if let Some(sink) = sink_slot {
         sink.stop();
     }
 
-    let start_offset = start_offset_ms.map(Duration::from_millis);
+    let resume_from = begin_at_ms.map(Duration::from_millis);
 
     crate::player::dolby_bridge::log_bridge(&format!(
         "handle_play: source={} path={}",
-        match &source {
+        match &music_source {
             AudioSource::LocalFile(_) => "LocalFile",
             AudioSource::RemoteWebDav(_) => "RemoteWebDav",
             AudioSource::StreamingTempFile(_) => "StreamingTempFile",
         },
-        source.display_path()
+        music_source.display_path()
     ));
 
-    match source {
-        AudioSource::LocalFile(path) => {
-            if let Some((wav_reader, codec)) = bridge_local_file(Path::new(&path)) {
-                append_decoded_source(
+    match music_source {
+        AudioSource::LocalFile(track) => {
+            if let Some((wav_reader, codec)) = bridge_local_file(Path::new(&track)) {
+                feed_decoder_chain(
                     wav_reader,
-                    output,
-                    current_sink,
-                    progress,
-                    start_offset,
-                    volume_balance_gain,
-                    current_normalizer_handle,
-                    equalizer_handle,
-                    sound_effect_handle,
-                    user_volume,
+                    backend,
+                    sink_slot,
+                    live_progress,
+                    resume_from,
+                    balance_gain,
+                    loudness_slot,
+                    equalizer_rig,
+                    effect_rig,
+                    master_volume,
                     Some(format!("dolby {} → wav", codec.as_str())),
                 );
-            } else if let Some(reader) = open_local_audio_reader(Path::new(&path)) {
-                append_decoded_source(
-                    reader,
-                    output,
-                    current_sink,
-                    progress,
-                    start_offset,
-                    volume_balance_gain,
-                    current_normalizer_handle,
-                    equalizer_handle,
-                    sound_effect_handle,
-                    user_volume,
+            } else if let Some(track_handle) = open_disk_track(Path::new(&track)) {
+                feed_decoder_chain(
+                    track_handle,
+                    backend,
+                    sink_slot,
+                    live_progress,
+                    resume_from,
+                    balance_gain,
+                    loudness_slot,
+                    equalizer_rig,
+                    effect_rig,
+                    master_volume,
                     None,
                 );
-            } else if let Ok(mut reason) = progress.start_failed_reason.lock() {
+            } else if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
                 *reason = Some("本地音频文件打开失败".to_string());
-                progress.start_failed.store(true, Ordering::Relaxed);
+                live_progress.start_failed.store(true, Ordering::Relaxed);
             }
         }
-        AudioSource::RemoteWebDav(stream) => match RemoteRangeReader::new(stream) {
-            Ok(reader) => append_decoded_source(
-                reader,
-                output,
-                current_sink,
-                progress,
-                start_offset,
-                volume_balance_gain,
-                current_normalizer_handle,
-                equalizer_handle,
-                sound_effect_handle,
-                user_volume,
+        AudioSource::RemoteWebDav(web_stream) => match RemoteRangeReader::new(web_stream) {
+            Ok(track_handle) => feed_decoder_chain(
+                track_handle,
+                backend,
+                sink_slot,
+                live_progress,
+                resume_from,
+                balance_gain,
+                loudness_slot,
+                equalizer_rig,
+                effect_rig,
+                master_volume,
                 None,
             ),
             Err(err) => {
-                if let Ok(mut reason) = progress.start_failed_reason.lock() {
+                if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
                     *reason = Some(format!("远程流读取器构建失败: {err}"));
                 }
-                progress.start_failed.store(true, Ordering::Relaxed);
+                live_progress.start_failed.store(true, Ordering::Relaxed);
             }
         },
-        AudioSource::StreamingTempFile(state) => match state.new_reader_with_decryption() {
-            Ok(mut reader) => {
-                let size = state.downloaded_bytes();
-                let status = if state.is_download_finished() {
-                    if state.download_complete.load(Ordering::Relaxed) {
-                        "下载完成".to_string()
+        AudioSource::StreamingTempFile(cache_state) => {
+            match cache_state.new_reader_with_decryption() {
+                Ok(mut track_handle) => {
+                    let size = cache_state.downloaded_bytes();
+                    let status = if cache_state.is_download_finished() {
+                        if cache_state.download_complete.load(Ordering::Relaxed) {
+                            "下载完成".to_string()
+                        } else {
+                            format!(
+                                "下载失败: {}",
+                                cache_state
+                                    .download_error()
+                                    .unwrap_or_else(|| "未知原因".to_string())
+                            )
+                        }
                     } else {
-                        format!(
-                            "下载失败: {}",
-                            state
-                                .download_error()
-                                .unwrap_or_else(|| "未知原因".to_string())
-                        )
+                        "下载中".to_string()
+                    };
+                    if let Some((wav_reader, codec)) =
+                        bridge_streaming_state(&cache_state, &mut *track_handle)
+                    {
+                        feed_decoder_chain(
+                            wav_reader,
+                            backend,
+                            sink_slot,
+                            live_progress,
+                            resume_from,
+                            balance_gain,
+                            loudness_slot,
+                            equalizer_rig,
+                            effect_rig,
+                            master_volume,
+                            Some(format!(
+                                "dolby {} → wav，已下载 {size} bytes",
+                                codec.as_str()
+                            )),
+                        );
+                    } else {
+                        feed_decoder_chain(
+                            track_handle,
+                            backend,
+                            sink_slot,
+                            live_progress,
+                            resume_from,
+                            balance_gain,
+                            loudness_slot,
+                            equalizer_rig,
+                            effect_rig,
+                            master_volume,
+                            Some(format!("已下载 {size} bytes，{status}")),
+                        );
                     }
-                } else {
-                    "下载中".to_string()
-                };
-                if let Some((wav_reader, codec)) =
-                    bridge_streaming_state(&state, &mut *reader)
-                {
-                    append_decoded_source(
-                        wav_reader,
-                        output,
-                        current_sink,
-                        progress,
-                        start_offset,
-                        volume_balance_gain,
-                        current_normalizer_handle,
-                        equalizer_handle,
-                        sound_effect_handle,
-                        user_volume,
-                        Some(format!(
-                            "dolby {} → wav，已下载 {size} bytes",
-                            codec.as_str()
-                        )),
-                    );
-                } else {
-                    append_decoded_source(
-                        reader,
-                        output,
-                        current_sink,
-                        progress,
-                        start_offset,
-                        volume_balance_gain,
-                        current_normalizer_handle,
-                        equalizer_handle,
-                        sound_effect_handle,
-                        user_volume,
-                        Some(format!("已下载 {size} bytes，{status}")),
-                    );
+                }
+                Err(err) => {
+                    if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
+                        *reason = Some(format!("流式临时文件读取器构建失败: {err}"));
+                    }
+                    live_progress.start_failed.store(true, Ordering::Relaxed);
                 }
             }
-            Err(err) => {
-                if let Ok(mut reason) = progress.start_failed_reason.lock() {
-                    *reason = Some(format!("流式临时文件读取器构建失败: {err}"));
-                }
-                progress.start_failed.store(true, Ordering::Relaxed);
-            }
-        },
+        }
     }
 }
 
+// seek 失败后的重建路径：按当前来源重新打开并从目标位置续播
 #[allow(clippy::too_many_arguments)]
-fn handle_seek(
-    time: f64,
-    is_playing: bool,
-    request_id: u64,
-    output: &Option<SharedOutputBackend>,
-    current_sink: &mut Option<Sink>,
-    current_path: &str,
-    is_playing_flag: &mut bool,
-    progress: &Arc<SharedProgress>,
+fn reposition_playhead(
+    requested_time: f64,
+    should_resume: bool,
+    pending_id: u64,
+    backend: &Option<SharedOutputBackend>,
+    sink_slot: &mut Option<Sink>,
+    active_file_path: &str,
+    audible: &mut bool,
+    live_progress: &Arc<SharedProgress>,
     app: &AppHandle,
-    volume_balance_gain: f32,
-    current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
-    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
-    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
-    user_volume: Arc<std::sync::atomic::AtomicU32>,
-    remote_stream: Option<&RemoteStreamSource>,
-    streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
+    balance_gain: f32,
+    loudness_slot: &mut Option<VolumeNormalizerHandle>,
+    equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
+    effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    master_volume: Arc<AtomicU32>,
+    remote_feed: Option<&RemoteStreamSource>,
+    temp_file_feed: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
-    let clamped_time = time.max(0.0);
-    let jump_target = Duration::from_secs_f64(clamped_time);
-    *is_playing_flag = is_playing;
-    progress.visualizer.reset();
+    let landing = requested_time.max(0.0);
+    let jump_target = Duration::from_secs_f64(landing);
+    *audible = should_resume;
+    live_progress.visualizer.reset();
 
-    if let Some(sink) = current_sink {
+    if let Some(sink) = sink_slot {
         match sink.try_seek(jump_target) {
             Ok(()) => {
-                let rate = progress.sample_rate.load(Ordering::Relaxed);
-                let channels = progress.channels.load(Ordering::Relaxed);
-                let samples_at_target =
-                    (clamped_time * rate as f64 * channels as f64).round() as u64;
-                progress
+                let at_target = samples_for_position(landing, live_progress);
+                live_progress
                     .samples_played
-                    .store(samples_at_target, Ordering::Relaxed);
+                    .store(at_target, Ordering::Relaxed);
 
-                if is_playing {
+                if should_resume {
                     sink.play();
                 } else {
                     sink.pause();
                 }
             }
             Err(_) => {
+                // rodio 拒绝原地 seek：整条解码链推倒重建，从目标位置起播
                 sink.stop();
 
-                let start_offset = Some(jump_target);
-                if let Some(state) = streaming_state {
-                    match state.new_reader_with_decryption() {
-                        Ok(mut reader) => {
+                let resume_from = Some(jump_target);
+                if let Some(cache_state) = temp_file_feed {
+                    match cache_state.new_reader_with_decryption() {
+                        Ok(mut track_handle) => {
                             if let Some((wav_reader, codec)) =
-                                bridge_streaming_state(&state, &mut *reader)
+                                bridge_streaming_state(cache_state, &mut *track_handle)
                             {
-                                append_decoded_source(
+                                feed_decoder_chain(
                                     wav_reader,
-                                    output,
-                                    current_sink,
-                                    progress,
-                                    start_offset,
-                                    volume_balance_gain,
-                                    current_normalizer_handle,
-                                    equalizer_handle,
-                                    sound_effect_handle,
-                                    user_volume,
+                                    backend,
+                                    sink_slot,
+                                    live_progress,
+                                    resume_from,
+                                    balance_gain,
+                                    loudness_slot,
+                                    equalizer_rig,
+                                    effect_rig,
+                                    master_volume,
                                     Some(format!(
                                         "dolby {} → wav（seek 重建）",
                                         codec.as_str()
                                     )),
                                 );
                             } else {
-                                append_decoded_source(
-                                    reader,
-                                    output,
-                                    current_sink,
-                                    progress,
-                                    start_offset,
-                                    volume_balance_gain,
-                                    current_normalizer_handle,
-                                    equalizer_handle,
-                                    sound_effect_handle,
-                                    user_volume,
+                                feed_decoder_chain(
+                                    track_handle,
+                                    backend,
+                                    sink_slot,
+                                    live_progress,
+                                    resume_from,
+                                    balance_gain,
+                                    loudness_slot,
+                                    equalizer_rig,
+                                    effect_rig,
+                                    master_volume,
                                     None,
                                 );
                             }
                         }
                         Err(_) => {}
                     }
-                } else if let Some(stream) = remote_stream.cloned() {
-                    match RemoteRangeReader::new(stream) {
-                        Ok(reader) => append_decoded_source(
-                            reader,
-                            output,
-                            current_sink,
-                            progress,
-                            start_offset,
-                            volume_balance_gain,
-                            current_normalizer_handle,
-                            equalizer_handle,
-                            sound_effect_handle,
-                            user_volume,
+                } else if let Some(web_stream) = remote_feed.cloned() {
+                    match RemoteRangeReader::new(web_stream) {
+                        Ok(track_handle) => feed_decoder_chain(
+                            track_handle,
+                            backend,
+                            sink_slot,
+                            live_progress,
+                            resume_from,
+                            balance_gain,
+                            loudness_slot,
+                            equalizer_rig,
+                            effect_rig,
+                            master_volume,
                             None,
                         ),
                         Err(_) => {}
                     }
-                } else if !current_path.is_empty() {
+                } else if !active_file_path.is_empty() {
                     if let Some((wav_reader, codec)) =
-                        bridge_local_file(Path::new(current_path))
+                        bridge_local_file(Path::new(active_file_path))
                     {
-                        append_decoded_source(
+                        feed_decoder_chain(
                             wav_reader,
-                            output,
-                            current_sink,
-                            progress,
-                            start_offset,
-                            volume_balance_gain,
-                            current_normalizer_handle,
-                            equalizer_handle,
-                            sound_effect_handle,
-                            user_volume,
+                            backend,
+                            sink_slot,
+                            live_progress,
+                            resume_from,
+                            balance_gain,
+                            loudness_slot,
+                            equalizer_rig,
+                            effect_rig,
+                            master_volume,
                             Some(format!(
                                 "dolby {} → wav（seek 重建）",
                                 codec.as_str()
                             )),
                         );
-                    } else if let Some(reader) =
-                        open_local_audio_reader(Path::new(current_path))
+                    } else if let Some(track_handle) =
+                        open_disk_track(Path::new(active_file_path))
                     {
-                        append_decoded_source(
-                            reader,
-                            output,
-                            current_sink,
-                            progress,
-                            start_offset,
-                            volume_balance_gain,
-                            current_normalizer_handle,
-                            equalizer_handle,
-                            sound_effect_handle,
-                            user_volume,
+                        feed_decoder_chain(
+                            track_handle,
+                            backend,
+                            sink_slot,
+                            live_progress,
+                            resume_from,
+                            balance_gain,
+                            loudness_slot,
+                            equalizer_rig,
+                            effect_rig,
+                            master_volume,
                             None,
                         );
                     }
                 }
 
-                if !is_playing {
-                    if let Some(new_sink) = current_sink {
-                        new_sink.pause();
+                if !should_resume {
+                    if let Some(fresh_sink) = sink_slot {
+                        fresh_sink.pause();
                     }
                 }
             }
         }
     } else {
-        let rate = progress.sample_rate.load(Ordering::Relaxed);
-        let channels = progress.channels.load(Ordering::Relaxed);
-        let samples_at_target = (clamped_time * rate as f64 * channels as f64).round() as u64;
-        progress
+        // 没有 sink 可 seek 时仅校准计数，保证进度条不回跳
+        let at_target = samples_for_position(landing, live_progress);
+        live_progress
             .samples_played
-            .store(samples_at_target, Ordering::Relaxed);
+            .store(at_target, Ordering::Relaxed);
     }
 
     let _ = app.emit(
         "seek_completed",
         SeekCompletedPayload {
-            request_id,
-            time: clamped_time,
+            request_id: pending_id,
+            time: landing,
         },
     );
 }
 
+// 每个轮询节拍巡检一次网络缓冲健康度：断流压停、来数放行、广播缓冲状态
 #[allow(clippy::too_many_arguments)]
-fn poll_buffering_watchdog(
-    progress: &SharedProgress,
-    current_sink: &Option<Sink>,
-    network_backed: bool,
-    is_playing_flag: bool,
+fn survey_stream_health(
+    live_progress: &SharedProgress,
+    sink_slot: &Option<Sink>,
+    stream_over_network: bool,
+    audible: bool,
     app: &AppHandle,
-    sink_paused: &mut bool,
-    buffering_active: &mut bool,
-    starved_since: &mut Option<std::time::Instant>,
-    resume_grace_since: &mut Option<std::time::Instant>,
+    watchdog_held_sink: &mut bool,
+    watchdog_buffer_flag: &mut bool,
+    watchdog_starve_marker: &mut Option<std::time::Instant>,
+    watchdog_grace_marker: &mut Option<std::time::Instant>,
 ) {
-    if !network_backed {
+    if !stream_over_network {
         return;
     }
 
     let now = std::time::Instant::now();
-    let starved = progress.buffered.starved.load(Ordering::Relaxed);
-    let produced = progress.buffered.produced.swap(false, Ordering::Relaxed);
+    let starved = live_progress.buffered.starved.load(Ordering::Relaxed);
+    let produced = live_progress.buffered.produced.swap(false, Ordering::Relaxed);
 
-    let recovered = produced && *sink_paused;
-    let starved = starved && !recovered;
+    // 压停期间来过数即视为已恢复，本轮不算断流
+    let revived = produced && *watchdog_held_sink;
+    let starved = starved && !revived;
 
-    if starved && is_playing_flag && !*sink_paused {
-        let since = starved_since.get_or_insert(now);
-        if now.saturating_duration_since(*since) >= BUFFER_STARVE_BEFORE_PAUSE {
-            if let Some(sink) = current_sink {
+    if starved && audible && !*watchdog_held_sink {
+        let since = watchdog_starve_marker.get_or_insert(now);
+        if now.saturating_duration_since(*since) >= STARVE_PAUSE_THRESHOLD {
+            if let Some(sink) = sink_slot {
                 sink.pause();
             }
-            *sink_paused = true;
-            *starved_since = None;
-            if !*buffering_active {
-                *buffering_active = true;
-                let _ = app.emit("playback:buffer", PlaybackBufferPayload { buffering: true });
+            *watchdog_held_sink = true;
+            *watchdog_starve_marker = None;
+            if !*watchdog_buffer_flag {
+                *watchdog_buffer_flag = true;
+                let _ =
+                    app.emit("playback:buffer", PlaybackBufferPayload { buffering: true });
             }
         }
     } else if starved {
-        *starved_since = Some(now);
-        *resume_grace_since = None;
+        // 断流但（未在播/已压停）：只记起点，等条件满足再压
+        *watchdog_starve_marker = Some(now);
+        *watchdog_grace_marker = None;
     } else {
-        *starved_since = None;
+        *watchdog_starve_marker = None;
 
-        if *sink_paused {
-            if !is_playing_flag {
-                if *buffering_active {
-                    *buffering_active = false;
+        if *watchdog_held_sink {
+            if !audible {
+                if *watchdog_buffer_flag {
+                    *watchdog_buffer_flag = false;
                     let _ = app.emit(
                         "playback:buffer",
                         PlaybackBufferPayload { buffering: false },
                     );
                 }
-                *sink_paused = false;
+                *watchdog_held_sink = false;
                 return;
             }
-            if resume_grace_since.is_none() {
-                *resume_grace_since = Some(now);
+            if watchdog_grace_marker.is_none() {
+                *watchdog_grace_marker = Some(now);
             }
-            let elapsed = resume_grace_since
-                .and_then(|t| now.checked_duration_since(t))
+            let held = watchdog_grace_marker
+                .and_then(|marked| now.checked_duration_since(marked))
                 .unwrap_or_default();
-            if elapsed >= BUFFER_RESUME_GRACE {
-                *resume_grace_since = None;
-                if let Some(sink) = current_sink {
+            if held >= RESUME_GRACE_WINDOW {
+                *watchdog_grace_marker = None;
+                if let Some(sink) = sink_slot {
                     sink.play();
                 }
-                *sink_paused = false;
-                if *buffering_active {
-                    *buffering_active = false;
+                *watchdog_held_sink = false;
+                if *watchdog_buffer_flag {
+                    *watchdog_buffer_flag = false;
                     let _ = app.emit(
                         "playback:buffer",
                         PlaybackBufferPayload { buffering: false },
                     );
                 }
             }
-        } else if *buffering_active {
-            *buffering_active = false;
+        } else if *watchdog_buffer_flag {
+            *watchdog_buffer_flag = false;
             let _ = app.emit(
                 "playback:buffer",
                 PlaybackBufferPayload { buffering: false },
@@ -1415,768 +1496,774 @@ fn poll_buffering_watchdog(
 }
 
 pub fn init_player(app: &AppHandle) -> PlayerState {
-    let (tx, rx) = channel::<AudioCommand>();
-    let shared_progress = Arc::new(SharedProgress {
-        samples_played: Arc::new(AtomicU64::new(0)),
-        sample_rate: Arc::new(AtomicU32::new(44100)),
-        channels: Arc::new(AtomicU32::new(2)),
-        visualizer: Arc::new(SharedVisualizer::new()),
-        start_failed: Arc::new(AtomicBool::new(false)),
-        start_failed_reason: Arc::new(std::sync::Mutex::new(None)),
-        buffered: Arc::new(BufferedMonitor::new()),
-        total_duration_secs: Arc::new(AtomicU64::new(0u64)),
+    let (command_tx, command_rx) = channel::<AudioCommand>();
+    let runtime_progress = Arc::new(SharedProgress {
         is_playing: Arc::new(AtomicBool::new(false)),
+        total_duration_secs: Arc::new(AtomicU64::default()),
+        buffered: Arc::new(BufferedMonitor::new()),
+        start_failed_reason: Arc::new(std::sync::Mutex::new(None)),
+        start_failed: Arc::new(AtomicBool::new(false)),
+        visualizer: Arc::new(SharedVisualizer::new()),
+        channels: Arc::new(AtomicU32::from(2)),
+        sample_rate: Arc::new(AtomicU32::from(44_100)),
+        samples_played: Arc::new(AtomicU64::default()),
     });
-    let thread_progress = shared_progress.clone();
-    let thread_app_handle = app.clone();
-    let controls = initialize_media_controls(app);
-    let output_status = Arc::new(Mutex::new(AudioOutputStatus::default()));
-    let thread_output_status = output_status.clone();
-    let thread_controls = controls.clone();
+    let live_progress = runtime_progress.clone();
+    let worker_app = app.clone();
+    let media_hub = boot_media_key_hub(app);
+    let output_status_slot = Arc::new(Mutex::new(AudioOutputStatus::default()));
+    let worker_status = output_status_slot.clone();
+    let worker_controls = media_hub.clone();
 
-    let thread_eq_handle = Arc::new(crate::player::equalizer::EqualizerHandle::new(
+    let worker_eq = Arc::new(crate::player::equalizer::EqualizerHandle::new(
         crate::player::equalizer::EqualizerSettings::default(),
     ));
-    let thread_se_handle = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
+    let worker_se = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
         crate::player::sound_effect::SoundEffectSettings::default(),
     ));
-    let user_volume = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
-    let thread_user_volume = user_volume.clone();
+    let master_volume = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
+    let worker_master_volume = master_volume.clone();
 
-    thread::spawn(move || {
-        let host = cpal::default_host();
-        let mut selected_device_name: Option<String> = None;
-        let mut output = SharedOutputBackend::open(&host, None).ok();
-        let mut current_sink: Option<Sink> = None;
+    std::thread::spawn(move || {
+        let audio_host = cpal::default_host();
+        let mut chosen_device: Option<String> = None;
+        let mut shared_out = SharedOutputBackend::open(&audio_host, None).ok();
+        let mut sink_slot: Option<Sink> = None;
         #[cfg(target_os = "windows")]
-        let mut exclusive_playback: Option<WasapiExclusivePlayback> = None;
-        let mut current_path = String::new();
-        let mut current_volume = 1.0;
-        let current_speed = 1.0;
-        let mut is_playing_flag = false;
-        let mut requested_output_mode = AudioOutputMode::Shared;
-        let mut active_output_mode = AudioOutputMode::Shared;
-        let mut fallback_reason: Option<String> = None;
-        let mut last_default_device_name = default_output_device_name(&host);
-        let mut active_device_name = output
+        let mut exclusive_session: Option<WasapiExclusivePlayback> = None;
+        let mut active_file_path = String::new();
+        let mut speaker_gain = 1.0_f32;
+        let tempo_scale = 1.0_f32;
+        let mut audible = false;
+        let mut wanted_mode = AudioOutputMode::Shared;
+        let mut live_mode = AudioOutputMode::Shared;
+        let mut downgrade_note: Option<String> = None;
+        let mut prior_system_default = default_output_device_name(&audio_host);
+        let mut live_device_label = shared_out
             .as_ref()
-            .map(|output| output.active_device_name().to_string());
-        let mut current_normalizer_handle: Option<VolumeNormalizerHandle> = None;
-        let mut current_volume_balance_gain = 1.0;
-        let mut current_dsd_native_passthrough = true;
-        let mut current_bit_perfect = false;
-        let mut last_progress_emit = std::time::Instant::now();
-        let mut last_output_recover = std::time::Instant::now();
-        let mut current_remote_stream: Option<RemoteStreamSource> = None;
-        let mut current_streaming_state: Option<
-            crate::player::stream_cache::StreamingTempFileState,
-        > = None;
-        let mut watchdog_sink_paused = false;
-        let mut watchdog_buffering_active = false;
-        let mut watchdog_starved_since: Option<std::time::Instant> = None;
-        let mut watchdog_resume_grace_since: Option<std::time::Instant> = None;
-        let mut network_backed = false;
+            .map(|backend| backend.active_device_name().to_string());
+        let mut loudness_slot: Option<VolumeNormalizerHandle> = None;
+        let mut balance_gain_live = 1.0_f32;
+        let mut dsd_passthrough_live = true;
+        let mut bit_perfect_live = false;
+        let mut last_progress_burst = std::time::Instant::now();
+        let mut last_output_salvage = std::time::Instant::now();
+        let mut remote_feed: Option<RemoteStreamSource> = None;
+        let mut temp_file_feed: Option<crate::player::stream_cache::StreamingTempFileState> =
+            None;
+        let mut watchdog_held_sink = false;
+        let mut watchdog_buffer_flag = false;
+        let mut watchdog_starve_marker: Option<std::time::Instant> = None;
+        let mut watchdog_grace_marker: Option<std::time::Instant> = None;
+        let mut stream_over_network = false;
 
-        if let Some(output) = &output {
-            current_sink = output.create_sink().ok();
+        if let Some(backend) = &shared_out {
+            sink_slot = backend.create_sink().ok();
         }
 
-        emit_output_status(
-            &thread_app_handle,
-            &thread_output_status,
-            selected_device_name.clone(),
-            active_device_name.clone(),
-            requested_output_mode,
-            active_output_mode,
-            fallback_reason.clone(),
+        broadcast_output_state(
+            &worker_app,
+            &worker_status,
+            &chosen_device,
+            &live_device_label,
+            wanted_mode,
+            live_mode,
+            &downgrade_note,
         );
 
-        loop {
-            thread_progress
+        'command_pump: loop {
+            live_progress
                 .is_playing
-                .store(is_playing_flag, Ordering::Relaxed);
-            poll_buffering_watchdog(
-                &thread_progress,
-                &current_sink,
-                network_backed,
-                is_playing_flag,
-                &thread_app_handle,
-                &mut watchdog_sink_paused,
-                &mut watchdog_buffering_active,
-                &mut watchdog_starved_since,
-                &mut watchdog_resume_grace_since,
+                .store(audible, Ordering::Relaxed);
+            survey_stream_health(
+                &live_progress,
+                &sink_slot,
+                stream_over_network,
+                audible,
+                &worker_app,
+                &mut watchdog_held_sink,
+                &mut watchdog_buffer_flag,
+                &mut watchdog_starve_marker,
+                &mut watchdog_grace_marker,
             );
 
             #[cfg(target_os = "windows")]
             {
-                guard_device_ops(|| {
-                    recover_from_exclusive_failure(
-                        &mut exclusive_playback,
-                        &selected_device_name,
-                        &mut output,
-                        &host,
-                        &mut current_sink,
-                        &mut active_device_name,
-                        &mut requested_output_mode,
-                        &mut active_output_mode,
-                        &mut fallback_reason,
-                        &current_path,
-                        is_playing_flag,
-                        &thread_progress,
-                        thread_eq_handle.clone(),
-                        thread_se_handle.clone(),
-                        thread_user_volume.clone(),
-                        current_volume_balance_gain,
-                        &mut current_normalizer_handle,
-                        current_remote_stream.as_ref(),
-                        current_streaming_state.as_ref(),
-                        &thread_app_handle,
-                        &thread_output_status,
-                        &mut last_default_device_name,
+                confine_device_fault(|| {
+                    drain_finished_exclusive(
+                        &mut exclusive_session,
+                        &chosen_device,
+                        &mut shared_out,
+                        &audio_host,
+                        &mut sink_slot,
+                        &mut live_device_label,
+                        &mut wanted_mode,
+                        &mut live_mode,
+                        &mut downgrade_note,
+                        &active_file_path,
+                        audible,
+                        &live_progress,
+                        worker_eq.clone(),
+                        worker_se.clone(),
+                        worker_master_volume.clone(),
+                        balance_gain_live,
+                        &mut loudness_slot,
+                        remote_feed.as_ref(),
+                        temp_file_feed.as_ref(),
+                        &worker_app,
+                        &worker_status,
+                        &mut prior_system_default,
                     );
                 });
             }
 
-            match rx.recv_timeout(PLAYER_POLL_INTERVAL) {
-                Ok(cmd) => {
-                    let cmd_result =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match cmd {
+            match command_rx.recv_timeout(COMMAND_WAIT_TICK) {
+                Ok(incoming) => {
+                    let outcome =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match incoming {
                             AudioCommand::Play {
-                                source,
-                                output_mode,
-                                start_offset_ms,
-                                volume_balance_gain,
+                                source: music_source,
+                                output_mode: requested_mode,
+                                start_offset_ms: begin_at_ms,
+                                volume_balance_gain: requested_balance,
                                 dsd_native_passthrough,
                                 bit_perfect,
                             } => {
-                                requested_output_mode = output_mode;
-                                current_volume_balance_gain = volume_balance_gain;
-                                current_dsd_native_passthrough = dsd_native_passthrough;
-                                current_bit_perfect = bit_perfect;
-                                let source_is_network_backed = source.is_network_backed();
-                                let display_path = source.display_path();
-                                current_remote_stream = match &source {
-                                    AudioSource::RemoteWebDav(stream) => Some(stream.clone()),
+                                wanted_mode = requested_mode;
+                                balance_gain_live = requested_balance;
+                                dsd_passthrough_live = dsd_native_passthrough;
+                                bit_perfect_live = bit_perfect;
+                                let stream_backed = music_source.is_network_backed();
+                                let track_label = music_source.display_path();
+                                remote_feed = match &music_source {
+                                    AudioSource::RemoteWebDav(web) => Some(web.clone()),
                                     AudioSource::LocalFile(_) => None,
                                     AudioSource::StreamingTempFile(_) => None,
                                 };
-                                current_streaming_state = match &source {
-                                    AudioSource::StreamingTempFile(state) => Some(state.clone()),
+                                temp_file_feed = match &music_source {
+                                    AudioSource::StreamingTempFile(cache) => Some(cache.clone()),
                                     _ => None,
                                 };
-                                network_backed = source_is_network_backed;
-                                watchdog_sink_paused = false;
-                                watchdog_buffering_active = false;
-                                watchdog_starved_since = None;
-                                watchdog_resume_grace_since = None;
+                                stream_over_network = stream_backed;
+                                watchdog_held_sink = false;
+                                watchdog_buffer_flag = false;
+                                watchdog_starve_marker = None;
+                                watchdog_grace_marker = None;
 
-                                if let Some(sink) = &current_sink {
+                                if let Some(sink) = &sink_slot {
                                     sink.stop();
                                 }
-                                current_sink = None;
+                                sink_slot = None;
                                 #[cfg(target_os = "windows")]
-                                stop_exclusive_playback(&mut exclusive_playback);
+                                teardown_exclusive_session(&mut exclusive_session);
 
                                 #[cfg(target_os = "windows")]
-                                if output_mode == AudioOutputMode::WasapiExclusive
-                                    && !source_is_network_backed
+                                if requested_mode == AudioOutputMode::WasapiExclusive
+                                    && !stream_backed
                                 {
-                                    let exclusive_start = start_offset_ms
-                                        .map_or(Duration::ZERO, Duration::from_millis);
-                                    match start_exclusive_playback(
-                                        display_path.clone(),
-                                        selected_device_name.clone(),
-                                        current_volume,
+                                    let exclusive_start = begin_at_ms
+                                        .map(Duration::from_millis)
+                                        .unwrap_or(Duration::ZERO);
+                                    match launch_exclusive_session(
+                                        track_label.clone(),
+                                        chosen_device.clone(),
+                                        speaker_gain,
                                         true,
                                         exclusive_start,
-                                        &thread_progress,
-                                        current_volume_balance_gain,
-                                        thread_eq_handle.clone(),
-                                        thread_se_handle.clone(),
-                                        thread_user_volume.clone(),
-                                        current_dsd_native_passthrough,
-                                        current_bit_perfect,
+                                        &live_progress,
+                                        balance_gain_live,
+                                        worker_eq.clone(),
+                                        worker_se.clone(),
+                                        worker_master_volume.clone(),
+                                        dsd_passthrough_live,
+                                        bit_perfect_live,
                                     ) {
-                                        Ok(playback) => {
-                                            if selected_device_name.is_none() {
-                                                last_default_device_name =
-                                                    default_output_device_name(&host);
+                                        Ok(session) => {
+                                            if chosen_device.is_none() {
+                                                prior_system_default =
+                                                    default_output_device_name(&audio_host);
                                             }
-                                            active_device_name =
-                                                Some(playback.active_device_name().to_string());
-                                            active_output_mode = AudioOutputMode::WasapiExclusive;
-                                            fallback_reason = None;
-                                            current_path = display_path;
-                                            is_playing_flag = true;
-                                            exclusive_playback = Some(playback);
-                                            current_sink = None;
-                                            output = None;
+                                            live_device_label =
+                                                Some(session.active_device_name().to_string());
+                                            live_mode = AudioOutputMode::WasapiExclusive;
+                                            downgrade_note = None;
+                                            active_file_path = track_label;
+                                            audible = true;
+                                            exclusive_session = Some(session);
+                                            sink_slot = None;
+                                            shared_out = None;
 
-                                            emit_output_status(
-                                                &thread_app_handle,
-                                                &thread_output_status,
-                                                selected_device_name.clone(),
-                                                active_device_name.clone(),
-                                                requested_output_mode,
-                                                active_output_mode,
-                                                fallback_reason.clone(),
+                                            broadcast_output_state(
+                                                &worker_app,
+                                                &worker_status,
+                                                &chosen_device,
+                                                &live_device_label,
+                                                wanted_mode,
+                                                live_mode,
+                                                &downgrade_note,
                                             );
                                             return;
                                         }
                                         Err(error) => {
-                                            active_output_mode = AudioOutputMode::Shared;
-                                            fallback_reason = Some(error);
+                                            live_mode = AudioOutputMode::Shared;
+                                            downgrade_note = Some(error);
                                         }
                                     }
                                 }
                                 #[cfg(target_os = "windows")]
-                                if output_mode == AudioOutputMode::WasapiExclusive
-                                    && source_is_network_backed
+                                if requested_mode == AudioOutputMode::WasapiExclusive
+                                    && stream_backed
                                 {
-                                    active_output_mode = AudioOutputMode::Shared;
-                                    fallback_reason =
+                                    live_mode = AudioOutputMode::Shared;
+                                    downgrade_note =
                                         Some("网络音频使用共享模式缓冲播放".to_string());
                                 }
 
                                 #[cfg(not(target_os = "windows"))]
-                                if output_mode == AudioOutputMode::WasapiExclusive {
-                                    active_output_mode = AudioOutputMode::Shared;
-                                    fallback_reason = Some(
+                                if requested_mode == AudioOutputMode::WasapiExclusive {
+                                    live_mode = AudioOutputMode::Shared;
+                                    downgrade_note = Some(
                                         "WASAPI exclusive mode is only available on Windows"
                                             .to_string(),
                                     );
                                 }
 
-                                if active_output_mode == AudioOutputMode::Shared {
-                                    guard_device_ops(|| {
-                                        output = SharedOutputBackend::open(
-                                            &host,
-                                            selected_device_name.as_deref(),
+                                if live_mode == AudioOutputMode::Shared {
+                                    confine_device_fault(|| {
+                                        shared_out = SharedOutputBackend::open(
+                                            &audio_host,
+                                            chosen_device.as_deref(),
                                         )
                                         .ok();
                                     });
-                                    if selected_device_name.is_none() {
-                                        last_default_device_name =
-                                            default_output_device_name(&host);
+                                    if chosen_device.is_none() {
+                                        prior_system_default =
+                                            default_output_device_name(&audio_host);
                                     }
-                                    active_device_name = output
+                                    live_device_label = shared_out
                                         .as_ref()
-                                        .map(|output| output.active_device_name().to_string());
+                                        .map(|backend| backend.active_device_name().to_string());
                                 }
 
-                                emit_output_status(
-                                    &thread_app_handle,
-                                    &thread_output_status,
-                                    selected_device_name.clone(),
-                                    active_device_name.clone(),
-                                    requested_output_mode,
-                                    active_output_mode,
-                                    fallback_reason.clone(),
+                                broadcast_output_state(
+                                    &worker_app,
+                                    &worker_status,
+                                    &chosen_device,
+                                    &live_device_label,
+                                    wanted_mode,
+                                    live_mode,
+                                    &downgrade_note,
                                 );
 
                                 handle_play(
-                                    source,
-                                    &output,
-                                    &mut current_sink,
-                                    &mut current_path,
-                                    &mut is_playing_flag,
-                                    &thread_progress,
-                                    start_offset_ms,
-                                    current_volume_balance_gain,
-                                    &mut current_normalizer_handle,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
+                                    music_source,
+                                    &shared_out,
+                                    &mut sink_slot,
+                                    &mut active_file_path,
+                                    &mut audible,
+                                    &live_progress,
+                                    begin_at_ms,
+                                    balance_gain_live,
+                                    &mut loudness_slot,
+                                    worker_eq.clone(),
+                                    worker_se.clone(),
+                                    worker_master_volume.clone(),
                                 );
-                                if current_speed != 1.0 {
-                                    if let Some(sink) = &current_sink {
-                                        sink.set_speed(current_speed);
+                                if tempo_scale != 1.0 {
+                                    if let Some(sink) = &sink_slot {
+                                        sink.set_speed(tempo_scale);
                                     }
                                 }
                             }
                             AudioCommand::Pause => {
-                                is_playing_flag = false;
-                                if watchdog_buffering_active {
-                                    watchdog_buffering_active = false;
-                                    let _ = thread_app_handle.emit(
+                                audible = false;
+                                if watchdog_buffer_flag {
+                                    watchdog_buffer_flag = false;
+                                    let _ = worker_app.emit(
                                         "playback:buffer",
                                         PlaybackBufferPayload { buffering: false },
                                     );
                                 }
-                                if let Some(sink) = &current_sink {
+                                if let Some(sink) = &sink_slot {
                                     sink.stop();
                                 }
-                                current_sink = None;
-                                current_normalizer_handle = None;
-                                output = None;
+                                sink_slot = None;
+                                loudness_slot = None;
+                                shared_out = None;
                                 #[cfg(target_os = "windows")]
-                                stop_exclusive_playback(&mut exclusive_playback);
+                                teardown_exclusive_session(&mut exclusive_session);
                             }
                             AudioCommand::Stop => {
-                                is_playing_flag = false;
-                                current_path.clear();
-                                reset_playback_progress(&thread_progress);
-                                watchdog_sink_paused = false;
-                                watchdog_buffering_active = false;
-                                watchdog_starved_since = None;
-                                watchdog_resume_grace_since = None;
-                                let _ = thread_app_handle.emit(
+                                audible = false;
+                                active_file_path.clear();
+                                wipe_progress_bookkeeping(&live_progress);
+                                watchdog_held_sink = false;
+                                watchdog_buffer_flag = false;
+                                watchdog_starve_marker = None;
+                                watchdog_grace_marker = None;
+                                let _ = worker_app.emit(
                                     "playback:buffer",
                                     PlaybackBufferPayload { buffering: false },
                                 );
-                                if let Some(sink) = &current_sink {
+                                if let Some(sink) = &sink_slot {
                                     sink.stop();
                                 }
-                                current_sink = None;
-                                current_normalizer_handle = None;
-                                output = None;
+                                sink_slot = None;
+                                loudness_slot = None;
+                                shared_out = None;
                                 #[cfg(target_os = "windows")]
-                                stop_exclusive_playback(&mut exclusive_playback);
+                                teardown_exclusive_session(&mut exclusive_session);
                             }
                             AudioCommand::Resume => {
-                                is_playing_flag = true;
-                                if current_path.is_empty() {
+                                audible = true;
+                                if active_file_path.is_empty() {
                                     return;
                                 }
                                 #[cfg(target_os = "windows")]
-                                let source_is_network_backed = network_backed;
+                                let stream_backed = stream_over_network;
                                 #[cfg(target_os = "windows")]
-                                if requested_output_mode == AudioOutputMode::WasapiExclusive
-                                    && !source_is_network_backed
+                                if wanted_mode == AudioOutputMode::WasapiExclusive
+                                    && !stream_backed
                                 {
-                                    stop_exclusive_playback(&mut exclusive_playback);
-                                    match start_exclusive_playback(
-                                        current_path.clone(),
-                                        selected_device_name.clone(),
-                                        current_volume,
+                                    teardown_exclusive_session(&mut exclusive_session);
+                                    match launch_exclusive_session(
+                                        active_file_path.clone(),
+                                        chosen_device.clone(),
+                                        speaker_gain,
                                         true,
-                                        progress_duration(&thread_progress),
-                                        &thread_progress,
-                                        current_volume_balance_gain,
-                                        thread_eq_handle.clone(),
-                                        thread_se_handle.clone(),
-                                        thread_user_volume.clone(),
-                                        current_dsd_native_passthrough,
-                                        current_bit_perfect,
+                                        elapsed_playback_time(&live_progress),
+                                        &live_progress,
+                                        balance_gain_live,
+                                        worker_eq.clone(),
+                                        worker_se.clone(),
+                                        worker_master_volume.clone(),
+                                        dsd_passthrough_live,
+                                        bit_perfect_live,
                                     ) {
-                                        Ok(playback) => {
-                                            if selected_device_name.is_none() {
-                                                last_default_device_name =
-                                                    default_output_device_name(&host);
+                                        Ok(session) => {
+                                            if chosen_device.is_none() {
+                                                prior_system_default =
+                                                    default_output_device_name(&audio_host);
                                             }
-                                            active_device_name =
-                                                Some(playback.active_device_name().to_string());
-                                            active_output_mode = AudioOutputMode::WasapiExclusive;
-                                            fallback_reason = None;
-                                            exclusive_playback = Some(playback);
-                                            current_sink = None;
-                                            output = None;
-                                            current_normalizer_handle = None;
-                                            emit_output_status(
-                                                &thread_app_handle,
-                                                &thread_output_status,
-                                                selected_device_name.clone(),
-                                                active_device_name.clone(),
-                                                requested_output_mode,
-                                                active_output_mode,
-                                                fallback_reason.clone(),
+                                            live_device_label =
+                                                Some(session.active_device_name().to_string());
+                                            live_mode = AudioOutputMode::WasapiExclusive;
+                                            downgrade_note = None;
+                                            exclusive_session = Some(session);
+                                            sink_slot = None;
+                                            shared_out = None;
+                                            loudness_slot = None;
+                                            broadcast_output_state(
+                                                &worker_app,
+                                                &worker_status,
+                                                &chosen_device,
+                                                &live_device_label,
+                                                wanted_mode,
+                                                live_mode,
+                                                &downgrade_note,
                                             );
                                             return;
                                         }
                                         Err(error) => {
-                                            fallback_reason = Some(error);
+                                            downgrade_note = Some(error);
                                         }
                                     }
                                 }
 
-                                guard_device_ops(|| {
-                                    output = SharedOutputBackend::open(
-                                        &host,
-                                        selected_device_name.as_deref(),
+                                confine_device_fault(|| {
+                                    shared_out = SharedOutputBackend::open(
+                                        &audio_host,
+                                        chosen_device.as_deref(),
                                     )
                                     .ok();
                                 });
-                                if selected_device_name.is_none() {
-                                    last_default_device_name = default_output_device_name(&host);
+                                if chosen_device.is_none() {
+                                    prior_system_default =
+                                        default_output_device_name(&audio_host);
                                 }
-                                active_device_name = output
+                                live_device_label = shared_out
                                     .as_ref()
-                                    .map(|output| output.active_device_name().to_string());
-                                active_output_mode = AudioOutputMode::Shared;
+                                    .map(|backend| backend.active_device_name().to_string());
+                                live_mode = AudioOutputMode::Shared;
                                 restore_current_playback(
-                                    &output,
-                                    &mut current_sink,
-                                    &current_path,
+                                    &shared_out,
+                                    &mut sink_slot,
+                                    &active_file_path,
                                     true,
-                                    &thread_progress,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
-                                    current_volume_balance_gain,
-                                    &mut current_normalizer_handle,
-                                    current_remote_stream.as_ref(),
-                                    current_streaming_state.as_ref(),
+                                    &live_progress,
+                                    worker_eq.clone(),
+                                    worker_se.clone(),
+                                    worker_master_volume.clone(),
+                                    balance_gain_live,
+                                    &mut loudness_slot,
+                                    remote_feed.as_ref(),
+                                    temp_file_feed.as_ref(),
                                 );
-                                if current_speed != 1.0 {
-                                    if let Some(sink) = &current_sink {
-                                        sink.set_speed(current_speed);
+                                if tempo_scale != 1.0 {
+                                    if let Some(sink) = &sink_slot {
+                                        sink.set_speed(tempo_scale);
                                     }
                                 }
-                                emit_output_status(
-                                    &thread_app_handle,
-                                    &thread_output_status,
-                                    selected_device_name.clone(),
-                                    active_device_name.clone(),
-                                    requested_output_mode,
-                                    active_output_mode,
-                                    fallback_reason.clone(),
+                                broadcast_output_state(
+                                    &worker_app,
+                                    &worker_status,
+                                    &chosen_device,
+                                    &live_device_label,
+                                    wanted_mode,
+                                    live_mode,
+                                    &downgrade_note,
                                 );
                             }
                             AudioCommand::Seek {
-                                time,
-                                is_playing,
-                                request_id,
+                                time: requested_time,
+                                is_playing: should_resume,
+                                request_id: pending_id,
                             } => {
                                 #[cfg(target_os = "windows")]
-                                if let Some(playback) = &exclusive_playback {
-                                    let clamped_time = time.max(0.0);
-                                    is_playing_flag = is_playing;
-                                    playback
-                                        .seek(Duration::from_secs_f64(clamped_time), is_playing);
-                                    let _ = thread_app_handle.emit(
+                                if let Some(session) = &exclusive_session {
+                                    let landing = requested_time.max(0.0);
+                                    audible = should_resume;
+                                    session
+                                        .seek(Duration::from_secs_f64(landing), should_resume);
+                                    let _ = worker_app.emit(
                                         "seek_completed",
                                         SeekCompletedPayload {
-                                            request_id,
-                                            time: clamped_time,
+                                            request_id: pending_id,
+                                            time: landing,
                                         },
                                     );
                                     return;
                                 }
 
-                                watchdog_sink_paused = false;
-                                watchdog_buffering_active = false;
-                                watchdog_starved_since = None;
-                                watchdog_resume_grace_since = None;
+                                watchdog_held_sink = false;
+                                watchdog_buffer_flag = false;
+                                watchdog_starve_marker = None;
+                                watchdog_grace_marker = None;
 
-                                handle_seek(
-                                    time,
-                                    is_playing,
-                                    request_id,
-                                    &output,
-                                    &mut current_sink,
-                                    &current_path,
-                                    &mut is_playing_flag,
-                                    &thread_progress,
-                                    &thread_app_handle,
-                                    current_volume_balance_gain,
-                                    &mut current_normalizer_handle,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
-                                    current_remote_stream.as_ref(),
-                                    current_streaming_state.as_ref(),
+                                reposition_playhead(
+                                    requested_time,
+                                    should_resume,
+                                    pending_id,
+                                    &shared_out,
+                                    &mut sink_slot,
+                                    &active_file_path,
+                                    &mut audible,
+                                    &live_progress,
+                                    &worker_app,
+                                    balance_gain_live,
+                                    &mut loudness_slot,
+                                    worker_eq.clone(),
+                                    worker_se.clone(),
+                                    worker_master_volume.clone(),
+                                    remote_feed.as_ref(),
+                                    temp_file_feed.as_ref(),
                                 )
                             }
-                            AudioCommand::SetVolume(vol) => {
-                                current_volume = vol;
-                                thread_user_volume.store(vol.to_bits(), Ordering::Relaxed);
+                            AudioCommand::SetVolume(target_bits) => {
+                                speaker_gain = target_bits;
+                                worker_master_volume
+                                    .store(target_bits.to_bits(), Ordering::Relaxed);
                             }
-                            AudioCommand::SetDevice(device_name) => {
-                                selected_device_name = device_name;
+                            AudioCommand::SetDevice(picked_device) => {
+                                chosen_device = picked_device;
 
-                                if let Some(sink) = &current_sink {
+                                if let Some(sink) = &sink_slot {
                                     sink.stop();
                                 }
-                                current_sink = None;
+                                sink_slot = None;
                                 #[cfg(target_os = "windows")]
-                                stop_exclusive_playback(&mut exclusive_playback);
+                                teardown_exclusive_session(&mut exclusive_session);
 
-                                guard_device_ops(|| {
-                                    restore_preferred_output(
-                                        &selected_device_name,
-                                        &mut output,
-                                        &host,
-                                        &mut current_sink,
+                                confine_device_fault(|| {
+                                    rebuild_output_stack(
+                                        &chosen_device,
+                                        &mut shared_out,
+                                        &audio_host,
+                                        &mut sink_slot,
                                         #[cfg(target_os = "windows")]
-                                        &mut exclusive_playback,
-                                        &mut active_device_name,
-                                        &mut active_output_mode,
-                                        &mut fallback_reason,
-                                        requested_output_mode,
-                                        &current_path,
-                                        current_volume,
-                                        is_playing_flag,
-                                        &thread_progress,
-                                        current_volume_balance_gain,
-                                        thread_eq_handle.clone(),
-                                        thread_se_handle.clone(),
-                                        thread_user_volume.clone(),
-                                        &mut current_normalizer_handle,
-                                        current_remote_stream.as_ref(),
-                                        current_streaming_state.as_ref(),
-                                        current_dsd_native_passthrough,
-                                        current_bit_perfect,
+                                        &mut exclusive_session,
+                                        &mut live_device_label,
+                                        &mut live_mode,
+                                        &mut downgrade_note,
+                                        wanted_mode,
+                                        &active_file_path,
+                                        speaker_gain,
+                                        audible,
+                                        &live_progress,
+                                        balance_gain_live,
+                                        worker_eq.clone(),
+                                        worker_se.clone(),
+                                        worker_master_volume.clone(),
+                                        &mut loudness_slot,
+                                        remote_feed.as_ref(),
+                                        temp_file_feed.as_ref(),
+                                        dsd_passthrough_live,
+                                        bit_perfect_live,
                                     );
                                 });
-                                if current_speed != 1.0 {
-                                    if let Some(sink) = &current_sink {
-                                        sink.set_speed(current_speed);
+                                if tempo_scale != 1.0 {
+                                    if let Some(sink) = &sink_slot {
+                                        sink.set_speed(tempo_scale);
                                     }
                                 }
-                                if selected_device_name.is_none() {
-                                    last_default_device_name = default_output_device_name(&host);
+                                if chosen_device.is_none() {
+                                    prior_system_default =
+                                        default_output_device_name(&audio_host);
                                 }
 
-                                emit_output_status(
-                                    &thread_app_handle,
-                                    &thread_output_status,
-                                    selected_device_name.clone(),
-                                    active_device_name.clone(),
-                                    requested_output_mode,
-                                    active_output_mode,
-                                    fallback_reason.clone(),
+                                broadcast_output_state(
+                                    &worker_app,
+                                    &worker_status,
+                                    &chosen_device,
+                                    &live_device_label,
+                                    wanted_mode,
+                                    live_mode,
+                                    &downgrade_note,
                                 );
                             }
-                            AudioCommand::SetOutputMode(output_mode) => {
-                                requested_output_mode = output_mode;
+                            AudioCommand::SetOutputMode(switch_to) => {
+                                wanted_mode = switch_to;
 
-                                if let Some(sink) = &current_sink {
+                                if let Some(sink) = &sink_slot {
                                     sink.stop();
                                 }
-                                current_sink = None;
+                                sink_slot = None;
                                 #[cfg(target_os = "windows")]
-                                stop_exclusive_playback(&mut exclusive_playback);
+                                teardown_exclusive_session(&mut exclusive_session);
 
-                                guard_device_ops(|| {
-                                    restore_preferred_output(
-                                        &selected_device_name,
-                                        &mut output,
-                                        &host,
-                                        &mut current_sink,
+                                confine_device_fault(|| {
+                                    rebuild_output_stack(
+                                        &chosen_device,
+                                        &mut shared_out,
+                                        &audio_host,
+                                        &mut sink_slot,
                                         #[cfg(target_os = "windows")]
-                                        &mut exclusive_playback,
-                                        &mut active_device_name,
-                                        &mut active_output_mode,
-                                        &mut fallback_reason,
-                                        requested_output_mode,
-                                        &current_path,
-                                        current_volume,
-                                        is_playing_flag,
-                                        &thread_progress,
-                                        current_volume_balance_gain,
-                                        thread_eq_handle.clone(),
-                                        thread_se_handle.clone(),
-                                        thread_user_volume.clone(),
-                                        &mut current_normalizer_handle,
-                                        current_remote_stream.as_ref(),
-                                        current_streaming_state.as_ref(),
-                                        current_dsd_native_passthrough,
-                                        current_bit_perfect,
+                                        &mut exclusive_session,
+                                        &mut live_device_label,
+                                        &mut live_mode,
+                                        &mut downgrade_note,
+                                        wanted_mode,
+                                        &active_file_path,
+                                        speaker_gain,
+                                        audible,
+                                        &live_progress,
+                                        balance_gain_live,
+                                        worker_eq.clone(),
+                                        worker_se.clone(),
+                                        worker_master_volume.clone(),
+                                        &mut loudness_slot,
+                                        remote_feed.as_ref(),
+                                        temp_file_feed.as_ref(),
+                                        dsd_passthrough_live,
+                                        bit_perfect_live,
                                     );
                                 });
-                                if current_speed != 1.0 {
-                                    if let Some(sink) = &current_sink {
-                                        sink.set_speed(current_speed);
+                                if tempo_scale != 1.0 {
+                                    if let Some(sink) = &sink_slot {
+                                        sink.set_speed(tempo_scale);
                                     }
                                 }
-                                if selected_device_name.is_none() {
-                                    last_default_device_name = default_output_device_name(&host);
+                                if chosen_device.is_none() {
+                                    prior_system_default =
+                                        default_output_device_name(&audio_host);
                                 }
 
-                                emit_output_status(
-                                    &thread_app_handle,
-                                    &thread_output_status,
-                                    selected_device_name.clone(),
-                                    active_device_name.clone(),
-                                    requested_output_mode,
-                                    active_output_mode,
-                                    fallback_reason.clone(),
+                                broadcast_output_state(
+                                    &worker_app,
+                                    &worker_status,
+                                    &chosen_device,
+                                    &live_device_label,
+                                    wanted_mode,
+                                    live_mode,
+                                    &downgrade_note,
                                 );
                             }
                             AudioCommand::SetVolumeBalance {
-                                enabled,
-                                target_gain,
+                                enabled: balance_on,
+                                target_gain: requested_gain,
                             } => {
-                                let next_gain = if enabled { target_gain } else { 1.0 };
-                                current_volume_balance_gain = next_gain;
+                                let effective_gain = if balance_on { requested_gain } else { 1.0 };
+                                balance_gain_live = effective_gain;
 
-                                if let Some(ref handle) = current_normalizer_handle {
-                                    handle.set_target_gain(next_gain);
+                                if let Some(ref leveler) = loudness_slot {
+                                    leveler.set_target_gain(effective_gain);
                                 }
 
                                 #[cfg(target_os = "windows")]
-                                if let Some(ref playback) = exclusive_playback {
-                                    playback.set_volume_balance(enabled, target_gain);
+                                if let Some(ref session) = exclusive_session {
+                                    session.set_volume_balance(balance_on, requested_gain);
                                 }
                             }
-                            AudioCommand::SetEqualizerSettings { settings } => {
-                                thread_eq_handle.set_settings(settings.clone());
+                            AudioCommand::SetEqualizerSettings { settings: curve } => {
+                                worker_eq.set_settings(curve.clone());
                                 #[cfg(target_os = "windows")]
-                                if let Some(ref playback) = exclusive_playback {
-                                    playback.set_equalizer_settings(settings);
+                                if let Some(ref session) = exclusive_session {
+                                    session.set_equalizer_settings(curve);
                                 }
                             }
-                            AudioCommand::SetSoundEffectSettings { settings } => {
-                                thread_se_handle.set_settings(settings.clone());
+                            AudioCommand::SetSoundEffectSettings { settings: flavor } => {
+                                worker_se.set_settings(flavor.clone());
                                 #[cfg(target_os = "windows")]
-                                if let Some(ref playback) = exclusive_playback {
-                                    playback.set_sound_effect_settings(settings);
+                                if let Some(ref session) = exclusive_session {
+                                    session.set_sound_effect_settings(flavor);
                                 }
                             }
                         }));
-                    if cmd_result.is_err() {
+                    if outcome.is_err() {
                         eprintln!(
                             "[Audio][rust] 播放命令处理 panic，已隔离（不终止播放线程，命令通道保持存活）"
                         );
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    if selected_device_name.is_none() {
-                        let next_default_name = default_output_device_name(&host);
+                    if chosen_device.is_none() {
+                        let refreshed_default = default_output_device_name(&audio_host);
 
-                        let missing_output = is_playing_flag
-                            && output.is_none()
-                            && active_output_mode == AudioOutputMode::Shared
-                            && last_output_recover.elapsed() >= OUTPUT_RECOVER_INTERVAL;
-                        if missing_output {
-                            last_output_recover = std::time::Instant::now();
-                            if let Some(sink) = &current_sink {
+                        // 播放中却连共享后端都没有：周期性尝试自救
+                        let needs_output_salvage = audible
+                            && shared_out.is_none()
+                            && live_mode == AudioOutputMode::Shared
+                            && last_output_salvage.elapsed() >= OUTPUT_RECOVERY_SPACING;
+                        if needs_output_salvage {
+                            last_output_salvage = std::time::Instant::now();
+                            if let Some(sink) = &sink_slot {
                                 sink.stop();
                             }
-                            current_sink = None;
-                            guard_device_ops(|| {
-                                restore_shared_output(
-                                    &selected_device_name,
-                                    &mut output,
-                                    &host,
-                                    &mut current_sink,
-                                    &mut active_device_name,
-                                    &current_path,
-                                    is_playing_flag,
-                                    &thread_progress,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
-                                    current_volume_balance_gain,
-                                    &mut current_normalizer_handle,
-                                    current_remote_stream.as_ref(),
-                                    current_streaming_state.as_ref(),
+                            sink_slot = None;
+                            confine_device_fault(|| {
+                                reopen_shared_pipeline(
+                                    &chosen_device,
+                                    &mut shared_out,
+                                    &audio_host,
+                                    &mut sink_slot,
+                                    &mut live_device_label,
+                                    &active_file_path,
+                                    audible,
+                                    &live_progress,
+                                    worker_eq.clone(),
+                                    worker_se.clone(),
+                                    worker_master_volume.clone(),
+                                    balance_gain_live,
+                                    &mut loudness_slot,
+                                    remote_feed.as_ref(),
+                                    temp_file_feed.as_ref(),
                                 );
                             });
-                            if output.is_some() {
-                                fallback_reason = None;
-                                thread_progress.start_failed.store(false, Ordering::Relaxed);
-                                if let Ok(mut reason) = thread_progress.start_failed_reason.lock() {
+                            if shared_out.is_some() {
+                                downgrade_note = None;
+                                live_progress.start_failed.store(false, Ordering::Relaxed);
+                                if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
                                     *reason = None;
                                 }
-                                last_default_device_name = next_default_name.clone();
+                                prior_system_default = refreshed_default.clone();
                             } else {
-                                fallback_reason = Some(
+                                downgrade_note = Some(
                                     "未检测到可用的音频输出设备，请检查扬声器/耳机是否已连接"
                                         .to_string(),
                                 );
                             }
-                            emit_output_status(
-                                &thread_app_handle,
-                                &thread_output_status,
-                                selected_device_name.clone(),
-                                active_device_name.clone(),
-                                requested_output_mode,
-                                active_output_mode,
-                                fallback_reason.clone(),
+                            broadcast_output_state(
+                                &worker_app,
+                                &worker_status,
+                                &chosen_device,
+                                &live_device_label,
+                                wanted_mode,
+                                live_mode,
+                                &downgrade_note,
                             );
                         }
 
-                        if is_playing_flag
+                        // 系统默认设备换了且我们在裸奔跟随：整体重建输出链
+                        if audible
                             && should_restore_for_default_device_change(
-                                &selected_device_name,
-                                &last_default_device_name,
-                                &next_default_name,
-                                &active_device_name,
+                                &chosen_device,
+                                &prior_system_default,
+                                &refreshed_default,
+                                &live_device_label,
                             )
                         {
-                            last_default_device_name = next_default_name;
-                            if let Some(sink) = &current_sink {
+                            prior_system_default = refreshed_default;
+                            if let Some(sink) = &sink_slot {
                                 sink.stop();
                             }
-                            current_sink = None;
-                            output = None;
+                            sink_slot = None;
+                            shared_out = None;
                             #[cfg(target_os = "windows")]
-                            stop_exclusive_playback(&mut exclusive_playback);
+                            teardown_exclusive_session(&mut exclusive_session);
 
                             #[cfg(target_os = "windows")]
-                            guard_device_ops(|| {
-                                restore_preferred_output(
-                                    &selected_device_name,
-                                    &mut output,
-                                    &host,
-                                    &mut current_sink,
-                                    &mut exclusive_playback,
-                                    &mut active_device_name,
-                                    &mut active_output_mode,
-                                    &mut fallback_reason,
-                                    requested_output_mode,
-                                    &current_path,
-                                    current_volume,
-                                    is_playing_flag,
-                                    &thread_progress,
-                                    current_volume_balance_gain,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
-                                    &mut current_normalizer_handle,
-                                    current_remote_stream.as_ref(),
-                                    current_streaming_state.as_ref(),
-                                    current_dsd_native_passthrough,
-                                    current_bit_perfect,
+                            confine_device_fault(|| {
+                                rebuild_output_stack(
+                                    &chosen_device,
+                                    &mut shared_out,
+                                    &audio_host,
+                                    &mut sink_slot,
+                                    &mut exclusive_session,
+                                    &mut live_device_label,
+                                    &mut live_mode,
+                                    &mut downgrade_note,
+                                    wanted_mode,
+                                    &active_file_path,
+                                    speaker_gain,
+                                    audible,
+                                    &live_progress,
+                                    balance_gain_live,
+                                    worker_eq.clone(),
+                                    worker_se.clone(),
+                                    worker_master_volume.clone(),
+                                    &mut loudness_slot,
+                                    remote_feed.as_ref(),
+                                    temp_file_feed.as_ref(),
+                                    dsd_passthrough_live,
+                                    bit_perfect_live,
                                 );
                             });
                             #[cfg(not(target_os = "windows"))]
-                            guard_device_ops(|| {
-                                restore_preferred_output(
-                                    &selected_device_name,
-                                    &mut output,
-                                    &host,
-                                    &mut current_sink,
-                                    &mut active_device_name,
-                                    &mut active_output_mode,
-                                    &mut fallback_reason,
-                                    requested_output_mode,
-                                    &current_path,
-                                    current_volume,
-                                    is_playing_flag,
-                                    &thread_progress,
-                                    current_volume_balance_gain,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
-                                    &mut current_normalizer_handle,
-                                    current_remote_stream.as_ref(),
-                                    current_streaming_state.as_ref(),
-                                    current_dsd_native_passthrough,
-                                    current_bit_perfect,
+                            confine_device_fault(|| {
+                                rebuild_output_stack(
+                                    &chosen_device,
+                                    &mut shared_out,
+                                    &audio_host,
+                                    &mut sink_slot,
+                                    &mut live_device_label,
+                                    &mut live_mode,
+                                    &mut downgrade_note,
+                                    wanted_mode,
+                                    &active_file_path,
+                                    speaker_gain,
+                                    audible,
+                                    &live_progress,
+                                    balance_gain_live,
+                                    worker_eq.clone(),
+                                    worker_se.clone(),
+                                    worker_master_volume.clone(),
+                                    &mut loudness_slot,
+                                    remote_feed.as_ref(),
+                                    temp_file_feed.as_ref(),
+                                    dsd_passthrough_live,
+                                    bit_perfect_live,
                                 );
                             });
 
-                            emit_output_status(
-                                &thread_app_handle,
-                                &thread_output_status,
-                                None,
-                                active_device_name.clone(),
-                                requested_output_mode,
-                                active_output_mode,
-                                fallback_reason.clone(),
+                            broadcast_output_state(
+                                &worker_app,
+                                &worker_status,
+                                &None,
+                                &live_device_label,
+                                wanted_mode,
+                                live_mode,
+                                &downgrade_note,
                             );
                         }
                     }
 
-                    if is_playing_flag && last_progress_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
-                        last_progress_emit = std::time::Instant::now();
-                        let position = progress_duration(&thread_progress).as_secs_f64();
+                    if audible && last_progress_burst.elapsed() >= PROGRESS_BROADCAST_SPACING {
+                        last_progress_burst = std::time::Instant::now();
+                        let position = elapsed_playback_time(&live_progress).as_secs_f64();
                         let duration_bits =
-                            thread_progress.total_duration_secs.load(Ordering::Relaxed);
+                            live_progress.total_duration_secs.load(Ordering::Relaxed);
                         let duration = f64::from_bits(duration_bits);
-                        let _ = thread_app_handle.emit(
+                        let _ = worker_app.emit(
                             "playback:progress",
                             PlaybackProgressPayload {
                                 position,
@@ -2185,28 +2272,29 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             },
                         );
 
-                        if let Ok(mut controls) = thread_controls.lock() {
-                            if let Some(mc) = controls.as_mut() {
-                                let pos = MediaPosition(Duration::from_secs_f64(position.max(0.0)));
-                                let _ = mc.set_playback(MediaPlayback::Playing {
-                                    progress: Some(pos),
+                        if let Ok(mut hub_guard) = worker_controls.lock() {
+                            if let Some(mounted) = hub_guard.as_mut() {
+                                let marker =
+                                    MediaPosition(Duration::from_secs_f64(position.max(0.0)));
+                                let _ = mounted.set_playback(MediaPlayback::Playing {
+                                    progress: Some(marker),
                                 });
                             }
                         }
                     }
                 }
-                Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Disconnected) => break 'command_pump,
             }
         }
     });
 
     PlayerState {
-        tx: Mutex::new(tx),
-        progress: shared_progress,
-        playback_id: Arc::new(AtomicU64::new(0)),
-        controls,
-        output_status,
-        user_volume,
+        tx: Mutex::new(command_tx),
+        progress: runtime_progress,
+        playback_id: Arc::new(AtomicU64::default()),
+        controls: media_hub,
+        output_status: output_status_slot,
+        user_volume: master_volume,
     }
 }
 

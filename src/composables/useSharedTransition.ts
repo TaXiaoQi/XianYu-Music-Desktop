@@ -1,278 +1,254 @@
-import { ref, computed, type CSSProperties } from 'vue';
+import { computed, ref, type CSSProperties } from 'vue';
 
-// 封面矩形（视口坐标）
-interface ElementBox {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
+// 底栏封面 ↔ 详情页封面之间的共享位移动画（FLIP 方案）。
+// 模块级单例：同一时刻只允许一条封面位移在跑，新的转场会让旧转场的回调失效。
+
+type MorphPhase = 'idle' | 'entering' | 'leaving';
+
+// 视口坐标系里的矩形（left/top 与 DOMRect 字段对齐，便于直接换算位移）
+interface Box {
+    left: number; // 视口原点横坐标
+    top: number; // 视口原点纵坐标
+    width: number; // 水平跨度
+    height: number; // 垂直跨度
 }
 
-// 全局单例：同一时刻只允许一条转场在跑
-const TRANSITION_MS = 500;
-const EASING_CURVE = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
-const IDENTITY_TRANSFORM = 'translate(0, 0) scale(1, 1)';
+const MORPH_MS = 500;
+const MORPH_EASING = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
+const NEUTRAL_SHIFT = 'translate(0, 0) scale(1, 1)';
+const DOCK_CORNER = '8px'; // 底栏封面的圆角
+const STAGE_CORNER = '16px'; // 详情页封面的圆角
+// 配角元素交错入场的进度点（占整段位移时长的比例）
+const REVEAL_FRACTIONS = [0.45, 0.6, 0.8] as const;
 
-const animationPhase = ref<'idle' | 'entering' | 'leaving'>('idle');
-const isAnimating = ref<boolean>(false);
+// ---- 模块级状态 ----
+const morphPhase = ref<MorphPhase>('idle');
+const morphBusy = ref(false);
+// 转场期间隐藏底栏封面，避免与详情页封面重影
+const dockCoverShown = ref(true);
+// 详情页背景的透明度（配合封面做交叉淡入淡出）
+const backdropAlpha = ref(0);
+// 配角元素交错入场阶段：0=全隐，1=顶栏，2=歌曲信息+控件，3=歌词区
+const revealStage = ref(0);
+// FLIP 的 First 位置（底栏封面最近一次测量的矩形）
+const dockBox = ref<Box | null>(null);
 
-// 底栏封面在转场期间隐藏，避免与详情页封面重影
-const footerCoverVisible = ref(true);
+// 封面位移进行中的样式分量
+const shiftExpr = ref('');
+const cornerExpr = ref('');
+const tweenExpr = ref('');
 
-// 页面背景的透明度（配合封面做交叉淡入淡出）
-const bgOpacity = ref(0);
+// 自增代号：每次新转场都会让旧转场的回调失效
+let ticket = 0;
+// 交错入场的定时器集合
+let revealTimers: ReturnType<typeof setTimeout>[] = [];
 
-// 配角元素的交错入场阶段：0=全隐，1=顶栏，2=歌曲信息+控件，3=歌词区
-const staggerPhase = ref(0);
+const superseded = (id: number) => id !== ticket;
 
-// FLIP 的 First 位置（底栏封面最后一次测量的矩形）
-const originBox = ref<ElementBox | null>(null);
+const flushRevealTimers = () => {
+    revealTimers.forEach((timer) => clearTimeout(timer));
+    revealTimers = [];
+};
 
-// 封面动画进行中的样式值
-const coverTransform = ref('');
-const coverRadius = ref('');
-const coverTransition = ref('');
+const waitForPaint = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
 
-// 自增的动画代号：每次新的转场都会让旧转场的回调失效
-let latestAnimId = 0;
+const dwell = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
-// 配角元素交错入场的定时器集合
-let phaseTimers: ReturnType<typeof setTimeout>[] = [];
+const readBox = (el: HTMLElement): Box => {
+    const rect = el.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+};
 
-function resetPhaseTimers() {
-    phaseTimers.forEach((timer) => clearTimeout(timer));
-    phaseTimers = [];
-}
+/** 计算"从 dock 反推回 stage"的 FLIP 反向位移串 */
+const rewindShift = (dock: Box, stage: Box) => {
+    const shiftX = dock.left - stage.left;
+    const shiftY = dock.top - stage.top;
+    const scaleX = dock.width / stage.width;
+    const scaleY = dock.height / stage.height;
+    return `translate(${shiftX}px, ${shiftY}px) scale(${scaleX}, ${scaleY})`;
+};
 
-const isStale = (animId: number) => animId !== latestAnimId;
+const morphTween = () =>
+    `transform ${MORPH_MS}ms ${MORPH_EASING}, border-radius ${MORPH_MS}ms ${MORPH_EASING}`;
 
-const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
-
-function measureBox(el: HTMLElement): ElementBox {
-    const box = el.getBoundingClientRect();
-    return { x: box.left, y: box.top, width: box.width, height: box.height };
-}
-
-/** 计算"从 from 反推回 to"的 FLIP 反向变换串 */
-function offsetTransform(from: ElementBox, to: DOMRect): string {
-    const dx = from.x - to.left;
-    const dy = from.y - to.top;
-    const sx = from.width / to.width;
-    const sy = from.height / to.height;
-    return `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
-}
-
-function coverTransitionStyle(): string {
-    return `transform ${TRANSITION_MS}ms ${EASING_CURVE}, border-radius ${TRANSITION_MS}ms ${EASING_CURVE}`;
-}
-
-/** 收尾：可选地清空封面样式，然后复位为静止状态 */
-function settleAsIdle(clearCoverStyles: boolean) {
+/** 收尾：可选地清空封面样式分量，然后复位为静止状态 */
+const restMorph = (clearCoverStyles: boolean) => {
     if (clearCoverStyles) {
-        coverTransition.value = '';
-        coverTransform.value = '';
+        tweenExpr.value = '';
+        shiftExpr.value = '';
     }
-    animationPhase.value = 'idle';
-    isAnimating.value = false;
-    footerCoverVisible.value = true;
-}
+    morphPhase.value = 'idle';
+    morphBusy.value = false;
+    dockCoverShown.value = true;
+};
 
-/** 注册配角元素按 0.45 / 0.6 / 0.8 进度依次入场的定时器 */
-function scheduleStaggerSteps(animId: number) {
-    const steps: Array<[number, number]> = [
-        [1, TRANSITION_MS * 0.45],
-        [2, TRANSITION_MS * 0.6],
-        [3, TRANSITION_MS * 0.8],
-    ];
-    steps.forEach(([phase, delay]) => {
-        phaseTimers.push(
-            setTimeout(() => {
-                if (isStale(animId)) return;
-                staggerPhase.value = phase;
-            }, delay),
-        );
+/** 在指定阶段点亮配角元素；转场已被顶掉则忽略 */
+const armReveal = (id: number, stage: number) => {
+    if (superseded(id)) return;
+    revealStage.value = stage;
+};
+
+/** 配角元素按 45% / 60% / 80% 进度依次入场 */
+const armRevealSteps = (id: number) => {
+    REVEAL_FRACTIONS.forEach((fraction, index) => {
+        const fireAt = MORPH_MS * fraction;
+        revealTimers.push(setTimeout(() => armReveal(id, index + 1), fireAt));
     });
+};
+
+// 一段位移动画的完整编排：起点摆位 → 等两帧 → 释放过渡 → 计时收尾
+interface MorphPlan {
+    id: number;
+    startShift: string;
+    startCorner: string;
+    endShift: string;
+    endCorner: string;
+    backdrop: number;
+    onRelease?: () => void;
 }
 
-/** 等两帧后再执行：rAF 链中途动画被取消则提前 resolve */
-async function playForwardFrames(animId: number): Promise<boolean> {
-    await nextFrame();
-    if (isStale(animId)) {
-        return false;
+const runMorphPlan = async (plan: MorphPlan) => {
+    // "Invert"：先无过渡地摆到起点位置
+    tweenExpr.value = 'none';
+    shiftExpr.value = plan.startShift;
+    cornerExpr.value = plan.startCorner;
+    backdropAlpha.value = plan.backdrop;
+
+    await waitForPaint();
+    if (superseded(plan.id)) return;
+    await waitForPaint();
+    if (superseded(plan.id)) return;
+
+    // "Play"：释放过渡，滑向终点位置
+    tweenExpr.value = morphTween();
+    shiftExpr.value = plan.endShift;
+    cornerExpr.value = plan.endCorner;
+    plan.onRelease?.();
+
+    await dwell(MORPH_MS);
+    if (superseded(plan.id)) return;
+    restMorph(true);
+};
+
+/** 记录 First 位置（一般为底栏封面的矩形） */
+const markDockAnchor = (el: HTMLElement) => {
+    dockBox.value = readBox(el);
+};
+
+/** 展开动画：详情页封面 DOM 挂载后调用，传入详情页封面元素作为 Last 位置 */
+async function expandInto(stageCover: HTMLElement): Promise<void> {
+    const id = ++ticket;
+    flushRevealTimers();
+    morphPhase.value = 'entering';
+    morphBusy.value = true;
+    dockCoverShown.value = false;
+    backdropAlpha.value = 0;
+    revealStage.value = 0;
+
+    // 没有 First 位置时无从翻转，退化为整页直接淡入
+    const dock = dockBox.value;
+    if (!dock) {
+        backdropAlpha.value = 1;
+        revealStage.value = 3;
+        await dwell(MORPH_MS);
+        restMorph(false);
+        return;
     }
-    await nextFrame();
-    return !isStale(animId);
-}
 
-/** 记录 "First" 位置（一般为底栏封面的矩形） */
-function captureFirst(el: HTMLElement) {
-    originBox.value = measureBox(el);
-}
-
-/** 展开动画：详情页封面 DOM 挂载后调用，传入详情页封面元素作为 "Last" 位置 */
-function playEnter(lastEl: HTMLElement): Promise<void> {
-    return new Promise((resolve) => {
-        const animId = ++latestAnimId;
-        animationPhase.value = 'entering';
-        isAnimating.value = true;
-        footerCoverVisible.value = false;
-        bgOpacity.value = 0;
-        staggerPhase.value = 0;
-        resetPhaseTimers();
-
-        // 没有 First 位置时无从翻转，退化为整页直接淡入
-        if (!originBox.value) {
-            bgOpacity.value = 1;
-            staggerPhase.value = 3;
-            setTimeout(() => {
-                settleAsIdle(false);
-                resolve();
-            }, TRANSITION_MS);
-            return;
-        }
-
-        const startBox: ElementBox = originBox.value;
-        const endBox = lastEl.getBoundingClientRect();
-
-        // "Invert"：先无过渡地摆到起点位置
-        coverTransition.value = 'none';
-        coverTransform.value = offsetTransform(startBox, endBox);
-        coverRadius.value = '8px';
-
-        void (async () => {
-            const framesOk = await playForwardFrames(animId);
-            if (!framesOk) {
-                resolve();
-                return;
-            }
-
-            // "Play"：释放过渡，封面滑向最终位置，背景交叉淡入
-            coverTransition.value = coverTransitionStyle();
-            coverTransform.value = IDENTITY_TRANSFORM;
-            coverRadius.value = '16px';
-            bgOpacity.value = 1;
-
-            scheduleStaggerSteps(animId);
-
-            setTimeout(() => {
-                if (isStale(animId)) {
-                    resolve();
-                    return;
-                }
-                settleAsIdle(true);
-                resolve();
-            }, TRANSITION_MS);
-        })();
+    await runMorphPlan({
+        id,
+        startShift: rewindShift(dock, readBox(stageCover)),
+        startCorner: DOCK_CORNER,
+        endShift: NEUTRAL_SHIFT,
+        endCorner: STAGE_CORNER,
+        backdrop: 0,
+        onRelease: () => {
+            // 背景交叉淡入，同时配角元素依次入场
+            backdropAlpha.value = 1;
+            armRevealSteps(id);
+        },
     });
 }
 
 /** 收起动画：反向 FLIP，把详情页封面收回底栏封面位置 */
-function playLeave(detailCoverEl: HTMLElement): Promise<void> {
-    return new Promise((resolve) => {
-        const animId = ++latestAnimId;
-        animationPhase.value = 'leaving';
-        isAnimating.value = true;
-        resetPhaseTimers();
+async function collapseBack(stageCover: HTMLElement): Promise<void> {
+    const id = ++ticket;
+    flushRevealTimers();
+    morphPhase.value = 'leaving';
+    morphBusy.value = true;
+    // 配角元素立刻整体淡出
+    revealStage.value = 0;
 
-        // 配角元素立刻整体淡出
-        staggerPhase.value = 0;
+    // 没有 First 位置时退化为背景淡出
+    let dock = dockBox.value;
+    if (!dock) {
+        backdropAlpha.value = 0;
+        await dwell(MORPH_MS * 0.6);
+        restMorph(false);
+        return;
+    }
 
-        if (!originBox.value) {
-            bgOpacity.value = 0;
-            setTimeout(() => {
-                settleAsIdle(false);
-                resolve();
-            }, TRANSITION_MS * 0.6);
-            return;
-        }
+    // 重新测量底栏封面位置（窗口尺寸可能已经变化）
+    const dockEl = document.querySelector('[data-footer-cover]') as HTMLElement | null;
+    if (dockEl) {
+        dock = readBox(dockEl);
+        dockBox.value = dock;
+    }
 
-        // 重新测量底栏封面位置（窗口尺寸可能已经变化）
-        const footerEl = document.querySelector('[data-footer-cover]') as HTMLElement | null;
-        if (footerEl) {
-            originBox.value = measureBox(footerEl);
-        }
-
-        const startBox: ElementBox = originBox.value;
-        const endBox = detailCoverEl.getBoundingClientRect();
-
-        // 当前处于 "Last" 位置（无偏移），随后动画滑回 First
-        coverTransition.value = 'none';
-        coverTransform.value = IDENTITY_TRANSFORM;
-        coverRadius.value = '16px';
-
-        bgOpacity.value = 0;
-
-        void (async () => {
-            const framesOk = await playForwardFrames(animId);
-            if (!framesOk) {
-                resolve();
-                return;
-            }
-
-            coverTransition.value = coverTransitionStyle();
-            coverTransform.value = offsetTransform(startBox, endBox);
-            coverRadius.value = '8px';
-
-            setTimeout(() => {
-                if (isStale(animId)) {
-                    resolve();
-                    return;
-                }
-                settleAsIdle(true);
-                resolve();
-            }, TRANSITION_MS);
-        })();
+    await runMorphPlan({
+        id,
+        startShift: NEUTRAL_SHIFT,
+        startCorner: STAGE_CORNER,
+        endShift: rewindShift(dock, readBox(stageCover)),
+        endCorner: DOCK_CORNER,
+        backdrop: 0,
     });
 }
 
 /** 取消当前动画（连续快速触发转场时使用） */
-function cancel() {
-    latestAnimId++;
-    resetPhaseTimers();
-    coverTransition.value = '';
-    coverTransform.value = '';
-    coverRadius.value = '';
-    bgOpacity.value = 0;
-    staggerPhase.value = 0;
-    animationPhase.value = 'idle';
-    isAnimating.value = false;
-    footerCoverVisible.value = true;
-}
+const abortMorph = () => {
+    ticket += 1;
+    flushRevealTimers();
+    tweenExpr.value = '';
+    shiftExpr.value = '';
+    cornerExpr.value = '';
+    backdropAlpha.value = 0;
+    revealStage.value = 0;
+    morphPhase.value = 'idle';
+    morphBusy.value = false;
+    dockCoverShown.value = true;
+};
 
 /** 封面元素绑定的动画样式 */
-const coverStyle = computed<CSSProperties>(() => {
-    const style: CSSProperties = {};
-    const transform = coverTransform.value;
-    const radius = coverRadius.value;
-    const transition = coverTransition.value;
-
-    if (transform) {
-        style.transform = transform;
-        style.transformOrigin = 'top left';
+const coverAppearance = computed<CSSProperties>(() => {
+    const appearance: CSSProperties = {};
+    if (shiftExpr.value) {
+        appearance.transform = shiftExpr.value;
+        appearance.transformOrigin = 'top left';
     }
-    if (radius) {
-        style.borderRadius = radius;
+    if (cornerExpr.value) {
+        appearance.borderRadius = cornerExpr.value;
     }
-    if (transition === 'none') {
-        style.transition = 'none';
-    } else if (transition) {
-        style.transition = transition;
+    if (tweenExpr.value === 'none') {
+        appearance.transition = 'none';
+    } else if (tweenExpr.value) {
+        appearance.transition = tweenExpr.value;
     }
-    return style;
+    return appearance;
 });
 
 export function useSharedTransition() {
     return {
-        animationPhase,
-        isAnimating,
-        coverStyle,
-        footerCoverVisible,
-        bgOpacity,
-        staggerPhase,
-        captureFirst,
-        playEnter,
-        playLeave,
-        cancel,
-        DURATION: TRANSITION_MS,
+        animationPhase: morphPhase,
+        isAnimating: morphBusy,
+        coverStyle: coverAppearance,
+        footerCoverVisible: dockCoverShown,
+        bgOpacity: backdropAlpha,
+        staggerPhase: revealStage,
+        captureFirst: markDockAnchor,
+        playEnter: expandInto,
+        playLeave: collapseBack,
+        cancel: abortMorph,
+        DURATION: MORPH_MS,
     };
 }

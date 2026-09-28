@@ -1,27 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const { tauriInvoke } = vi.hoisted(() => ({
-  tauriInvoke: vi.fn(),
+import { historyApi as historyApiModule } from './historyApi';
+
+// 拦截 invoke 收口层，核对命令名与载荷是否原样透传。
+const { callTauriDouble } = vi.hoisted(() => ({
+  callTauriDouble: vi.fn(),
 }));
 
-vi.mock('./invoke', () => ({
-  tauriInvoke,
-}));
+vi.mock('./invoke', () => ({ tauriInvoke: callTauriDouble }));
 
-import { historyApi } from './historyApi';
+describe('historyApi 与后端命令的对接', () => {
+  it('removeSongsFromHistoryAndStatistics 按原样转发命令名与 songPaths 载荷', () => {
+    callTauriDouble.mockReset();
+    const removedPaths = ['C:\\Music\\removed.flac'];
+    const { removeSongsFromHistoryAndStatistics } = historyApiModule;
 
-describe('historyApi', () => {
-  beforeEach(() => {
-    tauriInvoke.mockReset();
-  });
+    removeSongsFromHistoryAndStatistics(removedPaths);
 
-  it('removes all history and statistics for song paths', () => {
-    const songPaths = ['C:\\Music\\removed.flac'];
-
-    historyApi.removeSongsFromHistoryAndStatistics(songPaths);
-
-    expect(tauriInvoke).toHaveBeenCalledWith('remove_songs_from_history_and_statistics', {
-      songPaths,
+    expect(callTauriDouble).toHaveBeenCalledWith('remove_songs_from_history_and_statistics', {
+      songPaths: removedPaths,
     });
   });
 });

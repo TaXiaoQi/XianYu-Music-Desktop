@@ -1,54 +1,51 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
+import { ref, type Ref } from 'vue';
 
 import { runStartupRouteRepaint } from './startupRouteRepaint';
 
-const createRouter = (path = '/', fullPath = path) => {
-  const currentRoute = ref({ path, fullPath });
+/** 构造带 replace 调用记录的路由器桩 */
+const buildRouterStub = (path = '/', fullPath = path) => {
+  const routeSnapshot = ref({ path, fullPath });
   return {
-    currentRoute,
+    currentRoute: routeSnapshot,
     replace: vi.fn(async (target: string) => {
-      currentRoute.value = { path: target.split('?')[0], fullPath: target };
+      routeSnapshot.value = { fullPath: target, path: target.split('?')[0] };
     }),
   };
 };
 
-describe('startup route repaint', () => {
-  it('temporarily opens settings and restores the original route for transparent window materials', async () => {
-    const router = createRouter('/albums', '/albums?artist=a');
-    const skipNextPageTransition = ref(false);
+/** 以指定材质开关执行启动重绘 */
+const repaintWith = (routerStub: unknown, materialOn: boolean, transition?: Ref<boolean>) =>
+  runStartupRouteRepaint({
+    router: routerStub as never,
+    hasWindowMaterial: ref(materialOn),
+    skipNextPageTransition: transition ?? ref(false),
+  });
 
-    await runStartupRouteRepaint({
-      router: router as never,
-      hasWindowMaterial: ref(true),
-      skipNextPageTransition,
-    });
+describe('startup route repaint 启动路由重绘', () => {
+  it('flashes the settings route once and then restores the original path for material repaint', async () => {
+    const router = buildRouterStub('/albums', '/albums?artist=a');
+    const transitionGate = ref(false);
+
+    await repaintWith(router, true, transitionGate);
 
     expect(router.replace).toHaveBeenNthCalledWith(1, '/settings');
     expect(router.replace).toHaveBeenNthCalledWith(2, '/albums?artist=a');
-    expect(skipNextPageTransition.value).toBe(false);
+    expect(transitionGate.value).toBe(false);
   });
 
-  it('does nothing when no transparent window material is active', async () => {
-    const router = createRouter('/albums');
+  it('skips the repaint pulse entirely without window material', async () => {
+    const router = buildRouterStub('/albums');
 
-    await runStartupRouteRepaint({
-      router: router as never,
-      hasWindowMaterial: ref(false),
-      skipNextPageTransition: ref(false),
-    });
+    await repaintWith(router, false);
 
     expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it('does not pulse when the current route is already settings', async () => {
-    const router = createRouter('/settings');
+  it('skips the repaint pulse when already on the settings route', async () => {
+    const router = buildRouterStub('/settings');
 
-    await runStartupRouteRepaint({
-      router: router as never,
-      hasWindowMaterial: ref(true),
-      skipNextPageTransition: ref(false),
-    });
+    await repaintWith(router, true);
 
     expect(router.replace).not.toHaveBeenCalled();
   });

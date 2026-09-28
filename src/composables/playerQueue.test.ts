@@ -1,225 +1,161 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-vi.mock('../services/tauri/playbackApi', () => ({
-  playbackApi: {
-    pauseAudio: vi.fn().mockResolvedValue(undefined),
-  },
-}));
+const playbackApiBridge = vi.hoisted(() => ({ pauseAudio: vi.fn().mockResolvedValue(undefined) }));
 
-import { playbackApi } from '../services/tauri/playbackApi';
+vi.mock('../services/tauri/playbackApi', () => ({ playbackApi: playbackApiBridge }));
+
 import type { Song } from '../types';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
 import { createPlayerQueue } from '../features/playback/playerQueue';
 
-const makeSong = (overrides: Partial<Song> = {}): Song => ({
-  path: '/music/demo.flac',
-  name: 'demo.flac',
-  title: 'Demo',
-  artist: 'Artist',
-  artist_names: ['Artist'],
-  effective_artist_names: ['Artist'],
-  album: 'Album',
-  album_artist: 'Artist',
-  album_key: 'album::artist',
-  is_various_artists_album: false,
-  collapse_artist_credits: false,
-  duration: 180,
-  ...overrides,
-});
+function makeSong(overrides: Partial<Song> = {}): Song {
+  return {
+    path: '/music/demo.flac', name: 'demo.flac', title: 'Demo',
+    artist: 'Artist', artist_names: ['Artist'], effective_artist_names: ['Artist'],
+    album: 'Album', album_artist: 'Artist', album_key: 'album::artist',
+    is_various_artists_album: false, collapse_artist_credits: false, duration: 180,
+    ...overrides,
+  };
+}
 
-describe('player queue domain', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
-    vi.clearAllMocks();
+const generateSongsTo = (count: number) =>
+  Array.from({ length: count }, (_, index) => makeSong({ path: `/music/${index}.flac`, title: `Song ${index}` }));
+
+const buildQueueHarness = () => {
+  const playback = usePlaybackStore();
+  const library = useLibraryStore();
+  const playedPaths: string[] = [];
+  const runtimeStopper = vi.fn();
+  let queue!: ReturnType<typeof createPlayerQueue>;
+
+  queue = createPlayerQueue({
+    playSong: (song, options) => { queue.handleBeforePlay(song, options); playback.currentSong = song; playedPaths.push(song.path); },
+    stopPlaybackRuntime: runtimeStopper,
+    showToast: vi.fn(),
   });
 
-  it('plays queued temp songs before the main queue', () => {
-    const played: string[] = [];
-    const playbackStore = usePlaybackStore();
-    const playerQueue = createPlayerQueue({
-      playSong: (song) => {
-        played.push(song.path);
-      },
-      stopPlaybackRuntime: vi.fn(),
-      showToast: vi.fn(),
-    });
+  return { queue, playback, library, playedPaths, stopPlaybackRuntime: runtimeStopper };
+};
 
-    const currentSong = makeSong({ path: '/music/current.flac', title: 'Current' });
-    const queuedSong = makeSong({ path: '/music/queued.flac', title: 'Queued' });
-    const tempSong = makeSong({ path: '/music/next.flac', title: 'Next Up' });
+describe('createPlayerQueue', () => {
+  beforeEach(() => { setActivePinia(createPinia()); vi.clearAllMocks(); });
 
-    playbackStore.currentSong = currentSong;
-    playbackStore.playQueue = [currentSong, queuedSong];
-    playbackStore.tempQueue = [tempSong];
+  it('drains queued temp songs ahead of the main queue', () => {
+    const { queue, playback, playedPaths } = buildQueueHarness();
+    const [currentSong, queuedSong, tempSong] = [
+      makeSong({ path: '/music/current.flac', title: 'Current' }),
+      makeSong({ path: '/music/queued.flac', title: 'Queued' }),
+      makeSong({ path: '/music/next.flac', title: 'Next Up' }),
+    ];
 
-    playerQueue.nextSong();
+    playback.currentSong = currentSong;
+    playback.playQueue = [currentSong, queuedSong];
+    playback.tempQueue = [tempSong];
 
-    expect(played).toEqual(['/music/next.flac']);
-    expect(playbackStore.tempQueue).toEqual([]);
+    queue.nextSong();
+
+    expect(playedPaths).toEqual(['/music/next.flac']);
+    expect(playback.tempQueue).toEqual([]);
   });
 
-  it('clears queue state and pauses runtime when queue is reset during playback', async () => {
-    const playbackStore = usePlaybackStore();
-    const stopPlaybackRuntime = vi.fn();
-    const playerQueue = createPlayerQueue({
-      playSong: vi.fn(),
-      stopPlaybackRuntime,
-      showToast: vi.fn(),
-    });
+  it('empties queue state and halts the runtime while a song is playing', async () => {
+    const { queue, playback, stopPlaybackRuntime } = buildQueueHarness();
 
-    playbackStore.isPlaying = true;
-    playbackStore.currentSong = makeSong({ path: '/music/current.flac' });
-    playbackStore.playQueue = [makeSong({ path: '/music/a.flac' })];
-    playbackStore.tempQueue = [makeSong({ path: '/music/b.flac' })];
+    playback.isPlaying = true;
+    playback.currentSong = makeSong({ path: '/music/current.flac' });
+    playback.playQueue = [makeSong({ path: '/music/a.flac' })];
+    playback.tempQueue = [makeSong({ path: '/music/b.flac' })];
 
-    await playerQueue.clearQueue();
+    await queue.clearQueue();
 
-    expect(playbackStore.playQueue).toEqual([]);
-    expect(playbackStore.tempQueue).toEqual([]);
-    expect(playbackStore.currentSong).toBeNull();
-    expect(playbackStore.isPlaying).toBe(false);
-    expect(playbackApi.pauseAudio).toHaveBeenCalledTimes(1);
-    expect(stopPlaybackRuntime).toHaveBeenCalledTimes(1);
+    expect(playback.playQueue).toEqual([]);
+    expect(playback.tempQueue).toEqual([]);
+    expect(playback.currentSong).toBeNull();
+    expect(playback.isPlaying).toBe(false);
+    expect(playbackApiBridge.pauseAudio).toHaveBeenCalledTimes(1); expect(stopPlaybackRuntime).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to library songs for previous navigation in shuffle mode', () => {
-    const played: string[] = [];
-    const playbackStore = usePlaybackStore();
-    const libraryStore = useLibraryStore();
-    const playerQueue = createPlayerQueue({
-      playSong: (song) => {
-        played.push(song.path);
-      },
-      stopPlaybackRuntime: vi.fn(),
-      showToast: vi.fn(),
-    });
+  it('resolves previous-track navigation from the library song list', () => {
+    const { queue, playback, library, playedPaths } = buildQueueHarness();
+    const [firstSong, secondSong] = [
+      makeSong({ path: '/music/first.flac', title: 'First' }),
+      makeSong({ path: '/music/second.flac', title: 'Second' }),
+    ];
 
-    const firstSong = makeSong({ path: '/music/first.flac', title: 'First' });
-    const secondSong = makeSong({ path: '/music/second.flac', title: 'Second' });
-    libraryStore.songList = [firstSong, secondSong];
-    playbackStore.playMode = 2;
-    playbackStore.currentSong = firstSong;
+    library.songList = [firstSong, secondSong];
+    playback.playMode = 2;
+    playback.currentSong = firstSong;
 
-    playerQueue.handleBeforePlay(secondSong);
-    playbackStore.currentSong = secondSong;
+    queue.handleBeforePlay(secondSong);
+    playback.currentSong = secondSong;
 
-    playerQueue.prevSong();
+    queue.prevSong();
 
-    expect(played).toEqual(['/music/first.flac']);
+    expect(playedPaths).toEqual(['/music/first.flac']);
   });
 
-  it('plays every candidate once before starting a new pseudo-random cycle', () => {
-    const played: string[] = [];
-    const playbackStore = usePlaybackStore();
-    const songs = Array.from({ length: 5 }, (_, index) => makeSong({
-      path: `/music/${index}.flac`,
-      title: `Song ${index}`,
-    }));
-    let playerQueue: ReturnType<typeof createPlayerQueue>;
+  it('visits every candidate once before starting the next pseudo-random cycle', () => {
+    const { queue, playback, playedPaths } = buildQueueHarness();
+    const songs = generateSongsTo(5);
 
-    playerQueue = createPlayerQueue({
-      playSong: (song) => {
-        playerQueue.handleBeforePlay(song);
-        playbackStore.currentSong = song;
-        played.push(song.path);
-      },
-      stopPlaybackRuntime: vi.fn(),
-      showToast: vi.fn(),
-    });
+    playback.playMode = 2;
+    playback.playQueue = songs;
+    playback.currentSong = songs[0];
 
-    playbackStore.playMode = 2;
-    playbackStore.playQueue = songs;
-    playbackStore.currentSong = songs[0];
+    for (let step = 0; step < songs.length - 1; step += 1) { queue.nextSong(); }
 
-    for (let index = 0; index < songs.length - 1; index += 1) {
-      playerQueue.nextSong();
+    expect(new Set(playedPaths).size).toBe(songs.length - 1);
+    expect(playedPaths).not.toContain(songs[0].path);
+
+    const lastPathOfFirstCycle = playedPaths.at(-1);
+    queue.nextSong();
+
+    expect(playedPaths).toHaveLength(songs.length);
+    expect(playedPaths.at(-1)).not.toBe(lastPathOfFirstCycle);
+  });
+
+  it('keeps backward and forward positions across pseudo-random jumps', () => {
+    const { queue, playback, playedPaths } = buildQueueHarness();
+    const songs = generateSongsTo(4);
+
+    playback.playMode = 2;
+    playback.playQueue = songs;
+    playback.currentSong = songs[0];
+
+    queue.nextSong();
+    const secondPath = playback.currentSong.path;
+    queue.nextSong();
+    const thirdPath = playback.currentSong.path;
+
+    queue.prevSong();
+    expect(playback.currentSong.path).toBe(secondPath);
+
+    queue.nextSong();
+    expect(playback.currentSong.path).toBe(thirdPath);
+
+    queue.prevSong();
+    expect(playback.currentSong.path).toBe(secondPath);
+    expect(playedPaths).toHaveLength(5);
+  });
+
+  it('retains only the most recent 256 history entries', () => {
+    const { queue, playback, library, playedPaths } = buildQueueHarness();
+    const songs = generateSongsTo(300);
+
+    library.songList = songs;
+    playback.playMode = 2;
+    playback.currentSong = songs[0];
+
+    for (let songIndex = 1; songIndex < songs.length; songIndex += 1) {
+      queue.handleBeforePlay(songs[songIndex]); playback.currentSong = songs[songIndex];
     }
 
-    expect(new Set(played).size).toBe(songs.length - 1);
-    expect(played).not.toContain(songs[0].path);
+    for (let step = 0; step < 256; step += 1) { queue.prevSong(); }
 
-    const lastPathInFirstCycle = played.at(-1);
-    playerQueue.nextSong();
-
-    expect(played).toHaveLength(songs.length);
-    expect(played.at(-1)).not.toBe(lastPathInFirstCycle);
-  });
-
-  it('keeps backward and forward history while using pseudo-random playback', () => {
-    const played: string[] = [];
-    const playbackStore = usePlaybackStore();
-    const songs = Array.from({ length: 4 }, (_, index) => makeSong({
-      path: `/music/${index}.flac`,
-      title: `Song ${index}`,
-    }));
-    let playerQueue: ReturnType<typeof createPlayerQueue>;
-
-    playerQueue = createPlayerQueue({
-      playSong: (song, options) => {
-        playerQueue.handleBeforePlay(song, options);
-        playbackStore.currentSong = song;
-        played.push(song.path);
-      },
-      stopPlaybackRuntime: vi.fn(),
-      showToast: vi.fn(),
-    });
-
-    playbackStore.playMode = 2;
-    playbackStore.playQueue = songs;
-    playbackStore.currentSong = songs[0];
-
-    playerQueue.nextSong();
-    const secondPath = playbackStore.currentSong.path;
-    playerQueue.nextSong();
-    const thirdPath = playbackStore.currentSong.path;
-
-    playerQueue.prevSong();
-    expect(playbackStore.currentSong.path).toBe(secondPath);
-
-    playerQueue.nextSong();
-    expect(playbackStore.currentSong.path).toBe(thirdPath);
-
-    playerQueue.prevSong();
-    expect(playbackStore.currentSong.path).toBe(secondPath);
-    expect(played).toHaveLength(5);
-  });
-
-  it('caps shuffle history to the most recent 256 entries', () => {
-    const played: string[] = [];
-    const playbackStore = usePlaybackStore();
-    const libraryStore = useLibraryStore();
-    const songs = Array.from({ length: 300 }, (_, index) =>
-      makeSong({
-        path: `/music/${index}.flac`,
-        title: `Song ${index}`,
-      }),
-    );
-    const playerQueue = createPlayerQueue({
-      playSong: (song) => {
-        played.push(song.path);
-        playbackStore.currentSong = song;
-      },
-      stopPlaybackRuntime: vi.fn(),
-      showToast: vi.fn(),
-    });
-
-    libraryStore.songList = songs;
-    playbackStore.playMode = 2;
-    playbackStore.currentSong = songs[0];
-
-    for (let index = 1; index < songs.length; index += 1) {
-      playerQueue.handleBeforePlay(songs[index]);
-      playbackStore.currentSong = songs[index];
-    }
-
-    for (let index = 0; index < 256; index += 1) {
-      playerQueue.prevSong();
-    }
-
-    expect(played).toHaveLength(256);
-    expect(played[0]).toBe('/music/298.flac');
-    expect(played[255]).toBe('/music/43.flac');
+    expect(playedPaths).toHaveLength(256);
+    expect(playedPaths[0]).toBe('/music/298.flac');
+    expect(playedPaths[255]).toBe('/music/43.flac');
   });
 });

@@ -5,58 +5,56 @@ import { usePlaybackStore } from './store';
 import { useUiStore } from '../../shared/stores/ui';
 
 const demoSong = {
-  path: '/music/demo.flac',
-  name: 'demo.flac',
-  title: 'Demo',
-  artist: 'Artist',
-  artist_names: ['Artist'],
-  effective_artist_names: ['Artist'],
-  album: 'Album',
-  album_artist: 'Artist',
-  album_key: 'Album::Artist',
-  is_various_artists_album: false,
-  collapse_artist_credits: false,
-  duration: 120,
+  path: '/music/demo.flac', name: 'demo.flac', title: 'Demo',
+  artist: 'Artist', artist_names: ['Artist'], effective_artist_names: ['Artist'],
+  album: 'Album', album_artist: 'Artist', album_key: 'Album::Artist',
+  is_various_artists_album: false, collapse_artist_credits: false, duration: 120,
 };
 
-describe('playback and ui stores', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
+describe('usePlaybackStore', () => {
+  beforeEach(() => { setActivePinia(createPinia()); });
+
+  it('persists transport and queue fields as plain writable state', () => {
+    const playback = usePlaybackStore();
+
+    playback.isPlaying = true;
+    playback.volume = 72;
+    playback.currentSong = demoSong;
+    playback.playQueue = [demoSong];
+
+    expect(playback.isPlaying).toBe(true);
+    expect(playback.volume).toBe(72);
+    expect(playback.currentSong).toEqual(demoSong);
+    expect(playback.playQueue).toEqual([demoSong]);
   });
 
-  it('stores playback state directly in the playback store', () => {
-    const playbackStore = usePlaybackStore();
+  it('boots with idle transport state and an empty queue', () => {
+    const playback = usePlaybackStore();
 
-    playbackStore.isPlaying = true;
-    playbackStore.volume = 72;
-    playbackStore.currentSong = demoSong;
-    playbackStore.playQueue = [demoSong];
+    expect(playback.isPlaying).toBe(false);
+    expect(playback.playQueue).toEqual([]);
+  });
+});
 
-    expect(playbackStore.isPlaying).toBe(true);
-    expect(playbackStore.volume).toBe(72);
-    expect(playbackStore.currentSong).toEqual(demoSong);
-    expect(playbackStore.playQueue).toEqual([demoSong]);
+describe('useUiStore', () => {
+  beforeEach(() => { setActivePinia(createPinia()); });
+
+  it('persists queue visibility, palette and mini-mode flags as plain writable state', () => {
+    const ui = useUiStore();
+
+    ui.showQueue = true;
+    ui.dominantColors = ['#111111', '#222222', '#333333', '#444444'];
+    ui.isMiniMode = true;
+
+    expect(ui.showQueue).toBe(true);
+    expect(ui.dominantColors).toEqual(['#111111', '#222222', '#333333', '#444444']);
+    expect(ui.isMiniMode).toBe(true);
   });
 
-  it('stores ui state directly in the ui store', () => {
-    const uiStore = useUiStore();
+  it('boots with the overlay panels closed', () => {
+    const ui = useUiStore();
 
-    uiStore.showQueue = true;
-    uiStore.dominantColors = ['#111111', '#222222', '#333333', '#444444'];
-    uiStore.isMiniMode = true;
-
-    expect(uiStore.showQueue).toBe(true);
-    expect(uiStore.dominantColors).toEqual(['#111111', '#222222', '#333333', '#444444']);
-    expect(uiStore.isMiniMode).toBe(true);
-  });
-
-  it('keeps playback and ui state scoped to their dedicated stores', () => {
-    const playbackStore = usePlaybackStore();
-    const uiStore = useUiStore();
-
-    expect(playbackStore.isPlaying).toBe(false);
-    expect(playbackStore.playQueue).toEqual([]);
-    expect(uiStore.showQueue).toBe(false);
-    expect(uiStore.showPlayerDetail).toBe(false);
+    expect(ui.showQueue).toBe(false);
+    expect(ui.showPlayerDetail).toBe(false);
   });
 });

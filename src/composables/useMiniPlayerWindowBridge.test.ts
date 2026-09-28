@@ -39,7 +39,42 @@ vi.mock('./useCoverCache', () => ({
   useCoverCache: vi.fn(),
 }));
 
-describe('mini player window bridge', () => {
+// 构造与 restoreMainWindowFromMiniMode 入参同形的夹具。
+function makeRestoreFixture() {
+  return {
+    isMiniMode: ref(true),
+    hideMiniPlayerWindow: vi.fn().mockResolvedValue(undefined),
+    mainWindow: {
+      unminimize: vi.fn().mockResolvedValue(undefined),
+      show: vi.fn().mockResolvedValue(undefined),
+      setFocus: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+}
+
+function spyWindowDispatch(): any {
+  return vi.spyOn((globalThis as any).window, 'dispatchEvent') as any;
+}
+
+function expectMainWindowRevealed(fixture: ReturnType<typeof makeRestoreFixture>) {
+  expect(fixture.isMiniMode.value).toBe(false);
+  expect(fixture.mainWindow.unminimize).toHaveBeenCalledTimes(1);
+  expect(fixture.mainWindow.show).toHaveBeenCalledTimes(1);
+  expect(fixture.mainWindow.setFocus).toHaveBeenCalledTimes(1);
+}
+
+function expectResizeRelayedTwice(spy: any) {
+  expect(spy).toHaveBeenCalledTimes(2);
+  expect(spy.mock.calls.map((call: any[]) => call[0].type)).toEqual(['resize', 'resize']);
+}
+
+async function restoreWithinFakeTimers(options: Parameters<typeof restoreMainWindowFromMiniMode>[0]) {
+  const pending = restoreMainWindowFromMiniMode(options);
+  await vi.advanceTimersByTimeAsync(500);
+  await pending;
+}
+
+describe('restoreMainWindowFromMiniMode', () => {
   beforeAll(() => {
     (globalThis as any).window = {
       dispatchEvent: () => false,
@@ -54,76 +89,37 @@ describe('mini player window bridge', () => {
     vi.useRealTimers();
   });
 
-  it('restores the main window from mini mode before focusing it', async () => {
+  it('dismisses the mini overlay before unminimizing and focusing the main window', async () => {
     vi.useFakeTimers();
-    const dispatchSpy = vi.spyOn((globalThis as any).window, 'dispatchEvent') as any;
+    const resizeSpy = spyWindowDispatch();
+    const fixture = makeRestoreFixture();
 
-    const isMiniMode = ref(true);
-    const hideMiniPlayerWindow = vi.fn().mockResolvedValue(undefined);
-    const mainWindow = {
-      unminimize: vi.fn().mockResolvedValue(undefined),
-      show: vi.fn().mockResolvedValue(undefined),
-      setFocus: vi.fn().mockResolvedValue(undefined),
-    };
+    await restoreWithinFakeTimers(fixture);
 
-    const restorePromise = restoreMainWindowFromMiniMode({
-      isMiniMode,
-      hideMiniPlayerWindow,
-      mainWindow,
-    });
-    await vi.advanceTimersByTimeAsync(500);
-    await restorePromise;
-
-    expect(isMiniMode.value).toBe(false);
-    expect(hideMiniPlayerWindow).toHaveBeenCalledTimes(1);
-    expect(mainWindow.unminimize).toHaveBeenCalledTimes(1);
-    expect(mainWindow.show).toHaveBeenCalledTimes(1);
-    expect(mainWindow.setFocus).toHaveBeenCalledTimes(1);
+    expectMainWindowRevealed(fixture);
+    expect(fixture.hideMiniPlayerWindow).toHaveBeenCalledTimes(1);
 
     vi.runAllTimers();
-
-    expect(dispatchSpy).toHaveBeenCalledTimes(2);
-    expect(dispatchSpy.mock.calls[0][0].type).toBe('resize');
-    expect(dispatchSpy.mock.calls[1][0].type).toBe('resize');
+    expectResizeRelayedTwice(resizeSpy);
 
     vi.useRealTimers();
-    dispatchSpy.mockRestore();
+    resizeSpy.mockRestore();
   });
 
-  it('can restore the main window while keeping the mini player visible', async () => {
+  it('leaves the mini overlay untouched when keepMiniPlayerVisible is set', async () => {
     vi.useFakeTimers();
-    const dispatchSpy = vi.spyOn((globalThis as any).window, 'dispatchEvent') as any;
+    const resizeSpy = spyWindowDispatch();
+    const fixture = makeRestoreFixture();
 
-    const isMiniMode = ref(true);
-    const hideMiniPlayerWindow = vi.fn().mockResolvedValue(undefined);
-    const mainWindow = {
-      unminimize: vi.fn().mockResolvedValue(undefined),
-      show: vi.fn().mockResolvedValue(undefined),
-      setFocus: vi.fn().mockResolvedValue(undefined),
-    };
+    await restoreWithinFakeTimers({ ...fixture, keepMiniPlayerVisible: true });
 
-    const restorePromise = restoreMainWindowFromMiniMode({
-      isMiniMode,
-      hideMiniPlayerWindow,
-      mainWindow,
-      keepMiniPlayerVisible: true,
-    });
-    await vi.advanceTimersByTimeAsync(500);
-    await restorePromise;
-
-    expect(isMiniMode.value).toBe(false);
-    expect(hideMiniPlayerWindow).not.toHaveBeenCalled();
-    expect(mainWindow.unminimize).toHaveBeenCalledTimes(1);
-    expect(mainWindow.show).toHaveBeenCalledTimes(1);
-    expect(mainWindow.setFocus).toHaveBeenCalledTimes(1);
+    expectMainWindowRevealed(fixture);
+    expect(fixture.hideMiniPlayerWindow).not.toHaveBeenCalled();
 
     vi.runAllTimers();
-
-    expect(dispatchSpy).toHaveBeenCalledTimes(2);
-    expect(dispatchSpy.mock.calls[0][0].type).toBe('resize');
-    expect(dispatchSpy.mock.calls[1][0].type).toBe('resize');
+    expectResizeRelayedTwice(resizeSpy);
 
     vi.useRealTimers();
-    dispatchSpy.mockRestore();
+    resizeSpy.mockRestore();
   });
 });

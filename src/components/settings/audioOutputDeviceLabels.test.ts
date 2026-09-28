@@ -1,12 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { it, describe, expect } from 'vitest';
 
-import {
-  buildAudioOutputDeviceOptions,
-  getSelectedOutputDeviceLabel,
-} from './audioOutputDeviceLabels';
-import type { AudioOutputStatus } from '../../services/tauri/contracts';
+import type { AudioOutputStatus as OutputStatusContract } from '../../services/tauri/contracts';
+import { getSelectedOutputDeviceLabel as getSelectedLabel, buildAudioOutputDeviceOptions as buildDeviceOptions } from './audioOutputDeviceLabels';
 
-const systemDefaultStatus: AudioOutputStatus = {
+// 行为规格（逐字冻结）：系统默认状态的快照输入。
+const systemDefaultStatus: OutputStatusContract = {
   selected_device_id: null,
   active_device_name: '扬声器 (CX31993 HIFI Audio)',
   follows_system_default: true,
@@ -15,12 +13,12 @@ const systemDefaultStatus: AudioOutputStatus = {
   fallback_reason: null,
 };
 
-describe('audio output device labels', () => {
-  it('keeps system default as the selected policy', () => {
-    const options = buildAudioOutputDeviceOptions([
+describe('音频输出设备标签', () => {
+  it('跟随系统默认策略时，选中项标签落回内置的系统默认设备', () => {
+    const options = buildDeviceOptions([
       { id: '扬声器 (CX31993 HIFI Audio)', name: '扬声器 (CX31993 HIFI Audio)' },
     ]);
 
-    expect(getSelectedOutputDeviceLabel(options, '', systemDefaultStatus)).toBe('系统默认');
+    expect(getSelectedLabel(options, '', systemDefaultStatus)).toBe('系统默认');
   });
 });

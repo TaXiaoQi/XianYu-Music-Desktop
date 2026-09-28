@@ -1,227 +1,116 @@
-import { watch, type Ref } from 'vue';
-import type {
-  LocationQuery,
-  LocationQueryRaw,
-  RouteLocationNormalizedLoaded,
-  Router,
-} from 'vue-router';
-import type { FolderNode } from '../types';
-import { normalizePath } from '../utils/path';
+import { watch } from 'vue';
+import type { Ref } from 'vue';
+import type { LocationQueryRaw, RouteLocationNormalizedLoaded, Router } from 'vue-router';
+import type { FolderNode as FolderNodeShape } from '../types';
+import {
+  HOME_URL_PARAMS,
+  IDLE_HOME_VIEW,
+  buildHomeQueryFromState,
+  carriesHomeParams,
+  readRoutedHomeState,
+  sameControlledHomeQuery,
+} from './homeRouteQueryState';
+import { findDeepestOwningRoot, toRootPaths } from './libraryRootOwnership';
 
-type SyncedHomeViewMode =
-  | 'all'
-  | 'folder'
-  | 'artist'
-  | 'album'
-  | 'playlist'
-  | 'statistics'
-  | 'leaderboard'
-  | 'dailyRecommend'
-  | 'topLists';
+const EMPTY_FILTER = '';
 
-interface HomeRouteState {
-  viewMode: SyncedHomeViewMode;
-  filter: string;
-  folder: string;
+interface HomeRouteSyncOptions {
+  route: RouteLocationNormalizedLoaded; router: Router;
+  currentViewMode: Ref<string>; filterCondition: Ref<string>; currentFolderFilter: Ref<string>;
+  activeRootPath: Ref<string | null>; folderTree: Ref<FolderNodeShape[]>; searchQuery: Ref<string>;
 }
 
-interface UseHomeRouteSyncOptions {
-  route: RouteLocationNormalizedLoaded;
-  router: Router;
-  currentViewMode: Ref<string>;
-  filterCondition: Ref<string>;
-  currentFolderFilter: Ref<string>;
-  activeRootPath: Ref<string | null>;
-  folderTree: Ref<FolderNode[]>;
-  searchQuery: Ref<string>;
-}
-
-const HOME_QUERY_KEYS = ['view', 'filter', 'folder'] as const;
-
-const readQueryString = (value: LocationQuery[string]) => {
-  if (Array.isArray(value)) {
-    return typeof value[0] === 'string' ? value[0] : '';
-  }
-
-  return typeof value === 'string' ? value : '';
+/** 收藏/最近播放等独立路由映射到的共享导航模式 */
+const COLLECTION_ROUTE_MODES: Record<string, 'favorites' | 'recent'> = {
+  '/favorites': 'favorites',
+  '/recent': 'recent',
 };
 
-const hasExplicitHomeQuery = (query: LocationQuery) =>
-  HOME_QUERY_KEYS.some((key) => query[key] !== undefined);
+/** 触发入站同步的路由片段 */
+const inboundRouteSources = (route: RouteLocationNormalizedLoaded) => [
+  () => route.path, () => route.query.view, () => route.query.filter, () => route.query.folder,
+];
 
-const parseHomeRouteState = (query: LocationQuery): HomeRouteState => {
-  const view = readQueryString(query.view);
-  const filter = readQueryString(query.filter);
-  const folder = readQueryString(query.folder);
+/**
+ * 首页路由与内部视图状态的双向同步：
+ * 入站方向把路由翻译成状态，出站方向把状态回写成路由。
+ */
+export function useHomeRouteSync(options: HomeRouteSyncOptions) {
+  const { route, router, currentViewMode, filterCondition, currentFolderFilter, activeRootPath, folderTree } =
+    options;
 
-  switch (view) {
-    case 'all':
-      return { viewMode: 'all', filter: '', folder: '' };
-    case 'artist':
-    case 'album':
-    case 'playlist':
-      if (!filter) {
-        return { viewMode: 'statistics', filter: '', folder: '' };
-      }
-      return { viewMode: view, filter, folder: '' };
-    case 'folder':
-      return { viewMode: 'folder', filter: '', folder };
-    case 'statistics':
-      return { viewMode: 'statistics', filter: '', folder: '' };
-    case 'leaderboard':
-      return { viewMode: 'leaderboard', filter: '', folder: '' };
-    case 'dailyRecommend':
-      return { viewMode: 'dailyRecommend', filter: '', folder: '' };
-    case 'topLists':
-      return { viewMode: 'topLists', filter: '', folder: '' };
-    default:
-      return { viewMode: 'statistics', filter: '', folder: '' };
-  }
-};
-
-const findOwningRootPath = (nodes: FolderNode[], targetPath: string) => {
-  const normalizedTarget = normalizePath(targetPath);
-  const matchedRoots = nodes
-    .map((node) => node.path)
-    .filter((rootPath) => {
-      const normalizedRoot = normalizePath(rootPath);
-      return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}/`);
-    })
-    .sort((left, right) => normalizePath(right).length - normalizePath(left).length);
-
-  return matchedRoots[0] || null;
-};
-
-const buildHomeRouteQuery = (
-  currentViewMode: string,
-  filterCondition: string,
-  currentFolderFilter: string,
-): LocationQueryRaw => {
-  switch (currentViewMode) {
-    case 'all':
-      return { view: 'all' };
-    case 'artist':
-    case 'album':
-    case 'playlist':
-      return filterCondition ? { view: currentViewMode, filter: filterCondition } : {};
-    case 'statistics':
-      return {};
-    case 'leaderboard':
-      return { view: 'leaderboard' };
-    case 'dailyRecommend':
-      return { view: 'dailyRecommend' };
-    case 'topLists':
-      return { view: 'topLists' };
-    case 'folder':
-      return currentFolderFilter ? { view: 'folder', folder: currentFolderFilter } : { view: 'folder' };
-    default:
-      return {};
-  }
-};
-
-const getComparableHomeQuery = (query: LocationQuery | LocationQueryRaw) => ({
-  view: readQueryString(query.view as LocationQuery[string]),
-  filter: readQueryString(query.filter as LocationQuery[string]),
-  folder: readQueryString(query.folder as LocationQuery[string]),
-});
-
-export function useHomeRouteSync({
-  route,
-  router,
-  currentViewMode,
-  filterCondition,
-  currentFolderFilter,
-  activeRootPath,
-  folderTree,
-}: UseHomeRouteSyncOptions) {
-  const resetToDefaultHomeState = () => {
-    currentViewMode.value = 'statistics';
-    filterCondition.value = '';
+  const clearFilterCondition = () => {
+    filterCondition.value = EMPTY_FILTER;
   };
 
-  const applyCollectionRouteState = (viewMode: 'favorites' | 'recent') => {
-    currentViewMode.value = viewMode;
-    filterCondition.value = '';
+  /** folder 视图入站时：补全缺省目录并定位其归属根 */
+  const adoptFolderRouteState = (routedFolder: string) => {
+    const targetFolder =
+      routedFolder || currentFolderFilter.value || folderTree.value[0]?.path || '';
+
+    if (targetFolder) {
+      currentFolderFilter.value = targetFolder;
+    }
+
+    const owningRoot = findDeepestOwningRoot(toRootPaths(folderTree.value), targetFolder);
+    if (owningRoot) {
+      activeRootPath.value = owningRoot;
+    }
   };
 
-  watch(
-    [() => route.path, () => route.query.view, () => route.query.filter, () => route.query.folder],
-    ([path]) => {
-      if (path === '/favorites') {
-        applyCollectionRouteState('favorites');
-        return;
+  // 入站同步：路由变化 → 首页内部状态
+  const applyInboundState = () => {
+    const collectionMode = COLLECTION_ROUTE_MODES[route.path];
+    if (collectionMode) {
+      currentViewMode.value = collectionMode;
+      clearFilterCondition();
+      return;
+    }
+
+    if (route.path !== '/') {
+      return;
+    }
+
+    if (!carriesHomeParams(route.query)) {
+      currentViewMode.value = IDLE_HOME_VIEW;
+      clearFilterCondition();
+      return;
+    }
+
+    const inbound = readRoutedHomeState(route.query);
+    currentViewMode.value = inbound.viewMode;
+    filterCondition.value = inbound.filter;
+
+    if (inbound.viewMode === 'folder') {
+      adoptFolderRouteState(inbound.folder);
+    }
+  };
+
+  /** 出站同步：首页状态 → 路由（受控参数实际变化时才 replace） */
+  const pushStateIntoRoute = () => {
+    if (route.path !== '/') {
+      return;
+    }
+
+    const passthroughQuery: LocationQueryRaw = {};
+    for (const [key, value] of Object.entries(route.query)) {
+      if (!(HOME_URL_PARAMS as readonly string[]).includes(key)) {
+        passthroughQuery[key] = value;
       }
+    }
 
-      if (path === '/recent') {
-        applyCollectionRouteState('recent');
-        return;
-      }
+    const outgoingQuery: LocationQueryRaw = {
+      ...passthroughQuery,
+      ...buildHomeQueryFromState(currentViewMode.value, filterCondition.value, currentFolderFilter.value),
+    };
 
-      if (path !== '/') {
-        return;
-      }
+    if (sameControlledHomeQuery(route.query, outgoingQuery)) {
+      return;
+    }
 
-      if (!hasExplicitHomeQuery(route.query)) {
-        resetToDefaultHomeState();
-        return;
-      }
+    void router.replace({ path: '/', query: outgoingQuery });
+  };
 
-      const nextState = parseHomeRouteState(route.query);
-      currentViewMode.value = nextState.viewMode;
-      filterCondition.value = nextState.filter;
-
-      if (nextState.viewMode === 'folder') {
-        const resolvedFolder =
-          nextState.folder ||
-          currentFolderFilter.value ||
-          folderTree.value[0]?.path ||
-          '';
-
-        if (resolvedFolder) {
-          currentFolderFilter.value = resolvedFolder;
-        }
-
-        const rootPath = findOwningRootPath(folderTree.value, resolvedFolder);
-        if (rootPath) {
-          activeRootPath.value = rootPath;
-        }
-      }
-    },
-    { immediate: true },
-  );
-
-  watch(
-    [() => route.path, currentViewMode, filterCondition, currentFolderFilter],
-    ([path]) => {
-      if (path !== '/') {
-        return;
-      }
-
-      const baseQuery: LocationQueryRaw = { ...route.query };
-      for (const key of HOME_QUERY_KEYS) {
-        delete baseQuery[key];
-      }
-
-      const nextQuery = {
-        ...baseQuery,
-        ...buildHomeRouteQuery(
-          currentViewMode.value,
-          filterCondition.value,
-          currentFolderFilter.value,
-        ),
-      };
-
-      const currentComparable = getComparableHomeQuery(route.query);
-      const nextComparable = getComparableHomeQuery(nextQuery);
-      if (JSON.stringify(currentComparable) === JSON.stringify(nextComparable)) {
-        return;
-      }
-
-      void router.replace({
-        path: '/',
-        query: nextQuery,
-      });
-    },
-    { immediate: true },
-  );
+  watch(inboundRouteSources(route), applyInboundState, { immediate: true });
+  watch([() => route.path, currentViewMode, filterCondition, currentFolderFilter], pushStateIntoRoute, { immediate: true });
 }

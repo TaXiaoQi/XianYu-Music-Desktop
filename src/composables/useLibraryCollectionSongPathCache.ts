@@ -1,143 +1,57 @@
-import { ref } from 'vue';
-
-import type { HistoryItem } from '../types';
-import type { LocalSortMode } from '../services/storage/playerStorage';
 import { libraryApi } from '../services/tauri/libraryApi';
-import { MemoryCache } from '../utils/MemoryCache';
+import { createSongPathChannel, historyFingerprint } from './libraryPathCacheKit';
+import type { FavoritePathDemand, RecentPathDemand } from './libraryPathCacheKit';
 
-type BackendLocalSortMode = Exclude<LocalSortMode, 'custom'>;
-type FavoriteDetailFilter = { type: 'artist' | 'album'; name: string } | null;
-
-const COLLECTION_VIEW_PATH_CACHE_TTL_MS = 5 * 60 * 1000;
-const COLLECTION_VIEW_PATH_CACHE_MAX_ENTRIES = 96;
-
-const collectionViewPathCache = new MemoryCache<string, string[]>({
-  maxEntries: COLLECTION_VIEW_PATH_CACHE_MAX_ENTRIES,
-  ttlMs: COLLECTION_VIEW_PATH_CACHE_TTL_MS,
+// 收藏/最近播放共用一条检索通道：模块级单例，5 分钟 TTL，容量取默认 96 条。
+const collectionChannel = createSongPathChannel({
+  ttlMs: 5 * 60 * 1000,
 });
 
-const inFlightRequests = new Map<string, Promise<string[]>>();
-const cacheVersion = ref(0);
+const FIELD_MARK = '\u0001';
+const PATH_MARK = '\u0002';
 
-const serializeHistoryItems = (items: HistoryItem[]) =>
-  items
-    .map(item => `${item.path}\u0002${item.playedAt}`)
-    .join('\u0003');
-
-const serializeFavoriteDetailFilter = (filter: FavoriteDetailFilter) =>
-  filter ? `${filter.type}\u0001${filter.name}` : '';
-
-const makeFavoriteCacheKey = (
-  favoritePaths: string[],
-  query: string,
-  sortMode: BackendLocalSortMode,
-  detailFilter: FavoriteDetailFilter,
-) => [
-  'favorites',
-  sortMode,
-  query,
-  serializeFavoriteDetailFilter(detailFilter),
-  favoritePaths.join('\u0002'),
-].join('\u0001');
-
-const makeRecentCacheKey = (
-  recentSongs: HistoryItem[],
-  query: string,
-  sortMode: BackendLocalSortMode,
-) => [
-  'recent',
-  sortMode,
-  query,
-  serializeHistoryItems(recentSongs),
-].join('\u0001');
-
-const loadWithCache = async (key: string, loader: () => Promise<string[]>) => {
-  const cached = collectionViewPathCache.get(key);
-  if (cached) {
-    return cached;
-  }
-
-  const inFlight = inFlightRequests.get(key);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const request = loader()
-    .then((paths) => {
-      collectionViewPathCache.set(key, paths);
-      cacheVersion.value += 1;
-      return paths;
-    })
-    .finally(() => {
-      inFlightRequests.delete(key);
-    });
-
-  inFlightRequests.set(key, request);
-  return request;
-};
-
-export function useLibraryCollectionSongPathCache() {
-  const loadFavoriteSongPaths = async ({
-    favoritePaths,
-    query = '',
-    sortMode,
-    detailFilter = null,
-  }: {
-    favoritePaths: string[];
-    query?: string;
-    sortMode: BackendLocalSortMode;
-    detailFilter?: FavoriteDetailFilter;
-  }) => {
-    if (favoritePaths.length === 0) {
-      return [];
+export const useLibraryCollectionSongPathCache = () => {
+  const fetchFavoritePaths = async (demand: FavoritePathDemand) => {
+    const { favoritePaths, query = '', sortMode, detailFilter = null } = demand;
+    if (favoritePaths.length < 1) {
+      return [] as string[];
     }
 
-    const cacheKey = makeFavoriteCacheKey(favoritePaths, query, sortMode, detailFilter);
-    return loadWithCache(cacheKey, () =>
+    const faceSegment = detailFilter
+      ? `${detailFilter.type}${FIELD_MARK}${detailFilter.name}`
+      : '';
+    const lookupKey = ['favorites', sortMode, query, faceSegment, favoritePaths.join(PATH_MARK)]
+      .join(FIELD_MARK);
+
+    return collectionChannel.enqueue(lookupKey, () =>
       libraryApi.getFavoriteSongPathsView(
-        favoritePaths,
-        query,
-        sortMode,
-        detailFilter?.type,
-        detailFilter?.name,
+        favoritePaths, query, sortMode,
+        detailFilter?.type, detailFilter?.name,
       ),
     );
   };
 
-  const loadRecentSongPaths = async ({
-    recentSongs,
-    query = '',
-    sortMode,
-  }: {
-    recentSongs: HistoryItem[];
-    query?: string;
-    sortMode: BackendLocalSortMode;
-  }) => {
-    if (recentSongs.length === 0) {
-      return [];
+  const fetchRecentPaths = async (demand: RecentPathDemand) => {
+    const { recentSongs, query = '', sortMode } = demand;
+    if (recentSongs.length < 1) {
+      return [] as string[];
     }
 
-    const cacheKey = makeRecentCacheKey(recentSongs, query, sortMode);
-    return loadWithCache(cacheKey, () =>
+    const lookupKey = ['recent', sortMode, query, historyFingerprint(recentSongs)]
+      .join(FIELD_MARK);
+
+    return collectionChannel.enqueue(lookupKey, () =>
       libraryApi.getRecentSongPathsView(
-        recentSongs.map(item => ({
-          songPath: item.path,
-          playedAt: item.playedAt,
-        })),
-        query,
-        sortMode,
+        recentSongs.map(entry => ({ songPath: entry.path, playedAt: entry.playedAt })),
+        query, sortMode,
       ),
     );
   };
 
-  return {
-    loadFavoriteSongPaths,
-    loadRecentSongPaths,
-    clearLibraryCollectionSongPathCache: () => {
-      collectionViewPathCache.clear();
-      inFlightRequests.clear();
-      cacheVersion.value += 1;
-    },
-    libraryCollectionSongPathCacheVersion: cacheVersion,
+  const api = {
+    loadFavoriteSongPaths: fetchFavoritePaths, loadRecentSongPaths: fetchRecentPaths,
+    clearLibraryCollectionSongPathCache: () => collectionChannel.reset(),
+    libraryCollectionSongPathCacheVersion: collectionChannel.changes,
   };
-}
+  return api;
+};

@@ -1,27 +1,26 @@
-import { ref, watch, type Ref } from 'vue';
+import { ref, watch } from 'vue';
+import type { Ref } from 'vue';
 
-export function useScopedBatchSelection(scopeKey: Ref<string>) {
-  const isBatchMode = ref(false);
-  const selectedPaths = ref<Set<string>>(new Set());
+const SYNC_WATCH_OPTIONS = { flush: 'sync' } as const;
 
-  const clearSelection = () => {
-    selectedPaths.value = new Set();
+export function useScopedBatchSelection(activeScope: Ref<string>) {
+  const batchModeEnabled = ref(false);
+  const markedPaths = ref<Set<string>>(new Set<string>());
+
+  const resetMarkedPaths = () => {
+    markedPaths.value = new Set<string>();
   };
 
-  watch(isBatchMode, value => {
-    if (!value) {
-      clearSelection();
+  watch(batchModeEnabled, isEnabled => {
+    if (!isEnabled) {
+      resetMarkedPaths();
     }
-  }, { flush: 'sync' });
+  }, SYNC_WATCH_OPTIONS);
 
-  watch(scopeKey, () => {
-    isBatchMode.value = false;
-    clearSelection();
-  }, { flush: 'sync' });
+  watch(activeScope, () => {
+    batchModeEnabled.value = false;
+    resetMarkedPaths();
+  }, SYNC_WATCH_OPTIONS);
 
-  return {
-    isBatchMode,
-    selectedPaths,
-    clearSelection,
-  };
+  return { isBatchMode: batchModeEnabled, selectedPaths: markedPaths, clearSelection: resetMarkedPaths };
 }

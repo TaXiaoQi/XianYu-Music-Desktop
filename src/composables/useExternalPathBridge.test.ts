@@ -2,27 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { showMainWindowAfterStartup } from './useExternalPathBridge';
 
-describe('startup window reveal', () => {
-  it('waits for theme material sync before showing and refreshes material after focus', async () => {
-    const calls: string[] = [];
-    const appWindow = {
-      show: vi.fn(async () => {
-        calls.push('show');
-      }),
-      setFocus: vi.fn(async () => {
-        calls.push('focus');
-      }),
+describe('startup window reveal 启动窗口揭示', () => {
+  it('reveals the window after material sync and refreshes material on focus', async () => {
+    const callOrder: string[] = [];
+    const markStep = (step: string) => {
+      callOrder.push(step);
+    };
+    const windowStub = {
+      show: vi.fn(async () => markStep('show')),
+      setFocus: vi.fn(async () => markStep('focus')),
     };
 
-    await showMainWindowAfterStartup(appWindow, {
-      beforeShow: async () => {
-        calls.push('before');
-      },
-      afterShow: async () => {
-        calls.push('after');
-      },
+    await showMainWindowAfterStartup(windowStub, {
+      beforeShow: async () => markStep('before'),
+      afterShow: async () => markStep('after'),
     });
 
-    expect(calls).toEqual(['before', 'show', 'focus', 'after']);
+    expect(callOrder).toEqual(['before', 'show', 'focus', 'after']);
   });
 });

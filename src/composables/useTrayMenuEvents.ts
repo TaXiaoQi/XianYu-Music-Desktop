@@ -1,7 +1,5 @@
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
-import { windowApi } from '../services/tauri/windowApi';
-import { appApi } from '../services/tauri/appApi';
-import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { storeToRefs } from 'pinia';
@@ -26,174 +24,177 @@ import {
   type TrayMenuAction,
   type TrayMenuStatePayload,
 } from '../features/tray/actions';
+import { windowApi } from '../services/tauri/windowApi';
+import { appApi } from '../services/tauri/appApi';
 
-interface TrayMenuOpenPayload {
+interface TrayMenuAnchor {
   x: number;
   y: number;
 }
 
-let trayMenuWindowPromise: Promise<WebviewWindow> | null = null;
-let isTrayMenuReady = false;
-let trayMenuReadyPromise: Promise<void> | null = null;
-let resolveTrayMenuReady: (() => void) | null = null;
-let isTrayMenuSizeApplied = false;
-let trayMenuSizePromise: Promise<void> | null = null;
-
-const TRAY_MENU_PREWARM_DELAY_MS = 600;
-
-async function getTrayMenuWindow() {
-  return WebviewWindow.getByLabel(TRAY_MENU_WINDOW_LABEL);
+interface TrayWindowLease {
+  creation: Promise<WebviewWindow> | null;
+  announced: boolean;
+  readyGate: Promise<void> | null;
+  readyRelease: (() => void) | null;
+  metricsApplied: boolean;
+  metricsJob: Promise<void> | null;
 }
 
-async function ensureTrayMenuWindow() {
-  const existing = await getTrayMenuWindow();
+const lease: TrayWindowLease = {
+  creation: null,
+  announced: false,
+  readyGate: null,
+  readyRelease: null,
+  metricsApplied: false,
+  metricsJob: null,
+};
+
+const WARMUP_DELAY_MS = 600;
+const READY_GATE_TIMEOUT_MS = 600;
+const CURSOR_NUDGE_X = 12;
+const CURSOR_GAP_Y = 10;
+
+const findTrayWindow = async () => WebviewWindow.getByLabel(TRAY_MENU_WINDOW_LABEL);
+
+const resetLease = () => {
+  lease.creation = null;
+  lease.announced = false;
+  lease.readyGate = null;
+  lease.readyRelease = null;
+  lease.metricsApplied = false;
+  lease.metricsJob = null;
+};
+
+const openTrayWindow = async (): Promise<WebviewWindow> => {
+  const existing = await findTrayWindow();
   if (existing) return existing;
 
-  if (!trayMenuWindowPromise) {
-    isTrayMenuReady = false;
-    isTrayMenuSizeApplied = false;
-    trayMenuSizePromise = null;
-    trayMenuReadyPromise = null;
-    resolveTrayMenuReady = null;
-    const windowInstance = new WebviewWindow(TRAY_MENU_WINDOW_LABEL, {
-      url: '/',
-      title: 'XianYu Music Tray Menu',
-      width: TRAY_MENU_WINDOW_WIDTH,
-      height: TRAY_MENU_WINDOW_HEIGHT,
-      minWidth: TRAY_MENU_WINDOW_WIDTH,
-      minHeight: TRAY_MENU_WINDOW_HEIGHT,
-      maxWidth: TRAY_MENU_WINDOW_WIDTH,
-      maxHeight: TRAY_MENU_WINDOW_HEIGHT,
-      visible: false,
-      decorations: false,
-      transparent: true,
-      shadow: false,
-      resizable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
-      focus: false,
-      focusable: true,
-      center: false,
-    });
-
-    trayMenuWindowPromise = new Promise<WebviewWindow>((resolve, reject) => {
-      let settled = false;
-
-      void windowInstance.once('tauri://created', () => {
-        if (settled) return;
-        settled = true;
-        trayMenuWindowPromise = null;
-        resolve(windowInstance);
-      });
-
-      void windowInstance.once('tauri://error', (event) => {
-        if (settled) return;
-        settled = true;
-        trayMenuWindowPromise = null;
-        reject(event.payload);
-      });
-    });
+  if (lease.creation) {
+    return lease.creation;
   }
 
-  return trayMenuWindowPromise;
-}
+  lease.announced = false;
+  lease.metricsApplied = false;
+  lease.metricsJob = null;
+  lease.readyGate = null;
+  lease.readyRelease = null;
 
-function markTrayMenuReady() {
-  isTrayMenuReady = true;
-  resolveTrayMenuReady?.();
-  resolveTrayMenuReady = null;
-  trayMenuReadyPromise = null;
-}
+  const candidate = new WebviewWindow(TRAY_MENU_WINDOW_LABEL, {
+    url: '/',
+    title: 'XianYu Music Tray Menu',
+    width: TRAY_MENU_WINDOW_WIDTH, height: TRAY_MENU_WINDOW_HEIGHT,
+    minWidth: TRAY_MENU_WINDOW_WIDTH, minHeight: TRAY_MENU_WINDOW_HEIGHT,
+    maxWidth: TRAY_MENU_WINDOW_WIDTH, maxHeight: TRAY_MENU_WINDOW_HEIGHT,
+    visible: false, decorations: false, transparent: true, shadow: false,
+    resizable: false, skipTaskbar: true, alwaysOnTop: true,
+    focus: false, focusable: true, center: false,
+  });
 
-function resetTrayMenuWindowState() {
-  trayMenuWindowPromise = null;
-  isTrayMenuReady = false;
-  trayMenuReadyPromise = null;
-  resolveTrayMenuReady = null;
-  isTrayMenuSizeApplied = false;
-  trayMenuSizePromise = null;
-}
+  let settled = false;
+  const conclude = (finish: () => void) => {
+    if (settled) return;
+    settled = true;
+    lease.creation = null;
+    finish();
+  };
 
-function waitForTrayMenuReady(timeoutMs = 600) {
-  if (isTrayMenuReady) {
-    return Promise.resolve();
-  }
+  lease.creation = new Promise<WebviewWindow>((resolve, reject) => {
+    void candidate.once('tauri://created', () => {
+      conclude(() => resolve(candidate));
+    });
 
-  if (!trayMenuReadyPromise) {
-    trayMenuReadyPromise = new Promise<void>((resolve) => {
-      resolveTrayMenuReady = resolve;
+    void candidate.once('tauri://error', (event) => {
+      conclude(() => reject(event.payload));
+    });
+  });
+
+  return lease.creation;
+};
+
+const announceTrayReady = () => {
+  lease.announced = true;
+  lease.readyRelease?.();
+  lease.readyRelease = null;
+  lease.readyGate = null;
+};
+
+const awaitTrayReady = (timeoutMs = READY_GATE_TIMEOUT_MS) => {
+  if (lease.announced) return Promise.resolve();
+
+  if (!lease.readyGate) {
+    lease.readyGate = new Promise<void>((resolve) => {
+      lease.readyRelease = resolve;
       window.setTimeout(resolve, timeoutMs);
     });
   }
 
-  return trayMenuReadyPromise;
-}
+  return lease.readyGate;
+};
 
-async function ensureTrayMenuSize(targetWindow: WebviewWindow) {
-  if (isTrayMenuSizeApplied) {
-    return;
-  }
+const applyTrayMetrics = async (target: WebviewWindow) => {
+  if (lease.metricsApplied) return;
+  if (lease.metricsJob) return lease.metricsJob;
 
-  if (trayMenuSizePromise) {
-    return trayMenuSizePromise;
-  }
-
-  const size = new LogicalSize(TRAY_MENU_WINDOW_WIDTH, TRAY_MENU_WINDOW_HEIGHT);
-  trayMenuSizePromise = (async () => {
-    await targetWindow.setMinSize(size);
-    await targetWindow.setMaxSize(size);
-    await targetWindow.setSize(size);
-    isTrayMenuSizeApplied = true;
+  const bounds = new LogicalSize(TRAY_MENU_WINDOW_WIDTH, TRAY_MENU_WINDOW_HEIGHT);
+  lease.metricsJob = (async () => {
+    for (const resize of [target.setMinSize, target.setMaxSize, target.setSize]) {
+      await resize.call(target, bounds);
+    }
+    lease.metricsApplied = true;
   })().finally(() => {
-    trayMenuSizePromise = null;
+    lease.metricsJob = null;
   });
 
-  return trayMenuSizePromise;
-}
+  return lease.metricsJob;
+};
 
-async function resolveTrayMenuPosition(payload: TrayMenuOpenPayload): Promise<LogicalPosition> {
+const clampWithin = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
+
+const resolveTrayMenuPosition = async (anchor: TrayMenuAnchor): Promise<LogicalPosition> => {
   const monitors = await availableMonitors();
-  const selectedMonitor = monitors.find((monitor) => {
-    const { position, size } = monitor.workArea;
-    return payload.x >= position.x
-      && payload.x <= position.x + size.width
-      && payload.y >= position.y
-      && payload.y <= position.y + size.height;
+  const host = monitors.find((monitor) => {
+    const area = monitor.workArea;
+    return anchor.x >= area.position.x
+      && anchor.x <= area.position.x + area.size.width
+      && anchor.y >= area.position.y
+      && anchor.y <= area.position.y + area.size.height;
   }) ?? monitors[0];
 
-  if (!selectedMonitor) {
+  if (!host) {
     return new LogicalPosition(
-      payload.x - TRAY_MENU_WINDOW_WIDTH + 12,
-      payload.y - TRAY_MENU_WINDOW_HEIGHT - 10,
+      anchor.x - TRAY_MENU_WINDOW_WIDTH + CURSOR_NUDGE_X,
+      anchor.y - TRAY_MENU_WINDOW_HEIGHT - CURSOR_GAP_Y,
     );
   }
 
-  const scaleFactor = selectedMonitor.scaleFactor || 1;
-  const workAreaPosition = selectedMonitor.workArea.position.toLogical(scaleFactor);
-  const workAreaSize = selectedMonitor.workArea.size.toLogical(scaleFactor);
-  const clickX = payload.x / scaleFactor;
-  const clickY = payload.y / scaleFactor;
+  const zoom = host.scaleFactor || 1;
+  const area = host.workArea;
+  const origin = area.position.toLogical(zoom);
+  const extent = area.size.toLogical(zoom);
+  const cursorX = anchor.x / zoom;
+  const cursorY = anchor.y / zoom;
+  const edge = 0;
 
-  const margin = 0;
-  const maxX = workAreaPosition.x + workAreaSize.width - TRAY_MENU_WINDOW_WIDTH - margin;
-  const minX = workAreaPosition.x + margin;
-  const maxY = workAreaPosition.y + workAreaSize.height - TRAY_MENU_WINDOW_HEIGHT - margin;
-  const minY = workAreaPosition.y + margin;
-  const preferAboveY = clickY - TRAY_MENU_WINDOW_HEIGHT - margin;
-  const fallbackBelowY = clickY + margin;
-  const preferredX = clickX + 12 - TRAY_MENU_WINDOW_WIDTH;
+  const lowestX = origin.x + edge;
+  const highestX = origin.x + extent.width - TRAY_MENU_WINDOW_WIDTH - edge;
+  const lowestY = origin.y + edge;
+  const highestY = origin.y + extent.height - TRAY_MENU_WINDOW_HEIGHT - edge;
+  const aboveY = cursorY - TRAY_MENU_WINDOW_HEIGHT - edge;
+  const belowY = cursorY + edge;
+  const wantedX = cursorX + CURSOR_NUDGE_X - TRAY_MENU_WINDOW_WIDTH;
 
   return new LogicalPosition(
-    Math.round(Math.max(minX, Math.min(maxX, preferredX))),
-    Math.round(Math.max(minY, Math.min(maxY, preferAboveY >= minY ? preferAboveY : fallbackBelowY))),
+    Math.round(clampWithin(wantedX, lowestX, highestX)),
+    Math.round(clampWithin(aboveY >= lowestY ? aboveY : belowY, lowestY, highestY)),
   );
-}
+};
 
-const waitForRoutePaint = () => new Promise<void>((resolve) => {
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => resolve());
-  });
+const nextFrame = () => new Promise<void>((settle) => {
+  window.requestAnimationFrame(() => settle());
 });
+
+const waitForRoutePaint = () => nextFrame().then(nextFrame);
 
 export function useTrayMenuEvents(router: Router) {
   const mainWindow = getCurrentWindow();
@@ -206,73 +207,69 @@ export function useTrayMenuEvents(router: Router) {
   const { playMode } = storeToRefs(playbackStore);
   const { isMiniMode, skipNextPageTransition } = storeToRefs(uiStore);
 
-  let unlistenTrayMenu: UnlistenFn | null = null;
-  let unlistenTrayMenuOpen: UnlistenFn | null = null;
-  let unlistenTrayMenuReady: UnlistenFn | null = null;
-  let stopTrayMenuStateWatch: (() => void) | null = null;
-  let stopCustomTrayMenuWatch: (() => void) | null = null;
-  let trayMenuPrewarmTimer: number | null = null;
+  const disposers: Array<() => void> = [];
+  let stopStateWatcher: (() => void) | null = null;
+  let stopCustomWatcher: (() => void) | null = null;
+  let warmupTimer: number | null = null;
 
-  const createTrayMenuState = (): TrayMenuStatePayload => ({
-    currentSong: currentSong.value,
-    isPlaying: isPlaying.value,
-    isDarkTheme: isDarkTheme.value,
-    playMode: playMode.value,
+  const buildTraySnapshot = (): TrayMenuStatePayload => ({
+    currentSong: currentSong.value, isPlaying: isPlaying.value,
+    isDarkTheme: isDarkTheme.value, playMode: playMode.value,
     showDesktopLyrics: showDesktopLyrics.value,
     isFavorite: currentSong.value ? libraryCollections.isFavorite(currentSong.value) : false,
-    isMiniMode: isMiniMode.value,
-    useCustomTrayMenu: theme.value.useCustomTrayMenu,
-    windowMaterial: theme.value.windowMaterial,
-    windowBlurTint: theme.value.windowBlurTint,
+    isMiniMode: isMiniMode.value, useCustomTrayMenu: theme.value.useCustomTrayMenu,
+    windowMaterial: theme.value.windowMaterial, windowBlurTint: theme.value.windowBlurTint,
   });
 
-  const updateNativeTrayMenu = async () => {
+  const pushNativeSnapshot = async () => {
     try {
-      await windowApi.updateNativeTrayMenu(createTrayMenuState());
+      await windowApi.updateNativeTrayMenu(buildTraySnapshot());
     } catch (error) {
       console.warn('Failed to update native tray menu:', error);
     }
   };
 
-  const emitTrayMenuState = async () => {
+  const broadcastSnapshot = async () => {
     if (!theme.value.useCustomTrayMenu) return;
-    const targetWindow = await getTrayMenuWindow();
-    if (!targetWindow) return;
-    await emitTo<TrayMenuStatePayload>(
-      TRAY_MENU_WINDOW_LABEL,
-      TRAY_MENU_STATE_EVENT,
-      createTrayMenuState(),
-    );
+    const target = await findTrayWindow();
+    if (!target) return;
+    await emitTo<TrayMenuStatePayload>(TRAY_MENU_WINDOW_LABEL, TRAY_MENU_STATE_EVENT, buildTraySnapshot());
   };
 
-  const destroyTrayMenuWindow = async () => {
-    const targetWindow = await getTrayMenuWindow();
-    if (!targetWindow) {
-      resetTrayMenuWindowState();
+  const cancelWarmup = () => {
+    if (warmupTimer !== null) {
+      window.clearTimeout(warmupTimer);
+      warmupTimer = null;
+    }
+  };
+
+  const dismantleTrayWindow = async () => {
+    const target = await findTrayWindow();
+    if (!target) {
+      resetLease();
       return;
     }
 
     try {
-      await targetWindow.destroy();
+      await target.destroy();
     } catch (error) {
       console.warn('Failed to destroy custom tray menu window:', error);
     } finally {
-      resetTrayMenuWindowState();
+      resetLease();
     }
   };
 
-  const revealMainWindow = async () => {
-    await mainWindow.unminimize();
-    await mainWindow.show();
-    await mainWindow.setFocus();
+  const summonMainWindow = async () => {
+    for (const step of [mainWindow.unminimize, mainWindow.show, mainWindow.setFocus]) {
+      await step.call(mainWindow);
+    }
   };
 
-  const openSettings = async () => {
+  const jumpToSettings = async () => {
     skipNextPageTransition.value = true;
     try {
-      if (router.currentRoute.value.path !== '/settings') {
-        await router.replace('/settings');
-      }
+      const currentPath = router.currentRoute.value.path;
+      if (currentPath !== '/settings') await router.replace('/settings');
       await nextTick();
       await waitForRoutePaint();
     } finally {
@@ -280,144 +277,111 @@ export function useTrayMenuEvents(router: Router) {
     }
   };
 
-  const prewarmTrayMenu = async () => {
+  const warmTrayWindow = async () => {
     if (!theme.value.useCustomTrayMenu) return;
 
     try {
-      const targetWindow = await ensureTrayMenuWindow();
-      await waitForTrayMenuReady();
-      await ensureTrayMenuSize(targetWindow);
-      await emitTrayMenuState();
-      await targetWindow.setAlwaysOnTop(true);
+      const target = await openTrayWindow();
+      await awaitTrayReady();
+      await applyTrayMetrics(target);
+      await broadcastSnapshot(); await target.setAlwaysOnTop(true);
     } catch (error) {
       console.warn('Failed to prewarm tray menu window:', error);
     }
   };
 
-  const scheduleTrayMenuPrewarm = () => {
-    if (trayMenuPrewarmTimer !== null) {
-      window.clearTimeout(trayMenuPrewarmTimer);
-      trayMenuPrewarmTimer = null;
-    }
-
+  const queueTrayWarmup = () => {
+    cancelWarmup();
     if (!theme.value.useCustomTrayMenu) return;
 
-    trayMenuPrewarmTimer = window.setTimeout(() => {
-      trayMenuPrewarmTimer = null;
-      void prewarmTrayMenu();
-    }, TRAY_MENU_PREWARM_DELAY_MS);
+    warmupTimer = window.setTimeout(() => {
+      warmupTimer = null;
+      void warmTrayWindow();
+    }, WARMUP_DELAY_MS);
   };
 
-  const openTrayMenu = async (payload: TrayMenuOpenPayload) => {
+  const presentTrayMenu = async (anchor: TrayMenuAnchor) => {
     if (!theme.value.useCustomTrayMenu) return;
 
-    const targetWindow = await ensureTrayMenuWindow();
-    await waitForTrayMenuReady();
-    await ensureTrayMenuSize(targetWindow);
-    const position = await resolveTrayMenuPosition(payload);
-    await targetWindow.setAlwaysOnTop(true);
-    await targetWindow.setPosition(position);
-    await emitTo<TrayMenuStatePayload>(
-      TRAY_MENU_WINDOW_LABEL,
-      TRAY_MENU_STATE_EVENT,
-      createTrayMenuState(),
-    );
-    await targetWindow.show();
-    await targetWindow.setFocus();
+    const target = await openTrayWindow();
+    await awaitTrayReady();
+    await applyTrayMetrics(target);
+    const position = await resolveTrayMenuPosition(anchor);
+    await target.setAlwaysOnTop(true); await target.setPosition(position);
+    await emitTo<TrayMenuStatePayload>(TRAY_MENU_WINDOW_LABEL, TRAY_MENU_STATE_EVENT, buildTraySnapshot());
+    await target.show(); await target.setFocus();
   };
 
-  const quitApp = () => appApi.exitApp();
+  const shutdownApp = () => appApi.exitApp();
+
+  const buildActionDeps = () => ({
+    prevSong, togglePlay, nextSong, playMode,
+    cyclePlayMode: toggleMode, isMiniMode, showDesktopLyrics,
+    revealMainWindow: summonMainWindow, openSettings: jumpToSettings, quitApp: shutdownApp,
+    toggleFavorite: () => {
+      if (currentSong.value) libraryCollections.toggleFavorite(currentSong.value);
+    },
+  });
 
   onMounted(async () => {
-    await updateNativeTrayMenu();
-    scheduleTrayMenuPrewarm();
+    await pushNativeSnapshot();
+    queueTrayWarmup();
 
-    stopTrayMenuStateWatch = watch(
-      createTrayMenuState,
+    stopStateWatcher = watch(
+      buildTraySnapshot,
       () => {
-        void updateNativeTrayMenu();
-        void emitTrayMenuState();
+        void pushNativeSnapshot();
+        void broadcastSnapshot();
 
         if (theme.value.useCustomTrayMenu) {
-          scheduleTrayMenuPrewarm();
+          queueTrayWarmup();
         } else {
-          if (trayMenuPrewarmTimer !== null) {
-            window.clearTimeout(trayMenuPrewarmTimer);
-            trayMenuPrewarmTimer = null;
-          }
-          void destroyTrayMenuWindow();
+          cancelWarmup();
+          void dismantleTrayWindow();
         }
       },
       { deep: true, flush: 'post' },
     );
 
-    stopCustomTrayMenuWatch = watch(
+    stopCustomWatcher = watch(
       () => theme.value.useCustomTrayMenu,
       (useCustomTrayMenu) => {
-        void updateNativeTrayMenu();
+        void pushNativeSnapshot();
 
         if (useCustomTrayMenu) {
-          scheduleTrayMenuPrewarm();
+          queueTrayWarmup();
           return;
         }
 
-        if (trayMenuPrewarmTimer !== null) {
-          window.clearTimeout(trayMenuPrewarmTimer);
-          trayMenuPrewarmTimer = null;
-        }
-        void destroyTrayMenuWindow();
+        cancelWarmup();
+        void dismantleTrayWindow();
       },
       { flush: 'sync' },
     );
 
-    unlistenTrayMenu = await listen<TrayMenuAction>(APP_TRAY_MENU_EVENT, (event) => {
+    disposers.push(await listen<TrayMenuAction>(APP_TRAY_MENU_EVENT, (event) => {
       void (async () => {
-        await handleTrayMenuAction(event.payload, {
-          prevSong,
-          togglePlay,
-          nextSong,
-          playMode,
-          cyclePlayMode: toggleMode,
-          isMiniMode,
-          showDesktopLyrics,
-          revealMainWindow,
-          openSettings,
-          quitApp,
-          toggleFavorite: () => {
-            if (currentSong.value) {
-              libraryCollections.toggleFavorite(currentSong.value);
-            }
-          },
-        });
-        await updateNativeTrayMenu();
-        await emitTrayMenuState();
+        await handleTrayMenuAction(event.payload, buildActionDeps());
+        await pushNativeSnapshot();
+        await broadcastSnapshot();
       })();
-    });
+    }));
 
-    unlistenTrayMenuOpen = await listen<TrayMenuOpenPayload>(APP_TRAY_MENU_OPEN_EVENT, (event) => {
-      void openTrayMenu(event.payload);
-    });
+    disposers.push(await listen<TrayMenuAnchor>(APP_TRAY_MENU_OPEN_EVENT, (event) => {
+      void presentTrayMenu(event.payload);
+    }));
 
-    unlistenTrayMenuReady = await listen(TRAY_MENU_READY_EVENT, () => {
-      markTrayMenuReady();
-    });
+    disposers.push(await listen(TRAY_MENU_READY_EVENT, () => {
+      announceTrayReady();
+    }));
   });
 
   onUnmounted(() => {
-    if (trayMenuPrewarmTimer !== null) {
-      window.clearTimeout(trayMenuPrewarmTimer);
-      trayMenuPrewarmTimer = null;
-    }
-
-    stopTrayMenuStateWatch?.();
-    stopCustomTrayMenuWatch?.();
-    unlistenTrayMenu?.();
-    unlistenTrayMenuOpen?.();
-    unlistenTrayMenuReady?.();
-    stopTrayMenuStateWatch = null;
-    stopCustomTrayMenuWatch = null;
-    unlistenTrayMenu = null;
-    unlistenTrayMenuOpen = null;
-    unlistenTrayMenuReady = null;
+    cancelWarmup();
+    stopStateWatcher?.();
+    stopCustomWatcher?.();
+    disposers.splice(0).forEach((off) => off());
+    stopStateWatcher = null;
+    stopCustomWatcher = null;
   });
 }

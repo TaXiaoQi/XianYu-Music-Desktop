@@ -1,98 +1,102 @@
-import { ref, watch, type Ref } from 'vue';
+import { ref, watch } from 'vue';
+import type { Ref } from 'vue';
 
 import type { FolderNode, Song } from '../types';
-import { normalizePath, getParentFolderPath } from '../utils/path';
+import { getParentFolderPath, normalizePath } from '../utils/path';
+import {
+  findDeepestOwningRoot,
+  pathUnderRootPrefix,
+  pathWithinRootScope,
+  toRootPaths,
+} from './libraryRootOwnership';
+import {
+  REFRESH_FAILURE_PREFIX,
+  REFRESH_OK_TEXT,
+  describeLibraryRefresh,
+  resolveFailureDetail,
+} from './libraryRefreshFeedback';
 
-interface ConfirmOptions {
-  title: string;
-  confirmText: string;
+type ConfirmRequest = {
+  title: string; confirmText: string;
   message: string;
   action: () => void | Promise<void>;
-}
+};
 
 interface UseHomeFolderManagementOptions {
-  isManagementMode: Ref<boolean>;
-  activeRootPath: Ref<string | null>;
-  currentFolderFilter: Ref<string>;
-  libraryHierarchy: Ref<FolderNode[]>;
-  sourceSongs: Ref<Song[]>;
-  refreshFolder: (folderPath: string) => Promise<unknown>;
-  fetchFolderTree: () => Promise<unknown>;
+  isManagementMode: Ref<boolean>; activeRootPath: Ref<string | null>; currentFolderFilter: Ref<string>;
+  libraryHierarchy: Ref<FolderNode[]>; sourceSongs: Ref<Song[]>;
+  refreshFolder: (folderPath: string) => Promise<unknown>; fetchFolderTree: () => Promise<unknown>;
   createFolder: (parentPath: string, folderName: string) => Promise<string>;
-  deleteFolder: (path: string) => Promise<unknown>;
-  expandFolderPath: (path: string) => Promise<unknown>;
-  addLibraryFolder: () => Promise<unknown>;
-  removeLibraryFolderLinked: (path: string) => Promise<unknown>;
+  deleteFolder: (path: string) => Promise<unknown>; expandFolderPath: (path: string) => Promise<unknown>;
+  addLibraryFolder: () => Promise<unknown>; removeLibraryFolderLinked: (path: string) => Promise<unknown>;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
-  openConfirm: (options: ConfirmOptions) => void;
+  openConfirm: (options: ConfirmRequest) => void;
+}
+
+const CREATED_FOLDER_PREFIX = '已创建文件夹: ';
+const CREATE_FOLDER_FAILURE_PREFIX = '新建文件夹失败: ';
+const FOLDER_REMOVED_TOAST = '文件夹已删除';
+const DELETE_FOLDER_FAILURE_PREFIX = '删除文件夹失败: ';
+const REMOVE_FOLDER_TITLE = '移除文件夹';
+const REMOVE_FOLDER_ACTION_TEXT = '移除';
+
+/** 删除动作落地后的关注点：被删的是整个根目录，还是根下某个子目录 */
+interface PostRemovalPlan {
+  owningRoot: string | null;
+  removedWholeRoot: boolean;
+  landingPath: string | null;
 }
 
 export function useHomeFolderManagement({
-  isManagementMode,
-  activeRootPath,
-  currentFolderFilter,
-  libraryHierarchy,
-  sourceSongs,
-  refreshFolder,
-  fetchFolderTree,
-  createFolder,
-  deleteFolder,
-  expandFolderPath,
-  addLibraryFolder,
-  removeLibraryFolderLinked,
-  showToast,
-  openConfirm,
+  isManagementMode, activeRootPath, currentFolderFilter, libraryHierarchy, sourceSongs,
+  refreshFolder, fetchFolderTree, createFolder, deleteFolder, expandFolderPath,
+  addLibraryFolder, removeLibraryFolderLinked, showToast, openConfirm,
 }: UseHomeFolderManagementOptions) {
-  const showCreateFolderModal = ref(false);
-  const createFolderParentPath = ref('');
-  const createFolderRootPath = ref<string | null>(null);
-  const showFolderDeleteConfirm = ref(false);
-  const folderToDeletePath = ref('');
-  const skipNextRootSync = ref(false);
+  // 新建文件夹对话框三件套
+  const creationDialog = {
+    visible: ref(false),
+    parentPath: ref(''),
+    rootAnchor: ref<string | null>(null),
+  };
+  // 删除确认对话框
+  const removalDialog = {
+    visible: ref(false),
+    targetPath: ref(''),
+  };
+  /** 程序性改写 activeRootPath 时，跳过一次 watch 的联动 */
+  const suppressRootWatch = ref(false);
 
-  const getOwningRootPath = (path: string) => {
-    const normalizedTarget = normalizePath(path);
-    const matchedRoots = libraryHierarchy.value
-      .map(node => node.path)
-      .filter(root => {
-        const normalizedRoot = normalizePath(root);
-        return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}/`);
-      })
-      .sort((left, right) => normalizePath(right).length - normalizePath(left).length);
+  const resolveOwningRoot = (candidatePath: string): string | null =>
+    findDeepestOwningRoot(toRootPaths(libraryHierarchy.value), candidatePath) ||
+    activeRootPath.value ||
+    null;
 
-    return matchedRoots[0] || activeRootPath.value || null;
+  /** 让指定根目录成为当前激活根，并把目录过滤同步到根路径 */
+  const syncRootSelection = (nextRoot: string | null) => {
+    activeRootPath.value = nextRoot;
+    currentFolderFilter.value = nextRoot || '';
   };
 
-  const syncRootSelection = (path: string | null) => {
-    const normalizedPath = path || '';
-    activeRootPath.value = path;
-    currentFolderFilter.value = normalizedPath;
+  const handleActiveRootChange = (nextRoot: string | null) => {
+    syncRootSelection(nextRoot);
   };
 
-  const handleActiveRootChange = (path: string | null) => {
-    syncRootSelection(path);
-  };
-
-  watch(activeRootPath, (newPath, oldPath) => {
-    if (skipNextRootSync.value) {
-      skipNextRootSync.value = false;
+  watch(activeRootPath, (nextRoot, previousRoot) => {
+    if (suppressRootWatch.value) {
+      suppressRootWatch.value = false;
       return;
     }
 
-    if (!newPath || newPath === oldPath) {
+    if (!nextRoot || nextRoot === previousRoot) {
       return;
     }
 
-    const normalizedRoot = normalizePath(newPath);
-    const normalizedCurrentFolder = normalizePath(currentFolderFilter.value);
-    if (
-      normalizedCurrentFolder === normalizedRoot ||
-      normalizedCurrentFolder.startsWith(`${normalizedRoot}/`)
-    ) {
+    // 当前子目录仍归属新根时，不打断用户的浏览位置
+    if (pathWithinRootScope(currentFolderFilter.value, nextRoot)) {
       return;
     }
 
-    syncRootSelection(newPath);
+    syncRootSelection(nextRoot);
   });
 
   const requestCreateFolder = (parentPath: string) => {
@@ -100,34 +104,39 @@ export function useHomeFolderManagement({
       return;
     }
 
-    createFolderParentPath.value = parentPath;
-    createFolderRootPath.value = getOwningRootPath(parentPath);
-    showCreateFolderModal.value = true;
+    creationDialog.parentPath.value = parentPath;
+    creationDialog.rootAnchor.value = resolveOwningRoot(parentPath);
+    creationDialog.visible.value = true;
+  };
+
+  const closeCreationDialog = () => {
+    creationDialog.visible.value = false;
+    creationDialog.parentPath.value = '';
+    creationDialog.rootAnchor.value = null;
   };
 
   const confirmCreateFolder = async (folderName: string) => {
-    if (!createFolderParentPath.value) {
+    const parentPath = creationDialog.parentPath.value;
+    if (!parentPath) {
       return;
     }
 
     try {
-      const newFolderPath = await createFolder(createFolderParentPath.value, folderName);
+      const createdPath = await createFolder(parentPath, folderName);
       await fetchFolderTree();
 
-      if (createFolderRootPath.value) {
-        skipNextRootSync.value = true;
-        activeRootPath.value = createFolderRootPath.value;
+      if (creationDialog.rootAnchor.value) {
+        suppressRootWatch.value = true;
+        activeRootPath.value = creationDialog.rootAnchor.value;
       }
 
-      await expandFolderPath(newFolderPath);
-      currentFolderFilter.value = newFolderPath;
-      showToast(`已创建文件夹: ${folderName}`, 'success');
-    } catch (error: any) {
-      showToast(`新建文件夹失败: ${error?.message || error}`, 'error');
+      await expandFolderPath(createdPath);
+      currentFolderFilter.value = createdPath;
+      showToast(`${CREATED_FOLDER_PREFIX}${folderName}`, 'success');
+    } catch (error: unknown) {
+      showToast(`${CREATE_FOLDER_FAILURE_PREFIX}${resolveFailureDetail(error)}`, 'error');
     } finally {
-      showCreateFolderModal.value = false;
-      createFolderParentPath.value = '';
-      createFolderRootPath.value = null;
+      closeCreationDialog();
     }
   };
 
@@ -136,123 +145,113 @@ export function useHomeFolderManagement({
       return;
     }
 
-    folderToDeletePath.value = folderPath;
-    showFolderDeleteConfirm.value = true;
+    removalDialog.targetPath.value = folderPath;
+    removalDialog.visible.value = true;
+  };
+
+  /** 预先计算删除后的归属根与回退目录 */
+  const planAfterRemoval = (removedPath: string): PostRemovalPlan => {
+    const owningRoot = resolveOwningRoot(removedPath);
+    const removedWholeRoot = !!owningRoot && normalizePath(owningRoot) === normalizePath(removedPath);
+
+    if (removedWholeRoot) {
+      return { owningRoot, removedWholeRoot, landingPath: null };
+    }
+
+    const parentPath = getParentFolderPath(removedPath);
+    const landingPath = owningRoot
+      ? pathUnderRootPrefix(parentPath, owningRoot) ? parentPath : owningRoot
+      : parentPath;
+
+    return { owningRoot, removedWholeRoot: false, landingPath: landingPath || '' };
+  };
+
+  /** 整根被删后：接管剩余的第一个根，根目录清空时同时清掉歌曲列表 */
+  const adoptRemainingRootAfterRemoval = () => {
+    const nextRoot = libraryHierarchy.value[0]?.path || null;
+    if (nextRoot) {
+      syncRootSelection(nextRoot);
+    } else {
+      syncRootSelection(null);
+      sourceSongs.value = [];
+    }
   };
 
   const executeDeleteFolder = async () => {
-    if (!folderToDeletePath.value) {
+    const removedPath = removalDialog.targetPath.value;
+    if (!removedPath) {
       return;
     }
 
-    const deletedPath = folderToDeletePath.value;
-    const owningRootPath = getOwningRootPath(deletedPath);
-    const deletedRoot = owningRootPath && normalizePath(owningRootPath) === normalizePath(deletedPath);
-    const fallbackPath = deletedRoot
-      ? null
-      : (() => {
-          const parentPath = getParentFolderPath(deletedPath);
-          if (!owningRootPath) {
-            return parentPath || '';
-          }
-          const normalizedRoot = normalizePath(owningRootPath);
-          const normalizedParent = normalizePath(parentPath);
-          return normalizedParent.startsWith(normalizedRoot) ? parentPath : owningRootPath;
-        })();
+    const plan = planAfterRemoval(removedPath);
 
     try {
-      await deleteFolder(deletedPath);
+      await deleteFolder(removedPath);
       await fetchFolderTree();
 
-      if (deletedRoot) {
-        const nextRoot = libraryHierarchy.value[0]?.path || null;
-        if (nextRoot) {
-          syncRootSelection(nextRoot);
-        } else {
-          syncRootSelection(null);
-          sourceSongs.value = [];
+      if (plan.removedWholeRoot) {
+        adoptRemainingRootAfterRemoval();
+      } else if (plan.landingPath) {
+        if (plan.owningRoot) {
+          suppressRootWatch.value = true;
+          activeRootPath.value = plan.owningRoot;
         }
-      } else if (fallbackPath) {
-        if (owningRootPath) {
-          skipNextRootSync.value = true;
-          activeRootPath.value = owningRootPath;
-        }
-        await expandFolderPath(fallbackPath);
-        currentFolderFilter.value = fallbackPath;
+        await expandFolderPath(plan.landingPath);
+        currentFolderFilter.value = plan.landingPath;
       }
 
-      showToast('文件夹已删除', 'success');
-    } catch (error: any) {
-      showToast(`删除文件夹失败: ${error?.message || error}`, 'error');
+      showToast(FOLDER_REMOVED_TOAST, 'success');
+    } catch (error: unknown) {
+      showToast(`${DELETE_FOLDER_FAILURE_PREFIX}${resolveFailureDetail(error)}`, 'error');
     } finally {
-      showFolderDeleteConfirm.value = false;
-      folderToDeletePath.value = '';
+      removalDialog.visible.value = false;
+      removalDialog.targetPath.value = '';
     }
   };
 
-  const handleAddFolder = async () => {
-    await addLibraryFolder();
-  };
+  const handleAddFolder = () => addLibraryFolder();
 
-  const handleRootCreateFolderRequest = (path: string) => {
-    requestCreateFolder(path);
-  };
+  const handleRootCreateFolderRequest = (path: string) => requestCreateFolder(path);
 
-  const handleRootDeleteFolderRequest = (path: string) => {
-    requestDeleteFolder(path);
-  };
+  const handleRootDeleteFolderRequest = (path: string) => requestDeleteFolder(path);
 
   const handleRefreshFolder = async () => {
-    if (!currentFolderFilter.value) {
+    const targetFolder = currentFolderFilter.value;
+    if (!targetFolder) {
       return;
     }
 
     try {
-      const summary = await refreshFolder(currentFolderFilter.value);
-      if (summary && typeof summary === 'object' && 'removedCount' in summary) {
-        const removedCount = Number(summary.removedCount) || 0;
-        showToast(
-          removedCount > 0
-            ? `刷新成功，检测到少了 ${removedCount} 首歌曲`
-            : '刷新成功',
-          'success',
-        );
-        return;
-      }
-
-      showToast('刷新成功', 'success');
-    } catch (error: any) {
-      showToast(`刷新失败: ${error?.message || error}`, 'error');
+      showToast(describeLibraryRefresh(await refreshFolder(targetFolder)) ?? REFRESH_OK_TEXT, 'success');
+    } catch (error: unknown) {
+      showToast(`${REFRESH_FAILURE_PREFIX}${resolveFailureDetail(error)}`, 'error');
     }
   };
+
+  const removalNoticeFor = (folderName?: string) =>
+    ['确定要移除', folderName ? `“${folderName}”` : '此文件夹'].join('') +
+    '吗？这不会删除本地文件。';
 
   const handleRemoveFolderWithConfirm = (path: string, name?: string) => {
     openConfirm({
-      title: '移除文件夹',
-      confirmText: '移除',
-      message: name
-        ? `确定要移除“${name}”吗？这不会删除本地文件。`
-        : '确定要移除此文件夹吗？这不会删除本地文件。',
+      title: REMOVE_FOLDER_TITLE,
+      confirmText: REMOVE_FOLDER_ACTION_TEXT,
+      message: removalNoticeFor(name),
       action: async () => {
         const wasActive = activeRootPath.value === path;
         await removeLibraryFolderLinked(path);
 
         if (wasActive) {
-          if (libraryHierarchy.value.length > 0) {
-            syncRootSelection(libraryHierarchy.value[0].path);
-          } else {
-            syncRootSelection(null);
-            sourceSongs.value = [];
-          }
+          adoptRemainingRootAfterRemoval();
         }
       },
     });
   };
 
   return {
-    showCreateFolderModal,
-    showFolderDeleteConfirm,
-    folderToDeletePath,
+    showCreateFolderModal: creationDialog.visible,
+    showFolderDeleteConfirm: removalDialog.visible,
+    folderToDeletePath: removalDialog.targetPath,
     syncRootSelection,
     handleActiveRootChange,
     requestCreateFolder,

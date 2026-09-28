@@ -2,63 +2,84 @@ import { storeToRefs } from 'pinia';
 import { watch } from 'vue';
 
 import { playerStorage, playerStorageKeys } from '../../services/storage/playerStorage';
-import {
-  defaultAppSettings,
-  type DeprecatedAppSettingsPatch,
-  mergeAppSettings,
-  useSettingsStore,
-} from './store';
+import { defaultAppSettings, mergeAppSettings, useSettingsStore } from './store';
+import type { DeprecatedAppSettingsPatch } from './store';
 import { restorePersistedAppSettings } from './restore';
 
-let didMigrateLegacySettings = false;
-const restoredSettingsStores = new WeakSet<ReturnType<typeof useSettingsStore>>();
+// 旧版把全部设置存在 app_settings 键下，本次启动做一次性迁移。
+let legacyMigrationFinished = false;
 
-const migrateLegacySettings = (mergeSettings: (partialSettings: Partial<typeof defaultAppSettings>) => void) => {
-  if (didMigrateLegacySettings) {
+// restorePersistedAppSettings 只应对每个 store 实例执行一次。
+const storesAlreadyRestored = new WeakSet<ReturnType<typeof useSettingsStore>>();
+
+/** 把旧键里的设置并进默认值后套用；若新键尚无内容则顺手落盘一份。 */
+function migrateLegacySettings(applyPatch: (partialSettings: Partial<typeof defaultAppSettings>) => void) {
+  if (legacyMigrationFinished) {
+    return;
+  }
+  legacyMigrationFinished = true;
+
+  const legacyRaw = playerStorage.getString(
+    playerStorageKeys.legacyAppSettings,
+  );
+  if (legacyRaw === null || legacyRaw === '') {
     return;
   }
 
-  didMigrateLegacySettings = true;
-  const legacyRaw = playerStorage.getString(playerStorageKeys.legacyAppSettings);
-  if (!legacyRaw) return;
-
   try {
-    const parsed = JSON.parse(legacyRaw) as DeprecatedAppSettingsPatch;
-    const migratedSettings = mergeAppSettings(defaultAppSettings, parsed);
-    mergeSettings(migratedSettings);
+    const legacyPatch = JSON.parse(legacyRaw) as DeprecatedAppSettingsPatch;
+    const migrated = mergeAppSettings(defaultAppSettings, legacyPatch);
+    applyPatch(migrated);
 
-    if (!playerStorage.getString(playerStorageKeys.settings)) {
-      playerStorage.writeSettings(migratedSettings);
+    const currentRaw = playerStorage.getString(playerStorageKeys.settings);
+    if (currentRaw === null || currentRaw === '') {
+      playerStorage.writeSettings(migrated, playerStorageKeys.settings);
     }
   } catch (error) {
-    console.error('Failed to parse legacy app settings', error);
+    console.error(`Failed to parse legacy app settings`, error);
   }
-};
+}
 
 export function useSettings() {
-  const settingsStore = useSettingsStore();
-  const { settings, audioDelay, theme, sidebar, footerLayout, topBarLayout } = storeToRefs(settingsStore);
+  const store = useSettingsStore();
+  const { settings, audioDelay, theme, sidebar, footerLayout, topBarLayout } = storeToRefs(store);
 
-  migrateLegacySettings(settingsStore.patchSettings);
-  if (!restoredSettingsStores.has(settingsStore)) {
-    restoredSettingsStores.add(settingsStore);
-    restorePersistedAppSettings(settings.value, settingsStore.replaceSettings);
+  migrateLegacySettings((patch) => store.patchSettings(patch));
+
+  const needsRestore = !storesAlreadyRestored.has(store);
+  if (needsRestore) {
+    storesAlreadyRestored.add(store);
+    restorePersistedAppSettings(
+      settings.value,
+      store.replaceSettings,
+    );
   }
 
-  let themePersistTimer: ReturnType<typeof setTimeout> | undefined;
+  // 主题变更做 250ms 防抖后整份持久化，避免拖拽色板时高频写盘。
+  let themePersistHandle: ReturnType<typeof setTimeout> | undefined;
   watch(
     theme,
     () => {
-      if (themePersistTimer) {
-        clearTimeout(themePersistTimer);
+      if (themePersistHandle !== undefined) {
+        clearTimeout(themePersistHandle);
       }
-      themePersistTimer = setTimeout(() => {
-        themePersistTimer = undefined;
+      themePersistHandle = setTimeout(() => {
+        themePersistHandle = undefined;
         playerStorage.writeSettings(settings.value);
       }, 250);
     },
     { deep: true },
   );
+
+  const {
+    patchSettings,
+    replaceSettings,
+    patchTheme,
+    replaceTheme,
+    patchSidebar,
+    patchFooterLayout,
+    patchTopBarLayout,
+  } = store;
 
   return {
     settings,
@@ -67,12 +88,12 @@ export function useSettings() {
     sidebar,
     footerLayout,
     topBarLayout,
-    patchSettings: settingsStore.patchSettings,
-    replaceSettings: settingsStore.replaceSettings,
-    patchTheme: settingsStore.patchTheme,
-    replaceTheme: settingsStore.replaceTheme,
-    patchSidebar: settingsStore.patchSidebar,
-    patchFooterLayout: settingsStore.patchFooterLayout,
-    patchTopBarLayout: settingsStore.patchTopBarLayout,
+    patchSettings,
+    replaceSettings,
+    patchTheme,
+    replaceTheme,
+    patchSidebar,
+    patchFooterLayout,
+    patchTopBarLayout,
   };
 }

@@ -13,31 +13,72 @@ import type {
 } from './contracts';
 import { useConcurrentScheduler } from '../../composables/useConcurrentScheduler';
 
+/** 把「开关 + 前置增益 + 十段增益」序列化成可比较的签名字符串。 */
 export function createEqualizerSignature(enabled: boolean, preamp: number, gains: number[]): string {
-  const gainsStr = gains.map(g => g.toFixed(1)).join(',');
-  return `${enabled}:${preamp.toFixed(1)}:[${gainsStr}]`;
+  const gainText = gains.map((gain) => gain.toFixed(1)).join(',');
+  return `${enabled}:${preamp.toFixed(1)}:[${gainText}]`;
 }
 
+// —— 均衡器同步的模块级状态 ——
+const EQ_THROTTLE_INTERVAL_MS = 50;
+
+// 串行闸门：保证底层同一时刻只处理一个均衡器写入。
 const eqScheduler = useConcurrentScheduler();
+// 最近一次成功同步给底层的签名，供上层做「是否已生效」判断。
 let lastSyncedParams: string | null = null;
 
-let throttleTimer: any = null;
-let nextRequestArgs: { enabled: boolean, preamp: number, gains: number[] } | null = null;
-let lastThrottleTime = 0;
+// 拖拽节流：待发送的参数与定时器句柄。
+let queuedEqualizerArgs: { enabled: boolean, preamp: number, gains: number[] } | null = null;
+let throttleHandle: ReturnType<typeof setTimeout> | null = null;
+let lastDispatchAt = 0;
+
+function cancelScheduledThrottle(): void {
+  if (throttleHandle !== null) {
+    clearTimeout(throttleHandle);
+    throttleHandle = null;
+  }
+}
+
+/** 取出暂存的最新参数并立即下发（节流窗口到期时触发）。 */
+function dispatchQueuedEqualizer(): void {
+  if (queuedEqualizerArgs === null) return;
+
+  const request = queuedEqualizerArgs;
+  queuedEqualizerArgs = null;
+  lastDispatchAt = Date.now();
+
+  void playbackApi.setEqualizerSettings(request.enabled, request.preamp, request.gains);
+}
 
 export const playbackApi = {
-  setVolume: (volume: number): Promise<void> => tauriInvoke('set_volume', { volume }),
-  getPlaybackProgress: (): Promise<number> => tauriInvoke('get_playback_progress'),
-  getPlaybackDuration: (): Promise<number> => tauriInvoke('get_playback_duration'),
-  getPlaybackReady: (): Promise<boolean> => tauriInvoke('get_playback_ready'),
-  getPlaybackStartFailed: (): Promise<boolean> => tauriInvoke('get_playback_start_failed'),
-  getPlaybackStartFailedReason: (): Promise<string | null> =>
-    tauriInvoke('get_playback_start_failed_reason'),
-  getPlaybackStartFailedInfo: (): Promise<{ failed: boolean; reason: string | null }> =>
-    tauriInvoke('get_playback_start_failed_info'),
-  getAudioVisualizerSamples: (): Promise<number[]> =>
-    tauriInvoke('get_audio_visualizer_samples'),
-  recordPlay: (payload: {
+  // —— 音量与进度查询 ——
+  setVolume(volume: number): Promise<void> {
+    return tauriInvoke('set_volume', { volume });
+  },
+  getPlaybackProgress(): Promise<number> {
+    return tauriInvoke('get_playback_progress');
+  },
+  getPlaybackDuration(): Promise<number> {
+    return tauriInvoke('get_playback_duration');
+  },
+  getPlaybackReady(): Promise<boolean> {
+    return tauriInvoke('get_playback_ready');
+  },
+  getPlaybackStartFailed(): Promise<boolean> {
+    return tauriInvoke('get_playback_start_failed');
+  },
+  getPlaybackStartFailedReason(): Promise<string | null> {
+    return tauriInvoke('get_playback_start_failed_reason');
+  },
+  getPlaybackStartFailedInfo(): Promise<{ failed: boolean; reason: string | null }> {
+    return tauriInvoke('get_playback_start_failed_info');
+  },
+  getAudioVisualizerSamples(): Promise<number[]> {
+    return tauriInvoke('get_audio_visualizer_samples');
+  },
+
+  // —— 播放记录 ——
+  recordPlay(payload: {
     songPath: string;
     listenedMs: number;
     durationMs: number;
@@ -46,94 +87,120 @@ export const playbackApi = {
     album: string;
     trackNumber?: string;
     countAsPlay: boolean;
-  }) =>
-    tauriInvoke('record_play', { payload }),
-  playAudio: (options: PlayAudioOptions): Promise<void> => tauriInvoke('play_audio', options),
-  updatePlaybackMetadata: (options: UpdatePlaybackMetadataOptions): Promise<void> =>
-    tauriInvoke('update_playback_metadata', options),
-  pauseAudio: (): Promise<void> => tauriInvoke('pause_audio'),
-  stopAudio: (): Promise<void> => tauriInvoke('stop_audio'),
-  resumeAudio: (): Promise<void> => tauriInvoke('resume_audio'),
-  seekAudio: (options: SeekAudioOptions): Promise<void> => tauriInvoke('seek_audio', options),
-  setAudioOutputMode: (outputMode: PlayAudioOptions['outputMode']): Promise<void> =>
-    tauriInvoke('set_audio_output_mode', { outputMode }),
-  setOutputDevice: (deviceId: string | null) =>
-    tauriInvoke('set_output_device', { deviceId }),
-  setPreventSleep: (active: boolean): Promise<void> =>
-    tauriInvoke('set_prevent_sleep', { active }),
-  getOutputDevices: (): Promise<AudioDevice[]> => tauriInvoke('get_output_devices'),
-  getCurrentOutputDevice: (): Promise<AudioOutputStatus> =>
-    tauriInvoke('get_current_output_device'),
-  getAudioDeviceFormats: (): Promise<AudioDeviceFormats[]> =>
-    tauriInvoke('get_audio_device_formats'),
-  getTrackLoudnessInfo: (songId: number): Promise<LoudnessRecord | null> =>
-    tauriInvoke('get_track_loudness_info', { songId }),
-  updateLoudnessSettings: (options: UpdateLoudnessSettingsOptions): Promise<void> =>
-    tauriInvoke('update_loudness_settings', options),
+  }) {
+    return tauriInvoke('record_play', { payload });
+  },
 
-  setSoundEffectSettings: (settings: SoundEffectSettings): Promise<void> =>
-    tauriInvoke('set_sound_effect_settings', { settings }),
+  // —— 播放控制 ——
+  playAudio(options: PlayAudioOptions): Promise<void> {
+    return tauriInvoke('play_audio', options);
+  },
+  updatePlaybackMetadata(options: UpdatePlaybackMetadataOptions): Promise<void> {
+    return tauriInvoke('update_playback_metadata', options);
+  },
+  pauseAudio(): Promise<void> {
+    return tauriInvoke('pause_audio');
+  },
+  stopAudio(): Promise<void> {
+    return tauriInvoke('stop_audio');
+  },
+  resumeAudio(): Promise<void> {
+    return tauriInvoke('resume_audio');
+  },
+  seekAudio(options: SeekAudioOptions): Promise<void> {
+    return tauriInvoke('seek_audio', options);
+  },
 
-  setStreamCacheMaxSize: (bytes: number): Promise<void> =>
-    tauriInvoke('set_stream_cache_max_size', { bytes }),
-  getStreamCacheInfo: (): Promise<{ current: number; max: number }> =>
-    tauriInvoke('get_stream_cache_info'),
-  clearStreamCache: (): Promise<void> => tauriInvoke('clear_stream_cache'),
-  setStreamCacheDir: (path: string): Promise<void> =>
-    tauriInvoke('set_stream_cache_dir', { path }),
-  getStreamCacheDir: (): Promise<string> =>
-    tauriInvoke('get_stream_cache_dir'),
+  // —— 输出设备 ——
+  setAudioOutputMode(outputMode: PlayAudioOptions['outputMode']): Promise<void> {
+    return tauriInvoke('set_audio_output_mode', { outputMode });
+  },
+  setOutputDevice(deviceId: string | null) {
+    return tauriInvoke('set_output_device', { deviceId });
+  },
+  setPreventSleep(active: boolean): Promise<void> {
+    return tauriInvoke('set_prevent_sleep', { active });
+  },
+  getOutputDevices(): Promise<AudioDevice[]> {
+    return tauriInvoke('get_output_devices');
+  },
+  getCurrentOutputDevice(): Promise<AudioOutputStatus> {
+    return tauriInvoke('get_current_output_device');
+  },
+  getAudioDeviceFormats(): Promise<AudioDeviceFormats[]> {
+    return tauriInvoke('get_audio_device_formats');
+  },
 
-  prefetchAudioHead: (options: PrefetchAudioHeadOptions): Promise<boolean> =>
-    tauriInvoke('prefetch_audio_head', options),
+  // —— 响度均衡 ——
+  getTrackLoudnessInfo(songId: number): Promise<LoudnessRecord | null> {
+    return tauriInvoke('get_track_loudness_info', { songId });
+  },
+  updateLoudnessSettings(options: UpdateLoudnessSettingsOptions): Promise<void> {
+    return tauriInvoke('update_loudness_settings', options);
+  },
 
-  getLastSyncedParams: () => lastSyncedParams,
+  // —— 音效 ——
+  setSoundEffectSettings(settings: SoundEffectSettings): Promise<void> {
+    return tauriInvoke('set_sound_effect_settings', { settings });
+  },
 
-  setEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]): Promise<void> => {
-    return eqScheduler.execute(() => {
-      return tauriInvoke('set_equalizer_settings', { enabled, preamp, gains })
-        .then(() => {
-          lastSyncedParams = createEqualizerSignature(enabled, preamp, gains);
-        });
+  // —— 流缓存 ——
+  setStreamCacheMaxSize(bytes: number): Promise<void> {
+    return tauriInvoke('set_stream_cache_max_size', { bytes });
+  },
+  getStreamCacheInfo(): Promise<{ current: number; max: number }> {
+    return tauriInvoke('get_stream_cache_info');
+  },
+  clearStreamCache(): Promise<void> {
+    return tauriInvoke('clear_stream_cache');
+  },
+  setStreamCacheDir(path: string): Promise<void> {
+    return tauriInvoke('set_stream_cache_dir', { path });
+  },
+  getStreamCacheDir(): Promise<string> {
+    return tauriInvoke('get_stream_cache_dir');
+  },
+
+  // —— 预热 ——
+  prefetchAudioHead(options: PrefetchAudioHeadOptions): Promise<boolean> {
+    return tauriInvoke('prefetch_audio_head', options);
+  },
+
+  // —— 均衡器 ——
+  getLastSyncedParams(): string | null {
+    return lastSyncedParams;
+  },
+
+  async setEqualizerSettings(enabled: boolean, preamp: number, gains: number[]): Promise<void> {
+    await eqScheduler.execute(async () => {
+      await tauriInvoke('set_equalizer_settings', { enabled, preamp, gains });
+      lastSyncedParams = createEqualizerSignature(enabled, preamp, gains);
     });
   },
 
-  requestEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]) => {
-    const now = Date.now();
-    nextRequestArgs = { enabled, preamp, gains };
+  /** 拖拽场景下的节流入口：窗口期内仅保留最新参数，到期统一下发。 */
+  requestEqualizerSettings(enabled: boolean, preamp: number, gains: number[]) {
+    queuedEqualizerArgs = { enabled, preamp, gains };
 
-    const executeRequest = () => {
-      if (!nextRequestArgs) return;
-      const { enabled, preamp, gains } = nextRequestArgs;
-      nextRequestArgs = null;
-      lastThrottleTime = Date.now();
-
-      playbackApi.setEqualizerSettings(enabled, preamp, gains);
-    };
-
-    if (now - lastThrottleTime >= 50) {
-      if (throttleTimer) {
-        clearTimeout(throttleTimer);
-        throttleTimer = null;
-      }
-      executeRequest();
-    } else {
-      if (!throttleTimer) {
-        throttleTimer = setTimeout(() => {
-          throttleTimer = null;
-          executeRequest();
-        }, 50 - (now - lastThrottleTime));
-      }
+    const elapsedSinceDispatch = Date.now() - lastDispatchAt;
+    if (elapsedSinceDispatch >= EQ_THROTTLE_INTERVAL_MS) {
+      cancelScheduledThrottle();
+      dispatchQueuedEqualizer();
+      return;
     }
+
+    if (throttleHandle !== null) return;
+    throttleHandle = setTimeout(() => {
+      throttleHandle = null;
+      dispatchQueuedEqualizer();
+    }, EQ_THROTTLE_INTERVAL_MS - elapsedSinceDispatch);
   },
 
-  flushEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]): Promise<void> => {
-    if (throttleTimer) {
-      clearTimeout(throttleTimer);
-      throttleTimer = null;
-    }
-    nextRequestArgs = null;
+  /** 松手/停止时取消节流并立刻同步最终参数。 */
+  flushEqualizerSettings(enabled: boolean, preamp: number, gains: number[]): Promise<void> {
+    cancelScheduledThrottle();
+    queuedEqualizerArgs = null;
 
     return playbackApi.setEqualizerSettings(enabled, preamp, gains);
-  }
+  },
 };

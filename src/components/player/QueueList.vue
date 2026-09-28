@@ -1,116 +1,81 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue';
-import { storeToRefs } from 'pinia';
-import { useVirtualizer } from '@tanstack/vue-virtual';
+import { computed, nextTick, watch } from 'vue';
+import { storeToRefs as toRefsOf } from 'pinia';
 
-import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { usePlaybackStore } from '../../features/playback/store';
-import { useLibraryStore } from '../../features/library/store';
-import { useSettings } from '../../features/settings/useSettings';
+import {
+  usePlaybackController,
+} from '../../features/playback/usePlaybackController';
+import { usePlaybackStore as useQueueStore } from '../../features/playback/store';
+import { useLibraryStore as useLibraryVault } from '../../features/library/store';
+import { useSettings as useAppSettings } from '../../features/settings/useSettings';
+import type { Song } from '../../types';
 
-const { settings } = useSettings();
-const songClickAction = computed(() => settings.value.songClickAction || 'double');
+import PendingRowCard from './queue/PendingRowCard.vue';
+import { useQueueWindow } from './queue/queueWindowing';
 
-const libraryStore = useLibraryStore();
-const { sourceSongs } = storeToRefs(libraryStore);
-const { playQueue, currentSong, playSong, formatDuration } = usePlaybackController();
-const playbackStore = usePlaybackStore();
-const { tempQueue } = storeToRefs(playbackStore);
+const { settings } = useAppSettings();
+const clickMode = computed(() => settings.value.songClickAction || 'double');
 
-const queue = computed(() => {
-  if (playQueue.value.length > 0 || tempQueue.value.length > 0) {
-    return [...tempQueue.value, ...playQueue.value];
-  }
-  return sourceSongs.value;
+const queueStore = useQueueStore();
+const { tempQueue } = toRefsOf(queueStore);
+
+const libraryVault = useLibraryVault();
+const { sourceSongs } = toRefsOf(libraryVault);
+
+const { playQueue, currentSong, playSong: startPlayback } = usePlaybackController();
+
+/** 有排片时展示插队 + 主队列，否则回退为整库曲目列表 */
+const pendingTracks = computed<Song[]>(() => {
+  const linedUp = [...tempQueue.value, ...playQueue.value];
+  return linedUp.length > 0 ? linedUp : sourceSongs.value;
 });
 
-// --- 虚拟滚动 ---
-const scrollContainerRef = ref<HTMLElement | null>(null);
-const ROW_HEIGHT = 56;
-
-const virtualizer = useVirtualizer({
-  get count() { return queue.value.length; },
-  getScrollElement: () => scrollContainerRef.value,
-  estimateSize: () => ROW_HEIGHT,
-  overscan: 6,
+const { viewportEl, renderedRows, contentExtent, placementFor, revealRow } = useQueueWindow<Song>({
+  entries: pendingTracks,
+  rowExtent: 56,
+  bufferRows: 6,
 });
 
-const virtualItems = computed(() => virtualizer.value.getVirtualItems());
-const totalSize = computed(() => virtualizer.value.getTotalSize());
-
-watch(currentSong, async () => {
-  await nextTick();
-  scrollToCurrent();
-}, { immediate: true });
-
-const scrollToCurrent = () => {
-  if (!currentSong.value) return;
-  const index = queue.value.findIndex(s => s.path === currentSong.value?.path);
-  if (index !== -1) {
-    virtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'smooth' });
-  }
+/** 正在播放的曲目变化时，把对应行滚到视野中央 */
+const followPlaying = () => {
+  void nextTick(() => {
+    const trackNow = currentSong.value;
+    if (!trackNow) return;
+    const position = pendingTracks.value.findIndex(entry => entry.path === trackNow.path);
+    if (position !== -1) revealRow(position, 'smooth');
+  });
 };
+
+watch(currentSong, followPlaying, { immediate: true });
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
-    <div class="flex items-center justify-between mb-4 px-2">
-      <h2 class="text-xl font-bold text-white">待播清单</h2>
-      <span class="text-sm text-white/40">{{ queue.length }} 首歌曲</span>
-    </div>
-    
-    <div ref="scrollContainerRef" class="flex-1 overflow-y-auto custom-scrollbar -mr-4 pr-4">
-      <div v-if="queue.length > 0" :style="{ height: `${totalSize}px`, position: 'relative', width: '100%' }">
-        <div
-          v-for="vItem in virtualItems"
-          :key="queue[vItem.index].path + vItem.index"
-          :style="{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: `${vItem.size}px`,
-            transform: `translateY(${vItem.start}px)`,
-          }"
-          class="flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 cursor-pointer group transition-colors duration-200"
-          :class="currentSong?.path === queue[vItem.index].path ? 'bg-white/15' : ''"
-          @click="songClickAction === 'single' && playSong(queue[vItem.index])"
-          @dblclick="songClickAction !== 'single' && playSong(queue[vItem.index])"
-        >
-          <div class="w-8 flex justify-center text-white/40 text-sm font-medium">
-               <div v-if="currentSong?.path === queue[vItem.index].path" class="text-white animate-pulse">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
-               </div>
-               <span v-else class="group-hover:hidden">{{ vItem.index + 1 }}</span>
-               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden group-hover:block text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-          </div>
-          
-          <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium truncate mb-0.5" :class="currentSong?.path === queue[vItem.index].path ? 'text-white' : 'text-white/90'">{{ queue[vItem.index].title || queue[vItem.index].name }}</div>
-              <div class="text-xs truncate" :class="currentSong?.path === queue[vItem.index].path ? 'text-white/60' : 'text-white/40'">{{ queue[vItem.index].artist || 'Unknown' }}</div>
-          </div>
-          
-          <div class="text-xs tabular-nums" :class="currentSong?.path === queue[vItem.index].path ? 'text-white/60' : 'text-white/30'">
-              {{ formatDuration(queue[vItem.index].duration) }}
-          </div>
-       </div>
+  <div class="flex h-full flex-col">
+    <header class="mb-4 flex items-center justify-between px-2">
+      <h2 class="font-bold text-xl text-white">待播清单</h2>
+      <span class="text-white/40 text-sm">{{ pendingTracks.length }} 首歌曲</span>
+    </header>
+
+    <div ref="viewportEl" class="queue-scroll -mr-4 flex-1 overflow-y-auto pr-4">
+      <div v-if="pendingTracks.length > 0" class="relative w-full" :style="{ height: `${contentExtent}px` }">
+        <PendingRowCard
+          v-for="row in renderedRows"
+          :key="row.entry.path + row.index"
+          :style="placementFor(row)"
+          :entry="row.entry"
+          :ordinal="row.index"
+          :active="currentSong?.path === row.entry.path"
+          :click-mode="clickMode"
+          @activate="startPlayback"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.2);
-}
+.queue-scroll::-webkit-scrollbar { width: 6px; }
+.queue-scroll::-webkit-scrollbar-track { background: transparent; }
+.queue-scroll::-webkit-scrollbar-thumb { border-radius: 3px; background-color: rgba(255, 255, 255, .1); }
+.queue-scroll::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, .2); }
 </style>

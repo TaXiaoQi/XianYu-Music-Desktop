@@ -1,74 +1,33 @@
-import { ref } from 'vue';
-
-import type { FolderSortMode } from '../services/storage/playerStorage';
 import { libraryApi } from '../services/tauri/libraryApi';
-import { MemoryCache } from '../utils/MemoryCache';
+import { createSongPathChannel } from './libraryPathCacheKit';
+import type { FolderViewPathDemand } from './libraryPathCacheKit';
 
-type BackendFolderSortMode = Exclude<FolderSortMode, 'custom'>;
-
-const FOLDER_VIEW_PATH_CACHE_TTL_MS = 5 * 60 * 1000;
-const FOLDER_VIEW_PATH_CACHE_MAX_ENTRIES = 96;
-
-const folderViewPathCache = new MemoryCache<string, string[]>({
-  maxEntries: FOLDER_VIEW_PATH_CACHE_MAX_ENTRIES,
-  ttlMs: FOLDER_VIEW_PATH_CACHE_TTL_MS,
+// 文件夹视图检索通道：模块级单例，5 分钟 TTL，容量取默认 96 条。
+// 版本号只在显式清空时推进——文件夹列表以目录树数据为准，回填不触发重查。
+const folderChannel = createSongPathChannel({
+  ttlMs: 5 * 60 * 1000,
+  countFillAsChange: false,
 });
 
-const inFlightRequests = new Map<string, Promise<string[]>>();
-const cacheVersion = ref(0);
-
-const makeCacheKey = (
-  folderPath: string,
-  query: string,
-  sortMode: BackendFolderSortMode,
-) => `${sortMode}\u0001${folderPath}\u0001${query}`;
-
-export function useLibraryFolderSongPathCache() {
-  const loadFolderViewSongPaths = async ({
-    folderPath,
-    query = '',
-    sortMode,
-  }: {
-    folderPath: string;
-    query?: string;
-    sortMode: BackendFolderSortMode;
-  }) => {
-    if (!folderPath) {
-      return [];
+export const useLibraryFolderSongPathCache = () => {
+  const fetchFolderPaths = async (demand: FolderViewPathDemand) => {
+    const { folderPath: directory, query = '', sortMode } = demand;
+    if (!directory) {
+      return [] as string[];
     }
 
-    const cacheKey = makeCacheKey(folderPath, query, sortMode);
-    const cached = folderViewPathCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+    // 键维度固定为 排序→目录→搜索词。
+    const lookupKey = [sortMode, directory, query].join('\u0001');
 
-    const inFlight = inFlightRequests.get(cacheKey);
-    if (inFlight) {
-      return inFlight;
-    }
-
-    const request = libraryApi
-      .getLibrarySongPathsForFolderView(folderPath, query, sortMode)
-      .then((paths) => {
-        folderViewPathCache.set(cacheKey, paths);
-        return paths;
-      })
-      .finally(() => {
-        inFlightRequests.delete(cacheKey);
-      });
-
-    inFlightRequests.set(cacheKey, request);
-    return request;
+    return folderChannel.enqueue(lookupKey, () =>
+      libraryApi.getLibrarySongPathsForFolderView(directory, query, sortMode),
+    );
   };
 
-  return {
-    loadFolderViewSongPaths,
-    clearLibraryFolderSongPathCache: () => {
-      folderViewPathCache.clear();
-      inFlightRequests.clear();
-      cacheVersion.value += 1;
-    },
-    libraryFolderSongPathCacheVersion: cacheVersion,
+  const api = {
+    loadFolderViewSongPaths: fetchFolderPaths,
+    clearLibraryFolderSongPathCache: () => folderChannel.reset(),
+    libraryFolderSongPathCacheVersion: folderChannel.changes,
   };
-}
+  return api;
+};

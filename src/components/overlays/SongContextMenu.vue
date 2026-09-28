@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch, type CSSProperties, type ComponentPublicInstance } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, defineAsyncComponent, ref, watch, type ComponentPublicInstance } from 'vue';
+import { useRoute } from 'vue-router';
+import { useRouter } from 'vue-router';
 
 import { usePlayer } from '../../features/playback';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
@@ -27,36 +28,21 @@ import {
   addPendingDeletedSongs,
 } from '../../services/domain/playlistSongSyncState';
 import type { SyncDeleteScope } from './SyncDeleteScopeModal.vue';
-import type { Song } from '../../types';
+import type { Song as SongEntity } from '../../types';
+
+import CtxRow from './contextMenu/CtxRow.vue';
+import GlyphIcon from './contextMenu/GlyphIcon.vue';
+import MenuSurface from './contextMenu/MenuSurface.vue';
+import { GLASS_SHEET, GLASS_SHEET_WIDE } from './contextMenu/sheetChrome';
+import { rowLag } from './contextMenu/motion';
+import { planSongMenu, songGlyphs, type SongMenuCommand } from './contextMenu/songMenuPlan';
+import { watchPointerAway } from './contextMenu/onPointerAway';
 
 /**
- * 歌曲右键菜单：动作分发、艺术家子菜单、在线/本地双模式、已同步歌单的删除范围弹窗。
- * 桌面端独立实现，对外 props/emits 契约与旧版一致。
+ * 歌曲右键菜单。条目由 songMenuPlan 数据驱动编排，图标经 GlyphIcon 渲染，
+ * 定位/动效由 MenuSurface 承担；本组件保留动作分发、艺术家子菜单与
+ * 已同步歌单的删除范围弹窗。对外 props/emits 契约与旧版完全一致。
  */
-
-// ==================== 本地类型 ====================
-type MenuActionKind =
-  | 'play' | 'playNext' | 'addToQueueTail' | 'downloadToLocal' | 'addAlbumToQueueTail'
-  | 'favorite' | 'addToPlaylist' | 'viewArtist' | 'viewAlbum' | 'openFolder'
-  | 'viewSongInfo' | 'removeFromList' | 'deleteFromDisk' | 'viewLeaderboardUser';
-
-type MenuEntryDef =
-  | { type: 'divider'; key: string }
-  | { type: 'action'; key: MenuActionKind; label: string; danger?: boolean };
-
-type MenuEntryWithMotion =
-  | ({ type: 'divider'; key: string; motionIndex: number })
-  | ({ type: 'action'; key: MenuActionKind; label: string; danger?: boolean; motionIndex: number });
-
-interface MenuIconDef {
-  fill?: boolean;
-  viewBox?: string;
-  paths: Array<{
-    d: string;
-    fillRule?: 'evenodd' | 'nonzero' | 'inherit';
-    clipRule?: 'evenodd' | 'nonzero' | 'inherit';
-  }>;
-}
 
 interface RankUserBrief {
   username: string;
@@ -64,10 +50,9 @@ interface RankUserBrief {
   avatar?: string;
 }
 
-// ==================== 对外契约 ====================
 const props = defineProps<{
   visible: boolean;
-  song: Song | null;
+  song: SongEntity | null;
   x: number;
   y: number;
   isPlaylistView: boolean;
@@ -81,13 +66,16 @@ const props = defineProps<{
 
 const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk', 'view-online-artist', 'view-online-album', 'view-leaderboard-user']);
 
-// ==================== 依赖 ====================
-const route = useRoute();
-const router = useRouter();
-const { showToast } = useToast();
+const activeRoute = useRoute();
+const { showToast: flash } = useToast();
 const {
-  playSong, playNext, addSongToQueue, addAlbumToQueueTail,
-  removeSongFromList, openInFinder, currentViewMode,
+  playSong: startTrack,
+  playNext: queueUpNext,
+  addSongToQueue: appendTrack,
+  addAlbumToQueueTail: appendWholeAlbum,
+  removeSongFromList: ejectTrack,
+  openInFinder: revealFile,
+  currentViewMode: libraryScope,
 } = usePlayer();
 const {
   removeFromPlaylist: pruneFromPlaylist,
@@ -95,255 +83,82 @@ const {
   toggleFavorite: flipFavorite,
 } = useLibraryCollections();
 const { filterCondition } = usePlayerViewState();
-const { openSongInfo } = useSongInfoDialog();
-const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
+const { openSongInfo: showDossier } = useSongInfoDialog();
+const { openHomeArtist, openHomeAlbum } = useHomeNavigation(useRouter());
 const { openDownloadDialog } = useDownloadDialog();
 
-// ==================== 菜单几何状态 ====================
-const menuEl = ref<HTMLElement | null>(null);
-const artistTriggerEl = ref<HTMLElement | null>(null);
-const submenuEl = ref<HTMLElement | null>(null);
-const menuBox = ref({ width: 0, height: 0 });
-const submenuBox = ref({ width: 0, height: 0 });
+// ==================== 菜单编排与外壳 ====================
+const mainSheet = ref<InstanceType<typeof MenuSurface> | null>(null);
+const subSheet = ref<InstanceType<typeof MenuSurface> | null>(null);
+const triggerEl = ref<HTMLElement | null>(null);
 const submenuOpen = ref(false);
 
-// 是否展示“从本地移除”（仅文件夹管理态）
+// “从本地移除”只在文件夹管理态出现
 const wipeVisible = computed(() => Boolean(props.isFolderView && props.isManagementMode));
 
-// 距屏幕边缘的最小留白
-const EDGE_GAP = 8;
+const stagedRows = computed(() =>
+  planSongMenu({
+    rankMode: Boolean(props.leaderboardEntry),
+    webSource: Boolean(props.isOnlineSearch),
+    insidePlaylist: props.isPlaylistView,
+    wipeUnlocked: wipeVisible.value,
+    detailPage: props.onlineDetailType,
+    favorited: props.song ? checkFavorite(props.song) : false,
+    downloadable: Boolean(props.isOnlineSearch) && !!props.song && isDownloadableOnlineSong(props.song),
+    wholeAlbumQueable: !props.isOnlineSearch && !props.isPlaylistView && !!props.song && hasSongAlbumMetadata(props.song),
+  }).map((row, seq) => ({ ...row, seq })),
+);
 
-// ==================== 图标定义（仅本文件内使用） ====================
-const iconTable: Record<MenuActionKind, MenuIconDef> = {
-  play: { fill: true, viewBox: '0 0 24 24', paths: [{ d: 'M8 5.5v13l10.5-6.5z' }] },
-  playNext: { fill: true, viewBox: '0 0 24 24', paths: [{ d: 'M4.8 7.1c0-.95 1.06-1.52 1.86-1l5.04 3.36c.72.48.72 1.56 0 2.04L6.66 14.86c-.8.53-1.86-.05-1.86-1V7.1zm7.5 0c0-.95 1.06-1.52 1.86-1l5.04 3.36c.72.48.72 1.56 0 2.04l-5.04 3.36c-.8.53-1.86-.05-1.86-1V7.1z' }] },
-  addToQueueTail: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M5 7.5h14' }, { d: 'M5 12h14' }, { d: 'M5 16.5h14' }] },
-  downloadToLocal: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 4v11' }, { d: 'M8 11l4 4 4-4' }, { d: 'M5 19h14' }] },
-  addAlbumToQueueTail: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M 2,12 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0' }, { d: 'M 5.5,12 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0' }, { d: 'M14.75 8.5H19.25' }, { d: 'M14.75 12H20.25' }, { d: 'M14.75 15.5H21.25' }] },
-  addToPlaylist: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 5.5v13' }, { d: 'M5.5 12h13' }] },
-  favorite: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' }] },
-  viewArtist: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 11a3 3 0 100-6 3 3 0 000 6z' }, { d: 'M6.5 18.5a5.5 5.5 0 0111 0' }] },
-  viewAlbum: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 18.5a6.5 6.5 0 100-13 6.5 6.5 0 000 13z' }, { d: 'M12 13.75a1.75 1.75 0 100-3.5 1.75 1.75 0 000 3.5z' }] },
-  openFolder: { fill: true, viewBox: '0 0 24 24', paths: [{ d: 'M3.5 8.25A2.25 2.25 0 015.75 6h4.07c.48 0 .93.19 1.27.53l1.02 1.02c.34.34.79.53 1.27.53h4.87a2.25 2.25 0 012.25 2.25v5.42A2.25 2.25 0 0118.25 18H5.75A2.25 2.25 0 013.5 15.75v-7.5z' }] },
-  viewSongInfo: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 10.5v4.75' }, { d: 'M12 8h.01' }, { d: 'M12 19a7 7 0 100-14 7 7 0 000 14z' }] },
-  removeFromList: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M7 7l10 10' }, { d: 'M17 7L7 17' }] },
-  deleteFromDisk: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M5 7h14' }, { d: 'M9 7V5.75A1.75 1.75 0 0110.75 4h2.5A1.75 1.75 0 0115 5.75V7' }, { d: 'M8 10.5v5.5' }, { d: 'M12 10.5v5.5' }, { d: 'M16 10.5v5.5' }, { d: 'M6.5 7l.7 10.3A2 2 0 009.2 19h5.6a2 2 0 001.99-1.7L17.5 7' }] },
-  viewLeaderboardUser: { fill: false, viewBox: '0 0 24 24', paths: [{ d: 'M12 11a3 3 0 100-6 3 3 0 000 6z' }, { d: 'M6.5 18.5a5.5 5.5 0 0111 0' }] },
-};
+// ==================== 艺术家子菜单 ====================
+const artistChoices = computed(() => (props.song ? resolveArtistSubmenuOptions(props.song) : []));
+const multiArtist = computed(() => artistChoices.value.length > 1);
 
-const activeIcon = (key: MenuActionKind) => iconTable[key];
-
-// ==================== 菜单项组装 ====================
-const entryDefs = computed<MenuEntryDef[]>(() => {
-  // 排行榜场景只留一个入口
-  if (props.leaderboardEntry) {
-    return [{ type: 'action', key: 'viewLeaderboardUser', label: '查看' }];
+watch(artistChoices, (choices) => {
+  if (choices.length <= 1) {
+    submenuOpen.value = false;
   }
-
-  const online = props.isOnlineSearch;
-  const favLabel = props.song && checkFavorite(props.song) ? '取消收藏' : '收藏歌曲';
-  const list: MenuEntryDef[] = [];
-  const add = (...items: MenuEntryDef[]) => list.push(...items);
-
-  // 第一组：播放相关
-  add(
-    { type: 'action', key: 'play', label: '播放' },
-    { type: 'action', key: 'playNext', label: '下一首播放' },
-    { type: 'action', key: 'addToQueueTail', label: '添加到队尾' },
-  );
-
-  // 在线歌曲可下载时追加下载项
-  if (online && props.song && isDownloadableOnlineSong(props.song)) {
-    add({ type: 'action', key: 'downloadToLocal', label: '下载至本地' });
-  }
-
-  // 本地歌曲有专辑元数据时支持整张入队
-  if (!online && !props.isPlaylistView && props.song && hasSongAlbumMetadata(props.song)) {
-    add({ type: 'action', key: 'addAlbumToQueueTail', label: '整张专辑添加到队尾' });
-  }
-
-  if (online) {
-    // 在线歌手/专辑详情页内隐藏二次跳转入口
-    const skipNav = props.onlineDetailType === 'artist' || props.onlineDetailType === 'album';
-    if (!skipNav) {
-      add(
-        { type: 'divider', key: 'divider-primary' },
-        { type: 'action', key: 'viewArtist', label: '查看歌手' },
-        { type: 'action', key: 'viewAlbum', label: '查看专辑' },
-      );
-    }
-    add(
-      { type: 'divider', key: 'divider-secondary' },
-      { type: 'action', key: 'favorite', label: favLabel },
-    );
-    add(props.isPlaylistView
-      ? { type: 'action', key: 'removeFromList', label: '从歌单中移除' }
-      : { type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
-  } else {
-    add(
-      { type: 'divider', key: 'divider-primary' },
-      { type: 'action', key: 'favorite', label: favLabel },
-    );
-    if (!props.isPlaylistView) {
-      add({ type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
-    }
-    add(
-      { type: 'action', key: 'viewArtist', label: '查看歌手' },
-      { type: 'action', key: 'viewAlbum', label: '查看专辑' },
-      { type: 'divider', key: 'divider-secondary' },
-      { type: 'action', key: 'openFolder', label: '打开文件所在目录' },
-      { type: 'action', key: 'viewSongInfo', label: '查看歌曲信息' },
-      { type: 'divider', key: 'divider-danger' },
-      { type: 'action', key: 'removeFromList', label: props.isPlaylistView ? '从歌单中移除' : '从列表移除' },
-    );
-    if (wipeVisible.value) {
-      add({ type: 'action', key: 'deleteFromDisk', label: '从本地移除', danger: true });
-    }
-  }
-
-  return list;
-});
-
-// 附加级联序号用于入场动效
-const motionList = computed<MenuEntryWithMotion[]>(() =>
-  entryDefs.value.map((item, motionIndex) => ({ ...item, motionIndex })));
-
-// ==================== 尺寸测量与定位 ====================
-const readBox = (el: HTMLElement) => ({
-  width: el.offsetWidth,
-  height: el.offsetHeight,
 });
 
 watch(
   () => props.visible,
-  async (shown) => {
-    if (shown) {
-      await nextTick();
-      if (menuEl.value) {
-        menuBox.value = readBox(menuEl.value);
-      }
-      return;
+  (on) => {
+    if (!on) {
+      submenuOpen.value = false;
     }
-
-    menuBox.value = { width: 0, height: 0 };
-    submenuBox.value = { width: 0, height: 0 };
-    submenuOpen.value = false;
   },
   { immediate: true },
 );
 
-watch(submenuOpen, async (shown) => {
-  if (shown) {
-    await nextTick();
-    if (submenuEl.value) {
-      submenuBox.value = readBox(submenuEl.value);
-    }
-    return;
-  }
-
-  submenuBox.value = { width: 0, height: 0 };
-});
-
-// 主菜单：优先放右下，放不下则向上/向左翻转
-const popoverStyle = computed<CSSProperties>(() => {
-  if (!props.visible) {
-    return {};
-  }
-
-  let top = props.y;
-  let left = props.x;
-  let vOrigin = 'top';
-  let hOrigin = 'left';
-
-  if (top + menuBox.value.height > window.innerHeight) {
-    top = props.y - menuBox.value.height;
-    vOrigin = 'bottom';
-  }
-
-  if (left + menuBox.value.width > window.innerWidth) {
-    left = props.x - menuBox.value.width;
-    hOrigin = 'right';
-  }
-
-  return {
-    left: `${Math.max(EDGE_GAP, left)}px`,
-    top: `${Math.max(EDGE_GAP, top)}px`,
-    visibility: menuBox.value.height === 0 ? 'hidden' : 'visible',
-    transformOrigin: `${hOrigin} ${vOrigin}`,
-  };
-});
-
-// 点击菜单外部关闭（子菜单也算内部）
-const onOutsidePress = (event: MouseEvent) => {
-  const target = event.target as Node;
-  const insideMenu = Boolean(menuEl.value?.contains(target));
-  const insideSubmenu = Boolean(submenuEl.value?.contains(target));
-
-  if (props.visible && !insideMenu && !insideSubmenu) {
-    emit('close');
-  }
-};
-
-onMounted(() => window.addEventListener('mousedown', onOutsidePress));
-onUnmounted(() => window.removeEventListener('mousedown', onOutsidePress));
-
-// ==================== 艺术家子菜单 ====================
-const submenuArtists = computed(() =>
-  props.song ? resolveArtistSubmenuOptions(props.song) : []);
-
-const hasArtistMore = computed(() => submenuArtists.value.length > 1);
-
-watch(submenuArtists, (options) => {
-  if (options.length <= 1) {
-    submenuOpen.value = false;
-  }
-});
-
-// 子菜单：贴着触发项右侧展开，空间不足时翻到左侧/上方
-const submenuStyle = computed<CSSProperties>(() => {
-  if (!submenuOpen.value || !artistTriggerEl.value) {
-    return {};
-  }
-
-  const box = artistTriggerEl.value.getBoundingClientRect();
-  let top = box.top - 6;
-  let left = box.right + 8;
-  let vOrigin = 'top';
-  let hOrigin = 'left';
-
-  if (left + submenuBox.value.width > window.innerWidth) {
-    left = box.left - submenuBox.value.width - 8;
-    hOrigin = 'right';
-  }
-
-  if (top + submenuBox.value.height > window.innerHeight) {
-    top = window.innerHeight - submenuBox.value.height - 8;
-    vOrigin = 'bottom';
-  }
-
-  return {
-    left: `${Math.max(EDGE_GAP, left)}px`,
-    top: `${Math.max(EDGE_GAP, top)}px`,
-    visibility: submenuBox.value.height === 0 ? 'hidden' : 'visible',
-    transformOrigin: `${hOrigin} ${vOrigin}`,
-  };
-});
-
-const collapseSubmenu = () => {
+const foldArtists = () => {
   submenuOpen.value = false;
 };
 
-const expandSubmenu = () => {
-  if (!hasArtistMore.value) {
-    submenuOpen.value = false;
+const spreadArtists = () => {
+  if (!multiArtist.value) {
+    foldArtists();
     return;
   }
   submenuOpen.value = true;
 };
 
-const gotoArtistPage = (artistName: string) => {
+// 悬停换页：.artist 行展开子菜单，其余行收起
+const onRoam = (id: SongMenuCommand) => {
+  if (id === 'inspectArtist') {
+    spreadArtists();
+    return;
+  }
+  foldArtists();
+};
+
+// 记录 .artist 行的 DOM，供子菜单停靠定位
+const grabTrigger = (node: Element | ComponentPublicInstance | null) => {
+  const exposed = node as { body?: HTMLElement | null } | null;
+  triggerEl.value = exposed && exposed.body instanceof HTMLElement ? exposed.body : null;
+};
+
+const jumpToArtist = (artistName: string) => {
   if (!isMeaningfulMetadataValue(artistName)) {
-    showToast('当前歌曲缺少歌手信息', 'info');
+    flash('当前歌曲缺少歌手信息', 'info');
     return;
   }
 
@@ -351,19 +166,24 @@ const gotoArtistPage = (artistName: string) => {
   emit('close');
 };
 
-// ==================== 从列表移除 ====================
+// ==================== 从列表移除（含云端同步范围选择） ====================
+const ScopePickerDialog = defineAsyncComponent(() => import('./SyncDeleteScopeModal.vue'));
+
+const scopeDialogOpen = ref(false);
+const pendingWipe = ref<{ playlistId: string; path: string; cloudId: string; payloadJson: string } | null>(null);
+
 const removeFromCurrentList = () => {
   if (!props.song) {
     return;
   }
 
-  // 歌单视图：已同步到云端的歌单需要先询问删除范围
+  // 歌单视图：已同步云端的歌单先弹窗确认删除范围
   if (props.isPlaylistView) {
     const collectionsStore = useCollectionsStore();
     const playlist = collectionsStore.getPlaylistById(filterCondition.value);
     const cloudId = playlist?.cloudId || '';
     if (playlist && cloudId) {
-      stagedRemoval.value = {
+      pendingWipe.value = {
         playlistId: filterCondition.value,
         path: props.song.path,
         cloudId,
@@ -376,71 +196,145 @@ const removeFromCurrentList = () => {
     return;
   }
 
-  // 收藏 / 最近播放 / 全部歌曲视图：直接从列表移除
-  if (route.path === '/favorites' || route.path === '/recent' || currentViewMode.value === 'all') {
-    void removeSongFromList(props.song);
+  // 收藏 / 最近播放 / 全部歌曲视图直接出列
+  if (activeRoute.path === '/favorites' || activeRoute.path === '/recent' || libraryScope.value === 'all') {
+    void ejectTrack(props.song);
     return;
   }
 
-  showToast('当前页面暂不支持从列表移除', 'info');
+  flash('当前页面暂不支持从列表移除', 'info');
 };
 
-// ==================== 已同步歌单：删除范围三选一 ====================
-
-const SyncScopeDialog = defineAsyncComponent(() => import('./SyncDeleteScopeModal.vue'));
-
-const scopeDialogOpen = ref(false);
-const stagedRemoval = ref<{ playlistId: string; path: string; cloudId: string; payloadJson: string } | null>(null);
-
-// 把歌曲从本地歌单元数据中剔除（保留至少一首时更新数组，否则清空）
-const prunePlaylistSongs = (playlist: { songs?: Array<{ path: string }> }, removedPath: string) => {
-  const list = playlist.songs;
-  if (!list?.length) {
+// 从歌单的歌曲数组中剔除指定曲目：仍有剩余则保留数组，否则整个字段清空
+const stripPlaylistEntry = (playlist: { songs?: Array<{ path: string }> }, removedPath: string) => {
+  const kept = playlist.songs;
+  if (!kept?.length) {
     return;
   }
-  const remaining = list.filter(s => s.path !== removedPath);
-  if (remaining.length !== list.length) {
-    playlist.songs = remaining.length > 0 ? remaining : undefined;
+  const rest = kept.filter((entry) => entry.path !== removedPath);
+  if (rest.length !== kept.length) {
+    playlist.songs = rest.length > 0 ? rest : undefined;
   }
 };
 
-const applyRemoveScope = (scope: SyncDeleteScope) => {
-  const target = stagedRemoval.value;
+const settleRemoveScope = (scope: SyncDeleteScope) => {
+  const staged = pendingWipe.value;
   scopeDialogOpen.value = false;
-  stagedRemoval.value = null;
-  if (!target) return;
+  pendingWipe.value = null;
+  if (!staged) {
+    return;
+  }
 
   const collectionsStore = useCollectionsStore();
-  const playlist = collectionsStore.getPlaylistById(target.playlistId);
-  if (!playlist) return;
+  const playlist = collectionsStore.getPlaylistById(staged.playlistId);
+  if (!playlist) {
+    return;
+  }
 
   if (scope === 'local') {
-    // 仅从本地歌单移除，云端保留
-    addCloudKeepSongs(target.cloudId, [{ path: target.path, payloadJson: target.payloadJson }]);
-    pruneFromPlaylist(target.playlistId, target.path);
-    prunePlaylistSongs(playlist, target.path);
+    // 本地移除，云端保留
+    addCloudKeepSongs(staged.cloudId, [{ path: staged.path, payloadJson: staged.payloadJson }]);
+    pruneFromPlaylist(staged.playlistId, staged.path);
+    stripPlaylistEntry(playlist, staged.path);
   } else if (scope === 'all') {
     // 本地与云端一并删除
-    addPendingDeletedSongs(target.cloudId, [target.path]);
-    pruneFromPlaylist(target.playlistId, target.path);
-    prunePlaylistSongs(playlist, target.path);
+    addPendingDeletedSongs(staged.cloudId, [staged.path]);
+    pruneFromPlaylist(staged.playlistId, staged.path);
+    stripPlaylistEntry(playlist, staged.path);
   } else {
-    // 云端删除、本地保留
-    addLocalOnlySongs(target.cloudId, [target.path]);
+    // 云端删除，本地保留
+    addLocalOnlySongs(staged.cloudId, [staged.path]);
   }
 };
 
 // ==================== 动作分发 ====================
-const onItemHover = (action: MenuActionKind) => {
-  if (action === 'viewArtist') {
-    expandSubmenu();
-    return;
-  }
-  collapseSubmenu();
+type Verdict = 'seal' | 'linger';
+
+const COMMANDS: Record<SongMenuCommand, (track: SongEntity) => Verdict> = {
+  startNow: (track) => {
+    // 在线封面直接交给飞行动画，本地封面由动画自行解析
+    const webCover = track.cover_thumb_path && /^https?:\/\//.test(track.cover_thumb_path)
+      ? track.cover_thumb_path
+      : '';
+    void launchFlyingCover(track.path, webCover);
+    void startTrack(track);
+    return 'seal';
+  },
+  queueNext: (track) => {
+    queueUpNext(track);
+    return 'seal';
+  },
+  queueLast: (track) => {
+    appendTrack(track);
+    return 'seal';
+  },
+  fetchLocal: (track) => {
+    void openDownloadDialog(track);
+    return 'seal';
+  },
+  queueWholeAlbum: (track) => {
+    appendWholeAlbum(track);
+    return 'seal';
+  },
+  markFavorite: (track) => {
+    flash(flipFavorite(track) ? '已收藏' : '已取消收藏', 'info');
+    return 'seal';
+  },
+  pickPlaylist: () => {
+    emit('add-to-playlist');
+    return 'seal';
+  },
+  inspectArtist: (track) => {
+    if (props.isOnlineSearch) {
+      emit('view-online-artist', track);
+      emit('close');
+      return 'linger';
+    }
+    if (!hasSongArtistMetadata(track)) {
+      flash('当前歌曲缺少歌手信息', 'info');
+      return 'seal';
+    }
+    if (multiArtist.value) {
+      spreadArtists();
+      return 'linger';
+    }
+    jumpToArtist(resolvePrimaryArtistName(track));
+    return 'linger';
+  },
+  inspectAlbum: (track) => {
+    if (props.isOnlineSearch) {
+      emit('view-online-album', track);
+      emit('close');
+      return 'linger';
+    }
+    if (!hasSongAlbumMetadata(track)) {
+      flash('当前歌曲缺少专辑信息', 'info');
+      return 'seal';
+    }
+    void openHomeAlbum(getSongAlbumKey(track));
+    return 'seal';
+  },
+  revealOnDisk: (track) => {
+    void revealFile(props.resolvedFilePath ?? track.path);
+    return 'seal';
+  },
+  songDossier: (track) => {
+    showDossier(props.resolvedFilePath ? { ...track, path: props.resolvedFilePath } : track);
+    return 'seal';
+  },
+  ejectFromList: () => {
+    removeFromCurrentList();
+    return 'seal';
+  },
+  purgeOnDisk: (track) => {
+    emit('delete-disk', track);
+    return 'seal';
+  },
+  peekRankUser: () => 'seal',
 };
 
-const runMenuAction = (action: MenuActionKind) => {
-  if (action === 'viewLeaderboardUser') {
+const runCommand = (id: SongMenuCommand) => {
+  if (id === 'peekRankUser') {
     emit('view-leaderboard-user');
     emit('close');
     return;
@@ -449,152 +343,49 @@ const runMenuAction = (action: MenuActionKind) => {
   if (!props.song) {
     return;
   }
-  const song = props.song;
 
-  switch (action) {
-    case 'play': {
-      // 在线封面直接起飞，本地封面交给飞行动画自行取
-      const remoteCover = song.cover_thumb_path && /^https?:\/\//.test(song.cover_thumb_path)
-        ? song.cover_thumb_path
-        : '';
-      void launchFlyingCover(song.path, remoteCover);
-      void playSong(song);
-      break;
-    }
-    case 'playNext':
-      playNext(song);
-      break;
-    case 'addToQueueTail':
-      addSongToQueue(song);
-      break;
-    case 'downloadToLocal':
-      void openDownloadDialog(song);
-      break;
-    case 'addAlbumToQueueTail':
-      addAlbumToQueueTail(song);
-      break;
-    case 'favorite':
-      showToast(flipFavorite(song) ? '已收藏' : '已取消收藏', 'info');
-      break;
-    case 'addToPlaylist':
-      emit('add-to-playlist');
-      break;
-    case 'viewArtist': {
-      if (props.isOnlineSearch) {
-        emit('view-online-artist', song);
-        emit('close');
-        return;
-      }
-      if (!hasSongArtistMetadata(song)) {
-        showToast('当前歌曲缺少歌手信息', 'info');
-        break;
-      }
-      if (hasArtistMore.value) {
-        expandSubmenu();
-        return;
-      }
-      gotoArtistPage(resolvePrimaryArtistName(song));
-      return;
-    }
-    case 'viewAlbum': {
-      if (props.isOnlineSearch) {
-        emit('view-online-album', song);
-        emit('close');
-        return;
-      }
-      if (!hasSongAlbumMetadata(song)) {
-        showToast('当前歌曲缺少专辑信息', 'info');
-        break;
-      }
-      void openHomeAlbum(getSongAlbumKey(song));
-      break;
-    }
-    case 'openFolder':
-      void openInFinder(props.resolvedFilePath ?? song.path);
-      break;
-    case 'viewSongInfo':
-      openSongInfo(props.resolvedFilePath ? { ...song, path: props.resolvedFilePath } : song);
-      break;
-    case 'removeFromList':
-      removeFromCurrentList();
-      break;
-    case 'deleteFromDisk':
-      emit('delete-disk', song);
-      break;
+  if (COMMANDS[id](props.song) === 'seal') {
+    emit('close');
   }
-
-  emit('close');
 };
 
-// 兼容普通元素与组件实例两种 ref 目标
-const bindArtistTrigger = (element: Element | ComponentPublicInstance | null) => {
-  if (element instanceof HTMLElement) {
-    artistTriggerEl.value = element;
-    return;
-  }
-
-  artistTriggerEl.value =
-    element && '$el' in element && element.$el instanceof HTMLElement
-      ? element.$el
-      : null;
-};
-
-// 菜单项入场动效的级联延迟
-const itemDelayStyle = (motionIndex: number) => ({
-  '--menu-item-delay': `${motionIndex * 14}ms`,
-});
+// 主菜单与子菜单之外的按下视为关闭请求
+watchPointerAway(
+  (hit) =>
+    props.visible &&
+    ![mainSheet.value?.shell, subSheet.value?.shell].some((el) => el?.contains(hit as Node)),
+  () => emit('close'),
+);
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="song-menu-pop" appear>
-      <div
-        v-if="visible"
-        ref="menuEl"
-        class="fixed z-[9999] select-none min-w-[220px] rounded-[18px] border border-white/65 bg-white/78 py-1.5 text-sm text-gray-700 backdrop-blur-[22px] supports-[backdrop-filter]:bg-white/72 shadow-[0_20px_45px_rgba(15,23,42,0.16),0_6px_18px_rgba(15,23,42,0.08)]"
-        :style="popoverStyle"
-        @contextmenu.prevent
-      >
-        <template v-for="entry in motionList" :key="entry.key">
-          <div
-            v-if="entry.type === 'divider'"
-            class="song-menu-divider"
-            :style="itemDelayStyle(entry.motionIndex)"
-          ></div>
-          <div
-            v-else
-            class="song-menu-item flex cursor-pointer items-center px-4 py-2.5 transition-colors"
-            :class="entry.danger ? 'text-[#EC4141] hover:text-[#d73a3a]' : ''"
-            :style="itemDelayStyle(entry.motionIndex)"
-            :ref="entry.key === 'viewArtist' ? bindArtistTrigger : undefined"
-            @click="runMenuAction(entry.key)"
-            @mouseenter="onItemHover(entry.key)"
-          >
-            <div class="mr-3 flex h-5 w-5 shrink-0 items-center justify-center text-[#6b778c]">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                :viewBox="activeIcon(entry.key).viewBox || '0 0 24 24'"
-                class="h-5 w-5"
-                :fill="activeIcon(entry.key).fill ? 'currentColor' : 'none'"
-                :stroke="activeIcon(entry.key).fill ? 'none' : 'currentColor'"
-                :stroke-width="activeIcon(entry.key).fill ? undefined : '1.7'"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  v-for="(path, pathIndex) in activeIcon(entry.key).paths"
-                  :key="`${entry.key}-${pathIndex}`"
-                  :d="path.d"
-                  :fill-rule="path.fillRule"
-                  :clip-rule="path.clipRule"
-                />
-              </svg>
-            </div>
-            <span class="min-w-0 flex-1 truncate">{{ entry.label }}</span>
-            <div
-              v-if="entry.key === 'viewArtist' && hasArtistMore"
-              class="ml-3 flex h-4 w-4 shrink-0 items-center justify-center text-[#8b97aa]"
-            >
+    <MenuSurface
+      ref="mainSheet"
+      :shown="visible"
+      :at-x="x"
+      :at-y="y"
+      pop-name="ctx-pop"
+      :chrome-class="GLASS_SHEET"
+    >
+      <template v-for="row in stagedRows" :key="row.id">
+        <div v-if="row.kind === 'break'" class="ctx-sep" :style="rowLag(row.seq)"></div>
+        <CtxRow
+          v-else
+          :ref="row.id === 'inspectArtist' ? grabTrigger : undefined"
+          :caption="row.caption"
+          :alert="row.alert"
+          :alert-drift="row.alert"
+          :step="row.seq"
+          lead-class="shrink-0 text-[#6b778c]"
+          @roam="onRoam(row.id)"
+          @pick="runCommand(row.id)"
+        >
+          <template #lead>
+            <GlyphIcon :shape="songGlyphs[row.id]" />
+          </template>
+          <template v-if="row.id === 'inspectArtist' && multiArtist" #tail>
+            <div class="ml-3 flex h-4 w-4 shrink-0 items-center justify-center text-[#8b97aa]">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
@@ -608,76 +399,37 @@ const itemDelayStyle = (motionIndex: number) => ({
                 <path d="m9 6 6 6-6 6" />
               </svg>
             </div>
-          </div>
-        </template>
-      </div>
-    </Transition>
+          </template>
+        </CtxRow>
+      </template>
+    </MenuSurface>
 
-    <!-- 多歌手子菜单 -->
-    <Transition name="song-menu-pop" appear>
-      <div
-        v-if="visible && submenuOpen && hasArtistMore"
-        ref="submenuEl"
-        class="fixed z-[10000] select-none min-w-[200px] max-w-[280px] rounded-[18px] border border-white/65 bg-white/78 py-1.5 text-sm text-gray-700 backdrop-blur-[22px] supports-[backdrop-filter]:bg-white/72 shadow-[0_20px_45px_rgba(15,23,42,0.16),0_6px_18px_rgba(15,23,42,0.08)]"
-        :style="submenuStyle"
-        @contextmenu.prevent
-      >
-        <div
-          v-for="artistName in submenuArtists"
-          :key="artistName"
-          class="song-menu-item flex cursor-pointer items-center px-4 py-2.5 transition-colors"
-          @click="gotoArtistPage(artistName)"
-        >
-          <span class="min-w-0 flex-1 truncate">{{ artistName }}</span>
-        </div>
-      </div>
-    </Transition>
+    <!-- 多歌手子菜单：停靠在触发行旁 -->
+    <MenuSurface
+      ref="subSheet"
+      :shown="visible && submenuOpen && multiArtist"
+      :at-x="x"
+      :at-y="y"
+      :docked-to="triggerEl"
+      pop-name="ctx-pop"
+      :chrome-class="GLASS_SHEET_WIDE"
+    >
+      <CtxRow
+        v-for="artistName in artistChoices"
+        :key="artistName"
+        :caption="artistName"
+        @pick="jumpToArtist(artistName)"
+      />
+    </MenuSurface>
 
     <!-- 已同步歌单的删除范围选择 -->
-    <SyncScopeDialog
+    <ScopePickerDialog
       :visible="scopeDialogOpen"
       :title="'歌曲已同步到云端'"
       :description="'请选择删除范围'"
       can-delete-cloud
-      @scope="applyRemoveScope"
+      @scope="settleRemoveScope"
       @cancel="scopeDialogOpen = false"
     />
   </Teleport>
 </template>
-
-<style scoped>
-/* ===== 菜单项与分隔线 ===== */
-.song-menu-item { margin: 0 .375rem; border-radius: 12px; }
-.song-menu-item:hover { background: rgba(15,23,42,.055); }
-.song-menu-divider {
-  height: 1px; margin: .34rem .85rem;
-  background: linear-gradient(90deg, rgba(148,163,184,0), rgba(148,163,184,.34), rgba(148,163,184,0));
-}
-
-/* ===== 弹出/收起过渡 ===== */
-.song-menu-pop-enter-active,
-.song-menu-pop-leave-active { will-change: opacity, transform; }
-.song-menu-pop-enter-active { animation: song-menu-enter 240ms cubic-bezier(0.16, 1, 0.3, 1); }
-.song-menu-pop-leave-active { animation: song-menu-leave 140ms cubic-bezier(0.4, 0, 0.2, 1); }
-.song-menu-pop-enter-active .song-menu-item,
-.song-menu-pop-enter-active .song-menu-divider {
-  animation: song-menu-item-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--menu-item-delay, 0ms);
-}
-
-@keyframes song-menu-enter {
-  0% { opacity: 0; transform: translateY(10px) scale(0.965); }
-  72% { opacity: 1; transform: translateY(-1px) scale(1.008); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes song-menu-leave {
-  0% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(4px) scale(0.985); }
-}
-
-@keyframes song-menu-item-in {
-  0% { opacity: 0; transform: translateY(6px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-</style>

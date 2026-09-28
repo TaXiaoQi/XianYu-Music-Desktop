@@ -1,6 +1,7 @@
-import { computed, ref, shallowRef } from 'vue';
+import { ref, shallowRef } from 'vue';
 import { defineStore } from 'pinia';
 
+import { createLibrarySongVault } from './songVault';
 import type {
   AlbumSortMode,
   AlbumDetailSortMode,
@@ -19,562 +20,105 @@ import type {
   Song,
 } from '../../types';
 
-const areSamePaths = (left: string[], right: string[]) =>
-  left.length === right.length && left.every((path, index) => path === right[index]);
-
-const resolveSharedPaths = (paths: string[], existing: string[], sibling: string[]) => {
-  if (areSamePaths(existing, paths)) {
-    return existing;
-  }
-
-  if (areSamePaths(sibling, paths)) {
-    return sibling;
-  }
-
-  return paths;
-};
-
 export const useLibraryStore = defineStore('library', () => {
-  const songPool = new Map<string, LibrarySong>();
-  const protectedPaths = new Set<string>();
-  const songCatalogVersion = ref(0);
-  const libraryDataVersion = ref(0);
-  const stringPool = new Map<string, string>();
-  const arrayPool = new Map<string, string[]>();
-  const rebuildInternPools = () => {
-    const nextStringPool = new Map<string, string>();
-    const nextArrayPool = new Map<string, string[]>();
+  const vault = createLibrarySongVault();
 
-    const registerString = (value: string | undefined) => {
-      if (!value) {
-        return value;
-      }
+  const folderListing = ref<LibraryFolder[]>([]);
+  const hierarchyTree = ref<FolderNode[]>([]);
+  const scanStatus = ref<LibraryScanProgress | null>(null);
+  const scanJournal = ref<LibraryScanSession | null>(null);
+  const scanFailure = ref<string | null>(null);
+  const monitoredFolders = ref<string[]>([]);
+  const artistViewOrder = ref<ArtistSortMode>('name');
+  const albumViewOrder = ref<AlbumSortMode>('name');
+  const albumEntryOrder = ref<AlbumDetailSortMode>('track_number');
+  const artistPinnedOrder = ref<string[]>([]);
+  const albumPinnedOrder = ref<string[]>([]);
+  const folderViewOrder = ref<FolderSortMode>('title');
+  const folderPinnedOrder = ref<Record<string, string[]>>({});
+  const localViewOrder = ref<LocalSortMode>('title');
+  const localPinnedOrder = ref<string[]>([]);
 
-      const existing = nextStringPool.get(value);
-      if (existing) {
-        return existing;
-      }
+  const artistTabIndex = shallowRef<ArtistCatalogItem[]>([]);
+  const albumTabIndex = shallowRef<AlbumCatalogItem[]>([]);
 
-      nextStringPool.set(value, value);
-      return value;
-    };
-
-    const registerStringArray = (values: string[] = []) => {
-      if (values.length === 0) {
-        return [];
-      }
-
-      const normalized = values.map(value => registerString(value) ?? '');
-      const key = normalized.join('\u0001');
-      const existing = nextArrayPool.get(key);
-      if (existing) {
-        return existing;
-      }
-
-      nextArrayPool.set(key, normalized);
-      return normalized;
-    };
-
-    for (const song of songPool.values()) {
-      song.name = registerString(song.name) ?? '';
-      song.title = registerString(song.title);
-      song.path = registerString(song.path) ?? '';
-      song.artist = registerString(song.artist) ?? '';
-      song.artist_names = registerStringArray(song.artist_names);
-      song.effective_artist_names = registerStringArray(song.effective_artist_names);
-      song.album = registerString(song.album) ?? '';
-      song.album_artist = registerString(song.album_artist) ?? '';
-      song.album_key = registerString(song.album_key) ?? '';
-      song.track_number = registerString(song.track_number);
-      song.disc_number = registerString(song.disc_number);
-      song.format = registerString(song.format);
-    }
-
-    stringPool.clear();
-    nextStringPool.forEach((value, key) => {
-      stringPool.set(key, value);
-    });
-
-    arrayPool.clear();
-    nextArrayPool.forEach((value, key) => {
-      arrayPool.set(key, value);
-    });
+  const saveFolderListing = (items: LibraryFolder[]) => {
+    folderListing.value = items;
   };
 
-  const songKeys: Array<keyof LibrarySong> = [
-    'id',
-    'name',
-    'title',
-    'path',
-    'comment',
-    'artist',
-    'artist_names',
-    'effective_artist_names',
-    'album',
-    'album_artist',
-    'album_key',
-    'track_number',
-    'disc_number',
-    'is_various_artists_album',
-    'collapse_artist_credits',
-    'duration',
-    'bitrate',
-    'sample_rate',
-    'bit_depth',
-    'format',
-    'added_at',
-    'file_modified_at',
-  ];
-
-  const canonicalSongPaths = shallowRef<string[]>([]);
-  const sourceSongPaths = shallowRef<string[]>([]);
-  const artistCatalog = shallowRef<ArtistCatalogItem[]>([]);
-  const albumCatalog = shallowRef<AlbumCatalogItem[]>([]);
-
-  const internString = (value: string | undefined) => {
-    if (!value) {
-      return value;
-    }
-
-    const existing = stringPool.get(value);
-    if (existing) {
-      return existing;
-    }
-
-    stringPool.set(value, value);
-    return value;
+  const saveHierarchyTree = (tree: FolderNode[]) => {
+    hierarchyTree.value = tree;
   };
 
-  const internStringArray = (values: string[] = []) => {
-    if (values.length === 0) {
-      return [];
-    }
-
-    const normalized = values.map(value => internString(value) ?? '');
-    const key = normalized.join('\u0001');
-    const existing = arrayPool.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    arrayPool.set(key, normalized);
-    return normalized;
+  const saveArtistTabIndex = (items: ArtistCatalogItem[]) => {
+    artistTabIndex.value = items;
   };
 
-  const normalizeSongRecord = (song: LibrarySong): LibrarySong => ({
-    ...song,
-    name: internString(song.name) ?? '',
-    title: internString(song.title),
-    comment: internString(song.comment),
-    path: internString(song.path) ?? '',
-    artist: internString(song.artist) ?? '',
-    artist_names: internStringArray(song.artist_names),
-    effective_artist_names: internStringArray(song.effective_artist_names),
-    album: internString(song.album) ?? '',
-    album_artist: internString(song.album_artist) ?? '',
-    album_key: internString(song.album_key) ?? '',
-    track_number: internString(song.track_number),
-    disc_number: internString(song.disc_number),
-    format: internString(song.format),
-  });
-
-  const syncSongRecord = (target: LibrarySong, source: LibrarySong) => {
-    let changed = false;
-
-    songKeys.forEach((key) => {
-      const nextValue = source[key];
-      const normalizedValue = Array.isArray(nextValue)
-        ? internStringArray(nextValue)
-        : typeof nextValue === 'string'
-          ? internString(nextValue)
-          : nextValue;
-      const prevValue = target[key];
-
-      const isSameArray = Array.isArray(prevValue)
-        && Array.isArray(normalizedValue)
-        && prevValue.length === normalizedValue.length
-        && prevValue.every((item, index) => item === normalizedValue[index]);
-
-      if (prevValue === normalizedValue || isSameArray) {
-        return;
-      }
-
-      (target as Record<keyof LibrarySong, unknown>)[key] = normalizedValue;
-      changed = true;
-    });
-
-    return changed;
+  const saveAlbumTabIndex = (items: AlbumCatalogItem[]) => {
+    albumTabIndex.value = items;
   };
 
-  const internSong = (song: LibrarySong) => {
-    const path = song?.path;
-    if (!path) {
-      return { song, changed: false };
-    }
-
-    const existing = songPool.get(path);
-    if (!existing) {
-      songPool.set(path, normalizeSongRecord(song));
-      return { song: songPool.get(path) as LibrarySong, changed: true };
-    }
-
-    return {
-      song: existing,
-      changed: syncSongRecord(existing, normalizeSongRecord(song)),
-    };
+  const saveScanStatus = (progress: LibraryScanProgress | null) => {
+    scanStatus.value = progress;
   };
 
-  const normalizeSongCollection = (songs: LibrarySong[]) => {
-    const nextPaths: string[] = [];
-    const seenPaths = new Set<string>();
-    let changed = false;
-
-    songs.forEach((song) => {
-      if (!song?.path || seenPaths.has(song.path)) {
-        return;
-      }
-
-      seenPaths.add(song.path);
-      nextPaths.push(song.path);
-
-      const interned = internSong(song);
-      if (interned.changed) {
-        changed = true;
-      }
-    });
-
-    return { paths: nextPaths, changed };
+  const saveScanJournal = (session: LibraryScanSession | null) => {
+    scanJournal.value = session;
   };
 
-  const pruneSongPool = () => {
-    const referencedPaths = new Set<string>([
-      ...canonicalSongPaths.value,
-      ...sourceSongPaths.value,
-      ...protectedPaths,
-    ]);
-
-    let removed = false;
-    for (const path of songPool.keys()) {
-      if (!referencedPaths.has(path)) {
-        songPool.delete(path);
-        removed = true;
-      }
-    }
-
-    if (removed) {
-      rebuildInternPools();
-      songCatalogVersion.value += 1;
-    }
+  const saveScanFailure = (message: string | null) => {
+    scanFailure.value = message;
   };
 
-  const materializeSongs = (paths: string[]) => {
-    songCatalogVersion.value;
-    return paths
-      .map(path => songPool.get(path))
-      .filter((song): song is LibrarySong => !!song);
+  const saveMonitoredFolders = (paths: string[]) => {
+    monitoredFolders.value = paths;
   };
 
-  const updateCanonicalSongPaths = (paths: string[], didChangeSongPool = false) => {
-    const nextPaths = resolveSharedPaths(paths, canonicalSongPaths.value, sourceSongPaths.value);
-    const didChangePaths = canonicalSongPaths.value !== nextPaths;
-    if (didChangePaths) {
-      canonicalSongPaths.value = nextPaths;
-    }
-
-    if (didChangeSongPool) {
-      songCatalogVersion.value += 1;
-    }
-    if (didChangePaths || didChangeSongPool) {
-      libraryDataVersion.value += 1;
-    }
-
-    pruneSongPool();
-  };
-
-  const updateSourceSongPaths = (paths: string[], didChangeSongPool = false) => {
-    const nextPaths = resolveSharedPaths(paths, sourceSongPaths.value, canonicalSongPaths.value);
-    if (sourceSongPaths.value !== nextPaths) {
-      sourceSongPaths.value = nextPaths;
-    }
-
-    if (didChangeSongPool) {
-      songCatalogVersion.value += 1;
-    }
-
-    pruneSongPool();
-  };
-
-  const setCanonicalSongs = (songs: LibrarySong[]) => {
-    const normalized = normalizeSongCollection(songs);
-    updateCanonicalSongPaths(normalized.paths, normalized.changed);
-  };
-
-  const setSourceSongs = (songs: LibrarySong[]) => {
-    const normalized = normalizeSongCollection(songs);
-    updateSourceSongPaths(normalized.paths, normalized.changed);
-  };
-
-  const setSongRecord = (song: LibrarySong) => {
-    const interned = internSong(song);
-    if (interned.changed) {
-      songCatalogVersion.value += 1;
-    }
-  };
-
-  const setExtraSong = (song: LibrarySong) => {
-    if (!song?.path) {
+  const moveMonitoredFolder = (fromIndex: number, toIndex: number) => {
+    const reordered = [...monitoredFolders.value];
+    const [picked] = reordered.splice(fromIndex, 1);
+    if (!picked) {
       return;
     }
 
-    protectedPaths.add(song.path);
-    const interned = internSong(song);
-    if (interned.changed) {
-      songCatalogVersion.value += 1;
-    }
+    reordered.splice(toIndex, 0, picked);
+    monitoredFolders.value = reordered;
   };
 
-  const patchSongMeta = (path: string, patch: Partial<LibrarySong>) => {
-    if (!path) return;
-    const existing = songPool.get(path);
-    if (existing) {
-      songPool.set(path, { ...existing, ...patch });
-      songCatalogVersion.value += 1;
-    }
-  };
+  const setSongRecord = (song: LibrarySong) => vault.recordEntry(song);
 
-  const setExtraSongs = (songs: LibrarySong[]) => {
-    let changed = false;
-    songs.forEach((song) => {
-      if (!song?.path) {
-        return;
-      }
-      protectedPaths.add(song.path);
-      const interned = internSong(song);
-      if (interned.changed) {
-        changed = true;
-      }
-    });
+  const setExtraSong = (song: LibrarySong) => vault.pinEntry(song);
 
-    if (changed) {
-      songCatalogVersion.value += 1;
-    }
-  };
+  const setExtraSongs = (songs: LibrarySong[]) => vault.pinEntries(songs);
 
-  const setExtraSongsBatch = (songGroups: LibrarySong[][]) => {
-    let changed = false;
-    for (const songs of songGroups) {
-      songs.forEach((song) => {
-        if (!song?.path) {
-          return;
-        }
-        protectedPaths.add(song.path);
-        const interned = internSong(song);
-        if (interned.changed) {
-          changed = true;
-        }
-      });
-    }
-    if (changed) {
-      songCatalogVersion.value += 1;
-    }
-  };
+  const setExtraSongsBatch = (songGroups: LibrarySong[][]) => vault.pinEntryGroups(songGroups);
 
-  const removeExtraSong = (path: string | null | undefined) => {
-    if (!path) {
-      return;
-    }
+  const patchSongMeta = (path: string, patch: Partial<LibrarySong>) => vault.amendEntry(path, patch);
 
-    protectedPaths.delete(path);
-    if (songPool.delete(path)) {
-      songCatalogVersion.value += 1;
-    }
-  };
+  const removeExtraSong = (path: string | null | undefined) => vault.dropPinnedEntry(path);
 
-  const getSongByPath = (path: string | null | undefined, fallback?: Song | null) => {
-    void songCatalogVersion.value;
+  const getSongByPath = (path: string | null | undefined, fallback?: Song | null) =>
+    vault.getEntry(path, fallback);
 
-    if (!path) {
-      return fallback ?? null;
-    }
+  const resolveSongsByPaths = (paths: string[], fallbackSongs: Song[] = []) =>
+    vault.getEntries(paths, fallbackSongs);
 
-    return songPool.get(path) ?? fallback ?? null;
-  };
+  const setCanonicalSongs = (songs: LibrarySong[]) => vault.adoptCanonical(songs);
 
-  const resolveSongsByPaths = (paths: string[], fallbackSongs: Song[] = []) => {
-    const fallbackLookup = new Map<string, Song>();
-    fallbackSongs.forEach((song) => {
-      if (song?.path && !fallbackLookup.has(song.path)) {
-        fallbackLookup.set(song.path, song);
-      }
-    });
+  const setSourceSongs = (songs: LibrarySong[]) => vault.adoptSource(songs);
 
-    return paths
-      .map(path => getSongByPath(path, fallbackLookup.get(path)))
-      .filter((song): song is Song => !!song);
-  };
+  const patchLibrarySongs = (payload: { songs: LibrarySong[]; deleted_paths: string[] }) =>
+    vault.applyDelta(payload);
 
-  const songLookup = computed(() => {
-    songCatalogVersion.value;
-    return songPool as Map<string, Song>;
-  });
-
-  const canonicalSongs = computed<Song[]>({
-    get: () => materializeSongs(canonicalSongPaths.value),
-    set: setCanonicalSongs,
-  });
-
-  const sourceSongs = computed<Song[]>({
-    get: () => materializeSongs(sourceSongPaths.value),
-    set: setSourceSongs,
-  });
-
-  const libraryFolders = ref<LibraryFolder[]>([]);
-  const libraryHierarchy = ref<FolderNode[]>([]);
-  const libraryScanProgress = ref<LibraryScanProgress | null>(null);
-  const libraryScanSession = ref<LibraryScanSession | null>(null);
-  const lastLibraryScanError = ref<string | null>(null);
-  const watchedFolders = ref<string[]>([]);
-  const artistSortMode = ref<ArtistSortMode>('name');
-  const albumSortMode = ref<AlbumSortMode>('name');
-  const albumDetailSortMode = ref<AlbumDetailSortMode>('track_number');
-  const artistCustomOrder = ref<string[]>([]);
-  const albumCustomOrder = ref<string[]>([]);
-  const folderSortMode = ref<FolderSortMode>('title');
-  const folderCustomOrder = ref<Record<string, string[]>>({});
-  const localSortMode = ref<LocalSortMode>('title');
-  const localCustomOrder = ref<string[]>([]);
-
-  const setLibraryFolders = (folders: LibraryFolder[]) => {
-    libraryFolders.value = folders;
-  };
-
-  const setLibraryHierarchy = (tree: FolderNode[]) => {
-    libraryHierarchy.value = tree;
-  };
-
-  const setArtistCatalog = (items: ArtistCatalogItem[]) => {
-    artistCatalog.value = items;
-  };
-
-  const setAlbumCatalog = (items: AlbumCatalogItem[]) => {
-    albumCatalog.value = items;
-  };
-
-  const setLibraryScanProgress = (progress: LibraryScanProgress | null) => {
-    libraryScanProgress.value = progress;
-  };
-
-  const setLibraryScanSession = (session: LibraryScanSession | null) => {
-    libraryScanSession.value = session;
-  };
-
-  const setLastLibraryScanError = (message: string | null) => {
-    lastLibraryScanError.value = message;
-  };
-
-  const setWatchedFolders = (paths: string[]) => {
-    watchedFolders.value = paths;
-  };
-
-  const reorderWatchedFolders = (from: number, to: number) => {
-    const list = [...watchedFolders.value];
-    const [removed] = list.splice(from, 1);
-    if (!removed) {
-      return;
-    }
-
-    list.splice(to, 0, removed);
-    watchedFolders.value = list;
-  };
-
-  const patchLibrarySongs = (payload: { songs: LibrarySong[]; deleted_paths: string[] }) => {
-    const incomingSongs = payload.songs ?? [];
-    const incomingDeleted = payload.deleted_paths ?? [];
-
-    if (incomingSongs.length === 0 && incomingDeleted.length === 0) {
-      return;
-    }
-
-    let didChange = false;
-
-    if (incomingDeleted.length > 0) {
-      const deletedSet = new Set(incomingDeleted);
-      const nextCanonical = canonicalSongPaths.value.filter(path => !deletedSet.has(path));
-      if (nextCanonical.length !== canonicalSongPaths.value.length) {
-        canonicalSongPaths.value = nextCanonical;
-        didChange = true;
-      }
-
-      const nextSource = sourceSongPaths.value.filter(path => !deletedSet.has(path));
-      if (nextSource.length !== sourceSongPaths.value.length) {
-        sourceSongPaths.value = nextSource;
-        didChange = true;
-      }
-
-      incomingDeleted.forEach((path) => {
-        if (songPool.delete(path)) {
-          didChange = true;
-        }
-      });
-    }
-
-    if (incomingSongs.length > 0) {
-      const addedPaths: string[] = [];
-
-      incomingSongs.forEach((song) => {
-        if (!song?.path) {
-          return;
-        }
-
-        const path = song.path;
-        const existing = songPool.has(path);
-
-        const interned = internSong(song);
-        if (interned.changed) {
-          didChange = true;
-        }
-
-        if (!existing) {
-          addedPaths.push(path);
-        }
-      });
-
-      if (addedPaths.length > 0) {
-        canonicalSongPaths.value = [...canonicalSongPaths.value, ...addedPaths];
-        sourceSongPaths.value = [...sourceSongPaths.value, ...addedPaths];
-        didChange = true;
-      }
-    }
-
-    if (didChange) {
-      songCatalogVersion.value += 1;
-      libraryDataVersion.value += 1;
-    }
-  };
-
-  const setCanonicalSongOrder = (paths: string[]) => {
-    if (!Array.isArray(paths)) {
-      return;
-    }
-
-    const validPaths = paths.filter(path => songPool.has(path));
-
-    if (areSamePaths(canonicalSongPaths.value, validPaths)) {
-      return;
-    }
-
-    canonicalSongPaths.value = validPaths;
-    songCatalogVersion.value += 1;
-    libraryDataVersion.value += 1;
-  };
+  const setCanonicalSongOrder = (paths: string[]) => vault.orderCanonical(paths);
 
   return {
-    libraryDataVersion,
-    canonicalSongs,
-    canonicalSongPaths,
-    sourceSongs,
-    sourceSongPaths,
-    songLookup,
+    libraryDataVersion: vault.dataVersion,
+    canonicalSongs: vault.canonicalView,
+    canonicalSongPaths: vault.canonicalTrail,
+    sourceSongs: vault.sourceView,
+    sourceSongPaths: vault.sourceTrail,
+    songLookup: vault.songIndex,
     getSongByPath,
     resolveSongsByPaths,
     setSongRecord,
@@ -583,40 +127,40 @@ export const useLibraryStore = defineStore('library', () => {
     setExtraSongsBatch,
     patchSongMeta,
     removeExtraSong,
-    libraryFolders,
-    libraryHierarchy,
-    artistCatalog,
-    albumCatalog,
-    songList: sourceSongs,
-    librarySongs: canonicalSongs,
-    folderTree: libraryHierarchy,
-    libraryScanProgress,
-    libraryScanSession,
-    lastLibraryScanError,
-    watchedFolders,
-    artistSortMode,
-    albumSortMode,
-    albumDetailSortMode,
-    artistCustomOrder,
-    albumCustomOrder,
-    folderSortMode,
-    folderCustomOrder,
-    localSortMode,
-    localCustomOrder,
+    libraryFolders: folderListing,
+    libraryHierarchy: hierarchyTree,
+    artistCatalog: artistTabIndex,
+    albumCatalog: albumTabIndex,
+    songList: vault.sourceView,
+    librarySongs: vault.canonicalView,
+    folderTree: hierarchyTree,
+    libraryScanProgress: scanStatus,
+    libraryScanSession: scanJournal,
+    lastLibraryScanError: scanFailure,
+    watchedFolders: monitoredFolders,
+    artistSortMode: artistViewOrder,
+    albumSortMode: albumViewOrder,
+    albumDetailSortMode: albumEntryOrder,
+    artistCustomOrder: artistPinnedOrder,
+    albumCustomOrder: albumPinnedOrder,
+    folderSortMode: folderViewOrder,
+    folderCustomOrder: folderPinnedOrder,
+    localSortMode: localViewOrder,
+    localCustomOrder: localPinnedOrder,
     setSourceSongs,
     setCanonicalSongs,
-    setLibraryFolders,
-    setLibraryHierarchy,
-    setArtistCatalog,
-    setAlbumCatalog,
+    setLibraryFolders: saveFolderListing,
+    setLibraryHierarchy: saveHierarchyTree,
+    setArtistCatalog: saveArtistTabIndex,
+    setAlbumCatalog: saveAlbumTabIndex,
     setSongList: setSourceSongs,
     setLibrarySongs: setCanonicalSongs,
-    setFolderTree: setLibraryHierarchy,
-    setLibraryScanProgress,
-    setLibraryScanSession,
-    setLastLibraryScanError,
-    setWatchedFolders,
-    reorderWatchedFolders,
+    setFolderTree: saveHierarchyTree,
+    setLibraryScanProgress: saveScanStatus,
+    setLibraryScanSession: saveScanJournal,
+    setLastLibraryScanError: saveScanFailure,
+    setWatchedFolders: saveMonitoredFolders,
+    reorderWatchedFolders: moveMonitoredFolder,
     patchLibrarySongs,
     setCanonicalSongOrder,
   };

@@ -1,44 +1,47 @@
-import { describe, expect, it } from 'vitest';
+import { it, describe, expect } from 'vitest';
 
-import playerFooter from '../components/layout/PlayerFooter.vue?raw';
-import footerControlItem from '../components/layout/FooterControlItem.vue?raw';
-import sidebarPlaylists from '../components/layout/SidebarPlaylists.vue?raw';
-import miniPlayer from '../components/layout/MiniPlayerWindow.vue?raw';
-import volumePopoverWindow from '../components/layout/VolumePopoverWindow.vue?raw';
-import songTable from '../components/song-list/SongTable.vue?raw';
-import sidebarDrag from '../composables/useSidebarPlaylistDragDrop.ts?raw';
-import songDrag from '../composables/useSongDrag.ts?raw';
+import playerFooterMarkup from '../components/layout/PlayerFooter.vue?raw';
+import footerControlItemMarkup from '../components/layout/FooterControlItem.vue?raw';
+import sidebarPlaylistsMarkup from '../components/layout/SidebarPlaylists.vue?raw';
+import miniPlayerMarkup from '../components/layout/MiniPlayerWindow.vue?raw';
+import volumePopoverMarkup from '../components/layout/VolumePopoverWindow.vue?raw';
+import songTableMarkup from '../components/song-list/SongTable.vue?raw';
+import sidebarDragLogic from '../composables/useSidebarPlaylistDragDrop.ts?raw';
+import songDragLogic from '../composables/useSongDrag.ts?raw';
 
-describe('touch drag support', () => {
-  it('uses pointer events for song table drag gestures', () => {
-    expect(songTable).toContain('@pointerdown="onRowPointerDown($event, song, song.virtualIndex)"');
-    expect(songTable).toContain('@pointermove="onTablePointerMove"');
-    expect(songDrag).toContain("window.addEventListener('pointermove'");
-    expect(songDrag).toContain("window.addEventListener('pointerup'");
-    expect(songDrag).toContain("window.addEventListener('pointercancel'");
+// 行为规格（逐字冻结）：所有拖拽手势一律基于 Pointer Events 实现，
+// 拖拽期间在 window 上跟踪 move / up / cancel 三类指针事件。
+
+describe('触摸拖拽支持', () => {
+  it('歌曲表格的行拖拽走 pointer 事件', () => {
+    expect(songTableMarkup).toContain('@pointerdown="onRowPointerDown($event, song, song.virtualIndex)"');
+    expect(songTableMarkup).toContain('@pointermove="onTablePointerMove"');
+    expect(songDragLogic).toContain("window.addEventListener('pointermove'");
+    expect(songDragLogic).toContain("window.addEventListener('pointerup'");
+    expect(songDragLogic).toContain("window.addEventListener('pointercancel'");
   });
 
-  it('uses pointer events for library reorder drag gestures', () => {
-    expect(sidebarPlaylists).toContain('@pointerdown="$emit(\'pointerDown\', $event, index, list)"');
-    expect(sidebarPlaylists).toContain('@pointermove="$emit(\'itemPointerMove\', $event, list.id)"');
-    expect(sidebarDrag).toContain("window.addEventListener('pointermove'");
-    expect(sidebarDrag).toContain("window.addEventListener('pointerup'");
-    expect(sidebarDrag).toContain("window.addEventListener('pointercancel'");
+  it('媒体库歌单重排的拖拽走 pointer 事件', () => {
+    expect(sidebarPlaylistsMarkup).toContain('@pointerdown="$emit(\'pointerDown\', $event, index, list)"');
+    expect(sidebarPlaylistsMarkup).toContain('@pointermove="$emit(\'itemPointerMove\', $event, list.id)"');
+    expect(sidebarDragLogic).toContain("window.addEventListener('pointermove'");
+    expect(sidebarDragLogic).toContain("window.addEventListener('pointerup'");
+    expect(sidebarDragLogic).toContain("window.addEventListener('pointercancel'");
   });
 
-  it('uses pointer events for playback sliders', () => {
-    expect(playerFooter).toContain('@pointerdown="startProgressDrag"');
-    expect(footerControlItem).toContain('@pointerdown="startDrag"');
-    expect(playerFooter).toContain("window.addEventListener('pointermove'");
-    expect(playerFooter).toContain("window.addEventListener('pointerup'");
-    expect(playerFooter).toContain("window.addEventListener('pointercancel'");
-    expect(volumePopoverWindow).toContain('@pointerdown.stop="startVolumeDrag"');
-    expect(miniPlayer).toContain('@pointerdown.stop="startProgressDrag"');
-    expect(miniPlayer).toContain("window.addEventListener('pointermove'");
-    expect(miniPlayer).toContain("window.addEventListener('pointerup'");
-    expect(miniPlayer).toContain("window.addEventListener('pointercancel'");
-    expect(volumePopoverWindow).toContain("window.addEventListener('pointermove'");
-    expect(volumePopoverWindow).toContain("window.addEventListener('pointerup'");
-    expect(volumePopoverWindow).toContain("window.addEventListener('pointercancel'");
+  it('播放进度与音量滑杆的拖拽走 pointer 事件', () => {
+    expect(playerFooterMarkup).toContain('@pointerdown="startProgressDrag"');
+    expect(footerControlItemMarkup).toContain('@pointerdown="startDrag"');
+    expect(playerFooterMarkup).toContain("window.addEventListener('pointermove'");
+    expect(playerFooterMarkup).toContain("window.addEventListener('pointerup'");
+    expect(playerFooterMarkup).toContain("window.addEventListener('pointercancel'");
+    expect(volumePopoverMarkup).toContain('@pointerdown.stop="startVolumeDrag"');
+    expect(miniPlayerMarkup).toContain('@pointerdown.stop="startProgressDrag"');
+    expect(miniPlayerMarkup).toContain("window.addEventListener('pointermove'");
+    expect(miniPlayerMarkup).toContain("window.addEventListener('pointerup'");
+    expect(miniPlayerMarkup).toContain("window.addEventListener('pointercancel'");
+    expect(volumePopoverMarkup).toContain("window.addEventListener('pointermove'");
+    expect(volumePopoverMarkup).toContain("window.addEventListener('pointerup'");
+    expect(volumePopoverMarkup).toContain("window.addEventListener('pointercancel'");
   });
 });

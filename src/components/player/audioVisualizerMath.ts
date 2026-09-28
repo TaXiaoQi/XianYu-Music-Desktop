@@ -1,12 +1,16 @@
-const RISE_SMOOTHING = 0.3;
-const FALL_SMOOTHING = 0.15;
+const ATTACK_RATIO = 0.3;
+const RELEASE_RATIO = 0.15;
 
-const clampLevel = (value: number) => Math.min(1, Math.max(0, value));
+function confineToUnitInterval(level: number): number {
+  if (level < 0) return 0;
+  if (level > 1) return 1;
+  return level;
+}
 
-export const smoothVisualizerLevel = (previous: number, target: number) => {
-  const safePrevious = clampLevel(previous);
-  const safeTarget = clampLevel(target);
-  const smoothing = safeTarget > safePrevious ? RISE_SMOOTHING : FALL_SMOOTHING;
+export function smoothVisualizerLevel(previous: number, target: number): number {
+  const nextLevel = confineToUnitInterval(previous);
+  const goalLevel = confineToUnitInterval(target);
+  const ratio = goalLevel > nextLevel ? ATTACK_RATIO : RELEASE_RATIO;
 
-  return clampLevel(safePrevious + (safeTarget - safePrevious) * smoothing);
-};
+  return confineToUnitInterval(nextLevel + (goalLevel - nextLevel) * ratio);
+}

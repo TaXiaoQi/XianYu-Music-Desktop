@@ -1,91 +1,39 @@
-import { ref } from 'vue';
-
-import type { LocalSortMode } from '../services/storage/playerStorage';
+import { useLibraryStore as useLibraryCatalogStore } from '../features/library/store';
 import { libraryApi } from '../services/tauri/libraryApi';
-import { MemoryCache } from '../utils/MemoryCache';
+import { createSongPathChannel, isStalePathRequest } from './libraryPathCacheKit';
+import type { AllViewPathDemand } from './libraryPathCacheKit';
 
-import { useLibraryStore } from '../features/library/store';
-
-type BackendLocalSortMode = Exclude<LocalSortMode, 'custom'>;
-
-const ALL_VIEW_PATH_CACHE_TTL_MS = 5 * 60 * 1000;
-const ALL_VIEW_PATH_CACHE_MAX_ENTRIES = 96;
-
-const allViewPathCache = new MemoryCache<string, string[]>({
-  maxEntries: ALL_VIEW_PATH_CACHE_MAX_ENTRIES,
-  ttlMs: ALL_VIEW_PATH_CACHE_TTL_MS,
+// 「全部音乐」检索通道：模块级单例，5 分钟 TTL，容量取默认 96 条。
+const allViewChannel = createSongPathChannel({
+  ttlMs: 5 * 60 * 1000,
 });
 
-const inFlightRequests = new Map<string, Promise<string[]>>();
-const cacheVersion = ref(0);
-const STALE_LIBRARY_PATH_REQUEST = 'STALE_LIBRARY_PATH_REQUEST';
+export const useLibraryAllSongPathCache = () => {
+  const catalogStore = useLibraryCatalogStore();
 
-const makeCacheKey = (
-  query: string,
-  artistFilter: string,
-  albumFilter: string,
-  sortMode: BackendLocalSortMode,
-) => `${sortMode}\u0001${query}\u0001${artistFilter}\u0001${albumFilter}`;
+  const fetchAllViewPaths = async (demand: AllViewPathDemand) => {
+    const { query = '', artistFilter = '', albumFilter = '', sortMode } = demand;
 
-export function useLibraryAllSongPathCache() {
-  const libraryStore = useLibraryStore();
+    // 键维度固定为 排序→搜索词→歌手→专辑。
+    const lookupKey = [sortMode, query, artistFilter, albumFilter].join('\u0001');
 
-  const loadAllViewSongPaths = async ({
-    query = '',
-    artistFilter = '',
-    albumFilter = '',
-    sortMode,
-  }: {
-    query?: string;
-    artistFilter?: string;
-    albumFilter?: string;
-    sortMode: BackendLocalSortMode;
-  }) => {
-    const cacheKey = makeCacheKey(query, artistFilter, albumFilter, sortMode);
-    const cached = allViewPathCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    const inFlight = inFlightRequests.get(cacheKey);
-    if (inFlight) {
-      return inFlight;
-    }
-
-    const requestVersion = libraryStore.libraryDataVersion;
-
-    const request = libraryApi
-      .getLibrarySongPathsForAllView(query, artistFilter, albumFilter, sortMode)
-      .then((paths) => {
-        if (libraryStore.libraryDataVersion === requestVersion) {
-          allViewPathCache.set(cacheKey, paths);
-          cacheVersion.value += 1;
-          return paths;
-        }
-        throw Object.assign(new Error('Stale library path request'), {
-          code: STALE_LIBRARY_PATH_REQUEST,
-        });
-      })
-      .finally(() => {
-        inFlightRequests.delete(cacheKey);
-      });
-
-    inFlightRequests.set(cacheKey, request);
-    return request;
+    return allViewChannel.enqueue(
+      lookupKey,
+      () => libraryApi.getLibrarySongPathsForAllView(query, artistFilter, albumFilter, sortMode),
+      {
+        // 请求前后数据版本一致才允许回填，避免把旧库的列表写进新库。
+        capture: () => catalogStore.libraryDataVersion,
+        retains: snapshot => catalogStore.libraryDataVersion === snapshot,
+      },
+    );
   };
 
-  return {
-    loadAllViewSongPaths,
-    clearLibraryAllSongPathCache: () => {
-      allViewPathCache.clear();
-      inFlightRequests.clear();
-      cacheVersion.value += 1;
-    },
-    libraryAllSongPathCacheVersion: cacheVersion,
+  const api = {
+    loadAllViewSongPaths: fetchAllViewPaths,
+    clearLibraryAllSongPathCache: () => allViewChannel.reset(),
+    libraryAllSongPathCacheVersion: allViewChannel.changes,
   };
-}
+  return api;
+};
 
-export const isStaleLibraryPathRequestError = (error: unknown) =>
-  typeof error === 'object'
-  && error !== null
-  && (error as { code?: string }).code === STALE_LIBRARY_PATH_REQUEST;
+export const isStaleLibraryPathRequestError = isStalePathRequest;

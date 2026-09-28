@@ -1,884 +1,830 @@
-import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
+import { computed, ref } from 'vue';
 
 import type {
-  AppSettings,
-  AudioSettings,
-  AutoSyncConfig,
-  DesktopLyricsSettings,
-  DownloadLyricsStyle,
-  DownloadSettings,
-  EqualizerPreset,
-  FooterLayoutSettings,
-  ImportedLyricsFont,
-  LyricsSettings,
-  LogSettings,
-  MvQualityKey,
-  PluginSettings,
-  SidebarSettings,
-  ThemeSettings,
-  TopBarLayoutSettings,
-  UploadSettings,
+  ThemeSettings, SidebarSettings, FooterLayoutSettings, TopBarLayoutSettings,
+  AudioSettings, LyricsSettings, DesktopLyricsSettings,
+  DownloadSettings, UploadSettings, PluginSettings, AutoSyncConfig, LogSettings,
+  ImportedLyricsFont, EqualizerPreset, MvQualityKey, AppSettings,
 } from '../../types';
-import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS } from '../../types';
-import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../../utils/themeColor';
+import { MV_QUALITY_KEYS, ALL_QUALITY_KEYS } from '../../types';
+import { normalizeThemeColor, DEFAULT_THEME_COLOR } from '../../utils/themeColor';
 import {
-  createDefaultDesktopLyricsSettings,
-  createDefaultLyricsSettings,
+  normalizeImportedLyricsFonts,
   mergeDesktopLyricsSettings,
   mergeLyricsSettings,
-  normalizeImportedLyricsFonts,
+  createDefaultDesktopLyricsSettings,
+  createDefaultLyricsSettings,
 } from '../../composables/lyrics/constants';
 import {
+  type ShortcutSettingsPatch,
   createDefaultShortcutSettings,
   mergeShortcutSettings,
-  type ShortcutSettingsPatch,
 } from './shortcuts';
-import { DEFAULT_SIDEBAR_ORDER, normalizeSidebarOrder } from './sidebarItems';
-import { DEFAULT_FOOTER_LAYOUT, normalizeFooterLayout } from './footerItems';
-import { DEFAULT_TOPBAR_LAYOUT, normalizeTopBarLayout } from './topBarItems';
-import { playerStorage } from '../../services/storage/playerStorage';
+import { normalizeSidebarOrder, DEFAULT_SIDEBAR_ORDER } from './sidebarItems';
+import { normalizeFooterLayout, DEFAULT_FOOTER_LAYOUT } from './footerItems';
+import { normalizeTopBarLayout, DEFAULT_TOPBAR_LAYOUT } from './topBarItems';
 import { normalizeLyricsSyncOffsetSeconds } from './lyricsSyncOffset';
+import { playerStorage } from '../../services/storage/playerStorage';
 
-const createUserPresetId = (): string =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? `user_${crypto.randomUUID()}`
-    : `user_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+/**
+ * 设置域合并的核心约定：patch 中值为 undefined 视为「不覆盖」，其余值需通过
+ * 各自的合法性校验后才会写入结果。以下辅助原语统一表达这些语义。
+ */
+type OptionalFields<T> = { [K in keyof T]?: T[K] };
 
-export type ThemeSettingsPatch = Partial<Omit<ThemeSettings, 'customBackground'>> & {
-  customBackground?: Partial<ThemeSettings['customBackground']>;
+const withFallback = <V>(candidate: V | null | undefined, fallback: V): V => candidate ?? fallback;
+
+const definedOr = <V>(candidate: V | undefined, fallback: V): V =>
+  (candidate !== undefined ? candidate : fallback);
+
+const chooseBoolean = (candidate: unknown, fallback: boolean): boolean =>
+  (typeof candidate === 'boolean' ? candidate : fallback);
+
+const pickString = (candidate: unknown, fallback: string): string =>
+  (typeof candidate === 'string' ? candidate : fallback);
+
+const pickOption = <T extends string>(candidate: unknown, fallback: T, allowed: readonly T[]): T =>
+  (allowed.includes(candidate as T) ? (candidate as T) : fallback);
+
+const roundPositive = (candidate: number | undefined, fallback: number): number => {
+  if (candidate === undefined || !Number.isFinite(candidate) || candidate <= 0) {
+    return fallback;
+  }
+  return Math.round(candidate);
 };
 
-export type SidebarSettingsPatch = Partial<SidebarSettings>;
-export type FooterLayoutSettingsPatch = Partial<FooterLayoutSettings>;
-export type TopBarLayoutSettingsPatch = Partial<TopBarLayoutSettings>;
+const clampFadeDuration = (candidate: number | undefined, fallback: number): number => {
+  if (candidate === undefined || !Number.isFinite(candidate) || candidate <= 0) {
+    return fallback;
+  }
+  return Math.min(2000, Math.max(100, Math.round(candidate)));
+};
 
-export type LyricsSettingsPatch = Partial<LyricsSettings>;
-export type DesktopLyricsSettingsPatch = Partial<DesktopLyricsSettings>;
-type LegacyVolumeBalanceSettingsPatch = Partial<AudioSettings['volumeBalance']> & {
-  targetLufs?: number;
+const resolveMvQuality = (
+  candidate: MvQualityKey | undefined,
+  fallback: MvQualityKey | undefined,
+): MvQualityKey => (MV_QUALITY_KEYS.includes(candidate as MvQualityKey) ? (candidate as MvQualityKey) : fallback ?? '720P');
+
+const createUserPresetId = (): string => {
+  const canUseUuid = typeof crypto !== 'undefined' && 'randomUUID' in crypto;
+  const uniqueToken = canUseUuid
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return `user_${uniqueToken}`;
 };
-export type AudioSettingsPatch = Partial<Omit<AudioSettings, 'volumeBalance'>> & {
-  volumeBalance?: LegacyVolumeBalanceSettingsPatch | boolean;
+
+/* ---------------------------------------------------------------------- */
+/* 各设置域的 Patch 类型                                                    */
+/* ---------------------------------------------------------------------- */
+
+export type ThemeSettingsPatch = OptionalFields<Omit<ThemeSettings, 'customBackground'>> & {
+  customBackground?: OptionalFields<ThemeSettings['customBackground']>;
 };
-export type ImportedLyricsFontsPatch = ImportedLyricsFont[];
-export type DownloadSettingsPatch = Partial<DownloadSettings>;
-export type UploadSettingsPatch = Partial<UploadSettings>;
-export type PluginSettingsPatch = Partial<PluginSettings>;
-export type AutoSyncConfigPatch = Partial<AutoSyncConfig>;
-export type LogSettingsPatch = Partial<LogSettings>;
+
+export type SidebarSettingsPatch = OptionalFields<SidebarSettings>;
+export type FooterLayoutSettingsPatch = OptionalFields<FooterLayoutSettings>;
+export type TopBarLayoutSettingsPatch = OptionalFields<TopBarLayoutSettings>;
+
+export type LyricsSettingsPatch = OptionalFields<LyricsSettings>;
+export type DesktopLyricsSettingsPatch = OptionalFields<DesktopLyricsSettings>;
+
+type LegacyVolumeBalanceSettingsPatch = OptionalFields<AudioSettings['volumeBalance']> & { targetLufs?: number };
+
+type AudioBalancePatch = LegacyVolumeBalanceSettingsPatch | boolean;
+export type AudioSettingsPatch = OptionalFields<Omit<AudioSettings, 'volumeBalance'>> & { volumeBalance?: AudioBalancePatch };
+
+export type ImportedLyricsFontsPatch = Array<ImportedLyricsFont>;
+export type DownloadSettingsPatch = OptionalFields<DownloadSettings>;
+export type UploadSettingsPatch = OptionalFields<UploadSettings>;
+export type PluginSettingsPatch = OptionalFields<PluginSettings>;
+export type AutoSyncConfigPatch = OptionalFields<AutoSyncConfig>;
+export type LogSettingsPatch = OptionalFields<LogSettings>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'footerLayout' | 'topBarLayout' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync' | 'logging'>> {
-  theme?: ThemeSettingsPatch;
-  sidebar?: SidebarSettingsPatch;
-  footerLayout?: FooterLayoutSettingsPatch;
-  topBarLayout?: TopBarLayoutSettingsPatch;
+  extends OptionalFields<Omit<AppSettings, 'logging' | 'autoSync' | 'plugins' | 'upload' | 'download' | 'customLyricsFonts' | 'audio' | 'desktopLyrics' | 'lyrics' | 'shortcuts' | 'topBarLayout' | 'footerLayout' | 'sidebar' | 'theme'>> {
+  theme?: ThemeSettingsPatch; sidebar?: SidebarSettingsPatch;
+  footerLayout?: FooterLayoutSettingsPatch; topBarLayout?: TopBarLayoutSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
-  lyrics?: LyricsSettingsPatch;
-  desktopLyrics?: DesktopLyricsSettingsPatch;
-  audio?: AudioSettingsPatch;
-  customLyricsFonts?: ImportedLyricsFontsPatch;
-  download?: DownloadSettingsPatch;
-  upload?: UploadSettingsPatch;
-  plugins?: PluginSettingsPatch;
-  autoSync?: AutoSyncConfigPatch;
-  logging?: LogSettingsPatch;
+  lyrics?: LyricsSettingsPatch; desktopLyrics?: DesktopLyricsSettingsPatch;
+  audio?: AudioSettingsPatch; customLyricsFonts?: ImportedLyricsFontsPatch;
+  download?: DownloadSettingsPatch; upload?: UploadSettingsPatch;
+  plugins?: PluginSettingsPatch; autoSync?: AutoSyncConfigPatch; logging?: LogSettingsPatch;
 }
 
-export interface DeprecatedAppSettingsPatch extends AppSettingsPatch {
+export type DeprecatedAppSettingsPatch = AppSettingsPatch & {
+  /** 旧版「关闭即最小化到托盘」开关，仅存在于历史持久化数据中，合并时直接忽略。 */
   minimizeToTray?: boolean;
+};
+
+/* ---------------------------------------------------------------------- */
+/* 归一化函数                                                               */
+/* ---------------------------------------------------------------------- */
+
+const FOREGROUND_STYLE_BY_VALUE: Record<string, ThemeSettings['customBackground']['foregroundStyle']> = {
+  dark: 'dark',
+};
+
+export function normalizeForegroundStyle(
+  foregroundStyle: string | null | undefined,
+): ThemeSettings['customBackground']['foregroundStyle'] {
+  return FOREGROUND_STYLE_BY_VALUE[foregroundStyle ?? ''] ?? 'light';
 }
 
-export const normalizeForegroundStyle = (
-  foregroundStyle: string | null | undefined,
-): ThemeSettings['customBackground']['foregroundStyle'] => (foregroundStyle === 'dark' ? 'dark' : 'light');
+export function normalizeLibraryMinDurationSeconds(value: number | null | undefined): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return numeric > 0 ? Math.round(numeric) : 0;
+}
+
+/* ---------------------------------------------------------------------- */
+/* 各设置域默认值                                                           */
+/* ---------------------------------------------------------------------- */
 
 export const defaultThemeSettings: ThemeSettings = {
-  mode: 'system',
-  accentColor: DEFAULT_THEME_COLOR,
-  playerDetailCoverBehavior: 'remember',
-  lastPlayerDetailCoverVisible: true,
-  playerDetailStyle: 'classic',
-  playerDetailMeshBackground: true,
-  playerDetailMeshAntiAlias: true,
-  playerDetailMeshSpeed: 1,
-  playerDetailVinylMaterial: 'light',
-  dynamicBgType: 'none',
-  windowMaterial: 'none',
-  keepWindowMaterialOnBlur: true,
-  useCustomTrayMenu: true,
-  useGlassSwitch: false,
-  showLeaderboard: true,
-  flowColorBoost: 25,
-  flowDepth: 30,
-  flowSpeed: 52,
-  flowTexture: 34,
-  windowBlurTint: 50,
-  customBgPath: '',
-  opacity: 0.8,
-  blur: 20,
+  mode: 'system', accentColor: DEFAULT_THEME_COLOR,
+  playerDetailCoverBehavior: 'remember', lastPlayerDetailCoverVisible: true,
+  playerDetailStyle: 'classic', playerDetailMeshBackground: true, playerDetailMeshAntiAlias: true,
+  playerDetailMeshSpeed: 1, playerDetailVinylMaterial: 'light',
+  dynamicBgType: 'none', windowMaterial: 'none', keepWindowMaterialOnBlur: true,
+  useCustomTrayMenu: true, useGlassSwitch: false, showLeaderboard: true,
+  flowColorBoost: 25, flowDepth: 30, flowSpeed: 52, flowTexture: 34, windowBlurTint: 50,
+  customBgPath: '', opacity: 0.8, blur: 20,
   customBackground: {
-    imagePath: '',
-    mediaType: 'image',
-    blur: 20,
-    opacity: 1,
-    maskColor: '#000000',
-    maskAlpha: 0.4,
-    scale: 1,
-    foregroundStyle: 'light',
-    translateX: 0,
-    translateY: 0,
+    imagePath: '', mediaType: 'image', blur: 20, opacity: 1,
+    maskColor: '#000000', maskAlpha: 0.4, scale: 1, foregroundStyle: 'light',
+    translateX: 0, translateY: 0,
   },
 };
 
 export const defaultSidebarSettings: SidebarSettings = {
-  showLocalMusic: true,
-  showArtists: true,
-  showAlbums: true,
-  showFavorites: true,
-  showRecent: true,
-  showFolders: true,
-  showStatistics: true,
-  showPlugins: true,
+  showLocalMusic: true, showArtists: true, showAlbums: true, showFavorites: true,
+  showRecent: true, showFolders: true, showStatistics: true, showPlugins: true,
   showAccount: true,
-  order: [...DEFAULT_SIDEBAR_ORDER],
+  order: DEFAULT_SIDEBAR_ORDER.slice(),
 };
 
 export const defaultFooterLayoutSettings: FooterLayoutSettings = {
-  left: [...DEFAULT_FOOTER_LAYOUT.left],
+  left: DEFAULT_FOOTER_LAYOUT.left.slice(),
   middleLeft: DEFAULT_FOOTER_LAYOUT.middleLeft,
   middleRight: DEFAULT_FOOTER_LAYOUT.middleRight,
-  right: [...DEFAULT_FOOTER_LAYOUT.right],
-  hidden: [...DEFAULT_FOOTER_LAYOUT.hidden],
+  right: DEFAULT_FOOTER_LAYOUT.right.slice(),
+  hidden: DEFAULT_FOOTER_LAYOUT.hidden.slice(),
 };
 
 export const defaultTopBarLayoutSettings: TopBarLayoutSettings = {
-  left: [...DEFAULT_TOPBAR_LAYOUT.left],
-  right: [...DEFAULT_TOPBAR_LAYOUT.right],
-  hidden: [...DEFAULT_TOPBAR_LAYOUT.hidden],
+  left: DEFAULT_TOPBAR_LAYOUT.left.slice(),
+  right: DEFAULT_TOPBAR_LAYOUT.right.slice(),
+  hidden: DEFAULT_TOPBAR_LAYOUT.hidden.slice(),
 };
 
 export const defaultAudioSettings: AudioSettings = {
-  outputMode: 'shared',
-  outputBitPerfect: false,
-  dsdNativePassthrough: false,
+  outputMode: 'shared', outputBitPerfect: false, dsdNativePassthrough: false,
   volumeBalance: {
-    enabled: false,
-    gainOffsetDb: 0,
-    preventClipping: true,
+    enabled: false, gainOffsetDb: 0, preventClipping: true,
   },
   equalizer: {
-    enabled: false,
-    preamp: 0.0,
-    gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    enabled: false, preamp: 0.0, gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
-  showEqualizerInFooter: true,
-  onlineDefaultQuality: 'flac',
-  onlineFailureBehavior: 'stop',
-  onlineQualityFallbackBehavior: 'lower',
-  streamCacheSizeMB: 512,
-  streamCacheDir: '',
-  fadeInOutEnabled: true,
-  fadeInOutDurationMs: 500,
-  mvDefaultQuality: '720P',
+  showEqualizerInFooter: true, onlineDefaultQuality: 'flac',
+  onlineFailureBehavior: 'stop', onlineQualityFallbackBehavior: 'lower',
+  streamCacheSizeMB: 512, streamCacheDir: '',
+  fadeInOutEnabled: true, fadeInOutDurationMs: 500, mvDefaultQuality: '720P',
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
-  downloadPath: '',
-  behavior: 'default',
-  batchDownloadLimit: 2,
-  format: 'mp3',
-  quality: 'flac',
-  downloadLyrics: false,
-  lyricsFormat: 'lrc',
-  lyricsStyle: 'word-by-word',
-  overwriteExisting: false,
-  keepSourceFilename: false,
-  fileNameStyle: 'title-artist',
-  rememberDownloadPath: false,
+  downloadPath: '', behavior: 'default', batchDownloadLimit: 2,
+  format: 'mp3', quality: 'flac', downloadLyrics: false,
+  lyricsFormat: 'lrc', lyricsStyle: 'word-by-word',
+  overwriteExisting: false, keepSourceFilename: false,
+  fileNameStyle: 'title-artist', rememberDownloadPath: false,
   qualityFallbackBehavior: 'lower',
-  embedMetadata: true,
-  embedLyrics: true,
-  embedCover: true,
+  embedMetadata: true, embedLyrics: true, embedCover: true,
   mvDefaultQuality: '720P',
 };
 
 export const defaultUploadSettings: UploadSettings = {
-  playlists: true,
-  history: true,
-  favorites: true,
-  plugins: true,
-  settings: true,
+  playlists: true, history: true, favorites: true, plugins: true, settings: true,
 };
 
 export const defaultPluginSettings: PluginSettings = {
-  autoUpdateOnStartup: false,
-  lazyLoad: true,
-  skipVersionCheck: false,
+  autoUpdateOnStartup: false, lazyLoad: true, skipVersionCheck: false,
 };
 
 export const defaultAutoSyncConfig: AutoSyncConfig = {
-  enabled: true,
-  syncIntervalSeconds: 3600,
-  maxDelayMinutes: 5,
-  delayedCount: 0,
-  lastSyncAttemptAt: 0,
-  lastSyncSuccessAt: 0,
-  nextSyncAt: 0,
+  enabled: true, syncIntervalSeconds: 3600, maxDelayMinutes: 5,
+  delayedCount: 0, lastSyncAttemptAt: 0, lastSyncSuccessAt: 0, nextSyncAt: 0,
 };
 
 export const defaultLogSettings: LogSettings = {
-  minimumLevel: 'info',
-  retentionDays: 1,
-  autoAnalyze: true,
+  minimumLevel: 'info', retentionDays: 1, autoAnalyze: true,
 };
 
 export const defaultAppSettings: AppSettings = {
-  language: 'system',
-  closeToTray: true,
-  launchOnStartup: false,
-  launchOnStartupMinimized: false,
-  preventSleepWhilePlaying: true,
-  showDesktopLyrics: false,
-  showQualityBadges: true,
-  showSongComments: true,
-  enableScrollToTopButton: true,
-  libraryMinDurationSeconds: 0,
-  linkFoldersToLibrary: false,
-  lyricsSyncOffset: 0,
-  organizeRoot: 'D:\\Music',
-  enableAutoOrganize: true,
-  organizeRule: '{Artist}/{Album}/{Title}',
-  audio: defaultAudioSettings,
-  customLyricsFonts: [],
-  lyrics: createDefaultLyricsSettings(),
-  desktopLyrics: createDefaultDesktopLyricsSettings(),
-  theme: defaultThemeSettings,
-  sidebar: defaultSidebarSettings,
-  footerLayout: defaultFooterLayoutSettings,
-  topBarLayout: defaultTopBarLayoutSettings,
+  language: 'system', closeToTray: true, launchOnStartup: false,
+  launchOnStartupMinimized: false, preventSleepWhilePlaying: true,
+  showDesktopLyrics: false, showQualityBadges: true, showSongComments: true,
+  enableScrollToTopButton: true, libraryMinDurationSeconds: 0,
+  linkFoldersToLibrary: false, lyricsSyncOffset: 0,
+  organizeRoot: 'D:\\Music', enableAutoOrganize: true, organizeRule: '{Artist}/{Album}/{Title}',
+  audio: defaultAudioSettings, customLyricsFonts: [],
+  lyrics: createDefaultLyricsSettings(), desktopLyrics: createDefaultDesktopLyricsSettings(),
+  theme: defaultThemeSettings, sidebar: defaultSidebarSettings,
+  footerLayout: defaultFooterLayoutSettings, topBarLayout: defaultTopBarLayoutSettings,
   shortcuts: createDefaultShortcutSettings(),
-  showTaskbarPlayer: false,
-  taskbarPlayerCanDrag: false,
-  gpuAcceleration: true,
-  performanceMode: 'auto',
-  checkUpdateOnStartup: true,
-  writeArtistAvatarToTags: false,
-  dlnaRendererEnabled: false,
-  dlnaRendererName: '',
-  download: defaultDownloadSettings,
-  upload: defaultUploadSettings,
-  plugins: defaultPluginSettings,
-  autoSync: defaultAutoSyncConfig,
-  logging: defaultLogSettings,
-  songClickAction: 'double',
-  shareLinkValidityMinutes: 120,
+  showTaskbarPlayer: false, taskbarPlayerCanDrag: false,
+  gpuAcceleration: true, performanceMode: 'auto',
+  checkUpdateOnStartup: true, writeArtistAvatarToTags: false,
+  dlnaRendererEnabled: false, dlnaRendererName: '',
+  download: defaultDownloadSettings, upload: defaultUploadSettings,
+  plugins: defaultPluginSettings, autoSync: defaultAutoSyncConfig, logging: defaultLogSettings,
+  songClickAction: 'double', shareLinkValidityMinutes: 120,
   sharePlaybackFailureBehavior: 'pause',
 };
 
-export const createDefaultThemeSettings = (): ThemeSettings => ({
-  ...defaultThemeSettings,
-  customBackground: {
-    ...defaultThemeSettings.customBackground,
-  },
-});
+/* ---------------------------------------------------------------------- */
+/* 默认值工厂（生成全新副本，避免共享可变嵌套结构）                           */
+/* ---------------------------------------------------------------------- */
 
-export const createDefaultSidebarSettings = (): SidebarSettings => ({
-  ...defaultSidebarSettings,
-  order: [...defaultSidebarSettings.order],
-});
+export function createDefaultThemeSettings(): ThemeSettings {
+  const snapshot = { ...defaultThemeSettings };
+  snapshot.customBackground = { ...snapshot.customBackground };
+  return snapshot;
+}
 
-export const createDefaultFooterLayoutSettings = (): FooterLayoutSettings => ({
-  left: [...defaultFooterLayoutSettings.left],
-  middleLeft: defaultFooterLayoutSettings.middleLeft,
-  middleRight: defaultFooterLayoutSettings.middleRight,
-  right: [...defaultFooterLayoutSettings.right],
-  hidden: [...defaultFooterLayoutSettings.hidden],
-});
+export function createDefaultSidebarSettings(): SidebarSettings {
+  return { ...defaultSidebarSettings, order: defaultSidebarSettings.order.slice() };
+}
 
-export const createDefaultTopBarLayoutSettings = (): TopBarLayoutSettings => ({
-  left: [...defaultTopBarLayoutSettings.left],
-  right: [...defaultTopBarLayoutSettings.right],
-  hidden: [...defaultTopBarLayoutSettings.hidden],
-});
+export function createDefaultFooterLayoutSettings(): FooterLayoutSettings {
+  return {
+    ...defaultFooterLayoutSettings,
+    left: defaultFooterLayoutSettings.left.slice(),
+    right: defaultFooterLayoutSettings.right.slice(),
+    hidden: defaultFooterLayoutSettings.hidden.slice(),
+  };
+}
 
-export const createDefaultAudioSettings = (): AudioSettings => ({
-  ...defaultAudioSettings,
-  volumeBalance: {
-    ...defaultAudioSettings.volumeBalance,
-  },
-  equalizer: {
+export function createDefaultTopBarLayoutSettings(): TopBarLayoutSettings {
+  return {
+    ...defaultTopBarLayoutSettings,
+    left: defaultTopBarLayoutSettings.left.slice(),
+    right: defaultTopBarLayoutSettings.right.slice(),
+    hidden: defaultTopBarLayoutSettings.hidden.slice(),
+  };
+}
+
+export function createDefaultAudioSettings(): AudioSettings {
+  const snapshot = { ...defaultAudioSettings };
+  snapshot.volumeBalance = { ...defaultAudioSettings.volumeBalance };
+  snapshot.equalizer = {
     ...defaultAudioSettings.equalizer,
-    gains: [...defaultAudioSettings.equalizer.gains],
-  },
+    gains: defaultAudioSettings.equalizer.gains.slice(),
+  };
+  return snapshot;
+}
+
+export function createDefaultDownloadSettings(): DownloadSettings {
+  return { ...defaultDownloadSettings };
+}
+
+export function createDefaultUploadSettings(): UploadSettings {
+  return { ...defaultUploadSettings };
+}
+
+export function createDefaultAutoSyncConfig(): AutoSyncConfig {
+  return { ...defaultAutoSyncConfig };
+}
+
+export function createDefaultLogSettings(): LogSettings {
+  return { ...defaultLogSettings };
+}
+
+export function createDefaultAppSettings(): AppSettings {
+  const snapshot = { ...defaultAppSettings };
+  snapshot.customLyricsFonts = [];
+  snapshot.lyrics = createDefaultLyricsSettings();
+  snapshot.desktopLyrics = createDefaultDesktopLyricsSettings();
+  snapshot.audio = createDefaultAudioSettings();
+  snapshot.theme = createDefaultThemeSettings();
+  snapshot.sidebar = createDefaultSidebarSettings();
+  snapshot.footerLayout = createDefaultFooterLayoutSettings();
+  snapshot.shortcuts = createDefaultShortcutSettings();
+  snapshot.download = createDefaultDownloadSettings();
+  snapshot.upload = createDefaultUploadSettings();
+  snapshot.autoSync = createDefaultAutoSyncConfig();
+  snapshot.logging = createDefaultLogSettings();
+  return snapshot;
+}
+
+/* ---------------------------------------------------------------------- */
+/* 上传设置合并                                                             */
+/* ---------------------------------------------------------------------- */
+
+export const mergeUploadSettings = (base: UploadSettings, patch: UploadSettingsPatch): UploadSettings => ({
+  playlists: chooseBoolean(patch.playlists, base.playlists),
+  history: chooseBoolean(patch.history, base.history),
+  favorites: chooseBoolean(patch.favorites, base.favorites),
+  plugins: chooseBoolean(patch.plugins, base.plugins),
+  settings: chooseBoolean(patch.settings, base.settings),
 });
 
-export const createDefaultDownloadSettings = (): DownloadSettings => ({
-  ...defaultDownloadSettings,
-});
+/* ---------------------------------------------------------------------- */
+/* 下载设置合并（枚举字段统一走选项表校验）                                   */
+/* ---------------------------------------------------------------------- */
 
-export const createDefaultUploadSettings = (): UploadSettings => ({
-  ...defaultUploadSettings,
-});
+type DownloadEnumField = 'format' | 'behavior' | 'quality' | 'lyricsFormat' | 'lyricsStyle' | 'fileNameStyle';
 
-export const createDefaultAutoSyncConfig = (): AutoSyncConfig => ({
-  ...defaultAutoSyncConfig,
-});
+const DOWNLOAD_ENUM_OPTIONS: Record<DownloadEnumField, readonly string[]> = {
+  format: ['aac', 'wav', 'mp3', 'flac'],
+  behavior: ['ask', 'default'],
+  quality: ALL_QUALITY_KEYS,
+  lyricsFormat: ['txt', 'lrc'],
+  lyricsStyle: ['line-by-line', 'word-by-word'],
+  fileNameStyle: ['title-artist-album', 'artist-title', 'title-artist'],
+};
 
-export const createDefaultLogSettings = (): LogSettings => ({
-  ...defaultLogSettings,
-});
+const QUALITY_FALLBACK_DIRECTIONS: readonly DownloadSettings['qualityFallbackBehavior'][] = ['higher', 'lower'];
 
-export const mergeUploadSettings = (
-  base: UploadSettings,
-  patch: UploadSettingsPatch,
-): UploadSettings => ({
-  playlists: typeof patch.playlists === 'boolean' ? patch.playlists : base.playlists,
-  history: typeof patch.history === 'boolean' ? patch.history : base.history,
-  favorites: typeof patch.favorites === 'boolean' ? patch.favorites : base.favorites,
-  plugins: typeof patch.plugins === 'boolean' ? patch.plugins : base.plugins,
-  settings: typeof patch.settings === 'boolean' ? patch.settings : base.settings,
-});
-
-const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
-const VALID_DOWNLOAD_BEHAVIORS: DownloadSettings['behavior'][] = ['default', 'ask'];
-const VALID_DOWNLOAD_QUALITIES = ALL_QUALITY_KEYS;
-const VALID_LYRICS_FORMATS: DownloadSettings['lyricsFormat'][] = ['lrc', 'txt'];
-const VALID_LYRICS_STYLES: DownloadLyricsStyle[] = ['word-by-word', 'line-by-line'];
-const VALID_FILE_NAME_STYLES: DownloadSettings['fileNameStyle'][] = [
-  'artist-title',
-  'title-artist',
-  'title-artist-album',
-];
-
-export const mergeDownloadSettings = (
+const resolveDownloadEnumField = <K extends DownloadEnumField>(
+  field: K,
   base: DownloadSettings,
   patch: DownloadSettingsPatch,
-): DownloadSettings => {
-  const format = patch.format && VALID_DOWNLOAD_FORMATS.includes(patch.format)
-    ? patch.format
-    : base.format;
-  const behavior = patch.behavior && VALID_DOWNLOAD_BEHAVIORS.includes(patch.behavior)
-    ? patch.behavior
-    : base.behavior;
-  const quality = patch.quality && VALID_DOWNLOAD_QUALITIES.includes(patch.quality)
-    ? patch.quality
-    : base.quality;
-  const lyricsFormat = patch.lyricsFormat && VALID_LYRICS_FORMATS.includes(patch.lyricsFormat)
-    ? patch.lyricsFormat
-    : base.lyricsFormat;
-  const lyricsStyle = patch.lyricsStyle && VALID_LYRICS_STYLES.includes(patch.lyricsStyle)
-    ? patch.lyricsStyle
-    : base.lyricsStyle;
-  const fileNameStyle = patch.fileNameStyle && VALID_FILE_NAME_STYLES.includes(patch.fileNameStyle)
-    ? patch.fileNameStyle
-    : base.fileNameStyle;
-  const qualityFallbackBehavior = patch.qualityFallbackBehavior && ['lower', 'higher'].includes(patch.qualityFallbackBehavior)
-    ? patch.qualityFallbackBehavior
-    : base.qualityFallbackBehavior;
-  const rawBatchDownloadLimit = Number(patch.batchDownloadLimit);
-  const batchDownloadLimit = Number.isFinite(rawBatchDownloadLimit)
-    ? Math.min(5, Math.max(1, Math.round(rawBatchDownloadLimit)))
-    : (base.batchDownloadLimit ?? 2);
-
-  return {
-    downloadPath: typeof patch.downloadPath === 'string' ? patch.downloadPath : base.downloadPath,
-    behavior,
-    batchDownloadLimit,
-    format,
-    quality,
-    downloadLyrics: typeof patch.downloadLyrics === 'boolean' ? patch.downloadLyrics : base.downloadLyrics,
-    lyricsFormat,
-    lyricsStyle,
-    overwriteExisting: typeof patch.overwriteExisting === 'boolean' ? patch.overwriteExisting : base.overwriteExisting,
-    keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
-    fileNameStyle,
-    rememberDownloadPath: typeof patch.rememberDownloadPath === 'boolean' ? patch.rememberDownloadPath : base.rememberDownloadPath,
-    qualityFallbackBehavior,
-    embedMetadata: typeof patch.embedMetadata === 'boolean' ? patch.embedMetadata : base.embedMetadata,
-    embedLyrics: typeof patch.embedLyrics === 'boolean' ? patch.embedLyrics : base.embedLyrics,
-    embedCover: typeof patch.embedCover === 'boolean' ? patch.embedCover : base.embedCover,
-    mvDefaultQuality: MV_QUALITY_KEYS.includes(patch.mvDefaultQuality as MvQualityKey)
-      ? (patch.mvDefaultQuality as MvQualityKey)
-      : base.mvDefaultQuality ?? '720P',
-  };
-};
-
-export const normalizeLibraryMinDurationSeconds = (
-  value: number | null | undefined,
-): number => {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue) || numericValue <= 0) {
-    return 0;
+): DownloadSettings[K] => {
+  const candidate: unknown = patch[field];
+  const allowed = DOWNLOAD_ENUM_OPTIONS[field];
+  if (typeof candidate !== 'string' || !allowed.includes(candidate)) {
+    return base[field];
   }
-
-  return Math.round(numericValue);
+  return candidate as DownloadSettings[K];
 };
 
-export const createDefaultAppSettings = (): AppSettings => ({
-  ...defaultAppSettings,
-  customLyricsFonts: [],
-  lyrics: createDefaultLyricsSettings(),
-  desktopLyrics: createDefaultDesktopLyricsSettings(),
-  audio: createDefaultAudioSettings(),
-  theme: createDefaultThemeSettings(),
-  sidebar: createDefaultSidebarSettings(),
-  footerLayout: createDefaultFooterLayoutSettings(),
-  shortcuts: createDefaultShortcutSettings(),
-  download: createDefaultDownloadSettings(),
-  upload: createDefaultUploadSettings(),
-  autoSync: createDefaultAutoSyncConfig(),
-  logging: createDefaultLogSettings(),
+const clampBatchLimit = (candidate: number | undefined, fallback: number): number => {
+  const parsed = Number(candidate);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(5, Math.round(parsed)));
+};
+
+export const mergeDownloadSettings = (base: DownloadSettings, patch: DownloadSettingsPatch): DownloadSettings => ({
+  downloadPath: pickString(patch.downloadPath, base.downloadPath),
+  behavior: resolveDownloadEnumField('behavior', base, patch),
+  batchDownloadLimit: clampBatchLimit(patch.batchDownloadLimit, base.batchDownloadLimit ?? 2),
+  format: resolveDownloadEnumField('format', base, patch),
+  quality: resolveDownloadEnumField('quality', base, patch),
+  downloadLyrics: chooseBoolean(patch.downloadLyrics, base.downloadLyrics),
+  lyricsFormat: resolveDownloadEnumField('lyricsFormat', base, patch),
+  lyricsStyle: resolveDownloadEnumField('lyricsStyle', base, patch),
+  overwriteExisting: chooseBoolean(patch.overwriteExisting, base.overwriteExisting),
+  keepSourceFilename: chooseBoolean(patch.keepSourceFilename, base.keepSourceFilename),
+  fileNameStyle: resolveDownloadEnumField('fileNameStyle', base, patch),
+  rememberDownloadPath: chooseBoolean(patch.rememberDownloadPath, base.rememberDownloadPath),
+  qualityFallbackBehavior: pickOption(patch.qualityFallbackBehavior, base.qualityFallbackBehavior, QUALITY_FALLBACK_DIRECTIONS),
+  embedMetadata: chooseBoolean(patch.embedMetadata, base.embedMetadata),
+  embedLyrics: chooseBoolean(patch.embedLyrics, base.embedLyrics),
+  embedCover: chooseBoolean(patch.embedCover, base.embedCover),
+  mvDefaultQuality: resolveMvQuality(patch.mvDefaultQuality, base.mvDefaultQuality),
 });
 
-export const mergeThemeSettings = (
-  base: ThemeSettings,
-  patch: ThemeSettingsPatch,
-): ThemeSettings => {
-  const legacyPatch = patch as ThemeSettingsPatch & {
+/* ---------------------------------------------------------------------- */
+/* 主题设置合并                                                             */
+/* ---------------------------------------------------------------------- */
+
+const COVER_BEHAVIOR_OPTIONS: readonly ThemeSettings['playerDetailCoverBehavior'][] = ['remember', 'hide', 'show'];
+const DETAIL_STYLE_OPTIONS: readonly ThemeSettings['playerDetailStyle'][] = ['vinyl', 'classic'];
+const VINYL_MATERIAL_OPTIONS: readonly ThemeSettings['playerDetailVinylMaterial'][] = ['marble', 'oak', 'matte', 'light'];
+
+const legacyCoverFlagToMode = (flag: unknown): 'show' | 'hide' | undefined => {
+  if (typeof flag !== 'boolean') {
+    return undefined;
+  }
+  return flag ? 'show' : 'hide';
+};
+
+export const mergeThemeSettings = (base: ThemeSettings, patch: ThemeSettingsPatch): ThemeSettings => {
+  const { showPlayerDetailCoverByDefault: legacyCoverVisible, ...usablePatch } = patch as ThemeSettingsPatch & {
     showPlayerDetailCoverByDefault?: unknown;
   };
-  const {
-    showPlayerDetailCoverByDefault: legacyShowPlayerDetailCover,
-    ...normalizedPatch
-  } = legacyPatch;
-  const playerDetailCoverBehavior = ['show', 'hide', 'remember'].includes(
-    patch.playerDetailCoverBehavior ?? '',
-  )
-    ? patch.playerDetailCoverBehavior!
-    : typeof legacyShowPlayerDetailCover === 'boolean'
-      ? legacyShowPlayerDetailCover ? 'show' : 'hide'
-      : base.playerDetailCoverBehavior;
-  const playerDetailStyle = patch.playerDetailStyle === 'vinyl' || patch.playerDetailStyle === 'classic'
-    ? patch.playerDetailStyle
-    : base.playerDetailStyle;
-  const playerDetailMeshBackground =
-    typeof patch.playerDetailMeshBackground === 'boolean'
-      ? patch.playerDetailMeshBackground
-      : base.playerDetailMeshBackground;
-  const playerDetailMeshAntiAlias =
-    typeof patch.playerDetailMeshAntiAlias === 'boolean'
-      ? patch.playerDetailMeshAntiAlias
-      : base.playerDetailMeshAntiAlias;
-  const playerDetailVinylMaterial =
-    patch.playerDetailVinylMaterial === 'light'
-      || patch.playerDetailVinylMaterial === 'matte'
-      || patch.playerDetailVinylMaterial === 'oak'
-      || patch.playerDetailVinylMaterial === 'marble'
-      ? patch.playerDetailVinylMaterial
-      : base.playerDetailVinylMaterial;
-  const mergedCustomBackground = {
-    ...base.customBackground,
-    ...(patch.customBackground ?? {}),
-  };
+  const mergedBackground = { ...base.customBackground, ...(patch.customBackground ?? {}) };
+  const coverBehavior = pickOption(
+    patch.playerDetailCoverBehavior,
+    legacyCoverFlagToMode(legacyCoverVisible) ?? base.playerDetailCoverBehavior,
+    COVER_BEHAVIOR_OPTIONS,
+  );
 
   return {
     ...base,
-    ...normalizedPatch,
-    accentColor: normalizeThemeColor(patch.accentColor, base.accentColor),
-    playerDetailCoverBehavior,
-    playerDetailStyle,
-    playerDetailMeshBackground,
-    playerDetailMeshAntiAlias,
-    playerDetailVinylMaterial,
-    lastPlayerDetailCoverVisible:
-      typeof patch.lastPlayerDetailCoverVisible === 'boolean'
-        ? patch.lastPlayerDetailCoverVisible
-        : base.lastPlayerDetailCoverVisible,
+    ...usablePatch,
+    accentColor: normalizeThemeColor(usablePatch.accentColor, base.accentColor),
+    playerDetailCoverBehavior: coverBehavior,
+    playerDetailStyle: pickOption(patch.playerDetailStyle, base.playerDetailStyle, DETAIL_STYLE_OPTIONS),
+    playerDetailMeshBackground: chooseBoolean(patch.playerDetailMeshBackground, base.playerDetailMeshBackground),
+    playerDetailMeshAntiAlias: chooseBoolean(patch.playerDetailMeshAntiAlias, base.playerDetailMeshAntiAlias),
+    playerDetailVinylMaterial: pickOption(patch.playerDetailVinylMaterial, base.playerDetailVinylMaterial, VINYL_MATERIAL_OPTIONS),
+    lastPlayerDetailCoverVisible: chooseBoolean(patch.lastPlayerDetailCoverVisible, base.lastPlayerDetailCoverVisible),
     customBackground: {
-      ...mergedCustomBackground,
-      foregroundStyle: normalizeForegroundStyle(mergedCustomBackground.foregroundStyle),
+      ...mergedBackground,
+      foregroundStyle: normalizeForegroundStyle(mergedBackground.foregroundStyle),
     },
   };
 };
 
-export const mergeSidebarSettings = (
-  base: SidebarSettings,
-  patch: SidebarSettingsPatch,
-): SidebarSettings => ({
+/* ---------------------------------------------------------------------- */
+/* 侧栏 / 布局设置合并                                                      */
+/* ---------------------------------------------------------------------- */
+
+export const mergeSidebarSettings = (base: SidebarSettings, patch: SidebarSettingsPatch): SidebarSettings => {
+  const orderSource = patch.order === undefined || patch.order === null ? base.order : patch.order;
+  return { ...base, ...patch, order: normalizeSidebarOrder(orderSource) };
+};
+
+export const mergeFooterLayoutSettings = (base: FooterLayoutSettings, patch: FooterLayoutSettingsPatch): FooterLayoutSettings => {
+  const combined: FooterLayoutSettings = {
+    ...base,
+    left: withFallback(patch.left, base.left),
+    middleLeft: definedOr(patch.middleLeft, base.middleLeft),
+    middleRight: definedOr(patch.middleRight, base.middleRight),
+    right: withFallback(patch.right, base.right),
+    hidden: withFallback(patch.hidden, base.hidden),
+    collapsed: withFallback(patch.collapsed, base.collapsed),
+  };
+  return normalizeFooterLayout(combined);
+};
+
+export const mergeTopBarLayoutSettings = (base: TopBarLayoutSettings, patch: TopBarLayoutSettingsPatch): TopBarLayoutSettings => normalizeTopBarLayout({
   ...base,
-  ...patch,
-  order: normalizeSidebarOrder(patch.order ?? base.order),
+  left: withFallback(patch.left, base.left),
+  right: withFallback(patch.right, base.right),
+  hidden: withFallback(patch.hidden, base.hidden),
 });
 
-export const mergeFooterLayoutSettings = (
-  base: FooterLayoutSettings,
-  patch: FooterLayoutSettingsPatch,
-): FooterLayoutSettings => normalizeFooterLayout({
-  left: patch.left ?? base.left,
-  middleLeft: patch.middleLeft !== undefined ? patch.middleLeft : base.middleLeft,
-  middleRight: patch.middleRight !== undefined ? patch.middleRight : base.middleRight,
-  right: patch.right ?? base.right,
-  hidden: patch.hidden ?? base.hidden,
-  collapsed: patch.collapsed ?? base.collapsed,
-});
+/* ---------------------------------------------------------------------- */
+/* 音频设置合并                                                             */
+/* ---------------------------------------------------------------------- */
 
-export const mergeTopBarLayoutSettings = (
-  base: TopBarLayoutSettings,
-  patch: TopBarLayoutSettingsPatch,
-): TopBarLayoutSettings => normalizeTopBarLayout({
-  left: patch.left ?? base.left,
-  right: patch.right ?? base.right,
-  hidden: patch.hidden ?? base.hidden,
-});
+const OUTPUT_MODE_OPTIONS: readonly AudioSettings['outputMode'][] = ['wasapiExclusive', 'shared'];
+const ONLINE_FAILURE_OPTIONS: readonly AudioSettings['onlineFailureBehavior'][] = ['stop', 'autoswitch', 'skip'];
+const ONLINE_QUALITY_FALLBACK_OPTIONS: readonly AudioSettings['onlineQualityFallbackBehavior'][] = ['higher', 'pause', 'lower'];
 
-export const mergeAudioSettings = (
-  base: AudioSettings,
-  patch: AudioSettingsPatch,
-): AudioSettings => {
-  const volumeBalancePatch = patch.volumeBalance;
-  let enabled = base.volumeBalance?.enabled ?? false;
-  let gainOffsetDb = base.volumeBalance?.gainOffsetDb ?? 0;
-  let preventClipping = base.volumeBalance?.preventClipping ?? true;
+const LEGACY_TARGET_LUFS_DB = -18;
+const NEUTRAL_EQ_GAINS = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-  if (typeof volumeBalancePatch === 'boolean') {
-    enabled = volumeBalancePatch;
-  } else if (volumeBalancePatch && typeof volumeBalancePatch === 'object') {
-    enabled = volumeBalancePatch.enabled ?? enabled;
-    gainOffsetDb = volumeBalancePatch.gainOffsetDb
-      ?? (volumeBalancePatch.targetLufs !== undefined ? volumeBalancePatch.targetLufs - (-18) : gainOffsetDb);
-    preventClipping = volumeBalancePatch.preventClipping ?? preventClipping;
+const resolveVolumeBalance = (
+  current: AudioSettings['volumeBalance'] | undefined,
+  incoming: AudioSettingsPatch['volumeBalance'],
+): AudioSettings['volumeBalance'] => {
+  const state = {
+    enabled: current?.enabled ?? false,
+    gainOffsetDb: current?.gainOffsetDb ?? 0,
+    preventClipping: current?.preventClipping ?? true,
+  };
+  if (typeof incoming === 'boolean') {
+    return { ...state, enabled: incoming };
   }
-
-  const equalizerPatch = patch.equalizer;
-  let eqEnabled = base.equalizer?.enabled ?? false;
-  let eqPreamp = base.equalizer?.preamp ?? 0.0;
-  let eqGains = base.equalizer?.gains ?? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  let eqCurrentPresetId = base.equalizer?.currentPresetId ?? null;
-
-  if (equalizerPatch && typeof equalizerPatch === 'object') {
-    eqEnabled = equalizerPatch.enabled ?? eqEnabled;
-    eqPreamp = equalizerPatch.preamp ?? eqPreamp;
-    eqGains = equalizerPatch.gains ? [...equalizerPatch.gains] : eqGains;
-    if ('currentPresetId' in equalizerPatch) {
-      eqCurrentPresetId = equalizerPatch.currentPresetId ?? null;
-    }
+  if (!incoming || typeof incoming !== 'object') {
+    return state;
   }
-
-  const nextOutputMode =
-    patch.outputMode === 'wasapiExclusive' || patch.outputMode === 'shared'
-      ? patch.outputMode
-      : base.outputMode ?? 'shared';
-
-  const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
-  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'autoswitch'];
-  const VALID_QUALITY_FALLBACK_BEHAVIORS = ['pause', 'lower', 'higher'];
-
+  const legacyOffset = incoming.targetLufs !== undefined
+    ? incoming.targetLufs - LEGACY_TARGET_LUFS_DB
+    : state.gainOffsetDb;
   return {
-    ...base,
-    outputMode: nextOutputMode,
-    outputBitPerfect: typeof patch.outputBitPerfect === 'boolean'
-      ? patch.outputBitPerfect
-      : (base.outputBitPerfect ?? false),
-    dsdNativePassthrough: typeof patch.dsdNativePassthrough === 'boolean'
-      ? patch.dsdNativePassthrough
-      : (base.dsdNativePassthrough ?? true),
-    volumeBalance: {
-      enabled,
-      gainOffsetDb,
-      preventClipping,
-    },
-    equalizer: {
-      enabled: eqEnabled,
-      preamp: eqPreamp,
-      gains: eqGains,
-      currentPresetId: eqCurrentPresetId,
-    },
-    showEqualizerInFooter: patch.showEqualizerInFooter ?? base.showEqualizerInFooter ?? true,
-    onlineDefaultQuality: VALID_ONLINE_QUALITIES.includes(patch.onlineDefaultQuality as any)
-      ? (patch.onlineDefaultQuality as AudioSettings['onlineDefaultQuality'])
-      : base.onlineDefaultQuality ?? '320k',
-    onlineFailureBehavior: (() => {
-      if (VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)) {
-        return patch.onlineFailureBehavior as AudioSettings['onlineFailureBehavior'];
-      }
-      if ((base as unknown as Record<string, unknown>).autoSwitchSourceOnFailure === true) {
-        return 'autoswitch';
-      }
-      return base.onlineFailureBehavior ?? 'skip';
-    })(),
-    onlineQualityFallbackBehavior: VALID_QUALITY_FALLBACK_BEHAVIORS.includes(patch.onlineQualityFallbackBehavior as string)
-      ? (patch.onlineQualityFallbackBehavior as AudioSettings['onlineQualityFallbackBehavior'])
-      : base.onlineQualityFallbackBehavior ?? 'lower',
-    streamCacheSizeMB: Number.isFinite(patch.streamCacheSizeMB) && patch.streamCacheSizeMB! > 0
-      ? Math.round(patch.streamCacheSizeMB!)
-      : base.streamCacheSizeMB ?? 512,
-    streamCacheDir: typeof patch.streamCacheDir === 'string'
-      ? patch.streamCacheDir
-      : base.streamCacheDir ?? '',
-    fadeInOutEnabled: typeof patch.fadeInOutEnabled === 'boolean'
-      ? patch.fadeInOutEnabled
-      : base.fadeInOutEnabled ?? false,
-    fadeInOutDurationMs: Number.isFinite(patch.fadeInOutDurationMs) && patch.fadeInOutDurationMs! > 0
-      ? Math.max(100, Math.min(2000, Math.round(patch.fadeInOutDurationMs!)))
-      : base.fadeInOutDurationMs ?? 1000,
-    mvDefaultQuality: MV_QUALITY_KEYS.includes(patch.mvDefaultQuality as MvQualityKey)
-      ? (patch.mvDefaultQuality as MvQualityKey)
-      : base.mvDefaultQuality ?? '720P',
+    enabled: incoming.enabled ?? state.enabled,
+    gainOffsetDb: incoming.gainOffsetDb ?? legacyOffset,
+    preventClipping: incoming.preventClipping ?? state.preventClipping,
   };
 };
 
-export const mergeAppSettings = (
-  base: AppSettings,
-  patch: DeprecatedAppSettingsPatch,
-): AppSettings => {
-  const {
-    minimizeToTray: _deprecated,
-    libraryMinDurationSeconds,
-    preventSleepWhilePlaying,
-    language,
-    ...rest
-  } = patch;
+const resolveEqualizer = (
+  current: AudioSettings['equalizer'] | undefined,
+  incoming: AudioSettingsPatch['equalizer'],
+): AudioSettings['equalizer'] => {
+  const state: AudioSettings['equalizer'] = {
+    enabled: current?.enabled ?? false,
+    preamp: current?.preamp ?? 0.0,
+    gains: current?.gains ?? [...NEUTRAL_EQ_GAINS],
+    currentPresetId: current?.currentPresetId ?? null,
+  };
+  if (!incoming || typeof incoming !== 'object') {
+    return state;
+  }
+  if (incoming.gains) {
+    state.gains = [...incoming.gains];
+  }
+  if ('currentPresetId' in incoming) {
+    state.currentPresetId = incoming.currentPresetId ?? null;
+  }
+  return {
+    enabled: incoming.enabled ?? state.enabled,
+    preamp: incoming.preamp ?? state.preamp,
+    gains: state.gains,
+    currentPresetId: state.currentPresetId,
+  };
+};
+
+const resolveOnlineFailureBehavior = (
+  current: AudioSettings,
+  incoming: AudioSettingsPatch['onlineFailureBehavior'],
+): AudioSettings['onlineFailureBehavior'] => {
+  if (ONLINE_FAILURE_OPTIONS.includes(incoming as AudioSettings['onlineFailureBehavior'])) {
+    return incoming as AudioSettings['onlineFailureBehavior'];
+  }
+  const legacyAutoSwitch = (current as unknown as Record<string, unknown>).autoSwitchSourceOnFailure;
+  return legacyAutoSwitch === true ? 'autoswitch' : current.onlineFailureBehavior ?? 'skip';
+};
+
+export const mergeAudioSettings = (base: AudioSettings, patch: AudioSettingsPatch): AudioSettings => {
+  const balance = resolveVolumeBalance(base.volumeBalance, patch.volumeBalance);
+  const equalizer = resolveEqualizer(base.equalizer, patch.equalizer);
 
   return {
     ...base,
-    ...rest,
-    language: language === 'system' || language === 'zh-CN' || language === 'zh-TW' || language === 'en-US' ? language : base.language,
-    preventSleepWhilePlaying: typeof preventSleepWhilePlaying === 'boolean'
-      ? preventSleepWhilePlaying
-      : base.preventSleepWhilePlaying,
+    outputMode: pickOption(patch.outputMode, base.outputMode ?? 'shared', OUTPUT_MODE_OPTIONS),
+    outputBitPerfect: chooseBoolean(patch.outputBitPerfect, base.outputBitPerfect ?? false),
+    dsdNativePassthrough: chooseBoolean(patch.dsdNativePassthrough, base.dsdNativePassthrough ?? true),
+    volumeBalance: balance,
+    equalizer,
+    showEqualizerInFooter: withFallback(patch.showEqualizerInFooter, base.showEqualizerInFooter ?? true),
+    onlineDefaultQuality: pickOption(patch.onlineDefaultQuality, base.onlineDefaultQuality ?? '320k', ALL_QUALITY_KEYS),
+    onlineFailureBehavior: resolveOnlineFailureBehavior(base, patch.onlineFailureBehavior),
+    onlineQualityFallbackBehavior: pickOption(
+      patch.onlineQualityFallbackBehavior,
+      base.onlineQualityFallbackBehavior ?? 'lower',
+      ONLINE_QUALITY_FALLBACK_OPTIONS,
+    ),
+    streamCacheSizeMB: roundPositive(patch.streamCacheSizeMB, base.streamCacheSizeMB ?? 512),
+    streamCacheDir: pickString(patch.streamCacheDir, base.streamCacheDir ?? ''),
+    fadeInOutEnabled: chooseBoolean(patch.fadeInOutEnabled, base.fadeInOutEnabled ?? false),
+    fadeInOutDurationMs: clampFadeDuration(patch.fadeInOutDurationMs, base.fadeInOutDurationMs ?? 1000),
+    mvDefaultQuality: resolveMvQuality(patch.mvDefaultQuality, base.mvDefaultQuality),
+  };
+};
+
+/* ---------------------------------------------------------------------- */
+/* 插件 / 自动同步 / 日志设置合并                                            */
+/* ---------------------------------------------------------------------- */
+
+const mergePluginSettings = (base: PluginSettings, patch: PluginSettingsPatch): PluginSettings => ({
+  autoUpdateOnStartup: chooseBoolean(patch.autoUpdateOnStartup, base.autoUpdateOnStartup),
+  lazyLoad: chooseBoolean(patch.lazyLoad, base.lazyLoad),
+  skipVersionCheck: chooseBoolean(patch.skipVersionCheck, base.skipVersionCheck),
+});
+
+const mergeAutoSyncConfig = (base: AutoSyncConfig, patch: AutoSyncConfigPatch): AutoSyncConfig => {
+  const nonNegativeOr = (candidate: number | undefined, fallback: number): number =>
+    (typeof candidate === 'number' && candidate >= 0 ? candidate : fallback);
+  const numberOr = (candidate: number | undefined, fallback: number): number =>
+    (typeof candidate === 'number' ? candidate : fallback);
+  return {
+    enabled: chooseBoolean(patch.enabled, base.enabled),
+    syncIntervalSeconds: nonNegativeOr(patch.syncIntervalSeconds, base.syncIntervalSeconds),
+    maxDelayMinutes: nonNegativeOr(patch.maxDelayMinutes, base.maxDelayMinutes),
+    delayedCount: numberOr(patch.delayedCount, base.delayedCount),
+    lastSyncAttemptAt: numberOr(patch.lastSyncAttemptAt, base.lastSyncAttemptAt),
+    lastSyncSuccessAt: numberOr(patch.lastSyncSuccessAt, base.lastSyncSuccessAt),
+    nextSyncAt: numberOr(patch.nextSyncAt, base.nextSyncAt),
+  };
+};
+
+const LOG_LEVEL_OPTIONS: readonly LogSettings['minimumLevel'][] = ['error', 'warn', 'info', 'debug'];
+
+export const mergeLogSettings = (base: LogSettings, patch: LogSettingsPatch): LogSettings => ({
+  minimumLevel: pickOption(patch.minimumLevel, base.minimumLevel, LOG_LEVEL_OPTIONS),
+  retentionDays: 1, autoAnalyze: chooseBoolean(patch.autoAnalyze, base.autoAnalyze),
+});
+
+/* ---------------------------------------------------------------------- */
+/* 应用级设置合并                                                           */
+/* ---------------------------------------------------------------------- */
+
+const APP_LANGUAGE_OPTIONS: readonly AppSettings['language'][] = ['en-US', 'zh-TW', 'zh-CN', 'system'];
+
+/**
+ * 子域合并的统一入口：patch 中该子域缺省时直接沿用 base（base 亦缺省时才落到
+ * 默认值工厂），存在时先补齐 base 缺口再执行域内合并。
+ */
+const mergeSectionField = <S, P>(
+  baseSection: S | undefined,
+  patchSection: P | undefined,
+  makeDefaults: () => S,
+  mergeFn: (current: S, incoming: P) => S,
+): S => (patchSection
+  ? mergeFn(baseSection ?? makeDefaults(), patchSection)
+  : baseSection ?? makeDefaults());
+
+export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettingsPatch): AppSettings => {
+  const patchRest: DeprecatedAppSettingsPatch = { ...patch };
+  const languagePatch = patchRest.language;
+  const preventSleepPatch = patchRest.preventSleepWhilePlaying;
+  const libraryMinPatch = patchRest.libraryMinDurationSeconds;
+  const lyricsPatch = patchRest.lyrics;
+  const desktopLyricsPatch = patchRest.desktopLyrics;
+  const fontsPatch = patchRest.customLyricsFonts;
+  const themePatch = patchRest.theme;
+  const sidebarPatch = patchRest.sidebar;
+  const shortcutsPatch = patchRest.shortcuts;
+  delete patchRest.minimizeToTray;
+  delete patchRest.language;
+  delete patchRest.preventSleepWhilePlaying;
+  delete patchRest.libraryMinDurationSeconds;
+
+  return {
+    ...base,
+    ...patchRest,
+    language: pickOption(languagePatch, base.language, APP_LANGUAGE_OPTIONS),
+    preventSleepWhilePlaying: chooseBoolean(preventSleepPatch, base.preventSleepWhilePlaying),
     lyricsSyncOffset: normalizeLyricsSyncOffsetSeconds(
-      patch.lyricsSyncOffset ?? base.lyricsSyncOffset,
+      withFallback(patch.lyricsSyncOffset, base.lyricsSyncOffset),
     ),
     libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds(
-      libraryMinDurationSeconds ?? base.libraryMinDurationSeconds,
+      withFallback(libraryMinPatch, base.libraryMinDurationSeconds),
     ),
-    lyrics: patch.lyrics ? mergeLyricsSettings(base.lyrics, patch.lyrics) : base.lyrics,
-    desktopLyrics: patch.desktopLyrics ? mergeDesktopLyricsSettings(base.desktopLyrics, patch.desktopLyrics) : base.desktopLyrics,
-    audio: patch.audio ? mergeAudioSettings(base.audio ?? createDefaultAudioSettings(), patch.audio) : (base.audio ?? createDefaultAudioSettings()),
-    customLyricsFonts: patch.customLyricsFonts ? normalizeImportedLyricsFonts(patch.customLyricsFonts) : base.customLyricsFonts,
-    theme: patch.theme ? mergeThemeSettings(base.theme, patch.theme) : base.theme,
-    sidebar: patch.sidebar ? mergeSidebarSettings(base.sidebar, patch.sidebar) : base.sidebar,
-    footerLayout: patch.footerLayout ? mergeFooterLayoutSettings(base.footerLayout ?? createDefaultFooterLayoutSettings(), patch.footerLayout) : (base.footerLayout ?? createDefaultFooterLayoutSettings()),
-    topBarLayout: patch.topBarLayout ? mergeTopBarLayoutSettings(base.topBarLayout ?? createDefaultTopBarLayoutSettings(), patch.topBarLayout) : (base.topBarLayout ?? createDefaultTopBarLayoutSettings()),
-    shortcuts: patch.shortcuts ? mergeShortcutSettings(base.shortcuts, patch.shortcuts) : base.shortcuts,
-    download: patch.download ? mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download) : (base.download ?? createDefaultDownloadSettings()),
-    upload: patch.upload ? mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload) : (base.upload ?? createDefaultUploadSettings()),
-    plugins: patch.plugins ? mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins) : (base.plugins ?? defaultPluginSettings),
-    autoSync: patch.autoSync ? mergeAutoSyncConfig(base.autoSync ?? createDefaultAutoSyncConfig(), patch.autoSync) : (base.autoSync ?? createDefaultAutoSyncConfig()),
-    logging: patch.logging ? mergeLogSettings(base.logging ?? createDefaultLogSettings(), patch.logging) : (base.logging ?? createDefaultLogSettings()),
+    lyrics: lyricsPatch ? mergeLyricsSettings(base.lyrics, lyricsPatch) : base.lyrics,
+    desktopLyrics: desktopLyricsPatch
+      ? mergeDesktopLyricsSettings(base.desktopLyrics, desktopLyricsPatch)
+      : base.desktopLyrics,
+    audio: mergeSectionField(base.audio, patch.audio, createDefaultAudioSettings, mergeAudioSettings),
+    customLyricsFonts: fontsPatch ? normalizeImportedLyricsFonts(fontsPatch) : base.customLyricsFonts,
+    theme: themePatch ? mergeThemeSettings(base.theme, themePatch) : base.theme,
+    sidebar: sidebarPatch ? mergeSidebarSettings(base.sidebar, sidebarPatch) : base.sidebar,
+    footerLayout: mergeSectionField(base.footerLayout, patch.footerLayout, createDefaultFooterLayoutSettings, mergeFooterLayoutSettings),
+    topBarLayout: mergeSectionField(base.topBarLayout, patch.topBarLayout, createDefaultTopBarLayoutSettings, mergeTopBarLayoutSettings),
+    shortcuts: shortcutsPatch ? mergeShortcutSettings(base.shortcuts, shortcutsPatch) : base.shortcuts,
+    download: mergeSectionField(base.download, patch.download, createDefaultDownloadSettings, mergeDownloadSettings),
+    upload: mergeSectionField(base.upload, patch.upload, createDefaultUploadSettings, mergeUploadSettings),
+    plugins: mergeSectionField(base.plugins, patch.plugins, () => defaultPluginSettings, mergePluginSettings),
+    autoSync: mergeSectionField(base.autoSync, patch.autoSync, createDefaultAutoSyncConfig, mergeAutoSyncConfig),
+    logging: mergeSectionField(base.logging, patch.logging, createDefaultLogSettings, mergeLogSettings),
   };
 };
 
-const mergePluginSettings = (base: PluginSettings, patch: Partial<PluginSettings>): PluginSettings => ({
-  autoUpdateOnStartup: typeof patch.autoUpdateOnStartup === 'boolean' ? patch.autoUpdateOnStartup : base.autoUpdateOnStartup,
-  lazyLoad: typeof patch.lazyLoad === 'boolean' ? patch.lazyLoad : base.lazyLoad,
-  skipVersionCheck: typeof patch.skipVersionCheck === 'boolean' ? patch.skipVersionCheck : base.skipVersionCheck,
-});
+/* ---------------------------------------------------------------------- */
+/* Settings Store                                                           */
+/* ---------------------------------------------------------------------- */
 
-const mergeAutoSyncConfig = (base: AutoSyncConfig, patch: Partial<AutoSyncConfig>): AutoSyncConfig => ({
-  enabled: typeof patch.enabled === 'boolean' ? patch.enabled : base.enabled,
-  syncIntervalSeconds: typeof patch.syncIntervalSeconds === 'number' && patch.syncIntervalSeconds >= 0 ? patch.syncIntervalSeconds : base.syncIntervalSeconds,
-  maxDelayMinutes: typeof patch.maxDelayMinutes === 'number' && patch.maxDelayMinutes >= 0 ? patch.maxDelayMinutes : base.maxDelayMinutes,
-  delayedCount: typeof patch.delayedCount === 'number' ? patch.delayedCount : base.delayedCount,
-  lastSyncAttemptAt: typeof patch.lastSyncAttemptAt === 'number' ? patch.lastSyncAttemptAt : base.lastSyncAttemptAt,
-  lastSyncSuccessAt: typeof patch.lastSyncSuccessAt === 'number' ? patch.lastSyncSuccessAt : base.lastSyncSuccessAt,
-  nextSyncAt: typeof patch.nextSyncAt === 'number' ? patch.nextSyncAt : base.nextSyncAt,
-});
+export const useSettingsStore = defineStore(
+  'settings',
+  () => {
+    const settingsState = ref<AppSettings>(createDefaultAppSettings());
 
-const LOG_LEVELS: LogSettings['minimumLevel'][] = ['debug', 'info', 'warn', 'error'];
-
-export const mergeLogSettings = (
-  base: LogSettings,
-  patch: Partial<LogSettings>,
-): LogSettings => ({
-  minimumLevel: patch.minimumLevel && LOG_LEVELS.includes(patch.minimumLevel)
-    ? patch.minimumLevel
-    : base.minimumLevel,
-  retentionDays: 1,
-  autoAnalyze: typeof patch.autoAnalyze === 'boolean' ? patch.autoAnalyze : base.autoAnalyze,
-});
-
-export const useSettingsStore = defineStore('settings', () => {
-  const settings = ref<AppSettings>(createDefaultAppSettings());
-  const audioDelay = computed(() => settings.value.lyricsSyncOffset);
-  const theme = computed<ThemeSettings>({
-    get: () => settings.value.theme,
-    set: nextTheme => {
-      settings.value = {
-        ...settings.value,
-        theme: mergeThemeSettings(createDefaultThemeSettings(), nextTheme),
-      };
-    },
-  });
-  const sidebar = computed<SidebarSettings>({
-    get: () => settings.value.sidebar,
-    set: nextSidebar => {
-      settings.value = {
-        ...settings.value,
-        sidebar: mergeSidebarSettings(createDefaultSidebarSettings(), nextSidebar),
-      };
-    },
-  });
-  const footerLayout = computed<FooterLayoutSettings>({
-    get: () => settings.value.footerLayout,
-    set: nextFooterLayout => {
-      settings.value = {
-        ...settings.value,
-        footerLayout: mergeFooterLayoutSettings(createDefaultFooterLayoutSettings(), nextFooterLayout),
-      };
-    },
-  });
-  const topBarLayout = computed<TopBarLayoutSettings>({
-    get: () => settings.value.topBarLayout,
-    set: nextTopBarLayout => {
-      settings.value = {
-        ...settings.value,
-        topBarLayout: mergeTopBarLayoutSettings(createDefaultTopBarLayoutSettings(), nextTopBarLayout),
-      };
-    },
-  });
-
-  const replaceSettings = (nextSettings: AppSettings) => {
-    settings.value = mergeAppSettings(createDefaultAppSettings(), nextSettings);
-  };
-
-  const patchSettings = (partialSettings: AppSettingsPatch) => {
-    settings.value = mergeAppSettings(settings.value, partialSettings);
-  };
-
-  const resetSettings = () => {
-    settings.value = createDefaultAppSettings();
-  };
-
-  const replaceTheme = (nextTheme: ThemeSettings) => {
-    theme.value = nextTheme;
-  };
-
-  const patchTheme = (partialTheme: ThemeSettingsPatch) => {
-    settings.value = {
-      ...settings.value,
-      theme: mergeThemeSettings(settings.value.theme, partialTheme),
+    const setThemeState = (next: ThemeSettings) => {
+      settingsState.value = { ...settingsState.value, theme: next };
     };
-  };
-
-  const replaceSidebar = (nextSidebar: SidebarSettings) => {
-    sidebar.value = nextSidebar;
-  };
-
-  const patchSidebar = (partialSidebar: SidebarSettingsPatch) => {
-    settings.value = {
-      ...settings.value,
-      sidebar: mergeSidebarSettings(settings.value.sidebar, partialSidebar),
+    const setSidebarState = (next: SidebarSettings) => {
+      settingsState.value = { ...settingsState.value, sidebar: next };
     };
-  };
-
-  const patchFooterLayout = (partialFooterLayout: FooterLayoutSettingsPatch) => {
-    settings.value = {
-      ...settings.value,
-      footerLayout: mergeFooterLayoutSettings(settings.value.footerLayout, partialFooterLayout),
+    const setFooterLayoutState = (next: FooterLayoutSettings) => {
+      settingsState.value = { ...settingsState.value, footerLayout: next };
     };
-  };
-
-  const patchTopBarLayout = (partialTopBarLayout: TopBarLayoutSettingsPatch) => {
-    settings.value = {
-      ...settings.value,
-      topBarLayout: mergeTopBarLayoutSettings(settings.value.topBarLayout, partialTopBarLayout),
+    const setTopBarLayoutState = (next: TopBarLayoutSettings) => {
+      settingsState.value = { ...settingsState.value, topBarLayout: next };
     };
-  };
 
-  const equalizerPresets = ref<EqualizerPreset[]>(
-    playerStorage.readEqualizerPresets()
-  );
-  
-  const userPresets = computed(() => 
-    equalizerPresets.value.filter(p => !p.isBuiltin)
-  );
-  
-  const saveEqualizerPreset = (name: string) => {
-    const newPreset: EqualizerPreset = {
-      id: createUserPresetId(),
-      name,
-      preamp: settings.value.audio.equalizer.preamp,
-      gains: [...settings.value.audio.equalizer.gains],
-      isBuiltin: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    
-    equalizerPresets.value.push(newPreset);
-    playerStorage.writeEqualizerPresets(userPresets.value);
-    
-    patchSettings({
-      audio: {
-        equalizer: {
-          ...settings.value.audio.equalizer,
-          currentPresetId: newPreset.id,
-        },
-      },
+    const audioDelay = computed(() => settingsState.value.lyricsSyncOffset);
+
+    const theme = computed<ThemeSettings>({
+      get: () => settingsState.value.theme,
+      set: incoming => setThemeState(mergeThemeSettings(createDefaultThemeSettings(), incoming)),
     });
-    
-    return newPreset;
-  };
-  
-  const updateEqualizerPreset = (presetId: string, name: string) => {
-    const preset = equalizerPresets.value.find(p => p.id === presetId);
-    if (preset && !preset.isBuiltin) {
-      preset.name = name;
-      preset.preamp = settings.value.audio.equalizer.preamp;
-      preset.gains = [...settings.value.audio.equalizer.gains];
-      preset.updatedAt = Date.now();
-      playerStorage.writeEqualizerPresets(userPresets.value);
-    }
-  };
-  
-  const deleteEqualizerPreset = (presetId: string) => {
-    const index = equalizerPresets.value.findIndex(p => p.id === presetId);
-    if (index !== -1 && !equalizerPresets.value[index].isBuiltin) {
-      equalizerPresets.value.splice(index, 1);
-      playerStorage.writeEqualizerPresets(userPresets.value);
-      
-      if (settings.value.audio.equalizer.currentPresetId === presetId) {
-        patchSettings({
-          audio: {
-            equalizer: {
-              ...settings.value.audio.equalizer,
-              currentPresetId: null,
-            },
-          },
-        });
-      }
-    }
-  };
-  
-  const loadEqualizerPreset = (presetId: string) => {
-    const preset = equalizerPresets.value.find(p => p.id === presetId);
-    if (preset) {
-      patchSettings({
-        audio: {
-          equalizer: {
-            enabled: true,
-            preamp: preset.preamp,
-            gains: [...preset.gains],
-            currentPresetId: presetId,
-          },
-        },
-      });
-    }
-  };
+    const sidebar = computed<SidebarSettings>({
+      get: () => settingsState.value.sidebar,
+      set: incoming => setSidebarState(mergeSidebarSettings(createDefaultSidebarSettings(), incoming)),
+    });
+    const footerLayout = computed<FooterLayoutSettings>({
+      get: () => settingsState.value.footerLayout,
+      set: incoming => setFooterLayoutState(mergeFooterLayoutSettings(createDefaultFooterLayoutSettings(), incoming)),
+    });
+    const topBarLayout = computed<TopBarLayoutSettings>({
+      get: () => settingsState.value.topBarLayout,
+      set: incoming => setTopBarLayoutState(mergeTopBarLayoutSettings(createDefaultTopBarLayoutSettings(), incoming)),
+    });
 
-  return {
-    settings,
-    audioDelay,
-    theme,
-    sidebar,
-    footerLayout,
-    topBarLayout,
-    equalizerPresets,
-    userPresets,
-    replaceSettings,
-    patchSettings,
-    resetSettings,
-    replaceTheme,
-    patchTheme,
-    replaceSidebar,
-    patchSidebar,
-    patchFooterLayout,
-    patchTopBarLayout,
-    saveEqualizerPreset,
-    updateEqualizerPreset,
-    deleteEqualizerPreset,
-    loadEqualizerPreset,
-  };
-});
+    const replaceSettings = (incoming: AppSettings) => {
+      settingsState.value = mergeAppSettings(createDefaultAppSettings(), incoming);
+    };
+
+    const patchSettings = (partial: AppSettingsPatch) => {
+      settingsState.value = mergeAppSettings(settingsState.value, partial);
+    };
+
+    function resetSettings() {
+      settingsState.value = createDefaultAppSettings();
+    }
+
+    const replaceTheme = (incoming: ThemeSettings) => {
+      theme.value = incoming;
+    };
+
+    const patchTheme = (partial: ThemeSettingsPatch) => {
+      setThemeState(mergeThemeSettings(settingsState.value.theme, partial));
+    };
+
+    const replaceSidebar = (incoming: SidebarSettings) => {
+      sidebar.value = incoming;
+    };
+
+    const patchSidebar = (partial: SidebarSettingsPatch) => {
+      setSidebarState(mergeSidebarSettings(settingsState.value.sidebar, partial));
+    };
+
+    const patchFooterLayout = (partial: FooterLayoutSettingsPatch) => {
+      setFooterLayoutState(mergeFooterLayoutSettings(settingsState.value.footerLayout, partial));
+    };
+
+    const patchTopBarLayout = (partial: TopBarLayoutSettingsPatch) => {
+      setTopBarLayoutState(mergeTopBarLayoutSettings(settingsState.value.topBarLayout, partial));
+    };
+
+    // 均衡器预设独立存放于播放器存储，这里维护其与 audio.equalizer 的联动。
+    const equalizerPresets = ref<EqualizerPreset[]>(playerStorage.readEqualizerPresets());
+    const userPresets = computed(() => equalizerPresets.value.filter(preset => !preset.isBuiltin));
+
+    const persistUserPresets = () => {
+      playerStorage.writeEqualizerPresets(userPresets.value);
+    };
+    const snapshotEqualizer = () => settingsState.value.audio.equalizer;
+    const applyEqualizerState = (next: AudioSettings['equalizer']) => {
+      patchSettings({ audio: { equalizer: next } });
+    };
+
+    const saveEqualizerPreset = (name: string) => {
+      const stamp = Date.now();
+      const created: EqualizerPreset = {
+        id: createUserPresetId(),
+        name,
+        preamp: snapshotEqualizer().preamp,
+        gains: [...snapshotEqualizer().gains],
+        isBuiltin: false,
+        createdAt: stamp,
+        updatedAt: stamp,
+      };
+      equalizerPresets.value.push(created);
+      persistUserPresets();
+      applyEqualizerState({ ...snapshotEqualizer(), currentPresetId: created.id });
+      return created;
+    };
+
+    const updateEqualizerPreset = (presetId: string, name: string) => {
+      const target = equalizerPresets.value.find(preset => preset.id === presetId);
+      if (!target || target.isBuiltin) {
+        return;
+      }
+      target.name = name;
+      target.preamp = snapshotEqualizer().preamp;
+      target.gains = [...snapshotEqualizer().gains];
+      target.updatedAt = Date.now();
+      persistUserPresets();
+    };
+
+    const deleteEqualizerPreset = (presetId: string) => {
+      const targetIndex = equalizerPresets.value.findIndex(preset => preset.id === presetId);
+      if (targetIndex === -1 || equalizerPresets.value[targetIndex].isBuiltin) {
+        return;
+      }
+      equalizerPresets.value.splice(targetIndex, 1);
+      persistUserPresets();
+      if (snapshotEqualizer().currentPresetId === presetId) {
+        applyEqualizerState({ ...snapshotEqualizer(), currentPresetId: null });
+      }
+    };
+
+    const loadEqualizerPreset = (presetId: string) => {
+      const preset = equalizerPresets.value.find(item => item.id === presetId);
+      if (!preset) {
+        return;
+      }
+      applyEqualizerState({
+        enabled: true,
+        preamp: preset.preamp,
+        gains: [...preset.gains],
+        currentPresetId: presetId,
+      });
+    };
+
+    return {
+      settings: settingsState,
+      audioDelay,
+      theme,
+      sidebar,
+      footerLayout,
+      topBarLayout,
+      equalizerPresets,
+      userPresets,
+      replaceSettings,
+      patchSettings,
+      resetSettings,
+      replaceTheme,
+      patchTheme,
+      replaceSidebar,
+      patchSidebar,
+      patchFooterLayout,
+      patchTopBarLayout,
+      saveEqualizerPreset,
+      updateEqualizerPreset,
+      deleteEqualizerPreset,
+      loadEqualizerPreset,
+    };
+  },
+);

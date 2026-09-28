@@ -5,12 +5,15 @@ import { effectScope, nextTick, ref, type EffectScope } from 'vue';
 import { useSettingsStore } from '../features/settings/store';
 import { useAppThemeSync } from './useAppThemeSync';
 
-const setTheme = vi.fn(() => Promise.resolve());
-const onFocusChanged = vi.fn(() => Promise.resolve(() => undefined));
-const applyWindowMaterial = vi.fn(() => Promise.resolve('none'));
-const rebuildWindowMaterialForCompositor = vi.fn(() => Promise.resolve('none'));
-const refreshWindowMaterialActiveState = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-const loadWindowMaterialCapabilities = vi.fn(() => Promise.resolve({
+// ---------------------------------------------------------------------------
+// 原生层与窗口材质层的替身
+// ---------------------------------------------------------------------------
+
+const nativeSetTheme = vi.fn(() => Promise.resolve());
+const nativeOnFocusChanged = vi.fn(() => Promise.resolve(() => undefined));
+const materialPushMock = vi.fn(() => Promise.resolve('none'));
+const materialRebuildMock = vi.fn(() => Promise.resolve('none'));
+const materialCapabilityReport = vi.fn(() => Promise.resolve({
   isWindows: true,
   supportsAcrylic: true,
   supportsMica: true,
@@ -18,115 +21,133 @@ const loadWindowMaterialCapabilities = vi.fn(() => Promise.resolve({
   systemTransparencyEnabled: true,
   windowsBuildNumber: 22631,
 }));
-const activeWindowMaterial = ref('none');
-let scope: EffectScope | null = null;
+const activeMaterialRef = ref('none');
+const refreshMaterialActiveStateMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+let hostScope: EffectScope | null = null;
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
-    setTheme,
-    onFocusChanged,
+    setTheme: nativeSetTheme,
+    onFocusChanged: nativeOnFocusChanged,
   }),
 }));
 
 vi.mock('./windowMaterial', () => ({
   useWindowMaterial: () => ({
-    activeWindowMaterial,
-    applyWindowMaterial,
-    rebuildWindowMaterialForCompositor,
-    loadWindowMaterialCapabilities,
+    activeWindowMaterial: activeMaterialRef,
+    applyWindowMaterial: materialPushMock,
+    rebuildWindowMaterialForCompositor: materialRebuildMock,
+    loadWindowMaterialCapabilities: materialCapabilityReport,
   }),
 }));
 
 vi.mock('../services/tauri/windowApi', () => ({
   windowApi: {
-    refreshWindowMaterialActiveState,
+    refreshWindowMaterialActiveState: refreshMaterialActiveStateMock,
   },
 }));
 
-async function flushThemeSync() {
-  await nextTick();
-  await Promise.resolve();
-  await nextTick();
-  await Promise.resolve();
-}
+// ---------------------------------------------------------------------------
+// 测试脚手架
+// ---------------------------------------------------------------------------
 
-describe('useAppThemeSync', () => {
+/** 排空响应式队列与微任务，让主题同步管线完整跑完 */
+const drainReactiveQueue = async () => {
+  await nextTick();
+  await Promise.resolve();
+  await nextTick();
+  await Promise.resolve();
+};
+
+/** 在当前 effectScope 内挂载 useAppThemeSync 并排空首轮同步 */
+const mountThemeSyncInScope = async () => {
+  hostScope?.run(() => useAppThemeSync());
+  await drainReactiveQueue();
+};
+
+const installDocumentStub = () => {
+  vi.stubGlobal('document', {
+    documentElement: {
+      classList: {
+        add: vi.fn(),
+        contains: vi.fn(() => false),
+        remove: vi.fn(),
+      },
+      style: {
+        setProperty: vi.fn(),
+      },
+    },
+  });
+};
+
+const resetMaterialMocks = () => {
+  nativeSetTheme.mockClear();
+  nativeOnFocusChanged.mockClear();
+  materialPushMock.mockClear();
+  materialPushMock.mockResolvedValue('none');
+  materialRebuildMock.mockClear();
+  materialRebuildMock.mockResolvedValue('none');
+  refreshMaterialActiveStateMock.mockClear();
+  materialCapabilityReport.mockClear();
+  activeMaterialRef.value = 'none';
+};
+
+/** 以「自定义背景 + 指定前景明暗」的形态铺设主题设置 */
+const seedCustomBackdropTheme = (foregroundStyle: 'light' | 'dark') => {
+  useSettingsStore().patchTheme({
+    mode: 'custom',
+    windowMaterial: 'none',
+    customBackground: {
+      imagePath: '/covers/demo.jpg',
+      foregroundStyle,
+    },
+  });
+};
+
+describe('useAppThemeSync 主题/材质联动', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    scope = effectScope();
-    vi.stubGlobal('document', {
-      documentElement: {
-        classList: {
-          add: vi.fn(),
-          contains: vi.fn(() => false),
-          remove: vi.fn(),
-        },
-        style: {
-          setProperty: vi.fn(),
-        },
-      },
-    });
-    setTheme.mockClear();
-    onFocusChanged.mockClear();
-    applyWindowMaterial.mockClear();
-    applyWindowMaterial.mockResolvedValue('none');
-    rebuildWindowMaterialForCompositor.mockClear();
-    rebuildWindowMaterialForCompositor.mockResolvedValue('none');
-    refreshWindowMaterialActiveState.mockClear();
-    loadWindowMaterialCapabilities.mockClear();
-    activeWindowMaterial.value = 'none';
+    hostScope = effectScope();
+    installDocumentStub();
+    resetMaterialMocks();
   });
 
-  it('refreshes native material active state when a material is applied', async () => {
-    const settingsStore = useSettingsStore();
-    settingsStore.patchTheme({
+  afterEach(() => {
+    hostScope?.stop();
+    hostScope = null;
+    vi.unstubAllGlobals();
+  });
+
+  it('材质应用成功后把激活态（含失焦保活偏好）同步给原生层', async () => {
+    useSettingsStore().patchTheme({
       windowMaterial: 'acrylic',
       keepWindowMaterialOnBlur: true,
     });
-    applyWindowMaterial.mockResolvedValue('acrylic');
+    materialPushMock.mockResolvedValue('acrylic');
 
-    scope?.run(() => useAppThemeSync());
-    await flushThemeSync();
+    await mountThemeSyncInScope();
 
-    expect(refreshWindowMaterialActiveState).toHaveBeenCalledWith(true);
+    expect(refreshMaterialActiveStateMock).toHaveBeenCalledWith(true);
   });
 
-  it('applies accent color changes to root CSS variables', async () => {
-    const settingsStore = useSettingsStore();
-    scope?.run(() => useAppThemeSync());
-    await flushThemeSync();
+  it('主题色变化即时写入根节点 CSS 变量', async () => {
+    await mountThemeSyncInScope();
 
-    settingsStore.patchTheme({ accentColor: '#3B82F6' });
-    await flushThemeSync();
+    useSettingsStore().patchTheme({ accentColor: '#3B82F6' });
+    await drainReactiveQueue();
 
     expect(document.documentElement.style.setProperty).toHaveBeenCalledWith('--theme-color', '#3B82F6');
     expect(document.documentElement.style.setProperty).toHaveBeenCalledWith('--theme-color-rgb', '59 130 246');
   });
 
-  afterEach(() => {
-    scope?.stop();
-    scope = null;
-    vi.unstubAllGlobals();
-  });
+  it('自定义背景仅调整绘制参数时，不触发原生主题与材质重同步', async () => {
+    seedCustomBackdropTheme('light');
+    await mountThemeSyncInScope();
 
-  it('does not resync native window material for custom background paint-only changes', async () => {
-    const settingsStore = useSettingsStore();
-    settingsStore.patchTheme({
-      mode: 'custom',
-      windowMaterial: 'none',
-      customBackground: {
-        imagePath: '/covers/demo.jpg',
-        foregroundStyle: 'light',
-      },
-    });
+    const setThemeCallsBefore = nativeSetTheme.mock.calls.length;
+    const materialPushCallsBefore = materialPushMock.mock.calls.length;
 
-    scope?.run(() => useAppThemeSync());
-    await flushThemeSync();
-
-    const initialSetThemeCalls = setTheme.mock.calls.length;
-    const initialMaterialCalls = applyWindowMaterial.mock.calls.length;
-
-    settingsStore.patchTheme({
+    useSettingsStore().patchTheme({
       customBackground: {
         blur: 36,
         opacity: 0.82,
@@ -134,37 +155,27 @@ describe('useAppThemeSync', () => {
         scale: 1.14,
       },
     });
-    await flushThemeSync();
+    await drainReactiveQueue();
 
-    expect(setTheme).toHaveBeenCalledTimes(initialSetThemeCalls);
-    expect(applyWindowMaterial).toHaveBeenCalledTimes(initialMaterialCalls);
+    expect(nativeSetTheme).toHaveBeenCalledTimes(setThemeCallsBefore);
+    expect(materialPushMock).toHaveBeenCalledTimes(materialPushCallsBefore);
   });
 
-  it('resyncs native window material when custom foreground style changes resolved theme darkness', async () => {
-    const settingsStore = useSettingsStore();
-    settingsStore.patchTheme({
-      mode: 'custom',
-      windowMaterial: 'none',
-      customBackground: {
-        imagePath: '/covers/demo.jpg',
-        foregroundStyle: 'light',
-      },
-    });
+  it('自定义背景前景明暗反转（改变明暗解析）时，触发完整重同步', async () => {
+    seedCustomBackdropTheme('light');
+    await mountThemeSyncInScope();
 
-    scope?.run(() => useAppThemeSync());
-    await flushThemeSync();
+    const setThemeCallsBefore = nativeSetTheme.mock.calls.length;
+    const materialPushCallsBefore = materialPushMock.mock.calls.length;
 
-    const initialSetThemeCalls = setTheme.mock.calls.length;
-    const initialMaterialCalls = applyWindowMaterial.mock.calls.length;
-
-    settingsStore.patchTheme({
+    useSettingsStore().patchTheme({
       customBackground: {
         foregroundStyle: 'dark',
       },
     });
-    await flushThemeSync();
+    await drainReactiveQueue();
 
-    expect(setTheme.mock.calls.length).toBeGreaterThan(initialSetThemeCalls);
-    expect(applyWindowMaterial.mock.calls.length).toBeGreaterThan(initialMaterialCalls);
+    expect(nativeSetTheme.mock.calls.length).toBeGreaterThan(setThemeCallsBefore);
+    expect(materialPushMock.mock.calls.length).toBeGreaterThan(materialPushCallsBefore);
   });
 });

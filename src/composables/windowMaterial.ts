@@ -1,306 +1,305 @@
-import { Effect, getCurrentWindow, type Color } from '@tauri-apps/api/window';
-import { nextTick, ref } from 'vue';
-import { windowApi, type WindowMaterialCapabilities as TauriWindowMaterialCapabilities } from '../services/tauri/windowApi';
+// 原生窗口材质编排：负责能力探测（一次性缓存）、材质降级解析，以及
+// mica / acrylic / blur / none 四种归宿的实际下发。材质切换涉及合成器
+// 时序，因此这里的每一步都围绕「先铺底色 → 再挂特效 → 最后修阴影」
+// 的顺序展开；从材质退回 none 时用过渡遮罩抑制 CSS 过渡抖动。
+import { type Color, Effect, getCurrentWindow } from '@tauri-apps/api/window';
+import { ref, nextTick } from 'vue';
+import { windowApi } from '../services/tauri/windowApi';
+import type { WindowMaterialCapabilities as TauriWindowMaterialCapabilities } from '../services/tauri/windowApi';
+
+import {
+  buildAcrylicTint,
+  buildBlurTint,
+  buildOpaqueSurfaceColor,
+  NATIVE_MICA_EFFECT_BY_DARKNESS,
+  runsOnWindows11,
+  TRANSLUCENT_SURFACE_COLOR,
+  type WindowMaterialCapabilities,
+} from './windowMaterialPalette';
 
 export type WindowMaterialMode = 'none' | 'mica' | 'acrylic' | 'blur';
 export type ResolvedWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur';
 
-export interface WindowMaterialCapabilities {
-  isWindows: boolean;
-  supportsAcrylic: boolean;
-  supportsMica: boolean;
-  supportsBlur: boolean;
-  systemTransparencyEnabled: boolean | null;
-  windowsBuildNumber: number | null;
-}
+export type { WindowMaterialCapabilities } from './windowMaterialPalette';
 
-const defaultCapabilities = (): WindowMaterialCapabilities => ({
-  isWindows: false,
-  supportsAcrylic: false,
-  supportsMica: false,
-  supportsBlur: false,
-  systemTransparencyEnabled: null,
-  windowsBuildNumber: null,
+/** 无材质可用的统一归宿值 */
+const INERT_MATERIAL: ResolvedWindowMaterial = 'none';
+
+/** 能力探测尚未落地时的兜底快照：全平台视为不支持 */
+const blankCapabilitySnapshot = (): WindowMaterialCapabilities => ({
+  isWindows: false, supportsAcrylic: false, supportsMica: false, supportsBlur: false,
+  systemTransparencyEnabled: null, windowsBuildNumber: null,
 });
 
-const capabilities = ref<WindowMaterialCapabilities>(defaultCapabilities());
-const activeWindowMaterial = ref<ResolvedWindowMaterial>('none');
-const isWindowMaterialReady = ref(false);
+// ---- 模块级共享状态（多窗口组件共用同一份能力与激活态） ----
 
-const materialTransitionMaskVisible = ref(false);
-
+const capabilitySnapshot = ref<WindowMaterialCapabilities>(blankCapabilitySnapshot());
+const activeMaterialState = ref<ResolvedWindowMaterial>(INERT_MATERIAL);
+const capabilityQuerySettled = ref(false);
+const transitionMaskVisible = ref(false);
 const materialSwitching = ref(false);
 
-let loadPromise: Promise<WindowMaterialCapabilities> | null = null;
+let capabilityQueryInFlight: Promise<WindowMaterialCapabilities> | null = null;
 
-const MICA_DARK_EFFECT = 'micaDark' as Effect;
-const MICA_LIGHT_EFFECT = 'micaLight' as Effect;
+/** 等待 Vue 完成本轮渲染冲刷后再继续操作原生窗口 */
+const flushVueRenderPass = nextTick;
 
-function normalizeCapabilities(
-  value: Partial<WindowMaterialCapabilities> | null | undefined,
-): WindowMaterialCapabilities {
-  return {
-    ...defaultCapabilities(),
-    ...value,
-  };
-}
+/** 各模式对平台能力的资格判定；未列出的模式一律不放行 */
+const eligibilityTests: Partial<Record<WindowMaterialMode, (snapshot: WindowMaterialCapabilities) => boolean>> = {
+  mica: (snapshot) => runsOnWindows11(snapshot.isWindows, snapshot.windowsBuildNumber) && snapshot.supportsMica,
+  acrylic: (snapshot) => runsOnWindows11(snapshot.isWindows, snapshot.windowsBuildNumber) && snapshot.supportsAcrylic,
+  blur: (snapshot) => snapshot.isWindows && snapshot.supportsBlur,
+};
 
-export function resolveWindowMaterial(
-  mode: WindowMaterialMode,
-  value: WindowMaterialCapabilities = capabilities.value,
-): ResolvedWindowMaterial {
-  const isWindows11 = value.isWindows && value.windowsBuildNumber !== null && value.windowsBuildNumber >= 22000;
+const isSystemTransparencyDisabled = (snapshot: WindowMaterialCapabilities) =>
+  snapshot.systemTransparencyEnabled === false;
 
-  if (value.systemTransparencyEnabled === false) {
-    return 'none';
+/**
+ * 将用户选择的模式解析为当前平台真正可用的材质：
+ * 系统透明度被关闭时全部回退 none，其余按资格表判定。
+ */
+export function resolveWindowMaterial(mode: WindowMaterialMode, value: WindowMaterialCapabilities = capabilitySnapshot.value): ResolvedWindowMaterial {
+  if (isSystemTransparencyDisabled(value)) {
+    return INERT_MATERIAL;
   }
 
-  if (mode === 'mica') {
-    return isWindows11 && value.supportsMica ? 'mica' : 'none';
-  }
-
-  if (mode === 'acrylic') {
-    return isWindows11 && value.supportsAcrylic ? 'acrylic' : 'none';
-  }
-
-  if (mode === 'blur') {
-    return value.isWindows && value.supportsBlur ? 'blur' : 'none';
-  }
-
-  return 'none';
+  const eligibilityTest = eligibilityTests[mode];
+  return eligibilityTest?.(value) ? (mode as ResolvedWindowMaterial) : INERT_MATERIAL;
 }
 
-function getAcrylicTint(isDark: boolean): Color {
-  return isDark ? [18, 18, 18, 140] : [248, 248, 248, 125];
-}
+// ---- 原生窗口的基础写入（失败仅告警，不中断编排） ----
 
-function normalizeTintValue(value = 50): number {
-  return Math.min(100, Math.max(0, Math.round(value)));
-}
-
-function getBlurTint(isDark: boolean, tintValue = 50): Color {
-  const value = normalizeTintValue(tintValue);
-  const alpha = isDark
-    ? 50 + Math.round(value * 1.2)
-    : 40 + value;
-  return isDark ? [18, 18, 18, alpha] : [248, 248, 248, alpha];
-}
-
-function getBaseWindowColor(isDark: boolean): Color {
-  return isDark ? [38, 38, 38, 255] : [255, 255, 255, 255];
-}
-
-function getTransparentWindowColor(): Color {
-  return [0, 0, 0, 0];
-}
-
-function waitForCompositorFrame(): Promise<void> {
-  if (typeof requestAnimationFrame !== 'function') {
-    return new Promise(resolve => setTimeout(resolve, 16));
-  }
-
-  return new Promise(resolve => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve());
-    });
-  });
-}
-
-async function trySetWindowBackgroundColor(color: Color): Promise<void> {
-  const appWindow = getCurrentWindow();
-
+async function paintWindowBackgroundSafely(color: Color): Promise<void> {
   try {
-    await appWindow.setBackgroundColor(color);
+    await getCurrentWindow().setBackgroundColor(color);
   } catch (error) {
     console.warn('Failed to set window background color:', error);
   }
 }
 
-async function showTransitionMask(): Promise<void> {
-  materialTransitionMaskVisible.value = true;
-  await nextTick();
-  await waitForCompositorFrame();
-}
-
-async function hideTransitionMask(): Promise<void> {
-  await waitForCompositorFrame();
-  materialTransitionMaskVisible.value = false;
-}
-
-async function trySetWindowShadow(enabled: boolean): Promise<void> {
-  const appWindow = getCurrentWindow();
-
+async function toggleWindowShadowSafely(enabled: boolean): Promise<void> {
+  const hostWindow = getCurrentWindow();
   try {
-    if (appWindow.setShadow) {
-      await appWindow.setShadow(enabled);
+    if (hostWindow.setShadow) {
+      await hostWindow.setShadow(enabled);
     }
   } catch (error) {
     console.warn('Failed to set window shadow:', error);
   }
 }
 
-export async function loadWindowMaterialCapabilities(force = false): Promise<WindowMaterialCapabilities> {
-  if (isWindowMaterialReady.value && !force) {
-    return capabilities.value;
+/**
+ * 等待两个合成器帧：特效/底色变更需要跨越一整个合成周期才会稳定，
+ * 连续两次 rAF（无 rAF 环境退化为 16ms 定时器）可确保时序可靠。
+ */
+function awaitNextCompositorFrame(): Promise<void> {
+  const scheduleFrame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null;
+  if (!scheduleFrame) {
+    return new Promise((resolve) => { setTimeout(resolve, 16); });
   }
 
-  if (loadPromise && !force) {
-    return loadPromise;
-  }
-
-  loadPromise = windowApi.getWindowMaterialCapabilities()
-    .then((result) => {
-      const normalized = normalizeCapabilities(result as TauriWindowMaterialCapabilities);
-      capabilities.value = normalized;
-      isWindowMaterialReady.value = true;
-      return normalized;
-    })
-    .catch((error) => {
-      console.error('Failed to query window material capabilities:', error);
-      const fallback = defaultCapabilities();
-      capabilities.value = fallback;
-      isWindowMaterialReady.value = true;
-      return fallback;
-    })
-    .finally(() => {
-      loadPromise = null;
+  return new Promise((resolve) => {
+    scheduleFrame(() => {
+      scheduleFrame(() => resolve());
     });
-
-  return loadPromise;
+  });
 }
 
-export async function applyWindowMaterial(
-  mode: WindowMaterialMode,
-  isDark: boolean,
-  blurTint = 50,
-): Promise<ResolvedWindowMaterial> {
-  const value = await loadWindowMaterialCapabilities();
-  const resolved = resolveWindowMaterial(mode, value);
-  const appWindow = getCurrentWindow();
+/** 升起过渡遮罩：材质切换期间冻结根节点的 CSS 过渡 */
+async function revealTransitionMask(): Promise<void> {
+  transitionMaskVisible.value = true;
+  await flushVueRenderPass();
+  await awaitNextCompositorFrame();
+}
+
+/** 落下过渡遮罩：先再等一帧，确认合成器稳定后再恢复过渡 */
+async function concealTransitionMask(): Promise<void> {
+  await awaitNextCompositorFrame();
+  transitionMaskVisible.value = false;
+}
+
+// ---- 能力探测 ----
+
+/** 把原生层上报的能力快照补齐为完整结构（缺失字段取安全默认值） */
+function adoptReportedCapabilities(reported?: Partial<WindowMaterialCapabilities> | null): WindowMaterialCapabilities {
+  return {
+    isWindows: reported?.isWindows ?? false,
+    supportsAcrylic: reported?.supportsAcrylic ?? false,
+    supportsMica: reported?.supportsMica ?? false,
+    supportsBlur: reported?.supportsBlur ?? false,
+    systemTransparencyEnabled: reported?.systemTransparencyEnabled ?? null,
+    windowsBuildNumber: reported?.windowsBuildNumber ?? null,
+  };
+}
+
+async function fetchAndStoreCapabilities(): Promise<WindowMaterialCapabilities> {
+  try {
+    const reported = await windowApi.getWindowMaterialCapabilities();
+    const adopted = adoptReportedCapabilities(reported as TauriWindowMaterialCapabilities);
+    capabilitySnapshot.value = adopted;
+    capabilityQuerySettled.value = true;
+    return adopted;
+  } catch (error) {
+    console.error('Failed to query window material capabilities:', error);
+    const fallback = blankCapabilitySnapshot();
+    capabilitySnapshot.value = fallback;
+    capabilityQuerySettled.value = true;
+    return fallback;
+  } finally {
+    capabilityQueryInFlight = null;
+  }
+}
+
+/**
+ * 拉取并缓存材质能力：成功/失败都视为「已探测」，后续调用直接命中
+ * 缓存；并发调用共享同一次在途查询，force 时强制重探。
+ */
+export async function loadWindowMaterialCapabilities(force = false): Promise<WindowMaterialCapabilities> {
+  if (capabilityQuerySettled.value && !force) {
+    return capabilitySnapshot.value;
+  }
+  if (capabilityQueryInFlight && !force) {
+    return capabilityQueryInFlight;
+  }
+
+  capabilityQueryInFlight = fetchAndStoreCapabilities();
+  return capabilityQueryInFlight;
+}
+
+// ---- 材质下发 ----
+
+export async function applyWindowMaterial(mode: WindowMaterialMode, isDark: boolean, blurTint = 50): Promise<ResolvedWindowMaterial> {
+  const snapshot = await loadWindowMaterialCapabilities();
+  const resolved = resolveWindowMaterial(mode, snapshot);
+  const hostWindow = getCurrentWindow();
 
   try {
     if (resolved === 'mica') {
-      await trySetWindowBackgroundColor(getTransparentWindowColor());
-      await appWindow.setEffects({
-        effects: [isDark ? MICA_DARK_EFFECT : MICA_LIGHT_EFFECT],
-      });
-      await trySetWindowShadow(true);
+      await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
+      await hostWindow.setEffects({ effects: [isDark ? NATIVE_MICA_EFFECT_BY_DARKNESS.dark : NATIVE_MICA_EFFECT_BY_DARKNESS.light] });
+      await toggleWindowShadowSafely(true);
     } else if (resolved === 'acrylic') {
-      await trySetWindowBackgroundColor(getTransparentWindowColor());
+      await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
       await windowApi.setDarkModeForWindow(isDark);
-      await appWindow.setEffects({
-        effects: [Effect.Acrylic],
-        color: getAcrylicTint(isDark),
-      });
-      await trySetWindowShadow(true);
+      await hostWindow.setEffects({ effects: [Effect.Acrylic], color: buildAcrylicTint(isDark) });
+      await toggleWindowShadowSafely(true);
     } else if (resolved === 'blur') {
-      await trySetWindowBackgroundColor(getTransparentWindowColor());
+      await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
       await windowApi.setDarkModeForWindow(isDark);
-      await appWindow.setEffects({
-        effects: [Effect.Blur],
-        color: getBlurTint(isDark, blurTint),
-      });
-      await trySetWindowShadow(false);
+      await hostWindow.setEffects({ effects: [Effect.Blur], color: buildBlurTint(isDark, blurTint) });
+      await toggleWindowShadowSafely(false);
     } else {
-      const baseColor = getBaseWindowColor(isDark);
-      const prev = activeWindowMaterial.value;
-      const needsTransitionMask = prev !== 'none';
+      const surfaceColor = buildOpaqueSurfaceColor(isDark);
+      const previousMaterial = activeMaterialState.value;
+      const needsTransitionMask = previousMaterial !== INERT_MATERIAL;
 
-      if (prev === 'acrylic' || prev === 'blur') {
-        const effect = prev === 'acrylic' ? Effect.Acrylic : Effect.Blur;
-        await appWindow.setEffects({ effects: [effect], color: baseColor });
-        await waitForCompositorFrame();
-        await trySetWindowBackgroundColor(baseColor);
-      } else if (prev === 'mica') {
-        await trySetWindowBackgroundColor(baseColor);
-        await waitForCompositorFrame();
+      // 退回 none：先用旧特效兜住底色过渡，再统一清干净特效
+      if (previousMaterial === 'acrylic' || previousMaterial === 'blur') {
+        const staleEffect = previousMaterial === 'acrylic' ? Effect.Acrylic : Effect.Blur;
+        await hostWindow.setEffects({ effects: [staleEffect], color: surfaceColor });
+        await awaitNextCompositorFrame();
+        await paintWindowBackgroundSafely(surfaceColor);
+      } else if (previousMaterial === 'mica') {
+        await paintWindowBackgroundSafely(surfaceColor);
+        await awaitNextCompositorFrame();
       }
 
       if (needsTransitionMask) {
-        await showTransitionMask();
+        await revealTransitionMask();
       }
 
       const shouldSuppressTransitions = needsTransitionMask;
       if (shouldSuppressTransitions) {
         materialSwitching.value = true;
-        await nextTick();
+        await flushVueRenderPass();
       }
 
       try {
-        activeWindowMaterial.value = 'none';
-        await nextTick();
-        await appWindow.clearEffects();
-        await trySetWindowShadow(true);
-        await waitForCompositorFrame();
+        activeMaterialState.value = INERT_MATERIAL;
+        await flushVueRenderPass();
+        await hostWindow.clearEffects();
+        await toggleWindowShadowSafely(true);
+        await awaitNextCompositorFrame();
       } finally {
         if (shouldSuppressTransitions) {
           materialSwitching.value = false;
         }
         if (needsTransitionMask) {
-          await hideTransitionMask();
+          await concealTransitionMask();
         }
       }
     }
 
-    activeWindowMaterial.value = resolved;
+    activeMaterialState.value = resolved;
   } catch (error) {
     console.error('Failed to apply window material:', error);
-    activeWindowMaterial.value = 'none';
+    activeMaterialState.value = INERT_MATERIAL;
   }
 
-  return activeWindowMaterial.value;
+  return activeMaterialState.value;
 }
 
+// ---- 合成器级重建 ----
+
+type EffectDisposer = () => Promise<unknown>;
+type RepaintWaiter = () => Promise<unknown>;
+type MaterialApplier = (mode: WindowMaterialMode, isDark: boolean, blurTint: number) => Promise<ResolvedWindowMaterial>;
+
+/** 重建流程的可注入依赖（测试与特殊窗口可替换默认实现） */
 interface RebuildWindowMaterialDeps {
-  clearEffects: () => Promise<unknown>;
-  waitForRepaint: () => Promise<unknown>;
-  applyMaterial: (mode: WindowMaterialMode, isDark: boolean, blurTint: number) => Promise<ResolvedWindowMaterial>;
+  clearEffects?: EffectDisposer;
+  waitForRepaint?: RepaintWaiter;
+  applyMaterial?: MaterialApplier;
 }
 
-export async function rebuildWindowMaterialForCompositor(
-  mode: WindowMaterialMode,
-  isDark: boolean,
-  blurTint = 50,
-  deps?: Partial<RebuildWindowMaterialDeps>,
-): Promise<ResolvedWindowMaterial> {
-  const clearEffects = deps?.clearEffects ?? (() => getCurrentWindow().clearEffects());
-  const waitForRepaint = deps?.waitForRepaint ?? waitForCompositorFrame;
-  const applyMaterial = deps?.applyMaterial ?? applyWindowMaterial;
+/**
+ * 合成器级重建：先升起过渡遮罩并清空现有特效，等一帧确认清空
+ * 生效后，再整体重铺目标材质。mode 为 none 时退化为普通应用。
+ */
+export async function rebuildWindowMaterialForCompositor(mode: WindowMaterialMode, isDark: boolean, blurTint = 50, deps?: Partial<RebuildWindowMaterialDeps>): Promise<ResolvedWindowMaterial> {
+  const disposeNativeEffects = deps?.clearEffects ?? (async () => getCurrentWindow().clearEffects());
+  const awaitReportedRepaint = deps?.waitForRepaint ?? awaitNextCompositorFrame;
+  const pushTargetMaterial = deps?.applyMaterial ?? applyWindowMaterial;
 
-  if (mode === 'none') {
-    return applyMaterial(mode, isDark, blurTint);
+  if (mode === INERT_MATERIAL) {
+    return pushTargetMaterial(mode, isDark, blurTint);
   }
 
   try {
-    await showTransitionMask();
+    await revealTransitionMask();
     materialSwitching.value = true;
-    await nextTick();
-    await clearEffects();
-    activeWindowMaterial.value = 'none';
-    await waitForRepaint();
+    await flushVueRenderPass();
+    await disposeNativeEffects();
+    activeMaterialState.value = INERT_MATERIAL;
+    await awaitReportedRepaint();
   } catch (error) {
     console.warn('Failed to rebuild window material compositor:', error);
   }
 
   try {
-    return await applyMaterial(mode, isDark, blurTint);
+    return await pushTargetMaterial(mode, isDark, blurTint);
   } finally {
-    await nextTick();
-    await waitForCompositorFrame();
+    await flushVueRenderPass();
+    await awaitNextCompositorFrame();
     materialSwitching.value = false;
-    await hideTransitionMask();
+    await concealTransitionMask();
   }
 }
 
+/** 供各窗口组件读取材质状态 / 复用编排逻辑的组合入口 */
 export function useWindowMaterial() {
+  const queryCapabilities = loadWindowMaterialCapabilities;
+  const pushMaterial = applyWindowMaterial;
+  const rebuildMaterial = rebuildWindowMaterialForCompositor;
+
   return {
-    capabilities,
-    activeWindowMaterial,
-    isWindowMaterialReady,
-    materialTransitionMaskVisible,
+    capabilities: capabilitySnapshot,
+    activeWindowMaterial: activeMaterialState,
+    isWindowMaterialReady: capabilityQuerySettled,
+    materialTransitionMaskVisible: transitionMaskVisible,
     materialSwitching,
-    loadWindowMaterialCapabilities,
-    applyWindowMaterial,
-    rebuildWindowMaterialForCompositor,
+    loadWindowMaterialCapabilities: queryCapabilities,
+    applyWindowMaterial: pushMaterial,
+    rebuildWindowMaterialForCompositor: rebuildMaterial,
   };
 }

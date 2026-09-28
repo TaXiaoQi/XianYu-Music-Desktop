@@ -1,156 +1,153 @@
-import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, unref, watch, type Ref } from 'vue';
-import { listScrollCache } from '../caches/imageCaches';
+import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, unref, watch } from 'vue';
+import type { Ref } from 'vue';
 
-const RESTORE_MAX_ATTEMPTS = 120;
+import { listScrollCache as scrollMemoryStore } from '../caches/imageCaches';
+
+// 恢复位置时最多等待的帧数：虚拟列表迟迟未撑开容器就放弃，避免无限重试。
+const RESTORE_FRAME_BUDGET = 120;
+// scrollTop 与目标值相差不足该像素数即认为已落位。
+const SETTLE_TOLERANCE_PX = 2;
+
+type ScrollKeySource = string | Ref<string>;
+
+interface ListScrollMemoryOptions {
+  /** 置真后冻结读写；监听器仍会挂载，与既有调用方的约定保持一致。 */
+  disabled?: boolean;
+}
+
+const frameOnce = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 
 export function useListScrollMemory(
-  keySource: string | Ref<string>,
+  keySource: ScrollKeySource,
   containerRef: Ref<HTMLElement | null>,
-  options?: { disabled?: boolean },
+  options?: ListScrollMemoryOptions,
 ) {
-  const resolveKey = () => unref(keySource);
-  const isDisabled = () => options?.disabled ?? false;
-  let attachedElement: HTMLElement | null = null;
-  let keyChanged = false;
+  const readKey = () => unref(keySource);
+  const writable = () => !(options?.disabled ?? false);
 
-  const handleContainerScroll = () => {
-    saveScrollPosition();
+  let boundTarget: HTMLElement | null = null;
+  // 键迁移后由迁移回调负责收尾，生命周期钩子不再重复落盘。
+  let keyMigrated = false;
+
+  const persist = (key = readKey()) => {
+    if (!writable() || !key || !containerRef.value) {
+      return;
+    }
+    scrollMemoryStore.set(key, containerRef.value.scrollTop);
   };
 
-  const detachScrollListener = () => {
-    if (!attachedElement) {
-      return;
-    }
-
-    attachedElement.removeEventListener('scroll', handleContainerScroll);
-    attachedElement = null;
-  };
-
-  const attachScrollListener = () => {
-    const element = containerRef.value;
-    if (!element || attachedElement === element) {
-      return;
-    }
-
-    detachScrollListener();
-    element.addEventListener('scroll', handleContainerScroll, { passive: true });
-    attachedElement = element;
-  };
-
-  const saveScrollPosition = (key = resolveKey()) => {
-    if (isDisabled()) {
-      return;
-    }
-
-    if (!key) {
-      return;
-    }
-
-    if (!containerRef.value) {
-      return;
-    }
-
-    listScrollCache.set(key, containerRef.value.scrollTop);
-  };
-
-  const restoreScrollPosition = async (key = resolveKey()) => {
-    if (isDisabled()) {
-      return;
-    }
-
-    if (!key) {
+  const reclaim = async (key = readKey()) => {
+    if (!writable() || !key) {
       return;
     }
 
     await nextTick();
 
-    if (!containerRef.value) {
+    const host = containerRef.value;
+    if (!host) {
       return;
     }
 
-    const savedTop = listScrollCache.get(key);
-    if (savedTop === undefined) {
+    const remembered = scrollMemoryStore.get(key);
+    if (remembered === undefined) {
       return;
     }
 
-    await new Promise<void>((resolve) => {
-      let attempts = 0;
+    await frameOnce();
 
-      const applyScrollPosition = () => {
-        const element = containerRef.value;
-        if (!element) {
-          resolve();
-          return;
-        }
-
-        if (savedTop > 0 && (element.clientHeight <= 0 || element.scrollHeight <= element.clientHeight)) {
-          if (attempts >= RESTORE_MAX_ATTEMPTS) {
-            resolve();
-            return;
-          }
-
-          attempts += 1;
-          requestAnimationFrame(applyScrollPosition);
-          return;
-        }
-
-        element.scrollTop = savedTop;
-        element.dispatchEvent(new Event('scroll'));
-
-        if (Math.abs(element.scrollTop - savedTop) < 2 || attempts >= RESTORE_MAX_ATTEMPTS) {
-          resolve();
-          return;
-        }
-
-        attempts += 1;
-        requestAnimationFrame(applyScrollPosition);
-      };
-
-      requestAnimationFrame(applyScrollPosition);
-    });
-  };
-
-  onMounted(() => {
-    attachScrollListener();
-    void restoreScrollPosition();
-  });
-
-  onActivated(() => {
-    attachScrollListener();
-    void restoreScrollPosition();
-  });
-
-  onDeactivated(() => {
-    if (!keyChanged) saveScrollPosition();
-  });
-
-  onBeforeUnmount(() => {
-    if (!keyChanged) saveScrollPosition();
-    detachScrollListener();
-  });
-
-  watch(containerRef, () => {
-    attachScrollListener();
-  });
-
-  if (typeof keySource !== 'string') {
-    watch(keySource, (newKey, oldKey) => {
-      if (oldKey && oldKey !== newKey) {
-        saveScrollPosition(oldKey);
-        detachScrollListener();
-        keyChanged = true;
-      }
-
-      if (!newKey || newKey === oldKey) {
+    for (let frame = 0; ; frame += 1) {
+      const target = containerRef.value;
+      if (!target) {
         return;
       }
 
-      void restoreScrollPosition(newKey);
+      // 内容尚未撑开容器时先让帧，等列表渲染到位再落位。
+      const waitingForContent = remembered > 0
+        && (target.clientHeight <= 0 || target.scrollHeight <= target.clientHeight);
+      if (waitingForContent) {
+        if (frame >= RESTORE_FRAME_BUDGET) {
+          return;
+        }
+        await frameOnce();
+        continue;
+      }
+
+      target.scrollTop = remembered;
+      target.dispatchEvent(new Event('scroll'));
+
+      const settled = Math.abs(target.scrollTop - remembered) < SETTLE_TOLERANCE_PX;
+      if (settled || frame >= RESTORE_FRAME_BUDGET) {
+        return;
+      }
+      await frameOnce();
+    }
+  };
+
+  const onHostScroll = () => {
+    persist();
+  };
+
+  const release = () => {
+    if (!boundTarget) {
+      return;
+    }
+    boundTarget.removeEventListener('scroll', onHostScroll);
+    boundTarget = null;
+  };
+
+  const bind = () => {
+    const host = containerRef.value;
+    if (!host || host === boundTarget) {
+      return;
+    }
+    release();
+    host.addEventListener('scroll', onHostScroll, { passive: true });
+    boundTarget = host;
+  };
+
+  const bindAndReclaim = () => {
+    bind();
+    void reclaim();
+  };
+
+  const persistIfSettled = () => {
+    if (!keyMigrated) persist();
+  };
+
+  const persistThenRelease = () => {
+    persistIfSettled();
+    release();
+  };
+
+  onMounted(bindAndReclaim);
+
+  onActivated(bindAndReclaim);
+
+  onDeactivated(persistIfSettled);
+
+  onBeforeUnmount(persistThenRelease);
+
+  watch(containerRef, bind);
+
+  if (typeof keySource !== 'string') {
+    watch(keySource, (nextKey, prevKey) => {
+      if (prevKey && prevKey !== nextKey) {
+        persist(prevKey);
+        release();
+        keyMigrated = true;
+      }
+
+      if (nextKey && nextKey !== prevKey) {
+        void reclaim(nextKey);
+      }
     });
   }
 
   return {
-    saveScrollPosition,
-    restoreScrollPosition,
+    saveScrollPosition: persist,
+    restoreScrollPosition: reclaim,
   };
 }

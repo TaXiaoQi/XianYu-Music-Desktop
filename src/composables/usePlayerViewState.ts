@@ -1,46 +1,38 @@
 import { storeToRefs } from 'pinia';
+
 import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { useNavigationStore } from '../shared/stores/navigation';
 import { useUiStore } from '../shared/stores/ui';
 
+type FolderSortChoice = 'title' | 'name' | 'artist' | 'track_number' | 'added_at' | 'added_at_asc' | 'custom';
+type LocalSortChoice = 'title' | 'artist' | 'added_at' | 'added_at_asc' | 'file_modified_at' | 'file_modified_at_asc' | 'custom';
+type AlbumDetailSortChoice = 'track_number' | 'track_number_desc' | 'title' | 'artist' | 'added_at' | 'added_at_asc' | 'file_modified_at' | 'file_modified_at_asc';
+type PlaylistSortChoice = 'title' | 'name' | 'artist' | 'added_at' | 'added_at_asc' | 'custom';
+
 export function usePlayerViewState() {
-  const collectionsStore = useCollectionsStore();
-  const libraryStore = useLibraryStore();
-  const navigationStore = useNavigationStore();
-  const uiStore = useUiStore();
-  const collectionsRefs = storeToRefs(collectionsStore);
-  const libraryRefs = storeToRefs(libraryStore);
-  const navigationRefs = storeToRefs(navigationStore);
-  const uiRefs = storeToRefs(uiStore);
+  const navigation = useNavigationStore();
+  const { setSearch } = navigation;
+  const { folderSortMode, localSortMode, albumDetailSortMode } = storeToRefs(useLibraryStore());
+  const { playlistSortMode } = storeToRefs(useCollectionsStore());
+  const { isMiniMode } = storeToRefs(useUiStore());
 
-  const setFolderSortMode = (mode: 'title' | 'name' | 'artist' | 'track_number' | 'added_at' | 'added_at_asc' | 'custom') => {
-    libraryRefs.folderSortMode.value = mode;
-  };
-
-  const setLocalSortMode = (mode: 'title' | 'artist' | 'added_at' | 'added_at_asc' | 'file_modified_at' | 'file_modified_at_asc' | 'custom') => {
-    libraryRefs.localSortMode.value = mode;
-  };
-
-  const setAlbumDetailSortMode = (mode: 'track_number' | 'track_number_desc' | 'title' | 'artist' | 'added_at' | 'added_at_asc' | 'file_modified_at' | 'file_modified_at_asc') => {
-    libraryRefs.albumDetailSortMode.value = mode;
-  };
-
-  const setPlaylistSortMode = (mode: 'title' | 'name' | 'artist' | 'added_at' | 'added_at_asc' | 'custom') => {
-    collectionsRefs.playlistSortMode.value = mode;
-  };
+  const applyFolderSort = (mode: FolderSortChoice) => { folderSortMode.value = mode; };
+  const applyLocalSort = (mode: LocalSortChoice) => { localSortMode.value = mode; };
+  const applyAlbumDetailSort = (mode: AlbumDetailSortChoice) => { albumDetailSortMode.value = mode; };
+  const applyPlaylistSort = (mode: PlaylistSortChoice) => { playlistSortMode.value = mode; };
 
   return {
-    ...navigationRefs,
-    isMiniMode: uiRefs.isMiniMode,
-    folderSortMode: libraryRefs.folderSortMode,
-    localSortMode: libraryRefs.localSortMode,
-    albumDetailSortMode: libraryRefs.albumDetailSortMode,
-    playlistSortMode: collectionsRefs.playlistSortMode,
-    setSearch: navigationStore.setSearch,
-    setFolderSortMode,
-    setLocalSortMode,
-    setAlbumDetailSortMode,
-    setPlaylistSortMode,
+    ...storeToRefs(navigation),
+    isMiniMode,
+    folderSortMode,
+    localSortMode,
+    albumDetailSortMode,
+    playlistSortMode,
+    setSearch,
+    setFolderSortMode: applyFolderSort,
+    setLocalSortMode: applyLocalSort,
+    setAlbumDetailSortMode: applyAlbumDetailSort,
+    setPlaylistSortMode: applyPlaylistSort,
   };
 }

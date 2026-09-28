@@ -1,69 +1,98 @@
+// 全局主题联动：把 settings store 中的主题意图分发到三条链路上——
+//   1) document 根节点的暗色类与「玻璃开关」标记；
+//   2) 原生窗口 theme（system 模式交还给系统，其余模式显式声明深浅）；
+//   3) 原生窗口材质（mica / acrylic / blur）与其激活态。
+// 首轮同步通过 whenInitialThemeSynced 暴露为 Promise，供启动期透明合成
+// 流程等待；焦点恢复与启动显示前的重建逻辑都复用同一套代际守卫防串扰。
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
+
 import { useWindowMaterial } from './windowMaterial';
 import { useThemeSettings } from './useThemeSettings';
 import { windowApi } from '../services/tauri/windowApi';
 import { applyThemeColorToDocument } from '../utils/themeColor';
 import { applyDarkClassWithTransition } from './themeTransition';
 
+/** 焦点恢复后的追加补同步延迟：DWM 恢复模糊透明窗口比焦点事件慢一拍 */
+const FOCUS_RESYNC_DELAY_MS = 120;
+/** 启动期材质重建延迟：等待首帧布局稳定后再重建合成器材质 */
+const STARTUP_REBUILD_DELAY_MS = 180;
+
 export function useAppThemeSync() {
   const {
-    activeWindowMaterial,
-    applyWindowMaterial,
-    rebuildWindowMaterialForCompositor,
-    loadWindowMaterialCapabilities,
+    activeWindowMaterial: currentMaterial,
+    applyWindowMaterial: pushWindowMaterial,
+    rebuildWindowMaterialForCompositor: rebuildCompositorMaterial,
+    loadWindowMaterialCapabilities: queryMaterialCapabilities,
   } = useWindowMaterial();
   const { theme, isDarkTheme } = useThemeSettings();
-  const appWindow = getCurrentWindow();
+  const hostWindow = getCurrentWindow();
 
-  const hasWindowMaterial = computed(() => activeWindowMaterial.value !== 'none');
-  const isMicaWindowMaterial = computed(() => activeWindowMaterial.value === 'mica');
-  let restoreSyncTimer: ReturnType<typeof setTimeout> | null = null;
-  let unlistenFocusChanged: UnlistenFn | null = null;
-  let syncGeneration = 0;
-  let skipNextFocusRestore = false;
-  let resolveInitialThemeSync: (() => void) | null = null;
-  const initialThemeSync = new Promise<void>((resolve) => {
-    resolveInitialThemeSync = resolve;
+  const materialPresent = computed(() => currentMaterial.value !== 'none');
+  const micaMaterialActive = computed(() => currentMaterial.value === 'mica');
+
+  let deferredResyncHandle: ReturnType<typeof setTimeout> | null = null;
+  let detachFocusWatcher: UnlistenFn | null = null;
+  let syncEpoch = 0;
+  let suppressNextFocusResync = false;
+  let settleFirstSync: (() => void) | null = null;
+  const firstSyncCompletion = new Promise<void>((resolve) => {
+    settleFirstSync = resolve;
   });
 
-  const markInitialThemeSynced = () => {
-    resolveInitialThemeSync?.();
-    resolveInitialThemeSync = null;
+  const settleFirstSyncOnce = () => {
+    settleFirstSync?.();
+    settleFirstSync = null;
   };
 
-  const applyGlassSwitchClass = () => {
-    if (typeof document === 'undefined' || !document.documentElement?.classList) return;
-    const isNoGlass = theme.value.useGlassSwitch === false;
-    if (typeof document.documentElement.classList.toggle === 'function') {
-      document.documentElement.classList.toggle('no-glass-switch', isNoGlass);
-    } else if (isNoGlass) {
-      document.documentElement.classList.add?.('no-glass-switch');
-    } else {
-      document.documentElement.classList.remove?.('no-glass-switch');
+  const epochIsActive = (epoch: number) => epoch === syncEpoch;
+
+  /** 等待 Vue 完成本轮渲染冲刷，再操作原生窗口材质 */
+  const waitForVueFlush = nextTick;
+
+  /** 清掉尚未触发的延迟补同步 */
+  const cancelDeferredResync = () => {
+    if (deferredResyncHandle) {
+      clearTimeout(deferredResyncHandle);
+      deferredResyncHandle = null;
     }
   };
 
-  const applyTheme = async () => {
-    applyGlassSwitchClass();
+  /** 玻璃开关关闭时在根节点挂 no-glass-switch，禁用全套玻璃质感装饰 */
+  const syncGlassSwitchFlag = () => {
+    const rootClassList = typeof document === 'undefined' ? undefined : document.documentElement?.classList;
+    if (!rootClassList) return;
+
+    const glassEnabled = theme.value.useGlassSwitch !== false;
+    if (typeof rootClassList.toggle === 'function') {
+      rootClassList.toggle('no-glass-switch', !glassEnabled);
+    } else if (glassEnabled) {
+      rootClassList.remove?.('no-glass-switch');
+    } else {
+      rootClassList.add?.('no-glass-switch');
+    }
+  };
+
+  /** 读取当前 DOM 实际渲染的暗色状态，作为原生材质取色的依据 */
+  const readPaintedDarkFlag = () => document.documentElement.classList.contains('dark');
+
+  /** 同步暗色类与玻璃开关标记，并把深浅意图下发给原生窗口 */
+  const pushNativeThemePreference = async () => {
+    syncGlassSwitchFlag();
     applyDarkClassWithTransition(isDarkTheme.value);
 
+    const nativeThemeValue = theme.value.mode === 'system' ? null : isDarkTheme.value ? 'dark' : 'light';
     try {
-      if (theme.value.mode === 'system') {
-        await appWindow.setTheme(null);
-      } else {
-        await appWindow.setTheme(isDarkTheme.value ? 'dark' : 'light');
-      }
+      await hostWindow.setTheme(nativeThemeValue);
     } catch (error) {
       console.warn('Failed to set window theme:', error);
     }
   };
 
+  /** 通知原生层刷新材质激活态；无材质时无需打扰原生侧 */
   const refreshMaterialActiveState = async (hasMaterial = theme.value.windowMaterial !== 'none') => {
-    if (!hasMaterial) {
-      return;
-    }
+    if (!hasMaterial) return;
 
     try {
       await windowApi.refreshWindowMaterialActiveState(theme.value.keepWindowMaterialOnBlur);
@@ -72,151 +101,143 @@ export function useAppThemeSync() {
     }
   };
 
-  const syncWindowMaterial = async () => {
-    await nextTick();
-    const resolvedMaterial = await applyWindowMaterial(
-      theme.value.windowMaterial,
-      document.documentElement.classList.contains('dark'),
-      theme.value.windowBlurTint,
-    );
+  /** 按当前主题设置重推一次窗口材质，并刷新其激活态 */
+  const resyncWindowMaterial = async () => {
+    await waitForVueFlush();
+    const resolvedMaterial = await pushWindowMaterial(theme.value.windowMaterial, readPaintedDarkFlag(), theme.value.windowBlurTint);
     await refreshMaterialActiveState(resolvedMaterial !== 'none');
   };
 
-  const syncThemeAndMaterial = async () => {
-    const gen = ++syncGeneration;
+  /**
+   * 主题/材质管线的公共外壳：每次执行领取新代际，过期的执行链在阶段间
+   * 自行让位；只有最新代际有权结算首轮同步 Promise。
+   */
+  const runGuardedThemePipeline = async (pipeline: (epoch: number) => Promise<void>) => {
+    const epoch = ++syncEpoch;
     try {
-      await applyTheme();
-      if (gen !== syncGeneration) return;
-      await syncWindowMaterial();
+      await pipeline(epoch);
     } finally {
-      if (gen === syncGeneration) {
-        markInitialThemeSynced();
+      if (epochIsActive(epoch)) {
+        settleFirstSyncOnce();
       }
     }
   };
 
-  const scheduleRestoreMaterialSync = () => {
-    if (skipNextFocusRestore) {
-      skipNextFocusRestore = false;
-      return;
-    }
+  /** 主题任一相关设置变化：先刷主题，再重推材质 */
+  const resyncThemeAndMaterial = () =>
+    runGuardedThemePipeline(async (epoch) => {
+      await pushNativeThemePreference();
+      if (!epochIsActive(epoch)) return;
 
-    if (restoreSyncTimer) {
-      clearTimeout(restoreSyncTimer);
-      restoreSyncTimer = null;
-    }
+      await resyncWindowMaterial();
+    });
 
-    void syncThemeAndMaterial();
+  /** 合成器级材质重建：先清特效再整体重铺，避免新旧材质残影 */
+  const rebuildMaterialComposition = () =>
+    runGuardedThemePipeline(async (epoch) => {
+      await pushNativeThemePreference();
+      if (!epochIsActive(epoch)) return;
 
-    restoreSyncTimer = setTimeout(() => {
-      restoreSyncTimer = null;
-      void syncThemeAndMaterial();
-    }, 120);
-  };
-
-  const rebuildMaterialComposition = async () => {
-    const gen = ++syncGeneration;
-    try {
-      await applyTheme();
-      if (gen !== syncGeneration) return;
-      await nextTick();
-      const resolvedMaterial = await rebuildWindowMaterialForCompositor(
-        theme.value.windowMaterial,
-        document.documentElement.classList.contains('dark'),
-        theme.value.windowBlurTint,
-      );
+      await waitForVueFlush();
+      const resolvedMaterial = await rebuildCompositorMaterial(theme.value.windowMaterial, readPaintedDarkFlag(), theme.value.windowBlurTint);
       await refreshMaterialActiveState(resolvedMaterial !== 'none');
-    } finally {
-      if (gen === syncGeneration) {
-        markInitialThemeSynced();
-      }
-    }
-  };
+    });
 
-  const scheduleStartupMaterialRebuild = () => {
-    if (theme.value.windowMaterial === 'none') {
+  /** 焦点恢复后立即补同步一次，并追加一次延迟补同步兜底 DWM 时序 */
+  const queueFocusRestoreResync = () => {
+    if (suppressNextFocusResync) {
+      suppressNextFocusResync = false;
       return;
     }
 
-    if (restoreSyncTimer) {
-      clearTimeout(restoreSyncTimer);
-      restoreSyncTimer = null;
-    }
+    cancelDeferredResync();
+    void resyncThemeAndMaterial();
 
-    restoreSyncTimer = setTimeout(() => {
-      restoreSyncTimer = null;
+    deferredResyncHandle = setTimeout(() => {
+      deferredResyncHandle = null;
+      void resyncThemeAndMaterial();
+    }, FOCUS_RESYNC_DELAY_MS);
+  };
+
+  /** 启动显示后的延迟重建入口（对外名 restoreMaterialAfterShow） */
+  const armDeferredStartupRebuild = () => {
+    if (theme.value.windowMaterial === 'none') return;
+
+    cancelDeferredResync();
+    deferredResyncHandle = setTimeout(() => {
+      deferredResyncHandle = null;
       void rebuildMaterialComposition();
-    }, 180);
+    }, STARTUP_REBUILD_DELAY_MS);
   };
 
-  const rebuildStartupMaterialBeforeShow = async () => {
-    if (theme.value.windowMaterial === 'none') {
-      return;
-    }
+  /** 启动显示前同步重建材质，并抑制紧随而来的焦点补同步 */
+  const prepareMaterialBeforeReveal = async () => {
+    if (theme.value.windowMaterial === 'none') return;
 
-    if (restoreSyncTimer) {
-      clearTimeout(restoreSyncTimer);
-      restoreSyncTimer = null;
-    }
-
+    cancelDeferredResync();
     await rebuildMaterialComposition();
-    skipNextFocusRestore = true;
+    suppressNextFocusResync = true;
   };
 
-  void loadWindowMaterialCapabilities();
+  /** 生成读取 theme 指定字段的观察源（多源 watch 逐字段比对，避免整包误触发） */
+  const pickThemeField = (field: 'mode' | 'windowMaterial' | 'keepWindowMaterialOnBlur' | 'windowBlurTint' | 'useGlassSwitch') =>
+    () => theme.value[field];
+
+  /** 自定义背景的前景明暗变化会反转整体明暗解析，单独列为观察源 */
+  const pickBackdropForegroundStyle = () => theme.value.customBackground.foregroundStyle;
+
+  void queryMaterialCapabilities();
 
   watch(
     [
-      () => theme.value.mode,
-      () => theme.value.windowMaterial,
-      () => theme.value.keepWindowMaterialOnBlur,
-      () => theme.value.windowBlurTint,
-      () => theme.value.customBackground.foregroundStyle,
-      () => theme.value.useGlassSwitch,
+      pickThemeField('mode'),
+      pickThemeField('windowMaterial'),
+      pickThemeField('keepWindowMaterialOnBlur'),
+      pickThemeField('windowBlurTint'),
+      pickBackdropForegroundStyle,
+      pickThemeField('useGlassSwitch'),
       isDarkTheme,
     ],
     () => {
-      void syncThemeAndMaterial();
+      void resyncThemeAndMaterial();
     },
     { immediate: true },
   );
 
   watch(
     () => theme.value.accentColor,
-    accentColor => applyThemeColorToDocument(accentColor),
+    (accentColor) => applyThemeColorToDocument(accentColor),
     { immediate: true },
   );
 
   onMounted(() => {
-    void appWindow.onFocusChanged(({ payload: focused }) => {
-      if (focused || theme.value.keepWindowMaterialOnBlur) {
-        scheduleRestoreMaterialSync();
-      }
-    }).then((unlisten) => {
-      unlistenFocusChanged = unlisten;
-    });
+    void hostWindow
+      .onFocusChanged(({ payload: focused }) => {
+        if (!focused && !theme.value.keepWindowMaterialOnBlur) return;
+        queueFocusRestoreResync();
+      })
+      .then((unlisten) => {
+        detachFocusWatcher = unlisten;
+      });
   });
 
   onBeforeUnmount(() => {
-    if (restoreSyncTimer) {
-      clearTimeout(restoreSyncTimer);
-      restoreSyncTimer = null;
-    }
+    cancelDeferredResync();
 
-    if (unlistenFocusChanged) {
-      unlistenFocusChanged();
-      unlistenFocusChanged = null;
+    if (detachFocusWatcher) {
+      detachFocusWatcher();
+      detachFocusWatcher = null;
     }
   });
 
   return {
-    activeWindowMaterial,
-    hasWindowMaterial,
-    isMicaWindowMaterial,
-    syncWindowMaterial,
+    activeWindowMaterial: currentMaterial,
+    hasWindowMaterial: materialPresent,
+    isMicaWindowMaterial: micaMaterialActive,
+    syncWindowMaterial: resyncWindowMaterial,
     refreshMaterialActiveState,
-    whenInitialThemeSynced: () => initialThemeSync,
-    restoreMaterialAfterShow: scheduleStartupMaterialRebuild,
-    rebuildStartupMaterialBeforeShow,
+    whenInitialThemeSynced: () => firstSyncCompletion,
+    restoreMaterialAfterShow: armDeferredStartupRebuild,
+    rebuildStartupMaterialBeforeShow: prepareMaterialBeforeReveal,
   };
 }

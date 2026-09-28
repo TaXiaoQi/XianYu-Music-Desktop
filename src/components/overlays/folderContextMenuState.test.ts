@@ -1,18 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { it, describe, expect } from 'vitest';
 
-import {
-  canUseFolderManagementAction,
-  shouldShowFolderManagementActions,
-} from './folderContextMenuState';
+import * as menuState from './folderContextMenuState';
 
-describe('folder context menu state', () => {
-  it('hides management actions while browsing', () => {
-    expect(shouldShowFolderManagementActions(false)).toBe(false);
-    expect(canUseFolderManagementAction(false)).toBe(false);
+describe('文件夹右键菜单状态门槛', () => {
+  it('浏览态：管理操作既不可见也不可点', () => {
+    expect(menuState.shouldShowFolderManagementActions(false)).toBe(false);
+    expect(menuState.canUseFolderManagementAction(false)).toBe(false);
   });
 
-  it('shows management actions and allows removing from library in management mode', () => {
-    expect(shouldShowFolderManagementActions(true)).toBe(true);
-    expect(canUseFolderManagementAction(true)).toBe(true);
+  it('整理态：管理操作可见且允许移出媒体库', () => {
+    expect(menuState.shouldShowFolderManagementActions(true)).toBe(true);
+    expect(menuState.canUseFolderManagementAction(true)).toBe(true);
   });
 });

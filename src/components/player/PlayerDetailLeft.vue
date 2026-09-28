@@ -1,19 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { computed, ref } from 'vue';
+import { usePlaybackController as useStageControl } from '../../features/playback/usePlaybackController';
 import { useDetailCover } from '../../composables/useDetailCover';
+import CoverReflection from './detail/CoverReflection.vue';
 
-const props = defineProps<{
-  isExpanded?: boolean;
-  coverHidden?: boolean;
-}>();
+const props = defineProps<{ isExpanded?: boolean; coverHidden?: boolean }>();
 
-const emit = defineEmits<{
-  (e: 'toggle-cover'): void;
-}>();
+const emit = defineEmits<{ (e: 'toggle-cover'): void }>();
 
-const { isPlaying, dominantColors } = usePlaybackController();
-const isExpandedRef = computed(() => Boolean(props.isExpanded));
+const { isPlaying, dominantColors } = useStageControl();
+const expandFlag = computed(() => Boolean(props.isExpanded));
 
 const {
   currentSongPath,
@@ -25,153 +21,228 @@ const {
   onBigCoverLoad,
   onBigCoverError,
   onLocalCoverError,
-} = useDetailCover({ isExpanded: isExpandedRef });
+} = useDetailCover({ isExpanded: expandFlag });
 
-const reflectionCoverUrl = ref('');
-
-watch([currentSongPath, displayedLocalCoverUrl, isExpandedRef], ([path, localUrl, expanded]) => {
-  if (!path) {
-    reflectionCoverUrl.value = '';
-    return;
+/** 展开时封面下方的镜面倒影取图（跟手缩略图），收起即清空 */
+const reflectionSource = computed(() => {
+  if (!currentSongPath.value || !expandFlag.value) {
+    return '';
   }
+  return displayedLocalCoverUrl.value || '';
+});
 
-  if (!expanded) {
-    reflectionCoverUrl.value = '';
-    return;
+/** 播放中光环投影 / 静止时常规投影 / 收起时无投影 */
+const frameShadow = computed(() => {
+  if (!props.isExpanded) {
+    return 'none';
   }
-
-  const nextReflectionUrl = localUrl || '';
-  if (nextReflectionUrl === reflectionCoverUrl.value) {
-    return;
+  if (!isPlaying.value) {
+    return '0 10px 20px -5px rgba(0, 0, 0, 0.4)';
   }
+  return [
+    '0 30px 60px -12px rgba(0, 0, 0, 0.6)',
+    '0 18px 36px -18px rgba(0, 0, 0, 0.7)',
+    `0 0 80px -20px ${dominantColors.value[0]}44`,
+  ].join(', ');
+});
 
-  reflectionCoverUrl.value = nextReflectionUrl;
-}, { immediate: true });
+const thumbTuning = computed(() => {
+  if (!props.isExpanded) {
+    return 'art-thumb--docked';
+  }
+  return fullCoverLoading.value ? 'art-thumb--soft' : 'art-thumb--crisp';
+});
 
-const detailCoverRef = ref<HTMLElement | null>(null);
-defineExpose({ detailCoverRef });
+const fullTuning = computed(() => [
+  props.isExpanded ? 'art-full--settled' : 'art-full--zoomed',
+  bigCoverLoaded.value ? 'art-full--shown' : 'art-full--veiled',
+]);
 
-const handleCoverClick = (event: MouseEvent) => {
+const stageMode = computed(() => (props.isExpanded ? 'cover-stage--open' : 'cover-stage--docked'));
+const stageModeExtra = computed(() => {
+  if (props.coverHidden) {
+    return 'cover-stage--masked';
+  }
+  return props.isExpanded ? 'cover-stage--interactive' : 'cover-stage--passive';
+});
+
+const detailCoverRef = ref<HTMLDivElement | null>(null);
+const exposedRefs = { detailCoverRef };
+defineExpose(exposedRefs);
+
+const onCoverActivate = (event: MouseEvent) => {
   event.stopPropagation();
   emit('toggle-cover');
 };
 </script>
 
 <template>
-  <div class="pointer-events-none">
-
+  <div class="cover-host">
     <div
       ref="detailCoverRef"
-      class="absolute aspect-square transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] z-[70] will-change-transform"
-      :class="[
-        props.isExpanded ? 'top-[45%] left-[calc(75px+18%)] -translate-x-1/2 -translate-y-1/2 w-[clamp(220px,45vh,580px)] rounded-2xl' : 'top-[calc(100vh-64px)] left-[16px] translate-x-0 translate-y-0 w-12 rounded-lg',
-        props.coverHidden ? 'opacity-0 pointer-events-none' : (props.isExpanded ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'),
-      ]"
-      :style="{
-        boxShadow: props.isExpanded && isPlaying
-          ? `0 30px 60px -12px rgba(0,0,0,0.6), 0 18px 36px -18px rgba(0,0,0,0.7), 0 0 80px -20px ${dominantColors[0]}44`
-          : (props.isExpanded ? `0 10px 20px -5px rgba(0,0,0,0.4)` : 'none'),
-        transform: 'scale(1)',
-      }"
-      @click="handleCoverClick"
+      class="cover-stage"
+      :class="[stageMode, stageModeExtra]"
+      :style="{ boxShadow: frameShadow, transform: 'scale(1)' }"
+      @click="onCoverActivate"
     >
-      <div class="w-full h-full rounded-[inherit] overflow-hidden relative isolate z-20">
-        <img v-if="displayedLocalCoverUrl" :key="`thumb:${currentSongPath}:${displayedLocalCoverUrl}`" :src="displayedLocalCoverUrl" @error="onLocalCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-[transform,filter,opacity] duration-[240ms] ease-out z-10" :class="props.isExpanded ? (fullCoverLoading ? 'scale-[1.03] blur-[10px] brightness-90' : 'scale-100 blur-0 brightness-100') : 'scale-125 blur-0 brightness-100'" draggable="false" decoding="async" referrerpolicy="no-referrer" />
-        <img v-if="currentBigCoverUrl" :key="`big:${currentSongPath}:${currentBigCoverUrl}`" :src="currentBigCoverUrl" @load="onBigCoverLoad" @error="onBigCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-opacity duration-[240ms] ease-out z-20" :class="[props.isExpanded ? 'scale-100' : 'scale-125', bigCoverLoaded ? 'opacity-100' : 'opacity-0']" draggable="false" decoding="async" referrerpolicy="no-referrer" />
-        <div v-if="showCoverPlaceholder" class="absolute inset-0 z-0 flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 text-zinc-400 dark:from-zinc-700 dark:to-zinc-800 dark:text-zinc-400">
-          <svg xmlns="http://www.w3.org/2000/svg" :class="props.isExpanded ? 'h-32 w-32' : 'h-6 w-6'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" :stroke-width="props.isExpanded ? 1 : 1.7" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+      <div class="art-frame">
+        <img
+          v-if="displayedLocalCoverUrl"
+          :key="`thumb:${currentSongPath}:${displayedLocalCoverUrl}`"
+          :src="displayedLocalCoverUrl"
+          class="art-thumb"
+          :class="thumbTuning"
+          @error="onLocalCoverError"
+          draggable="false"
+          decoding="async"
+          referrerpolicy="no-referrer"
+        />
+        <img
+          v-if="currentBigCoverUrl"
+          :key="`big:${currentSongPath}:${currentBigCoverUrl}`"
+          :src="currentBigCoverUrl"
+          class="art-full"
+          :class="fullTuning"
+          @load="onBigCoverLoad"
+          @error="onBigCoverError"
+          draggable="false"
+          decoding="async"
+          referrerpolicy="no-referrer"
+        />
+        <div
+          v-if="showCoverPlaceholder"
+          class="art-fallback bg-gradient-to-br from-zinc-100 to-zinc-200 text-zinc-400 dark:from-zinc-700 dark:to-zinc-800 dark:text-zinc-400"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            :class="props.isExpanded ? 'h-32 w-32' : 'h-6 w-6'"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" :stroke-width="props.isExpanded ? 1 : 1.7" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
         </div>
       </div>
 
-      <transition name="reflection-reveal" appear>
-        <div v-if="props.isExpanded" class="absolute top-[calc(100%+2px)] left-0 w-full h-[65%] pointer-events-none z-10 reflection-wrapper rounded-[inherit] overflow-hidden">
-          <div class="absolute inset-0 reflection-glass reflection-glass--sharp rounded-[inherit] overflow-hidden">
-            <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" referrerpolicy="no-referrer" />
-          </div>
-          <div class="absolute inset-0 reflection-glass reflection-glass--blur rounded-[inherit] overflow-hidden">
-            <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" referrerpolicy="no-referrer" />
-          </div>
-        </div>
-      </transition>
+      <CoverReflection :visible="props.isExpanded" :source="reflectionSource" />
     </div>
-
   </div>
 </template>
 
 <style scoped>
-.reflection-wrapper {
-  perspective: 1500px;
-  transform-origin: top;
-  transform: rotateX(40deg) skewX(-18deg) scale(1.01);
-  opacity: 0.2;
+.cover-host {
+  pointer-events: none;
 }
 
-.reflection-glass {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    rgba(0, 0, 0, 0.5) 30%,
-    transparent 85%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    rgba(0, 0, 0, 0.5) 30%,
-    transparent 85%
-  );
+.cover-stage {
+  position: absolute;
+  aspect-ratio: 1 / 1;
+  z-index: 70;
+  transition: all 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
 
-.reflection-glass--sharp {
-  -webkit-mask-image:
-    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
-    linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%);
-  mask-image:
-    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
-    linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
+.cover-stage--open {
+  top: 45%;
+  left: calc(75px + 18%);
+  width: clamp(220px, 45vh, 580px);
+  border-radius: 1rem;
+  translate: -50% -50%;
 }
 
-.reflection-glass--blur {
-  filter: blur(4px);
-  -webkit-mask-image:
-    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
-    radial-gradient(ellipse 62% 62% at 50% 45%, transparent 55%, black 100%);
-  mask-image:
-    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
-    radial-gradient(ellipse 62% 62% at 50% 45%, transparent 55%, black 100%);
-  -webkit-mask-composite: source-in;
-  mask-composite: intersect;
+.cover-stage--docked {
+  top: calc(100vh - 64px);
+  left: 16px;
+  width: 3rem;
+  border-radius: 0.5rem;
 }
 
-.reflection-reveal-enter-active,
-.reflection-reveal-appear-active {
-  transition:
-    transform 560ms cubic-bezier(0.22, 1, 0.36, 1) 220ms,
-    opacity 420ms ease-out 220ms,
-    filter 560ms cubic-bezier(0.22, 1, 0.36, 1) 220ms;
-}
-
-.reflection-reveal-leave-active {
-  transition:
-    transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 180ms ease-in,
-    filter 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.reflection-reveal-enter-from,
-.reflection-reveal-appear-from,
-.reflection-reveal-leave-to {
+.cover-stage--masked {
   opacity: 0;
-  filter: blur(10px);
+  pointer-events: none;
 }
 
-.reflection-reveal-enter-from,
-.reflection-reveal-appear-from {
-  transform: translateY(-18px) rotateX(58deg) skewX(-22deg) scale(0.96);
+.cover-stage--interactive {
+  pointer-events: auto;
+  cursor: pointer;
 }
 
-.reflection-reveal-leave-to {
-  transform: translateY(-10px) rotateX(48deg) skewX(-20deg) scale(0.985);
+.cover-stage--passive {
+  pointer-events: none;
+}
+
+.art-frame {
+  position: relative;
+  z-index: 20;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  isolation: isolate;
+}
+
+.art-thumb {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  transition:
+    transform 240ms ease-out, filter 240ms ease-out, opacity 240ms ease-out;
+}
+
+.art-thumb--soft {
+  scale: 1.03;
+  filter: blur(10px) brightness(0.9);
+}
+
+.art-thumb--crisp {
+  scale: 1;
+  filter: blur(0) brightness(1);
+}
+
+.art-thumb--docked {
+  scale: 1.25;
+  filter: blur(0) brightness(1);
+}
+
+.art-full {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  transition: opacity 240ms ease-out;
+}
+
+.art-full--settled {
+  scale: 1;
+}
+
+.art-full--zoomed {
+  scale: 1.25;
+}
+
+.art-full--shown {
+  opacity: 1;
+}
+
+.art-full--veiled {
+  opacity: 0;
+}
+
+.art-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
 }
 </style>

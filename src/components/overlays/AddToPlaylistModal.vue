@@ -1,160 +1,27 @@
-//负责显示“添加到歌单”的弹窗。
 <script setup lang="ts">
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { useLibraryStore } from '../../features/library/store';
-import { computed, onUnmounted, ref, watch } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import ModernInputModal from '../common/ModernInputModal.vue';
-import { useCoverCache } from '../../composables/useCoverCache';
-import type { Playlist } from '../../types';
+// 「收藏到歌单」弹窗对外入口：声明冻结的 props/emits 契约，
+// 具体渲染与交互全部下沉到 addToPlaylist/ 子目录内的实现组件。
+import AddToPlaylistDialogBody from './addToPlaylist/AddToPlaylistDialogBody.vue';
 
-const props = defineProps<{
-  visible: boolean,
-  selectedCount: number,
-  excludedPlaylistId?: string | null
+defineProps<{
+  visible: boolean;
+  selectedCount: number;
+  excludedPlaylistId?: string | null;
 }>();
 
-const emit = defineEmits(['close', 'add']);
+const emit = defineEmits<{
+  (e: 'close'): void;
+  (e: 'add', playlistId: string): void;
+}>();
 
-const { playlists, createPlaylist } = useLibraryCollections();
-const libraryStore = useLibraryStore();
-const playlistCoverCache = ref<Map<string, string>>(new Map());
-let clearTimer: number | null = null;
-const { loadCover } = useCoverCache();
-const availablePlaylists = computed(() =>
-  playlists.value.filter(playlist => playlist.id !== props.excludedPlaylistId),
-);
-
-const clearCoverCache = () => {
-  playlistCoverCache.value.clear();
-};
-
-const cancelClearTimer = () => {
-  if (clearTimer !== null) {
-    window.clearTimeout(clearTimer);
-    clearTimer = null;
-  }
-};
-
-const scheduleClear = () => {
-  cancelClearTimer();
-  clearTimer = window.setTimeout(() => {
-    clearCoverCache();
-    clearTimer = null;
-  }, 15000);
-};
-
-const getPlaylistCover = (playlist: Playlist): string => {
-  if (playlist.coverPath) {
-    if (playlist.coverPath.startsWith('http') || playlist.coverPath.startsWith('asset:') || playlist.coverPath.startsWith('data:')) {
-      return playlist.coverPath;
-    }
-    try {
-      return convertFileSrc(playlist.coverPath);
-    } catch {
-      return '';
-    }
-  }
-  if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) {
-    return playlist.cloudCoverUrl;
-  }
-  if (playlist.songPaths.length > 0) {
-    const song = libraryStore.songLookup.get(playlist.songPaths[0]);
-    const thumbPath = song?.cover_thumb_path;
-    if (thumbPath) {
-      if (thumbPath.startsWith('http') || thumbPath.startsWith('asset:') || thumbPath.startsWith('data:')) {
-        return thumbPath;
-      }
-      try {
-        return convertFileSrc(thumbPath);
-      } catch {
-        return '';
-      }
-    }
-  }
-  return '';
-};
-
-const loadPlaylistCover = async (id: string, path: string) => {
-  if (!path || playlistCoverCache.value.has(id)) return;
-  try {
-    const coverUrl = await loadCover(path);
-    if (coverUrl && props.visible) {
-       playlistCoverCache.value.set(id, coverUrl);
-    }
-  } catch {}
-};
-
-watch(() => props.visible, (val) => {
-  if (val) {
-    cancelClearTimer();
-    availablePlaylists.value.forEach(pl => {
-      if (getPlaylistCover(pl)) return;
-      if (pl.songPaths.length > 0) void loadPlaylistCover(pl.id, pl.songPaths[0]);
-    });
-    return;
-  }
-
-  scheduleClear();
-});
-
-onUnmounted(() => {
-  cancelClearTimer();
-  clearCoverCache();
-});
-
-const showCreateModal = ref(false);
-const handleCreateClick = () => {
-  showCreateModal.value = true;
-};
-
-const handleConfirmCreate = (name: string) => {
-  if (name) {
-    const playlistId = createPlaylist(name);
-    if (playlistId) {
-      emit('add', playlistId);
-    }
-  }
-};
+const forwardAdd = (playlistId: string) => emit('add', playlistId);
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="modal-pop">
-      <div v-if="visible" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="emit('close')">
-        <div class="modal-content bg-white/80 dark:bg-gray-900/90 rounded-xl shadow-2xl w-80 overflow-hidden">
-          <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
-            <h3 class="font-bold text-gray-800 text-sm">收藏到歌单</h3>
-            <button @click="emit('close')" class="text-gray-400 hover:text-gray-600">✕</button>
-          </div>
-          <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-            <div @click="handleCreateClick" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer mb-1 group">
-              <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 group-hover:bg-gray-200 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-              </div>
-              <span class="text-sm text-gray-600">创建新歌单</span>
-            </div>
-            <div v-for="pl in availablePlaylists" :key="pl.id" @click="emit('add', pl.id)" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-              <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
-                <img v-if="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" :src="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" class="w-full h-full object-cover" loading="lazy" decoding="async">
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="text-sm text-gray-800 truncate">{{ pl.name }}</div>
-                <div class="text-xs text-gray-400">{{ pl.songPaths.length }}首</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <ModernInputModal
-      v-model:visible="showCreateModal"
-      title="创建并添加到歌单"
-      placeholder="请输入歌单名称"
-      confirm-text="创建"
-      @confirm="handleConfirmCreate"
-    />
-  </Teleport>
+  <AddToPlaylistDialogBody
+    :visible="visible"
+    :excluded-playlist-id="excludedPlaylistId"
+    @close="emit('close')"
+    @add="forwardAdd"
+  />
 </template>

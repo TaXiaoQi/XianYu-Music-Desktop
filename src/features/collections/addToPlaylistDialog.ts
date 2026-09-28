@@ -5,15 +5,24 @@ import { useToast } from '../../composables/toast';
 import { reportDailyLikeSignals } from '../../services/domain/dailyRecommendFeedback';
 import { useCollectionsStore } from './store';
 
-const isAddToPlaylistDialogVisible = ref(false);
-const addToPlaylistTargetSongPaths = ref<string[]>([]);
-const addToPlaylistTargetSongs = ref<Song[]>([]);
-const excludedPlaylistId = ref<string | null>(null);
-let afterAddToPlaylist: (() => void) | null = null;
+// 「添加到歌单」弹窗是应用级单例：状态放在模块层，多个调用方共享同一份。
 
-const normalizeSongPaths = (songPaths: string | string[]) => {
-  const list = Array.isArray(songPaths) ? songPaths : [songPaths];
-  return [...new Set(list.filter((path): path is string => typeof path === 'string' && path.length > 0))];
+const dialogVisible = ref(false);
+const pendingSongPaths = ref<string[]>([]);
+const pendingSongs = ref<Song[]>([]);
+const excludedPlaylistId = ref<string | null>(null);
+let pendingAddedCallback: (() => void) | null = null;
+
+/** 去空、去重，整理出待添加的路径列表。 */
+const collectUniquePaths = (input: string | string[]): string[] => {
+  const rawList = Array.isArray(input) ? input : [input];
+  const unique: string[] = [];
+  for (const path of rawList) {
+    if (typeof path === 'string' && path.length > 0 && !unique.includes(path)) {
+      unique.push(path);
+    }
+  }
+  return unique;
 };
 
 export function useAddToPlaylistDialog() {
@@ -21,64 +30,71 @@ export function useAddToPlaylistDialog() {
   const { showToast } = useToast();
 
   const closeAddToPlaylistDialog = () => {
-    isAddToPlaylistDialogVisible.value = false;
-    addToPlaylistTargetSongPaths.value = [];
-    addToPlaylistTargetSongs.value = [];
+    dialogVisible.value = false;
+    pendingSongPaths.value = [];
+    pendingSongs.value = [];
     excludedPlaylistId.value = null;
-    afterAddToPlaylist = null;
+    pendingAddedCallback = null;
   };
 
+  /**
+   * 打开弹窗；无可添加路径时直接拒绝（返回 false）。
+   * songs 提供完整元数据用于上报，excludedPlaylistId 用于在列表中隐藏来源歌单。
+   */
   const openAddToPlaylistDialog = (
     songPaths: string | string[],
     options: { onAdded?: () => void; songs?: Song[]; excludedPlaylistId?: string | null } = {},
   ) => {
-    const nextSongPaths = normalizeSongPaths(songPaths);
-    if (nextSongPaths.length === 0) {
+    const nextPaths = collectUniquePaths(songPaths);
+    if (nextPaths.length === 0) {
       return false;
     }
 
-    addToPlaylistTargetSongPaths.value = nextSongPaths;
-    addToPlaylistTargetSongs.value = options.songs ?? [];
+    pendingSongPaths.value = nextPaths;
+    pendingSongs.value = options.songs ?? [];
     excludedPlaylistId.value = options.excludedPlaylistId ?? null;
-    isAddToPlaylistDialogVisible.value = true;
-    afterAddToPlaylist = options.onAdded ?? null;
+    pendingAddedCallback = options.onAdded ?? null;
+    dialogVisible.value = true;
     return true;
   };
 
   const addSelectedSongsToPlaylist = (playlistId: string) => {
     const addedCount = collectionsStore.addSongsToPlaylist(
       playlistId,
-      addToPlaylistTargetSongPaths.value,
-      addToPlaylistTargetSongs.value.length > 0 ? addToPlaylistTargetSongs.value : undefined,
+      pendingSongPaths.value,
+      pendingSongs.value.length > 0 ? pendingSongs.value : undefined,
     );
-    const onAdded = afterAddToPlaylist;
-    const likeSongs =
+    const addedCallback = pendingAddedCallback;
+    const likeSignals =
       addedCount > 0
-        ? addToPlaylistTargetSongs.value.map(s => ({
-            songName: s.title ?? '',
-            singer: s.artist ?? '',
+        ? pendingSongs.value.map(song => ({
+            songName: song.title ?? '',
+            singer: song.artist ?? '',
           }))
         : [];
 
     closeAddToPlaylistDialog();
 
-    if (likeSongs.length > 0) {
-      void reportDailyLikeSignals(likeSongs, 'playlist');
+    if (likeSignals.length > 0) {
+      void reportDailyLikeSignals(likeSignals, 'playlist');
     }
 
-    if (onAdded) {
-      onAdded();
+    if (addedCallback) {
+      addedCallback();
     }
 
-    showToast(addedCount === 0 ? '歌单内歌曲重复' : '已加入歌单', addedCount === 0 ? 'info' : 'success');
+    showToast(
+      addedCount === 0 ? '歌单内歌曲重复' : '已加入歌单',
+      addedCount === 0 ? 'info' : 'success',
+    );
     return addedCount;
   };
 
   return {
-    showAddToPlaylistModal: isAddToPlaylistDialogVisible,
-    playlistAddTargetSongs: addToPlaylistTargetSongPaths,
+    showAddToPlaylistModal: dialogVisible,
+    playlistAddTargetSongs: pendingSongPaths,
     excludedPlaylistId,
-    selectedCount: computed(() => addToPlaylistTargetSongPaths.value.length),
+    selectedCount: computed(() => pendingSongPaths.value.length),
     openAddToPlaylistDialog,
     closeAddToPlaylistDialog,
     addSelectedSongsToPlaylist,

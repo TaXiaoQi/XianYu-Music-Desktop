@@ -11,193 +11,209 @@ import router from '../../router';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useAddToPlaylistDialog } from './addToPlaylistDialog';
 
-const LEGACY_PLAYER_HISTORY_KEY = 'player_history';
+// 旧版本把播放历史存放在该键下，现已迁移至后端；访问历史时顺带清理。
+const LEGACY_HISTORY_STORAGE_KEY = 'player_history';
 
 export function useLibraryCollections() {
-  const collectionsStore = useCollectionsStore();
-  const { openHomeAll, openHomePlaylist } = useHomeNavigation(router);
-  const collectionsRefs = storeToRefs(collectionsStore);
-  const { openAddToPlaylistDialog: openDialog } = useAddToPlaylistDialog();
+  const store = useCollectionsStore();
+  const homeNav = useHomeNavigation(router);
+  const storeRefs = storeToRefs(store);
+  const dialog = useAddToPlaylistDialog();
+
+  /** 历史相关操作后统一清理旧版本地历史键。 */
+  const purgeLegacyHistoryStorage = () => {
+    playerStorage.remove(LEGACY_HISTORY_STORAGE_KEY);
+  };
 
   const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) =>
-    collectionsStore.createPlaylist(name, initialSongs, fullSongs);
+    store.createPlaylist(name, initialSongs, fullSongs);
 
-  const renamePlaylist = (id: string, name: string) =>
-    collectionsStore.renamePlaylist(id, name);
+  const renamePlaylist = (playlistId: string, name: string) =>
+    store.renamePlaylist(playlistId, name);
 
-  const setPlaylistCover = (id: string, coverPath: string | null) =>
-    collectionsStore.setPlaylistCover(id, coverPath);
+  const setPlaylistCover = (playlistId: string, coverPath: string | null) =>
+    store.setPlaylistCover(playlistId, coverPath);
 
-  const deletePlaylist = (id: string) => {
-    const deleted = collectionsStore.deletePlaylist(id);
-    const currentRoute = router.currentRoute.value;
-    const openedPlaylistId =
-      currentRoute.path === '/' && currentRoute.query.view === 'playlist'
-        ? currentRoute.query.filter
-        : undefined;
-
-    if (deleted && openedPlaylistId === id) {
-      void openHomeAll({ replace: true });
+  /** 删除歌单；若当前正停留在该歌单页，则退回「全部音乐」。 */
+  const deletePlaylist = (playlistId: string) => {
+    const removed = store.deletePlaylist(playlistId);
+    if (!removed) {
+      return false;
     }
 
-    return deleted;
+    const route = router.currentRoute.value;
+    const isViewingDeletedPlaylist =
+      route.path === '/' && route.query.view === 'playlist' && route.query.filter === playlistId;
+    if (isViewingDeletedPlaylist) {
+      void homeNav.openHomeAll({ replace: true });
+    }
+
+    return removed;
   };
 
-  const addToPlaylist = (playlistId: string, path: string) =>
-    collectionsStore.addToPlaylist(playlistId, path);
+  const addToPlaylist = (targetPlaylistId: string, songPath: string) =>
+    store.addToPlaylist(targetPlaylistId, songPath);
 
-  const removeFromPlaylist = (playlistId: string, path: string) =>
-    collectionsStore.removeFromPlaylist(playlistId, path);
+  const removeFromPlaylist = (targetPlaylistId: string, songPath: string) =>
+    store.removeFromPlaylist(targetPlaylistId, songPath);
 
   const addSongsToPlaylist = (playlistId: string, songPaths: string[], fullSongs?: Song[]) =>
-    collectionsStore.addSongsToPlaylist(playlistId, songPaths, fullSongs);
+    store.addSongsToPlaylist(playlistId, songPaths, fullSongs);
 
   const setPlaylistSource = (
-    id: string,
+    playlistId: string,
     source: { sourcePluginId?: string; sourceUrl?: string; sourceRaw?: any } | null,
-  ) => collectionsStore.setPlaylistSource(id, source);
+  ) => store.setPlaylistSource(playlistId, source);
 
-  const applySourceSync = (id: string, sourceSongs: Song[], fullSync: boolean) =>
-    collectionsStore.applySourceSync(id, sourceSongs, fullSync);
+  const applySourceSync = (playlistId: string, sourceSongs: Song[], fullSync: boolean) =>
+    store.applySourceSync(playlistId, sourceSongs, fullSync);
 
-  const reorderPlaylists = (from: number, to: number) =>
-    collectionsStore.reorderPlaylists(from, to);
+  const reorderPlaylists = (fromIndex: number, toIndex: number) =>
+    store.reorderPlaylists(fromIndex, toIndex);
 
   const getSongsFromPlaylist = (playlistId: string) =>
-    collectionsStore.getSongsFromPlaylist(playlistId);
+    store.getSongsFromPlaylist(playlistId);
 
-  const viewPlaylist = (playlistId: string) => {
-    void openHomePlaylist(playlistId);
+  const viewPlaylist = (targetPlaylistId: string) => {
+    void homeNav.openHomePlaylist(targetPlaylistId);
   };
 
+  /* —— 收藏（红心） —— */
+
+  /** 在线歌曲（远端/插件/LX 协议）需要额外维护元数据与曲库补挂。 */
   const isOnlineSong = (song: Song) =>
     isRemoteSong(song)
     || isPluginSong(song)
     || song.path?.startsWith('lx://') === true;
 
-  const resolveSongPath = (target: Song | string | null | undefined) => {
-    if (!target) {
+  /** 入参既可以是 Song 对象也可以是裸路径，统一解析成路径。 */
+  const resolveSongPath = (candidate: Song | string | null | undefined): string | null => {
+    if (candidate === null || candidate === undefined) {
       return null;
     }
-
-    return typeof target === 'string' ? target : target.path;
+    return typeof candidate === 'string' ? candidate : candidate.path;
   };
 
-  const isFavorite = (target: Song | string | null | undefined) =>
-    collectionsStore.isFavoritePath(resolveSongPath(target));
+  const isFavorite = (candidate: Song | string | null | undefined) =>
+    store.isFavoritePath(resolveSongPath(candidate));
 
-  const toggleFavorite = (target: Song | string) => {
-    const path = resolveSongPath(target);
-    if (!path) {
+  const toggleFavorite = (candidate: Song | string) => {
+    const path = resolveSongPath(candidate);
+    if (path === null || path === '') {
       return false;
     }
 
-    const isFavoriteNow = collectionsStore.toggleFavoritePath(path);
-    const song = typeof target === 'string' ? null : target;
+    const nowFavorited = store.toggleFavoritePath(path);
+    const song = typeof candidate === 'string' ? null : candidate;
 
-    if (isFavoriteNow && song) {
+    if (nowFavorited && song !== null) {
       void reportDailyLikeSignals(
         [{ songName: song.title ?? '', singer: song.artist ?? '' }],
         'favorite',
       );
     }
 
-    if (song && isOnlineSong(song)) {
+    if (song !== null && isOnlineSong(song)) {
       const libraryStore = useLibraryStore();
-      if (isFavoriteNow) {
-        collectionsStore.setFavoriteSongMeta(path, song);
+      if (nowFavorited) {
+        store.setFavoriteSongMeta(path, song);
         libraryStore.setExtraSong(song);
       } else {
-        collectionsStore.removeFavoriteSongMeta(path);
-        if (!(path in collectionsStore.recentSongMeta)) {
+        store.removeFavoriteSongMeta(path);
+        // 只有该路径不再被最近播放引用时才从曲库补挂表移除。
+        if (!(path in store.recentSongMeta)) {
           libraryStore.removeExtraSong(path);
         }
       }
     }
 
-    return isFavoriteNow;
+    return nowFavorited;
   };
 
-  const removeFavoritePaths = (paths: string[]) => {
-    collectionsStore.removeFavoritePaths(paths);
+  const removeFavoritePaths = (targets: string[]) => {
+    store.removeFavoritePaths(targets);
     const libraryStore = useLibraryStore();
-    paths.forEach(path => libraryStore.removeExtraSong(path));
+    for (const path of targets) {
+      libraryStore.removeExtraSong(path);
+    }
   };
 
-  const clearFavorites = () => {
-    const removedPaths = Object.keys(collectionsStore.favoriteSongMeta);
-    collectionsStore.clearFavorites();
+  const clearFavorites = (): void => {
+    const onlineFavoritedPaths = Object.keys(store.favoriteSongMeta);
+    store.clearFavorites();
+
     const libraryStore = useLibraryStore();
-    removedPaths.forEach(path => libraryStore.removeExtraSong(path));
+    for (const path of onlineFavoritedPaths) {
+      libraryStore.removeExtraSong(path);
+    }
   };
 
-  const addToHistory = async (song: Song) => {
-    collectionsStore.addRecentSong(song);
-    playerStorage.remove(LEGACY_PLAYER_HISTORY_KEY);
+  /* —— 播放历史 —— */
+
+  const addToHistory = async (song: Song): Promise<void> => {
+    store.addRecentSong(song);
+    purgeLegacyHistoryStorage();
 
     if (isOnlineSong(song)) {
       const libraryStore = useLibraryStore();
-      collectionsStore.setRecentSongMeta(song.path, song);
+      store.setRecentSongMeta(song.path, song);
       libraryStore.setExtraSong(song);
     }
 
-    historyApi.addToHistory(song.path).catch(error => {
-      console.warn('add_to_history failed:', error);
-    });
+    historyApi.addToHistory(song.path).catch((failure: unknown) =>
+      console.warn(`add_to_history failed:`, failure));
   };
 
-  const removeFromHistory = async (songPaths: string[]) => {
-    if (songPaths.length === 0) {
+  const removeFromHistory = async (targetPaths: string[]): Promise<void> => {
+    if (targetPaths.length === 0) {
       return;
     }
 
-    const onlineMetaPaths = songPaths.filter(path => path in collectionsStore.recentSongMeta);
+    // 记下需要同步清理曲库补挂的在线歌曲路径（后续还要判断收藏占用）。
+    const onlineMetaPaths = targetPaths.filter(path => path in store.recentSongMeta);
 
-    collectionsStore.removeRecentSongs(songPaths);
-    playerStorage.remove(LEGACY_PLAYER_HISTORY_KEY);
+    store.removeRecentSongs(targetPaths);
+    purgeLegacyHistoryStorage();
 
     if (onlineMetaPaths.length > 0) {
       const libraryStore = useLibraryStore();
-      onlineMetaPaths.forEach((path) => {
-        if (!(path in collectionsStore.favoriteSongMeta)) {
+      for (const path of onlineMetaPaths) {
+        if (!(path in store.favoriteSongMeta)) {
           libraryStore.removeExtraSong(path);
         }
-      });
+      }
     }
 
-    try {
-      await historyApi.removeFromRecentHistory(songPaths);
-    } catch (error) {
-      console.warn('remove_from_recent_history failed:', error);
-    }
+    await historyApi.removeFromRecentHistory(targetPaths).catch((failure: unknown) => {
+      console.warn(`remove_from_recent_history failed:`, failure);
+    });
   };
 
-  const clearHistory = async () => {
-    const clearedOnlinePaths = Object.keys(collectionsStore.recentSongMeta);
+  const clearHistory = async (): Promise<void> => {
+    const clearedOnlinePaths = Object.keys(store.recentSongMeta);
 
-    collectionsStore.clearRecentSongs();
-    playerStorage.remove(LEGACY_PLAYER_HISTORY_KEY);
+    store.clearRecentSongs();
+    purgeLegacyHistoryStorage();
 
     if (clearedOnlinePaths.length > 0) {
       const libraryStore = useLibraryStore();
-      clearedOnlinePaths.forEach((path) => {
-        if (!(path in collectionsStore.favoriteSongMeta)) {
+      for (const path of clearedOnlinePaths) {
+        if (!(path in store.favoriteSongMeta)) {
           libraryStore.removeExtraSong(path);
         }
-      });
+      }
     }
 
-    try {
-      await historyApi.clearRecentHistory();
-    } catch (error) {
-      console.warn('clear_recent_history failed:', error);
-    }
+    await historyApi.clearRecentHistory().catch((failure: unknown) => {
+      console.warn(`clear_recent_history failed:`, failure);
+    });
   };
 
-  const openAddToPlaylistDialog = (songPaths: string | string[]) => openDialog(songPaths);
+  const openAddToPlaylistDialog = (targets: string | string[]) =>
+    dialog.openAddToPlaylistDialog(targets);
 
   return {
-    ...collectionsRefs,
+    ...storeRefs,
     createPlaylist,
     renamePlaylist,
     setPlaylistCover,

@@ -1,141 +1,135 @@
+/**
+ * 进程内 LRU + TTL 缓存。
+ * Map 保持插入序：命中即重新插入实现「最近使用」语义；
+ * 清理时先剔除过期项，再按插入序逐出最老的条目直至容量达标。
+ */
+
 type MemoryCacheOptions = {
-  maxEntries: number;
-  ttlMs: number;
+  maxEntries: number; ttlMs: number;
 };
 
-type CacheEntry<V> = {
-  value: V;
-  expiresAt: number;
+type CacheCell<V> = {
+  value: V; expiresAt: number;
 };
 
 type MemoryCacheStats = {
-  size: number;
-  hits: number;
-  misses: number;
-  evictions: number;
-  expired: number;
-  maxEntries: number;
-  ttlMs: number;
+  size: number; hits: number; misses: number;
+  evictions: number; expired: number;
+  maxEntries: number; ttlMs: number;
 };
 
-export class MemoryCache<K, V> {
-  private readonly store = new Map<K, CacheEntry<V>>();
-  private readonly maxEntries: number;
-  private readonly ttlMs: number;
-  private hits = 0;
-  private misses = 0;
-  private evictions = 0;
-  private expired = 0;
+class MemoryCache<K, V> {
+  private readonly entries = new Map<K, CacheCell<V>>();
+  private readonly capacity: number;
+  private readonly lifetimeMs: number;
+  private hitCount = 0;
+  private missCount = 0;
+  private evictionCount = 0;
+  private expiryCount = 0;
 
   constructor({ maxEntries, ttlMs }: MemoryCacheOptions) {
-    this.maxEntries = Math.max(0, maxEntries);
-    this.ttlMs = Math.max(0, ttlMs);
+    this.capacity = Math.max(0, maxEntries);
+    this.lifetimeMs = Math.max(0, ttlMs);
   }
 
-  private isExpired(entry: CacheEntry<V>, now: number) {
-    return entry.expiresAt <= now;
+  /** 是否已越过过期时刻。 */
+  private stale(cell: CacheCell<V>, now: number): boolean {
+    return cell.expiresAt <= now;
   }
 
-  get(key: K): V | undefined {
-    const entry = this.store.get(key);
-    if (!entry) {
-      this.misses += 1;
-      return undefined;
+  /** 取出仍有效的条目；过期条目顺带清除并视为不存在。 */
+  private take(key: K): CacheCell<V> | null {
+    const cell = this.entries.get(key);
+    if (cell === undefined) {
+      return null;
     }
 
-    const now = Date.now();
-    if (this.isExpired(entry, now)) {
-      this.store.delete(key);
-      this.expired += 1;
-      this.misses += 1;
-      return undefined;
+    if (this.stale(cell, Date.now())) {
+      this.entries.delete(key);
+      this.expiryCount += 1;
+      return null;
     }
 
-    this.store.delete(key);
-    this.store.set(key, entry);
-    this.hits += 1;
-    return entry.value;
+    return cell;
+  }
+
+  /** 重新插入，把该键挪到「最近使用」位置。 */
+  private touch(cell: CacheCell<V>, key: K): void {
+    this.entries.delete(key);
+    this.entries.set(key, cell);
+  }
+
+  get(key: K) {
+    const cell = this.take(key);
+    if (cell !== null) {
+      this.touch(cell, key);
+      this.hitCount += 1;
+    } else {
+      this.missCount += 1;
+    }
+    return cell?.value;
   }
 
   set(key: K, value: V) {
-    if (this.store.has(key)) {
-      this.store.delete(key);
-    }
-
-    this.store.set(key, {
-      value,
-      expiresAt: Date.now() + this.ttlMs,
-    });
+    // 先删后插：覆盖旧值的同时刷新插入序。
+    this.entries.delete(key);
+    this.entries.set(key, { value, expiresAt: Date.now() + this.lifetimeMs });
 
     this.prune();
   }
 
-  has(key: K) {
-    const entry = this.store.get(key);
-    if (!entry) {
-      return false;
-    }
+  has(key: K) { return this.take(key) !== null; }
 
-    if (this.isExpired(entry, Date.now())) {
-      this.store.delete(key);
-      this.expired += 1;
-      return false;
-    }
+  delete(key: K) { return this.entries.delete(key); }
 
-    return true;
-  }
+  clear() { this.entries.clear(); }
 
-  delete(key: K) {
-    return this.store.delete(key);
-  }
+  /** 惰性清理：先去过期项，再把规模压回容量上限内。 */
+  prune(): void {
+    const cutoff = Date.now();
 
-  clear() {
-    this.store.clear();
-  }
-
-  prune() {
-    const now = Date.now();
-
-    for (const [key, entry] of this.store) {
-      if (this.isExpired(entry, now)) {
-        this.store.delete(key);
-        this.expired += 1;
+    for (const [key, cell] of this.entries) {
+      if (this.stale(cell, cutoff)) {
+        this.entries.delete(key);
+        this.expiryCount += 1;
       }
     }
 
-    while (this.store.size > this.maxEntries) {
-      const oldestKey = this.store.keys().next().value as K | undefined;
-      if (oldestKey === undefined) {
+    while (this.entries.size > this.capacity) {
+      const eldest = this.entries.keys().next();
+      if (eldest.done === true) {
         break;
       }
 
-      this.store.delete(oldestKey);
-      this.evictions += 1;
+      this.entries.delete(eldest.value);
+      this.evictionCount += 1;
     }
   }
 
-  size() {
+  size() { this.prune(); return this.entries.size; }
+
+  snapshot(): Map<K, V> {
     this.prune();
-    return this.store.size;
+    const view = new Map<K, V>();
+    this.entries.forEach((cell, key) => {
+      view.set(key, cell.value);
+    });
+    return view;
   }
 
-  snapshot() {
+  stats() {
     this.prune();
-    return new Map(
-      Array.from(this.store.entries(), ([key, entry]) => [key, entry.value] as const),
-    );
-  }
-
-  stats(): MemoryCacheStats {
-    this.prune();
-    return {
-      size: this.store.size,
-      hits: this.hits,
-      misses: this.misses,
-      evictions: this.evictions,
-      expired: this.expired,
-      maxEntries: this.maxEntries,
-      ttlMs: this.ttlMs,
+    const summary: MemoryCacheStats = {
+      size: this.entries.size,
+      hits: this.hitCount,
+      misses: this.missCount,
+      evictions: this.evictionCount,
+      expired: this.expiryCount,
+      maxEntries: this.capacity,
+      ttlMs: this.lifetimeMs,
     };
+    return summary;
   }
 }
+
+export { MemoryCache };

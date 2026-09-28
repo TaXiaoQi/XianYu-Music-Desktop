@@ -1,506 +1,198 @@
 <script setup lang="ts">
-import {
-  Heart,
-  Maximize2,
-  Minimize2,
-  Music2,
-  Pause,
-  Play,
-  Power,
-  Repeat,
-  Repeat1,
-  Settings,
-  Shuffle,
-  SkipBack,
-  SkipForward,
-} from 'lucide-vue-next';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, watch } from 'vue';
 
 import { applyWindowMaterial, useWindowMaterial, type WindowMaterialMode } from '../../composables/windowMaterial';
 import { applyDarkClassWithTransition } from '../../composables/themeTransition';
 import {
-  APP_TRAY_MENU_EVENT,
-  TRAY_MENU_READY_EVENT,
-  TRAY_MENU_STATE_EVENT,
-  type TrayMenuAction,
-  type TrayMenuStatePayload,
+  type TrayMenuAction, type TrayMenuStatePayload,
+  APP_TRAY_MENU_EVENT, TRAY_MENU_READY_EVENT, TRAY_MENU_STATE_EVENT,
 } from '../../features/tray/actions';
 import type { Song } from '../../types';
 
-const appWindow = getCurrentWindow();
+import TrayCommandList from './tray/TrayCommandList.vue';
+import TrayTrackHeader from './tray/TrayTrackHeader.vue';
+import TrayTransportDock from './tray/TrayTransportDock.vue';
+
+const hostWindow = getCurrentWindow();
 const { activeWindowMaterial } = useWindowMaterial();
-const currentSong = ref<Song | null>(null);
-const isPlaying = ref(false);
-const isDarkTheme = ref(true);
-const playMode = ref(0);
-const isFavorite = ref(false);
-const isMiniMode = ref(false);
-const windowMaterial = ref<WindowMaterialMode>('none');
-const windowBlurTint = ref(50);
-let unlistenState: UnlistenFn | null = null;
-let unlistenFocus: UnlistenFn | null = null;
-let unlistenCloseRequested: UnlistenFn | null = null;
 
-const trackTitle = computed(() => {
-  const song = currentSong.value;
-  if (!song) return 'XianYu Music';
-  return song.title || song.name.replace(/\.[^/.]+$/, '');
+const panel = reactive({
+  track: null as Song | null,
+  spinning: false,
+  darkChrome: true,
+  loopMode: 0,
+  markedFavorite: false,
+  shrunkToMini: false,
+  material: 'none' as WindowMaterialMode,
+  blurTint: 50,
 });
 
-const trackArtist = computed(() => {
-  const song = currentSong.value;
-  if (!song) return '';
-  return song.artist || '';
-});
+const ingestSnapshot = (snapshot: TrayMenuStatePayload) => {
+  panel.track = snapshot.currentSong;
+  panel.spinning = snapshot.isPlaying;
+  panel.darkChrome = snapshot.isDarkTheme;
+  panel.loopMode = snapshot.playMode;
+  panel.markedFavorite = snapshot.isFavorite;
+  panel.shrunkToMini = snapshot.isMiniMode;
+  panel.material = snapshot.windowMaterial;
+  panel.blurTint = snapshot.windowBlurTint;
+};
 
-const coverUrl = computed(() => {
-  const song = currentSong.value;
-  if (!song?.cover_thumb_path) return '';
-  const path = song.cover_thumb_path;
-  if (path.startsWith('http') || path.startsWith('asset:') || path.startsWith('data:')) {
-    return path;
-  }
-  return convertFileSrc(path);
-});
-
-const playModeConfig = computed(() => {
-  switch (playMode.value) {
-    case 1:
-      return {
-        label: '单曲循环',
-        icon: Repeat1,
-      };
-    case 2:
-      return {
-        label: '随机播放',
-        icon: Shuffle,
-      };
-    default:
-      return {
-        label: '列表循环',
-        icon: Repeat,
-      };
-  }
-});
-
-const shellStyle = computed(() => {
+const chromeVars = computed(() => {
   const resolved = activeWindowMaterial.value;
-  let panelBg: string;
+  const daylight = !panel.darkChrome;
+  let backdrop: string;
   if (resolved === 'mica') {
-    panelBg = isDarkTheme.value ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.4)';
+    backdrop = daylight ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.08)';
   } else if (resolved !== 'none') {
-    panelBg = isDarkTheme.value ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.6)';
+    backdrop = daylight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.25)';
   } else {
-    panelBg = isDarkTheme.value ? 'rgba(39, 40, 52, 0.98)' : 'rgba(248, 249, 252, 0.98)';
+    backdrop = daylight ? 'rgba(248, 249, 252, 0.98)' : 'rgba(39, 40, 52, 0.98)';
   }
-  return { '--panel-bg': panelBg };
+  return { '--trayPanelBg': backdrop };
 });
 
-const sendAction = async (action: TrayMenuAction, options: { hide?: boolean } = {}) => {
-  await emitTo('main', APP_TRAY_MENU_EVENT, action);
-  if (options.hide !== false) {
-    await appWindow.hide();
+const hideWindow = () => { void hostWindow.hide(); };
+
+const dispatch = async (action: TrayMenuAction, opts: { keepOpen?: boolean } = {}) => {
+  await emitTo(
+    'main',
+    APP_TRAY_MENU_EVENT,
+    action,
+  );
+  if (opts.keepOpen !== true) {
+    await hostWindow.hide();
   }
 };
 
-const hideWindow = () => {
-  void appWindow.hide();
+const onKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape') return;
+  hideWindow();
 };
 
-const handleKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') {
-    hideWindow();
-  }
-};
+const releaseHooks: Array<() => void> = [];
 
-watch([windowMaterial, windowBlurTint, isDarkTheme], async () => {
-  applyDarkClassWithTransition(isDarkTheme.value);
+watch([() => panel.material, () => panel.blurTint, () => panel.darkChrome], async () => {
+  applyDarkClassWithTransition(panel.darkChrome);
 
   try {
-    await appWindow.setTheme(isDarkTheme.value ? 'dark' : 'light');
+    await hostWindow.setTheme(panel.darkChrome ? 'dark' : 'light');
   } catch (error) {
     console.warn('Failed to set tray menu window theme:', error);
   }
 
   await applyWindowMaterial(
-    windowMaterial.value,
-    isDarkTheme.value,
-    windowBlurTint.value,
+    panel.material,
+    panel.darkChrome,
+    panel.blurTint,
   );
 });
 
 onMounted(async () => {
   try {
-    await appWindow.setBackgroundColor([0, 0, 0, 0]);
+    await hostWindow
+      .setBackgroundColor([0, 0, 0, 0]);
   } catch (error) {
-    console.warn('Failed to force transparent background for tray menu window:', error);
+    console.warn(
+      'Failed to force transparent background for tray menu window:',
+      error,
+    );
   }
 
-  await appWindow.setAlwaysOnTop(true);
-  window.addEventListener('keydown', handleKeydown);
+  await hostWindow.setAlwaysOnTop(true);
+  window.addEventListener('keydown', onKeydown);
 
-  unlistenState = await listen<TrayMenuStatePayload>(TRAY_MENU_STATE_EVENT, (event) => {
-    currentSong.value = event.payload.currentSong;
-    isPlaying.value = event.payload.isPlaying;
-    isDarkTheme.value = event.payload.isDarkTheme;
-    playMode.value = event.payload.playMode;
-    isFavorite.value = event.payload.isFavorite;
-    isMiniMode.value = event.payload.isMiniMode;
-    windowMaterial.value = event.payload.windowMaterial;
-    windowBlurTint.value = event.payload.windowBlurTint;
-  });
+  releaseHooks.push(await listen<TrayMenuStatePayload>(TRAY_MENU_STATE_EVENT, (event) => {
+    ingestSnapshot(event.payload);
+  }));
 
-  unlistenFocus = await appWindow.onFocusChanged((event) => {
-    if (!event.payload) {
-      hideWindow();
-    }
-  });
+  releaseHooks.push(await hostWindow.onFocusChanged((focused) => {
+    if (!focused) hideWindow();
+  }));
 
-  unlistenCloseRequested = await appWindow.onCloseRequested((event) => {
-    event.preventDefault();
+  releaseHooks.push(await hostWindow.onCloseRequested((request) => {
+    request.preventDefault();
     hideWindow();
-  });
+  }));
 
   await emitTo('main', TRAY_MENU_READY_EVENT);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown);
-  unlistenState?.();
-  unlistenFocus?.();
-  unlistenCloseRequested?.();
+  window.removeEventListener('keydown', onKeydown);
+  releaseHooks.splice(0).forEach((off) => off());
 });
 </script>
 
 <template>
   <div
-    class="tray-menu-shell"
-    :class="[
-      { 'tray-menu-shell--light': !isDarkTheme },
-      { 'tray-menu-shell--material': activeWindowMaterial !== 'none' },
-    ]"
-    :style="shellStyle"
+    class="trayStage"
+    :class="{
+      'trayStage--daylight': !panel.darkChrome,
+      'trayStage--composited': activeWindowMaterial !== 'none',
+    }"
+    :style="chromeVars"
     @pointerdown.self="hideWindow"
   >
-    <div class="tray-menu-panel">
-      <section class="track-row">
-        <div class="track-cover">
-          <img v-if="coverUrl" :src="coverUrl" alt="" class="track-cover-img" />
-          <Music2 v-else class="track-icon" :size="24" :stroke-width="2.1" />
-        </div>
-        <div class="track-info">
-          <span class="track-title" :title="trackTitle">{{ trackTitle }}</span>
-          <span v-if="trackArtist" class="track-artist" :title="trackArtist">{{ trackArtist }}</span>
-        </div>
-      </section>
+    <div class="trayCard">
+      <TrayTrackHeader :track="panel.track" />
 
-      <section class="transport" aria-label="播放控制">
-        <button
-          class="transport-circle transport-favorite"
-          :class="{ 'transport-favorite--active': isFavorite }"
-          title="收藏"
-          @click="sendAction('toggle-favorite', { hide: false })"
-        >
-          <Heart :size="16" :stroke-width="2.2" :fill="isFavorite ? 'currentColor' : 'none'" />
-        </button>
-        <div class="transport-main">
-          <button class="transport-circle" title="上一首" @click="sendAction('prev-song', { hide: false })">
-            <SkipBack :size="18" :stroke-width="2.35" />
-          </button>
-          <button class="transport-circle transport-circle--play" title="播放/暂停" @click="sendAction('toggle-play', { hide: false })">
-            <Pause v-if="isPlaying" :size="20" :stroke-width="2.5" />
-            <Play v-else :size="20" :stroke-width="2.5" />
-          </button>
-          <button class="transport-circle" title="下一首" @click="sendAction('next-song', { hide: false })">
-            <SkipForward :size="18" :stroke-width="2.35" />
-          </button>
-        </div>
-        <button
-          class="transport-circle"
-          :class="{ 'transport-circle--active': playMode !== 0 }"
-          :title="playModeConfig.label"
-          @click="sendAction('cycle-play-mode', { hide: false })"
-        >
-          <component :is="playModeConfig.icon" :size="16" :stroke-width="2.2" />
-        </button>
-      </section>
+      <TrayTransportDock
+        :playing="panel.spinning"
+        :favorite="panel.markedFavorite"
+        :loop-mode="panel.loopMode"
+        @favorite="dispatch('toggle-favorite', { keepOpen: true })"
+        @previous="dispatch('prev-song', { keepOpen: true })"
+        @toggle="dispatch('toggle-play', { keepOpen: true })"
+        @advance="dispatch('next-song', { keepOpen: true })"
+        @cycle-loop="dispatch('cycle-play-mode', { keepOpen: true })"
+      />
 
-      <div class="tray-menu-spacer" />
+      <div class="trayStretch" />
 
-      <div class="menu-divider" />
-
-      <button class="menu-row" @click="sendAction('open-desktop-lyrics')">
-        <span class="row-icon row-icon--text">词</span>
-        <span class="row-label">桌面歌词</span>
-      </button>
-
-      <div class="menu-divider" />
-
-      <button class="menu-row" @click="sendAction('show-mini-player')">
-        <span class="row-icon">
-          <component :is="isMiniMode ? Maximize2 : Minimize2" :size="18" :stroke-width="2.15" />
-        </span>
-        <span class="row-label">{{ isMiniMode ? '恢复主窗口' : 'mini窗口' }}</span>
-      </button>
-
-      <button class="menu-row" @click="sendAction('open-settings')">
-        <span class="row-icon">
-          <Settings :size="18" :stroke-width="2.15" />
-        </span>
-        <span class="row-label">设置</span>
-      </button>
-
-      <div class="menu-divider" />
-
-      <button class="menu-row" @click="sendAction('quit')">
-        <span class="row-icon">
-          <Power :size="18" :stroke-width="2.15" />
-        </span>
-        <span class="row-label">退出</span>
-      </button>
+      <TrayCommandList
+        :mini-mode="panel.shrunkToMini"
+        @lyrics="dispatch('open-desktop-lyrics')"
+        @toggle-mini="dispatch('show-mini-player')"
+        @settings="dispatch('open-settings')"
+        @quit="dispatch('quit')"
+      />
     </div>
   </div>
 </template>
 
 <style scoped>
-.tray-menu-shell {
-  --panel-bg: rgba(39, 40, 52, 0.98);
-  --panel-border: rgba(255, 255, 255, 0.12);
-  --text-main: rgba(245, 247, 252, 0.98);
-  --text-muted: rgba(230, 233, 242, 0.85);
-  --divider: rgba(255, 255, 255, 0.085);
-  --hover-bg: rgba(255, 255, 255, 0.085);
+.trayStage {
+  --trayPanelBg: rgba(39, 40, 52, 0.98); --trayEdge: rgba(255, 255, 255, 0.12);
+  --trayInk: rgba(245, 247, 252, 0.98); --trayInkSoft: rgba(230, 233, 242, 0.85);
+  --trayRule: rgba(255, 255, 255, 0.085); --trayHover: rgba(255, 255, 255, 0.085);
 
-  position: fixed;
-  inset: 0;
-  padding: 0;
-  overflow: hidden;
-  background: transparent;
-  color: var(--text-main);
-  font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  user-select: none;
+  position: fixed; inset: 0; padding: 0; overflow: hidden;
+  background: transparent; color: var(--trayInk);
+  font-family: Inter, "Segoe UI", system-ui,
+    -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility; user-select: none;
 }
 
-.tray-menu-shell--light {
-  --panel-bg: rgba(248, 249, 252, 0.98);
-  --panel-border: rgba(20, 24, 36, 0.12);
-  --text-main: rgba(22, 26, 36, 0.96);
-  --text-muted: rgba(40, 46, 60, 0.78);
-  --divider: rgba(20, 24, 36, 0.1);
-  --hover-bg: rgba(20, 24, 36, 0.07);
+.trayStage--daylight {
+  --trayPanelBg: rgba(248, 249, 252, 0.98); --trayEdge: rgba(20, 24, 36, 0.12);
+  --trayInk: rgba(22, 26, 36, 0.96); --trayInkSoft: rgba(40, 46, 60, 0.78);
+  --trayRule: rgba(20, 24, 36, 0.1); --trayHover: rgba(20, 24, 36, 0.07);
 }
 
-.tray-menu-shell--material .tray-menu-panel {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+.trayStage--composited .trayCard { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+.trayCard {
+  position: absolute; top: 0; left: 0; right: 0;
+  width: 100%; height: 100%; box-sizing: border-box;
+  overflow: hidden; padding-bottom: 8px; border: 0; border-radius: 10px;
+  background: var(--trayPanelBg);
+  box-shadow: inset 0 0 0 1px var(--trayEdge);
+  backdrop-filter: blur(18px); display: flex; flex-direction: column;
 }
 
-.tray-menu-panel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  overflow: hidden;
-  padding-bottom: 8px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--panel-bg);
-  box-shadow: inset 0 0 0 1px var(--panel-border);
-  backdrop-filter: blur(18px);
-  display: flex;
-  flex-direction: column;
-}
-
-.tray-menu-spacer {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.track-row {
-  display: flex;
-  align-items: center;
-  height: 64px;
-  gap: 11px;
-  padding: 6px 14px 0;
-  flex-shrink: 0;
-}
-
-.track-info {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-}
-
-.track-cover {
-  flex: 0 0 auto;
-  width: 50px;
-  height: 50px;
-  border-radius: 8px;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: var(--hover-bg);
-}
-
-.track-cover-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  pointer-events: none;
-}
-
-.track-icon {
-  color: var(--text-muted);
-}
-
-.track-title {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-main);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.track-artist {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu-divider {
-  height: 1px;
-  margin: 3px 13px;
-  background: var(--divider);
-}
-
-.transport {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 10px;
-  flex-shrink: 0;
-}
-
-.transport-main {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.transport-circle {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9999px;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: default;
-  transition: color 200ms ease, background-color 200ms ease, transform 200ms ease;
-}
-
-.menu-row {
-  border: 0;
-  background: transparent;
-  color: var(--text-main);
-  cursor: default;
-  flex-shrink: 0;
-}
-
-.transport-circle--play {
-  color: var(--text-main);
-}
-
-.transport-circle--active {
-  color: #EC4141;
-  background: rgba(236, 65, 65, 0.1);
-}
-
-.transport-favorite--active {
-  color: var(--favorite-color);
-  background: color-mix(in srgb, var(--favorite-color) 10%, transparent);
-}
-
-.transport-circle:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-main);
-  transform: scale(1.1);
-}
-
-.transport-circle--active:hover {
-  color: #EC4141;
-  background: rgba(236, 65, 65, 0.16);
-}
-
-.transport-favorite--active:hover {
-  color: var(--favorite-color);
-  background: color-mix(in srgb, var(--favorite-color) 16%, transparent);
-}
-
-.menu-row:hover {
-  background: var(--hover-bg);
-  color: var(--text-main);
-}
-
-.menu-row {
-  display: flex;
-  align-items: center;
-  width: calc(100% - 12px);
-  height: 32px;
-  margin: 0 6px;
-  gap: 9px;
-  border-radius: 7px;
-  padding: 0 7px;
-  text-align: left;
-}
-
-.row-icon {
-  display: grid;
-  place-items: center;
-  width: 19px;
-  height: 19px;
-  flex: 0 0 auto;
-  color: currentColor;
-}
-
-.row-icon--text {
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1;
-}
-
-.row-label {
-  min-width: 0;
-  overflow: hidden;
-  flex: 1;
-  color: currentColor;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.trayStretch { flex: 1 1 auto; min-height: 0; }
 </style>

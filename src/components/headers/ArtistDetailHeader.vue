@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
-import { open } from '@tauri-apps/plugin-dialog';
+import { computed, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { libraryApi } from '../../services/tauri/libraryApi';
 import { useLibraryStore } from '../../features/library/store';
-import { useSettings } from '../../features/settings/useSettings';
-import { useToast } from '../../composables/toast';
-import { artistHeaderCache } from '../../caches/imageCaches';
-import { useCoverCache } from '../../composables/useCoverCache';
-import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
-import { type ArtistTabId, getOrderedArtistTabs, saveTabsOrder } from '../../utils/artistTabsOrder';
+import type { ArtistTabId } from '../../utils/artistTabsOrder';
+import ArtistBatchBar from './artistDetail/ArtistBatchBar.vue';
+import ArtistBioBox from './artistDetail/ArtistBioBox.vue';
+import ArtistHero from './artistDetail/ArtistHero.vue';
+import ArtistTabsNav from './artistDetail/ArtistTabsNav.vue';
+import AvatarWriteBackDialog from './artistDetail/AvatarWriteBackDialog.vue';
+import { useArtistCover, gradientClassFor } from './artistDetail/useArtistCover';
+import { useAvatarWriter } from './artistDetail/useAvatarWriter';
+import { useHeroShrink } from './artistDetail/useHeroShrink';
 
 const props = defineProps<{
   artistName: string;
+  activeTab: ArtistTabId;
   isBatchMode: boolean;
   selectedCount?: number;
   totalSongCount?: number;
-  activeTab: ArtistTabId;
   songs?: any[];
   readOnly?: boolean;
   hasArtistDetail?: boolean;
@@ -29,644 +29,124 @@ const props = defineProps<{
   scrollContainerRef?: HTMLElement | null;
 }>();
 
-const emit = defineEmits([
-  'update:isBatchMode',
-  'update:activeTab',
-  'playAll',
-  'batchPlay',
-  'addToPlaylist',
-  'batchDelete',
-  'batchMove',
-  'selectAll',
-]);
+const emit = defineEmits(['update:isBatchMode', 'update:activeTab', 'playAll', 'batchPlay', 'addToPlaylist', 'batchDelete', 'batchMove', 'selectAll']);
 
-const isAllSelected = computed(() => {
+const everythingPicked = computed(() => {
   const total = props.totalSongCount ?? props.songs?.length ?? 0;
   return total > 0 && (props.selectedCount ?? 0) === total;
 });
 
-const tabs = ref(getOrderedArtistTabs());
-const draggedTabId = ref<ArtistTabId | null>(null);
-const suppressClick = ref<boolean>(false);
-
-const visibleTabs = computed(() => {
-  if (props.readOnly) {
-    return props.hasArtistDetail ? tabs.value : tabs.value.filter(t => t.id !== 'details');
-  }
-  return tabs.value;
-});
-
-const handleTabClick = (id: ArtistTabId) => {
-  if (suppressClick.value) return;
-  emit('update:activeTab', id);
-};
-
-const startX = ref(0);
-const startY = ref(0);
-const isDragging = ref(false);
-const targetInsertIndex = ref<number | null>(null);
-let pressTimer: number | null = null;
-
-const onPointerDown = (tabId: ArtistTabId, event: PointerEvent) => {
-  if (event.button !== 0) return;
-  if (props.readOnly) return;
-  
-  draggedTabId.value = tabId;
-  startX.value = event.clientX;
-  startY.value = event.clientY;
-  isDragging.value = false;
-  targetInsertIndex.value = null;
-  
-  event.preventDefault();
-  
-  pressTimer = window.setTimeout(() => {
-    isDragging.value = true;
-    suppressClick.value = true;
-    document.body.style.cursor = 'grabbing';
-  }, 300);
-  
-  window.addEventListener('pointermove', onPointerMove);
-  window.addEventListener('pointerup', onPointerUp);
-};
-
-const onPointerMove = (event: PointerEvent) => {
-  if (draggedTabId.value === null) return;
-  
-  const clientX = event.clientX;
-  const clientY = event.clientY;
-  
-  const distanceX = Math.abs(clientX - startX.value);
-  const distanceY = Math.abs(clientY - startY.value);
-  
-  if (!isDragging.value && (distanceX > 6 || distanceY > 6)) {
-    if (pressTimer !== null) {
-      clearTimeout(pressTimer);
-      pressTimer = null;
-    }
-    onPointerUp();
-    return;
-  }
-  
-  if (isDragging.value) {
-    const elements = document.elementsFromPoint(clientX, clientY);
-    let hoveredTabId: ArtistTabId | null = null;
-    let hoveredElement: HTMLElement | null = null;
-    
-    for (const el of elements) {
-      const tabIdAttr = el.getAttribute('data-artist-tab-id');
-      if (tabIdAttr && (tabIdAttr === 'songs' || tabIdAttr === 'albums' || tabIdAttr === 'details')) {
-        hoveredTabId = tabIdAttr as ArtistTabId;
-        hoveredElement = el as HTMLElement;
-        break;
-      }
-    }
-    
-    if (hoveredTabId !== null && hoveredElement !== null) {
-      const rect = hoveredElement.getBoundingClientRect();
-      const index = tabs.value.findIndex(t => t.id === hoveredTabId);
-      
-      if (index !== -1) {
-        if (clientX < rect.left + rect.width / 2) {
-          targetInsertIndex.value = index;
-        } else {
-          targetInsertIndex.value = index + 1;
-        }
-      }
-    } else {
-      targetInsertIndex.value = null;
-    }
-  }
-};
-
-const onPointerUp = () => {
-  if (pressTimer !== null) {
-    clearTimeout(pressTimer);
-    pressTimer = null;
-  }
-  
-  window.removeEventListener('pointermove', onPointerMove);
-  window.removeEventListener('pointerup', onPointerUp);
-  
-  document.body.style.cursor = '';
-  
-  if (draggedTabId.value === null) return;
-  
-  if (isDragging.value && targetInsertIndex.value !== null) {
-    const sourceIndex = tabs.value.findIndex(t => t.id === draggedTabId.value);
-    let insertIndex = targetInsertIndex.value;
-    
-    if (sourceIndex !== -1 && sourceIndex !== insertIndex) {
-      const [movedTab] = tabs.value.splice(sourceIndex, 1);
-      
-      if (insertIndex > sourceIndex) {
-        insertIndex--;
-      }
-      
-      tabs.value.splice(insertIndex, 0, movedTab);
-      saveTabsOrder(tabs.value.map(t => t.id));
-    }
-  }
-  
-  draggedTabId.value = null;
-  isDragging.value = false;
-  targetInsertIndex.value = null;
-  
-  setTimeout(() => {
-    suppressClick.value = false;
-  }, 50);
-};
-
 const libraryStore = useLibraryStore();
-const { settings } = useSettings();
-const { showToast } = useToast();
 
-const currentArtist = computed(() => {
-  return libraryStore.artistCatalog.find(item => item.name === props.artistName);
-});
+const artistEntry = computed(() =>
+  libraryStore.artistCatalog.find(entry => entry.name === props.artistName),
+);
 
-const displayedOverrideCover = ref('');
-watch(() => props.coverUrlOverride, (url) => {
-  if (!url) {
-    displayedOverrideCover.value = '';
-    return;
-  }
-  displayedOverrideCover.value = getDisplayCoverUrl(url, (dataUrl) => {
-    displayedOverrideCover.value = dataUrl;
-  });
+// 只读（在线）模式下的外部封面：异步代理完成后回填
+const overrideArtwork = ref('');
+watch(() => props.coverUrlOverride, (raw) => {
+  overrideArtwork.value = raw
+    ? getDisplayCoverUrl(raw, ready => { overrideArtwork.value = ready; })
+    : '';
 }, { immediate: true });
 
-const displayedCover = computed(() => {
-  if (props.readOnly && props.coverUrlOverride) {
-    return displayedOverrideCover.value;
-  }
-  if (currentArtist.value?.avatarPath) {
-    return convertFileSrc(currentArtist.value.avatarPath);
-  }
+const { coverUrl, resolving } = useArtistCover(() => props.artistName, () => props.songs);
+
+const shownCover = computed(() => {
+  if (props.readOnly && props.coverUrlOverride) return overrideArtwork.value;
+  if (artistEntry.value?.avatarPath) return convertFileSrc(artistEntry.value.avatarPath);
   return coverUrl.value;
 });
 
-const displayDescription = computed(() => {
+// 简介文案：优先显式 description，其次从原始数据字段中按优先级取值
+const bioText = computed(() => {
   const explicit = (props.description || '').trim();
   if (explicit) return explicit;
-  const rd = props.rawData;
-  if (rd && typeof rd === 'object') {
-    return (
-      rd.artistDesc || rd.artist_intro || rd.intro || rd.briefDesc
-      || rd.description || rd.desc || ''
-    ).trim();
+  const raw: any = props.rawData;
+  if (raw && typeof raw === 'object') {
+    const candidate =
+      raw.artistDesc || raw.artist_intro || raw.intro || raw.briefDesc
+      || raw.description || raw.desc || '';
+    return candidate.trim();
   }
   return '';
 });
 
-const isSavingAvatar = ref(false);
-const showWriteBackDialog = ref(false);
-const pendingImagePath = ref('');
-const activeTaskId = ref<string | null>(null);
+const {
+  saving: avatarSaving,
+  dialogOpen: askWriteBack,
+  task: tagTask,
+  pickNewAvatar,
+  confirmWriteBack,
+  confirmAppOnly,
+} = useAvatarWriter(() => artistEntry.value);
 
-interface WriteTagsProgress {
-  taskId: string;
-  current: number;
-  total: number;
-  successCount: number;
-  failureCount: number;
-  skippedCount: number;
-  skippedMultiArtist: number;
-  skippedRemote: number;
-  skippedCue: number;
-  skippedReadonly: number;
-  skippedMissing: number;
-  done: boolean;
-}
-const writeProgress = ref<WriteTagsProgress | null>(null);
+const scrollBox = computed(() => props.scrollContainerRef ?? null);
+const {
+  avatarSize,
+  infoHeight,
+  nameSize,
+  nameLine,
+  nameGap,
+  btnGap,
+  bioOpacity,
+  bioMaxHeight,
+} = useHeroShrink(scrollBox);
 
-const triggerAvatarSave = async (imagePath: string, writeToTags: boolean) => {
-  if (!currentArtist.value) return;
-  isSavingAvatar.value = true;
-
-  try {
-    const result = await libraryApi.saveArtistAvatar(
-      currentArtist.value.id,
-      imagePath,
-      writeToTags,
-    );
-
-    const updatedCatalog = libraryStore.artistCatalog.map(item => {
-      if (item.id === result.artistId) {
-        return { ...item, avatarPath: result.avatarPath };
-      }
-      return item;
-    });
-    libraryStore.setArtistCatalog(updatedCatalog);
-
-    if (result.taskId) {
-      activeTaskId.value = result.taskId;
-      writeProgress.value = {
-        taskId: result.taskId,
-        current: 0,
-        total: 0,
-        successCount: 0,
-        failureCount: 0,
-        skippedCount: 0,
-        skippedMultiArtist: 0,
-        skippedRemote: 0,
-        skippedCue: 0,
-        skippedReadonly: 0,
-        skippedMissing: 0,
-        done: false,
-      };
-    } else {
-      showToast('修改歌手头像成功', 'success');
-      isSavingAvatar.value = false;
-    }
-  } catch (error) {
-    console.error('Failed to save artist avatar:', error);
-    showToast(typeof error === 'string' ? error : '修改歌手头像失败', 'error');
-    isSavingAvatar.value = false;
-  }
-};
-
-const triggerAvatarSaveWithWriteBack = () => {
-  showWriteBackDialog.value = false;
-  if (pendingImagePath.value) {
-    triggerAvatarSave(pendingImagePath.value, true);
-    pendingImagePath.value = '';
-  }
-};
-
-const triggerAvatarSaveOnlyApp = () => {
-  showWriteBackDialog.value = false;
-  if (pendingImagePath.value) {
-    triggerAvatarSave(pendingImagePath.value, false);
-    pendingImagePath.value = '';
-  }
-};
-
-const handleAvatarClick = async () => {
-  if (!currentArtist.value || isSavingAvatar.value) return;
-
-  const selected = await open({
-    multiple: false,
-    directory: false,
-    title: '选择歌手头像',
-    filters: [
-      {
-        name: '图片',
-        extensions: ['jpg', 'jpeg', 'png', 'webp'],
-      },
-    ],
-  });
-
-  if (!selected || Array.isArray(selected)) {
-    return;
-  }
-
-  if (settings.value.writeArtistAvatarToTags) {
-    pendingImagePath.value = selected as string;
-    showWriteBackDialog.value = true;
-  } else {
-    triggerAvatarSave(selected as string, false);
-  }
-};
-
-let unlistenWriteTagsProgress: UnlistenFn | null = null;
-
-onMounted(async () => {
-  unlistenWriteTagsProgress = await listen<any>('artist-avatar:write-tags-progress', (event) => {
-    const payload = event.payload;
-    if (activeTaskId.value && payload.taskId === activeTaskId.value) {
-      writeProgress.value = {
-        taskId: payload.taskId,
-        current: payload.current,
-        total: payload.total,
-        successCount: payload.successCount,
-        failureCount: payload.failureCount,
-        skippedCount: payload.skippedCount,
-        skippedMultiArtist: payload.skippedMultiArtist,
-        skippedRemote: payload.skippedRemote,
-        skippedCue: payload.skippedCue,
-        skippedReadonly: payload.skippedReadonly,
-        skippedMissing: payload.skippedMissing,
-        done: payload.done,
-      };
-
-      if (payload.done) {
-        let skipDetails = [];
-        if (payload.skippedMultiArtist > 0) skipDetails.push(`多歌手: ${payload.skippedMultiArtist}`);
-        if (payload.skippedRemote > 0) skipDetails.push(`远程: ${payload.skippedRemote}`);
-        if (payload.skippedCue > 0) skipDetails.push(`CUE: ${payload.skippedCue}`);
-        if (payload.skippedReadonly > 0) skipDetails.push(`只读: ${payload.skippedReadonly}`);
-        if (payload.skippedMissing > 0) skipDetails.push(`缺失: ${payload.skippedMissing}`);
-
-        const detailsText = skipDetails.length > 0 ? ` (${skipDetails.join(', ')})` : '';
-
-        if (payload.error) {
-          showToast(`写回标签出错: ${payload.error}`, 'error');
-        } else if (payload.total === 0 || (payload.successCount === 0 && payload.skippedCount === payload.total && payload.total > 0)) {
-          showToast(`头像已保存，但没有可写入的本地单人歌曲${detailsText}。`, 'info');
-        } else {
-          showToast(
-            `歌手头像保存并写回标签完成！成功: ${payload.successCount} 首，跳过: ${payload.skippedCount} 首${detailsText}，失败: ${payload.failureCount} 首`,
-            payload.failureCount > 0 ? 'error' : 'success'
-          );
-        }
-
-        activeTaskId.value = null;
-        writeProgress.value = null;
-        isSavingAvatar.value = false;
-      }
-    }
-  });
-});
-
-onUnmounted(() => {
-  if (unlistenWriteTagsProgress) {
-    unlistenWriteTagsProgress();
-    unlistenWriteTagsProgress = null;
-  }
-});
-
-const coverUrl = ref<string>('');
-const isLoading = ref<boolean>(false);
-const { loadCover, peekCoverUrl } = useCoverCache();
-let coverRequestId = 0;
-
-watch([() => props.artistName, () => props.songs], async ([artistName, newSongs]) => {
-  const requestId = ++coverRequestId;
-
-  if (!newSongs || newSongs.length === 0) {
-    if (requestId !== coverRequestId) return;
-    coverUrl.value = '';
-    isLoading.value = false;
-    return;
-  }
-
-  const firstSongPath = newSongs[0]?.path;
-  if (!firstSongPath) {
-    if (requestId !== coverRequestId) return;
-    coverUrl.value = '';
-    isLoading.value = false;
-    return;
-  }
-
-  const cachedHeaderCover = artistHeaderCache.get(artistName);
-  if (cachedHeaderCover) {
-    coverUrl.value = cachedHeaderCover;
-    isLoading.value = false;
-    return;
-  }
-
-  const cachedThumbnail = peekCoverUrl(firstSongPath);
-  if (cachedThumbnail) {
-    coverUrl.value = cachedThumbnail;
-    artistHeaderCache.set(artistName, cachedThumbnail);
-    isLoading.value = false;
-    return;
-  }
-
-  isLoading.value = true;
-  try {
-    const resolvedCover = await loadCover(firstSongPath);
-    if (requestId !== coverRequestId) return;
-
-    if (resolvedCover) {
-      coverUrl.value = resolvedCover;
-      artistHeaderCache.set(artistName, resolvedCover);
-    } else {
-      coverUrl.value = '';
-    }
-  } catch {
-    if (requestId !== coverRequestId) return;
-    coverUrl.value = '';
-  } finally {
-    if (requestId === coverRequestId) {
-      isLoading.value = false;
-    }
-  }
-}, { immediate: true });
-
-const gradients = [
-  'from-pink-500 to-rose-500',
-  'from-purple-500 to-indigo-500',
-  'from-cyan-500 to-blue-500',
-  'from-emerald-400 to-teal-500',
-  'from-amber-400 to-orange-500',
-  'from-fuchsia-500 to-pink-500',
-  'from-blue-400 to-indigo-500',
-  'from-violet-500 to-purple-500',
-];
-
-const getGradientForArtist = (name: string) => {
-  if (!name) return gradients[0];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % gradients.length;
-  return gradients[index];
-};
-
-const handlePlayAll = () => {
-  emit('playAll');
-};
-
-// ===== 滚动缩小封面（QQ 音乐桌面版风格）=====
-const scrollContainer = computed(() => props.scrollContainerRef ?? null);
-const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 144);
-
-const coverSize = computed(() => `${144 - 100 * scrollProgress.value}px`);
-const columnHeight = computed(() => `${144 - 80 * scrollProgress.value}px`);
-const titleSize = computed(() => `${32 - 16 * scrollProgress.value}px`);
-const titleLineHeight = computed(() => `${40 - 20 * scrollProgress.value}px`);
-const titleMarginBottom = computed(() => `${16 - 12 * scrollProgress.value}px`);
-const buttonsMarginTop = computed(() => `${8 - 8 * scrollProgress.value}px`);
-const descriptionOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 2));
-const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 - scrollProgress.value * 2))}px`);
+const fallbackGradient = computed(() => gradientClassFor(props.artistName));
 </script>
 
 <template>
   <div class="px-8 shrink-0 select-none flex flex-col pt-6 pb-0 h-auto justify-start border-b border-black/5 dark:border-white/5 relative z-20 w-full bg-transparent">
-    
-    <div v-if="isBatchMode" class="flex items-center justify-between mb-4 animate-in fade-in slide-in-from-top-1 duration-200">
-      <div class="flex items-center gap-3">
-        <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path v-if="isAllSelected" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /><template v-else><circle cx="12" cy="12" r="9" stroke-width="2" /></template></svg>
-          {{ isAllSelected ? '取消全选' : '全选' }}
-        </button>
-        <button @click="emit('addToPlaylist')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg> 收藏到歌单
-        </button>
-        <button @click="emit('batchDelete')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> 删除
-        </button>
-      </div>
-      <div class="flex items-center gap-4">
-        <button @click="emit('update:isBatchMode', false)" class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1 rounded transition">完成</button>
-      </div>
-    </div>
+    <ArtistBatchBar
+      v-if="isBatchMode"
+      :everything-picked="everythingPicked"
+      @toggle-all="emit('selectAll')"
+      @collect="emit('addToPlaylist')"
+      @remove="emit('batchDelete')"
+      @finish="emit('update:isBatchMode', false)"
+    />
 
-    <div v-else class="flex items-center gap-6 h-auto mt-2 mb-6">
-      <div 
-        @click="!readOnly ? handleAvatarClick : undefined"
-        :style="{ width: coverSize, height: coverSize }"
-        class="rounded-full shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border-4 border-white/50 dark:border-white/5"
-        :class="!readOnly ? 'cursor-pointer' : 'cursor-default'"
-      >
-        <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div>
-        <img v-else-if="displayedCover" :src="displayedCover" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="artistName" decoding="async" />
-        <div v-else class="w-full h-full flex items-center justify-center text-4xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300" :class="getGradientForArtist(artistName)">
-          {{ artistName.charAt(0).toUpperCase() }}
-        </div>
-        
-        <div v-if="writeProgress && !writeProgress.done" class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center text-white z-10 p-2 text-center select-none animate-in fade-in duration-200">
-          <svg class="animate-spin h-5 w-5 mb-1.5 text-white" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-          </svg>
-          <span class="text-[10px] font-semibold">同步标签中...</span>
-          <span class="text-[10px] opacity-80 mt-0.5 tabular-nums">{{ writeProgress.current }}/{{ writeProgress.total }}</span>
-        </div>
-        
-        <div 
-          v-else-if="!readOnly"
-          class="absolute inset-0 bg-black/50 opacity-0 flex flex-col items-center justify-center text-white transition-opacity duration-300 gap-1.5"
-          :class="isSavingAvatar ? 'hidden' : 'group-hover:opacity-100'"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-          <span class="text-xs font-semibold">修改头像</span>
-        </div>
-      </div>
-      
-      <div :style="{ height: columnHeight }" class="flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0">
-        <div :style="{ marginBottom: titleMarginBottom }">
-          <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight">
-            {{ artistName }}
-          </h1>
-        </div>
+    <ArtistHero
+      v-else
+      :artist-name="artistName"
+      :cover="shownCover"
+      :loading="resolving"
+      :gradient="fallbackGradient"
+      :editable="!readOnly"
+      :saving="avatarSaving"
+      :tag-task="tagTask"
+      :size="avatarSize"
+      :info-height="infoHeight"
+      :name-size="nameSize"
+      :name-line="nameLine"
+      :name-gap="nameGap"
+      :btn-gap="btnGap"
+      @pick="pickNewAvatar"
+      @play-all="emit('playAll')"
+      @manage="emit('update:isBatchMode', true)"
+    />
 
-        <div class="flex items-center gap-3" :style="{ marginTop: buttonsMarginTop }">
-           <button 
-             @click="handlePlayAll" 
-             class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-6 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-           >
-             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-               <path d="M9 5.5v13l10-6.5-10-6.5Z" />
-             </svg>
-             播放全部
-           </button>
-           
-           <button 
-             v-if="!readOnly"
-             @click="emit('update:isBatchMode', true)" 
-             title="批量操作" 
-             class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-           >
-             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-             </svg>
-             管理
-           </button>
-        </div>
-      </div>
-    </div>
+    <ArtistBioBox
+      v-if="bioText && !(readOnly && hasArtistDetail)"
+      :text="bioText"
+      :opacity="bioOpacity"
+      :max-height="bioMaxHeight"
+    />
 
-    <div
-      v-if="displayDescription && !(readOnly && hasArtistDetail)"
-      class="mb-5 px-1 -mt-1 overflow-hidden"
-      :style="{ opacity: descriptionOpacity, maxHeight: descriptionMaxHeight }"
-    >
-      <div class="text-[12.5px] leading-relaxed text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 max-w-3xl whitespace-pre-line break-words">
-        {{ displayDescription }}
-      </div>
-    </div>
+    <ArtistTabsNav
+      :active-tab="activeTab"
+      :read-only="readOnly"
+      :has-detail="hasArtistDetail"
+      :name-overrides="tabNameOverrides"
+      @activate="emit('update:activeTab', $event)"
+    />
 
-    <TransitionGroup 
-      name="tabs-list" 
-      tag="div" 
-      class="flex gap-8 text-[15px] font-medium mt-auto w-full select-none touch-none"
-    >
-      <div 
-        v-for="(tab, index) in visibleTabs" 
-        :key="tab.id"
-        class="relative flex items-center shrink-0"
-      >
-        <div 
-          v-if="isDragging && targetInsertIndex === index" 
-          class="absolute left-[-16px] w-[3px] h-5 bg-[#EC4141] rounded-full animate-pulse transition-all z-20 pointer-events-none"
-        ></div>
-
-        <button 
-          :data-artist-tab-id="tab.id"
-          class="pb-1.5 transition-all relative cursor-pointer select-none touch-none no-user-drag"
-          :class="[
-            activeTab === tab.id 
-              ? 'text-gray-900 dark:text-white font-bold' 
-              : 'text-black/60 dark:text-white/60 hover:text-black/90 dark:hover:text-white/90',
-            draggedTabId === tab.id ? 'opacity-60 scale-95 cursor-grabbing' : ''
-          ]"
-          @pointerdown="onPointerDown(tab.id, $event)"
-          @click="handleTabClick(tab.id)"
-        >
-          <span class="pointer-events-none">{{ props.tabNameOverrides?.[tab.id] || tab.name }}</span>
-          <div 
-            v-if="activeTab === tab.id" 
-            class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-[3px] bg-[#EC4141] rounded-t-full pointer-events-none"
-          ></div>
-        </button>
-
-        <div 
-          v-if="isDragging && targetInsertIndex === visibleTabs.length && index === visibleTabs.length - 1" 
-          class="absolute right-[-16px] w-[3px] h-5 bg-[#EC4141] rounded-full animate-pulse transition-all z-20 pointer-events-none"
-        ></div>
-      </div>
-    </TransitionGroup>
-
-    <Teleport to="body">
-      <div v-if="showWriteBackDialog" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none" @click.self="showWriteBackDialog = false">
-        <div class="bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-[360px] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-          <div class="px-6 pt-6 pb-2 text-center">
-            <h3 class="text-lg font-bold text-gray-800 dark:text-zinc-100">更新歌手头像</h3>
-          </div>
-          <div class="px-6 pb-6 text-center">
-            <p class="text-xs text-gray-500 dark:text-zinc-400 leading-relaxed">
-              您已开启了“同步写回标签”设置。<br />
-              您可以选择将新头像同步写入本地单歌手歌曲的标签中。<br />
-              <span class="text-amber-500 dark:text-amber-400 block mt-1">注意：多歌手合作、分轨 CUE、远程歌曲及只读文件将被自动跳过。</span>
-            </p>
-          </div>
-          <div class="flex flex-col border-t border-gray-100 dark:border-zinc-800">
-            <button 
-              @click="triggerAvatarSaveWithWriteBack" 
-              class="w-full py-3 text-sm text-[#EC4141] font-semibold hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors focus:outline-none border-b border-gray-100 dark:border-zinc-800"
-            >
-              保存并同步写回音频标签
-            </button>
-            <button 
-              @click="triggerAvatarSaveOnlyApp" 
-              class="w-full py-3 text-sm text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors focus:outline-none border-b border-gray-100 dark:border-zinc-800"
-            >
-              仅保存至软件（不修改文件）
-            </button>
-            <button 
-              @click="showWriteBackDialog = false" 
-              class="w-full py-3 text-sm text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors focus:outline-none"
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <AvatarWriteBackDialog
+      v-if="askWriteBack"
+      @write-back="confirmWriteBack"
+      @save-local="confirmAppOnly"
+      @close="askWriteBack = false"
+    />
   </div>
 </template>
-
-<style scoped>
-.tabs-list-move {
-  transition: transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-.no-user-drag {
-  -webkit-user-drag: none;
-  user-drag: none;
-}
-</style>

@@ -2,15 +2,26 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { storeToRefs } from 'pinia';
+
 import { usePlayer } from '../../features/playback';
+import { usePlaybackStore } from '../../features/playback/store';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useCoverCache } from '../../composables/useCoverCache';
-import { usePlaybackStore } from '../../features/playback/store';
 import { useWindowMaterial } from '../../composables/windowMaterial';
 import { getPreblurredBackgroundUrl } from '../../composables/preblurredBackgroundCache';
 import { useRenderingPower } from '../../composables/renderingPower';
 import { usePerformanceMode } from '../../composables/usePerformanceMode';
 import { calculateCoverGeometry } from '../../composables/useThemeBackgroundGeometry';
+
+import FlowSceneStage from './background/FlowSceneStage.vue';
+import BlurCoverPlate from './background/BlurCoverPlate.vue';
+import CustomMediaPlate from './background/CustomMediaPlate.vue';
+import { useFlowScene } from './background/useFlowScene';
+import { useFlowLayerStack } from './background/useFlowLayerStack';
+
+/* ------------------------------------------------------------------ */
+/* 依赖注入                                                            */
+/* ------------------------------------------------------------------ */
 
 const { currentCover, currentCoverFull, dominantColors, showPlayerDetail, isMiniMode } = usePlayer();
 const { theme, isDarkTheme, patchTheme } = useThemeSettings();
@@ -21,48 +32,143 @@ const { isLowPerformance } = usePerformanceMode();
 const playbackStore = usePlaybackStore();
 const { currentSongPath } = storeToRefs(playbackStore);
 
-// --- 大背景物理尺寸动态测量 ---
-const containerWidth = ref(window.innerWidth);
-const containerHeight = ref(window.innerHeight);
+const materialActive = computed(() => activeWindowMaterial.value !== 'none');
+const micaActive = computed(() => activeWindowMaterial.value === 'mica');
+const motionFrozen = computed(
+  () => showPlayerDetail.value || isMainWindowLowPower.value || isLowPerformance.value,
+);
 
-const updateContainerSize = () => {
-  const bgEl = document.querySelector('[data-global-background]');
-  if (bgEl) {
-    const rect = bgEl.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      containerWidth.value = rect.width;
-      containerHeight.value = rect.height;
+/* ------------------------------------------------------------------ */
+/* 容器物理尺寸测量                                                     */
+/* ------------------------------------------------------------------ */
+
+const viewport = ref({ width: window.innerWidth, height: window.innerHeight });
+
+const syncViewport = () => {
+  const stage = document.querySelector('[data-global-background]');
+  if (stage) {
+    const box = stage.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0) {
+      viewport.value = { width: box.width, height: box.height };
       return;
     }
   }
-  containerWidth.value = window.innerWidth;
-  containerHeight.value = window.innerHeight;
+  viewport.value = { width: window.innerWidth, height: window.innerHeight };
 };
 
-// --- 图片物理原始宽高元数据管理 ---
-const imageNaturalWidth = ref(theme.value.customBackground?.imageWidth || 0);
-const imageNaturalHeight = ref(theme.value.customBackground?.imageHeight || 0);
+watch(isMiniMode, async (mini, wasMini) => {
+  if (!wasMini || mini) return;
+  await nextTick();
+  syncViewport();
+  setTimeout(syncViewport, 100);
+});
 
-const loadImageMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
+onMounted(() => {
+  syncViewport();
+  window.addEventListener('resize', syncViewport);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncViewport);
+});
+
+/* ------------------------------------------------------------------ */
+/* 背景方案解析                                                        */
+/* ------------------------------------------------------------------ */
+
+type BackdropVariant = 'custom' | 'flow' | 'blur';
+
+interface BackdropPlan {
+  variant: BackdropVariant;
+  source: string;
+  mediaType: 'image' | 'video';
+  blur: number;
+  opacity: number;
+  maskColor?: string;
+  maskAlpha?: number;
+  scale: number;
+  translateX?: number;
+  translateY?: number;
+  animated: boolean;
+}
+
+const backdropPlan = computed<BackdropPlan | null>(() => {
+  const current = theme.value;
+  if (!current) return null;
+
+  const customPath = current.mode === 'custom' ? current.customBackground.imagePath : '';
+  if (customPath) {
+    const asVideo = current.customBackground.mediaType === 'video' || /\.mp4$/i.test(customPath);
+    const preset = current.customBackground;
+    return {
+      variant: 'custom',
+      source: customPath,
+      mediaType: asVideo ? 'video' : 'image',
+      blur: preset.blur,
+      opacity: preset.opacity,
+      maskColor: preset.maskColor,
+      maskAlpha: preset.maskAlpha,
+      scale: preset.scale,
+      translateX: preset.translateX,
+      translateY: preset.translateY,
+      animated: false,
+    };
+  }
+
+  if (current.dynamicBgType === 'flow') {
+    return { variant: 'flow', source: currentCover.value, mediaType: 'image', blur: 60, opacity: 0.9, scale: 1, animated: true };
+  }
+
+  if (current.dynamicBgType === 'blur') {
+    return {
+      variant: 'blur',
+      source: currentCoverFull.value || currentCover.value,
+      mediaType: 'image',
+      blur: 32,
+      opacity: 0.75,
+      scale: 1.25,
+      animated: false,
+    };
+  }
+
+  return null;
+});
+
+const isRemoteLike = (candidate: string) => candidate.startsWith('http') || candidate.startsWith('data:');
+
+const backdropSource = computed(() => {
+  const raw = backdropPlan.value?.source;
+  if (!raw) return '';
+  return isRemoteLike(raw) ? raw : convertFileSrc(raw);
+});
+
+/* ------------------------------------------------------------------ */
+/* 自定义媒体元数据                                                     */
+/* ------------------------------------------------------------------ */
+
+interface FrameSize { width: number; height: number }
+
+const imageFrame = ref<FrameSize>({
+  width: theme.value.customBackground?.imageWidth || 0,
+  height: theme.value.customBackground?.imageHeight || 0,
+});
+const videoFrame = ref<FrameSize>({ width: 0, height: 0 });
+
+const probeImageFrame = (src: string) => new Promise<FrameSize>((resolve, reject) => {
   const img = new Image();
-
-  const cleanup = () => {
+  const detach = () => {
     img.onload = null;
     img.onerror = null;
     img.src = '';
   };
-
   img.onload = () => {
-    const metadata = {
-      width: img.naturalWidth,
-      height: img.naturalHeight,
-    };
-    cleanup();
-    resolve(metadata);
+    const frame = { width: img.naturalWidth, height: img.naturalHeight };
+    detach();
+    resolve(frame);
   };
   img.onerror = () => {
-    cleanup();
-    reject(new Error('图片加载失败'));
+    detach();
+    reject(new Error('probe failed'));
   };
   img.src = src;
 });
@@ -71,869 +177,277 @@ watch(
   [
     () => theme.value.customBackground?.imagePath,
     () => theme.value.customBackground?.imageWidth,
-    () => theme.value.customBackground?.imageHeight
+    () => theme.value.customBackground?.imageHeight,
   ],
-  async ([path, w, h], _oldValue, onCleanup) => {
-    let isCancelled = false;
-    onCleanup(() => {
-      isCancelled = true;
-    });
+  async ([path, width, height], _prev, onCleanup) => {
+    let stale = false;
+    onCleanup(() => { stale = true; });
 
     if (!path) {
-      imageNaturalWidth.value = 0;
-      imageNaturalHeight.value = 0;
+      imageFrame.value = { width: 0, height: 0 };
       return;
     }
-
-    if (w && h) {
-      imageNaturalWidth.value = w;
-      imageNaturalHeight.value = h;
+    if (width && height) {
+      imageFrame.value = { width, height };
       return;
     }
 
     try {
-      const metadata = await loadImageMetadata(convertFileSrc(path));
-      if (isCancelled) return;
-
-      imageNaturalWidth.value = metadata.width;
-      imageNaturalHeight.value = metadata.height;
-      
+      const frame = await probeImageFrame(convertFileSrc(path));
+      if (stale) return;
+      imageFrame.value = frame;
       patchTheme({
         customBackground: {
           ...theme.value.customBackground,
-          imageWidth: metadata.width,
-          imageHeight: metadata.height
-        }
+          imageWidth: frame.width,
+          imageHeight: frame.height,
+        },
       });
     } catch (err) {
       console.error('Failed to load old custom theme background image size', err);
     }
   },
-  { immediate: true }
-);
-
-const hasWindowMaterial = computed(() => activeWindowMaterial.value !== 'none');
-
-// --- 视频背景物理尺寸与播放控制 ---
-const videoNaturalWidth = ref(0);
-const videoNaturalHeight = ref(0);
-const videoRef = ref<HTMLVideoElement | null>(null);
-const videoLoadFailed = ref(false);
-
-const loadVideoMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
-  const video = document.createElement('video');
-  video.preload = 'metadata';
-  video.muted = true;
-  video.playsInline = true;
-
-  const cleanup = () => {
-    video.onloadedmetadata = null;
-    video.onerror = null;
-    video.src = '';
-  };
-
-  video.onloadedmetadata = () => {
-    const metadata = {
-      width: video.videoWidth,
-      height: video.videoHeight,
-    };
-    cleanup();
-    resolve(metadata);
-  };
-  video.onerror = () => {
-    cleanup();
-    reject(new Error('视频加载失败'));
-  };
-  video.src = src;
-});
-
-const onVideoLoadedMetadata = () => {
-  const video = videoRef.value;
-  if (!video) return;
-  if (reduceDynamicEffects.value) {
-    video.pause();
-  } else if (video.paused) {
-    video.play().catch(() => {});
-  }
-};
-
-const onVideoError = () => {
-  videoLoadFailed.value = true;
-  const video = videoRef.value;
-  if (video) video.pause();
-};
-
-const isMicaWindowMaterial = computed(() => activeWindowMaterial.value === 'mica');
-const reduceDynamicEffects = computed(() => showPlayerDetail.value || isMainWindowLowPower.value || isLowPerformance.value);
-const flowFallbackPalette = ['hsl(220, 28%, 34%)', 'hsl(196, 58%, 56%)', 'hsl(340, 52%, 58%)', 'hsl(42, 72%, 60%)'];
-const FLOW_SCENE_TRANSITION_MS = 1180;
-
-interface FlowLayerSnapshot {
-  id: number;
-  signature: string;
-  state: 'entering' | 'current' | 'previous';
-  shellClass: string;
-  colors: string[];
-  baseStyle: {
-    opacity: number;
-    background: string;
-  };
-  blobOpacity: number;
-  noiseOpacity: number;
-  overlayClass: string;
-  overlayStyle: {
-    opacity: number;
-  };
-  motionStyle: Record<string, string>;
-  reduceDynamicEffects: boolean;
-}
-
-const activeBackgroundInfo = computed(() => {
-  const currentTheme = theme.value;
-  if (!currentTheme) return null;
-
-  if (currentTheme.mode === 'custom' && currentTheme.customBackground.imagePath) {
-    const imagePath = currentTheme.customBackground.imagePath;
-    const isVideo = currentTheme.customBackground.mediaType === 'video' || /\.mp4$/i.test(imagePath);
-    return {
-      src: imagePath,
-      mediaType: isVideo ? 'video' as const : 'image' as const,
-      blur: currentTheme.customBackground.blur,
-      opacity: currentTheme.customBackground.opacity,
-      maskColor: currentTheme.customBackground.maskColor,
-      maskAlpha: currentTheme.customBackground.maskAlpha,
-      scale: currentTheme.customBackground.scale,
-      translateX: currentTheme.customBackground.translateX,
-      translateY: currentTheme.customBackground.translateY,
-      isDynamic: false,
-      type: 'custom' as const,
-    };
-  }
-
-  if (currentTheme.dynamicBgType === 'flow') {
-    return {
-      src: currentCover.value,
-      blur: 60,
-      opacity: 0.9,
-      isDynamic: true,
-      type: 'flow' as const,
-    };
-  }
-
-  if (currentTheme.dynamicBgType === 'blur') {
-    return {
-      src: currentCoverFull.value || currentCover.value,
-      blur: 32,
-      opacity: 0.75,
-      scale: 1.25,
-      isDynamic: false,
-      type: 'blur' as const,
-    };
-  }
-
-  return null;
-});
-
-watch(
-  [() => activeBackgroundInfo.value?.type, () => activeBackgroundInfo.value?.mediaType, () => activeBackgroundInfo.value?.src],
-  async ([backgroundType, mediaType, src], _oldValue, onCleanup) => {
-    let isCancelled = false;
-    onCleanup(() => {
-      isCancelled = true;
-    });
-
-    if (backgroundType !== 'custom' || mediaType !== 'video' || !src) {
-      videoNaturalWidth.value = 0;
-      videoNaturalHeight.value = 0;
-      videoLoadFailed.value = false;
-      return;
-    }
-
-    const videoSrc = src.startsWith('http') || src.startsWith('data:') ? src : convertFileSrc(src);
-    videoLoadFailed.value = false;
-    try {
-      const metadata = await loadVideoMetadata(videoSrc);
-      if (isCancelled) return;
-      videoNaturalWidth.value = metadata.width;
-      videoNaturalHeight.value = metadata.height;
-      if (metadata.width && metadata.height) {
-        patchTheme({
-          customBackground: {
-            ...theme.value.customBackground,
-            imageWidth: metadata.width,
-            imageHeight: metadata.height,
-          },
-        });
-      }
-    } catch {
-      if (isCancelled) return;
-      videoLoadFailed.value = true;
-      videoNaturalWidth.value = 0;
-      videoNaturalHeight.value = 0;
-    }
-  },
   { immediate: true },
 );
 
 watch(
-  [() => activeBackgroundInfo.value?.type, () => activeBackgroundInfo.value?.mediaType, reduceDynamicEffects],
-  ([backgroundType, mediaType, reduced]) => {
-    const video = videoRef.value;
-    if (!video) return;
-    if (backgroundType !== 'custom' || mediaType !== 'video') {
-      video.pause();
-      return;
-    }
-    if (reduced) {
-      video.pause();
-    } else if (video.paused) {
-      video.play().catch(() => {});
-    }
-  },
-  { immediate: true },
+  [() => backdropPlan.value?.variant, () => backdropPlan.value?.mediaType, () => backdropPlan.value?.source],
+  () => { videoFrame.value = { width: 0, height: 0 }; },
 );
 
-const bgImageSrc = computed(() => {
-  if (!activeBackgroundInfo.value?.src) return '';
+const absorbVideoFrame = (frame: FrameSize) => {
+  videoFrame.value = frame;
+  if (!(frame.width && frame.height)) return;
+  patchTheme({
+    customBackground: {
+      ...theme.value.customBackground,
+      imageWidth: frame.width,
+      imageHeight: frame.height,
+    },
+  });
+};
 
-  if (
-    activeBackgroundInfo.value.src.startsWith('http') ||
-    activeBackgroundInfo.value.src.startsWith('data:')
-  ) {
-    return activeBackgroundInfo.value.src;
-  }
+const discardVideoFrame = () => {
+  videoFrame.value = { width: 0, height: 0 };
+};
 
-  return convertFileSrc(activeBackgroundInfo.value.src);
-});
+/* ------------------------------------------------------------------ */
+/* 流光场景                                                            */
+/* ------------------------------------------------------------------ */
 
-const dynamicShellClass = computed(() => {
-  if (isMicaWindowMaterial.value) return 'bg-white/40 dark:bg-black/8';
-  if (hasWindowMaterial.value) return 'bg-white/60 dark:bg-black/25';
+const flowEngaged = computed(() => backdropPlan.value?.variant === 'flow');
+
+const shellTone = computed(() => {
+  if (micaActive.value) return 'bg-white/40 dark:bg-black/8';
+  if (materialActive.value) return 'bg-white/60 dark:bg-black/25';
   return 'bg-white dark:bg-[#262626]';
 });
 
-const flowColorBoostFactor = computed(() => theme.value.flowColorBoost / 100);
-const flowDepthFactor = computed(() => theme.value.flowDepth / 100);
-const flowSpeedFactor = computed(() => theme.value.flowSpeed / 100);
-const flowTextureFactor = computed(() => theme.value.flowTexture / 100);
-
-const resolvedFlowColors = computed(() => {
-  const colors = dominantColors.value.filter(color => color && color !== 'transparent');
-  return colors.length >= 3 ? colors : flowFallbackPalette;
-});
-
-const dynamicBaseOpacity = computed(() => {
-  const baseOpacity = 0.36 + flowColorBoostFactor.value * 0.15 - flowDepthFactor.value * 0.05;
-  return isMicaWindowMaterial.value ? Math.max(0.14, baseOpacity * 0.36) : Math.max(0.34, baseOpacity);
-});
-
-const dynamicBlobOpacity = computed(() => {
-  const blobOpacity = 0.45 + flowColorBoostFactor.value * 0.18;
-  return isMicaWindowMaterial.value ? Math.max(0.18, blobOpacity * 0.34) : Math.min(0.86, blobOpacity);
-});
-
-const dynamicNoiseOpacity = computed(() => {
-  const noiseOpacity = 0.004 + flowTextureFactor.value * 0.022;
-  return isMicaWindowMaterial.value ? noiseOpacity * 0.55 : noiseOpacity;
-});
-
-const flowMotionStyle = computed(() => {
-  const speedFactor = flowSpeedFactor.value;
-  const duration1 = 18 - speedFactor * 8;
-  const duration2 = 22 - speedFactor * 9;
-  const duration3 = 26 - speedFactor * 10;
-
-  return {
-    '--mesh-duration-1': `${duration1.toFixed(2)}s`,
-    '--mesh-duration-2': `${duration2.toFixed(2)}s`,
-    '--mesh-duration-3': `${duration3.toFixed(2)}s`,
-  };
-});
-
-const dynamicBaseStyle = computed(() => {
-  const [base, accent, edge, glow] = resolvedFlowColors.value;
-  const depthFactor = flowDepthFactor.value;
-
-  return {
-    opacity: dynamicBaseOpacity.value,
-    background: [
-      `radial-gradient(circle at 18% 18%, ${accent} 0%, transparent ${38 + depthFactor * 8}%)`,
-      `radial-gradient(circle at 82% 78%, ${glow || edge || base} 0%, transparent ${42 + depthFactor * 10}%)`,
-      `linear-gradient(135deg, ${base} 0%, ${edge || accent || base} 100%)`,
-    ].join(', '),
-  };
-});
-
-const dynamicOverlayClass = computed(() => {
-  if (isMicaWindowMaterial.value) return 'bg-white/[0.02] dark:bg-black/[0.08]';
-  if (hasWindowMaterial.value) return 'bg-white/[0.02] dark:bg-black/[0.16]';
+const overlayTone = computed(() => {
+  if (micaActive.value) return 'bg-white/[0.02] dark:bg-black/[0.08]';
+  if (materialActive.value) return 'bg-white/[0.02] dark:bg-black/[0.16]';
   return 'bg-white/[0.03] dark:bg-black/[0.22]';
 });
 
-const dynamicOverlayStyle = computed(() => {
-  const overlayOpacity = 0.91 + flowDepthFactor.value * 0.26 - flowColorBoostFactor.value * 0.08;
-  return { opacity: Math.min(1.1, Math.max(0.80, overlayOpacity)) };
+const { scene: flowScene, sceneSignature: flowSceneSignature } = useFlowScene({
+  flowEngaged,
+  themeSettings: theme,
+  coverPalette: dominantColors,
+  windowMaterial: activeWindowMaterial,
+  motionFrozen,
+  shellTone,
+  overlayTone,
 });
 
-const flowSceneSignature = computed(() => {
-  if (activeBackgroundInfo.value?.type !== 'flow') return null;
-  return JSON.stringify({
-    shellClass: dynamicShellClass.value,
-    reduceDynamicEffects: reduceDynamicEffects.value,
-  });
-});
+const { layers: flowLayers } = useFlowLayerStack(flowScene, flowSceneSignature);
 
-const flowScene = computed(() => {
-  if (activeBackgroundInfo.value?.type !== 'flow') {
-    return null;
-  }
+/* ------------------------------------------------------------------ */
+/* 模糊封面取全图与预模糊                                               */
+/* ------------------------------------------------------------------ */
 
-  const colors = [...resolvedFlowColors.value];
-  const baseStyle = { ...dynamicBaseStyle.value };
-  const overlayStyle = { ...dynamicOverlayStyle.value };
-  const motionStyle = { ...flowMotionStyle.value };
-
-  return {
-    signature: flowSceneSignature.value!,
-    shellClass: dynamicShellClass.value,
-    colors,
-    baseStyle,
-    blobOpacity: dynamicBlobOpacity.value,
-    noiseOpacity: dynamicNoiseOpacity.value,
-    overlayClass: dynamicOverlayClass.value,
-    overlayStyle,
-    motionStyle,
-    reduceDynamicEffects: reduceDynamicEffects.value,
-  };
-});
-
-const flowLayers = ref<FlowLayerSnapshot[]>([]);
-const preblurredStaticBgSrc = ref('');
-const isStaticBgPreblurred = ref(false);
-
-let flowLayerId = 0;
-let flowTransitionTimer: ReturnType<typeof setTimeout> | null = null;
-let flowEnterAnimationFrame: number | null = null;
-let fullCoverRequestId = 0;
-let preblurRequestId = 0;
-
-function clearFlowTransitionTimer() {
-  if (flowTransitionTimer) {
-    clearTimeout(flowTransitionTimer);
-    flowTransitionTimer = null;
-  }
-}
-
-function clearFlowEnterAnimationFrame() {
-  if (flowEnterAnimationFrame !== null) {
-    cancelAnimationFrame(flowEnterAnimationFrame);
-    flowEnterAnimationFrame = null;
-  }
-}
-
-function buildFlowLayerSnapshot(scene: NonNullable<typeof flowScene.value>): FlowLayerSnapshot {
-  return {
-    id: ++flowLayerId,
-    signature: scene.signature,
-    state: 'entering',
-    shellClass: scene.shellClass,
-    colors: scene.colors,
-    baseStyle: scene.baseStyle,
-    blobOpacity: scene.blobOpacity,
-    noiseOpacity: scene.noiseOpacity,
-    overlayClass: scene.overlayClass,
-    overlayStyle: scene.overlayStyle,
-    motionStyle: scene.motionStyle,
-    reduceDynamicEffects: scene.reduceDynamicEffects,
-  };
-}
-
-watch(flowSceneSignature, (newSig) => {
-  if (!newSig) {
-    clearFlowTransitionTimer();
-    clearFlowEnterAnimationFrame();
-    flowLayers.value = [];
-    return;
-  }
-
-  const nextScene = flowScene.value!;
-  const currentLayer = flowLayers.value.find(layer => layer.state === 'current');
-  if (!currentLayer) {
-    const initialLayer = buildFlowLayerSnapshot(nextScene);
-    flowLayers.value = [initialLayer];
-    void nextTick(() => {
-      clearFlowEnterAnimationFrame();
-      flowEnterAnimationFrame = requestAnimationFrame(() => {
-        flowLayers.value = flowLayers.value.map(layer => (
-          layer.id === initialLayer.id
-            ? { ...layer, state: 'current' }
-            : layer
-        ));
-        flowEnterAnimationFrame = null;
-      });
-    });
-    return;
-  }
-
-  const nextLayer = buildFlowLayerSnapshot(nextScene);
-  flowLayers.value = [
-    { ...currentLayer, state: 'previous' },
-    nextLayer,
-  ];
-
-  void nextTick(() => {
-    clearFlowEnterAnimationFrame();
-    flowEnterAnimationFrame = requestAnimationFrame(() => {
-      flowLayers.value = flowLayers.value.map(layer => (
-        layer.id === nextLayer.id
-          ? { ...layer, state: 'current' }
-          : layer
-      ));
-      flowEnterAnimationFrame = null;
-    });
-  });
-
-  clearFlowTransitionTimer();
-  flowTransitionTimer = setTimeout(() => {
-    flowLayers.value = flowLayers.value.filter(layer => layer.state === 'current');
-    flowTransitionTimer = null;
-  }, FLOW_SCENE_TRANSITION_MS);
-}, { immediate: true });
-
+let coverFetchTicket = 0;
 watch(
-  [resolvedFlowColors, dynamicBaseStyle, dynamicBlobOpacity, dynamicNoiseOpacity, dynamicOverlayClass, dynamicOverlayStyle, flowMotionStyle],
-  () => {
-    const nextScene = flowScene.value;
-    if (!nextScene) return;
-    flowLayers.value = flowLayers.value.map(layer =>
-      layer.state === 'current'
-        ? {
-            ...layer,
-            colors: nextScene.colors,
-            baseStyle: nextScene.baseStyle,
-            blobOpacity: nextScene.blobOpacity,
-            noiseOpacity: nextScene.noiseOpacity,
-            overlayClass: nextScene.overlayClass,
-            overlayStyle: nextScene.overlayStyle,
-            motionStyle: nextScene.motionStyle,
-          }
-        : layer,
-    );
-  },
-);
-
-watch(
-  [() => activeBackgroundInfo.value?.type, currentSongPath],
-  async ([backgroundType, path]) => {
-    if (backgroundType !== 'blur' || !path) {
-      fullCoverRequestId += 1;
+  [() => backdropPlan.value?.variant, currentSongPath],
+  async ([variant, path]) => {
+    if (variant !== 'blur' || !path) {
+      coverFetchTicket += 1;
       return;
     }
-
-    const requestId = ++fullCoverRequestId;
-
+    const ticket = ++coverFetchTicket;
     try {
-      const fullCoverUrl = await loadFullCover(path);
-      if (
-        requestId !== fullCoverRequestId
-        || currentSongPath.value !== path
-        || activeBackgroundInfo.value?.type !== 'blur'
-      ) {
-        return;
-      }
-
-      playbackStore.currentCoverFull = fullCoverUrl || playbackStore.currentCover;
+      const fetched = await loadFullCover(path);
+      if (ticket !== coverFetchTicket || currentSongPath.value !== path || backdropPlan.value?.variant !== 'blur') return;
+      playbackStore.currentCoverFull = fetched || playbackStore.currentCover;
     } catch {
-      if (
-        requestId !== fullCoverRequestId
-        || currentSongPath.value !== path
-        || activeBackgroundInfo.value?.type !== 'blur'
-      ) {
-        return;
-      }
-
+      if (ticket !== coverFetchTicket || currentSongPath.value !== path || backdropPlan.value?.variant !== 'blur') return;
       playbackStore.currentCoverFull = playbackStore.currentCover;
     }
   },
   { immediate: true },
 );
 
-const staticBlurAmount = computed(() => {
-  const info = activeBackgroundInfo.value;
-  if (info?.type !== 'blur') {
-    return 0;
-  }
-
-  return isMicaWindowMaterial.value ? Math.min(info.blur, 26) : info.blur;
+const plateBlur = computed(() => {
+  const plan = backdropPlan.value;
+  if (plan?.variant !== 'blur') return 0;
+  return micaActive.value ? Math.min(plan.blur, 26) : plan.blur;
 });
 
-const staticBrightness = computed(() => {
-  const info = activeBackgroundInfo.value;
-  return info?.type === 'blur' ? info.opacity : 1;
+const plateBrightness = computed(() => {
+  const plan = backdropPlan.value;
+  return plan?.variant === 'blur' ? plan.opacity : 1;
 });
+
+const preblurredPlate = ref('');
+const platePreblurred = ref(false);
+let preblurTicket = 0;
 
 watch(
-  [() => activeBackgroundInfo.value?.type, bgImageSrc, staticBlurAmount, staticBrightness],
-  async ([backgroundType, src, blur, brightness]) => {
-    const requestId = ++preblurRequestId;
-    preblurredStaticBgSrc.value = '';
-    isStaticBgPreblurred.value = false;
+  [() => backdropPlan.value?.variant, backdropSource, plateBlur, plateBrightness],
+  async ([variant, source, blur, brightness]) => {
+    const ticket = ++preblurTicket;
+    preblurredPlate.value = '';
+    platePreblurred.value = false;
+    if (variant !== 'blur' || !source) return;
 
-    if (backgroundType !== 'blur' || !src) {
-      return;
-    }
+    const boosted = await getPreblurredBackgroundUrl(source, { blur, brightness });
+    if (ticket !== preblurTicket || backdropPlan.value?.variant !== 'blur' || backdropSource.value !== source) return;
 
-    const preblurredUrl = await getPreblurredBackgroundUrl(src, {
-      blur,
-      brightness,
-    });
-
-    if (
-      requestId !== preblurRequestId
-      || activeBackgroundInfo.value?.type !== 'blur'
-      || bgImageSrc.value !== src
-    ) {
-      return;
-    }
-
-    preblurredStaticBgSrc.value = preblurredUrl;
-    isStaticBgPreblurred.value = preblurredUrl !== src;
+    preblurredPlate.value = boosted;
+    platePreblurred.value = boosted !== source;
   },
   { immediate: true },
 );
 
-let miniModeResizeTimer: ReturnType<typeof setTimeout> | null = null;
+/* ------------------------------------------------------------------ */
+/* 材质遮罩 / 模糊底板外观                                              */
+/* ------------------------------------------------------------------ */
 
-watch(isMiniMode, async (mini, prevMini) => {
-  if (prevMini && !mini) {
-    await nextTick();
-    updateContainerSize();
-    miniModeResizeTimer = setTimeout(() => {
-      updateContainerSize();
-      miniModeResizeTimer = null;
-    }, 100);
-  }
-});
-
-onMounted(() => {
-  updateContainerSize();
-  window.addEventListener('resize', updateContainerSize);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateContainerSize);
-  clearFlowTransitionTimer();
-  clearFlowEnterAnimationFrame();
-  fullCoverRequestId += 1;
-  preblurRequestId += 1;
-  if (miniModeResizeTimer) {
-    clearTimeout(miniModeResizeTimer);
-    miniModeResizeTimer = null;
-  }
-});
-
-const staticMaskClass = computed(() => {
-  if (isMicaWindowMaterial.value) return 'bg-white/40 dark:bg-black/35';
-  return 'bg-white/50 dark:bg-black/50';
-});
-
-const staticImageOpacity = computed(() => (isMicaWindowMaterial.value ? 0.35 : 1));
-
-const materialScrimStyle = computed(() => {
-  if (!hasWindowMaterial.value) {
-    return null;
-  }
-
+const scrimStyle = computed(() => {
+  if (!materialActive.value) return null;
   if (isDarkTheme.value) {
     return {
-      backgroundColor: isMicaWindowMaterial.value ? 'rgba(32, 32, 32, 0.42)' : 'rgba(28, 28, 28, 0.34)',
+      backgroundColor: micaActive.value ? 'rgba(32, 32, 32, 0.42)' : 'rgba(28, 28, 28, 0.34)',
     };
   }
-
   return {
-    backgroundColor: isMicaWindowMaterial.value ? 'rgba(248, 249, 251, 0.62)' : 'rgba(250, 250, 252, 0.5)',
+    backgroundColor: micaActive.value ? 'rgba(248, 249, 251, 0.62)' : 'rgba(250, 250, 252, 0.5)',
   };
 });
 
-const customBgGeometry = computed(() => {
-  if (activeBackgroundInfo.value?.type !== 'custom') return null;
-  const isVideo = activeBackgroundInfo.value.mediaType === 'video';
-  const natW = isVideo ? videoNaturalWidth.value : imageNaturalWidth.value;
-  const natH = isVideo ? videoNaturalHeight.value : imageNaturalHeight.value;
-  return calculateCoverGeometry(containerWidth.value, containerHeight.value, natW, natH);
+const plateMaskClass = computed(() => (
+  micaActive.value ? 'bg-white/40 dark:bg-black/35' : 'bg-white/50 dark:bg-black/50'
+));
+
+const plateImageOpacity = computed(() => (micaActive.value ? 0.35 : 1));
+
+/* ------------------------------------------------------------------ */
+/* 自定义媒体几何                                                      */
+/* ------------------------------------------------------------------ */
+
+const coverGeometry = computed(() => {
+  const plan = backdropPlan.value;
+  if (plan?.variant !== 'custom') return null;
+  const [nativeW, nativeH] = plan.mediaType === 'video'
+    ? [videoFrame.value.width, videoFrame.value.height]
+    : [imageFrame.value.width, imageFrame.value.height];
+  return calculateCoverGeometry(viewport.value.width, viewport.value.height, nativeW, nativeH);
 });
 
-const customBgTransform = computed(() => {
-  const info = activeBackgroundInfo.value;
-  if (!info || info.type !== 'custom') {
-    return { tx: 0, ty: 0, scale: 1.0 };
-  }
-
-  const blurComp = Math.min(0.08, (info.blur || 0) * 0.002);
-  const renderScale = (info.scale || 1.0) + blurComp;
-  const tx = (info.translateX || 0) * containerWidth.value;
-  const ty = (info.translateY || 0) * containerHeight.value;
-
+const coverTransform = computed(() => {
+  const plan = backdropPlan.value;
+  if (!plan || plan.variant !== 'custom') return { tx: 0, ty: 0, scale: 1 };
+  const blurAllowance = Math.min(0.08, (plan.blur || 0) * 0.002);
   return {
-    tx,
-    ty,
-    scale: renderScale
+    tx: (plan.translateX || 0) * viewport.value.width,
+    ty: (plan.translateY || 0) * viewport.value.height,
+    scale: (plan.scale || 1.0) + blurAllowance,
   };
 });
+
+/* ------------------------------------------------------------------ */
+/* 根节点外观                                                          */
+/* ------------------------------------------------------------------ */
+
+const rootTone = computed(() => {
+  if (theme.value?.mode === 'custom') return 'bg-black';
+  return materialActive.value ? 'bg-transparent' : 'bg-[#fafafa] dark:bg-[#262626]';
+});
+
+const rootClassList = computed(() => [
+  rootTone.value,
+  isMainWindowLowPower.value ? 'global-background--low-power' : '',
+]);
+
+const flowStageVisible = computed(() => flowEngaged.value && flowLayers.value.length > 0);
+const blurPlateVisible = computed(() => backdropPlan.value?.variant === 'blur' && !!backdropSource.value);
+const customMediaVisible = computed(() => backdropPlan.value?.variant === 'custom' && !!backdropSource.value);
 </script>
 
 <template>
   <div
     data-global-background
-    class="fixed inset-0 z-0 overflow-hidden pointer-events-none transition-colors duration-500"
-    :class="[
-      theme?.mode === 'custom'
-        ? 'bg-black'
-        : hasWindowMaterial
-          ? 'bg-transparent'
-          : 'bg-[#fafafa] dark:bg-[#262626]',
-      isMainWindowLowPower ? 'global-background--low-power' : '',
-    ]"
+    class="pointer-events-none fixed inset-0 z-0 overflow-hidden transition-colors duration-500"
+    :class="rootClassList"
   >
     <div
-      v-if="hasWindowMaterial"
+      v-if="materialActive"
       class="absolute inset-0 z-[1] transition-colors duration-500"
-      :style="materialScrimStyle"
+      :style="scrimStyle"
     ></div>
 
     <transition name="fade">
-      <div
-        v-if="activeBackgroundInfo?.isDynamic && flowLayers.length > 0"
-        class="absolute inset-0 overflow-hidden"
-      >
-        <div
-          v-for="layer in flowLayers"
-          :key="layer.id"
-          class="flow-layer absolute inset-0 overflow-hidden"
-          :class="[
-            layer.shellClass,
-            layer.state === 'previous'
-              ? 'flow-layer-previous'
-              : layer.state === 'entering'
-                ? 'flow-layer-entering'
-                : 'flow-layer-current',
-          ]"
-          :style="layer.motionStyle"
-        >
-          <div
-            class="absolute inset-0 transition-colors duration-[1500ms]"
-            :style="layer.baseStyle"
-          ></div>
-
-          <div
-            v-if="!layer.reduceDynamicEffects"
-            class="absolute inset-0 filter blur-[120px]"
-            :style="{ opacity: layer.blobOpacity }"
-          >
-            <div
-              class="absolute top-[-10%] left-[-10%] h-[60%] w-[60%] rounded-full mix-blend-multiply transition-colors duration-[1500ms] dark:mix-blend-screen animate-mesh-1"
-              :style="{ backgroundColor: layer.colors[1] }"
-            ></div>
-            <div
-              class="absolute bottom-[-10%] right-[-10%] h-[60%] w-[60%] rounded-full mix-blend-multiply transition-colors duration-[1500ms] dark:mix-blend-screen animate-mesh-2"
-              :style="{ backgroundColor: layer.colors[2] || layer.colors[0] }"
-            ></div>
-            <div
-              class="absolute top-[20%] right-[-10%] h-[70%] w-[70%] rounded-full mix-blend-multiply transition-colors duration-[1500ms] dark:mix-blend-screen animate-mesh-3"
-              :style="{ backgroundColor: layer.colors[3] || layer.colors[1] }"
-            ></div>
-          </div>
-
-          <div
-            v-if="!layer.reduceDynamicEffects"
-            class="absolute inset-0 z-10 bg-noise pointer-events-none"
-            :style="{ opacity: layer.noiseOpacity }"
-          ></div>
-
-          <div
-            class="absolute inset-0 z-20"
-            :class="layer.overlayClass"
-            :style="layer.overlayStyle"
-          ></div>
-        </div>
-      </div>
+      <FlowSceneStage v-if="flowStageVisible" :layers="flowLayers" />
     </transition>
 
     <transition name="fade-fast">
-      <div
-        v-if="activeBackgroundInfo?.type === 'blur' && bgImageSrc"
-        :key="bgImageSrc"
-        class="absolute inset-0"
-      >
-        <div class="absolute inset-0 z-10 transition-colors duration-500" :class="staticMaskClass"></div>
-        <img
-          :src="preblurredStaticBgSrc || bgImageSrc"
-          class="w-full h-full object-cover transition-opacity duration-1000 z-0"
-          :style="{
-            filter: isStaticBgPreblurred ? 'none' : `blur(${staticBlurAmount}px) brightness(${staticBrightness})`,
-            transform: `scale(${activeBackgroundInfo.scale})`,
-            opacity: staticImageOpacity,
-          }"
-          referrerpolicy="no-referrer"
-        />
-      </div>
+      <BlurCoverPlate
+        v-if="blurPlateVisible"
+        :key="backdropSource"
+        :raw-source="backdropSource"
+        :preblurred-source="preblurredPlate"
+        :is-preblurred="platePreblurred"
+        :blur-amount="plateBlur"
+        :brightness="plateBrightness"
+        :plate-scale="backdropPlan?.scale ?? 1"
+        :plate-opacity="plateImageOpacity"
+        :mask-class="plateMaskClass"
+      />
     </transition>
 
     <transition name="fade">
-      <div v-if="activeBackgroundInfo?.type === 'custom' && bgImageSrc" class="absolute inset-0 global-background-container overflow-hidden">
-        <div
-          v-if="activeBackgroundInfo.maskAlpha !== undefined && activeBackgroundInfo.maskAlpha > 0"
-          class="absolute inset-0 z-10 transition-all duration-300 pointer-events-none"
-          :style="{
-            backgroundColor: activeBackgroundInfo.maskColor || '#000000',
-            opacity: activeBackgroundInfo.maskAlpha,
-          }"
-        ></div>
-
-        <div
-          v-if="customBgGeometry"
-          class="absolute"
-          :style="{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            width: `${customBgGeometry.width}px`,
-            height: `${customBgGeometry.height}px`,
-            transform: 'translate(-50%, -50%)',
-          }"
-        >
-          <video
-          v-if="activeBackgroundInfo.mediaType === 'video'"
-          ref="videoRef"
-          :src="bgImageSrc"
-          muted
-          loop
-          playsinline
-          autoplay
-          preload="auto"
-          @loadedmetadata="onVideoLoadedMetadata"
-          @error="onVideoError"
-          class="absolute block max-w-none max-h-none select-none pointer-events-none"
-          :class="{ 'global-background-video-hidden': videoLoadFailed }"
-          :style="{
-            left: '25%',
-            top: '25%',
-            width: '50%',
-            height: '50%',
-            transformOrigin: 'center center',
-            transform: `translate3d(${customBgTransform.tx}px, ${customBgTransform.ty}px, 0) scale(${customBgTransform.scale}) scale(2)`,
-            filter: activeBackgroundInfo.blur ? `blur(${activeBackgroundInfo.blur / 2}px)` : 'none',
-            opacity: activeBackgroundInfo.opacity ?? 1.0,
-          }"
-        ></video>
-          <img
-            v-else
-            :src="bgImageSrc"
-            class="absolute block max-w-none max-h-none select-none pointer-events-none transition-all duration-700"
-            :style="{
-              width: '100%',
-              height: '100%',
-              transform: `translate3d(${customBgTransform.tx}px, ${customBgTransform.ty}px, 0) scale(${customBgTransform.scale})`,
-              transformOrigin: 'center center',
-              filter: `blur(${activeBackgroundInfo.blur}px)`,
-              opacity: activeBackgroundInfo.opacity ?? 1.0,
-            }"
-          />
-        </div>
-      </div>
+      <CustomMediaPlate
+        v-if="customMediaVisible"
+        :source="backdropSource"
+        :media-type="backdropPlan?.mediaType ?? 'image'"
+        :blur="backdropPlan?.blur ?? 0"
+        :opacity="backdropPlan?.opacity"
+        :mask-color="backdropPlan?.maskColor"
+        :mask-alpha="backdropPlan?.maskAlpha"
+        :geometry="coverGeometry"
+        :transform="coverTransform"
+        :motion-frozen="motionFrozen"
+        @video-measured="absorbVideoFrame"
+        @video-broken="discardVideoFrame"
+      />
     </transition>
 
     <div
-      v-if="!activeBackgroundInfo"
+      v-if="!backdropPlan"
       class="absolute inset-0 transition-colors duration-300"
-      :class="hasWindowMaterial ? 'bg-transparent' : 'bg-white dark:bg-[#262626]'"
+      :class="materialActive ? 'bg-transparent' : 'bg-white dark:bg-[#262626]'"
     ></div>
   </div>
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 1s ease;
-}
+.fade-enter-active, .fade-leave-active { transition: opacity 1s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+.fade-fast-enter-active, .fade-fast-leave-active { transition: opacity 0.5s ease; }
+.fade-fast-enter-from, .fade-fast-leave-to { opacity: 0; }
 
-.fade-fast-enter-active,
-.fade-fast-leave-active {
-  transition: opacity 0.5s ease;
-}
-
-.fade-fast-enter-from,
-.fade-fast-leave-to {
-  opacity: 0;
-}
-
-.flow-layer {
-  will-change: opacity, transform;
-  transition:
-    opacity 920ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 920ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.flow-layer-current {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.flow-layer-entering {
-  opacity: 0;
-  transform: scale(1.028);
-}
-
-.flow-layer-previous {
-  opacity: 0;
-  transform: scale(1.048);
-}
-
-.bg-noise {
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3%3Ffilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/feTurbulence%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-}
-
-@keyframes mesh-1 {
-  0% { transform: translate(-20%, 15%) scale(1) rotate(0deg); }
-  25% { transform: translate(30%, -10%) scale(1.1) rotate(90deg); }
-  50% { transform: translate(-15%, -25%) scale(0.9) rotate(180deg); }
-  75% { transform: translate(25%, 20%) scale(1.05) rotate(270deg); }
-  100% { transform: translate(-20%, 15%) scale(1) rotate(360deg); }
-}
-
-@keyframes mesh-2 {
-  0% { transform: translate(25%, -20%) scale(1.1) rotate(0deg); }
-  25% { transform: translate(-30%, -15%) scale(0.9) rotate(-90deg); }
-  50% { transform: translate(20%, 25%) scale(1.2) rotate(-180deg); }
-  75% { transform: translate(-25%, 10%) scale(1) rotate(-270deg); }
-  100% { transform: translate(25%, -20%) scale(1.1) rotate(-360deg); }
-}
-
-@keyframes mesh-3 {
-  0% { transform: translate(10%, 30%) scale(0.9) rotate(0deg); }
-  25% { transform: translate(-25%, -20%) scale(1.2) rotate(90deg); }
-  50% { transform: translate(30%, 15%) scale(1) rotate(180deg); }
-  75% { transform: translate(-15%, -30%) scale(1.1) rotate(270deg); }
-  100% { transform: translate(10%, 30%) scale(0.9) rotate(360deg); }
-}
-
-.animate-mesh-1 { animation: mesh-1 var(--mesh-duration-1, 14s) ease-in-out infinite; }
-.animate-mesh-2 { animation: mesh-2 var(--mesh-duration-2, 18s) ease-in-out infinite; }
-.animate-mesh-3 { animation: mesh-3 var(--mesh-duration-3, 22s) ease-in-out infinite; }
-
-.global-background--low-power,
-.global-background--low-power * {
+.global-background--low-power, .global-background--low-power :deep(*) {
   animation-play-state: paused !important;
-  transition: none !important;
-  will-change: auto !important;
-}
-
-.global-background-video-hidden {
-  display: none !important;
+  transition: none !important; will-change: auto !important;
 }
 </style>

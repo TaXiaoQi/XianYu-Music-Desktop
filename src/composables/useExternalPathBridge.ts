@@ -1,38 +1,64 @@
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onMounted, onUnmounted, ref } from 'vue';
+
 import { appApi } from '../services/tauri/appApi';
 import { importPluginScriptsFromPaths } from '../services/domain/pluginImport';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
 import { useUiStore } from '../shared/stores/ui';
+
 import { modalDragInterceptActive } from './dragState';
 
 type ExternalPathSource = 'drop' | 'open';
 
-const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+/** 仅识别带 URL scheme 的远程样式地址（如 https://、asset://），其余视为本地文件。 */
+const REMOTE_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 
-const PLUGIN_SCRIPT_RE = /\.(js|json)$/i;
+/** 插件脚本/清单的后缀形态（与拖放路径的宽松判断保持一致语义）。 */
+const PLUGIN_SUFFIX_PATTERN = /\.(js|json)$/i;
 
-interface UseExternalPathBridgeOptions {
+interface ExternalPathBridgeContract {
   handleExternalPaths: (paths: string[], options?: { source?: ExternalPathSource }) => Promise<void>;
   beforeWindowShow?: () => Promise<unknown>;
   afterWindowShow?: () => Promise<unknown> | void;
 }
 
-interface StartupWindow {
+interface RevealWindowHandle {
   show: () => Promise<unknown>;
   setFocus: () => Promise<unknown>;
 }
 
-interface StartupWindowHooks {
+interface RevealWindowHooks {
   beforeShow?: () => Promise<unknown>;
   afterShow?: () => Promise<unknown> | void;
 }
 
+const trimValue = (value: string) => (value || '').trim();
+
+const looksRemote = (value: string) => REMOTE_SCHEME_PATTERN.test(trimValue(value));
+
+const namesPluginEntry = (value: string) => PLUGIN_SUFFIX_PATTERN.test(trimValue(value));
+
+/** 拖放场景不 trim，直接按小写后缀判断是否为纯插件拖入。 */
+const dropNamesPluginEntry = (value: string) => {
+  const lowered = value.toLowerCase();
+  return lowered.endsWith('.js') || lowered.endsWith('.json');
+};
+
+function splitLocalEntries(paths: string[]) {
+  const pluginScripts = paths.filter(p => namesPluginEntry(p));
+  const audioPaths = paths.filter(p => !namesPluginEntry(p));
+  return { pluginScripts, audioPaths };
+}
+
+/**
+ * 启动揭示的标准动作序列：先跑 beforeShow（铺底），
+ * 再显示并聚焦窗口，最后执行 afterShow（收遮罩）。
+ */
 export async function showMainWindowAfterStartup(
-  appWindow: StartupWindow,
-  hooks: StartupWindowHooks = {},
+  appWindow: RevealWindowHandle,
+  hooks: RevealWindowHooks = {},
 ) {
   await hooks.beforeShow?.();
   await appWindow.show();
@@ -40,99 +66,109 @@ export async function showMainWindowAfterStartup(
   await hooks.afterShow?.();
 }
 
-export function useExternalPathBridge({
-  handleExternalPaths,
-  beforeWindowShow,
-  afterWindowShow,
-}: UseExternalPathBridgeOptions) {
+export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract) {
+  const { handleExternalPaths, beforeWindowShow, afterWindowShow } = bridgeOptions;
+
   const playbackStore = usePlaybackStore();
   const settingsStore = useSettingsStore();
   const uiStore = useUiStore();
-  const isExternalDragActive = ref(false);
-  let externalPathTask: Promise<void> = Promise.resolve();
-  let unlistenDragDrop: (() => void) | null = null;
-  let unlistenDragOver: (() => void) | null = null;
-  let unlistenDragLeave: (() => void) | null = null;
-  let unlistenOpenPaths: (() => void) | null = null;
 
-  const enqueueExternalPaths = (paths: string[], source: ExternalPathSource) => {
-    externalPathTask = externalPathTask
+  const dragActive = ref(false);
+
+  let pathTaskChain: Promise<void> = Promise.resolve();
+  const detachFns: Array<() => void> = [];
+
+  /** 外部路径处理必须串行，后到的批次排在前一批完成之后。 */
+  const queueExternalPaths = (paths: string[], source: ExternalPathSource) => {
+    pathTaskChain = pathTaskChain
       .then(() => handleExternalPaths(paths, { source }))
       .catch((error) => {
         console.error('Failed to process external paths:', error);
       });
-
-    return externalPathTask;
+    return pathTaskChain;
   };
 
-  const consumePendingOpenPaths = async (options: { startup?: boolean } = {}) => {
+  /** 消费后端攒下的待打开路径：本地插件脚本走导入，音频走统一入队。 */
+  const drainPendingOpenPaths = async (run: { startup?: boolean } = {}) => {
     try {
-      const paths = await appApi.consumePendingOpenPaths();
-      const localPaths = paths.filter((p) => !URL_SCHEME_RE.test((p || '').trim()));
+      const incoming = await appApi.consumePendingOpenPaths();
+      const localPaths = incoming.filter(p => !looksRemote(p));
       if (localPaths.length > 0) {
-        const pluginScripts = localPaths.filter((p) => PLUGIN_SCRIPT_RE.test((p || '').trim()));
-        const audioPaths = localPaths.filter((p) => !PLUGIN_SCRIPT_RE.test((p || '').trim()));
+        const { pluginScripts, audioPaths } = splitLocalEntries(localPaths);
         if (pluginScripts.length > 0) {
           await importPluginScriptsFromPaths(pluginScripts);
         }
         if (audioPaths.length > 0) {
-          if (options.startup) {
+          if (run.startup) {
             playbackStore.markExternalStartupFile();
           }
-          await enqueueExternalPaths(audioPaths, 'open');
+          await queueExternalPaths(audioPaths, 'open');
         }
       }
     } catch (error) {
       console.error('Failed to consume pending open paths:', error);
     } finally {
-      if (options.startup) {
+      if (run.startup) {
         playbackStore.markStartupPathsResolved();
       }
     }
   };
 
-  onMounted(async () => {
-    unlistenDragDrop = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
-      isExternalDragActive.value = false;
-      if (modalDragInterceptActive.value) return;
-      const paths = event.payload?.paths ?? [];
-      if (paths.length > 0 && paths.every(p => {
-        const lower = p.toLowerCase();
-        return lower.endsWith('.js') || lower.endsWith('.json');
-      })) {
-        return;
-      }
-      await enqueueExternalPaths(paths, 'drop');
-    });
+  const bindDragAndOpenListeners = async () => {
+    detachFns.push(
+      await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
+        dragActive.value = false;
+        if (modalDragInterceptActive.value) return;
+        const paths = event.payload?.paths ?? [];
+        if (paths.length > 0 && paths.every(dropNamesPluginEntry)) {
+          return;
+        }
+        await queueExternalPaths(paths, 'drop');
+      }),
+    );
 
-    unlistenDragOver = await listen('tauri://drag-over', () => {
-      if (modalDragInterceptActive.value) return;
-      isExternalDragActive.value = true;
-    });
+    detachFns.push(
+      await listen('tauri://drag-over', () => {
+        if (modalDragInterceptActive.value) return;
+        dragActive.value = true;
+      }),
+    );
 
-    unlistenDragLeave = await listen('tauri://drag-leave', () => {
-      isExternalDragActive.value = false;
-    });
+    detachFns.push(
+      await listen('tauri://drag-leave', () => {
+        dragActive.value = false;
+      }),
+    );
 
-    unlistenOpenPaths = await listen('app:open-paths', async () => {
-      await consumePendingOpenPaths();
-    });
+    detachFns.push(
+      await listen('app:open-paths', async () => {
+        await drainPendingOpenPaths();
+      }),
+    );
+  };
 
-    await consumePendingOpenPaths({ startup: true });
-
-    // 开机自启且用户勾选了「启动时最小化到托盘」：不显示主窗口，改走托盘睡眠路径。
-    // 直接置 uiStore.mainWindowUiSleepRequested，复用 App.vue 里 enterTraySleep 的同一套簿记
-    // （渲染快照 + 缓存释放由 App.vue 的 watch 处理，不会因绕过 show() 而漏掉）。
+  /** 开机自启且勾选「启动时最小化到托盘」时不亮主窗，转交 App.vue 的托盘睡眠簿记。 */
+  const maybeEnterTraySleepOnStartup = async () => {
     const launchedAtStartup = await appApi.wasLaunchedAtStartup().catch(() => false);
     if (launchedAtStartup && settingsStore.settings.launchOnStartupMinimized) {
       uiStore.mainWindowUiSleepRequested = true;
       await getCurrentWindow().hide();
+      return true;
+    }
+    return false;
+  };
+
+  onMounted(async () => {
+    await bindDragAndOpenListeners();
+
+    await drainPendingOpenPaths({ startup: true });
+
+    if (await maybeEnterTraySleepOnStartup()) {
       return;
     }
 
     try {
-      const appWindow = getCurrentWindow();
-      await showMainWindowAfterStartup(appWindow, {
+      await showMainWindowAfterStartup(getCurrentWindow(), {
         beforeShow: beforeWindowShow,
         afterShow: afterWindowShow,
       });
@@ -142,13 +178,10 @@ export function useExternalPathBridge({
   });
 
   onUnmounted(() => {
-    unlistenDragDrop?.();
-    unlistenDragOver?.();
-    unlistenDragLeave?.();
-    unlistenOpenPaths?.();
+    detachFns.forEach(detach => detach());
   });
 
   return {
-    isExternalDragActive,
+    isExternalDragActive: dragActive,
   };
 }
