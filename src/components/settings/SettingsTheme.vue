@@ -72,7 +72,7 @@ const TEXT = computed(() => isEnglish.value ? {
   leaderboardTitle: 'Home Leaderboard',
   leaderboardEnable: 'Show the listening leaderboard on Home',
   leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.',
-  switchStyleTitle: 'Switch Style',
+  switchStyleTitle: 'Style',
   useGlassSwitch: 'Liquid Glass Switches',
   useGlassSwitchHint: 'Enable translucent glassmorphic refraction and sheen sweep for switches. Turn this off to use classic flat style.',
 } : {
@@ -133,7 +133,7 @@ const TEXT = computed(() => isEnglish.value ? {
   leaderboardTitle: '首页排行榜',
   leaderboardEnable: '是否在首页展示听歌排行榜',
   leaderboardHint: '关闭后首页将不再显示听歌排行榜。',
-  switchStyleTitle: '开关样式',
+  switchStyleTitle: '样式',
   useGlassSwitch: '液态玻璃按钮效果',
   useGlassSwitchHint: '开启后全软件开关呈现晶莹透光玻璃折射与流光动画；关闭后切回经典极简风格。',
 });
