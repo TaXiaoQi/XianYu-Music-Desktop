@@ -1,4 +1,19 @@
 const exactEnglishTranslations: Record<string, string> = {
+  // 音源插件管理脚本内文案（src/components/settings/SettingsPlugins.vue）
+  // 模板静态文字由 staticCoverage.test.ts 强制覆盖；这批是 <script> 里的三元标签、
+  // toast 和传给子组件的提示文案，测试只遍历模板 AST，所以长期漏翻。
+  '全部启用': 'Enable all',
+  '全部禁用': 'Disable all',
+  '查看密码': 'Show password',
+  '隐藏密码': 'Hide password',
+  '请选择删除范围': 'Select deletion scope',
+  '该插件暂无云端副本，此选项不可用': 'No cloud copy for this plugin yet; this option is unavailable',
+  'anime 格式': 'Anime format',
+  '订阅链接需为公网 http/https 链接且以 .js 或 .json 结尾': 'Subscription URLs must be public http/https links ending in .js or .json',
+  '禁止访问内网或非法协议，仅支持公网 http/https 链接': 'Private network addresses and invalid protocols are blocked; only public http/https links are allowed',
+  '云端删除失败，请检查网络后重试': 'Cloud deletion failed. Check your network and try again',
+  '云端删除失败，其他设备可能仍会同步到该插件': 'Cloud deletion failed; other devices may still sync this plugin',
+  '支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容；请仅使用信任的来源。': 'Install JS plugins from a local file or URL; plugins can then fetch online music, playlists, lyrics, and more. Only use sources you trust.',
   // 睡眠定时（src/components/settings/SettingsSleepTimer.vue 与 src/features/sleepTimer）
   '睡眠定时': 'Sleep timer',
   '到点或一段时间没有操作后，自动暂停播放；也可以退出应用或隐藏到托盘。': 'Pause playback at the set time, or after a period without input; can also exit the app or hide to the tray.',
@@ -51,6 +66,14 @@ const exactEnglishTranslations: Record<string, string> = {
 // 多边形流光背景的流动速度滑块（标签「流动速度」复用既有英译）
 '数值越大流动越快，0 为静止': 'Higher values drift faster; 0 freezes the drift',
   // 云端歌单源端更新弹窗（SyncDeleteScopeModal / 歌单更新确认）
+  // 删除范围选项与兜底提示都写在 {{ }} 插值表达式里，staticCoverage 只认裸 TEXT 节点，
+  // 所以这一批一直没被它拦住。
+  '本机、云端、其他设备一起删除': 'Delete locally, in cloud, and on other devices',
+  '仅删除本机，云端与其他设备保留': 'Delete locally only; keep cloud and other devices',
+  '删除本地（云端保留）': 'Delete locally (keep in cloud)',
+  '云端与其他设备删除，本机保留': 'Delete in cloud and on other devices; keep locally',
+  '仅保留本地': 'Keep local only',
+  '该歌单暂无云端副本，此选项不可用': 'No cloud copy for this playlist yet; this option is unavailable',
   '仅添加新歌曲': 'Add new songs only',
   '从源端更新歌单': 'Update playlist from source',
   '保留本机现有歌曲不变': 'Keep existing local songs unchanged',
