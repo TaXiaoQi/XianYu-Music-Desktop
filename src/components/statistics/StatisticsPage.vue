@@ -6,6 +6,7 @@
  */
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
+import { Calendar, Clock, Database, Disc3, Headphones, Music, Play, TrendingUp } from 'lucide-vue-next';
 
 import { useStatisticsStore, type TimeRangeType } from '../../features/statistics/store';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
@@ -20,8 +21,9 @@ import { recentDayOfMonth } from './statsCharts';
 
 const { t, isEnglish } = useI18n();
 
-// 与设置页一致的卡片样式
-const CARD_CLASS = 'rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10';
+// 首页卡片：参考稿的玻璃拟态卡。这里刻意新起一个类名，不复用设置页共用的行样式
+// （rounded-2xl border-gray-200/40 bg-white/20 …），两处观感互不牵制。
+const HOME_CARD_CLASS = 'rounded-xl border border-white/20 bg-white/40 p-4 backdrop-blur-md transition-transform duration-300 ease-out hover:scale-[1.02] dark:bg-white/5';
 const ACCENT = '#EC4141';
 const HIRES_COLOR = '#F0A020';
 const OTHER_COLOR = '#9CA3AF';
@@ -221,7 +223,7 @@ const compositionTotal = computed(() => stats.value?.total_songs ?? 0);
         <!-- 时间范围切换：常驻，数据卡片 loading 时不跟着闪烁 -->
         <div class="mb-3 flex items-center justify-between gap-3">
           <div
-            class="inline-flex rounded-xl border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10"
+            class="inline-flex rounded-xl border border-white/20 bg-white/40 p-0.5 backdrop-blur-md dark:bg-white/5"
             role="group"
             :aria-label="t('stats.rangeLabel')"
           >
@@ -262,70 +264,124 @@ const compositionTotal = computed(() => stats.value?.total_songs ?? 0);
           class="space-y-4 transition-opacity"
           :class="rangeLoading ? 'pointer-events-none opacity-50 animate-pulse' : ''"
         >
-          <!-- 概览卡 -->
+          <!-- 概览卡：每卡一枚淡色图标方块（配色 blue / indigo / violet / purple），右下角另有装饰图标 hover 提亮 -->
           <section class="grid grid-cols-2 gap-3 md:grid-cols-4 animate-fade-in-up">
-            <div :class="CARD_CLASS">
-              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.listenDuration') }}</p>
-              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ formatStatisticsDuration(listenDisplay.total) }}</p>
+            <div :class="HOME_CARD_CLASS" class="group relative overflow-hidden">
+              <Headphones
+                aria-hidden="true"
+                class="pointer-events-none absolute -right-2 -bottom-2 h-14 w-14 text-blue-500 opacity-30 transition-opacity duration-300 group-hover:opacity-100 dark:text-blue-400 dark:opacity-20 dark:group-hover:opacity-50"
+                stroke-width="1.5"
+              />
+              <div class="relative flex items-start gap-3">
+                <div class="shrink-0 rounded-lg bg-blue-500/10 p-2 text-blue-500 dark:bg-blue-500/15 dark:text-blue-400">
+                  <Clock class="h-5 w-5" stroke-width="1.5" />
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.listenDuration') }}</p>
+                  <p class="mt-1 text-xl font-bold tracking-tight text-gray-900 dark:text-white">{{ formatStatisticsDuration(listenDisplay.total) }}</p>
+                </div>
+              </div>
             </div>
-            <div :class="CARD_CLASS">
-              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.playCount') }}</p>
-              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ behaviorStats.total_plays }}</p>
+            <div :class="HOME_CARD_CLASS" class="group relative overflow-hidden">
+              <Music
+                aria-hidden="true"
+                class="pointer-events-none absolute -right-2 -bottom-2 h-14 w-14 text-indigo-500 opacity-30 transition-opacity duration-300 group-hover:opacity-100 dark:text-indigo-400 dark:opacity-20 dark:group-hover:opacity-50"
+                stroke-width="1.5"
+              />
+              <div class="relative flex items-start gap-3">
+                <div class="shrink-0 rounded-lg bg-indigo-500/10 p-2 text-indigo-500 dark:bg-indigo-500/15 dark:text-indigo-400">
+                  <Play class="h-5 w-5" stroke-width="1.5" />
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.playCount') }}</p>
+                  <p class="mt-1 text-xl font-bold tracking-tight text-gray-900 dark:text-white">{{ behaviorStats.total_plays }}</p>
+                </div>
+              </div>
             </div>
-            <div :class="CARD_CLASS">
-              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.todayDuration') }}</p>
-              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ formatStatisticsDuration(listenDisplay.daily) }}</p>
-              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('stats.weekDuration') }} · {{ formatStatisticsDuration(listenDisplay.weekly) }}</p>
+            <div :class="HOME_CARD_CLASS" class="group relative overflow-hidden">
+              <TrendingUp
+                aria-hidden="true"
+                class="pointer-events-none absolute -right-2 -bottom-2 h-14 w-14 text-violet-500 opacity-30 transition-opacity duration-300 group-hover:opacity-100 dark:text-violet-400 dark:opacity-20 dark:group-hover:opacity-50"
+                stroke-width="1.5"
+              />
+              <div class="relative flex items-start gap-3">
+                <div class="shrink-0 rounded-lg bg-violet-500/10 p-2 text-violet-500 dark:bg-violet-500/15 dark:text-violet-400">
+                  <Calendar class="h-5 w-5" stroke-width="1.5" />
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.todayDuration') }}</p>
+                  <p class="mt-1 text-xl font-bold tracking-tight text-gray-900 dark:text-white">{{ formatStatisticsDuration(listenDisplay.daily) }}</p>
+                  <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('stats.weekDuration') }} · {{ formatStatisticsDuration(listenDisplay.weekly) }}</p>
+                </div>
+              </div>
             </div>
-            <div :class="CARD_CLASS">
-              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.libraryScale') }}</p>
-              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ t('stats.songCount', { count: stats.total_songs }) }}</p>
-              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('stats.losslessRatio') }} · {{ losslessRatio }}%</p>
+            <div :class="HOME_CARD_CLASS" class="group relative overflow-hidden">
+              <Disc3
+                aria-hidden="true"
+                class="pointer-events-none absolute -right-2 -bottom-2 h-14 w-14 text-purple-500 opacity-30 transition-opacity duration-300 group-hover:opacity-100 dark:text-purple-400 dark:opacity-20 dark:group-hover:opacity-50"
+                stroke-width="1.5"
+              />
+              <div class="relative flex items-start gap-3">
+                <div class="shrink-0 rounded-lg bg-purple-500/10 p-2 text-purple-500 dark:bg-purple-500/15 dark:text-purple-400">
+                  <Database class="h-5 w-5" stroke-width="1.5" />
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.libraryScale') }}</p>
+                  <p class="mt-1 text-xl font-bold tracking-tight text-gray-900 dark:text-white">{{ t('stats.songCount', { count: stats.total_songs }) }}</p>
+                  <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('stats.losslessRatio') }} · {{ losslessRatio }}%</p>
+                </div>
+              </div>
             </div>
           </section>
 
-          <!-- 近 7 天趋势 -->
-          <section :class="CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 60ms;">
-            <div class="mb-3 flex items-center justify-between gap-3">
-              <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.trendTitle') }}</h3>
-              <span class="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">{{ formatStatisticsDuration(trendTotal) }}</span>
-            </div>
-            <StatsTrendChart
-              :values="trendValues"
-              :labels="trendLabels"
-              :accent="ACCENT"
-              :empty-hint="t('stats.trendEmpty')"
-              :format-value="formatStatisticsDuration"
-            />
-          </section>
+          <!-- 近 7 天趋势（动画挂在外层，卡片自身保留 hover 缩放） -->
+          <div class="animate-fade-in-up" style="animation-delay: 60ms;">
+            <section :class="HOME_CARD_CLASS">
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <h3 class="text-lg font-bold italic text-gray-800 dark:text-gray-200">{{ t('stats.trendTitle') }}</h3>
+                <span class="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">{{ formatStatisticsDuration(trendTotal) }}</span>
+              </div>
+              <StatsTrendChart
+                :values="trendValues"
+                :labels="trendLabels"
+                :accent="ACCENT"
+                :empty-hint="t('stats.trendEmpty')"
+                :format-value="formatStatisticsDuration"
+              />
+            </section>
+          </div>
 
           <!-- 24 小时分布 -->
-          <section :class="CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 120ms;">
-            <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.hourTitle') }}</h3>
-            <StatsHourChart :values="hourValues" />
-          </section>
+          <div class="animate-fade-in-up" style="animation-delay: 120ms;">
+            <section :class="HOME_CARD_CLASS">
+              <h3 class="mb-3 text-lg font-bold italic text-gray-800 dark:text-gray-200">{{ t('stats.hourTitle') }}</h3>
+              <StatsHourChart :values="hourValues" />
+            </section>
+          </div>
 
           <!-- Top 榜 -->
           <section class="grid grid-cols-1 gap-3 md:grid-cols-3 animate-fade-in-up" style="animation-delay: 180ms;">
-            <div :class="CARD_CLASS">
-              <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.topSongs') }}</h3>
+            <div :class="HOME_CARD_CLASS">
+              <h3 class="mb-3 text-lg font-bold italic text-gray-800 dark:text-gray-200">{{ t('stats.topSongs') }}</h3>
               <StatsTopBars :items="topSongs" :accent="ACCENT" :empty-hint="t('stats.topEmpty')" />
             </div>
-            <div :class="CARD_CLASS">
-              <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.topArtists') }}</h3>
+            <div :class="HOME_CARD_CLASS">
+              <h3 class="mb-3 text-lg font-bold italic text-gray-800 dark:text-gray-200">{{ t('stats.topArtists') }}</h3>
               <StatsTopBars :items="topArtists" :accent="ACCENT" :empty-hint="t('stats.topEmpty')" />
             </div>
-            <div :class="CARD_CLASS">
-              <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.topAlbums') }}</h3>
+            <div :class="HOME_CARD_CLASS">
+              <h3 class="mb-3 text-lg font-bold italic text-gray-800 dark:text-gray-200">{{ t('stats.topAlbums') }}</h3>
               <StatsTopBars :items="topAlbums" :accent="ACCENT" :empty-hint="t('stats.topEmpty')" />
             </div>
           </section>
 
           <!-- 曲库构成 -->
-          <section :class="CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 240ms;">
-            <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.compositionTitle') }}</h3>
-            <StatsCompositionRing :segments="compositionSegments" :total="compositionTotal" />
-          </section>
+          <div class="animate-fade-in-up" style="animation-delay: 240ms;">
+            <section :class="HOME_CARD_CLASS">
+              <h3 class="mb-3 text-lg font-bold italic text-gray-800 dark:text-gray-200">{{ t('stats.compositionTitle') }}</h3>
+              <StatsCompositionRing :segments="compositionSegments" :total="compositionTotal" />
+            </section>
+          </div>
         </div>
       </div>
     </div>
