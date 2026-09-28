@@ -27,7 +27,7 @@ import { CircleCheck, Download } from 'lucide-vue-next';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
-import { getSongSourceLabel } from '../../utils/remoteSong';
+import { getSongSourceTag } from '../../utils/remoteSong';
 
 /**
  * 歌曲表格主组件
@@ -1091,9 +1091,12 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
           <div class="w-16 flex shrink-0 items-center justify-center">
             <span
               v-if="isStreamSong(song) && !(downloadCompletedAsLocal && savedStreamPaths.has(song.path))"
-              class="max-w-full truncate rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
-              :title="getSongSourceLabel(song)"
-            >{{ getSongSourceLabel(song) }}</span>
+              class="max-w-full truncate rounded-full border px-1.5 py-[1px] text-[10px] font-bold"
+              :class="getSongSourceTag(song).brand
+                ? 'border-[#E6A23C]/30 bg-[#E6A23C]/15 text-[#E6A23C]'
+                : 'border-[#EC4141]/20 bg-[#EC4141]/10 text-[#EC4141]'"
+              :title="getSongSourceTag(song).label"
+            >{{ getSongSourceTag(song).label }}</span>
             <span
               v-else
               class="whitespace-nowrap rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"

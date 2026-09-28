@@ -370,7 +370,8 @@ watch(() => props.currentTime, (value) => {
   overflow: hidden;
   color: rgba(255, 255, 255, 0.95);
   mix-blend-mode: plus-lighter;
-  line-height: 1.2em;
+  font-weight: 700;
+  line-height: 1.35em;
   font-size: calc(max(max(5vh, 2.5vw), 12px) * var(--lyrics-font-scale, 1));
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
   user-select: none;
@@ -391,7 +392,7 @@ watch(() => props.currentTime, (value) => {
   left: 0;
   width: 100%;
   box-sizing: border-box;
-  padding: 0.5em 1em;
+  padding: 0.35em 1em;
   border-radius: 0.25em;
   text-align: var(--lyrics-text-align, left);
   backface-visibility: hidden;
@@ -427,15 +428,11 @@ watch(() => props.currentTime, (value) => {
   align-items: center;
   vertical-align: top;
   will-change: transform;
-  transition: transform 0.25s ease;
 }
 
-:deep(.wlp-word--glow) {
-  transform: scale(1.05);
-}
-
+/* 唱毕词的余晖辉光（对齐移动端 Shadow α0.35 / blur10，按字号等比换算） */
 :deep(.wlp-word--glow .wlp-word__text) {
-  text-shadow: 0 0 0.35em rgba(255, 255, 255, 0.75);
+  text-shadow: 0 0 0.36em rgba(255, 255, 255, 0.35);
 }
 
 :deep(.wlp-word__text) {
@@ -453,13 +450,18 @@ watch(() => props.currentTime, (value) => {
 /* ---------- 副行（罗马音 / 翻译） ---------- */
 
 :deep(.wlp-line__sub) {
-  font-size: max(0.5em, 10px);
-  line-height: 1.5em;
-  margin-top: 0.1em;
+  font-size: max(0.62em, 10px);
+  line-height: 1.35em;
+  margin-top: 0.2em;
+  font-weight: 500;
   white-space: pre-wrap;
 }
 
-/* 子行明暗由遮罩表达（未唱 .3、已唱全亮），进度由内核逐帧写进 --xy-sub-line-progress。
+:deep(.wlp-line__sub--roman) {
+  line-height: 1.2em;
+}
+
+/* 子行明暗由遮罩表达（未唱 .34、已唱全亮），进度由内核逐帧写进 --xy-sub-line-progress。
    遮罩挂在文本包裹层上：inline-block 使其宽度恰好等于文本宽度，扫光因此正好覆盖文本、
    与主行逐字高光同时结束，翻译比整行短也不会提前扫完。 */
 :deep(.wlp-line__sub-text) {
@@ -467,12 +469,12 @@ watch(() => props.currentTime, (value) => {
   -webkit-mask-image: linear-gradient(
     90deg,
     #000 var(--xy-sub-line-progress, 0%),
-    rgba(0, 0, 0, 0.3) var(--xy-sub-line-progress, 0%)
+    rgba(0, 0, 0, 0.34) var(--xy-sub-line-progress, 0%)
   );
   mask-image: linear-gradient(
     90deg,
     #000 var(--xy-sub-line-progress, 0%),
-    rgba(0, 0, 0, 0.3) var(--xy-sub-line-progress, 0%)
+    rgba(0, 0, 0, 0.34) var(--xy-sub-line-progress, 0%)
   );
 }
 
