@@ -12,6 +12,7 @@ const SERVER_SNAPSHOT_KEY = 'listen_stats_server_snapshot';
 
 interface ReportBaseline extends ListenDurations {
   date: string;
+  reported_at: number;
 }
 
 export interface ListenServerSnapshot {
@@ -31,11 +32,17 @@ function loadBaseline(): ReportBaseline {
     if (raw) {
       const j = JSON.parse(raw) as ReportBaseline;
       if (typeof j.date === 'string' && typeof j.total === 'number') {
-        return { total: j.total, daily: j.daily ?? 0, weekly: j.weekly ?? 0, date: j.date };
+        return {
+          total: j.total,
+          daily: j.daily ?? 0,
+          weekly: j.weekly ?? 0,
+          date: j.date,
+          reported_at: typeof j.reported_at === 'number' ? j.reported_at : 0,
+        };
       }
     }
   } catch { /* 损坏时重建 */ }
-  return { total: 0, daily: 0, weekly: 0, date: todayStr() };
+  return { total: 0, daily: 0, weekly: 0, date: todayStr(), reported_at: 0 };
 }
 
 function saveBaseline(b: ReportBaseline): void {
@@ -111,7 +118,22 @@ async function reportListenDelta(
       baseline.daily = 0;
       baseline.weekly = 0;
     }
-    const delta = pendingDelta(durations, baseline);
+    let delta = pendingDelta(durations, baseline);
+
+    // 防全量重报护栏：baseline 丢失/重置时 delta 会等于本地全部历史累计。
+    // 单次上报物理上限 = 自上次成功上报以来的墙钟时间 × 3 + 10 分钟（倍速与
+    // 时钟误差余量；首次无时间戳给 2 小时兜底），超限截断——宁可少报，绝不重报。
+    const elapsedSecs = baseline.reported_at > 0
+      ? Math.max(0, Math.floor((Date.now() - baseline.reported_at) / 1000))
+      : -1;
+    const maxDelta = elapsedSecs >= 0 ? elapsedSecs * 3 + 600 : 7200;
+    if (delta.total > maxDelta) {
+      delta = {
+        total: maxDelta,
+        daily: Math.min(delta.daily, maxDelta),
+        weekly: Math.min(delta.weekly, maxDelta),
+      };
+    }
 
     const data = await signedRequest<{
       reset_at?: string;
@@ -127,6 +149,7 @@ async function reportListenDelta(
         delta_daily_duration: Math.floor(delta.daily),
         delta_songs: uniqueSongsCount,
         duration: Math.floor(durations.total),
+        elapsed_secs: elapsedSecs,
       },
       {
         fetchTimeoutMs: 8_000,
@@ -138,12 +161,23 @@ async function reportListenDelta(
       return { reset_at: data.reset_at };
     }
 
-    baseline.total = durations.total;
-    baseline.daily = durations.daily;
-    baseline.weekly = durations.weekly;
+    // 响应回执对账：服务端确认量 = 回执总量 − 上次快照总量，两方对上账才推进
+    // baseline；服务端截断/异常时只推进确认部分，剩余留本地追报
+    const prevTotal = loadServerSnapshot()?.total ?? 0;
+    const respTotal = Math.max(0, Math.floor(data?.server_total_duration ?? 0));
+    const serverDelta = respTotal - prevTotal;
+    const confirmedTotal = serverDelta >= 0 && serverDelta < Math.floor(delta.total)
+      ? serverDelta
+      : Math.floor(delta.total);
+    const confirmedDaily = Math.min(Math.floor(delta.daily), confirmedTotal);
+    const confirmedWeekly = Math.min(Math.floor(delta.weekly), confirmedTotal);
+    baseline.total = baseline.total + confirmedTotal;
+    baseline.daily = baseline.daily + confirmedDaily;
+    baseline.weekly = baseline.weekly + confirmedWeekly;
+    baseline.reported_at = Date.now();
     saveBaseline(baseline);
     saveServerSnapshot({
-      total: Math.max(0, Math.floor(data?.server_total_duration ?? 0)),
+      total: respTotal,
       daily: Math.max(0, Math.floor(data?.server_daily_duration ?? 0)),
       weekly: Math.max(0, Math.floor(data?.server_weekly_duration ?? 0)),
     });
@@ -159,7 +193,7 @@ async function handleResetSignal(resetAt: string): Promise<void> {
   try {
     await statisticsApi.resetLocalStatistics();
     localStorage.setItem(RESET_AT_KEY, resetAt);
-    saveBaseline({ total: 0, daily: 0, weekly: 0, date: todayStr() });
+    saveBaseline({ total: 0, daily: 0, weekly: 0, date: todayStr(), reported_at: 0 });
     saveServerSnapshot({ total: 0, daily: 0, weekly: 0 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
