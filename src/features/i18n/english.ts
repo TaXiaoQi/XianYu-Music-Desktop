@@ -1148,6 +1148,7 @@ const exactEnglishTranslations: Record<string, string> = {
   '上次同步:': 'Last synced:',
   '下次同步：': 'Next sync:',
   '批量同步多个来源': 'Sync multiple sources',
+  '付费订阅来源': 'Paid subscription source',
   '从其他软件导入': 'Import from another app',
   '从 BakaMusic、MusicFree 或洛雪音乐导入歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。': 'Import playlists from BakaMusic, MusicFree, or LX Music. Songs are imported when a compatible plugin is installed.',
   '应用备份': 'App Backup',
