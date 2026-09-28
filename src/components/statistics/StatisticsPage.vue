@@ -24,7 +24,8 @@ const { t, isEnglish } = useI18n();
 
 // 首页卡片有两套观感，由设置「样式」里的 useGlassSwitch 决定：
 // - 玻璃（true）：参考稿的玻璃拟态卡（淡色图标方块 + 装饰角标 + hover 缩放）
-// - 经典扁平（false）：改造前的朴素卡片，逐字保留原字符串，等价于 3110e0da^ 版本
+// - 经典扁平（false）：改造前的朴素卡片；下面数据块里有一整段 v-else-if 分支
+//   逐字还原 3110e0da^ 的标记（不只是类名字符串一致——外壳/图标/动画位置都还原）
 const HOME_CARD_CLASS = 'rounded-xl border border-white/20 bg-white/40 p-4 backdrop-blur-md transition-transform duration-300 ease-out hover:scale-[1.02] dark:bg-white/5';
 const FLAT_CARD_CLASS = 'rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10';
 
@@ -270,8 +271,9 @@ const compositionTotal = computed(() => stats.value?.total_songs ?? 0);
           </button>
         </div>
 
+        <!-- 玻璃模式：3110e0da 的观感（淡色图标方块 + 装饰角标 + 斜体标题 + hover 缩放） -->
         <div
-          v-else-if="stats && behaviorStats"
+          v-else-if="stats && behaviorStats && isGlass"
           class="space-y-4 transition-opacity"
           :class="rangeLoading ? 'pointer-events-none opacity-50 animate-pulse' : ''"
         >
@@ -397,6 +399,78 @@ const compositionTotal = computed(() => stats.value?.total_songs ?? 0);
               <StatsCompositionRing :segments="compositionSegments" :total="compositionTotal" />
             </section>
           </div>
+        </div>
+
+        <!-- 经典扁平模式：逐字还原 3110e0da^ 的统计页（朴素卡片；不放图标方块、不放动画外层壳） -->
+        <div
+          v-else-if="stats && behaviorStats"
+          class="space-y-4 transition-opacity"
+          :class="rangeLoading ? 'pointer-events-none opacity-50 animate-pulse' : ''"
+        >
+          <!-- 概览卡 -->
+          <section class="grid grid-cols-2 gap-3 md:grid-cols-4 animate-fade-in-up">
+            <div :class="FLAT_CARD_CLASS">
+              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.listenDuration') }}</p>
+              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ formatStatisticsDuration(listenDisplay.total) }}</p>
+            </div>
+            <div :class="FLAT_CARD_CLASS">
+              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.playCount') }}</p>
+              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ behaviorStats.total_plays }}</p>
+            </div>
+            <div :class="FLAT_CARD_CLASS">
+              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.todayDuration') }}</p>
+              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ formatStatisticsDuration(listenDisplay.daily) }}</p>
+              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('stats.weekDuration') }} · {{ formatStatisticsDuration(listenDisplay.weekly) }}</p>
+            </div>
+            <div :class="FLAT_CARD_CLASS">
+              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('stats.libraryScale') }}</p>
+              <p class="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">{{ t('stats.songCount', { count: stats.total_songs }) }}</p>
+              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('stats.losslessRatio') }} · {{ losslessRatio }}%</p>
+            </div>
+          </section>
+
+          <!-- 近 7 天趋势 -->
+          <section :class="FLAT_CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 60ms;">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.trendTitle') }}</h3>
+              <span class="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">{{ formatStatisticsDuration(trendTotal) }}</span>
+            </div>
+            <StatsTrendChart
+              :values="trendValues"
+              :labels="trendLabels"
+              :accent="ACCENT"
+              :empty-hint="t('stats.trendEmpty')"
+              :format-value="formatStatisticsDuration"
+            />
+          </section>
+
+          <!-- 24 小时分布 -->
+          <section :class="FLAT_CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 120ms;">
+            <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.hourTitle') }}</h3>
+            <StatsHourChart :values="hourValues" />
+          </section>
+
+          <!-- Top 榜 -->
+          <section class="grid grid-cols-1 gap-3 md:grid-cols-3 animate-fade-in-up" style="animation-delay: 180ms;">
+            <div :class="FLAT_CARD_CLASS">
+              <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.topSongs') }}</h3>
+              <StatsTopBars :items="topSongs" :accent="ACCENT" :empty-hint="t('stats.topEmpty')" />
+            </div>
+            <div :class="FLAT_CARD_CLASS">
+              <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.topArtists') }}</h3>
+              <StatsTopBars :items="topArtists" :accent="ACCENT" :empty-hint="t('stats.topEmpty')" />
+            </div>
+            <div :class="FLAT_CARD_CLASS">
+              <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.topAlbums') }}</h3>
+              <StatsTopBars :items="topAlbums" :accent="ACCENT" :empty-hint="t('stats.topEmpty')" />
+            </div>
+          </section>
+
+          <!-- 曲库构成 -->
+          <section :class="FLAT_CARD_CLASS" class="animate-fade-in-up" style="animation-delay: 240ms;">
+            <h3 class="mb-3 text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('stats.compositionTitle') }}</h3>
+            <StatsCompositionRing :segments="compositionSegments" :total="compositionTotal" />
+          </section>
         </div>
       </div>
     </div>
