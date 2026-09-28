@@ -60,8 +60,9 @@ describe('the time-range switcher is gated to the glass look', () => {
 
   it('keeps the switcher markup and behaviour, restyled with the lighter glass idiom', () => {
     // 玻璃类串：3110e0da 引入，玻璃质感升级时加了顶部 inset 亮线 + 增透
-    // （backdrop-saturate-150），深色档亮线 alpha 调低；扁平类串逐字取自旧版，不动
-    expect(source).toContain('\'border border-white/20 bg-white/40 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/5 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]\'');
+    // （backdrop-saturate-150）；深色档因"不够透亮"已整体提亮（填充 /12、亮线 0.22）；
+    // 扁平类串逐字取自旧版，不动
+    expect(source).toContain('\'border border-white/20 bg-white/40 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/12 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]\'');
     expect(source).toContain('\'border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10\'');
     // 点击与选中态绑定原样保留
     expect(source).toContain('@click="selectRange(range.value)"');
@@ -179,7 +180,8 @@ describe('glass look gains layered glass polish (corner refraction + hover sheen
     expect(source).toContain('shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(255,255,255,0.10),0_8px_24px_rgba(15,23,42,0.10)]');
     expect(source).toContain('backdrop-blur-lg backdrop-saturate-150');
     // 深色档：高光 alpha 调低 + 外阴影加深
-    expect(source).toContain('dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.15),inset_0_-1px_0_rgba(255,255,255,0.05),0_10px_28px_rgba(0,0,0,0.35)]');
+    // 深色档：填充与边框提亮（/12、white/25）+ 顶/底亮线加强，解决"不够透亮"
+    expect(source).toContain('dark:border-white/25 dark:bg-white/12 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),inset_0_-1px_0_rgba(255,255,255,0.14),0_10px_28px_rgba(0,0,0,0.35)]');
   });
 
   it('adds the ::before refraction layer and the ::after hover sheen in the scoped block', () => {

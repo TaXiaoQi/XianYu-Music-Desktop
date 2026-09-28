@@ -101,7 +101,7 @@ const TEXT = computed(() => isEnglish.value ? {
 //   挂在下方 scoped 样式块的 glass-card 类上，见「玻璃档卡片质感」段。
 // - 经典扁平（false）：改造前的统计页；下面数据块里有一整段 v-else-if 分支
 //   逐字还原 58c03b25^（= 04cacc5c）的标记——八项指标两行四列，无图标方块、无卡片外壳、无图表
-const HOME_CARD_CLASS = 'glass-card rounded-xl border border-white/30 bg-white/40 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(255,255,255,0.10),0_8px_24px_rgba(15,23,42,0.10)] backdrop-blur-lg backdrop-saturate-150 transition-transform duration-300 ease-out hover:scale-[1.02] dark:border-white/15 dark:bg-white/5 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.15),inset_0_-1px_0_rgba(255,255,255,0.05),0_10px_28px_rgba(0,0,0,0.35)]';
+const HOME_CARD_CLASS = 'glass-card rounded-xl border border-white/30 bg-white/40 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(255,255,255,0.10),0_8px_24px_rgba(15,23,42,0.10)] backdrop-blur-lg backdrop-saturate-150 transition-transform duration-300 ease-out hover:scale-[1.02] dark:border-white/25 dark:bg-white/12 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),inset_0_-1px_0_rgba(255,255,255,0.14),0_10px_28px_rgba(0,0,0,0.35)]';
 const FLAT_CARD_CLASS = 'rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10';
 
 // 读取设置里的「玻璃样式」开关；store 的 theme 是响应式 computed，切换无需重载
@@ -545,7 +545,7 @@ watch(isGlass, (glass) => {
           <div
             class="inline-flex rounded-xl"
             :class="isGlass
-              ? 'border border-white/20 bg-white/40 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/5 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]'
+              ? 'border border-white/20 bg-white/40 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/12 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]'
               : 'border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10'"
             role="group"
             :aria-label="t('stats.rangeLabel')"
@@ -980,11 +980,11 @@ watch(isGlass, (glass) => {
 
 .dark .glass-card::before {
   background:
-    radial-gradient(120% 90% at 0% 0%, rgba(226, 232, 240, 0.14), transparent 55%),
-    radial-gradient(100% 80% at 100% 0%, rgba(226, 232, 240, 0.08), transparent 50%),
-    radial-gradient(90% 70% at 100% 100%, rgba(226, 232, 240, 0.04), transparent 45%),
-    radial-gradient(90% 70% at 0% 100%, rgba(226, 232, 240, 0.03), transparent 45%),
-    linear-gradient(160deg, rgba(226, 232, 240, 0.02), rgba(226, 232, 240, 0) 38%, rgba(226, 232, 240, 0) 62%, rgba(226, 232, 240, 0.02));
+    radial-gradient(120% 90% at 0% 0%, rgba(236, 242, 250, 0.30), transparent 60%),
+    radial-gradient(100% 80% at 100% 0%, rgba(236, 242, 250, 0.19), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(236, 242, 250, 0.10), transparent 50%),
+    radial-gradient(90% 70% at 0% 100%, rgba(236, 242, 250, 0.07), transparent 50%),
+    linear-gradient(160deg, rgba(236, 242, 250, 0.08), rgba(236, 242, 250, 0) 38%, rgba(236, 242, 250, 0) 62%, rgba(236, 242, 250, 0.05));
 }
 
 .glass-card::after {
@@ -1008,7 +1008,7 @@ watch(isGlass, (glass) => {
 }
 
 .dark .glass-card::after {
-  background-image: linear-gradient(115deg, transparent 25%, rgba(226, 232, 240, 0.12) 50%, transparent 75%);
+  background-image: linear-gradient(115deg, transparent 25%, rgba(236, 242, 250, 0.22) 50%, transparent 75%);
 }
 
 @media (prefers-reduced-motion: reduce) {
