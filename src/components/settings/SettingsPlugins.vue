@@ -14,6 +14,7 @@ import SettingHint, { SETTING_HINT_Z_INDEX } from './SettingHint.vue';
 import { getCiyuanxiId } from '../../services/domain/playlistSync';
 import { deleteCloudPlugins } from '../../services/domain/pluginSync';
 import { getSyncedPluginIds, isPluginSynced, addDownloadSkipIds, addUploadSkipIds } from '../../services/domain/pluginSyncState';
+import { getPluginSubTag } from '../../utils/remoteSong';
 import type { SyncDeleteScope } from '../overlays/SyncDeleteScopeModal.vue';
 
 const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
@@ -145,6 +146,16 @@ async function refreshUserVarBadges() {
 
 const pluginsBakaIds = ref<Set<string>>(new Set());
 let bakaRefreshInProgress = false;
+
+// 付费订阅来源品牌标签（聆澜/ikun/付费），同步判定、随插件列表联动
+const subBrandLabelById = computed(() => {
+  const map = new Map<string, string>();
+  for (const p of plugins.value) {
+    const tag = getPluginSubTag(p);
+    if (tag) map.set(p.id, tag.label);
+  }
+  return map;
+});
 
 async function refreshBakaBadges() {
   if (bakaRefreshInProgress) return;
@@ -1447,6 +1458,13 @@ async function saveUserVariables() {
                   {{ pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).label }}
                 </span>
                 <span
+                  v-if="subBrandLabelById.get(plugin.id)"
+                  class="settings-plugin-tag settings-plugin-tag--brand shrink-0 whitespace-nowrap"
+                  title="付费订阅来源"
+                >
+                  {{ subBrandLabelById.get(plugin.id) }}
+                </span>
+                <span
                   v-if="plugin.updateAvailable"
                   class="settings-plugin-tag settings-plugin-tag--accent shrink-0 whitespace-nowrap"
                 >
@@ -2182,6 +2200,12 @@ async function saveUserVariables() {
   color: #3b82f6;
 }
 
+.settings-plugin-tag--brand {
+  background: rgba(230, 162, 60, 0.15);
+  color: #e6a23c;
+  box-shadow: inset 0 0 0 1px rgba(230, 162, 60, 0.4);
+}
+
 .settings-pop-panel-enter-active,
 .settings-pop-panel-leave-active {
   transition:
@@ -2647,6 +2671,11 @@ async function saveUserVariables() {
 .dark .settings-plugin-tag--vars {
   background: rgba(96, 165, 250, 0.18);
   color: #93c5fd;
+}
+
+.dark .settings-plugin-tag--brand {
+  background: rgba(230, 162, 60, 0.18);
+  color: #f0b25a;
 }
 
 .dark .settings-plugin-icon-button {

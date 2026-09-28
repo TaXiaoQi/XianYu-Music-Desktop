@@ -5,9 +5,9 @@
  * - 接收毫秒制逐字行数据（AmlPlayerLine），渲染主行 / 罗马音 ruby / 翻译副行；
  * - 逐字渐亮：单词级 alpha 遮罩随播放进度横扫，活动行逐帧刷新；
  * - 行位移动画：每行独立弹簧（带自上而下的级联延迟），支持对齐锚点与对齐比例；
- * - 行状态：活动行提亮、非活动行按距离模糊缩放、BG 行播放中折叠、暂停时展开；
+ * - 行状态：活动行全亮、非活动行按距离分档压暗 + 模糊缩放、BG 行播放中折叠、暂停时展开；
  * - 间奏呼吸点：行间空隙 ≥ 4s 时在行间插入三点呼吸动画；
- * - 手动滚轮偏移：5s 无操作后自动回弹到当前行。
+ * - 手动滚轮偏移：停手 1.8s 后自动回弹到当前行。
  *
  * 所有跨帧可复用的判定（强调词、词进度、活动行、间奏窗口、弹簧积分）
  * 以纯函数导出，供单元测试直接覆盖。
@@ -125,7 +125,6 @@ interface WordEntry {
   /** 遮罩横扫用的盒宽，仅重排后测量。 */
   width: number;
   progress: number;
-  emphasized: boolean;
 }
 
 type LineVisualState = 'past' | 'active' | 'future';
@@ -154,15 +153,21 @@ interface LineEntry {
   visualState: LineVisualState;
 }
 
-const DIM_TEXT_ALPHA = 0.335;
+/** 活动行内未唱词的遮罩暗度（对齐移动端 dim α0.28）。 */
+const DIM_TEXT_ALPHA = 0.28;
 const INTERLUDE_MIN_MS = 4000;
-const SCROLL_RESET_DELAY_MS = 5000;
-const STAGGER_STEP_MS = 45;
-const FLOW_STIFFNESS = 120;
-/** 阻尼略低于临界值，行位移带一点 Apple Music 式的回弹。 */
+/** 滚轮停手后回中的等待时长（对齐移动端 1.8s）。 */
+const SCROLL_RESET_DELAY_MS = 1800;
+const STAGGER_STEP_MS = 50;
+/** 弹簧对齐移动端 550ms Cubic(0.40,0.10,0,1) 的无过冲落位：19 ≈ 2√90，恰为临界阻尼。 */
+const FLOW_STIFFNESS = 90;
 const FLOW_DAMPING = 19;
 const MIN_LAYOUT_HEIGHT = 36;
-const MAX_BLUR_PX = 32;
+/** 非活动行模糊上限（CSS px）；移动端 σ≤8，按 σ→CSS 2σ 换算。 */
+const MAX_BLUR_PX = 16;
+/** 邻行向活动行聚拢的步长（主字号倍数）与最大步数。 */
+const FAN_STEP_EM = 0.07;
+const FAN_MAX_STEPS = 4;
 /** 子行扫光进度变量：写在行元素上，由子行文本遮罩消费。 */
 const SUB_LINE_PROGRESS_VAR = '--xy-sub-line-progress';
 
@@ -457,29 +462,34 @@ export class WordLyricPlayerCore {
       if (this.hidePassedLines && this.playing && i < cutoffIndex) {
         targetOpacity = 0.0001;
       } else if (isActive) {
-        targetOpacity = 0.85;
+        targetOpacity = 1;
       } else if (line.isBG && !this.playing) {
         targetOpacity = 0.4;
       } else {
-        targetOpacity = 1;
+        // 层次对齐移动端：按与锚点行的距离分档压暗
+        const dist = Math.abs(i - target);
+        targetOpacity = dist <= 1 ? 0.42 : dist === 2 ? 0.28 : 0.16;
       }
 
       let targetBlur = 0;
       if (this.enableBlur && !isActive) {
-        targetBlur = 1 + (i < target
+        // 对齐移动端 σ = 1 + dist(+1 已唱行)，σ→CSS 按 2σ 换算
+        targetBlur = (1 + (i < target
           ? Math.abs(target - i) + 1
-          : Math.abs(i - Math.max(target, latestActive)));
+          : Math.abs(i - Math.max(target, latestActive)))) * 2;
         targetBlur *= blurScale;
       }
 
       const targetScale = this.enableScale && !isActive && this.playing
-        ? (line.isBG ? 0.75 : 0.97)
+        ? (line.isBG ? 0.75 : 0.92)
         : 1;
 
       entry.targetOpacity = targetOpacity;
       entry.targetBlur = targetBlur;
       entry.targetScale = targetScale;
-      entry.pendingY = flowY + entry.flowOffset;
+      // 邻行向活动行聚拢（对齐移动端 ±2px/步 的层叠感）
+      const fan = clampValue(-FAN_MAX_STEPS, i - target, FAN_MAX_STEPS) * -FAN_STEP_EM * this.fontPx;
+      entry.pendingY = flowY + entry.flowOffset + fan;
 
       if (sync) {
         entry.spring.position = entry.pendingY;
@@ -524,7 +534,7 @@ export class WordLyricPlayerCore {
     const subCount = Number(line.translatedLyric.trim().length > 0)
       + Number(line.romanLyric.trim().length > 0);
     const verticalPadding = font;
-    const mainHeight = font * 1.25;
+    const mainHeight = font * 1.35;
     const subHeight = subCount * Math.max(font * 0.85, 14) * 1.35;
     const bgScale = line.isBG ? 0.78 : 1;
     return Math.max(font * 1.9, (verticalPadding + mainHeight + subHeight) * bgScale);
@@ -552,7 +562,7 @@ export class WordLyricPlayerCore {
         entry.spring.velocity = 0;
       }
 
-      const settle = 1 - Math.exp(-deltaMs / 180);
+      const settle = 1 - Math.exp(-deltaMs / 120);
       entry.scale += (entry.targetScale - entry.scale) * settle;
       entry.blur += (entry.targetBlur - entry.blur) * settle;
       entry.opacity += (entry.targetOpacity - entry.opacity) * settle;
@@ -570,15 +580,16 @@ export class WordLyricPlayerCore {
     this.updateDots(deltaMs);
   }
 
-  /** 词级遮罩刷新：活动行逐帧横扫；状态切换行一次性归位（唱毕全亮 / 未唱全暗）。 */
+  /** 词级遮罩刷新：活动行逐帧横扫；状态切换行一次性归位（清遮罩与词内 pop，明暗交给行透明度）。 */
   private updateWordMasks() {
-    const fadePx = Math.max(0.0001, this.wordFadeWidth) * this.fontPx;
+    // 羽化按词宽比例（对齐移动端 ShaderMask 的 10% 词宽）：wordFadeWidth 0.5 = 标准羽化、≈0 = 硬边扫光
+    const fadeScale = Math.max(0.0001, this.wordFadeWidth) * 0.2;
 
     for (const entry of this.lineEntries) {
       const state = this.resolveVisualState(entry);
       if (state !== entry.visualState) {
         entry.visualState = state;
-        this.applyStaticWordMasks(entry, state, fadePx);
+        this.applyStaticWordMasks(entry, state);
         this.applyStaticSubLineProgress(entry, state);
         continue;
       }
@@ -591,8 +602,13 @@ export class WordLyricPlayerCore {
         const progress = wordProgress(word.word, this.currentTimeMs);
         if (Math.abs(progress - word.progress) < 0.0005) continue;
         word.progress = progress;
-        this.applyWordMask(word, progress, fadePx);
-        word.wrapper.classList.toggle('wlp-word--glow', word.emphasized && progress > 0 && progress < 1);
+        this.applyWordMask(word, progress, fadeScale);
+        // 唱毕词保留余晖辉光（对齐移动端 Shadow α0.35）；唱中词按 sin 相位上浮放大
+        word.wrapper.classList.toggle('wlp-word--glow', progress >= 1);
+        const pop = Math.sin(progress * Math.PI);
+        word.wrapper.style.transform = pop > 0.001
+          ? `translate3d(0, ${(-0.09 * pop).toFixed(3)}em, 0) scale(${(1 + 0.05 * pop).toFixed(4)})`
+          : '';
       }
     }
   }
@@ -602,15 +618,33 @@ export class WordLyricPlayerCore {
     return entry.line.startTime <= this.currentTimeMs ? 'past' : 'future';
   }
 
-  private applyStaticWordMasks(entry: LineEntry, state: LineVisualState, fadePx: number) {
+  /**
+   * 活动行收敛：行时间窗口重叠时，非对唱场景只保留最新起唱的一组
+   * （对齐移动端「最后一条已起唱行」的单活动模型），避免相邻两行同时逐字扫光；
+   * 对唱合唱行豁免，仍允许双行同扫。BG 伴随行始终跟随其主行。
+   */
+  private resolveActiveIndices(): number[] {
+    const hits = findActiveLineIndices(this.lines, this.currentTimeMs);
+    if (hits.length <= 1) return hits;
+    const last = hits[hits.length - 1]!;
+    const prev = hits[hits.length - 2]!;
+    const lastLine = this.lines[last]!;
+    const prevLine = this.lines[prev]!;
+    if (lastLine.isDuet || prevLine.isDuet) return hits;
+    return lastLine.isBG ? [prev, last] : [last];
+  }
+
+  private applyStaticWordMasks(entry: LineEntry, state: LineVisualState) {
+    // 非活动行不再叠字级暗遮罩：行透明度按距离分档统一控制明暗（对齐移动端）
     for (const word of entry.words) {
+      word.wrapper.classList.remove('wlp-word--glow');
+      word.wrapper.style.transform = '';
       if (state === 'past') {
         word.progress = 1;
-        word.wrapper.classList.remove('wlp-word--glow');
         this.clearWordMask(word);
       } else if (state === 'future') {
         word.progress = 0;
-        this.applyWordMask(word, 0, fadePx);
+        this.clearWordMask(word);
       }
     }
   }
@@ -620,12 +654,13 @@ export class WordLyricPlayerCore {
     entry.el.style.setProperty(SUB_LINE_PROGRESS_VAR, state === 'past' ? '100%' : '0%');
   }
 
-  private applyWordMask(word: WordEntry, progress: number, fadePx: number) {
+  private applyWordMask(word: WordEntry, progress: number, fadeScale: number) {
     if (word.width <= 0) {
       this.clearWordMask(word);
       return;
     }
-    // 已唱区域全亮，未唱区域保留 33.5% 亮度，交界处按渐变宽度过渡
+    // 已唱区域全亮，未唱区域保留 28% 亮度，交界按词宽 10% 羽化（fadeScale=0.1 时）
+    const fadePx = fadeScale * word.width;
     const edge = progress * (word.width + fadePx) - fadePx;
     const image = `linear-gradient(90deg, rgba(255,255,255,1) ${edge.toFixed(2)}px, rgba(255,255,255,${DIM_TEXT_ALPHA}) ${(edge + fadePx).toFixed(2)}px)`;
     this.setWordMaskImage(word.wrapper, image);
@@ -724,7 +759,6 @@ export class WordLyricPlayerCore {
         word,
         width: 0,
         progress: -1,
-        emphasized: isEmphasizedWord(word),
       });
     }
 
@@ -821,7 +855,7 @@ export class WordLyricPlayerCore {
 
   private refreshActiveAndLayout(isSeek: boolean) {
     if (this.disposed) return;
-    const actives = findActiveLineIndices(this.lines, this.currentTimeMs);
+    const actives = this.resolveActiveIndices();
     const changed = !sameIndexSet(actives, this.activeIndices);
     this.activeIndices = new Set(actives);
     this.interlude = actives.length === 0
