@@ -1,149 +1,114 @@
-import { computed, ref } from 'vue';
-import { storeToRefs } from 'pinia';
-
-import {
-  normalizeForegroundStyle,
-  useSettingsStore,
-  type ThemeSettingsPatch,
-} from '../features/settings/store';
 import type { ThemeSettings } from '../types';
 import type { WindowMaterialMode } from './windowMaterial';
+import { type ThemeSettingsPatch, normalizeForegroundStyle, useSettingsStore } from '../features/settings/store';
+import { ref, computed } from 'vue';
+import { storeToRefs } from 'pinia';
 
-const systemPrefersDark = ref(false);
-let systemThemeListenerInitialized = false;
-let systemThemeMediaQuery: MediaQueryList | null = null;
+/** 系统深浅色的媒体查询；模块加载即完成首次绑定，各窗口共享同一份探测结果 */
+const SYSTEM_COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)';
 
-function handleSystemThemeChange(event: MediaQueryListEvent) {
-  systemPrefersDark.value = event.matches;
+const systemPrefersDarkMode = ref(false);
+let colorSchemeWatcher: MediaQueryList | null = null;
+let colorSchemeWatcherBound = false;
+
+function onColorSchemeFlip(changeEvent: MediaQueryListEvent) {
+  systemPrefersDarkMode.value = changeEvent.matches;
 }
 
-function cleanupSystemThemeListener() {
-  systemThemeMediaQuery?.removeEventListener('change', handleSystemThemeChange);
-  systemThemeMediaQuery = null;
-  systemThemeListenerInitialized = false;
+function unbindColorSchemeWatcher() {
+  colorSchemeWatcher?.removeEventListener('change', onColorSchemeFlip);
+  colorSchemeWatcher = null;
+  colorSchemeWatcherBound = false;
 }
 
-function ensureSystemThemeListener() {
-  if (systemThemeListenerInitialized || typeof window === 'undefined' || !window.matchMedia) {
-    return;
-  }
-  systemThemeListenerInitialized = true;
+function bindColorSchemeWatcher() {
+  if (colorSchemeWatcherBound || typeof window === 'undefined' || !window.matchMedia) return;
 
-  systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  systemPrefersDark.value = systemThemeMediaQuery.matches;
-  systemThemeMediaQuery.addEventListener('change', handleSystemThemeChange);
+  colorSchemeWatcherBound = true;
+  colorSchemeWatcher = window.matchMedia(SYSTEM_COLOR_SCHEME_QUERY);
+  systemPrefersDarkMode.value = colorSchemeWatcher.matches;
+  colorSchemeWatcher.addEventListener('change', onColorSchemeFlip);
 }
 
-function refreshSystemThemeDetection() {
-  if (!systemThemeMediaQuery) {
-    ensureSystemThemeListener();
-    return;
-  }
-  systemPrefersDark.value = systemThemeMediaQuery.matches;
+/** 重新采样系统深浅色；监听尚未建立时顺带完成首次绑定 */
+function resampleSystemColorScheme() {
+  const watcher = colorSchemeWatcher;
+  if (watcher) systemPrefersDarkMode.value = watcher.matches;
+  else bindColorSchemeWatcher();
 }
 
-ensureSystemThemeListener();
+bindColorSchemeWatcher();
 
-if (import.meta.hot) {
-  import.meta.hot.dispose(cleanupSystemThemeListener);
-}
+if (import.meta.hot) import.meta.hot.dispose(unbindColorSchemeWatcher);
 
-const resolveThemeDarkMode = (theme: ThemeSettings) => {
-  if (theme.mode === 'system') {
-    return systemPrefersDark.value;
-  }
+/** 由主题模式推导深色态：跟随系统、显式模式，或自定义背景的前景样式（亮前景配暗底） */
+const resolvesToDarkSurface = (themeSnapshot: ThemeSettings): boolean => {
+  if (themeSnapshot.mode === 'system') return systemPrefersDarkMode.value;
+  if (themeSnapshot.mode !== 'custom') return themeSnapshot.mode === 'dark';
 
-  if (theme.mode !== 'custom') {
-    return theme.mode === 'dark';
-  }
-
-  const foregroundStyle = normalizeForegroundStyle(theme.customBackground.foregroundStyle);
-  if (foregroundStyle === 'light') {
-    return true;
-  }
-  return false;
+  return normalizeForegroundStyle(themeSnapshot.customBackground.foregroundStyle) === 'light';
 };
 
 export function useThemeSettings() {
-  const settingsStore = useSettingsStore();
-  const { settings, theme } = storeToRefs(settingsStore);
+  const store = useSettingsStore();
+  const { theme, settings } = storeToRefs(store);
 
-  const isCustomTheme = computed(() => theme.value?.mode === 'custom');
-  const isDarkTheme = computed(() => {
-    if (!theme.value) return false;
-    return resolveThemeDarkMode(theme.value);
-  });
+  const isCustomTheme = computed<boolean>(() => theme.value?.mode === 'custom');
+  const isDarkTheme = computed(() => (theme.value ? resolvesToDarkSurface(theme.value) : false));
 
-  const replaceTheme = (nextTheme: ThemeSettings) => {
-    if (nextTheme.mode === 'system') {
-      refreshSystemThemeDetection();
-    }
-    settingsStore.replaceTheme(nextTheme);
+  // 切到「跟随系统」前重新采样一次，避免拿到陈旧的探测结果
+  const replaceTheme = (incomingTheme: ThemeSettings) => {
+    if (incomingTheme.mode === 'system') resampleSystemColorScheme();
+    store.replaceTheme(incomingTheme);
   };
 
-  const patchTheme = (partialTheme: ThemeSettingsPatch) => {
-    settingsStore.patchTheme(partialTheme);
-  };
+  const patchTheme = (partialTheme: ThemeSettingsPatch) => store.patchTheme(partialTheme);
 
-  const setThemeMode = (mode: ThemeSettings['mode']) => {
-    if (mode === 'system') {
-      refreshSystemThemeDetection();
-    }
+  const setThemeMode = (nextMode: ThemeSettings['mode']) => {
+    if (nextMode === 'system') resampleSystemColorScheme();
 
-    if (mode === 'custom') {
-      patchTheme({
-        mode,
-        dynamicBgType: 'none',
-        windowMaterial: 'none',
-      });
-      return;
-    }
-
-    patchTheme({ mode });
+    patchTheme(
+      nextMode === 'custom'
+        ? { mode: nextMode, dynamicBgType: 'none', windowMaterial: 'none' }
+        : { mode: nextMode },
+    );
   };
 
   const toggleThemeMode = () => {
-    const currentTheme = theme.value;
-    if (!currentTheme) return;
-    if (currentTheme.mode === 'custom' && currentTheme.customBackground.imagePath) {
-      const foregroundStyle = normalizeForegroundStyle(currentTheme.customBackground.foregroundStyle);
-      patchTheme({
-        customBackground: {
-          foregroundStyle: foregroundStyle === 'light' ? 'dark' : 'light',
-        },
-      });
-      return;
+    const activeTheme = theme.value;
+    if (!activeTheme) return;
+
+    // 自定义壁纸模式下翻转前景明暗而不退出该模式；无壁纸时退回普通明暗切换
+    const wallpaperForeground = activeTheme.mode === 'custom' && activeTheme.customBackground.imagePath
+      ? normalizeForegroundStyle(activeTheme.customBackground.foregroundStyle)
+      : null;
+
+    if (wallpaperForeground === null) {
+      const flippedMode: ThemeSettings['mode'] = isDarkTheme.value ? 'light' : 'dark';
+      setThemeMode(flippedMode);
+    } else {
+      patchTheme({ customBackground: { foregroundStyle: wallpaperForeground === 'light' ? 'dark' : 'light' } });
     }
-
-    setThemeMode(isDarkTheme.value ? 'light' : 'dark');
   };
 
-  const setDynamicBackgroundType = (dynamicBgType: ThemeSettings['dynamicBgType']) => {
-    patchTheme({ dynamicBgType });
+  const setDynamicBackgroundType = (nextDynamicBgType: ThemeSettings['dynamicBgType']) => {
+    patchTheme({ dynamicBgType: nextDynamicBgType });
   };
 
-  const setWindowMaterial = (windowMaterial: WindowMaterialMode) => {
-    patchTheme({
-      windowMaterial,
-      ...(windowMaterial !== 'none' ? { dynamicBgType: 'none' as const } : {}),
-    });
+  const setWindowMaterial = (nextWindowMaterial: WindowMaterialMode) => {
+    const materialPatch: ThemeSettingsPatch = { windowMaterial: nextWindowMaterial };
+    if (nextWindowMaterial !== 'none') materialPatch.dynamicBgType = 'none';
+    patchTheme(materialPatch);
   };
 
-  const updateCustomBackground = (customBackground: ThemeSettingsPatch['customBackground']) => {
-    patchTheme({ customBackground });
+  const updateCustomBackground = (customBackgroundPatch: ThemeSettingsPatch['customBackground']) => {
+    patchTheme({ customBackground: customBackgroundPatch });
   };
 
-  return {
-    settings,
-    theme,
-    isCustomTheme,
-    isDarkTheme,
-    replaceTheme,
-    patchTheme,
-    setThemeMode,
-    toggleThemeMode,
-    setDynamicBackgroundType,
-    setWindowMaterial,
-    updateCustomBackground,
+  const themeApi = {
+    settings, theme, isCustomTheme, isDarkTheme,
+    replaceTheme, patchTheme, setThemeMode, toggleThemeMode,
+    setDynamicBackgroundType, setWindowMaterial, updateCustomBackground,
   };
+  return themeApi;
 }
