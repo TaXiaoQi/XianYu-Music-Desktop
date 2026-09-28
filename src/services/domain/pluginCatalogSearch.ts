@@ -172,6 +172,15 @@ export async function pluginSearch(
 
 // ==================== 插件歌单搜索 ====================
 
+// 判断输入是否像歌单分享链接或纯数字歌单 ID。
+// 自己的歌单只能靠链接/ID 精确导入，公开搜索搜不到。
+function looksLikeSheetLinkOrId(keyword: string): boolean {
+  const t = (keyword || '').trim().toLowerCase();
+  if (!t) return false;
+  if (/^\d{6,}$/.test(t)) return true;
+  return /https?:\/\/|\.com|\.cn|\.cc|netease|kugou|kuwo|qishui|douyin|qq\.com/.test(t);
+}
+
 export async function pluginPlaylistSearch(
   source: PluginSource,
   keyword: string,
@@ -182,6 +191,31 @@ export async function pluginPlaylistSearch(
 
   try {
     if (typeof inst.instance.search !== 'function') return [];
+
+    // 链接/歌单 ID 优先走 importMusicSheet 精确导入：公开搜索会把链接当
+    // 关键词，搜出来的全是别人的同名歌单。
+    const linkLike = looksLikeSheetLinkOrId(keyword);
+    if (linkLike && typeof inst.instance.importMusicSheet === 'function') {
+      try {
+        const direct = await inst.instance.importMusicSheet(keyword);
+        if (Array.isArray(direct) && direct.length > 0) {
+          const title = `${source.name}收藏夹`;
+          return [{
+            id: keyword,
+            title,
+            coverUrl: extractCoverUrl(direct[0]),
+            trackCount: direct.length,
+            artist: '',
+            platform: source.name,
+            platformId: keyword,
+            pluginId: source.id,
+            rawData: { id: keyword, title, _importedTracks: direct },
+          }];
+        }
+      } catch (e: any) {
+        console.warn(`[${source.name}] importMusicSheet 精确导入失败:`, e?.message || e);
+      }
+    }
 
     let result = (await inst.instance.search(keyword, page, 'sheet')) ?? {};
     let list = extractResultList(result);
@@ -213,7 +247,7 @@ export async function pluginPlaylistSearch(
         });
       }
     }
-    if (list.length === 0) {
+    if (list.length === 0 && !linkLike) {
       if (typeof inst.instance.importMusicSheet === 'function') {
         try {
           const imported = await inst.instance.importMusicSheet(keyword);
