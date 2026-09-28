@@ -270,15 +270,12 @@ export function convertLyricsToAmlLines(
     const separatedWords = attachRomajiSeparators(builtWords);
     const hasTimedRomaji = builtWords.some((word) => (word.romanWord || '').trim().length > 0);
 
+    // 无词级时间轴的行（插件源给纯 LRC 时）：单个伪词仅作文本载体，行打上 isWordless 标记，
+    // 由播放器按整行点亮渲染，不做词级扫光。
     const words: AmlPlayerWord[] = separatedWords.length > 0
       ? separatedWords
-      : [{
-          word: line.text || mainFragments[0]?.text || ' ',
-          startTime,
-          endTime,
-          romanWord: '',
-          obscene: false,
-        }];
+      : [{ word: line.text || mainFragments[0]?.text || ' ', startTime, endTime, romanWord: '', obscene: false }];
+    const isWordless = separatedWords.length === 0;
 
     const romajiWords: AmlRomajiWord[] | undefined = showRomajiForLine && line.romajiWords
       ? [...line.romajiWords]
@@ -303,6 +300,7 @@ export function convertLyricsToAmlLines(
       endTime,
       isBG: line.isBG,
       isDuet: line.isDuet,
+      isWordless,
     };
   });
 }
