@@ -4,26 +4,26 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useSettingsStore } from '../features/settings/store';
 import { useThemeSettings } from './useThemeSettings';
 
+const bootThemeBed = () => setActivePinia(createPinia());
+
 describe('useThemeSettings', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
+  beforeEach(bootThemeBed);
+
+  it('cycles between light and dark app theme modes on toggle', () => {
+    const themeApi = useThemeSettings();
+
+    expect(themeApi.theme.value.mode).toBe('system');
+
+    themeApi.toggleThemeMode();
+    expect(themeApi.theme.value.mode).toBe('dark');
+
+    themeApi.toggleThemeMode();
+    expect(themeApi.theme.value.mode).toBe('light');
   });
 
-  it('toggles between light and dark theme modes', () => {
-    const { theme, toggleThemeMode } = useThemeSettings();
-
-    expect(theme.value.mode).toBe('system');
-
-    toggleThemeMode();
-    expect(theme.value.mode).toBe('dark');
-
-    toggleThemeMode();
-    expect(theme.value.mode).toBe('light');
-  });
-
-  it('toggles custom wallpaper foreground color without leaving custom mode', () => {
+  it('flips the custom wallpaper foreground style without leaving custom mode', () => {
     const settingsStore = useSettingsStore();
-    const { theme, toggleThemeMode } = useThemeSettings();
+    const themeApi = useThemeSettings();
 
     settingsStore.patchTheme({
       mode: 'custom',
@@ -33,20 +33,20 @@ describe('useThemeSettings', () => {
       },
     });
 
-    toggleThemeMode();
+    themeApi.toggleThemeMode();
 
-    expect(theme.value.mode).toBe('custom');
-    expect(theme.value.customBackground.foregroundStyle).toBe('dark');
+    expect(themeApi.theme.value.mode).toBe('custom');
+    expect(themeApi.theme.value.customBackground.foregroundStyle).toBe('dark');
   });
 
   it('falls back to switching app theme modes when custom mode has no wallpaper', () => {
     const settingsStore = useSettingsStore();
-    const { theme, toggleThemeMode } = useThemeSettings();
+    const themeApi = useThemeSettings();
 
     settingsStore.patchTheme({ mode: 'custom' });
 
-    toggleThemeMode();
+    themeApi.toggleThemeMode();
 
-    expect(theme.value.mode).toBe('light');
+    expect(themeApi.theme.value.mode).toBe('light');
   });
 });

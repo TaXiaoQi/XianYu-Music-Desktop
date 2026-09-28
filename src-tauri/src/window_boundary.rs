@@ -1,97 +1,124 @@
-//! 迷你播放器拖拽边界与全屏样式辅助。
+//! 迷你播放器窗口辅助层：拖拽范围限制与沉浸式全屏的消息处理。
 //!
-//! 通过窗口子类过程拦截 WM_MOVING，把窗口拖动范围约束在显示器工作区内；
-//! 沉浸式全屏开启期间吞掉 WM_NCCALCSIZE，去掉非客户区边框让内容铺满屏幕。
+//! 通过 Win32 子类机制接管窗口过程：
+//! - `WM_MOVING`：把拖动目标矩形钳制进所在显示器的工作区；
+//! - `WM_NCCALCSIZE`：沉浸式全屏期间返回 0，让客户区铺满整个窗口。
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
-    Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST},
-    UI::Shell::{DefSubclassProc, SetWindowSubclass},
-    UI::WindowsAndMessaging::{WM_MOVING, WM_NCCALCSIZE},
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromWindow, MONITOR_DEFAULTTONEAREST, MONITORINFO,
 };
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{WM_MOVING, WM_NCCALCSIZE};
 
-/// 是否启用迷你播放器的拖拽边界约束。
-static BOUNDARY_ENABLED: AtomicBool = AtomicBool::new(false);
+/// 迷你播放器拖拽限制是否开启。
+static DRAG_LIMIT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// 是否处于沉浸式全屏（由 window_fullscreen 模块切换）。
+/// 沉浸式全屏是否开启（开关由 window_fullscreen 模块维护）。
 pub static FULLSCREEN_ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// 子类注册标识，进程内保持唯一即可。
+/// 子类槽位号，进程内保持唯一即可。
 #[cfg(target_os = "windows")]
-const BOUNDARY_SUBCLASS_TOKEN: usize = 1001;
+const DRAG_HOOK_SLOT: usize = 1001;
 
-/// 把拖动中的矩形约束进工作区，保持宽高不变。
+/// 单轴收拢：先把起点贴向下限，若终点越上限再改为贴上限。
+/// 两步顺序与"先左后右 / 先上后下"的逐边钳制次序完全等价。
 #[cfg(target_os = "windows")]
-fn clamp_rect_to_work_area(rect: &mut RECT, work: &RECT) {
-    let width = rect.right - rect.left;
-    let height = rect.bottom - rect.top;
-
-    if rect.left < work.left {
-        rect.left = work.left;
-        rect.right = work.left + width;
-    }
-    if rect.top < work.top {
-        rect.top = work.top;
-        rect.bottom = work.top + height;
-    }
-    if rect.right > work.right {
-        rect.right = work.right;
-        rect.left = work.right - width;
-    }
-    if rect.bottom > work.bottom {
-        rect.bottom = work.bottom;
-        rect.top = work.bottom - height;
+fn fit_axis(start: i32, end: i32, lo: i32, hi: i32) -> (i32, i32) {
+    let span = end - start;
+    let (moved_start, moved_end) = if start < lo {
+        (lo, lo + span)
+    } else {
+        (start, end)
+    };
+    if moved_end > hi {
+        (hi - span, hi)
+    } else {
+        (moved_start, moved_end)
     }
 }
 
-/// 子类过程：处理全屏非客户区裁剪与拖拽边界，其余消息走默认流程。
+/// 把拖动中的窗口矩形整体拉回工作区，宽高保持不变。
 #[cfg(target_os = "windows")]
-unsafe extern "system" fn boundary_subclass_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    _uid_subclass: usize,
-    _dw_ref_data: usize,
+fn pull_rect_into_work_area(target: &mut RECT, area: &RECT) {
+    let (left, right) = fit_axis(target.left, target.right, area.left, area.right);
+    target.left = left;
+    target.right = right;
+    let (top, bottom) = fit_axis(target.top, target.bottom, area.top, area.bottom);
+    target.top = top;
+    target.bottom = bottom;
+}
+
+/// 取窗口所在（最近）显示器的工作区矩形；查询失败时返回 None。
+#[cfg(target_os = "windows")]
+fn nearest_work_area(window: HWND) -> Option<RECT> {
+    let monitor = unsafe { MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) };
+    let zero_rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let mut details = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        rcMonitor: zero_rect,
+        rcWork: zero_rect,
+        dwFlags: 0,
+    };
+    let ok = unsafe { GetMonitorInfoW(monitor, &mut details) };
+    if ok != 0 {
+        Some(details.rcWork)
+    } else {
+        None
+    }
+}
+
+/// 子类过程：全屏时抹平非客户区计算，拖动时执行工作区约束，其余消息放行。
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn drag_and_fullscreen_hook(
+    window: HWND,
+    message: u32,
+    w_param: WPARAM,
+    l_param: LPARAM,
+    _slot: usize,
+    _context: usize,
 ) -> LRESULT {
-    // 全屏期间取消非客户区计算，让内容区域占满整个窗口
-    if msg == WM_NCCALCSIZE && wparam == 1 && FULLSCREEN_ENABLED.load(Ordering::Relaxed) {
-        return 0;
-    }
-
-    if msg == WM_MOVING && BOUNDARY_ENABLED.load(Ordering::Relaxed) {
-        let rect = &mut *(lparam as *mut RECT);
-        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        let mut info: MONITORINFO = std::mem::zeroed();
-        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-
-        if GetMonitorInfoW(monitor, &mut info) != 0 {
-            clamp_rect_to_work_area(rect, &info.rcWork);
+    match message {
+        // wparam 为 1 表示正在计算非客户区尺寸，返回 0 即可让内容铺满窗口
+        WM_NCCALCSIZE if w_param == 1 && FULLSCREEN_ENABLED.load(Ordering::Relaxed) => 0,
+        WM_MOVING if DRAG_LIMIT_ACTIVE.load(Ordering::Relaxed) => {
+            let target = &mut *(l_param as *mut RECT);
+            if let Some(area) = nearest_work_area(window) {
+                pull_rect_into_work_area(target, &area);
+            }
+            0
         }
-        return 0;
+        _ => DefSubclassProc(window, message, w_param, l_param),
     }
-
-    DefSubclassProc(hwnd, msg, wparam, lparam)
 }
 
-/// 在指定窗口上安装边界子类过程（启动时对迷你播放器窗口调用）。
+/// 为窗口安装边界约束子类（启动阶段对迷你播放器窗口调用一次）。
 #[cfg(target_os = "windows")]
 pub fn install_boundary_subclass(hwnd: isize) {
-    unsafe {
+    let _ = unsafe {
         SetWindowSubclass(
             hwnd as HWND,
-            Some(boundary_subclass_proc),
-            BOUNDARY_SUBCLASS_TOKEN,
+            Some(drag_and_fullscreen_hook),
+            DRAG_HOOK_SLOT,
             0,
-        );
-    }
+        )
+    };
 }
 
-/// 开关迷你播放器的拖拽边界约束。
+/// Tauri 命令：开关迷你播放器的拖拽边界约束。
 #[tauri::command]
 pub fn set_mini_boundary_enabled(enabled: bool) {
-    BOUNDARY_ENABLED.store(enabled, Ordering::Relaxed);
+    DRAG_LIMIT_ACTIVE.store(enabled, Ordering::Relaxed);
 }

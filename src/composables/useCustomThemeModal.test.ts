@@ -9,13 +9,18 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn(),
 }));
 
-async function flushPreviewUpdates() {
+type ModalController = ReturnType<typeof useCustomThemeModal>;
+
+// 预览草稿是响应式对象，改动后要等一个微任务让副作用收敛再断言
+const settlePreview = async () => {
   await nextTick();
   await Promise.resolve();
-}
+};
 
 describe('useCustomThemeModal', () => {
   let scope: EffectScope | null = null;
+
+  const launchModal = (): ModalController => scope!.run(() => useCustomThemeModal())!;
 
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -28,7 +33,7 @@ describe('useCustomThemeModal', () => {
     scope = null;
   });
 
-  it('keeps slider edits local until the user saves the custom skin', async () => {
+  it('holds slider edits in the local preview until the custom skin is saved', async () => {
     const settingsStore = useSettingsStore();
     settingsStore.patchTheme({
       mode: 'light',
@@ -44,12 +49,9 @@ describe('useCustomThemeModal', () => {
       },
     });
 
-    const modal = scope!.run(() => useCustomThemeModal())!;
-    modal.preview.value.blur = 36;
-    modal.preview.value.opacity = 0.82;
-    modal.preview.value.maskAlpha = 0.56;
-    modal.preview.value.scale = 1.14;
-    await flushPreviewUpdates();
+    const modal = launchModal();
+    Object.assign(modal.preview.value, { blur: 36, opacity: 0.82, maskAlpha: 0.56, scale: 1.14 });
+    await settlePreview();
 
     expect(settingsStore.theme.mode).toBe('light');
     expect(settingsStore.theme.dynamicBgType).toBe('flow');
@@ -69,7 +71,7 @@ describe('useCustomThemeModal', () => {
     expect(settingsStore.theme.customBackground.scale).toBe(1.14);
   });
 
-  it('drops local edits on cancel without rewriting the applied theme', async () => {
+  it('discards preview edits on cancel and leaves the applied theme untouched', async () => {
     const settingsStore = useSettingsStore();
     settingsStore.patchTheme({
       mode: 'light',
@@ -80,10 +82,10 @@ describe('useCustomThemeModal', () => {
       },
     });
 
-    const modal = scope!.run(() => useCustomThemeModal())!;
+    const modal = launchModal();
     modal.preview.value.blur = 42;
     modal.preview.value.foregroundStyle = 'dark';
-    await flushPreviewUpdates();
+    await settlePreview();
 
     modal.handleCancel();
 
@@ -92,7 +94,7 @@ describe('useCustomThemeModal', () => {
     expect(settingsStore.theme.customBackground.foregroundStyle).toBe('light');
   });
 
-  it('restores the original color scheme and window material on cancel when opened from the top bar skin shortcut', async () => {
+  it('rolls back the original color scheme and window material on cancel when opened from the top bar skin shortcut', async () => {
     const settingsStore = useSettingsStore();
     settingsStore.patchTheme({
       mode: 'light',
@@ -106,10 +108,10 @@ describe('useCustomThemeModal', () => {
     });
 
     skinModalOriginalTheme.value = { ...settingsStore.theme };
-    const modal = scope!.run(() => useCustomThemeModal())!;
+    const modal = launchModal();
     modal.preview.value.blur = 42;
     modal.preview.value.foregroundStyle = 'dark';
-    await flushPreviewUpdates();
+    await settlePreview();
 
     modal.handleCancel();
 
@@ -121,7 +123,7 @@ describe('useCustomThemeModal', () => {
     expect(skinModalOriginalTheme.value).toBeNull();
   });
 
-  it('clears the saved original theme after saving the custom skin', async () => {
+  it('forgets the saved original theme after the custom skin is saved', async () => {
     const settingsStore = useSettingsStore();
     settingsStore.patchTheme({
       mode: 'light',
@@ -133,9 +135,9 @@ describe('useCustomThemeModal', () => {
     });
 
     skinModalOriginalTheme.value = { ...settingsStore.theme };
-    const modal = scope!.run(() => useCustomThemeModal())!;
+    const modal = launchModal();
     modal.preview.value.blur = 36;
-    await flushPreviewUpdates();
+    await settlePreview();
 
     modal.handleSave();
 

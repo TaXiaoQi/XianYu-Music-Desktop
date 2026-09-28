@@ -1,736 +1,704 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-import { mergeAppSettings, useSettingsStore } from './store';
 import type { EqualizerSettings } from '../../types';
+import { mergeAppSettings, useSettingsStore } from './store';
 
-const partialEq = (patch: Partial<EqualizerSettings>) => patch as EqualizerSettings;
+type SettingsStore = ReturnType<typeof useSettingsStore>;
+
+const bootPinia = () => setActivePinia(createPinia());
+const freshStore = (): SettingsStore => useSettingsStore();
+
+// 持久化数据里的均衡器字段允许缺省，测试中统一宽化后喂给补丁入口
+const widenEq = (patch: Partial<EqualizerSettings>) => patch as EqualizerSettings;
+
+const patchEqualizer = (store: SettingsStore, patch: Partial<EqualizerSettings>) => {
+  store.patchSettings({ audio: { equalizer: widenEq(patch) } });
+};
 
 describe('settings store', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
-  });
+  beforeEach(bootPinia);
 
-  it('uses system language by default and validates persisted app languages', () => {
-    const settingsStore = useSettingsStore();
+  describe('defaults and persisted-value normalization', () => {
+    it('starts with the system language and only accepts known app languages', () => {
+      const store = freshStore();
 
-    expect(settingsStore.settings.language).toBe('system');
-    expect(mergeAppSettings(settingsStore.settings, { language: 'en-US' }).language).toBe('en-US');
-    expect(mergeAppSettings(settingsStore.settings, { language: 'system' }).language).toBe('system');
-    expect(mergeAppSettings(settingsStore.settings, {
-      language: 'fr-FR' as unknown as 'zh-CN',
-    }).language).toBe('system');
-  });
-
-  it('enables sleep prevention by default and preserves an explicit disabled value', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.preventSleepWhilePlaying).toBe(true);
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      preventSleepWhilePlaying: false,
-    });
-    expect(merged.preventSleepWhilePlaying).toBe(false);
-  });
-
-  it('patches theme settings without losing nested custom background fields', () => {
-    const settingsStore = useSettingsStore();
-
-    settingsStore.patchTheme({
-      mode: 'custom',
-      customBackground: {
-        imagePath: '/covers/demo.jpg',
-        blur: 32,
-      },
+      expect(store.settings.language).toBe('system');
+      expect(mergeAppSettings(store.settings, { language: 'en-US' }).language).toBe('en-US');
+      expect(mergeAppSettings(store.settings, { language: 'system' }).language).toBe('system');
+      expect(mergeAppSettings(store.settings, {
+        language: 'fr-FR' as unknown as 'zh-CN',
+      }).language).toBe('system');
     });
 
-    expect(settingsStore.theme.mode).toBe('custom');
-    expect(settingsStore.theme.customBackground.imagePath).toBe('/covers/demo.jpg');
-    expect(settingsStore.theme.customBackground.blur).toBe(32);
-    expect(settingsStore.theme.customBackground.maskColor).toBe('#000000');
-  });
+    it('keeps sleep prevention on unless persisted data explicitly disabled it', () => {
+      const store = freshStore();
 
-  it('normalizes theme colors and rejects invalid persisted values', () => {
-    const settingsStore = useSettingsStore();
+      expect(store.settings.preventSleepWhilePlaying).toBe(true);
 
-    settingsStore.patchTheme({ accentColor: '#3b82f6' });
-    expect(settingsStore.theme.accentColor).toBe('#3B82F6');
-
-    settingsStore.patchTheme({ accentColor: 'not-a-color' });
-    expect(settingsStore.theme.accentColor).toBe('#3B82F6');
-  });
-
-  it('stores the player detail cover behavior and last in-page choice', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('remember');
-    expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(true);
-    settingsStore.patchTheme({
-      playerDetailCoverBehavior: 'show',
-      lastPlayerDetailCoverVisible: false,
-    });
-    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('show');
-    expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(false);
-
-    settingsStore.patchTheme({
-      playerDetailCoverBehavior: 'invalid' as 'remember',
-      lastPlayerDetailCoverVisible: 'invalid' as unknown as boolean,
-    });
-    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('show');
-    expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(false);
-  });
-
-  it('migrates the previous player detail cover boolean', () => {
-    const settingsStore = useSettingsStore();
-
-    settingsStore.patchTheme({
-      showPlayerDetailCoverByDefault: false,
-    } as Parameters<typeof settingsStore.patchTheme>[0]);
-
-    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('hide');
-  });
-
-  it('stores the player detail style with normalization', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.theme.playerDetailStyle).toBe('classic');
-    settingsStore.patchTheme({ playerDetailStyle: 'vinyl' });
-    expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
-
-    settingsStore.patchTheme({ playerDetailStyle: 'invalid' as 'classic' });
-    expect(settingsStore.theme.playerDetailStyle).toBe('vinyl');
-  });
-
-  it('stores the vinyl plinth material with normalization', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('light');
-    settingsStore.patchTheme({ playerDetailVinylMaterial: 'matte' });
-    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('matte');
-    settingsStore.patchTheme({ playerDetailVinylMaterial: 'oak' });
-    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('oak');
-
-    // 非法值不得写入（回落为上一次的合法值）
-    settingsStore.patchTheme({ playerDetailVinylMaterial: 'walnut' as 'oak' });
-    expect(settingsStore.theme.playerDetailVinylMaterial).toBe('oak');
-  });
-
-  it('stores the polygon mesh flow speed multiplier', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(1);
-    settingsStore.patchTheme({ playerDetailMeshSpeed: 2.5 });
-    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(2.5);
-
-    // 0 表示静止，是合法取值（渲染侧只做夹取，不排除 0）
-    settingsStore.patchTheme({ playerDetailMeshSpeed: 0 });
-    expect(settingsStore.theme.playerDetailMeshSpeed).toBe(0);
-  });
-
-  it('stores the polygon mesh anti-aliasing flag with normalization', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(true);
-    settingsStore.patchTheme({ playerDetailMeshAntiAlias: false });
-    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(false);
-
-    settingsStore.patchTheme({ playerDetailMeshAntiAlias: 'yes' as unknown as boolean });
-    expect(settingsStore.theme.playerDetailMeshAntiAlias).toBe(false);
-  });
-  it('replaces theme through the settings domain instead of mutating ui state', () => {
-    const settingsStore = useSettingsStore();
-
-    settingsStore.replaceTheme({
-      mode: 'dark',
-      dynamicBgType: 'blur',
-      windowMaterial: 'mica',
-      flowColorBoost: 62,
-      flowDepth: 54,
-      flowSpeed: 48,
-      flowTexture: 28,
-      windowBlurTint: 50,
-      customBgPath: '',
-      opacity: 0.75,
-      blur: 18,
-      customBackground: {
-        imagePath: '/covers/fallback.jpg',
-        blur: 24,
-        opacity: 0.85,
-        maskColor: '#101010',
-        maskAlpha: 0.45,
-        scale: 1.08,
-        foregroundStyle: 'light',
-      },
+      const merged = mergeAppSettings(store.settings, {
+        preventSleepWhilePlaying: false,
+      });
+      expect(merged.preventSleepWhilePlaying).toBe(false);
     });
 
-    expect(settingsStore.settings.theme.windowMaterial).toBe('mica');
-    expect(settingsStore.settings.theme.customBackground.foregroundStyle).toBe('light');
+    it('ships safe logging defaults and clamps the persisted retention window', () => {
+      const store = freshStore();
+
+      expect(store.settings.logging).toEqual({
+        minimumLevel: 'info',
+        retentionDays: 1,
+        autoAnalyze: true,
+      });
+
+      const merged = mergeAppSettings(store.settings, {
+        logging: {
+          minimumLevel: 'error',
+          retentionDays: 999,
+          autoAnalyze: false,
+        },
+      });
+
+      expect(merged.logging).toEqual({
+        minimumLevel: 'error',
+        retentionDays: 1,
+        autoAnalyze: false,
+      });
+    });
+
+    it('treats negative short-audio thresholds as the feature being off', () => {
+      const store = freshStore();
+
+      expect(store.settings.libraryMinDurationSeconds).toBe(0);
+
+      const mergedPositive = mergeAppSettings(store.settings, {
+        libraryMinDurationSeconds: 12,
+      });
+      expect(mergedPositive.libraryMinDurationSeconds).toBe(12);
+
+      const mergedNegative = mergeAppSettings(store.settings, {
+        libraryMinDurationSeconds: -5,
+      });
+      expect(mergedNegative.libraryMinDurationSeconds).toBe(0);
+    });
+
+    it('remembers whether desktop lyrics were open', () => {
+      const store = freshStore();
+
+      expect(store.settings.showDesktopLyrics).toBe(false);
+
+      const merged = mergeAppSettings(store.settings, {
+        showDesktopLyrics: true,
+      });
+
+      expect(merged.showDesktopLyrics).toBe(true);
+    });
+
+    it('enables the scroll-to-top button, song comments and tray-minimize by default', () => {
+      const store = freshStore();
+
+      expect(store.settings.enableScrollToTopButton).toBe(true);
+      expect(store.settings.showSongComments).toBe(true);
+      expect(store.settings.closeToTray).toBe(true);
+    });
+
+    it('drops the deprecated minimizeToTray flag while merging', () => {
+      const store = freshStore();
+
+      const merged = mergeAppSettings(store.settings, {
+        minimizeToTray: true,
+        closeToTray: true,
+      });
+
+      expect(merged.closeToTray).toBe(true);
+      expect('minimizeToTray' in merged).toBe(false);
+    });
   });
 
-  it('normalizes legacy auto foreground style to light', () => {
-    const settingsStore = useSettingsStore();
+  describe('theme settings', () => {
+    it('keeps nested custom background fields when patching the theme', () => {
+      const store = freshStore();
 
-    settingsStore.replaceTheme({
-      mode: 'custom',
-      dynamicBgType: 'none',
-      windowMaterial: 'none',
-      flowColorBoost: 25,
-      flowDepth: 30,
-      flowSpeed: 52,
-      flowTexture: 34,
-      windowBlurTint: 50,
-      customBgPath: '',
-      opacity: 0.8,
-      blur: 20,
-      customBackground: {
-        imagePath: '/covers/legacy.jpg',
+      store.patchTheme({
+        mode: 'custom',
+        customBackground: {
+          imagePath: '/covers/demo.jpg',
+          blur: 32,
+        },
+      });
+
+      expect(store.theme.mode).toBe('custom');
+      expect(store.theme.customBackground.imagePath).toBe('/covers/demo.jpg');
+      expect(store.theme.customBackground.blur).toBe(32);
+      expect(store.theme.customBackground.maskColor).toBe('#000000');
+    });
+
+    it('uppercases valid accent colors and rejects malformed ones', () => {
+      const store = freshStore();
+
+      store.patchTheme({ accentColor: '#3b82f6' });
+      expect(store.theme.accentColor).toBe('#3B82F6');
+
+      store.patchTheme({ accentColor: 'not-a-color' });
+      expect(store.theme.accentColor).toBe('#3B82F6');
+    });
+
+    it('tracks the player detail cover behavior and the last in-page choice', () => {
+      const store = freshStore();
+
+      expect(store.theme.playerDetailCoverBehavior).toBe('remember');
+      expect(store.theme.lastPlayerDetailCoverVisible).toBe(true);
+      store.patchTheme({
+        playerDetailCoverBehavior: 'show',
+        lastPlayerDetailCoverVisible: false,
+      });
+      expect(store.theme.playerDetailCoverBehavior).toBe('show');
+      expect(store.theme.lastPlayerDetailCoverVisible).toBe(false);
+
+      store.patchTheme({
+        playerDetailCoverBehavior: 'invalid' as 'remember',
+        lastPlayerDetailCoverVisible: 'invalid' as unknown as boolean,
+      });
+      expect(store.theme.playerDetailCoverBehavior).toBe('show');
+      expect(store.theme.lastPlayerDetailCoverVisible).toBe(false);
+    });
+
+    it('migrates the legacy player detail cover boolean into hide behavior', () => {
+      const store = freshStore();
+
+      store.patchTheme({
+        showPlayerDetailCoverByDefault: false,
+      } as Parameters<typeof store.patchTheme>[0]);
+
+      expect(store.theme.playerDetailCoverBehavior).toBe('hide');
+    });
+
+    it('normalizes player detail style values', () => {
+      const store = freshStore();
+
+      expect(store.theme.playerDetailStyle).toBe('classic');
+      store.patchTheme({ playerDetailStyle: 'vinyl' });
+      expect(store.theme.playerDetailStyle).toBe('vinyl');
+
+      store.patchTheme({ playerDetailStyle: 'invalid' as 'classic' });
+      expect(store.theme.playerDetailStyle).toBe('vinyl');
+    });
+
+    it('normalizes vinyl plinth material values and ignores unknown ones', () => {
+      const store = freshStore();
+
+      expect(store.theme.playerDetailVinylMaterial).toBe('light');
+      store.patchTheme({ playerDetailVinylMaterial: 'matte' });
+      expect(store.theme.playerDetailVinylMaterial).toBe('matte');
+      store.patchTheme({ playerDetailVinylMaterial: 'oak' });
+      expect(store.theme.playerDetailVinylMaterial).toBe('oak');
+
+      // 非法值不得写入（回落为上一次的合法值）
+      store.patchTheme({ playerDetailVinylMaterial: 'walnut' as 'oak' });
+      expect(store.theme.playerDetailVinylMaterial).toBe('oak');
+    });
+
+    it('accepts the full polygon mesh speed range including standstill', () => {
+      const store = freshStore();
+
+      expect(store.theme.playerDetailMeshSpeed).toBe(1);
+      store.patchTheme({ playerDetailMeshSpeed: 2.5 });
+      expect(store.theme.playerDetailMeshSpeed).toBe(2.5);
+
+      // 0 表示静止，是合法取值（渲染侧只做夹取，不排除 0）
+      store.patchTheme({ playerDetailMeshSpeed: 0 });
+      expect(store.theme.playerDetailMeshSpeed).toBe(0);
+    });
+
+    it('normalizes the polygon mesh anti-aliasing flag', () => {
+      const store = freshStore();
+
+      expect(store.theme.playerDetailMeshAntiAlias).toBe(true);
+      store.patchTheme({ playerDetailMeshAntiAlias: false });
+      expect(store.theme.playerDetailMeshAntiAlias).toBe(false);
+
+      store.patchTheme({ playerDetailMeshAntiAlias: 'yes' as unknown as boolean });
+      expect(store.theme.playerDetailMeshAntiAlias).toBe(false);
+    });
+
+    it('routes replaceTheme through the settings domain instead of mutating ui state', () => {
+      const store = freshStore();
+
+      store.replaceTheme({
+        mode: 'dark',
+        dynamicBgType: 'blur',
+        windowMaterial: 'mica',
+        flowColorBoost: 62,
+        flowDepth: 54,
+        flowSpeed: 48,
+        flowTexture: 28,
+        windowBlurTint: 50,
+        customBgPath: '',
+        opacity: 0.75,
+        blur: 18,
+        customBackground: {
+          imagePath: '/covers/fallback.jpg',
+          blur: 24,
+          opacity: 0.85,
+          maskColor: '#101010',
+          maskAlpha: 0.45,
+          scale: 1.08,
+          foregroundStyle: 'light',
+        },
+      });
+
+      expect(store.settings.theme.windowMaterial).toBe('mica');
+      expect(store.settings.theme.customBackground.foregroundStyle).toBe('light');
+    });
+
+    it('maps the legacy auto foreground style onto light', () => {
+      const store = freshStore();
+
+      store.replaceTheme({
+        mode: 'custom',
+        dynamicBgType: 'none',
+        windowMaterial: 'none',
+        flowColorBoost: 25,
+        flowDepth: 30,
+        flowSpeed: 52,
+        flowTexture: 34,
+        windowBlurTint: 50,
+        customBgPath: '',
+        opacity: 0.8,
         blur: 20,
-        opacity: 1,
-        maskColor: '#000000',
-        maskAlpha: 0.4,
-        scale: 1,
-        foregroundStyle: 'auto' as unknown as 'light',
-      },
-    });
+        customBackground: {
+          imagePath: '/covers/legacy.jpg',
+          blur: 20,
+          opacity: 1,
+          maskColor: '#000000',
+          maskAlpha: 0.4,
+          scale: 1,
+          foregroundStyle: 'auto' as unknown as 'light',
+        },
+      });
 
-    expect(settingsStore.settings.theme.customBackground.foregroundStyle).toBe('light');
+      expect(store.settings.theme.customBackground.foregroundStyle).toBe('light');
+    });
   });
 
-  it('merges shortcut settings without dropping untouched bindings', () => {
-    const settingsStore = useSettingsStore();
+  describe('shortcuts, lyrics and desktop lyrics domains', () => {
+    it('merges shortcut settings without dropping untouched bindings', () => {
+      const store = freshStore();
 
-    settingsStore.patchSettings({
-      shortcuts: {
-        enabled: false,
-        local: {
-          togglePlay: {
-            code: 'Enter',
-            ctrl: false,
-            alt: false,
-            shift: false,
-            meta: false,
+      store.patchSettings({
+        shortcuts: {
+          enabled: false,
+          local: {
+            togglePlay: {
+              code: 'Enter',
+              ctrl: false,
+              alt: false,
+              shift: false,
+              meta: false,
+            },
           },
         },
-      },
+      });
+
+      expect(store.settings.shortcuts.enabled).toBe(false);
+      expect(store.settings.shortcuts.local.togglePlay?.code).toBe('Enter');
+      expect(store.settings.shortcuts.local.nextSong?.code).toBe('ArrowRight');
+      expect(store.settings.shortcuts.global.togglePlay?.code).toBe('KeyP');
     });
 
-    expect(settingsStore.settings.shortcuts.enabled).toBe(false);
-    expect(settingsStore.settings.shortcuts.local.togglePlay?.code).toBe('Enter');
-    expect(settingsStore.settings.shortcuts.local.nextSong?.code).toBe('ArrowRight');
-    expect(settingsStore.settings.shortcuts.global.togglePlay?.code).toBe('KeyP');
-  });
+    it('merges lyric preferences while keeping untouched display options', () => {
+      const store = freshStore();
 
-  it('ignores deprecated minimizeToTray when merging persisted settings', () => {
-    const settingsStore = useSettingsStore();
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      minimizeToTray: true,
-      closeToTray: true,
-    });
-
-    expect(merged.closeToTray).toBe(true);
-    expect('minimizeToTray' in merged).toBe(false);
-  });
-
-  it('enables the scroll to top button by default', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.enableScrollToTopButton).toBe(true);
-  });
-
-  it('shows song comments by default', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.showSongComments).toBe(true);
-  });
-
-  it('minimizes to tray on close by default', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.closeToTray).toBe(true);
-  });
-
-  it('uses safe logging defaults and normalizes persisted log settings', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.logging).toEqual({
-      minimumLevel: 'info',
-      retentionDays: 1,
-      autoAnalyze: true,
-    });
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      logging: {
-        minimumLevel: 'error',
-        retentionDays: 999,
-        autoAnalyze: false,
-      },
-    });
-
-    expect(merged.logging).toEqual({
-      minimumLevel: 'error',
-      retentionDays: 1,
-      autoAnalyze: false,
-    });
-  });
-
-  it('disables short audio exclusion by default and preserves persisted threshold', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.libraryMinDurationSeconds).toBe(0);
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      libraryMinDurationSeconds: 12,
-    });
-
-    expect(merged.libraryMinDurationSeconds).toBe(12);
-  });
-
-  it('normalizes invalid short audio thresholds to disabled', () => {
-    const settingsStore = useSettingsStore();
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      libraryMinDurationSeconds: -5,
-    });
-
-    expect(merged.libraryMinDurationSeconds).toBe(0);
-  });
-
-  it('remembers whether desktop lyrics were open', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.showDesktopLyrics).toBe(false);
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      showDesktopLyrics: true,
-    });
-
-    expect(merged.showDesktopLyrics).toBe(true);
-  });
-
-  it('uses shared audio output by default and preserves persisted output mode', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.audio.outputMode).toBe('shared');
-    expect(settingsStore.settings.audio.volumeBalance.gainOffsetDb).toBe(0);
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      audio: {
-        outputMode: 'wasapiExclusive',
-      },
-    });
-
-    expect(merged.audio.outputMode).toBe('wasapiExclusive');
-  });
-
-  it('migrates legacy target LUFS volume balance settings to gain offset dB', () => {
-    const settingsStore = useSettingsStore();
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      audio: {
-        volumeBalance: {
-          enabled: true,
-          targetLufs: -14,
-          preventClipping: false,
+      store.patchSettings({
+        lyrics: {
+          showRomaji: true,
+          playerOffsetX: 999,
         },
-      },
+      });
+
+      expect(store.settings.lyrics.showTranslation).toBe(true);
+      expect(store.settings.lyrics.showRomaji).toBe(true);
+      expect(store.settings.lyrics.playerOffsetX).toBe(30);
     });
 
-    expect(merged.audio.volumeBalance).toEqual({
-      enabled: true,
-      gainOffsetDb: 4,
-      preventClipping: false,
-    });
-  });
+    it('defaults the player lyrics renderer to AMLL and normalizes unknown modes', () => {
+      const store = freshStore();
 
-  it('merges lyrics settings without dropping untouched display preferences', () => {
-    const settingsStore = useSettingsStore();
+      expect(store.settings.lyrics.playerRenderMode).toBe('amll');
 
-    settingsStore.patchSettings({
-      lyrics: {
-        showRomaji: true,
-        playerOffsetX: 999,
-      },
-    });
+      const mergedLight = mergeAppSettings(store.settings, {
+        lyrics: {
+          playerRenderMode: 'light',
+        },
+      });
+      expect(mergedLight.lyrics.playerRenderMode).toBe('light');
 
-    expect(settingsStore.settings.lyrics.showTranslation).toBe(true);
-    expect(settingsStore.settings.lyrics.showRomaji).toBe(true);
-    expect(settingsStore.settings.lyrics.playerOffsetX).toBe(30);
-  });
-
-  it('uses AMLL as the default player lyrics render mode', () => {
-    const settingsStore = useSettingsStore();
-
-    expect(settingsStore.settings.lyrics.playerRenderMode).toBe('amll');
-  });
-
-  it('preserves a persisted light player lyrics render mode', () => {
-    const settingsStore = useSettingsStore();
-
-    const merged = mergeAppSettings(settingsStore.settings, {
-      lyrics: {
-        playerRenderMode: 'light',
-      },
+      const mergedInvalid = mergeAppSettings(store.settings, {
+        lyrics: {
+          playerRenderMode: 'canvas' as unknown as 'amll',
+        },
+      });
+      expect(mergedInvalid.lyrics.playerRenderMode).toBe('amll');
     });
 
-    expect(merged.lyrics.playerRenderMode).toBe('light');
-  });
+    it('merges desktop lyrics settings while keeping the desktop defaults intact', () => {
+      const store = freshStore();
 
-  it('normalizes invalid player lyrics render modes to AMLL', () => {
-    const settingsStore = useSettingsStore();
+      store.patchSettings({
+        desktopLyrics: {
+          autoHideWhenFullscreen: false,
+          colorScheme: 'pink',
+        },
+      });
 
-    const merged = mergeAppSettings(settingsStore.settings, {
-      lyrics: {
-        playerRenderMode: 'canvas' as unknown as 'amll',
-      },
+      expect(store.settings.desktopLyrics.autoHideWhenFullscreen).toBe(false);
+      expect(store.settings.desktopLyrics.colorScheme).toBe('pink');
+      expect(store.settings.desktopLyrics.playerAlignment).toBe('split-corners');
     });
 
-    expect(merged.lyrics.playerRenderMode).toBe('amll');
-  });
+    it('keeps desktop romaji played and unplayed colors independent', () => {
+      const store = freshStore();
 
-  it('merges desktop lyrics settings while keeping the desktop defaults intact', () => {
-    const settingsStore = useSettingsStore();
+      store.patchSettings({
+        desktopLyrics: {
+          customRomajiPlayedColor: '#123456',
+          customRomajiUnplayedColor: '#ABCDEF',
+        },
+      });
 
-    settingsStore.patchSettings({
-      desktopLyrics: {
-        autoHideWhenFullscreen: false,
-        colorScheme: 'pink',
-      },
-    });
-
-    expect(settingsStore.settings.desktopLyrics.autoHideWhenFullscreen).toBe(false);
-    expect(settingsStore.settings.desktopLyrics.colorScheme).toBe('pink');
-    expect(settingsStore.settings.desktopLyrics.playerAlignment).toBe('split-corners');
-  });
-
-  it('merges desktop romaji played and unplayed custom colors independently', () => {
-    const settingsStore = useSettingsStore();
-
-    settingsStore.patchSettings({
-      desktopLyrics: {
-        customRomajiPlayedColor: '#123456',
-        customRomajiUnplayedColor: '#ABCDEF',
-      },
-    });
-
-    expect(settingsStore.settings.desktopLyrics.customRomajiPlayedColor).toBe('#123456');
-    expect(settingsStore.settings.desktopLyrics.customRomajiUnplayedColor).toBe('#ABCDEF');
-  });
-
-  it('preserves outputMode when patching only equalizer', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: {
-        outputMode: 'wasapiExclusive',
-      },
-    });
-
-    store.patchSettings({
-      audio: {
-        equalizer: {
-          currentPresetId: 'preset_1',
-        } as unknown as import('../../types').EqualizerSettings,
-      },
-    });
-
-    expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
-  });
-
-  it('save/load/delete preset preserve wasapiExclusive output mode', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: {
-        outputMode: 'wasapiExclusive',
-      },
-    });
-
-    const preset = store.saveEqualizerPreset('Custom');
-    expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
-
-    store.loadEqualizerPreset(preset.id);
-    expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
-
-    store.deleteEqualizerPreset(preset.id);
-    expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
-  });
-
-  // ============================================================
-  // ============================================================
-
-  it('preserves outputMode through multiple sequential equalizer patches', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: {
-        outputMode: 'wasapiExclusive',
-        equalizer: partialEq({ enabled: true, preamp: 0, gains: Array(10).fill(0) }),
-      },
-    });
-
-    store.patchSettings({
-      audio: { equalizer: partialEq({ preamp: -3 }) },
-    });
-    store.patchSettings({
-      audio: { equalizer: partialEq({ gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1] }) },
-    });
-    store.patchSettings({
-      audio: { equalizer: partialEq({ enabled: false }) },
-    });
-
-    expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
-  });
-
-  it('preserves volumeBalance when patching only equalizer gains', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: {
-        volumeBalance: { enabled: true, gainOffsetDb: 5, preventClipping: true },
-      },
-    });
-
-    store.patchSettings({
-      audio: {
-        equalizer: partialEq({ gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1] }),
-      },
-    });
-
-    expect(store.settings.audio.volumeBalance).toEqual({
-      enabled: true,
-      gainOffsetDb: 5,
-      preventClipping: true,
+      expect(store.settings.desktopLyrics.customRomajiPlayedColor).toBe('#123456');
+      expect(store.settings.desktopLyrics.customRomajiUnplayedColor).toBe('#ABCDEF');
     });
   });
 
-  it('handles rapid save-delete-save preset operations', () => {
-    const store = useSettingsStore();
+  describe('audio output mode and volume balance', () => {
+    it('defaults to shared output with a zero gain offset', () => {
+      const store = freshStore();
 
-    store.patchSettings({
-      audio: { outputMode: 'wasapiExclusive' },
+      expect(store.settings.audio.outputMode).toBe('shared');
+      expect(store.settings.audio.volumeBalance.gainOffsetDb).toBe(0);
     });
 
-    const preset1 = store.saveEqualizerPreset('Preset 1');
-    const preset2 = store.saveEqualizerPreset('Preset 2');
-    const preset3 = store.saveEqualizerPreset('Preset 3');
+    it('preserves a persisted exclusive output mode', () => {
+      const store = freshStore();
 
-    store.deleteEqualizerPreset(preset2.id);
-    store.deleteEqualizerPreset(preset1.id);
+      const merged = mergeAppSettings(store.settings, {
+        audio: {
+          outputMode: 'wasapiExclusive',
+        },
+      });
 
-    const preset4 = store.saveEqualizerPreset('Preset 4');
+      expect(merged.audio.outputMode).toBe('wasapiExclusive');
+    });
 
-    expect(store.userPresets).toHaveLength(2);
-    expect(store.userPresets.map(p => p.id)).toContain(preset3.id);
-    expect(store.userPresets.map(p => p.id)).toContain(preset4.id);
-    expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
+    it('switches output modes back and forth through patches', () => {
+      const store = freshStore();
+
+      store.patchSettings({
+        audio: { outputMode: 'wasapiExclusive' },
+      });
+      expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
+
+      store.patchSettings({
+        audio: { outputMode: 'shared' },
+      });
+      expect(store.settings.audio.outputMode).toBe('shared');
+    });
+
+    it('migrates legacy target LUFS balance settings into gain offset dB', () => {
+      const store = freshStore();
+
+      const merged = mergeAppSettings(store.settings, {
+        audio: {
+          volumeBalance: {
+            enabled: true,
+            targetLufs: -14,
+            preventClipping: false,
+          },
+        },
+      });
+
+      expect(merged.audio.volumeBalance).toEqual({
+        enabled: true,
+        gainOffsetDb: 4,
+        preventClipping: false,
+      });
+    });
   });
 
-  it('handles preset operations with extreme gain values', () => {
-    const store = useSettingsStore();
+  describe('equalizer coexistence with other audio settings', () => {
+    it('keeps the output mode intact when only the equalizer is patched', () => {
+      const store = freshStore();
 
-    store.patchSettings({
-      audio: {
-        equalizer: partialEq({
-          preamp: -12,
-          gains: [-12, -12, -12, -12, -12, 12, 12, 12, 12, 12],
-        }),
-      },
+      store.patchSettings({
+        audio: {
+          outputMode: 'wasapiExclusive',
+        },
+      });
+
+      store.patchSettings({
+        audio: {
+          equalizer: {
+            currentPresetId: 'preset_1',
+          } as unknown as EqualizerSettings,
+        },
+      });
+
+      expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
     });
 
-    const preset = store.saveEqualizerPreset('Extreme');
-    expect(preset.gains).toEqual([-12, -12, -12, -12, -12, 12, 12, 12, 12, 12]);
-    expect(preset.preamp).toBe(-12);
+    it('keeps the output mode intact across sequential equalizer patches', () => {
+      const store = freshStore();
 
-    store.patchSettings({
-      audio: { equalizer: partialEq({ gains: Array(10).fill(0), preamp: 0 }) },
+      store.patchSettings({
+        audio: {
+          outputMode: 'wasapiExclusive',
+          equalizer: widenEq({ enabled: true, preamp: 0, gains: Array(10).fill(0) }),
+        },
+      });
+
+      patchEqualizer(store, { preamp: -3 });
+      patchEqualizer(store, { gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1] });
+      patchEqualizer(store, { enabled: false });
+
+      expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
     });
-    store.loadEqualizerPreset(preset.id);
-    expect(store.settings.audio.equalizer.gains).toEqual([-12, -12, -12, -12, -12, 12, 12, 12, 12, 12]);
-    expect(store.settings.audio.equalizer.preamp).toBe(-12);
+
+    it('keeps the volume balance intact when patching only equalizer gains', () => {
+      const store = freshStore();
+
+      store.patchSettings({
+        audio: {
+          volumeBalance: { enabled: true, gainOffsetDb: 5, preventClipping: true },
+        },
+      });
+
+      patchEqualizer(store, { gains: [1, 2, 3, 4, 5, 5, 4, 3, 2, 1] });
+
+      expect(store.settings.audio.volumeBalance).toEqual({
+        enabled: true,
+        gainOffsetDb: 5,
+        preventClipping: true,
+      });
+    });
+
+    it('keeps the footer equalizer toggle intact through equalizer patches', () => {
+      const store = freshStore();
+
+      store.patchSettings({
+        audio: { showEqualizerInFooter: false },
+      });
+
+      patchEqualizer(store, { enabled: true, gains: Array(10).fill(5) });
+
+      expect(store.settings.audio.showEqualizerInFooter).toBe(false);
+    });
+
+    it('leaves every audio field untouched when an empty audio patch arrives', () => {
+      const store = freshStore();
+
+      store.patchSettings({
+        audio: {
+          outputMode: 'wasapiExclusive',
+          equalizer: widenEq({ enabled: true, preamp: -3, gains: Array(10).fill(5) }),
+        },
+      });
+
+      const before = { ...store.settings.audio };
+      store.patchSettings({ audio: {} });
+      const after = store.settings.audio;
+
+      expect(after.outputMode).toBe(before.outputMode);
+      expect(after.equalizer.enabled).toBe(before.equalizer.enabled);
+      expect(after.equalizer.preamp).toBe(before.equalizer.preamp);
+      expect(after.equalizer.gains).toEqual(before.equalizer.gains);
+    });
   });
 
-  it('handles preset operations with decimal gain values', () => {
-    const store = useSettingsStore();
+  describe('equalizer presets', () => {
+    it('keeps the exclusive output mode through save, load and delete of a preset', () => {
+      const store = freshStore();
 
-    store.patchSettings({
-      audio: {
-        equalizer: partialEq({
-          preamp: -3.5,
-          gains: [1.5, 2.5, -0.5, 3.75, -1.25, 0, 4.5, -2.75, 1.125, -0.875],
-        }),
-      },
+      store.patchSettings({
+        audio: {
+          outputMode: 'wasapiExclusive',
+        },
+      });
+
+      const preset = store.saveEqualizerPreset('Custom');
+      expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
+
+      store.loadEqualizerPreset(preset.id);
+      expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
+
+      store.deleteEqualizerPreset(preset.id);
+      expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
     });
 
-    const preset = store.saveEqualizerPreset('Decimal');
-    expect(preset.gains).toEqual([1.5, 2.5, -0.5, 3.75, -1.25, 0, 4.5, -2.75, 1.125, -0.875]);
+    it('survives rapid save-delete-save preset sequences', () => {
+      const store = freshStore();
 
-    store.loadEqualizerPreset(preset.id);
-    expect(store.settings.audio.equalizer.gains).toEqual([1.5, 2.5, -0.5, 3.75, -1.25, 0, 4.5, -2.75, 1.125, -0.875]);
-  });
+      store.patchSettings({
+        audio: { outputMode: 'wasapiExclusive' },
+      });
 
-  it('preserves showEqualizerInFooter through equalizer patches', () => {
-    const store = useSettingsStore();
+      const firstPreset = store.saveEqualizerPreset('Preset 1');
+      const secondPreset = store.saveEqualizerPreset('Preset 2');
+      const thirdPreset = store.saveEqualizerPreset('Preset 3');
 
-    store.patchSettings({
-      audio: { showEqualizerInFooter: false },
+      store.deleteEqualizerPreset(secondPreset.id);
+      store.deleteEqualizerPreset(firstPreset.id);
+
+      const fourthPreset = store.saveEqualizerPreset('Preset 4');
+
+      expect(store.userPresets).toHaveLength(2);
+      expect(store.userPresets.map((preset) => preset.id)).toContain(thirdPreset.id);
+      expect(store.userPresets.map((preset) => preset.id)).toContain(fourthPreset.id);
+      expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
     });
 
-    store.patchSettings({
-      audio: {
-        equalizer: partialEq({ enabled: true, gains: Array(10).fill(5) }),
-      },
+    it('round-trips extreme gain values through a preset', () => {
+      const store = freshStore();
+
+      store.patchSettings({
+        audio: {
+          equalizer: widenEq({
+            preamp: -12,
+            gains: [-12, -12, -12, -12, -12, 12, 12, 12, 12, 12],
+          }),
+        },
+      });
+
+      const preset = store.saveEqualizerPreset('Extreme');
+      expect(preset.gains).toEqual([-12, -12, -12, -12, -12, 12, 12, 12, 12, 12]);
+      expect(preset.preamp).toBe(-12);
+
+      patchEqualizer(store, { gains: Array(10).fill(0), preamp: 0 });
+      store.loadEqualizerPreset(preset.id);
+      expect(store.settings.audio.equalizer.gains).toEqual([-12, -12, -12, -12, -12, 12, 12, 12, 12, 12]);
+      expect(store.settings.audio.equalizer.preamp).toBe(-12);
     });
 
-    expect(store.settings.audio.showEqualizerInFooter).toBe(false);
-  });
+    it('round-trips decimal gain values through a preset', () => {
+      const store = freshStore();
 
-  it('handles loading preset after manual equalizer adjustments', () => {
-    const store = useSettingsStore();
+      store.patchSettings({
+        audio: {
+          equalizer: widenEq({
+            preamp: -3.5,
+            gains: [1.5, 2.5, -0.5, 3.75, -1.25, 0, 4.5, -2.75, 1.125, -0.875],
+          }),
+        },
+      });
 
-    const preset = store.saveEqualizerPreset('Initial');
+      const preset = store.saveEqualizerPreset('Decimal');
+      expect(preset.gains).toEqual([1.5, 2.5, -0.5, 3.75, -1.25, 0, 4.5, -2.75, 1.125, -0.875]);
 
-    store.patchSettings({
-      audio: {
-        equalizer: partialEq({
-          preamp: -6,
-          gains: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
-          currentPresetId: null,
-        }),
-      },
+      store.loadEqualizerPreset(preset.id);
+      expect(store.settings.audio.equalizer.gains).toEqual([1.5, 2.5, -0.5, 3.75, -1.25, 0, 4.5, -2.75, 1.125, -0.875]);
     });
 
-    expect(store.settings.audio.equalizer.preamp).toBe(-6);
-    expect(store.settings.audio.equalizer.currentPresetId).toBeNull();
+    it('captures the equalizer state at the moment a preset is updated', () => {
+      const store = freshStore();
 
-    store.loadEqualizerPreset(preset.id);
-    expect(store.settings.audio.equalizer.preamp).toBe(0);
-    expect(store.settings.audio.equalizer.gains).toEqual(Array(10).fill(0));
-    expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
-  });
+      patchEqualizer(store, { preamp: 0, gains: Array(10).fill(0) });
+      const preset = store.saveEqualizerPreset('Original');
 
-  it('deleting non-current preset does not affect current equalizer state', () => {
-    const store = useSettingsStore();
+      patchEqualizer(store, { preamp: -5, gains: [5, 4, 3, 2, 1, -1, -2, -3, -4, -5] });
+      store.updateEqualizerPreset(preset.id, 'Updated');
 
-    const preset1 = store.saveEqualizerPreset('Preset 1');
-    const preset2 = store.saveEqualizerPreset('Preset 2');
+      patchEqualizer(store, { preamp: 0, gains: Array(10).fill(0) });
+      store.loadEqualizerPreset(preset.id);
 
-    store.loadEqualizerPreset(preset2.id);
-
-    store.deleteEqualizerPreset(preset1.id);
-
-    expect(store.settings.audio.equalizer.currentPresetId).toBe(preset2.id);
-    expect(store.settings.audio.equalizer.enabled).toBe(true);
-  });
-
-  it('handles save preset with special characters in name', () => {
-    const store = useSettingsStore();
-
-    const preset1 = store.saveEqualizerPreset('摇滚 & Bass');
-    const preset2 = store.saveEqualizerPreset('预设 <1>');
-    const preset3 = store.saveEqualizerPreset('Test "Quote"');
-
-    expect(preset1.name).toBe('摇滚 & Bass');
-    expect(preset2.name).toBe('预设 <1>');
-    expect(preset3.name).toBe('Test "Quote"');
-
-    expect(store.userPresets).toHaveLength(3);
-  });
-
-  it('handles save preset with empty name', () => {
-    const store = useSettingsStore();
-
-    const preset = store.saveEqualizerPreset('');
-    expect(preset.name).toBe('');
-    expect(store.userPresets).toHaveLength(1);
-  });
-
-  it('preset gains are independent copies - modifying one does not affect others', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: { equalizer: partialEq({ gains: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] }) },
-    });
-    const preset1 = store.saveEqualizerPreset('P1');
-
-    store.patchSettings({
-      audio: { equalizer: partialEq({ gains: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2] }) },
-    });
-    const preset2 = store.saveEqualizerPreset('P2');
-
-    expect(preset1.gains).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
-    expect(preset2.gains).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
-
-    store.loadEqualizerPreset(preset1.id);
-    expect(store.settings.audio.equalizer.gains).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
-  });
-
-  it('updateEqualizerPreset captures current settings at update time', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: { equalizer: partialEq({ preamp: 0, gains: Array(10).fill(0) }) },
-    });
-    const preset = store.saveEqualizerPreset('Original');
-
-    store.patchSettings({
-      audio: { equalizer: partialEq({ preamp: -5, gains: [5, 4, 3, 2, 1, -1, -2, -3, -4, -5] }) },
-    });
-    store.updateEqualizerPreset(preset.id, 'Updated');
-
-    store.patchSettings({ audio: { equalizer: partialEq({ preamp: 0, gains: Array(10).fill(0) }) } });
-    store.loadEqualizerPreset(preset.id);
-
-    expect(store.settings.audio.equalizer.preamp).toBe(-5);
-    expect(store.settings.audio.equalizer.gains).toEqual([5, 4, 3, 2, 1, -1, -2, -3, -4, -5]);
-  });
-
-  it('outputMode resets correctly from wasapiExclusive to shared', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: { outputMode: 'wasapiExclusive' },
-    });
-    expect(store.settings.audio.outputMode).toBe('wasapiExclusive');
-
-    store.patchSettings({
-      audio: { outputMode: 'shared' },
-    });
-    expect(store.settings.audio.outputMode).toBe('shared');
-  });
-
-  it('mergeAudioSettings handles undefined patch gracefully', () => {
-    const store = useSettingsStore();
-
-    store.patchSettings({
-      audio: {
-        outputMode: 'wasapiExclusive',
-        equalizer: partialEq({ enabled: true, preamp: -3, gains: Array(10).fill(5) }),
-      },
+      expect(store.settings.audio.equalizer.preamp).toBe(-5);
+      expect(store.settings.audio.equalizer.gains).toEqual([5, 4, 3, 2, 1, -1, -2, -3, -4, -5]);
     });
 
-    const before = { ...store.settings.audio };
-    store.patchSettings({ audio: {} });
-    const after = store.settings.audio;
+    it('loads a preset cleanly after manual equalizer adjustments', () => {
+      const store = freshStore();
 
-    expect(after.outputMode).toBe(before.outputMode);
-    expect(after.equalizer.enabled).toBe(before.equalizer.enabled);
-    expect(after.equalizer.preamp).toBe(before.equalizer.preamp);
-    expect(after.equalizer.gains).toEqual(before.equalizer.gains);
-  });
+      const preset = store.saveEqualizerPreset('Initial');
 
-  it('resetSettings clears all equalizer state including custom presets', () => {
-    const store = useSettingsStore();
+      patchEqualizer(store, {
+        preamp: -6,
+        gains: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+        currentPresetId: null,
+      });
 
-    store.patchSettings({ audio: { outputMode: 'wasapiExclusive' } });
-    store.saveEqualizerPreset('Custom 1');
-    store.saveEqualizerPreset('Custom 2');
+      expect(store.settings.audio.equalizer.preamp).toBe(-6);
+      expect(store.settings.audio.equalizer.currentPresetId).toBeNull();
 
-    store.resetSettings();
+      store.loadEqualizerPreset(preset.id);
+      expect(store.settings.audio.equalizer.preamp).toBe(0);
+      expect(store.settings.audio.equalizer.gains).toEqual(Array(10).fill(0));
+      expect(store.settings.audio.equalizer.currentPresetId).toBe(preset.id);
+    });
 
-    expect(store.settings.audio.outputMode).toBe('shared');
-    expect(store.settings.audio.equalizer.enabled).toBe(false);
-    expect(store.settings.audio.equalizer.preamp).toBe(0);
-    expect(store.settings.audio.equalizer.gains).toEqual(Array(10).fill(0));
+    it('does not disturb the current equalizer when deleting another preset', () => {
+      const store = freshStore();
+
+      const firstPreset = store.saveEqualizerPreset('Preset 1');
+      const secondPreset = store.saveEqualizerPreset('Preset 2');
+
+      store.loadEqualizerPreset(secondPreset.id);
+
+      store.deleteEqualizerPreset(firstPreset.id);
+
+      expect(store.settings.audio.equalizer.currentPresetId).toBe(secondPreset.id);
+      expect(store.settings.audio.equalizer.enabled).toBe(true);
+    });
+
+    it('accepts special characters in preset names', () => {
+      const store = freshStore();
+
+      const rockPreset = store.saveEqualizerPreset('摇滚 & Bass');
+      const anglePreset = store.saveEqualizerPreset('预设 <1>');
+      const quotePreset = store.saveEqualizerPreset('Test "Quote"');
+
+      expect(rockPreset.name).toBe('摇滚 & Bass');
+      expect(anglePreset.name).toBe('预设 <1>');
+      expect(quotePreset.name).toBe('Test "Quote"');
+
+      expect(store.userPresets).toHaveLength(3);
+    });
+
+    it('accepts an empty preset name', () => {
+      const store = freshStore();
+
+      const preset = store.saveEqualizerPreset('');
+      expect(preset.name).toBe('');
+      expect(store.userPresets).toHaveLength(1);
+    });
+
+    it('gives each preset an independent copy of the gains', () => {
+      const store = freshStore();
+
+      patchEqualizer(store, { gains: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] });
+      const firstPreset = store.saveEqualizerPreset('P1');
+
+      patchEqualizer(store, { gains: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2] });
+      const secondPreset = store.saveEqualizerPreset('P2');
+
+      expect(firstPreset.gains).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      expect(secondPreset.gains).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+
+      store.loadEqualizerPreset(firstPreset.id);
+      expect(store.settings.audio.equalizer.gains).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+    });
+
+    it('clears all equalizer state including custom presets on reset', () => {
+      const store = freshStore();
+
+      store.patchSettings({ audio: { outputMode: 'wasapiExclusive' } });
+      store.saveEqualizerPreset('Custom 1');
+      store.saveEqualizerPreset('Custom 2');
+
+      store.resetSettings();
+
+      expect(store.settings.audio.outputMode).toBe('shared');
+      expect(store.settings.audio.equalizer.enabled).toBe(false);
+      expect(store.settings.audio.equalizer.preamp).toBe(0);
+      expect(store.settings.audio.equalizer.gains).toEqual(Array(10).fill(0));
+    });
   });
 });

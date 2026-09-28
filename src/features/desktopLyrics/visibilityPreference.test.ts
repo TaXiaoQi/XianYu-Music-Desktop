@@ -1,28 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
-import {
-  applyDesktopLyricsVisibilityPreference,
-  persistDesktopLyricsVisibilityPreference,
-} from './visibilityPreference';
+import { applyDesktopLyricsVisibilityPreference, persistDesktopLyricsVisibilityPreference } from './visibilityPreference';
 
-describe('desktop lyrics visibility preference', () => {
-  it('applies the persisted visibility to the runtime state', () => {
-    const visible = ref(false);
+describe('desktop lyrics visibility preference sync', () => {
+  it('writes the persisted visibility into the runtime ref', () => {
+    const runtimeVisible = ref(false);
 
-    applyDesktopLyricsVisibilityPreference(visible, true);
+    applyDesktopLyricsVisibilityPreference(runtimeVisible, true);
 
-    expect(visible.value).toBe(true);
+    expect(runtimeVisible.value).toBe(true);
   });
 
-  it('persists runtime visibility changes only when the value changed', () => {
-    const patchSettings = vi.fn();
-    const settings = { showDesktopLyrics: false };
+  it('skips the settings patch while runtime visibility already matches', () => {
+    const applyPatch = vi.fn();
+    const initialSettings = { showDesktopLyrics: false };
 
-    persistDesktopLyricsVisibilityPreference(settings, patchSettings, true);
-    persistDesktopLyricsVisibilityPreference({ showDesktopLyrics: true }, patchSettings, true);
+    persistDesktopLyricsVisibilityPreference(initialSettings, applyPatch, true);
+    persistDesktopLyricsVisibilityPreference({ showDesktopLyrics: true }, applyPatch, true);
 
-    expect(patchSettings).toHaveBeenCalledTimes(1);
-    expect(patchSettings).toHaveBeenCalledWith({ showDesktopLyrics: true });
+    expect(applyPatch).toHaveBeenCalledTimes(1);
+    expect(applyPatch).toHaveBeenCalledWith({ showDesktopLyrics: true });
   });
 });
