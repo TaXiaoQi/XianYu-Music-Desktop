@@ -344,16 +344,11 @@ onMounted(() => {
 </template>
 
 <style>
-/* ---- 路由页切换：微上滑 + 柔和淡入淡出（合并自原先的重复定义，取最终生效值） ---- */
-.page-fade-enter-active, .page-fade-leave-active { transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+/* ---- 路由页切换：纯渐隐渐显（全局动效 token，无位移无缩放） ---- */
+.page-fade-enter-active, .page-fade-leave-active { transition: opacity var(--motion-dur-base) var(--motion-ease-standard); }
 .page-fade-leave-active { pointer-events: none; }
-.page-fade-enter-from { opacity: 0; transform: translateY(8px) scale(0.996); }
-.page-fade-leave-to { opacity: 0; transform: translateY(-6px) scale(0.996); }
-
-.page-enter-enter-active { animation: page-enter-in 0.22s ease; }
-@keyframes page-enter-in { from { opacity: 0; } to { opacity: 1; } }
-.page-enter-active { transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.24s cubic-bezier(0.16, 1, 0.3, 1); }
-.page-enter-from { opacity: 0; transform: translateY(8px); }
+.page-fade-enter-from { opacity: 0; }
+.page-fade-leave-to { opacity: 0; }
 
 .footer-slide-enter-active, .footer-slide-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; }
 .footer-slide-enter-from, .footer-slide-leave-to { transform: translateY(100%); max-height: 0 !important; opacity: 0; }

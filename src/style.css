@@ -20,6 +20,12 @@ input::-ms-clear {
   --favorite-color: #EC4142;
   --scrollbar-thumb-rgb: 0, 0, 0;
   --scrollbar-thumb-max-alpha: 0.38;
+  /* ---- 动效 token（由仓库现有过渡值归纳：时长集中在 140–300ms，缓动为这两条曲线） ---- */
+  --motion-dur-fast: 140ms;
+  --motion-dur-base: 200ms;
+  --motion-dur-slow: 280ms;
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   font-family: "Inter", system-ui, sans-serif;
   overflow: hidden;
 }
@@ -169,6 +175,17 @@ html.theme-transitioning * {
   html.theme-transitioning body,
   html.theme-transitioning *:not(svg):not(svg *) {
     transition-duration: 0ms;
+  }
+
+  .page-fade-enter-active,
+  .page-fade-leave-active {
+    transition: none !important;
+  }
+
+  .page-fade-enter-from,
+  .page-fade-leave-to {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 

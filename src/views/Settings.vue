@@ -49,6 +49,7 @@ const lazySettings = (loader: () => Promise<Component>) => defineAsyncComponent(
 const SettingsAbout = lazySettings(settingsLoaders.about);
 const SettingsAccount = lazySettings(settingsLoaders.account);
 const SettingsDesktopLyrics = lazySettings(settingsLoaders.desktopLyrics);
+const SettingsSleepTimer = lazySettings(settingsLoaders.sleepTimer);
 const SettingsGeneral = lazySettings(settingsLoaders.general);
 const SettingsLibrary = lazySettings(settingsLoaders.library);
 const SettingsPlugins = lazySettings(settingsLoaders.plugins);
@@ -469,6 +470,7 @@ const tabs = computed(() => {
           <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
           <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
+          <SettingsSleepTimer v-else-if="activeTab === 'sleepTimer'" key="sleepTimer" />
           <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" key="audioOutput" />
           <SettingsDownload v-else-if="activeTab === 'download'" key="download" />
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
