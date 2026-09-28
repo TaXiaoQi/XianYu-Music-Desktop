@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { ListChecks, ListPlus, RefreshCw } from 'lucide-vue-next';
+
 import { useSearchAwareTitle } from '../../composables/useSearchAwareTitle';
 import SortModeButton from '../common/SortModeButton.vue';
+import HeaderOverflowMenu from './HeaderOverflowMenu.vue';
 
 type BatchKey = 'toggleAll' | 'move' | 'collect' | 'remove';
 type PrimaryKey = 'play' | 'rescan' | 'enqueue' | 'bulk';
@@ -78,27 +81,15 @@ const leaveBatchMode = () => {
 const ROUND_BUTTON =
   'grid size-7 place-items-center rounded-full border border-white/1 bg-white/1 text-gray-900 shadow-sm transition hover:border-gray-200 hover:bg-white/10 hover:text-black active:scale-95 dark:text-gray-100 dark:hover:border-white/20 dark:hover:text-white';
 
+// 头部只保留“播放全部 / 排序”两个主操作，其余收进“更多”菜单。
 const primaryEntries: ActionSpec<PrimaryKey>[] = [
   { key: 'play', tip: '播放全部', weight: 2.2, strokes: ['M9 5.5v13l10-6.5-10-6.5Z'] },
-  {
-    key: 'rescan',
-    tip: '刷新音乐库',
-    strokes: [
-      'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
-    ],
-  },
-  {
-    key: 'enqueue',
-    tip: '全部添加至播放队列',
-    strokes: ['M3.5 6H17', 'M3.5 12H14', 'M3.5 18H11', 'M18 14v6', 'M15 17h6'],
-  },
-  {
-    key: 'bulk',
-    tip: '批量操作',
-    strokes: [
-      'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
-    ],
-  },
+];
+
+const overflowItems = [
+  { id: 'rescan', label: '刷新音乐库', icon: RefreshCw },
+  { id: 'enqueue', label: '全部添加至播放队列', icon: ListPlus },
+  { id: 'bulk', label: '批量操作', icon: ListChecks },
 ];
 
 const runPrimaryEntry = (key: PrimaryKey) => {
@@ -109,6 +100,10 @@ const runPrimaryEntry = (key: PrimaryKey) => {
     bulk: () => emit('update:isBatchMode', true),
   };
   outcomes[key]();
+};
+
+const handleOverflowPick = (id: string) => {
+  runPrimaryEntry(id as PrimaryKey);
 };
 </script>
 
@@ -177,6 +172,12 @@ const runPrimaryEntry = (key: PrimaryKey) => {
         </button>
 
         <SortModeButton />
+
+        <HeaderOverflowMenu
+          :items="overflowItems"
+          :button-class="ROUND_BUTTON"
+          @pick="handleOverflowPick"
+        />
       </div>
     </div>
   </div>

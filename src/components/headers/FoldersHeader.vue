@@ -1,8 +1,10 @@
 <script setup lang="ts">
 // 文件夹视图顶栏：浏览/管理模式切换、批量操作入口、排序菜单（按触发按钮位置在视口内定位）。
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, type Component } from 'vue';
+import { ListChecks, RefreshCw } from 'lucide-vue-next';
 
 import { default as SortModeIcon } from '../common/SortModeIcon.vue';
+import HeaderOverflowMenu from './HeaderOverflowMenu.vue';
 import { useToast as createToaster } from '../../composables/toast';
 import { usePlayerViewState as createViewState } from '../../composables/usePlayerViewState';
 
@@ -15,6 +17,22 @@ const props = defineProps<{ isBatchMode: boolean; selectedCount: number; current
 const emit = defineEmits(['update:isBatchMode', 'playAll', 'batchPlay', 'batchDelete', 'batchMove', 'addToPlaylist', 'addFolder', 'refreshFolder', 'update:isManagementMode']);
 
 const toast = createToaster();
+
+// 头部只保留“添加文件夹/排序”这类主操作；刷新与批量操作收进“更多”菜单。
+const HEADER_ROUND_BUTTON =
+  'bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20';
+
+const overflowItems = computed<{ id: string; label: string; icon: Component }[]>(() => {
+  const items: { id: string; label: string; icon: Component }[] = [];
+  if (props.currentFolderFilter) items.push({ id: 'refresh', label: '刷新文件夹', icon: RefreshCw });
+  items.push({ id: 'batch', label: props.isBatchMode ? '退出批量操作' : '批量操作', icon: ListChecks });
+  return items;
+});
+
+function handleOverflowPick(id: string) {
+  if (id === 'refresh') emit('refreshFolder');
+  else if (id === 'batch') emit('update:isBatchMode', !props.isBatchMode);
+}
 
 const sortMenuOpen = ref(false);
 const menuPosX = ref(0);
@@ -83,14 +101,14 @@ onUnmounted(() => window.removeEventListener('click', onDocClick));
       </div><button @click="emit('addFolder')" title="添加文件夹" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
           <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg></button>
 
-        <button v-if="currentFolderFilter" @click="emit('refreshFolder')" title="刷新文件夹" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
-          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
-
-        <button @click="emit('update:isBatchMode', !isBatchMode)" :title="isBatchMode ? '退出批量操作' : '批量操作'" :class="isBatchMode ? 'text-[#EC4141] border-red-200 bg-red-50/60 dark:bg-red-500/10' : ''" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
-          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg></button>
-
         <button @click="openSortMenu" title="排序方式" :class="{ 'text-blue-500 border-blue-200 bg-blue-50/50 dark:bg-blue-500/10': folderSortMode !== 'title' }" class="sort-menu-trigger bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
           <SortModeIcon class="h-4 w-4" /></button>
+
+        <HeaderOverflowMenu
+          :items="overflowItems"
+          :button-class="HEADER_ROUND_BUTTON"
+          @pick="handleOverflowPick"
+        />
 
         <Teleport to="body"><div v-if="sortMenuOpen" :style="sortMenuStyle()" class="fixed z-[9999] bg-white dark:bg-[#262626] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100">
           <div v-for="mode in (['title', 'name', 'artist', 'track_number', 'added_at', 'custom'] as const)" :key="mode" @click="chooseSortMode(mode)" :class="isActiveMode(mode) ? 'text-blue-500 font-medium' : 'text-gray-600 dark:text-gray-300'" class="px-3 py-2 text-xs cursor-pointer flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
