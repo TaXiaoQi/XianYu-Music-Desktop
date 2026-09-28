@@ -13,6 +13,7 @@ import ConfirmModal from '../overlays/ConfirmModal.vue';
 import SettingHint from './SettingHint.vue';
 import { useI18n } from '../../features/i18n';
 import { usePerformanceMode } from '../../composables/usePerformanceMode';
+import { AUDIO_FILE_ASSOCIATION_EXTENSIONS, audioFileAssociationLabel } from '../../features/settings/audioFileAssociations';
 import type { AppLanguage, PerformanceMode } from '../../types';
 
 const { settings, patchSettings } = useSettings();
@@ -93,6 +94,55 @@ const syncLaunchOnStartupFromSystem = async () => {
     }
   } catch {
     // 非 Tauri 环境静默忽略
+  }
+};
+
+// --- 音频文件关联（仅 Windows）：勾选哪些格式出现在系统「打开方式」列表 ---
+const isWindowsPlatform = computed(() => {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  return ua.includes('Windows');
+});
+
+const associatedExtensions = computed<string[]>(
+  () => settings.value.audioFileAssociations ?? [],
+);
+
+const isExtensionAssociated = (ext: string) => associatedExtensions.value.includes(ext);
+
+const toggleFileAssociation = (ext: string, next: boolean) => {
+  const current = associatedExtensions.value;
+  const updated = next
+    ? [...new Set([...current, ext])]
+    : current.filter((item) => item !== ext);
+  patchSettings({ audioFileAssociations: updated });
+  playerStorage.writeSettings(settings.value);
+  void appApi
+    .setAudioFileAssociations(next ? [ext] : [], next ? [] : [ext])
+    .catch((error) => {
+      console.error('Failed to update audio file association:', error);
+      showToast(t('toast.gpuFailed'), 'error');
+    });
+};
+
+const setAllFileAssociations = (enabled: boolean) => {
+  const all: string[] = [...AUDIO_FILE_ASSOCIATION_EXTENSIONS];
+  const current = associatedExtensions.value;
+  const added = enabled ? all.filter((ext) => !current.includes(ext)) : [];
+  const removed = enabled ? [] : current.filter((ext) => all.includes(ext));
+  patchSettings({ audioFileAssociations: enabled ? all : [] });
+  playerStorage.writeSettings(settings.value);
+  void appApi.setAudioFileAssociations(added, removed).catch((error) => {
+    console.error('Failed to update audio file associations:', error);
+  });
+};
+
+const syncFileAssociationsFromSystem = async () => {
+  if (!isWindowsPlatform.value) return;
+  try {
+    const enabled = await appApi.getAudioFileAssociations();
+    patchSettings({ audioFileAssociations: enabled });
+  } catch {
+    // 非 Tauri 环境或读取失败时保留本地值
   }
 };
 
@@ -249,6 +299,7 @@ const handleClearAllData = async () => {
 
 onMounted(() => {
   void syncLaunchOnStartupFromSystem();
+  void syncFileAssociationsFromSystem();
   void playbackApi.setStreamCacheMaxSize(settings.value.audio.streamCacheSizeMB * 1024 * 1024)
     .then(refreshStreamCacheInfo);
   if (settings.value.audio.streamCacheDir) {
@@ -460,6 +511,47 @@ onMounted(() => {
         </div>
       </div>
     </section>
+
+    <section v-if="isWindowsPlatform" class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        {{ t('general.fileAssoc') }}
+      </h2>
+      <p class="text-xs leading-5 text-gray-500 dark:text-white/45">{{ t('general.fileAssocHint') }}</p>
+      <div class="rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+        <div class="flex items-center justify-end gap-2 border-b border-gray-200/40 px-4 py-2.5 dark:border-gray-800/40">
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
+            @click="setAllFileAssociations(true)"
+          >
+            {{ t('general.fileAssocAll') }}
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
+            @click="setAllFileAssociations(false)"
+          >
+            {{ t('general.fileAssocNone') }}
+          </button>
+        </div>
+        <div
+          v-for="ext in AUDIO_FILE_ASSOCIATION_EXTENSIONS"
+          :key="ext"
+          class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+        >
+          <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ audioFileAssociationLabel(ext) }}</div>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': isExtensionAssociated(ext) }"
+            @click="toggleFileAssociation(ext, !isExtensionAssociated(ext))"
+          ></button>
+        </div>
+      </div>
+      <SettingHint severity="warning" :text="t('general.fileAssocNote')" />
+    </section>
+
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>

@@ -707,6 +707,8 @@ export interface AppSettings {
   closeToTray: boolean;
   launchOnStartup: boolean;
   launchOnStartupMinimized: boolean;
+  /** 已勾选「用弦予音乐打开」的音频扩展名（仅 Windows 生效）。 */
+  audioFileAssociations: string[];
   preventSleepWhilePlaying: boolean;
   showDesktopLyrics: boolean;
   showQualityBadges: boolean;
