@@ -60,9 +60,10 @@ describe('the time-range switcher is gated to the glass look', () => {
 
   it('keeps the switcher markup and behaviour, restyled with the lighter glass idiom', () => {
     // 玻璃类串：3110e0da 引入，玻璃质感升级时加了顶部 inset 亮线 + 增透
-    // （backdrop-saturate-150）；深色档因"不够透亮"已整体提亮（填充 /12、亮线 0.22）；
-    // 扁平类串逐字取自旧版，不动
-    expect(source).toContain('\'border border-white/20 bg-white/40 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/12 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]\'');
+    // （backdrop-saturate-150）；后按实机反馈「像 Win7 Aero 而非 iOS 液态玻璃」整体转
+    // Liquid Glass：卡面填充压到近全透（浅 /18、深 /8）+ 镜面点 + 内圈棱线，靠边缘折射
+    // 而非加白造存在感；扁平类串逐字取自旧版，不动
+    expect(source).toContain('\'border border-white/25 bg-white/20 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/8 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]\'');
     expect(source).toContain('\'border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10\'');
     // 点击与选中态绑定原样保留
     expect(source).toContain('@click="selectRange(range.value)"');
@@ -176,19 +177,22 @@ describe('glass look gains layered glass polish (corner refraction + hover sheen
 
   it('puts the pseudo-element carrier and the four-layer tokens on the glass card string', () => {
     expect(source).toContain("const HOME_CARD_CLASS = 'glass-card ");
-    // 第 1 层（inset 顶/底高光）+ 第 4 层（深外影 + 增透折射）进类串
-    expect(source).toContain('shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(255,255,255,0.10),0_8px_24px_rgba(15,23,42,0.10)]');
+    // 第 1 层（inset 顶高光 + 内圈棱线 + inset 底影）+ 第 4 层（近距接触影 + 深广投影 +
+    // 增透折射）进类串。内圈棱线是 Liquid Glass 的「倒角反光」，Aero 没有。
+    expect(source).toContain('shadow-[inset_0_1px_0_rgba(255,255,255,0.55),inset_0_0_0_1px_rgba(255,255,255,0.14),inset_0_-1px_1px_rgba(15,23,42,0.06),0_1px_2px_rgba(15,23,42,0.06),0_10px_30px_rgba(15,23,42,0.16)]');
     expect(source).toContain('backdrop-blur-lg backdrop-saturate-150');
-    // 深色档：高光 alpha 调低 + 外阴影加深
-    // 深色档：填充与边框提亮（/12、white/25）+ 顶/底亮线加强，解决"不够透亮"
-    expect(source).toContain('dark:border-white/25 dark:bg-white/12 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),inset_0_-1px_0_rgba(255,255,255,0.14),0_10px_28px_rgba(0,0,0,0.35)]');
+    // 深色档：填充压到近全透（/8、边框 white/18），靠镜面点 + 内圈棱线 + 三层阴影造厚度
+    expect(source).toContain('dark:border-white/18 dark:bg-white/8 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_0_0_1px_rgba(255,255,255,0.08),inset_0_-1px_1px_rgba(0,0,0,0.32),0_1px_2px_rgba(0,0,0,0.35),0_14px_36px_rgba(0,0,0,0.50)]');
   });
 
   it('adds the ::before refraction layer and the ::after hover sheen in the scoped block', () => {
-    // 第 2 层：边缘折射渐变 + 四角光斑（左上最亮 → 右上次之 → 右下/左下极弱）
+    // 第 2 层：边缘折射高光 + 四角镜面点（左上最亮 → 右上次之 → 右下/左下极弱）
     expect(scopedStyle).toContain('.glass-card::before');
     expect(scopedStyle).toContain('radial-gradient');
     expect(scopedStyle).toContain('.dark .glass-card::before');
+    // 镜面点必须是「小而亮、衰减极快」而非 Aero 的大范围柔光晕：小半径 + transparent 100%
+    expect(scopedStyle).toContain('transparent 100%');
+    expect(scopedStyle).not.toContain('transparent 55%');
     // 第 3 层：hover 掠射光泽，transition 触发而非循环动画
     expect(scopedStyle).toContain('.glass-card::after');
     expect(scopedStyle).toContain('.glass-card:hover::after');
