@@ -47,6 +47,7 @@ impl ControlCore {
     }
 
     /// 注入鉴权策略（测试钩子；生产路径使用 init_pairing 注入 PairingManager）。
+    #[allow(dead_code)] // 预留测试钩子，当前测试直接走 PairingManager
     pub fn set_auth(&self, auth: Arc<dyn server::HelloAuth>) {
         *CUSTOM_AUTH.lock().unwrap() = Some(auth);
     }
@@ -150,6 +151,8 @@ impl ControlCore {
         }
     }
 
+    /// 已连接 client 数（测试断言使用）。
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn client_count(&self) -> usize {
         self.guard
             .lock()
@@ -169,6 +172,8 @@ impl ControlCore {
             .unwrap_or_default()
     }
 
+    /// 按 client id 踢出（设置页设备管理预留接口）。
+    #[allow(dead_code)]
     pub fn kick_client(&self, id: u64) {
         if let Some(g) = self.guard.lock().unwrap().as_ref() {
             g.kick(id);

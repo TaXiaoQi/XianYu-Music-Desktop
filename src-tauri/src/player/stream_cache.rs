@@ -228,6 +228,8 @@ pub struct StreamingTempFileState {
     /// 共享总长槽位（字节，0 = 未知）：下载线程拿到 Content-Length 后实时回填。
     /// `total_bytes` 是 Clone 时刻快照（start_streaming_download 返回时必然 None），
     /// symphonia FLAC/MP3 demuxer 的 seek 依赖 `MediaSource::byte_len()`，必须实时可读。
+    /// 消费端待接线：rodio ReadSeekSource 的 byte_len 是一次性快照，换自定义 MediaSource 后启用。
+    #[allow(dead_code)]
     pub content_length_shared: Arc<AtomicU64>,
 }
 
@@ -331,6 +333,8 @@ impl StreamingTempFileState {
 
     /// 共享总长（字节）：下载线程回填 Content-Length 后实时可读，未知返回 None。
     /// symphonia FLAC/MP3 demuxer 的 seek 依赖 MediaSource::byte_len() 提供二分上界。
+    /// 消费端待接线：rodio ReadSeekSource 的 byte_len 是一次性快照，换自定义 MediaSource 后启用。
+    #[allow(dead_code)]
     pub fn shared_total_bytes(&self) -> Option<u64> {
         let v = self.content_length_shared.load(Ordering::Relaxed);
         if v == 0 {

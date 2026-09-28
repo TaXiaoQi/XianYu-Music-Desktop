@@ -6,8 +6,7 @@ use crate::dlna::net_util::lan_ip;
 use crate::dlna::ssdp::{
     bind_multicast_socket, tokio_udp_from_socket, SSDP_MULTICAST_V4, SSDP_PORT,
 };
-use socket2::Socket;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;

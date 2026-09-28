@@ -242,7 +242,7 @@ onMounted(() => {
 
         <div
           v-if="!isMiniMode"
-          class="relative z-10 flex-1 overflow-hidden transition-colors duration-500"
+          class="relative z-10 flex flex-1 overflow-hidden transition-colors duration-500"
           :class="[
             mainContainerClass,
             routeSwapMotion === 'entering' ? 'fs-entering' : '',
