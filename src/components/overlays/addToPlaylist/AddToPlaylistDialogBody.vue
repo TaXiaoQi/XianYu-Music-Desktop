@@ -1,3 +1,4 @@
+<script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import ModernInputModal from '../../common/ModernInputModal.vue';
