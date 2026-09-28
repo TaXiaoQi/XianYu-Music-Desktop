@@ -619,19 +619,20 @@ export class WordLyricPlayerCore {
   }
 
   /**
-   * 活动行收敛：行时间窗口重叠时，非对唱场景只保留最新起唱的一组
-   * （对齐移动端「最后一条已起唱行」的单活动模型），避免相邻两行同时逐字扫光；
-   * 对唱合唱行豁免，仍允许双行同扫。BG 伴随行始终跟随其主行。
+   * 活动行收敛：行时间窗口重叠时只保留最新起唱的一组
+   * （对齐移动端「最后一条已起唱行」的单活动模型）。
+   * 数据源会把长句拆成时间窗重叠的两条行（视觉上像折行），对唱标记也可能误标；
+   * 任何多行同扫都会呈现「两行一起逐字」，因此一律收敛为单活动组。
+   * BG 伴随行始终跟随其主行。
    */
   private resolveActiveIndices(): number[] {
     const hits = findActiveLineIndices(this.lines, this.currentTimeMs);
     if (hits.length <= 1) return hits;
     const last = hits[hits.length - 1]!;
-    const prev = hits[hits.length - 2]!;
     const lastLine = this.lines[last]!;
-    const prevLine = this.lines[prev]!;
-    if (lastLine.isDuet || prevLine.isDuet) return hits;
-    return lastLine.isBG ? [prev, last] : [last];
+    if (!lastLine.isBG) return [last];
+    const prev = hits[hits.length - 2]!;
+    return [prev, last];
   }
 
   private applyStaticWordMasks(entry: LineEntry, state: LineVisualState) {
