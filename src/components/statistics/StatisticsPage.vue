@@ -95,10 +95,13 @@ const TEXT = computed(() => isEnglish.value ? {
 });
 
 // 首页卡片有两套观感，由设置「样式」里的 useGlassSwitch 决定：
-// - 玻璃（true）：参考稿的玻璃拟态卡（淡色图标方块 + 装饰角标 + hover 缩放）
+// - 玻璃（true）：参考稿的玻璃拟态卡（淡色图标方块 + 装饰角标 + hover 缩放）。
+//   玻璃质感分四层：类串里的 inset 顶/底高光 + 深外影 + backdrop-blur-lg/saturate-150
+//   是其中两层；另两层（边缘折射渐变 + 四角光斑的 ::before、hover 掠射光泽的 ::after）
+//   挂在下方 scoped 样式块的 glass-card 类上，见「玻璃档卡片质感」段。
 // - 经典扁平（false）：改造前的统计页；下面数据块里有一整段 v-else-if 分支
 //   逐字还原 58c03b25^（= 04cacc5c）的标记——八项指标两行四列，无图标方块、无卡片外壳、无图表
-const HOME_CARD_CLASS = 'rounded-xl border border-white/20 bg-white/40 p-4 backdrop-blur-md transition-transform duration-300 ease-out hover:scale-[1.02] dark:bg-white/5';
+const HOME_CARD_CLASS = 'glass-card rounded-xl border border-white/30 bg-white/40 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(255,255,255,0.10),0_8px_24px_rgba(15,23,42,0.10)] backdrop-blur-lg backdrop-saturate-150 transition-transform duration-300 ease-out hover:scale-[1.02] dark:border-white/15 dark:bg-white/5 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.15),inset_0_-1px_0_rgba(255,255,255,0.05),0_10px_28px_rgba(0,0,0,0.35)]';
 const FLAT_CARD_CLASS = 'rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10';
 
 // 读取设置里的「玻璃样式」开关；store 的 theme 是响应式 computed，切换无需重载
@@ -542,7 +545,7 @@ watch(isGlass, (glass) => {
           <div
             class="inline-flex rounded-xl"
             :class="isGlass
-              ? 'border border-white/20 bg-white/40 p-0.5 backdrop-blur-md dark:bg-white/5'
+              ? 'border border-white/20 bg-white/40 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/5 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]'
               : 'border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10'"
             role="group"
             :aria-label="t('stats.rangeLabel')"
@@ -595,7 +598,7 @@ watch(isGlass, (glass) => {
                 stroke-width="1.5"
               />
               <div class="relative flex items-start gap-3">
-                <div v-if="isGlass" class="shrink-0 rounded-lg bg-blue-500/10 p-2 text-blue-500 dark:bg-blue-500/15 dark:text-blue-400">
+                <div v-if="isGlass" class="shrink-0 rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] bg-blue-500/10 p-2 text-blue-500 dark:bg-blue-500/15 dark:text-blue-400">
                   <Clock class="h-5 w-5" stroke-width="1.5" />
                 </div>
                 <div class="min-w-0">
@@ -612,7 +615,7 @@ watch(isGlass, (glass) => {
                 stroke-width="1.5"
               />
               <div class="relative flex items-start gap-3">
-                <div v-if="isGlass" class="shrink-0 rounded-lg bg-indigo-500/10 p-2 text-indigo-500 dark:bg-indigo-500/15 dark:text-indigo-400">
+                <div v-if="isGlass" class="shrink-0 rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] bg-indigo-500/10 p-2 text-indigo-500 dark:bg-indigo-500/15 dark:text-indigo-400">
                   <Play class="h-5 w-5" stroke-width="1.5" />
                 </div>
                 <div class="min-w-0">
@@ -629,7 +632,7 @@ watch(isGlass, (glass) => {
                 stroke-width="1.5"
               />
               <div class="relative flex items-start gap-3">
-                <div v-if="isGlass" class="shrink-0 rounded-lg bg-violet-500/10 p-2 text-violet-500 dark:bg-violet-500/15 dark:text-violet-400">
+                <div v-if="isGlass" class="shrink-0 rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] bg-violet-500/10 p-2 text-violet-500 dark:bg-violet-500/15 dark:text-violet-400">
                   <Calendar class="h-5 w-5" stroke-width="1.5" />
                 </div>
                 <div class="min-w-0">
@@ -647,7 +650,7 @@ watch(isGlass, (glass) => {
                 stroke-width="1.5"
               />
               <div class="relative flex items-start gap-3">
-                <div v-if="isGlass" class="shrink-0 rounded-lg bg-purple-500/10 p-2 text-purple-500 dark:bg-purple-500/15 dark:text-purple-400">
+                <div v-if="isGlass" class="shrink-0 rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] bg-purple-500/10 p-2 text-purple-500 dark:bg-purple-500/15 dark:text-purple-400">
                   <Database class="h-5 w-5" stroke-width="1.5" />
                 </div>
                 <div class="min-w-0">
@@ -935,6 +938,77 @@ watch(isGlass, (glass) => {
 
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* ==================== 玻璃档卡片质感（glass-card 伪元素自发光层） ====================
+   HOME_CARD_CLASS 挂 glass-card，这里补类串装不下的两块自发光层（纯色页面底没有
+   内容可供 blur 折射，光泽只能自己发光）：
+   - ::before：边缘折射渐变 + 四角光斑。单一光源下不同角部折射率不同——左上最亮
+     (0.35) → 右上次之 (0.20) → 右下 (0.08) / 左下 (0.05) 极弱，即「卡片边角的
+     折射率变化」。border-radius 与类串 rounded-xl 同步。
+   - ::after：hover 掠射光泽。高光带用 background-position 在卡片内扫过（transition，
+     无循环动画）；不用 transform 位移——图表卡的 section 没有 overflow-hidden
+     （d0bf8434 的教训：不给 section 补 overflow-hidden，会裁剪图表悬浮内容），
+     位移会把光带扫出卡片外。prefers-reduced-motion 下整层禁用。
+   深色档：高光/光斑 alpha 全线调低、光斑改冷白 (226,232,240)；外阴影加深在类串
+   dark:shadow 里。可调点：各 rgba alpha、radial-gradient 的 at/尺寸百分比、
+   光带 background-size/时长/alpha。 */
+.glass-card {
+  position: relative;
+}
+
+.glass-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem; /* 与 rounded-xl 同步 */
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.35), transparent 55%),
+    radial-gradient(100% 80% at 100% 0%, rgba(255, 255, 255, 0.20), transparent 50%),
+    radial-gradient(90% 70% at 100% 100%, rgba(255, 255, 255, 0.08), transparent 45%),
+    radial-gradient(90% 70% at 0% 100%, rgba(255, 255, 255, 0.05), transparent 45%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.06));
+}
+
+.dark .glass-card::before {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(226, 232, 240, 0.14), transparent 55%),
+    radial-gradient(100% 80% at 100% 0%, rgba(226, 232, 240, 0.08), transparent 50%),
+    radial-gradient(90% 70% at 100% 100%, rgba(226, 232, 240, 0.04), transparent 45%),
+    radial-gradient(90% 70% at 0% 100%, rgba(226, 232, 240, 0.03), transparent 45%),
+    linear-gradient(160deg, rgba(226, 232, 240, 0.05), rgba(226, 232, 240, 0) 38%, rgba(226, 232, 240, 0) 62%, rgba(226, 232, 240, 0.03));
+}
+
+.glass-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem; /* 与 rounded-xl 同步 */
+  pointer-events: none;
+  z-index: 1;
+  background-image: linear-gradient(115deg, transparent 25%, rgba(255, 255, 255, 0.25) 50%, transparent 75%);
+  background-repeat: no-repeat;
+  background-size: 220% 100%;
+  background-position: 0% 0;
+  opacity: 0;
+  transition: background-position 0.9s cubic-bezier(0.25, 1, 0.35, 1), opacity 0.3s ease;
+}
+
+.glass-card:hover::after {
+  background-position: 100% 0;
+  opacity: 1;
+}
+
+.dark .glass-card::after {
+  background-image: linear-gradient(115deg, transparent 25%, rgba(226, 232, 240, 0.12) 50%, transparent 75%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-card::after {
+    display: none;
+  }
 }
 
 /* ==================== 内联排行榜（经典扁平档）====================

@@ -26,8 +26,8 @@ describe('StatisticsPage style follows the appearance setting', () => {
   it('branches all five surfaces on isGlass', () => {
     // 1) 卡片类名
     expect(source).toContain(':class="isGlass ? HOME_CARD_CLASS : FLAT_CARD_CLASS"');
-    // 2) 图标方块 + 装饰角标整块 v-if
-    expect(source).toContain('<div v-if="isGlass" class="shrink-0 rounded-lg bg-blue-500/10 p-2 text-blue-500 dark:bg-blue-500/15 dark:text-blue-400">');
+    // 2) 图标方块 + 装饰角标整块 v-if（含玻璃质感升级加的顶部 inset 亮线）
+    expect(source).toContain('<div v-if="isGlass" class="shrink-0 rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] bg-blue-500/10 p-2 text-blue-500 dark:bg-blue-500/15 dark:text-blue-400">');
     // 3) 指标数字 font-bold / font-black
     expect(source).toContain(':class="isGlass ? \'font-bold\' : \'font-black\'"');
     // 4) 标题 text-lg italic / text-sm
@@ -58,9 +58,10 @@ describe('the time-range switcher is gated to the glass look', () => {
     expect(glass).toContain('<div v-if="isGlass" class="mb-3 flex items-center justify-between gap-3">');
   });
 
-  it('keeps the switcher markup, its styling and its behaviour unchanged', () => {
-    // 玻璃类串（3110e0da 引入）与扁平类串（逐字取自旧版）都还在——只加 v-if，没动样式
-    expect(source).toContain('\'border border-white/20 bg-white/40 p-0.5 backdrop-blur-md dark:bg-white/5\'');
+  it('keeps the switcher markup and behaviour, restyled with the lighter glass idiom', () => {
+    // 玻璃类串：3110e0da 引入，玻璃质感升级时加了顶部 inset 亮线 + 增透
+    // （backdrop-saturate-150），深色档亮线 alpha 调低；扁平类串逐字取自旧版，不动
+    expect(source).toContain('\'border border-white/20 bg-white/40 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-md backdrop-saturate-150 dark:bg-white/5 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]\'');
     expect(source).toContain('\'border border-gray-200/40 bg-white/20 p-0.5 dark:border-gray-800/40 dark:bg-black/10\'');
     // 点击与选中态绑定原样保留
     expect(source).toContain('@click="selectRange(range.value)"');
@@ -152,6 +153,59 @@ describe('flat branch renders the pre-restyle (58c03b25^ = 04cacc5c) markup verb
     expect(glass).toContain('group relative overflow-hidden');
     expect(glass).toContain('relative flex items-start gap-3');
     expect(glass).toContain('<div class="animate-fade-in-up" style="animation-delay: 60ms;">');
+  });
+});
+
+describe('glass look gains layered glass polish (corner refraction + hover sheen)', () => {
+  // 源码级（?raw）字符串钉桩 —— 说清它能证明什么、不能证明什么：
+  // - 能证明：HOME_CARD_CLASS 挂上 glass-card 且类串含双层 inset 高光 + 深外影 +
+  //   backdrop-blur-lg/backdrop-saturate-150（深色档高光 alpha 更低）；scoped 块里
+  //   ::before（边缘折射渐变 + 四角光斑，含 .dark 变体）与 ::after（hover 掠射光泽）
+  //   在场且 pointer-events:none；掠射光泽走 background-position 位移（transition，
+  //   不是循环 animation），prefers-reduced-motion 下整层禁用；扁平切片不含 glass-card。
+  // - 不能证明：浏览器里的真实合成观感——inset 高光的实际亮度、四角光斑的位置与
+  //   过渡是否自然、hover 扫光的轨迹与时序、backdrop-blur/saturate 在不同页面底上
+  //   的折射效果，都要实机肉眼校（数值类改动，预期要人工调一轮）。
+  // 在最后一个 </template> 之后找 scoped 样式块：对 script/template 注释里出现
+  // 的同形字面量免疫，避免切片混入模板内容
+  const scopedStyleStart = source.indexOf('<style scoped>', source.lastIndexOf('</template>'));
+  const scopedStyle = source.slice(scopedStyleStart, source.indexOf('</style>', scopedStyleStart));
+  const flatStart = source.indexOf('经典扁平模式');
+  const flat = source.slice(flatStart, source.lastIndexOf('</template>'));
+
+  it('puts the pseudo-element carrier and the four-layer tokens on the glass card string', () => {
+    expect(source).toContain("const HOME_CARD_CLASS = 'glass-card ");
+    // 第 1 层（inset 顶/底高光）+ 第 4 层（深外影 + 增透折射）进类串
+    expect(source).toContain('shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(255,255,255,0.10),0_8px_24px_rgba(15,23,42,0.10)]');
+    expect(source).toContain('backdrop-blur-lg backdrop-saturate-150');
+    // 深色档：高光 alpha 调低 + 外阴影加深
+    expect(source).toContain('dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.15),inset_0_-1px_0_rgba(255,255,255,0.05),0_10px_28px_rgba(0,0,0,0.35)]');
+  });
+
+  it('adds the ::before refraction layer and the ::after hover sheen in the scoped block', () => {
+    // 第 2 层：边缘折射渐变 + 四角光斑（左上最亮 → 右上次之 → 右下/左下极弱）
+    expect(scopedStyle).toContain('.glass-card::before');
+    expect(scopedStyle).toContain('radial-gradient');
+    expect(scopedStyle).toContain('.dark .glass-card::before');
+    // 第 3 层：hover 掠射光泽，transition 触发而非循环动画
+    expect(scopedStyle).toContain('.glass-card::after');
+    expect(scopedStyle).toContain('.glass-card:hover::after');
+    expect(scopedStyle).toContain('background-position');
+    expect(scopedStyle).not.toContain('animation');
+    // 两个伪元素都绝不拦截鼠标
+    expect(scopedStyle.match(/pointer-events:\s*none/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it('disables the hover sheen under prefers-reduced-motion', () => {
+    const reduced = scopedStyle.slice(scopedStyle.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduced).toContain('.glass-card::after');
+  });
+
+  it('keeps the new polish out of the flat look', () => {
+    // 扁平分支切片里不得出现任何玻璃质感标记（负向，防渗漏）
+    expect(flat).not.toContain('glass-card');
+    expect(flat).not.toContain('backdrop-saturate-150');
+    expect(flat).not.toContain('shadow-[inset_');
   });
 });
 
