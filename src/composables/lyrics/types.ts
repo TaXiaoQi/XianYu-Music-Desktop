@@ -284,4 +284,6 @@ export interface AmlPlayerLine {
   isBG: boolean;
   isDuet: boolean;
   romajiWords?: AmlRomajiWord[];
+  /** 行无词级时间轴（纯 LRC 源）：words 仅是整行伪词文本载体，播放器按整行点亮渲染。 */
+  isWordless?: boolean;
 }

@@ -48,6 +48,48 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
     expect(result[1]?.startTime).toBe(19830);
   });
 
+  it('无词级时间轴的行退化为单个伪词承载整行文本，并打上 isWordless 标记', () => {
+    const result = convertLyricsToAmlLines([
+      displayRow({ time: 103.04, endTime: 106.68, text: "And no one's asked me how I'm doing I'm doing" }),
+    ], false, false);
+
+    expect(result[0]!.isWordless).toBe(true);
+    expect(result[0]!.words).toHaveLength(1);
+    expect(result[0]!.words[0]!.word).toBe("And no one's asked me how I'm doing I'm doing");
+    expect(result[0]!.words[0]!.startTime).toBe(103040);
+    expect(result[0]!.words[0]!.endTime).toBe(106680);
+  });
+
+  it('有词级时间轴的行不打 isWordless 标记，词级时间轴照常透传', () => {
+    const result = convertLyricsToAmlLines([
+      displayRow({
+        time: 10,
+        endTime: 14,
+        text: '拙い祈り',
+        words: [
+          { start: 10, end: 12, text: '拙い', romaji: '' },
+          { start: 12, end: 14, text: '祈り', romaji: '' },
+        ],
+      }),
+    ], false, false);
+
+    expect(result[0]!.isWordless).toBeFalsy();
+    expect(result[0]!.words.map((word) => word.word)).toEqual(['拙い', '祈り']);
+    expect(result[0]!.words[0]!.startTime).toBe(10000);
+    expect(result[0]!.words[1]!.endTime).toBe(14000);
+  });
+
+  it('无词级的空白兜底行同样打 isWordless 标记', () => {
+    const result = convertLyricsToAmlLines([
+      displayRow({ time: 10, endTime: 14, text: '   ', translation: '间奏' }),
+    ], false, false);
+
+    expect(result[0]!.isWordless).toBe(true);
+    expect(result[0]!.words).toHaveLength(1);
+    expect(result[0]!.words[0]!.startTime).toBe(10000);
+    expect(result[0]!.words[0]!.endTime).toBe(14000);
+  });
+
   it('独立词级罗马音时间轴原样透传，供播放器渲染 ruby 卡拉OK', () => {
     const rows = [
       displayRow({

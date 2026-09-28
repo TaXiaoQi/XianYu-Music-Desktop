@@ -7,7 +7,7 @@
  * - 行位移动画：每行独立弹簧（带自上而下的级联延迟），支持对齐锚点与对齐比例；
  * - 行状态：活动行全亮、非活动行按距离分档压暗 + 模糊缩放、BG 行播放中折叠、暂停时展开；
  * - 间奏呼吸点：行间空隙 ≥ 4s 时在行间插入三点呼吸动画；
- * - 手动滚轮偏移：停手 1.8s 后自动回弹到当前行。
+ * - 手动滚轮 / 按住拖拽偏移：停手 1.8s 后自动回弹到当前行；
  *
  * 所有跨帧可复用的判定（强调词、词进度、活动行、间奏窗口、弹簧积分）
  * 以纯函数导出，供单元测试直接覆盖。
@@ -162,6 +162,8 @@ const STAGGER_STEP_MS = 50;
 /** 弹簧对齐移动端 550ms Cubic(0.40,0.10,0,1) 的无过冲落位：19 ≈ 2√90，恰为临界阻尼。 */
 const FLOW_STIFFNESS = 90;
 const FLOW_DAMPING = 19;
+/** 拖拽浏览的指数趋近时间常数（ms）：滞后 ≈ 拖动速度 × τ，跟手但保留一点柔。 */
+const DRAG_CHASE_TAU_MS = 40;
 const MIN_LAYOUT_HEIGHT = 36;
 /** 非活动行模糊上限（CSS px）；移动端 σ≤8，按 σ→CSS 2σ 换算。 */
 const MAX_BLUR_PX = 16;
@@ -225,6 +227,17 @@ export class WordLyricPlayerCore {
   private scrollResetTimer = 0;
   private allowScroll = true;
   private suspendFrameHandle = 0;
+  /** 上一次重排的对齐行：级联延迟仅在其变化时武装，滚轮平移 / 暂停等重排保持刚性。 */
+  private lastCascadeTarget: number | null = null;
+  /** 滚动动画回调：滚轮 / 拖拽 / 回弹改变目标位置后通知宿主，暂停态下补突发帧驱动动画。 */
+  private scrollActivityHandler: (() => void) | null = null;
+  /** 按住拖拽浏览：pointerdown 起记录起点，移动量直接映射为滚动偏移（内容跟手）。 */
+  private dragPointerId: number | null = null;
+  private dragStartClientY = 0;
+  private dragStartScrollY = 0;
+  private dragMoved = false;
+  /** 拖拽进行中：update() 对行 / 呼吸点位置改用指数趋近（DRAG_CHASE_TAU_MS），跟手带柔。 */
+  private dragScrolling = false;
 
   private lineClickHandlers = new Set<(event: WordLyricLineClickEvent) => void>();
   private disposed = false;
@@ -235,6 +248,8 @@ export class WordLyricPlayerCore {
     this.buildDotsEl();
     host.appendChild(this.root);
     this.root.addEventListener('wheel', this.handleWheel, { passive: true });
+    this.root.addEventListener('pointerdown', this.handlePointerDown);
+    this.root.addEventListener('click', this.suppressClickAfterDrag, true);
   }
 
   /* ---------- 装配与销毁 ---------- */
@@ -251,6 +266,9 @@ export class WordLyricPlayerCore {
   dispose(): void {
     this.disposed = true;
     this.root.removeEventListener('wheel', this.handleWheel);
+    this.root.removeEventListener('pointerdown', this.handlePointerDown);
+    this.root.removeEventListener('click', this.suppressClickAfterDrag, true);
+    this.detachDragListeners();
     if (this.scrollResetTimer !== 0) {
       clearTimeout(this.scrollResetTimer);
       this.scrollResetTimer = 0;
@@ -336,6 +354,11 @@ export class WordLyricPlayerCore {
       clearTimeout(this.scrollResetTimer);
       this.scrollResetTimer = 0;
     }
+  }
+
+  /** 注册滚动动画回调（宿主在暂停态借此补突发帧，让滚动 / 回弹 / 跳播动画收敛）。 */
+  setOnScrollActivity(handler: (() => void) | null) {
+    this.scrollActivityHandler = handler;
   }
 
   /** seek 期间冻结滚轮两帧，防止输入事件与布局重算互相踩踏。 */
@@ -472,7 +495,8 @@ export class WordLyricPlayerCore {
       }
 
       let targetBlur = 0;
-      if (this.enableBlur && !isActive) {
+      // 手动滚动浏览中解除距离模糊（对齐 AMLL 旧观感）：滚动的目的是阅读，回弹后恢复
+      if (this.enableBlur && !isActive && this.userScrollY === 0) {
         // 对齐移动端 σ = 1 + dist(+1 已唱行)，σ→CSS 按 2σ 换算
         targetBlur = (1 + (i < target
           ? Math.abs(target - i) + 1
@@ -480,7 +504,8 @@ export class WordLyricPlayerCore {
         targetBlur *= blurScale;
       }
 
-      const targetScale = this.enableScale && !isActive && this.playing
+      // 缩放层次与播放态无关：暂停/播放切换不改变行大小，避免整体呼吸式缩放
+      const targetScale = this.enableScale && !isActive
         ? (line.isBG ? 0.75 : 0.92)
         : 1;
 
@@ -498,11 +523,17 @@ export class WordLyricPlayerCore {
         entry.scale = targetScale;
         entry.blur = targetBlur;
         entry.opacity = targetOpacity;
-      } else {
+      } else if (target !== this.lastCascadeTarget) {
+        // 级联只在对齐行切换时武装：滚轮 / 回弹 / 暂停等重排不再重置延迟，
+        // 否则暂停态突发帧覆盖不了级联时长，下半区会冻结在旧位置（布局解体）
         entry.delayMs = i > target ? cascadeDelay : 0;
         if (!line.isBG && i >= target) cascadeDelay += STAGGER_STEP_MS;
+      } else {
+        entry.delayMs = 0;
       }
     }
+
+    this.lastCascadeTarget = target;
   }
 
   /** 尺寸与行高测量；行高 / 词宽仅在脏标记时重测，避免每帧强制重排。 */
@@ -553,10 +584,18 @@ export class WordLyricPlayerCore {
     }
 
     for (const entry of this.lineEntries) {
-      if (entry.delayMs > 0) {
+      // 拖拽期间级联延迟不排队，否则部分行冻结、破坏跟手
+      if (entry.delayMs > 0 && !this.dragScrolling) {
         entry.delayMs = Math.max(0, entry.delayMs - deltaMs);
       } else if (this.enableSpring) {
-        stepSpring(entry.spring, entry.pendingY, deltaMs, FLOW_STIFFNESS, FLOW_DAMPING);
+        if (this.dragScrolling) {
+          // 拖拽跟手：指数趋近（帧率无关、无条件稳定），滞后 ≈ 速度 × τ，带一点柔
+          const chase = 1 - Math.exp(-deltaMs / DRAG_CHASE_TAU_MS);
+          entry.spring.position += (entry.pendingY - entry.spring.position) * chase;
+          entry.spring.velocity = 0;
+        } else {
+          stepSpring(entry.spring, entry.pendingY, deltaMs, FLOW_STIFFNESS, FLOW_DAMPING);
+        }
       } else {
         entry.spring.position = entry.pendingY;
         entry.spring.velocity = 0;
@@ -699,7 +738,14 @@ export class WordLyricPlayerCore {
     }
 
     if (this.enableSpring) {
-      stepSpring(this.dotsSpring, this.dotsPendingY, deltaMs, FLOW_STIFFNESS, FLOW_DAMPING);
+      if (this.dragScrolling) {
+        // 与行同步的拖拽指数趋近，避免呼吸点与歌词流脱节
+        const chase = 1 - Math.exp(-deltaMs / DRAG_CHASE_TAU_MS);
+        this.dotsSpring.position += (this.dotsPendingY - this.dotsSpring.position) * chase;
+        this.dotsSpring.velocity = 0;
+      } else {
+        stepSpring(this.dotsSpring, this.dotsPendingY, deltaMs, FLOW_STIFFNESS, FLOW_DAMPING);
+      }
     } else {
       this.dotsSpring.position = this.dotsPendingY;
       this.dotsSpring.velocity = 0;
@@ -709,6 +755,20 @@ export class WordLyricPlayerCore {
 
     dots.style.transform = `translate3d(0, ${this.dotsSpring.position.toFixed(2)}px, 0) scale(${this.dotsScale.toFixed(4)})`;
     dots.style.opacity = this.dotsOpacity.toFixed(3);
+  }
+
+  /** 是否仍有未收敛的动画（级联延迟 / 弹簧 / 明暗收敛 / 呼吸点）：暂停态突发帧据此续帧。 */
+  hasPendingMotion(): boolean {
+    if (this.disposed) return false;
+    for (const entry of this.lineEntries) {
+      if (entry.delayMs > 0) return true;
+      if (Math.abs(entry.spring.position - entry.pendingY) > 0.5 || Math.abs(entry.spring.velocity) > 0.05) return true;
+      if (Math.abs(entry.blur - entry.targetBlur) > 0.05) return true;
+      if (Math.abs(entry.opacity - entry.targetOpacity) > 0.005) return true;
+      if (Math.abs(entry.scale - entry.targetScale) > 0.002) return true;
+    }
+    if (Math.abs(this.dotsSpring.position - this.dotsPendingY) > 0.5) return true;
+    return this.dotsOpacity > 0.01 && this.dotsOpacity < 0.99;
   }
 
   /* ---------- DOM 构建 ---------- */
@@ -737,7 +797,13 @@ export class WordLyricPlayerCore {
     const main = document.createElement('div');
     main.className = 'wlp-line__main';
 
-    for (const word of line.words) {
+    // 无词级时间轴的行（插件源给纯 LRC 时）：整行按纯文本渲染，不建词 span 与扫光遮罩，
+    // 活动时整行点亮；翻译/罗马音副行进度仍按行窗线性推进。
+    if (line.isWordless) {
+      main.textContent = line.words[0]?.word || ' ';
+    }
+
+    for (const word of line.isWordless ? [] : line.words) {
       const wrapper = document.createElement('span');
       wrapper.className = 'wlp-word';
 
@@ -827,24 +893,70 @@ export class WordLyricPlayerCore {
     return span;
   }
 
-  /* ---------- 滚轮 ---------- */
+  /* ---------- 滚轮与按住拖拽 ---------- */
 
   private handleWheel = (event: WheelEvent) => {
     if (!this.allowScroll || this.disposed) return;
     const unit = event.deltaMode === 0 ? 1 : 50;
-    this.userScrollY = clampValue(
-      this.scrollMinUserY,
-      this.userScrollY + event.deltaY * unit,
-      this.scrollMaxUserY,
-    );
+    // 滚轮向下 = 向后浏览（内容上移），向上 = 回看（内容下移）
+    this.applyUserScroll(this.userScrollY - event.deltaY * unit);
+  };
+
+  /** 统一写入滚动偏移：钳制边界、重启回弹计时、重排并通知宿主补帧。 */
+  private applyUserScroll(next: number) {
+    this.userScrollY = clampValue(this.scrollMinUserY, next, this.scrollMaxUserY);
     if (this.scrollResetTimer !== 0) clearTimeout(this.scrollResetTimer);
     this.scrollResetTimer = window.setTimeout(() => {
       this.scrollResetTimer = 0;
       this.userScrollY = 0;
       this.calcLayout(false);
+      this.scrollActivityHandler?.();
     }, SCROLL_RESET_DELAY_MS);
     this.calcLayout(false);
+    this.scrollActivityHandler?.();
+  }
+
+  private handlePointerDown = (event: PointerEvent) => {
+    if (event.button !== 0 || !this.allowScroll || this.disposed || this.dragPointerId !== null) return;
+    this.dragPointerId = event.pointerId;
+    this.dragStartClientY = event.clientY;
+    this.dragStartScrollY = this.userScrollY;
+    this.dragMoved = false;
+    this.dragScrolling = true;
+    window.addEventListener('pointermove', this.handlePointerMove);
+    window.addEventListener('pointerup', this.handlePointerUp);
+    window.addEventListener('pointercancel', this.handlePointerUp);
   };
+
+  private handlePointerMove = (event: PointerEvent) => {
+    if (event.pointerId !== this.dragPointerId || !this.allowScroll || this.disposed) return;
+    const dy = event.clientY - this.dragStartClientY;
+    if (Math.abs(dy) > 3) this.dragMoved = true;
+    // 内容跟手：向下拖 = 回看（内容下移），与滚轮的浏览语义相反；
+    // 跟手柔感由 update() 的拖拽指数趋近提供
+    this.applyUserScroll(this.dragStartScrollY + dy);
+  };
+
+  private handlePointerUp = (event: PointerEvent) => {
+    if (event.pointerId !== this.dragPointerId) return;
+    this.detachDragListeners();
+  };
+
+  /** 拖拽过的手势不触发行点击（跳播），在捕获阶段拦截。 */
+  private suppressClickAfterDrag = (event: MouseEvent) => {
+    if (!this.dragMoved) return;
+    event.stopPropagation();
+    this.dragMoved = false;
+  };
+
+  private detachDragListeners() {
+    if (this.dragPointerId === null) return;
+    this.dragPointerId = null;
+    this.dragScrolling = false;
+    window.removeEventListener('pointermove', this.handlePointerMove);
+    window.removeEventListener('pointerup', this.handlePointerUp);
+    window.removeEventListener('pointercancel', this.handlePointerUp);
+  }
 
   /** 布局修复入口：强制重测 + 同步重排 + 落位一帧（挂载、换行、字号、尺寸变化时调用）。 */
   recoverLayout() {

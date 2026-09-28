@@ -5,7 +5,7 @@
  * 对外保持与歌词视图对接所需的 props / 事件 / expose 面：
  * - `lyricLines` 传入毫秒制逐字行，`currentTime` 毫秒驱动逐字与行切换；
  * - `line-click` 上抛被点击行与其下标，行级 seek 由父组件编排；
- * - `syncSeekLayout` 暴露给父组件在 seek 后同步渲染器布局。
+ * - `syncSeekLayout` 暴露给父组件在 seek 后重排渲染器（弹簧滚动动画落位）。
  *
  * 动画内核在 WordLyricPlayer.ts；本组件只负责 props 桥接、
  * rAF 循环调度、暂停期 seek 突发帧、布局恢复与性能降级。
@@ -59,7 +59,6 @@ const { isMainWindowLowPower } = useRenderingPower();
 
 let core: WordLyricPlayerCore | null = null;
 let resizeObserver: ResizeObserver | null = null;
-let wheelHandler: ((event: WheelEvent) => void) | null = null;
 let frameId = 0;
 let recoveryFrameId = 0;
 let seekBurstFrameId = 0;
@@ -78,10 +77,11 @@ function stopSeekBurst() {
   }
 }
 
-/** 暂停态下渲染器没有常驻循环，seek / 手动滚动后用一串突发帧把动画收敛到位。 */
+/** 暂停态下渲染器没有常驻循环，seek / 手动滚动后用突发帧把动画收敛到位。 */
 function runSeekBurst() {
   stopSeekBurst();
-  let remaining = 20;
+  // 收敛驱动：跑到渲染器无待定动画为止（级联延迟 / 弹簧 / 明暗），上限约 10s 兜底
+  let remaining = 600;
   let lastTime = -1;
   const onFrame = (time: number) => {
     if (!core) {
@@ -92,7 +92,7 @@ function runSeekBurst() {
     core.update(time - lastTime);
     lastTime = time;
     remaining -= 1;
-    if (remaining > 0) {
+    if (remaining > 0 && core.hasPendingMotion()) {
       seekBurstFrameId = requestAnimationFrame(onFrame);
     } else {
       seekBurstFrameId = 0;
@@ -150,6 +150,11 @@ function attachCore(nextCore: WordLyricPlayerCore) {
   element.style.height = '100%';
   wrapper.appendChild(element);
   nextCore.onLineClick(handleLineClick);
+  // 滚轮 / 拖拽 / 回弹由 core 内部处理并回调，暂停态下宿主借此补突发帧驱动滚动动画
+  nextCore.setOnScrollActivity(() => {
+    if (props.disabled || isMainWindowLowPower.value) return;
+    if (!props.playing) runSeekBurst();
+  });
   core = nextCore;
   applyCoreProps();
   core.setLyricLines(props.lyricLines, Math.trunc(props.currentTime));
@@ -230,14 +235,6 @@ onMounted(() => {
     }
   });
   resizeObserver.observe(wrapper);
-
-  wheelHandler = () => {
-    if (props.disabled || isMainWindowLowPower.value) return;
-    if (!props.playing) {
-      runSeekBurst();
-    }
-  };
-  wrapper.addEventListener('wheel', wheelHandler, { passive: true });
 });
 
 onBeforeUnmount(() => {
@@ -251,11 +248,6 @@ onBeforeUnmount(() => {
 
   resizeObserver?.disconnect();
   resizeObserver = null;
-
-  if (wheelHandler) {
-    wrapperRef.value?.removeEventListener('wheel', wheelHandler);
-    wheelHandler = null;
-  }
 
   if (core) {
     detachCore();
@@ -376,6 +368,8 @@ watch(() => props.currentTime, (value) => {
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
   user-select: none;
   -webkit-user-select: none;
+  /* 按住拖拽浏览由 pointer 事件实现，屏蔽触摸屏默认手势劫持 */
+  touch-action: none;
 }
 
 @media screen and (max-width: 768px) {

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { getPlaybackSeekSecondsForLyricLine, syncWordLyricSeekLayout } from './seekLayout';
 
 describe('syncWordLyricSeekLayout', () => {
-  it('resets manual scroll and applies the seek layout synchronously', () => {
+  it('resets manual scroll and re-arms the seek layout without snapping', () => {
     const calls: string[] = [];
     const player = {
       resetScroll: vi.fn(() => calls.push('resetScroll')),
@@ -21,9 +21,9 @@ describe('syncWordLyricSeekLayout', () => {
 
     expect(player.suspendScrollForSeek).toHaveBeenCalledOnce();
     expect(player.resetScroll).toHaveBeenCalledOnce();
-    expect(player.setCurrentTime).toHaveBeenCalledWith(12345, true);
+    expect(player.setCurrentTime).toHaveBeenCalledWith(12345, false);
     expect(player.alignScrollToSeekTarget).toHaveBeenCalledWith(7);
-    expect(player.calcLayout).toHaveBeenCalledWith(true);
+    expect(player.calcLayout).toHaveBeenCalledWith(false);
     expect(player.update).toHaveBeenCalledWith(0);
     expect(calls).toEqual([
       'suspendScrollForSeek',
@@ -44,7 +44,7 @@ describe('syncWordLyricSeekLayout', () => {
       update: vi.fn(),
     }, -50);
 
-    expect(setCurrentTime).toHaveBeenCalledWith(0, true);
+    expect(setCurrentTime).toHaveBeenCalledWith(0, false);
   });
 });
 
