@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import source from './StatisticsPage.vue?raw';
 import settingsSource from '../settings/SettingsTheme.vue?raw';
+import homeTabsSource from '../home/HomeDiscoverTabs.vue?raw';
+import homeAreaSource from '../home/panels/HomeDiscoverArea.vue?raw';
+
+// 内联排行榜自带 <template>/</template>（我的名次行 / 未登录行两处），所以「扁平分支」
+// 切片一律用 lastIndexOf('</template>') 取最外层模板闭合；用 indexOf 会在第一条内层
+// </template> 处截断，把内联排行榜后半段漏掉。
 
 describe('StatisticsPage style follows the appearance setting', () => {
   it('keeps both card looks, with the flat one verbatim from the pre-restyle version', () => {
@@ -39,7 +45,7 @@ describe('the time-range switcher is gated to the glass look', () => {
   // 用户给的扁平档参考稿里没有「全部 / 7天 / 30天 / 今年」这一行——它由 58c03b25 引入，
   // 当时渲染在 v-if 链之外，两种观感都会出现。这里钉住它只属于玻璃档。
   const flatStart = source.indexOf('经典扁平模式');
-  const flat = source.slice(flatStart, source.indexOf('</template>'));
+  const flat = source.slice(flatStart, source.lastIndexOf('</template>'));
   const glass = source.slice(0, flatStart);
 
   it('renders the switcher only when isGlass is on', () => {
@@ -82,7 +88,7 @@ describe('flat branch renders the pre-restyle (58c03b25^ = 04cacc5c) markup verb
   //   但足以让“扁平分支退回 3110e0da^ 的四卡看板”或“八项变四项”这类回归无法悄悄复活。
   // 注：8 项指标的原始中文文案存在脚本里的 TEXT 表（逐字取自旧版），玻璃分支仍走 t('stats.*')。
   const flatStart = source.indexOf('经典扁平模式');
-  const flat = source.slice(flatStart, source.indexOf('</template>'));
+  const flat = source.slice(flatStart, source.lastIndexOf('</template>'));
   const glass = source.slice(0, flatStart);
 
   it('splits the data block into a glass branch and a flat v-else-if branch', () => {
@@ -155,5 +161,58 @@ describe('Settings appearance section title', () => {
     expect(settingsSource).toContain("switchStyleTitle: 'Style',");
     expect(settingsSource).not.toContain('开关样式');
     expect(settingsSource).not.toContain("switchStyleTitle: 'Switch Style'");
+  });
+});
+
+describe('flat look folds the leaderboard in, glass look keeps it standalone', () => {
+  // 源码级（?raw）字符串钉桩 —— 说清它能证明什么、不能证明什么：
+  // - 能证明：模板源码里「经典扁平」分支的标记确实同时含八项指标与内联排行榜整段
+  //   （标题 + 日/周/总榜切换 + 行/名次/头像 + 吸底「我的名次」/未登录行）；玻璃分支的
+  //   模板标记里没有任何内联排行榜标记；独立排行榜入口（HomeDiscoverTabs 的子标签、
+  //   HomeDiscoverArea 的 LeaderboardPage 挂载）改为按 useGlassSwitch 条件化——玻璃档
+  //   保留、扁平档隐藏/回落；内联排行榜的数据加载在玻璃档短路，玻璃档不新增请求。
+  // - 不能证明：浏览器里两档的真实渲染结果（v-if 的运行期求值、吸底/滚动的实际观感、
+  //   排行榜数据是否真的返回），这些要靠实机。
+  const flatStart = source.indexOf('经典扁平模式');
+  const flat = source.slice(flatStart, source.lastIndexOf('</template>'));
+  const glassBranch = source.slice(source.indexOf('<!-- 玻璃模式：3110e0da 的观感'), flatStart);
+
+  it('renders the leaderboard inline inside the flat branch, next to the metrics', () => {
+    // 内联排行榜整段逐字取自 04cacc5c^（排行榜拆成独立 tab 之前那版统计页）
+    expect(flat).toContain('<section v-if="theme.showLeaderboard" class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 400ms;">');
+    expect(flat).toContain('{{ TEXT.leaderboard }}');
+    expect(flat).toContain('v-for="p in PERIOD_OPTIONS"');
+    expect(flat).toContain('class="leaderboard-row animate-fade-in-up"');
+    expect(flat).toContain('class="leaderboard-row is-me is-sticky animate-fade-in-up"');
+    expect(flat).toContain('@contextmenu="handleLeaderboardContextMenu($event, item)"');
+    expect(flat).toContain('class="leaderboard-row leaderboard-row--login is-me is-sticky w-full text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EC4141]/50"');
+    // 指标与排行榜在同一扁平分支里并存
+    expect(flat).toContain('{{ TEXT.totalSongs }}');
+    expect(flat).toContain('{{ TEXT.longestPlayed }}');
+  });
+
+  it('keeps the inline leaderboard out of the glass branch', () => {
+    // 玻璃档排行榜仍是独立页，统计页玻璃分支里不得混入内联排行榜标记
+    expect(glassBranch).not.toContain('leaderboard-row');
+    expect(glassBranch).not.toContain('PERIOD_OPTIONS');
+    expect(glassBranch).not.toContain('theme.showLeaderboard');
+    expect(glassBranch).not.toContain('leaderboard-period-tabs');
+  });
+
+  it('loads the inline leaderboard only in the flat look', () => {
+    // 同一组件两档共用：内联排行榜的数据加载在玻璃档直接短路，玻璃档与本页改造前一致
+    expect(source).toContain('if (isGlass.value) return;');
+    expect(source).toContain('void loadLeaderboard();');
+    expect(source).toContain('await loadLeaderboard(true);');
+  });
+
+  it('hides the standalone leaderboard entry in the flat look only', () => {
+    // 独立的「排行榜」子标签：仅在「显示排行榜」且玻璃档时出现
+    expect(homeTabsSource).toContain('if (theme.value.showLeaderboard && theme.value.useGlassSwitch) {');
+    expect(homeTabsSource).toContain("{ key: 'leaderboard', label: isEnglish.value ? 'Leaderboard' : '排行榜' }");
+    // discover 区域仍挂载独立 LeaderboardPage（玻璃档路径保留），扁平档回落到统计页
+    expect(homeAreaSource).toContain('import LeaderboardPage from');
+    expect(homeAreaSource).toContain('<LeaderboardPage v-else-if="effectivePage === \'leaderboard\'" key="leaderboard" class="min-h-0 flex-1" />');
+    expect(homeAreaSource).toContain("props.activePage === 'leaderboard' && !theme.value.useGlassSwitch ? 'statistics' : props.activePage");
   });
 });
