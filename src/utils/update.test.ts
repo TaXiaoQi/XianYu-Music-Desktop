@@ -11,7 +11,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: backendInvoke, isTauri: inTauri
 // —— 冻结的 GitHub Release 桩数据 ——
 const GITHUB_RELEASE_PAYLOAD = {
   tag_name: "v1.4.0",
-  html_url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
+  html_url: "https://github.com/TaXiaoQi/XianYu-Music-Desktop/releases/tag/v1.4.0",
   published_at: "2026-05-08T00:00:00Z",
   body: "新增 GitHub 更新通道"
 };
@@ -19,7 +19,7 @@ const GITHUB_RELEASE_PAYLOAD = {
 // —— 冻结的期望解析结果 ——
 const EXPECTED_RELEASE_INFO = {
   version: "1.4.0",
-  url: "https://github.com//XianYuMusic/releases/tag/v1.4.0",
+  url: "https://github.com/TaXiaoQi/XianYu-Music-Desktop/releases/tag/v1.4.0",
   publishedAt: "2026-05-08T00:00:00Z",
   notes: "新增 GitHub 更新通道",
   source: "github"
@@ -65,8 +65,8 @@ describe("fetchLatestRelease：GitHub 发布信息获取", () => {
     inTauriEnv.mockReturnValue(true);
     backendInvoke.mockResolvedValue(JSON.stringify(GITHUB_RELEASE_PAYLOAD));
 
-    await expect(fetchLatestRelease("", "XianYuMusic")).resolves.toEqual(EXPECTED_RELEASE_INFO);
-    expect(backendInvoke).toHaveBeenCalledWith('check_update_by_rust', { owner: '', repo: 'XianYuMusic' });
+    await expect(fetchLatestRelease("TaXiaoQi", "XianYu-Music-Desktop")).resolves.toEqual(EXPECTED_RELEASE_INFO);
+    expect(backendInvoke).toHaveBeenCalledWith('check_update_by_rust', { owner: 'TaXiaoQi', repo: 'XianYu-Music-Desktop' });
   });
 
   it("Tauri 环境下 invoke 失败时不允许退化为浏览器 fetch", async () => {
@@ -74,7 +74,7 @@ describe("fetchLatestRelease：GitHub 发布信息获取", () => {
     backendInvoke.mockRejectedValue(new Error("GitHub API error inside Rust"));
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    await expect(fetchLatestRelease("", "XianYuMusic")).rejects.toThrow("[Rust Backend] GitHub API error inside Rust");
+    await expect(fetchLatestRelease("TaXiaoQi", "XianYu-Music-Desktop")).rejects.toThrow("[Rust Backend] GitHub API error inside Rust");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -84,8 +84,8 @@ describe("fetchLatestRelease：GitHub 发布信息获取", () => {
       new Response(JSON.stringify(GITHUB_RELEASE_PAYLOAD))
     );
 
-    await expect(fetchLatestRelease("", "XianYuMusic")).resolves.toEqual(EXPECTED_RELEASE_INFO);
-    expect(fetchSpy).toHaveBeenCalledWith("https://api.github.com/repos//XianYuMusic/releases/latest", {
+    await expect(fetchLatestRelease("TaXiaoQi", "XianYu-Music-Desktop")).resolves.toEqual(EXPECTED_RELEASE_INFO);
+    expect(fetchSpy).toHaveBeenCalledWith("https://api.github.com/repos/TaXiaoQi/XianYu-Music-Desktop/releases/latest", {
       headers: {
         Accept: "application/vnd.github+json"
       }
