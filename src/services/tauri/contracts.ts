@@ -1254,6 +1254,8 @@ export interface TauriCommandMap {
   // ============ 开机自启动 ============
   set_launch_on_startup: { payload: { enabled: boolean }; response: void };
   get_launch_on_startup: { payload: undefined; response: boolean };
+  set_audio_file_associations: { payload: { enabled: string[]; disabled: string[] }; response: void };
+  get_audio_file_associations: { payload: undefined; response: string[] };
   was_launched_at_startup: { payload: undefined; response: boolean };
   // ============ 网络代理 ============
   get_network_proxy: { payload: undefined; response: NetworkProxyState };

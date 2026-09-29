@@ -15,5 +15,8 @@ export const appApi = {
     tauriInvoke('set_install_language', { language }),
   setLaunchOnStartup: (enabled: boolean) => tauriInvoke('set_launch_on_startup', { enabled }),
   getLaunchOnStartup: () => tauriInvoke('get_launch_on_startup'),
+  setAudioFileAssociations: (enabled: string[], disabled: string[]) =>
+    tauriInvoke('set_audio_file_associations', { enabled, disabled }),
+  getAudioFileAssociations: () => tauriInvoke('get_audio_file_associations'),
   wasLaunchedAtStartup: () => tauriInvoke('was_launched_at_startup'),
 };

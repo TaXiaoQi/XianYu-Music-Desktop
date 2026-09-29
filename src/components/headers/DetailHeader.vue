@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 歌单/列表详情页头部：滚动收缩封面、批量工具条、排序弹出菜单
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue';
 import { convertFileSrc as toAssetProtocolUrl } from '@tauri-apps/api/core';
+import { ListChecks, ListPlus, PencilLine, RefreshCw } from 'lucide-vue-next';
 import type { Song } from '../../types';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
@@ -13,6 +14,7 @@ import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import SortModeIcon from '../common/SortModeIcon.vue';
 import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
 import SortOptionPopover from './sortPopover/SortOptionPopover.vue';
+import HeaderOverflowMenu from './HeaderOverflowMenu.vue';
 
 const props = defineProps<{
   title: string;
@@ -52,6 +54,26 @@ const totalTrackAmount = computed(() => props.totalSongCount ?? props.songs.leng
 const isAllSelected = computed(() => totalTrackAmount.value > 0 && props.selectedCount === totalTrackAmount.value);
 const canBatchCollectToPlaylist = computed(() => props.showAddToPlaylist !== false);
 const canCollectFromHeader = computed(() => props.showHeaderAddToPlaylist ?? canBatchCollectToPlaylist.value);
+
+// 头部保留“全部播放 / 收藏(心形) / 排序”这类主操作；重命名、源端更新、收藏至歌单、批量操作收进“更多”菜单。
+const HEADER_OVERFLOW_BUTTON =
+  'px-3 py-2 rounded-full text-sm font-medium transition flex items-center active:scale-95 shadow-sm bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-300 hover:border-gray-200 dark:hover:border-white/20';
+
+const overflowItems = computed<{ id: string; label: string; icon: Component }[]>(() => {
+  const items: { id: string; label: string; icon: Component }[] = [];
+  if (props.showRename) items.push({ id: 'rename', label: '修改信息', icon: PencilLine });
+  if (props.showSourceUpdate) items.push({ id: 'update', label: '从源端更新', icon: RefreshCw });
+  if (canCollectFromHeader.value) items.push({ id: 'collect', label: '收藏至歌单', icon: ListPlus });
+  if (!props.readOnly) items.push({ id: 'batch', label: '批量操作', icon: ListChecks });
+  return items;
+});
+
+function handleOverflowPick(id: string) {
+  if (id === 'rename') emit('rename');
+  else if (id === 'update') emit('updateFromSource');
+  else if (id === 'collect') emit('openAddToPlaylist');
+  else if (id === 'batch') emit('update:isBatchMode', true);
+}
 
 // ===== 排序弹出菜单 =====
 type PlaylistSortValue = 'title' | 'name' | 'artist' | 'added_at' | 'added_at_asc' | 'custom';
@@ -336,16 +358,6 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - 3 * 
         <div>
           <div class="mb-1 flex items-center gap-2">
             <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-800 dark:text-white truncate max-w-[500px]">{{ title }}</h1>
-            <button
-              v-if="showRename"
-              @click="emit('rename')"
-              title="修改信息"
-              class="p-1.5 rounded-lg transition shrink-0 text-gray-500 hover:text-gray-800 dark:text-white/60 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 active:scale-95"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
           </div>
 
           <div
@@ -365,26 +377,7 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - 3 * 
             全部播放
           </button>
 
-          <button v-if="showSourceUpdate" :class="pillButtonClass" title="从源端更新歌单" @click="emit('updateFromSource')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M23 4v6h-6M1 20v-6h6" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-            更新
-          </button>
-
-          <button v-if="canCollectFromHeader" :class="pillButtonClass" title="收藏至歌单" @click="emit('openAddToPlaylist')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-            收藏至歌单
-          </button>
-
           <CollectionFavoriteButton :entry="favoriteEntry ?? null" />
-
-          <button v-if="!readOnly" :class="pillButtonClass" title="批量操作" @click="emit('update:isBatchMode', true)">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </button>
 
           <template v-if="!readOnly">
             <button
@@ -408,6 +401,14 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - 3 * 
               @pick="applyPlaylistSort"
             />
           </template>
+
+          <HeaderOverflowMenu
+            v-if="overflowItems.length"
+            :items="overflowItems"
+            :button-class="HEADER_OVERFLOW_BUTTON"
+            icon-class="h-5 w-5"
+            @pick="handleOverflowPick"
+          />
         </div>
       </div>
     </div>

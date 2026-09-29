@@ -23,7 +23,9 @@ const tabs = computed<{ key: HomeDiscoverTab; label: string }[]>(() => {
   const items: { key: HomeDiscoverTab; label: string }[] = [
     { key: 'statistics', label: isEnglish.value ? 'Statistics' : '统计' },
   ];
-  if (theme.value.showLeaderboard) {
+  // 独立的「排行榜」子标签只在玻璃档存在：经典扁平档把排行榜内联进了统计页，
+  // 不再单独占一个入口。玻璃档（useGlassSwitch=true）行为与本条改造前一致。
+  if (theme.value.showLeaderboard && theme.value.useGlassSwitch) {
     items.push({ key: 'leaderboard', label: isEnglish.value ? 'Leaderboard' : '排行榜' });
   }
   items.push(

@@ -1,7 +1,7 @@
 // 模块布局：按「运行时骨架 → 音频/媒体 → 窗口体系 → 工具与系统」的顺序登记。
 mod app_runtime; mod audio_convert; mod audio_trim; mod autostart;
 pub(crate) mod control_channel; mod custom_fonts; mod database; pub(crate) mod dlna;
-pub mod error; mod fallback_verify; mod ffmpeg_bin; mod foreground_window;
+pub mod error; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
 mod host_crypto; mod install_language; mod music; mod netproxy;
 mod player; mod plugin_host; mod plugins; mod power;
 mod recognize; mod remote; mod security; mod skin_image;
@@ -25,6 +25,10 @@ use app_runtime::{
 use autostart::{
     get_launch_on_startup,
     set_launch_on_startup,
+};
+use file_assoc::{
+    get_audio_file_associations,
+    set_audio_file_associations,
 };
 use install_language::{
     get_install_language,
@@ -681,6 +685,8 @@ pub fn run() {
             get_launch_on_startup,
             set_launch_on_startup,
             was_launched_at_startup,
+            get_audio_file_associations,
+            set_audio_file_associations,
             set_sleep_timer,
             clear_sleep_timer,
             get_sleep_timer,

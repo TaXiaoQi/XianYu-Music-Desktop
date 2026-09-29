@@ -8,6 +8,7 @@ import type {
   ImportedLyricsFont, EqualizerPreset, MvQualityKey, AppSettings,
 } from '../../types';
 import { MV_QUALITY_KEYS, ALL_QUALITY_KEYS } from '../../types';
+import { AUDIO_FILE_ASSOCIATION_EXTENSIONS } from './audioFileAssociations';
 import { normalizeThemeColor, DEFAULT_THEME_COLOR } from '../../utils/themeColor';
 import {
   normalizeImportedLyricsFonts,
@@ -225,6 +226,7 @@ export const defaultLogSettings: LogSettings = {
 export const defaultAppSettings: AppSettings = {
   language: 'system', closeToTray: true, launchOnStartup: false,
   launchOnStartupMinimized: false, preventSleepWhilePlaying: true,
+  audioFileAssociations: [...AUDIO_FILE_ASSOCIATION_EXTENSIONS],
   showDesktopLyrics: false, showQualityBadges: true, showSongComments: true,
   enableScrollToTopButton: true, libraryMinDurationSeconds: 0,
   linkFoldersToLibrary: false, lyricsSyncOffset: 0,
@@ -305,6 +307,7 @@ export function createDefaultLogSettings(): LogSettings {
 export function createDefaultAppSettings(): AppSettings {
   const snapshot = { ...defaultAppSettings };
   snapshot.customLyricsFonts = [];
+  snapshot.audioFileAssociations = [...AUDIO_FILE_ASSOCIATION_EXTENSIONS];
   snapshot.lyrics = createDefaultLyricsSettings();
   snapshot.desktopLyrics = createDefaultDesktopLyricsSettings();
   snapshot.audio = createDefaultAudioSettings();

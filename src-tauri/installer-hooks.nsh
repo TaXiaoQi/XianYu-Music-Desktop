@@ -19,6 +19,15 @@
 !define XY_LANG_REGKEY "Software\xianyu\${PRODUCTNAME}"
 !define XY_LANG_REGVALUE "AppLanguage"
 
+; 「打开方式」列表写入/清理：.<ext>\OpenWithProgIds。宏须定义在顶层（NSIS 宏不可嵌套定义），
+; 供 NSIS_HOOK_POSTINSTALL / NSIS_HOOK_POSTUNINSTALL 内 !insertmacro 展开。
+!macro XY_OPEN_WITH_PROGID EXT
+  WriteRegStr HKCU "Software\Classes\.${EXT}\OpenWithProgIds" "XianYu Music Audio" ""
+!macroend
+!macro XY_DEL_OPEN_WITH_PROGID EXT
+  DeleteRegValue HKCU "Software\Classes\.${EXT}\OpenWithProgIds" "XianYu Music Audio"
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   ${If} $LANGUAGE == 1028
     WriteRegStr HKCU "${XY_LANG_REGKEY}" "${XY_LANG_REGVALUE}" "zh-TW"
@@ -51,6 +60,25 @@
   WriteRegStr HKCR "xianyu" "URL Protocol" ""
   WriteRegStr HKCR "xianyu\DefaultIcon" "" "$\"$INSTDIR\弦予音乐.exe$\",0"
   WriteRegStr HKCR "xianyu\shell\open\command" "" "$\"$INSTDIR\弦予音乐.exe$\" $\"%1$\""
+  ; 「打开方式」候选列表由 .<ext>\OpenWithProgIds 决定，而 Tauri 的 APP_ASSOCIATE
+  ;   从不写该键 —— 这正是本程序不出现在「选择应用以打开」列表的根因。此处补齐写入。
+  ; 根键用 HKCU：与主程序设置项（file_assoc.rs）和右侧 FriendlyTypeName 同根键，
+  ;   用户在主程序设置里取消勾选时能以同根键删除，无需提权。
+  ; 只写 OpenWithProgIds（不写 .<ext> 默认值，不劫持用户当前默认程序；默认由主程序
+  ;   设置项在用户主动勾选时“尽力”写入）。
+  ; 实测：Applications\<exe> + SupportedTypes 与 OpenWithProgIds 同写会让条目重复，
+  ;   故只走这一条路径。
+  !insertmacro XY_OPEN_WITH_PROGID "aac"
+  !insertmacro XY_OPEN_WITH_PROGID "aif"
+  !insertmacro XY_OPEN_WITH_PROGID "aiff"
+  !insertmacro XY_OPEN_WITH_PROGID "flac"
+  !insertmacro XY_OPEN_WITH_PROGID "m4a"
+  !insertmacro XY_OPEN_WITH_PROGID "m4b"
+  !insertmacro XY_OPEN_WITH_PROGID "mp3"
+  !insertmacro XY_OPEN_WITH_PROGID "mp4"
+  !insertmacro XY_OPEN_WITH_PROGID "oga"
+  !insertmacro XY_OPEN_WITH_PROGID "ogg"
+  !insertmacro XY_OPEN_WITH_PROGID "wav"
   ; 开始菜单/桌面快捷方式与「应用和功能」列表名跟随安装语言。
   ; 背景：Tauri 模板固定用 productName（简中「弦予音乐」）创建快捷方式与卸载项
   ;   DisplayName，英文系统上会显示简中。这里在安装完成后按语言重命名/覆盖：
@@ -82,6 +110,19 @@
 ;   候选名（Delete 目标不存在时静默跳过）。简中名由 Tauri 卸载器自己删。
 ; ============================================================================
 !macro NSIS_HOOK_POSTUNINSTALL
+  ; 补删安装钩子写入的「打开方式」条目（APP_UNASSOCIATE 不碰 OpenWithProgIds），
+  ;   避免残留指向已删 ProgId 的悬空项。显式写 HKCU，与写入侧同根键。
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "aac"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "aif"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "aiff"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "flac"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "m4a"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "m4b"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "mp3"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "mp4"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "oga"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "ogg"
+  !insertmacro XY_DEL_OPEN_WITH_PROGID "wav"
   SetShellVarContext current
   Delete "$SMPROGRAMS\XianYuMusic.lnk"
   Delete "$SMPROGRAMS\弦予音樂.lnk"

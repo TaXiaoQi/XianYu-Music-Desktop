@@ -195,6 +195,8 @@ commands.allow = [
   "set_install_language",
   "get_launch_on_startup",
   "set_launch_on_startup",
+  "get_audio_file_associations",
+  "set_audio_file_associations",
   "was_launched_at_startup",
   "set_sleep_timer",
   "clear_sleep_timer",
