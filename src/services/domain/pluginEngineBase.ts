@@ -492,6 +492,8 @@ export interface IPluginInstance {
   getTopListDetail?: (topListItem: any, page: number) => Promise<any>;
   importMusicSheet?: (urlLike: string) => Promise<any>;
   importMusicItem?: (urlLike: string) => Promise<any>;
+  // am（animemusic/1）歌单导入：返回 {id,title,cover,creator,desc,total,list}
+  importPlaylist?: (urlOrText: string) => Promise<any>;
   getMusicSheetInfo?: (sheetItem: any, page: number) => Promise<any>;
   getRecommendSheetTags?: () => Promise<any>;
   getRecommendSheetsByTag?: (tagItem: any, page: number) => Promise<any>;

@@ -335,6 +335,41 @@ export function createAnimeInstance(pluginId: string, metadata: any) {
       return envToList(env, singlePlatform);
     },
 
+    // 歌单导入（am v2.1.0+ importPlaylist）：分享链接/分享文案/纯数字歌单ID →
+    // 歌单元数据+歌曲。纯数字ID必须带 platform，聚合插件无固化平台时交由
+    // 服务端报错提示；服务端按链接域名自动识别平台，短链自动跟随重定向
+    async importPlaylist(urlOrText: string) {
+      const input = String(urlOrText || '').trim();
+      const params: Record<string, unknown> = { url: input, limit: 100 };
+      if (singlePlatform) params.platform = singlePlatform;
+      const first = await animeCall(pluginId, 'importPlaylist', params);
+      if (!first?.ok) {
+        throw new Error(`[anime] importPlaylist 失败: ${envelopeErrorText(first)}`);
+      }
+      const list = Array.isArray(first.list) ? [...first.list] : [];
+      const total = Number(first.total) || 0;
+      // 分页拉全曲目（limit≤100/页）；页数兜底防上游 hasMore 异常死循环
+      const maxPages = 50;
+      let page = Number(first.page) || 1;
+      let hasMore = first.hasMore !== false && (!total || list.length < total);
+      while (hasMore && page < maxPages) {
+        page += 1;
+        const env = await animeCall(pluginId, 'importPlaylist', { ...params, page });
+        if (!env?.ok || !Array.isArray(env.list) || env.list.length === 0) break;
+        list.push(...env.list);
+        hasMore = env.hasMore !== false && (!total || list.length < total);
+      }
+      return {
+        id: first.id != null ? String(first.id) : input,
+        title: first.title || '',
+        cover: first.cover || '',
+        creator: first.creator || '',
+        desc: first.desc || '',
+        total,
+        list: list.map((item: any) => injectAnimePlatform(item, singlePlatform)),
+      };
+    },
+
     // 歌手热门歌曲（music）/ 歌手专辑列表（album）
     async getArtistWorks(artistItem: any, page: number = 1, type: string = 'music') {
       const params: Record<string, unknown> = { id: pickAnimeId(artistItem), page: page || 1, limit: 30 };

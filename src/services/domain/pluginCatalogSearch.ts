@@ -195,6 +195,29 @@ export async function pluginPlaylistSearch(
     // 链接/歌单 ID 优先走 importMusicSheet 精确导入：公开搜索会把链接当
     // 关键词，搜出来的全是别人的同名歌单。
     const linkLike = looksLikeSheetLinkOrId(keyword);
+    // am 插件（animemusic/1）歌单导入：importPlaylist 返回歌单元数据+曲目，
+    // 优先走它拿到真实歌单名/封面/创建者
+    if (linkLike && typeof inst.instance.importPlaylist === 'function') {
+      try {
+        const imp = await inst.instance.importPlaylist(keyword);
+        if (imp && Array.isArray(imp.list) && imp.list.length > 0) {
+          const title = imp.title || `${source.name}歌单`;
+          return [{
+            id: keyword,
+            title,
+            coverUrl: imp.cover || '',
+            trackCount: Number(imp.total) || imp.list.length,
+            artist: imp.creator || '',
+            platform: source.name,
+            platformId: keyword,
+            pluginId: source.id,
+            rawData: { id: keyword, title, _importedTracks: imp.list },
+          }];
+        }
+      } catch (e: any) {
+        console.warn(`[${source.name}] importPlaylist 精确导入失败:`, e?.message || e);
+      }
+    }
     if (linkLike && typeof inst.instance.importMusicSheet === 'function') {
       try {
         const direct = await inst.instance.importMusicSheet(keyword);

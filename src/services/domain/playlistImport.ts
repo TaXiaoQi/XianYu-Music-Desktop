@@ -89,7 +89,8 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
           });
         }
       }
-    } else if (p.format === 'musicfree') {
+    } else if (p.format === 'musicfree' || p.format === 'anime') {
+      // am 插件歌单导入走 importPlaylist 动作，与 musicfree 同一导入通道
       const key = `mf_${p.id}`;
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
@@ -101,7 +102,7 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
         pluginSource: p,
       });
 
-      if (p.sources.some(s => s.toLowerCase() === 'bilibili')) {
+      if (p.format === 'musicfree' && p.sources.some(s => s.toLowerCase() === 'bilibili')) {
         const favKey = `fav_${p.id}`;
         if (!seenKeys.has(favKey)) {
           seenKeys.add(favKey);
