@@ -47,9 +47,6 @@ export default defineConfig(async () => ({
           if (!id.includes('node_modules')) {
             return;
           }
-          if (id.includes('/@applemusic-like-lyrics/')) {
-            return 'vendor-amll';
-          }
           if (id.includes('/@tauri-apps/')) {
             return 'vendor-tauri';
           }

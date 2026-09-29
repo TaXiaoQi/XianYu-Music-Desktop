@@ -3,9 +3,8 @@
 // Lyricify Quick Export / TTML / QRC（明文与十六进制密文）/ YRC / LYS / ESLRC，
 // 兜底为纯文本合成。
 
-use amll_lyric::{
-    eqrc::decrypt_qrc_hex, eslrc::parse_eslrc, lys::parse_lys, qrc::parse_qrc, yrc::parse_yrc,
-    LyricLine as AmllLine,
+use super::native_parse::{
+    decrypt_qrc_hex, parse_eslrc, parse_lys, parse_qrc, parse_yrc, NativeLine as SourceLine,
 };
 use regex::Regex;
 use std::cmp::Ordering;
@@ -46,11 +45,11 @@ static FORMAT_RE: LazyLock<FormatPatterns> = LazyLock::new(|| FormatPatterns {
     paren_word: Regex::new(r"([^()]*)\((\d+),(\d+)(?:,\d+)?\)").unwrap(),
 });
 
-// ---------- amll 解析结果的适配 ----------
+// ---------- 内部逐字解析结果的适配 ----------
 
-/// 把 amll 的解析行折算成内部 ParsedLine（含逐字词、角色前缀、纯分隔行剔除）。
-fn adapt_amll_line(
-    line: &AmllLine<'_>,
+/// 把逐字解析器的行折算成内部 ParsedLine（含逐字词、角色前缀、纯分隔行剔除）。
+fn adapt_source_line(
+    line: &SourceLine,
     format: LineFormat,
     order: usize,
 ) -> Option<ParsedLine> {
@@ -65,7 +64,7 @@ fn adapt_amll_line(
         .words
         .iter()
         .filter_map(|word| {
-            let text = tidy_word(word.word.as_ref());
+            let text = tidy_word(word.word.as_str());
             if text.is_empty() {
                 return None;
             }
@@ -86,15 +85,15 @@ fn adapt_amll_line(
             &line
                 .words
                 .iter()
-                .map(|word| word.word.as_ref())
+                .map(|word| word.word.as_str())
                 .collect::<String>(),
         )
     } else {
         tidy_line(&words.iter().map(|word| word.text.clone()).collect::<String>())
     };
     let (role, text) = split_role_prefix(&raw_text);
-    let translated_text = tidy_line(line.translated_lyric.as_ref());
-    let roman_text = tidy_line(line.roman_lyric.as_ref());
+    let translated_text = tidy_line(line.translated_lyric.as_str());
+    let roman_text = tidy_line(line.roman_lyric.as_str());
 
     if text.is_empty() && translated_text.is_empty() && roman_text.is_empty() && words.is_empty() {
         return None;
@@ -129,14 +128,14 @@ fn adapt_amll_line(
     })
 }
 
-fn amll_rows(
-    parsed: &[AmllLine<'_>],
+fn source_rows(
+    parsed: &[SourceLine],
     format: LineFormat,
 ) -> Vec<ParsedLine> {
     parsed
         .iter()
         .enumerate()
-        .filter_map(|(order, line)| adapt_amll_line(line, format.clone(), order))
+        .filter_map(|(order, line)| adapt_source_line(line, format.clone(), order))
         .collect()
 }
 
@@ -917,7 +916,7 @@ pub(super) fn dissect_source(raw: &str) -> Vec<ParsedLine> {
         );
     }
 
-    // 整段十六进制 → QRC 密文（3DES 变体 + zlib，由 amll 的 eqrc 完成解密）。
+    // 整段十六进制 → QRC 密文（QQ 魔改 3DES + zlib，native_parse 解密）。
     let hex_blob: String = text.split_whitespace().collect();
     if hex_blob.len() > HEX_DECRYPT_MIN_LEN
         && hex_blob.len() % 2 == 0
@@ -926,7 +925,7 @@ pub(super) fn dissect_source(raw: &str) -> Vec<ParsedLine> {
         push_candidate(
             &mut candidates,
             LineFormat::Qrc,
-            amll_rows(&parse_qrc(&decrypt_qrc_hex(&hex_blob)), LineFormat::Qrc),
+            source_rows(&parse_qrc(&decrypt_qrc_hex(&hex_blob)), LineFormat::Qrc),
         );
     }
 
@@ -939,11 +938,11 @@ pub(super) fn dissect_source(raw: &str) -> Vec<ParsedLine> {
     push_candidate(
         &mut candidates,
         LineFormat::Yrc,
-        amll_rows(&parse_yrc(&text), LineFormat::Yrc),
+        source_rows(&parse_yrc(&text), LineFormat::Yrc),
     );
 
     // QRC XML 之后可能拼接译文 LRC（见 merge_tail_translations 注释）。
-    let mut qrc_rows = amll_rows(&parse_qrc(&text), LineFormat::Qrc);
+    let mut qrc_rows = source_rows(&parse_qrc(&text), LineFormat::Qrc);
     if !qrc_rows.is_empty() {
         if let Some(xml_end) = text.find(QRC_XML_CLOSER) {
             let tail = &text[xml_end + QRC_XML_CLOSER.len()..];
@@ -955,13 +954,13 @@ pub(super) fn dissect_source(raw: &str) -> Vec<ParsedLine> {
     push_candidate(
         &mut candidates,
         LineFormat::Lys,
-        amll_rows(&parse_lys(&text), LineFormat::Lys),
+        source_rows(&parse_lys(&text), LineFormat::Lys),
     );
 
     push_candidate(
         &mut candidates,
         LineFormat::Eslrc,
-        amll_rows(
+        source_rows(
             &parse_eslrc(&expand_multi_stamp_lines(&text)),
             LineFormat::Eslrc,
         ),

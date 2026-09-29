@@ -121,7 +121,7 @@ fn take_stamp_block(rest: &str) -> Option<(usize, String)> {
 }
 
 /// ESLRC 行内可能连续携带多个 `[时间戳]`：在正文开始前把它们用隐形分隔符串起来，
-/// 供 amll 的 eslrc 解析器拆成多行。
+/// 供 eslrc 逐字解析器拆成多行。
 pub(super) fn expand_multi_stamp_lines(source: &str) -> String {
     source
         .lines()

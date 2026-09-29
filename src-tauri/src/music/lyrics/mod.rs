@@ -7,6 +7,8 @@ mod format;
 #[cfg(test)]
 mod tests;
 mod model;
+mod native_parse;
+mod qq_des;
 mod script;
 mod semantic;
 mod text;
