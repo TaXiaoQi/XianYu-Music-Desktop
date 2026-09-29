@@ -45,15 +45,26 @@ const brandFromIdentity = (name?: string, author?: string): string | null => {
   return null;
 };
 
-const brandFromUrl = (url?: string | null): string | null => {
+const urlSourceValue = (url?: string | null): string | null => {
   if (!url) return null;
   try {
-    const v = new URL(url).searchParams.get('source')?.trim();
-    if (!v) return null;
-    return SUB_SOURCE_BRAND_ALIAS[v.toLowerCase()] ?? v;
+    return new URL(url).searchParams.get('source')?.trim() || null;
   } catch {
     return null;
   }
+};
+
+// 订阅 URL 的 source 常带 .json 后缀（如 quandouyao.json），插件安装 URL 是去后缀的
+// 标识（如 quandouyao）——归属判定前统一去掉 .json 再比较
+const normalizeSourceValue = (v: string): string =>
+  v.toLowerCase().replace(/\.json$/, '');
+
+const brandFromUrl = (url?: string | null): string | null => {
+  const v = urlSourceValue(url);
+  if (!v) return null;
+  // 仅识别已知付费品牌别名：公开订阅也会用 source= 传自定义标识（如 quandouyao），
+  // 未知值不再视为付费，避免免费插件被误标
+  return SUB_SOURCE_BRAND_ALIAS[v.toLowerCase()] ?? null;
 };
 
 const urlHasKey = (url?: string | null): boolean => {
@@ -62,15 +73,6 @@ const urlHasKey = (url?: string | null): boolean => {
     return !!new URL(url).searchParams.get('key')?.trim();
   } catch {
     return false;
-  }
-};
-
-const urlHost = (url?: string | null): string | null => {
-  if (!url) return null;
-  try {
-    return new URL(url).host || null;
-  } catch {
-    return null;
   }
 };
 
@@ -110,14 +112,14 @@ const pluginSubTag = (p: PluginSource): SongSourceTagInfo | null => {
   const named = brandFromIdentity(p.name, p.author);
   if (named) return { label: named, brand: true };
   if (urlHasKey(p.filePath)) return { label: '付费', brand: true };
-  const ownHost = urlHost(p.filePath);
-  const pname = p.name.trim();
+  // 插件 URL 自带 source 标识时按 source 值精确归属订阅（订阅 URL 的 source 常多一个
+  // .json 后缀）；同一台主机可挂多个订阅（公共+付费并存），禁止按 host/名称猜归属
+  const ownSrc = urlSourceValue(p.filePath);
+  if (!ownSrc) return null;
+  const ownKey = normalizeSourceValue(ownSrc);
   for (const sub of readSubscriptions()) {
-    const subName = sub.name?.trim() ?? '';
-    const matched =
-      (subName !== '' && subName === pname) ||
-      (ownHost !== null && urlHost(sub.url) === ownHost);
-    if (!matched) continue;
+    const subSrc = urlSourceValue(sub.url);
+    if (!subSrc || normalizeSourceValue(subSrc) !== ownKey) continue;
     const brand = brandFromUrl(sub.url);
     if (brand) return { label: brand, brand: true };
     if (urlHasKey(sub.url)) return { label: '付费', brand: true };
@@ -142,11 +144,8 @@ export const getSongSourceTag = (
   if (path?.startsWith('plugin://')) {
     const pluginId = song?.plugin_id || song?.rawData?.pluginId;
     const plugin = pluginId ? getStoredPluginById(pluginId) : null;
-    if (plugin) {
-      const tag = pluginSubTag(plugin);
-      if (tag) return tag;
-      return { label: plugin.name, brand: false };
-    }
+    // 歌曲页等场景维持原样（红色标签显示插件名）；付费品牌标签只在插件管理页展示
+    if (plugin) return { label: plugin.name, brand: false };
     return { label: '在线', brand: false };
   }
 

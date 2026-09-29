@@ -488,6 +488,7 @@ const exactEnglishTranslations: Record<string, string> = {
   '添加订阅': 'Add subscription',
   '暂无订阅': 'No subscriptions',
   '暂无订阅源': 'No subscription sources',
+  '付费订阅来源': 'Paid subscription source',
   '该音源暂无榜单': 'No top lists from this source',
   '试试切换其他音源': 'Try switching to another source',
   '请先在「插件管理」中安装支持排行榜的音源插件': 'Install a source plugin with top-list support in Plugin Manager first',

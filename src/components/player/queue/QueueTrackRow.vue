@@ -63,10 +63,7 @@ const onEjectPress = (event: Event) => {
         <span class="min-w-0 truncate text-sm leading-tight" :class="active ? 'font-bold text-[#EC4141]' : 'font-medium'">{{ headingText }}</span>
         <span
           v-if="sourceTagShown"
-          class="shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] font-bold"
-          :class="sourceTag.brand
-            ? 'border-[#E6A23C]/30 bg-[#E6A23C]/15 text-[#E6A23C]'
-            : 'border-[#EC4141]/20 bg-[#EC4141]/10 text-[#EC4141]'"
+          class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
         >{{ sourceTag.label }}</span>
       </div>
       <span class="mt-1 truncate text-[11px] font-medium text-[#42526a] dark:text-white/80">{{ subText }}</span>

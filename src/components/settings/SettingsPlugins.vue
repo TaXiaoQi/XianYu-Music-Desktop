@@ -147,12 +147,12 @@ async function refreshUserVarBadges() {
 const pluginsBakaIds = ref<Set<string>>(new Set());
 let bakaRefreshInProgress = false;
 
-// 付费订阅来源品牌标签（聆澜/ikun/付费），同步判定、随插件列表联动
+// 付费订阅来源品牌标签（付费聆澜/付费ikun，无来源名回落「付费」），随插件列表联动
 const subBrandLabelById = computed(() => {
   const map = new Map<string, string>();
   for (const p of plugins.value) {
     const tag = getPluginSubTag(p);
-    if (tag) map.set(p.id, tag.label);
+    if (tag) map.set(p.id, tag.label === '付费' ? '付费' : `付费${tag.label}`);
   }
   return map;
 });
@@ -314,7 +314,7 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
       iconBg: 'bg-gradient-to-br from-green-500/12 to-emerald-400/12',
       iconText: 'text-green-600 dark:text-green-400',
       toggle: 'bg-green-500',
-      tagBg: 'bg-green-500/10 text-green-700 dark:text-green-300 dark:bg-green-500/15',
+      tagClass: 'settings-plugin-tag--lx',
       label: '落雪',
     };
   }
@@ -323,7 +323,7 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
       iconBg: 'bg-gradient-to-br from-purple-500/12 to-fuchsia-400/12',
       iconText: 'text-purple-600 dark:text-purple-400',
       toggle: 'bg-purple-500',
-      tagBg: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 dark:bg-purple-500/15',
+      tagClass: 'settings-plugin-tag--anime',
       label: 'anime',
     };
   }
@@ -333,7 +333,7 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
         iconBg: 'bg-gradient-to-br from-blue-500/12 to-indigo-400/12',
         iconText: 'text-blue-600 dark:text-blue-400',
         toggle: 'bg-blue-500',
-        tagBg: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 dark:bg-blue-500/15',
+        tagClass: 'settings-plugin-tag--baka',
         label: 'BakaMusic',
       };
     }
@@ -341,7 +341,7 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
       iconBg: 'bg-gradient-to-br from-orange-500/12 to-amber-400/12',
       iconText: 'text-orange-600 dark:text-orange-400',
       toggle: 'bg-orange-500',
-      tagBg: 'bg-orange-500/10 text-orange-700 dark:text-orange-300 dark:bg-orange-500/15',
+      tagClass: 'settings-plugin-tag--musicfree',
       label: 'MusicFree',
     };
   }
@@ -349,7 +349,7 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
     iconBg: 'bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12',
     iconText: 'text-[#EC4141]',
     toggle: 'bg-[#EC4141]',
-    tagBg: 'bg-gray-500/10 text-gray-700 dark:text-gray-300 dark:bg-gray-500/15',
+    tagClass: '',
     label: '未知',
   };
 }
@@ -466,6 +466,8 @@ function validatePluginUrl(urlStr: string): boolean {
 }
 
 async function handleInstallFromUrl() {
+  // 单飞互斥：导入进行中忽略再次触发（回车/连点），避免重复导入两份插件
+  if (isPluginBusy.value) return;
   const url = installUrl.value.trim();
   if (!url) {
     showToast('请输入插件 URL', 'error');
@@ -1453,7 +1455,7 @@ async function saveUserVariables() {
                 </div>
                 <span
                   class="settings-plugin-tag shrink-0 whitespace-nowrap"
-                  :class="pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).tagBg"
+                  :class="pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).tagClass"
                 >
                   {{ pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).label }}
                 </span>
@@ -2184,6 +2186,27 @@ async function saveUserVariables() {
   line-height: 1.4;
 }
 
+/* 类型标签按格式配色（对齐移动端）；定义在基础样式之后以同优先级覆盖灰色底 */
+.settings-plugin-tag--lx {
+  background: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+}
+
+.settings-plugin-tag--anime {
+  background: rgba(168, 85, 247, 0.1);
+  color: #7e22ce;
+}
+
+.settings-plugin-tag--baka {
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+}
+
+.settings-plugin-tag--musicfree {
+  background: rgba(249, 115, 22, 0.1);
+  color: #c2410c;
+}
+
 .settings-plugin-tag--accent {
   background: rgba(236, 65, 65, 0.12);
   color: #ec4141;
@@ -2661,6 +2684,26 @@ async function saveUserVariables() {
 .dark .settings-plugin-tag {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.8);
+}
+
+.dark .settings-plugin-tag--lx {
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+}
+
+.dark .settings-plugin-tag--anime {
+  background: rgba(168, 85, 247, 0.15);
+  color: #d8b4fe;
+}
+
+.dark .settings-plugin-tag--baka {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+}
+
+.dark .settings-plugin-tag--musicfree {
+  background: rgba(249, 115, 22, 0.15);
+  color: #fdba74;
 }
 
 .dark .settings-plugin-tag--accent {
