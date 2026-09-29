@@ -25,7 +25,7 @@ const preserveRuntimeThemeAlpha = (): Plugin => ({
   },
 });
 
-export default defineConfig(async () => ({
+export default defineConfig({
   plugins: [vue(), wasm(), topLevelAwait(), preserveRuntimeThemeAlpha()],
   resolve: {
     alias: {
@@ -114,4 +114,4 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
-}));
+});
