@@ -3,10 +3,20 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { AcknowledgementsItem } from '../../utils/aboutConfig';
 
-const props = defineProps<{
-  visible: boolean;
-  items: AcknowledgementsItem[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    visible: boolean;
+    items: AcknowledgementsItem[];
+    title?: string;
+    subtitle?: string;
+    emptyText?: string;
+  }>(),
+  {
+    title: '致谢名单',
+    subtitle: '感谢以下项目创意或功能的贡献者，排名不分先后',
+    emptyText: '暂无致谢名单，由服务器后台配置下发',
+  },
+);
 
 const emit = defineEmits(['close']);
 
@@ -67,7 +77,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
         :class="isClosing ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 translate-y-0'"
       >
         <div class="flex items-center justify-between px-6 pt-5 pb-3">
-          <h3 class="text-lg font-bold leading-6 text-gray-900 dark:text-white">致谢名单</h3>
+          <h3 class="text-lg font-bold leading-6 text-gray-900 dark:text-white">{{ props.title }}</h3>
           <button
             type="button"
             class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
@@ -84,7 +94,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
         <div class="px-6 pb-6">
           <p class="mb-4 text-center text-xs leading-relaxed text-gray-400 dark:text-white/40">
-            感谢以下项目创意或功能的贡献者，排名不分先后
+            {{ props.subtitle }}
           </p>
 
           <div v-if="items.length" class="flex flex-wrap justify-center gap-2">
@@ -101,7 +111,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           </div>
 
           <p v-else class="py-6 text-center text-sm text-gray-400 dark:text-white/40">
-            暂无致谢名单，由服务器后台配置下发
+            {{ props.emptyText }}
           </p>
         </div>
       </div>

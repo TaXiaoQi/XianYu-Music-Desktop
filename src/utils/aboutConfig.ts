@@ -10,8 +10,8 @@ export interface AboutConfig {
   officialSiteUrl: string;
   updateEnabled: boolean;
   projectUrl: string;
-  referenceProjectUrl: string;
   joinGroupUrl: string;
+  referenceProjects: AcknowledgementsItem[];
   acknowledgements: AcknowledgementsItem[];
 }
 
@@ -19,8 +19,11 @@ export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
   officialSiteUrl: 'https://xianyumusic.cn/',
   updateEnabled: true,
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
-  referenceProjectUrl: 'https://github.com//LyciaMusic',
   joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
+  referenceProjects: [
+    { name: 'Lycia Player', url: 'https://github.com//LyciaMusic' },
+    { name: 'BakaMusic', url: 'https://github.com/Zencok/BakaMusic' },
+  ],
   acknowledgements: [
     { name: '@', url: 'https://github.com/' },
     { name: '@Zencok', url: 'https://github.com/Zencok' },
@@ -34,8 +37,8 @@ function asUrl(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-function asAcknowledgements(value: unknown): AcknowledgementsItem[] {
-  if (!Array.isArray(value)) return [...DEFAULT_ABOUT_CONFIG.acknowledgements];
+function asAcknowledgements(value: unknown, fallback: AcknowledgementsItem[]): AcknowledgementsItem[] {
+  if (!Array.isArray(value)) return [...fallback];
   const items: AcknowledgementsItem[] = [];
   for (const entry of value) {
     if (typeof entry !== 'object' || entry === null) continue;
@@ -68,9 +71,9 @@ export async function fetchAboutConfig(): Promise<AboutConfig> {
         ? data.updateEnabled
         : DEFAULT_ABOUT_CONFIG.updateEnabled,
       projectUrl: asUrl(data.projectUrl, DEFAULT_ABOUT_CONFIG.projectUrl),
-      referenceProjectUrl: asUrl(data.referenceProjectUrl, DEFAULT_ABOUT_CONFIG.referenceProjectUrl),
       joinGroupUrl: asUrl(data.joinGroupUrl, DEFAULT_ABOUT_CONFIG.joinGroupUrl),
-      acknowledgements: asAcknowledgements(data.acknowledgements),
+      referenceProjects: asAcknowledgements(data.referenceProjects, DEFAULT_ABOUT_CONFIG.referenceProjects),
+      acknowledgements: asAcknowledgements(data.acknowledgements, DEFAULT_ABOUT_CONFIG.acknowledgements),
     };
   } catch (error) {
     console.warn('[AboutConfig] 获取关于页配置失败，使用默认配置', error);
