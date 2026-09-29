@@ -94,6 +94,9 @@ const isUploadClosing = ref(false);
 const uploadForm = ref({ title: '', description: '', category: '' });
 const uploadFile = ref<File | null>(null);
 const uploadPreview = ref('');
+const uploadVideoUrl = ref('');
+const uploadIsVideo = ref(false);
+const uploadVideoDuration = ref(0);
 const uploading = ref(false);
 const uploadError = ref('');
 
@@ -102,6 +105,12 @@ const clearUploadPreview = () => {
     URL.revokeObjectURL(uploadPreview.value);
     uploadPreview.value = '';
   }
+  if (uploadVideoUrl.value) {
+    URL.revokeObjectURL(uploadVideoUrl.value);
+    uploadVideoUrl.value = '';
+  }
+  uploadIsVideo.value = false;
+  uploadVideoDuration.value = 0;
 };
 
 const fetchWallpapers = async () => {
@@ -240,8 +249,36 @@ const onFileChange = (e: Event) => {
     return;
   }
   const file = input.files[0];
+  if (/^video\/mp4$/i.test(file.type) || /\.mp4$/i.test(file.name)) {
+    if (file.size > 50 * 1024 * 1024) {
+      uploadError.value = '视频过大，请选择 50MB 以内的 MP4 视频';
+      input.value = '';
+      uploadFile.value = null;
+      clearUploadPreview();
+      return;
+    }
+    clearUploadPreview();
+    uploadFile.value = file;
+    uploadIsVideo.value = true;
+    uploadVideoUrl.value = URL.createObjectURL(file);
+    // 读视频时长，兜底失败时按 0 上报（服务端仅校验 0-86400）
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.muted = true;
+    probe.onloadedmetadata = () => {
+      uploadVideoDuration.value = Math.max(0, Math.round(probe.duration || 0));
+      probe.removeAttribute('src');
+      probe.load();
+    };
+    probe.onerror = () => {
+      probe.removeAttribute('src');
+      probe.load();
+    };
+    probe.src = uploadVideoUrl.value;
+    return;
+  }
   if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
-    uploadError.value = '只支持 JPG / PNG / WEBP / GIF 格式';
+    uploadError.value = '只支持 JPG / PNG / WEBP / GIF 图片或 MP4 视频';
     input.value = '';
     uploadFile.value = null;
     clearUploadPreview();
@@ -296,6 +333,67 @@ const compressImageToDataUrl = (file: File, maxWidth = 1920, quality = 0.85): Pr
   });
 };
 
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+
+// 视频首帧封面：loadeddata 时首帧已就绪，直接绘到 canvas 导出 JPEG
+const captureVideoPoster = (url: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.muted = true;
+    video.preload = 'auto';
+    const cleanup = () => {
+      video.onloadeddata = null;
+      video.onerror = null;
+      video.removeAttribute('src');
+      video.load();
+    };
+    video.onloadeddata = () => {
+      try {
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (!w || !h) {
+          cleanup();
+          reject(new Error('无法读取视频画面'));
+          return;
+        }
+        let cw = w;
+        let ch = h;
+        if (cw > 1920) {
+          ch = Math.round(ch * (1920 / cw));
+          cw = 1920;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          cleanup();
+          reject(new Error('Canvas 上下文不可用'));
+          return;
+        }
+        ctx.drawImage(video, 0, 0, cw, ch);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        canvas.width = 0;
+        cleanup();
+        resolve(dataUrl);
+      } catch (err) {
+        cleanup();
+        reject(err instanceof Error ? err : new Error('视频封面提取失败'));
+      }
+    };
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('视频无法解析，请换一个文件'));
+    };
+    video.src = url;
+  });
+
 const doUpload = async () => {
   if (!isLoggedIn.value || !currentUser.value?.ciyuanxi_id) {
     uploadError.value = '请先登录';
@@ -307,26 +405,46 @@ const doUpload = async () => {
     return;
   }
   if (!uploadFile.value) {
-    uploadError.value = '请选择壁纸图片';
+    uploadError.value = '请选择壁纸图片或视频';
     return;
   }
   uploading.value = true;
   uploadError.value = '';
   try {
-    const imageData = await compressImageToDataUrl(uploadFile.value, 1920, 0.80);
-    await signedRequest(
-      'upload_wallpaper',
-      {
-        ciyuanxi_id: currentUser.value.ciyuanxi_id,
-        nickname: currentUser.value.nickname || currentUser.value.username || '',
-        title,
-        description: uploadForm.value.description.trim(),
-        category: uploadForm.value.category.trim() || '用户上传',
-        platform: 'desktop',
-        image_data: imageData,
-      },
-      { fetchTimeoutMs: 90_000, timeoutMs: 95_000 },
-    );
+    if (uploadIsVideo.value) {
+      const poster = await captureVideoPoster(uploadVideoUrl.value);
+      const videoData = await fileToDataUrl(uploadFile.value);
+      await signedRequest(
+        'upload_wallpaper',
+        {
+          ciyuanxi_id: currentUser.value.ciyuanxi_id,
+          nickname: currentUser.value.nickname || currentUser.value.username || '',
+          title,
+          description: uploadForm.value.description.trim(),
+          category: uploadForm.value.category.trim() || '用户上传',
+          platform: 'desktop',
+          image_data: poster,
+          video_data: videoData,
+          video_duration: uploadVideoDuration.value,
+        },
+        { fetchTimeoutMs: 600_000, timeoutMs: 610_000 },
+      );
+    } else {
+      const imageData = await compressImageToDataUrl(uploadFile.value, 1920, 0.80);
+      await signedRequest(
+        'upload_wallpaper',
+        {
+          ciyuanxi_id: currentUser.value.ciyuanxi_id,
+          nickname: currentUser.value.nickname || currentUser.value.username || '',
+          title,
+          description: uploadForm.value.description.trim(),
+          category: uploadForm.value.category.trim() || '用户上传',
+          platform: 'desktop',
+          image_data: imageData,
+        },
+        { fetchTimeoutMs: 90_000, timeoutMs: 95_000 },
+      );
+    }
     isUploadClosing.value = true;
     uploadCloseTimer = setTimeout(() => {
       showUploadModal.value = false;
@@ -777,13 +895,17 @@ onBeforeUnmount(() => {
               <input v-model="uploadForm.category" placeholder="留空默认为「用户上传」" class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10" />
             </div>
             <div class="mb-2">
-              <label class="mb-1 block text-xs text-white/60">图片 <span class="text-[#EC4141]">*</span></label>
+              <label class="mb-1 block text-xs text-white/60">壁纸文件 <span class="text-[#EC4141]">*</span></label>
               <div class="rounded-lg border border-dashed border-white/15 bg-white/5 px-3 py-2">
-                <input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,image/*" @change="onFileChange" class="w-full text-xs text-white/70 file:mr-3 file:rounded file:border-0 file:bg-[#EC4141] file:px-3 file:py-1 file:text-xs file:font-medium file:text-white hover:file:bg-[#d13a3a]" />
-                <p class="mt-1 text-[10px] text-white/40">支持 JPG / PNG / WEBP / GIF，30MB 以内，将自动压缩为 1920px JPEG</p>
+                <input type="file" accept=".jpg,.jpeg,.png,.webp,.gif,image/*,video/mp4,.mp4" @change="onFileChange" class="w-full text-xs text-white/70 file:mr-3 file:rounded file:border-0 file:bg-[#EC4141] file:px-3 file:py-1 file:text-xs file:font-medium file:text-white hover:file:bg-[#d13a3a]" />
+                <p class="mt-1 text-[10px] text-white/40">图片（JPG / PNG / WEBP / GIF，30MB 内）或 MP4 视频（50MB 内），图片自动压缩为 1920px JPEG，视频封面自动截取首帧</p>
               </div>
               <div v-if="uploadPreview" class="mt-2 overflow-hidden rounded-lg border border-white/10">
                 <img :src="uploadPreview" alt="预览" class="max-h-40 w-full object-cover" />
+              </div>
+              <div v-else-if="uploadVideoUrl" class="relative mt-2 overflow-hidden rounded-lg border border-white/10 bg-black">
+                <video :src="uploadVideoUrl" controls muted class="max-h-40 w-full object-contain"></video>
+                <span class="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80">视频壁纸</span>
               </div>
             </div>
             <div v-if="uploadError" class="mt-3 rounded-lg border border-[#EC4141]/30 bg-[#EC4141]/10 px-3 py-2 text-xs text-[#ff8a8a]">{{ uploadError }}</div>
