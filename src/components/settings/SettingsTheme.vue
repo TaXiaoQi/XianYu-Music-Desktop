@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { Check, ChevronDown } from 'lucide-vue-next';
+import { Check, ChevronDown, FileUp, Loader2 } from 'lucide-vue-next';
+import { open } from '@tauri-apps/plugin-dialog';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
 import { useI18n } from '../../features/i18n';
+import { useSettings } from '../../features/settings/useSettings';
+import { useToast } from '../../composables/toast';
+import { parseDesktopThemeJson } from '../../features/settings/desktopThemePackage';
+import { readFileBytes } from '../../services/tauri/pluginApi';
 import SettingHint from './SettingHint.vue';
 import RangeSlider from '../common/RangeSlider.vue';
 import CustomColorPicker from './CustomColorPicker.vue';
 
 const { isEnglish, t } = useI18n();
+const { replaceTheme } = useSettings();
+const { showToast } = useToast();
 
 const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue'));
 const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
@@ -252,6 +259,39 @@ const commitAccentColor = (event: Event) => {
   const input = event.target as HTMLInputElement;
   setAccentColor(input.value);
   input.value = theme.value.accentColor;
+};
+
+const isImportingTheme = ref(false);
+const importDesktopTheme = async () => {
+  if (isImportingTheme.value) return;
+  const selected = await open({
+    multiple: false,
+    directory: false,
+    title: isEnglish.value ? 'Import desktop theme JSON' : '导入桌面主题 JSON',
+    filters: [{ name: 'Theme JSON', extensions: ['json'] }],
+  });
+  const path = Array.isArray(selected) ? selected[0] : selected;
+  if (!path) return;
+
+  isImportingTheme.value = true;
+  try {
+    const bytes = await readFileBytes(path);
+    const result = parseDesktopThemeJson(new TextDecoder().decode(bytes));
+    const current = theme.value;
+    replaceTheme({
+      ...result.settings,
+      useCustomTrayMenu: current.useCustomTrayMenu,
+      showLeaderboard: current.showLeaderboard,
+      playerDetailCoverBehavior: current.playerDetailCoverBehavior,
+      lastPlayerDetailCoverVisible: current.lastPlayerDetailCoverVisible,
+    });
+    showToast(isEnglish.value ? 'Desktop theme applied' : '桌面主题已应用', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : (isEnglish.value ? 'Invalid theme file' : '主题文件无效');
+    showToast(message, 'error');
+  } finally {
+    isImportingTheme.value = false;
+  }
 };
 
 const openCustomSkin = () => {
@@ -508,6 +548,30 @@ onUnmounted(() => {
             <span class="text-sm font-semibold">{{ TEXT.customShort }}</span>
           </button>
         </div>
+      </div>
+    </section>
+
+    <section class="space-y-3 rounded-xl border border-gray-200/40 bg-white/10 p-4 dark:border-gray-800/40 dark:bg-black/10">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+            <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+            {{ isEnglish ? 'Desktop theme package' : '桌面主题包' }}
+          </h2>
+          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
+            {{ isEnglish ? 'Import a v2 desktop JSON exported by the server.' : '导入服务端导出的 Desktop v2 JSON；只应用主题视觉槽位。' }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#EC4141] px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="isImportingTheme"
+          @click="importDesktopTheme"
+        >
+          <Loader2 v-if="isImportingTheme" class="h-4 w-4 animate-spin" />
+          <FileUp v-else class="h-4 w-4" />
+          {{ isImportingTheme ? (isEnglish ? 'Importing…' : '导入中…') : (isEnglish ? 'Import JSON' : '导入 JSON') }}
+        </button>
       </div>
     </section>
 

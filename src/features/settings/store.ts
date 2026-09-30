@@ -5,7 +5,7 @@ import type {
   ThemeSettings, SidebarSettings, FooterLayoutSettings, TopBarLayoutSettings,
   AudioSettings, LyricsSettings, DesktopLyricsSettings,
   DownloadSettings, UploadSettings, PluginSettings, AutoSyncConfig, LogSettings,
-  ImportedLyricsFont, EqualizerPreset, MvQualityKey, AppSettings,
+  ImportedLyricsFont, EqualizerPreset, MvQualityKey, AppSettings, DesktopThemeSurface, DesktopThemeVisuals,
 } from '../../types';
 import { MV_QUALITY_KEYS, ALL_QUALITY_KEYS } from '../../types';
 import { AUDIO_FILE_ASSOCIATION_EXTENSIONS } from './audioFileAssociations';
@@ -79,8 +79,15 @@ const createUserPresetId = (): string => {
 /* 各设置域的 Patch 类型                                                    */
 /* ---------------------------------------------------------------------- */
 
-export type ThemeSettingsPatch = OptionalFields<Omit<ThemeSettings, 'customBackground'>> & {
+export type DesktopThemeVisualsPatch = Partial<Pick<DesktopThemeVisuals, 'quickEntryShape'>> & {
+  icons?: Record<string, string>;
+  stickers?: Record<string, string>;
+  surfaces?: Record<string, Partial<DesktopThemeSurface>>;
+};
+
+export type ThemeSettingsPatch = OptionalFields<Omit<ThemeSettings, 'customBackground' | 'desktopTheme'>> & {
   customBackground?: OptionalFields<ThemeSettings['customBackground']>;
+  desktopTheme?: DesktopThemeVisualsPatch;
 };
 
 export type SidebarSettingsPatch = OptionalFields<SidebarSettings>;
@@ -144,8 +151,16 @@ export function normalizeLibraryMinDurationSeconds(value: number | null | undefi
 /* 各设置域默认值                                                           */
 /* ---------------------------------------------------------------------- */
 
+const defaultDesktopTheme: DesktopThemeVisuals = {
+  quickEntryShape: 'circle',
+  icons: {},
+  stickers: {},
+  surfaces: {},
+};
+
 export const defaultThemeSettings: ThemeSettings = {
   mode: 'system', accentColor: DEFAULT_THEME_COLOR,
+  desktopTheme: defaultDesktopTheme,
   playerDetailCoverBehavior: 'remember', lastPlayerDetailCoverVisible: true,
   playerDetailStyle: 'classic', playerDetailMeshBackground: true, playerDetailMeshAntiAlias: true,
   playerDetailMeshSpeed: 1, playerDetailVinylMaterial: 'light',
@@ -253,6 +268,12 @@ export const defaultAppSettings: AppSettings = {
 export function createDefaultThemeSettings(): ThemeSettings {
   const snapshot = { ...defaultThemeSettings };
   snapshot.customBackground = { ...snapshot.customBackground };
+  snapshot.desktopTheme = {
+    ...defaultDesktopTheme,
+    icons: { ...defaultDesktopTheme.icons },
+    stickers: { ...defaultDesktopTheme.stickers },
+    surfaces: { ...defaultDesktopTheme.surfaces },
+  };
   return snapshot;
 }
 
@@ -407,6 +428,41 @@ const legacyCoverFlagToMode = (flag: unknown): 'show' | 'hide' | undefined => {
   return flag ? 'show' : 'hide';
 };
 
+const isThemeAssetReference = (value: unknown): value is string => (
+  typeof value === 'string'
+  && value.length <= 512
+  && !value.includes('\\')
+  && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('data:image/'))
+);
+
+const mergeDesktopTheme = (
+  base: DesktopThemeVisuals,
+  patch: ThemeSettingsPatch['desktopTheme'] | undefined,
+): DesktopThemeVisuals => {
+  const mergeAssets = (current: Record<string, string>, incoming: Record<string, string> | undefined) => {
+    const next = { ...current };
+    if (!incoming) return next;
+    for (const [key, value] of Object.entries(incoming)) {
+      if (/^[a-z][a-z0-9_.-]{0,80}$/i.test(key) && isThemeAssetReference(value)) next[key] = value;
+    }
+    return next;
+  };
+  const surfaces = { ...base.surfaces };
+  for (const [key, value] of Object.entries(patch?.surfaces ?? {})) {
+    if (!/^[a-z][a-z0-9_.-]{0,80}$/i.test(key)) continue;
+    if (!value || typeof value.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.color)) continue;
+    const opacity = Number(value.opacity);
+    if (Number.isFinite(opacity)) surfaces[key] = { color: value.color.toUpperCase(), opacity: Math.max(0, Math.min(1, opacity)) };
+  }
+
+  return {
+    quickEntryShape: pickOption(patch?.quickEntryShape, base.quickEntryShape, ['circle', 'rounded', 'square'] as const),
+    icons: mergeAssets(base.icons, patch?.icons),
+    stickers: mergeAssets(base.stickers, patch?.stickers),
+    surfaces,
+  };
+};
+
 export const mergeThemeSettings = (base: ThemeSettings, patch: ThemeSettingsPatch): ThemeSettings => {
   const { showPlayerDetailCoverByDefault: legacyCoverVisible, ...usablePatch } = patch as ThemeSettingsPatch & {
     showPlayerDetailCoverByDefault?: unknown;
@@ -421,6 +477,7 @@ export const mergeThemeSettings = (base: ThemeSettings, patch: ThemeSettingsPatc
   return {
     ...base,
     ...usablePatch,
+    desktopTheme: mergeDesktopTheme(base.desktopTheme, usablePatch.desktopTheme),
     accentColor: normalizeThemeColor(usablePatch.accentColor, base.accentColor),
     playerDetailCoverBehavior: coverBehavior,
     playerDetailStyle: pickOption(patch.playerDetailStyle, base.playerDetailStyle, DETAIL_STYLE_OPTIONS),

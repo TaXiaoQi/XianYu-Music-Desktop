@@ -247,9 +247,25 @@ export interface SleepTimerSnapshot {
   remaining_seconds: number;
 }
 
+export type DesktopThemeMode = 'light' | 'dark';
+export type DesktopQuickEntryShape = 'circle' | 'rounded' | 'square';
+
+export interface DesktopThemeSurface {
+  color: string;
+  opacity: number;
+}
+
+export interface DesktopThemeVisuals {
+  quickEntryShape: DesktopQuickEntryShape;
+  icons: Record<string, string>;
+  stickers: Record<string, string>;
+  surfaces: Record<string, DesktopThemeSurface>;
+}
+
 export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
   accentColor: string;
+  desktopTheme: DesktopThemeVisuals;
   playerDetailCoverBehavior: 'show' | 'hide' | 'remember';
   lastPlayerDetailCoverVisible: boolean;
   /** 播放详情页皮肤：classic=经典方形封面，vinyl=黑胶唱片（UI 移植自 mozarta-nexus/music-web-player） */

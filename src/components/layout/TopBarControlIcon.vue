@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Bell, Mic, Moon, Sun } from 'lucide-vue-next';
+import { computed } from 'vue';
 import type { TopBarItemKey } from '../../types';
+import { useDesktopTheme } from '../../composables/useDesktopTheme';
 
 defineOptions({ inheritAttrs: false });
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   itemKey: TopBarItemKey;
   active?: boolean;
   isDark?: boolean;
@@ -12,10 +14,23 @@ withDefaults(defineProps<{
   active: false,
   isDark: false,
 });
+const { icon } = useDesktopTheme();
+const topBarIconSlots: Partial<Record<TopBarItemKey, string>> = {
+  search: 'action.search',
+  recognize: 'action.mic',
+  colorScheme: 'desktop.wallpaper',
+  settings: 'desktop.settings',
+};
+const customIcon = computed(() => {
+  const slot = topBarIconSlots[props.itemKey];
+  return slot ? icon(slot) : '';
+});
 </script>
 
 <template>
-  <svg v-if="itemKey === 'back'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+  <img v-if="customIcon" v-bind="$attrs" :src="customIcon" alt="" class="object-contain" />
+
+  <svg v-else-if="itemKey === 'back'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
 
   <svg v-else-if="itemKey === 'search'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
 

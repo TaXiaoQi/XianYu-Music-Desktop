@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import type { SidebarItemKey, SidebarSettings } from '../../types';
 import { useI18n, type I18nKey } from '../../features/i18n';
 import { SIDEBAR_ITEMS, normalizeSidebarOrder } from '../../features/settings/sidebarItems';
+import { useDesktopTheme } from '../../composables/useDesktopTheme';
 
 interface Props {
   sidebar: SidebarSettings;
@@ -14,6 +15,7 @@ interface Props {
 
 const props = defineProps<Props>();
 const { t } = useI18n();
+const { icon } = useDesktopTheme();
 
 const sidebarLabelKeys: Record<SidebarItemKey, I18nKey> = {
   localMusic: 'sidebar.localMusic',
@@ -114,7 +116,8 @@ const itemClasses = (key: SidebarItemKey) => {
       @mouseleave="handleItemLeave()"
       :class="[baseNavClasses, isHomeActive ? activeNavClasses : idleClasses, hoveredItem === 'home' && !isHomeActive ? hoverClasses : '']"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+      <img v-if="icon('nav.home')" :src="icon('nav.home')" alt="" class="h-4 w-4 mr-3 shrink-0 object-contain" />
+      <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
       <span class="truncate min-w-0">{{ t('sidebar.home') }}</span>
     </li>
 

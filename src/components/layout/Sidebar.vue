@@ -23,9 +23,12 @@ import { useToast } from '../../composables/toast';
 import type { SidebarItemKey } from '../../types';
 import { useCollectionsStore, type FavoriteCollectionEntry } from '../../features/collections/store';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
+import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
 import SidebarPlaylists from './SidebarPlaylists.vue';
+
+const { sticker } = useDesktopTheme();
 
 const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
 const PlaylistContextMenu = defineAsyncComponent(() => import('../overlays/PlaylistContextMenu.vue'));
@@ -265,6 +268,13 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
       :playlists="playlists" :mode="playlistDialogMode"
       @create="confirmCreatePlaylist" @import="confirmImportPlaylist" @import-local="confirmLocalFolderImport"
       @import-backup="confirmBackupImport" @import-backup-online="confirmOnlineBackupImport"
+    />
+
+    <img
+      v-if="sticker('sidebar.bottom')"
+      :src="sticker('sidebar.bottom')"
+      alt=""
+      class="pointer-events-none absolute bottom-3 left-1/2 z-10 max-h-16 max-w-[80%] -translate-x-1/2 object-contain opacity-80"
     />
 
     <div

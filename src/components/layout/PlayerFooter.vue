@@ -31,6 +31,7 @@ import { useSettingsStore } from '../../features/settings/store';
 import { createShareUrl, getCachedShareUrl, preloadShareUrl, reportShareAction } from '../../services/domain/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
+import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress, Song } from '../../types';
 import { QUALITY_META, MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
 import {
@@ -38,6 +39,8 @@ import {
   getProgressVisualState,
   readStoredProgressHidden
 } from './playerFooterProgress';
+
+const { sticker, surfaceStyle } = useDesktopTheme();
 
 const AudioVisualizer = defineAsyncComponent(() => import('../player/AudioVisualizer.vue'));
 const FooterContextMenu = defineAsyncComponent(() => import("../overlays/FooterContextMenu.vue"));
@@ -1230,11 +1233,18 @@ onUnmounted(() => {
 <template>
   <footer 
     class="player-footer h-20 flex items-center justify-between px-4 z-[60] relative select-none bg-transparent"
+    :style="surfaceStyle('nav.bar')"
     @mouseenter="handleFooterMouseEnter"
     @mousemove="handleFooterMouseMove"
     @mouseleave="handleFooterMouseLeave"
   >
-    
+    <img
+      v-if="sticker('player.corner')"
+      :src="sticker('player.corner')"
+      alt=""
+      class="pointer-events-none absolute bottom-2 right-3 z-10 max-h-14 max-w-20 object-contain opacity-80"
+    />
+
     <div
       v-if="showPlayerDetail && currentSong && isVisualizerEnabled && !mvVideoActive"
       class="pointer-events-none absolute left-5 right-5 top-[-76px] h-16 z-40 transition-opacity duration-500 [mask-image:linear-gradient(90deg,transparent,black_1.5%,black_98.5%,transparent)]"

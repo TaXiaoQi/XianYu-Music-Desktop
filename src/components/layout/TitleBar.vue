@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { windowApi } from '../../services/tauri/windowApi';
@@ -32,6 +33,7 @@ const appWindow = getCurrentWindow();
 const { settings, topBarLayout } = useSettings();
 const { t } = useI18n();
 const { theme, isDarkTheme, toggleThemeMode, setThemeMode } = useThemeSettings();
+const { surfaceStyle } = useDesktopTheme();
 const uiStore = useUiStore();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
 const authStore = useAuthStore();
@@ -269,10 +271,8 @@ onUnmounted(() => {
       <TopBarControlItem v-for="key in leftControls" :key="key" :item-key="key" />
     </div>
 
-    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 focus-within:ring-2 focus-within:ring-[#EC4141]/20 pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border border-black/10 dark:border-white/20 z-10 relative">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 text-gray-900 dark:text-gray-100 mr-3 group-focus-within:text-[#EC4141]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
+    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 focus-within:ring-2 focus-within:ring-[#EC4141]/20 pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border border-black/10 dark:border-white/20 z-10 relative" :style="surfaceStyle('search.box')">
+      <TopBarControlIcon item-key="search" class="h-5 w-5 shrink-0 text-gray-900 dark:text-gray-100 mr-3 group-focus-within:text-[#EC4141]" />
       <input
         ref="searchInputRef"
         type="text"

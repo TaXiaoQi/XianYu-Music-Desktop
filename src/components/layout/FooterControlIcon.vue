@@ -2,12 +2,14 @@
 import { AudioLines, CircleCheck, Clapperboard, Download, Eye, EyeOff, MessageCircle, Palette, Share2, SlidersHorizontal } from 'lucide-vue-next';
 import type { FooterItemKey } from '../../types';
 import { useDownloadStore } from '../../features/download/store';
+import { computed } from 'vue';
+import { useDesktopTheme } from '../../composables/useDesktopTheme';
 
 defineOptions({ inheritAttrs: false });
 
 const downloadStore = useDownloadStore();
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   itemKey: FooterItemKey;
   active?: boolean;
   loading?: boolean;
@@ -23,10 +25,22 @@ withDefaults(defineProps<{
   volume: 100,
   qualityLabel: 'SQ',
 });
+const { icon } = useDesktopTheme();
+const footerIconSlots: Partial<Record<FooterItemKey, string>> = {
+  favorite: 'action.favorite', download: 'action.download', playMode: 'player.mode', desktopLyrics: 'player.lyric',
+  volume: 'player.volume', equalizer: 'player.sound', playlist: 'player.queue', comment: 'player.comment',
+  mv: 'player.mv', share: 'action.share', visualizer: 'player.visualizer', progress: 'player.progress',
+  pageStyle: 'player.style', pin: 'player.pin',
+};
+const customIcon = computed(() => {
+  const slot = footerIconSlots[props.itemKey];
+  return slot ? icon(slot) : '';
+});
 </script>
 
 <template>
-  <svg v-if="itemKey === 'favorite'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" :fill="active ? 'currentColor' : 'none'" stroke="currentColor">
+  <img v-if="customIcon && !loading" v-bind="$attrs" :src="customIcon" alt="" class="object-contain" />
+  <svg v-else-if="itemKey === 'favorite'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" :fill="active ? 'currentColor' : 'none'" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
   </svg>
   <div v-else-if="itemKey === 'download' && loading" v-bind="$attrs" class="relative inline-flex items-center justify-center">
