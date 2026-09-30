@@ -7,7 +7,7 @@
 
 - **Project**: XianYu Music (弦予音乐) — a cross-platform desktop music player
 - **Repository**: https://github.com/TaXiaoQi/XianYu-Music-Desktop
-- **License**: GNU Affero General Public License v3.0 (AGPL-3.0)
+- **License**: XianYu Source-Available License v1.0 (XSAL-1.0)
 - **Maintainer**: [TaXiaoQi](https://github.com/TaXiaoQi) (sole maintainer)
 
 ## What is signed

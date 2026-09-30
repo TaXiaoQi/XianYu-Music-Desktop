@@ -4,7 +4,7 @@
 # 弦予音乐· 桌面端
 ## (XianYu-Music-Desktop)
 
-弦予音乐的桌面端（Windows / Linux / macOS）：本地音乐库管理 + 插件化音源扩展，**VST3 / CLAP 第三方音频插件机架**、液态玻璃 UI、AMLL 逐字歌词、桌面歌词、迷你播放器与任务栏控制条，桌面听歌的全功能形态。软件不内置音乐内容，插件由用户自行安装。
+弦予音乐的桌面端（Windows / Linux / macOS）：本地音乐库管理 + 插件化音源扩展，**VST3 / CLAP 第三方音频插件机架**、液态玻璃 UI、自研逐字歌词、桌面歌词、迷你播放器与任务栏控制条，桌面听歌的全功能形态。软件不内置音乐内容，插件由用户自行安装。
 
  [](https://tauri.app/)
  [](https://vuejs.org/)
@@ -47,7 +47,7 @@
   - **机架式串联**：多槽位按顺序串联进播放链，参数实时调节 + 配置持久化；Windows 支持弹出插件原生编辑器窗口。
 - 📝 **歌词解析与文件管理**
   
-  - **全格式歌词**：支持音频文件内嵌标签歌词、同名 `.lrc` 文件解析，以及基于 AMLL 的歌词逐字动画渲染，支持歌词点击跳转进度与音译显隐开关；自定义歌词替换规则（错字 / 谐音修正）。
+  - **全格式歌词**：支持音频文件内嵌标签歌词、同名 `.lrc` 文件解析，以及自研逐字歌词动画渲染，支持歌词点击跳转进度与音译显隐开关；自定义歌词替换规则（错字 / 谐音修正）。
   - **物理整理与库更新**：内置文件夹管理模式，支持批量重命名预览、外部音频标签编辑器与无感入库刷新。
   - **音频工具箱**：设置内集成音频剪辑与格式转换工具。
 - 🎛️ **内置音效与播放控制**
@@ -155,7 +155,7 @@ graph TD
 | **共享 Store `shared/stores/`** | 跨功能状态：`ui`（面板可见性）、`navigation`（导航/搜索历史）、`audioExport`（导出进度） |
 | **组件 `components/`** | 按域划分：`layout`（Shell/侧边栏/底栏/标题栏）、`player`（播放详情/歌词/可视化/队列）、`settings`（15 个设置面板）、`overlays`（右键菜单/弹窗）、`home` / `song-list` / `statistics` |
 | **服务层 `services/`** | `pluginEngine`（MusicFree 插件引擎，82KB）、`lxPluginEngine`（落雪插件引擎）、`tauri/`（API 封装）、`downloadService` |
-| **构建优化** | Vite 手动分包：`vendor-vue` / `vendor-pixi`（流光背景）/ `vendor-amll`（AMLL 歌词）/ `vendor-utils` / `vendor-tauri`；WASM + TopLevelAwait 插件支持 |
+| **构建优化** | Vite 手动分包：`vendor-vue` / `vendor-tauri` / `vendor-utils` 等按域拆分；WASM + TopLevelAwait 插件支持 |
 
 ### 后端架构
 
@@ -194,25 +194,18 @@ Rust 后端由多个业务模块组成，通过 `src-tauri/src/lib.rs` 集中注
 
 | 层级 | 技术 |
 | --- | --- |
-| **前端** | Vue 3.5 (Composition API)、Vite 6、TypeScript 5.6、Tailwind CSS 4.0、Pinia 3、Vue Router 4、AMLL（Apple Music 风格歌词）、PixiJS（流光背景）、TanStack Virtual（虚拟列表） |
+| **前端** | Vue 3.5 (Composition API)、Vite 6、TypeScript 5.6、Tailwind CSS 4.0、Pinia 3、Vue Router 4、自研逐字歌词引擎、PixiJS（流光背景）、TanStack Virtual（虚拟列表） |
 | **后端** | Rust (edition 2021)、Tauri 2.x、rodio 0.20（vendored 定制）、cpal 0.15、symphonia 0.5、lofty 0.21、rusqlite 0.38（bundled SQLite）、souvlaki 0.7（SMTC 系统媒体控制）、rustfft 6.4、reqwest 0.12、wasapi 0.23（独占模式） |
 | **数据库** | SQLite（WAL 模式，14 张表，增量迁移） |
 | **构建工具** | Vite 6 + WASM 插件、vitest（前端测试）、cargo test（Rust 测试）、NSIS（Windows 安装包） |
 
 ---
 
-## 💝 特别致谢 
-
-- **[Lycia Player](https://github.com//LyciaMusic)**：本项目的UI设计、基础技术框架、本地播放引擎均由原项目实现。特此向其作者及所有贡献者致以最诚挚的谢意！
-
----
-
-
 ## ⚖️ 许可与资产声明
 
-- **开源协议**：本项目基于 **AGPL-3.0-only** 许可协议开源，完整协议内容请参阅 [LICENSE](LICENSE)。
-- **资产版权**：本项目内包含的所有视觉资产（包括但不限于应用 Logo、插图、截图等）均属原作者[](https://github.com/)个人及弦予开发团队（后称原团队）所有。未经原团队明确授权，请勿将这些图片资产用于任何商业用途或二次分发。
+- **源码可见协议**：本项目基于 **弦予源码可见协议（XianYu Source-Available License，XSAL）1.0** 授权发布，源码公开仅供查阅与学习，分发 / 修改 / 商业使用需另行授权，完整协议内容请参阅 [LICENSE](LICENSE)。
+- **资产版权**：本项目内包含的所有视觉资产（包括但不限于应用 Logo、插图、截图等）均属弦予音乐开发组所有。未经开发组明确授权，请勿将这些图片资产用于任何商业用途或二次分发。
 
 ---
 
-*更新日期：2026-09-25*
+*更新日期：2026-09-30*

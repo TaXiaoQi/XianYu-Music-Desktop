@@ -21,11 +21,9 @@ export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
   joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
   referenceProjects: [
-    { name: 'Lycia Player', url: 'https://github.com//LyciaMusic' },
     { name: 'BakaMusic', url: 'https://github.com/Zencok/BakaMusic' },
   ],
   acknowledgements: [
-    { name: '@', url: 'https://github.com/' },
     { name: '@Zencok', url: 'https://github.com/Zencok' },
     { name: '@kiomosu', url: 'https://github.com/kiomosu' },
   ],

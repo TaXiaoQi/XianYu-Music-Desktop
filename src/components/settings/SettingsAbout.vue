@@ -237,7 +237,7 @@ onUnmounted(() => {
           </span>
           <span class="h-1 w-1 rounded-full bg-current opacity-30" />
           <span class="flex items-center gap-1">
-            <span class="text-gray-300 dark:text-white/25">{{ buttonText.license }}</span>AGPL-3.0
+            <span class="text-gray-300 dark:text-white/25">{{ buttonText.license }}</span>XSAL-1.0
           </span>
           <span class="h-1 w-1 rounded-full bg-current opacity-30" />
           <span class="flex items-center gap-1">
@@ -253,7 +253,7 @@ onUnmounted(() => {
         <span>开发者名单（排名不分先后）：</span><a href="https://github.com/ShenYichenCN" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@ShenYichenCN</a> <a href="https://github.com/TaXiaoQi" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@TaXiaoQi</a> <a href="https://github.com/88541" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@知难辞</a> <a href="https://github.com/" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@绛狐</a>
       </div>
       <div>
-        Copyright © 2026 XianYu Music Developer. Licensed under AGPL-3.0-only.
+        Copyright © 2026 XianYu Music Developer. Source-available under XSAL-1.0.
       </div>
     </div>
   </div>

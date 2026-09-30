@@ -321,7 +321,7 @@ describe('settings store', () => {
       expect(store.settings.lyrics.playerOffsetX).toBe(30);
     });
 
-    it('defaults the player lyrics renderer to AMLL and normalizes unknown modes', () => {
+    it('defaults the player lyrics renderer to the word-by-word mode and normalizes unknown modes', () => {
       const store = freshStore();
 
       expect(store.settings.lyrics.playerRenderMode).toBe('amll');

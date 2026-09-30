@@ -495,7 +495,7 @@ export class WordLyricPlayerCore {
       }
 
       let targetBlur = 0;
-      // 手动滚动浏览中解除距离模糊（对齐 AMLL 旧观感）：滚动的目的是阅读，回弹后恢复
+      // 手动滚动浏览中解除距离模糊：滚动的目的是阅读，回弹后恢复
       if (this.enableBlur && !isActive && this.userScrollY === 0) {
         // 对齐移动端 σ = 1 + dist(+1 已唱行)，σ→CSS 按 2σ 换算
         targetBlur = (1 + (i < target
