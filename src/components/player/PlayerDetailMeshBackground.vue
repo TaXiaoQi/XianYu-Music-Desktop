@@ -48,20 +48,18 @@ function resolveDriftSpeed(multiplier: unknown): number {
   const clamped = Math.min(DRIFT_SPEED_MAX_MULTIPLIER, Math.max(DRIFT_SPEED_MIN_MULTIPLIER, value));
   return DRIFT_SPEED * clamped;
 }
-/** 接缝暗缝深度：相邻多边形之间压暗，形成切面感。取值偏大时在屏幕上是一条又宽又深的
- *  暗带（0.14 的宽度约合 30 多个屏幕像素），看着像板块之间的裂口，故压到 0.06，
- *  只留一层柔和暗部；多边形结构改由相邻色差与边缘抗锯齿的过渡来体现。 */
-const SEAM_DEPTH = 0.06;
+/** 接缝暗缝深度：只保留轻微切面感，避免暗色封面被切成大面积黑缝。 */
+const SEAM_DEPTH = 0.035;
 /** 接缝过渡宽度：越大越柔和 */
 const SEAM_WIDTH = 0.14;
 /** 多边形颜色向「按像素位置取色」的平滑渐变色混合的比例：
  *  0 = 纯平涂（块面感强、偏硬），1 = 纯渐变（柔和但没有多边形感）。
  *  取中间值可保留多边形结构的同时让相邻色块自然衔接。 */
 const GRADIENT_BLEND = 0.45;
-/** 色饱和度压缩：越低越接近参考图那种低饱和、柔和的观感 */
-const SATURATION = 0.72;
-/** 色场整体明度（<1 更暗更沉稳） */
-const BRIGHTNESS = 0.86;
+/** 色饱和度压缩：降低封面极端色块的冲击，给文字和主体留出对比度 */
+const SATURATION = 0.64;
+/** 色场整体明度：避免深色封面把播放页压成黑底 */
+const BRIGHTNESS = 0.98;
 /** 渲染分辨率系数（关闭边缘抗锯齿）：低于 1 由浏览器放大，边缘自然柔化并显著降低填充率 */
 const RENDER_SCALE = 0.45;
 /** 开启边缘抗锯齿时的分辨率系数：平滑过渡需要足够像素承载，否则放大后仍显台阶 */
@@ -189,14 +187,16 @@ void main() {
   // 降饱和 + 压暗：贴近参考图那种低调、不刺眼的面色调
   float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
   color = mix(vec3(luma), color, uSaturation) * uBrightness;
+  // 设置柔和最低明度，避免深色封面把文字、封面和播放控件一起压没。
+  color = max(color, vec3(0.075));
 
-  // 相邻多边形之间压暗成柔和暗缝（切面感），不做亮线描边
+  // 相邻多边形之间只压出轻微暗缝，不做亮线描边
   float seam = smoothstep(uSeamWidth, 0.0, f2 - f1);
   color *= 1.0 - seam * uSeamDepth;
 
-  // 轻微暗角，让画面四周沉下去
+  // 很轻的暗角保留层次，但不再把四角压成黑块
   float vignette = smoothstep(1.15, 0.25, distance(uv, vec2(0.5)));
-  color *= mix(0.82, 1.02, vignette);
+  color *= mix(0.92, 1.01, vignette);
 
   fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }`;
@@ -426,11 +426,11 @@ function buildColorField(image: HTMLImageElement): Uint8Array | null {
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
-    // 低频色场本身先做一次柔化：轻度去饱和 + 暗部抬升，
-    // 避免纯黑区域和过艳的颜色直接进入多边形色块（硬感的来源之一）。
+    // 低频色场先做柔化：降低饱和度并明显抬升暗部，
+    // 避免黑色封面区域直接变成吞没主体的大块黑色多边形。
     const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const sat = 0.78;
-    const lift = 10; // 抬暗部，防止深色封面全黑
+    const sat = 0.64;
+    const lift = 26; // 抬高暗部，给正文和控件保留背景对比
     out[i] = Math.max(0, Math.min(255, luma + (r - luma) * sat + lift));
     out[i + 1] = Math.max(0, Math.min(255, luma + (g - luma) * sat + lift));
     out[i + 2] = Math.max(0, Math.min(255, luma + (b - luma) * sat + lift));
