@@ -193,11 +193,13 @@ if (currentWindowLabel === 'main') {
       console.error('Failed to consume install language:', error);
     }
 
-    try {
-      const version = await getVersion();
-      showToast(t('toast.welcome', { version }), 'info');
-    } catch (error) {
-      console.error('Failed to get version for welcome toast:', error);
+    if (settings.value.showWelcomeToastOnStartup) {
+      try {
+        const version = await getVersion();
+        showToast(t('toast.welcome', { version }), 'info');
+      } catch (error) {
+        console.error('Failed to get version for welcome toast:', error);
+      }
     }
 
     const closeRequestedUnlisten = await getCurrentWindow().onCloseRequested(async (event) => {

@@ -253,7 +253,7 @@ export const defaultAppSettings: AppSettings = {
   shortcuts: createDefaultShortcutSettings(),
   showTaskbarPlayer: false, taskbarPlayerCanDrag: false,
   gpuAcceleration: true, performanceMode: 'auto',
-  checkUpdateOnStartup: true, writeArtistAvatarToTags: false,
+  checkUpdateOnStartup: true, showWelcomeToastOnStartup: true, writeArtistAvatarToTags: false,
   dlnaRendererEnabled: false, dlnaRendererName: '',
   download: defaultDownloadSettings, upload: defaultUploadSettings,
   plugins: defaultPluginSettings, autoSync: defaultAutoSyncConfig, logging: defaultLogSettings,
@@ -678,6 +678,7 @@ export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettings
   const patchRest: DeprecatedAppSettingsPatch = { ...patch };
   const languagePatch = patchRest.language;
   const preventSleepPatch = patchRest.preventSleepWhilePlaying;
+  const showWelcomeToastPatch = patchRest.showWelcomeToastOnStartup;
   const libraryMinPatch = patchRest.libraryMinDurationSeconds;
   const lyricsPatch = patchRest.lyrics;
   const desktopLyricsPatch = patchRest.desktopLyrics;
@@ -688,6 +689,7 @@ export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettings
   delete patchRest.minimizeToTray;
   delete patchRest.language;
   delete patchRest.preventSleepWhilePlaying;
+  delete patchRest.showWelcomeToastOnStartup;
   delete patchRest.libraryMinDurationSeconds;
 
   return {
@@ -695,6 +697,7 @@ export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettings
     ...patchRest,
     language: pickOption(languagePatch, base.language, APP_LANGUAGE_OPTIONS),
     preventSleepWhilePlaying: chooseBoolean(preventSleepPatch, base.preventSleepWhilePlaying),
+    showWelcomeToastOnStartup: chooseBoolean(showWelcomeToastPatch, base.showWelcomeToastOnStartup),
     lyricsSyncOffset: normalizeLyricsSyncOffsetSeconds(
       withFallback(patch.lyricsSyncOffset, base.lyricsSyncOffset),
     ),

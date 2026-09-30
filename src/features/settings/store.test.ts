@@ -102,6 +102,14 @@ describe('settings store', () => {
       expect(store.settings.closeToTray).toBe(true);
     });
 
+    it('shows the startup version toast by default and preserves an explicit opt-out', () => {
+      const store = freshStore();
+
+      expect(store.settings.showWelcomeToastOnStartup).toBe(true);
+      expect(mergeAppSettings(store.settings, { showWelcomeToastOnStartup: false }).showWelcomeToastOnStartup).toBe(false);
+      expect(mergeAppSettings(store.settings, { showWelcomeToastOnStartup: 'no' as unknown as boolean }).showWelcomeToastOnStartup).toBe(true);
+    });
+
     it('drops the deprecated minimizeToTray flag while merging', () => {
       const store = freshStore();
 

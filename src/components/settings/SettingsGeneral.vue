@@ -85,6 +85,15 @@ const launchOnStartup = computed({
   },
 });
 
+const showWelcomeToastOnStartup = computed({
+  get: () => settings.value.showWelcomeToastOnStartup,
+  set: (value: boolean) => {
+    if (settings.value.showWelcomeToastOnStartup === value) return;
+    patchSettings({ showWelcomeToastOnStartup: value });
+    playerStorage.writeSettings(settings.value);
+  },
+});
+
 // 进页面时以系统真实状态为准：用户可能在任务管理器「启动」页里手动关掉了自启。
 const syncLaunchOnStartupFromSystem = async () => {
   try {
@@ -409,6 +418,13 @@ onMounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.checkUpdates') }}</div>
           </div>
           <button type="button" @click="settings.checkUpdateOnStartup = !settings.checkUpdateOnStartup" class="glass-switch" :class="{ 'is-checked': settings.checkUpdateOnStartup }"></button>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.welcomeToast') }}</div>
+          </div>
+          <button type="button" @click="showWelcomeToastOnStartup = !showWelcomeToastOnStartup" class="glass-switch" :class="{ 'is-checked': showWelcomeToastOnStartup }"></button>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">

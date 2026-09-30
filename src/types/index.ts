@@ -750,6 +750,7 @@ export interface AppSettings {
   gpuAcceleration: boolean;
   performanceMode: PerformanceMode;
   checkUpdateOnStartup: boolean;
+  showWelcomeToastOnStartup: boolean;
   writeArtistAvatarToTags: boolean;
   download: DownloadSettings;
   upload: UploadSettings;

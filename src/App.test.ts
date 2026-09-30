@@ -21,3 +21,10 @@ describe('App imported lyrics fonts registration', () => {
     expect(source).not.toContain('if (!isDesktopLyricsWindow)');
   });
 });
+
+describe('App startup version toast setting', () => {
+  it('gates the welcome toast behind the persisted setting', () => {
+    expect(source).toContain('if (settings.value.showWelcomeToastOnStartup)');
+    expect(source).toContain("showToast(t('toast.welcome', { version }), 'info')");
+  });
+});
