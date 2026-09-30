@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { ArrowUpRight, BookOpen, CheckCircle2, Code2, ExternalLink, Github, Globe2, Heart, RefreshCw, ShieldCheck, Sparkles, UsersRound } from 'lucide-vue-next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_VERSION } from '../../../version';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useToast } from '../../composables/toast';
 import { useDeveloperMode } from '../../features/settings/developerMode';
 import { useI18n } from '../../features/i18n';
+import { useThemeSettings } from '../../composables/useThemeSettings';
 import { aboutConfig, startAboutConfigPolling, stopAboutConfigPolling } from '../../utils/aboutConfig';
 import AcknowledgementsModal from '../common/AcknowledgementsModal.vue';
 
@@ -18,8 +20,8 @@ const refModalOpen = ref(false);
 function openReferenceProjects() {
   refModalOpen.value = true;
 }
-const DEVELOPER_MODE_CLICK_COUNT = 10;
-const DEVELOPER_MODE_CLICK_HINT_START = 7;
+const DEVELOPER_MODE_CLICK_COUNT = 5;
+const DEVELOPER_MODE_CLICK_HINT_START = 3;
 const DEVELOPER_MODE_CLICK_INTERVAL = 1500;
 const developerModeClickCount = ref(0);
 let lastDeveloperModeClickAt = 0;
@@ -27,6 +29,8 @@ let lastDeveloperModeClickAt = 0;
 const { isDeveloperMode, enableDeveloperMode } = useDeveloperMode();
 const { showToast } = useToast();
 const { isEnglish } = useI18n();
+const { theme } = useThemeSettings();
+const isGlassAbout = computed(() => theme.value.useGlassSwitch);
 const buttonText = computed(() => isEnglish.value ? {
   update: 'Check for Updates',
   checking: 'Checking...',
@@ -103,167 +107,112 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative flex min-h-full min-w-0 flex-col items-center pb-8">
-    <!-- 环境光晕：径向渐变，每条渐变在面板四边都恰好淡到全透明，
-         因此无论容器多大都不会出现可见边界或被裁出的硬边。
-         负 inset 抵消上层容器的内边距，让光晕铺满整个设置面板。 -->
-    <div
-      class="pointer-events-none absolute -inset-x-4 -top-6 -bottom-16 overflow-hidden sm:-inset-x-6 md:-inset-x-8 xl:-inset-x-12"
-      aria-hidden="true"
-    >
-      <div class="xy-flow xy-flow-a absolute inset-0" />
-      <div class="xy-flow xy-flow-b absolute inset-0" />
-    </div>
-
-    <div class="relative z-10 flex w-full flex-1 items-center justify-center px-6 py-10">
-      <!-- Hero 卡片 -->
-      <div class="xy-enter relative w-full max-w-md rounded-3xl border border-black/5 bg-white/60 px-8 pb-8 pt-10 text-center shadow-2xl shadow-black/10 backdrop-blur-2xl dark:border-white/10 dark:bg-white/[0.05] dark:shadow-black/40">
-        <!-- 顶部品牌高光 -->
-        <div class="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#EC4141]/60 to-transparent" />
-
-        <!-- Logo：光环 + 呼吸 -->
-        <div class="xy-enter mx-auto mb-6 w-fit" style="animation-delay: 60ms">
-          <div class="xy-breathe rounded-full bg-gradient-to-br from-[#EC4141] to-[#ff9d9d] p-[3px] shadow-xl shadow-[#EC4141]/30">
-            <div class="rounded-full bg-white p-1.5 dark:bg-[#181818]">
-              <img src="/logo.png" alt="Logo" class="h-20 w-20 object-contain dark:invert" />
-            </div>
-          </div>
+  <div v-if="!isGlassAbout" class="flat-about flex min-h-full min-w-0 flex-col items-center pb-8">
+    <div class="flat-about__body flex w-full flex-1 flex-col items-center justify-center gap-7 py-5">
+      <div class="flex min-w-0 flex-col items-center gap-4 text-center">
+        <img src="/logo.png" alt="Logo" class="h-32 w-32 object-contain dark:invert" />
+        <div class="space-y-1">
+          <h1 class="text-2xl font-bold tracking-tight text-gray-800 dark:text-white">弦予音乐</h1>
+          <button type="button" class="flat-about__version" @click="handleDeveloperModeClick">v{{ appVersion }}</button>
         </div>
+        <p class="max-w-sm select-none text-sm text-gray-600 dark:text-gray-300">将音乐给予你</p>
+      </div>
 
-        <!-- 名称 + 版本 -->
-        <div class="xy-enter space-y-2.5" style="animation-delay: 140ms">
-          <h1 class="bg-gradient-to-r from-[#EC4141] via-[#ff7b7b] to-[#ffb199] bg-clip-text text-[26px] font-bold tracking-tight text-transparent">
-            弦予音乐
-          </h1>
-          <button
-            type="button"
-            class="cursor-pointer select-none rounded-full border border-black/10 bg-black/5 px-3 py-1 text-xs font-medium text-gray-600 transition-all duration-200 active:scale-90 active:border-[#EC4141]/40 active:bg-[#EC4141]/10 active:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:active:text-[#EC4141]"
-            @click="handleDeveloperModeClick"
-          >
-            v{{ appVersion }}
-          </button>
-          <p class="select-none text-sm text-gray-500 dark:text-white/45">
-            将音乐给予你
-          </p>
-        </div>
-
-        <!-- 主操作 -->
-        <div class="xy-enter mt-7 flex flex-wrap items-center justify-center gap-2.5" style="animation-delay: 220ms">
-          <button
-            v-if="aboutConfig.updateEnabled"
-            type="button"
-            :disabled="isCheckingUpdate"
-            @click="checkUpdateManual"
-            class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-gradient-to-br from-[#EC4141] to-[#d13a3a] px-4 py-2 text-sm font-medium text-white shadow-lg shadow-red-500/25 transition active:scale-95 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            <svg v-if="isCheckingUpdate" class="h-3.5 w-3.5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z" />
-            </svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-11a1 1 0 1 0-2 0v2H7a1 1 0 1 0 0 2h2v2a1 1 0 1 0 2 0v-2h2a1 1 0 1 0 0-2h-2V7Z" clip-rule="evenodd" /></svg>
+      <div class="flex max-w-full flex-col items-center gap-2.5 px-4">
+        <div class="flex max-w-full flex-wrap items-center justify-center gap-2.5">
+          <button v-if="aboutConfig.updateEnabled" type="button" :disabled="isCheckingUpdate" @click="checkUpdateManual" class="flat-about__primary">
+            <RefreshCw v-if="isCheckingUpdate" class="h-3.5 w-3.5 animate-spin" />
+            <CheckCircle2 v-else class="h-3.5 w-3.5" />
             {{ isCheckingUpdate ? buttonText.checking : buttonText.update }}
           </button>
-
-          <button
-            v-if="aboutConfig.officialSiteUrl"
-            type="button"
-            @click="openExternal(aboutConfig.officialSiteUrl)"
-            class="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl bg-gradient-to-br from-[#EC4141] to-[#d13a3a] px-4 py-2 text-sm font-medium text-white no-underline shadow-lg shadow-red-500/25 transition active:scale-95 hover:brightness-110"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M2 12h20" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
-            </svg>
-            {{ buttonText.officialSite }}
+          <button v-if="aboutConfig.officialSiteUrl" type="button" @click="openExternal(aboutConfig.officialSiteUrl)" class="flat-about__primary">
+            <Globe2 class="h-3.5 w-3.5" />{{ buttonText.officialSite }}
           </button>
-
-          <button
-            v-if="aboutConfig.joinGroupUrl"
-            type="button"
-            @click="openExternal(aboutConfig.joinGroupUrl)"
-            class="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl bg-gradient-to-br from-[#EC4141] to-[#d13a3a] px-4 py-2 text-sm font-medium text-white no-underline shadow-lg shadow-red-500/25 transition active:scale-95 hover:brightness-110"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-            {{ buttonText.joinGroup }}
+          <button v-if="aboutConfig.joinGroupUrl" type="button" @click="openExternal(aboutConfig.joinGroupUrl)" class="flat-about__primary">
+            <UsersRound class="h-3.5 w-3.5" />{{ buttonText.joinGroup }}
           </button>
         </div>
 
-        <!-- 分隔线 -->
-        <div class="xy-enter mx-auto mt-7 h-px w-4/5 bg-gradient-to-r from-transparent via-black/10 to-transparent dark:via-white/10" style="animation-delay: 300ms" />
-
-        <!-- 次操作 -->
-        <div class="xy-enter mt-6 flex flex-wrap items-center justify-center gap-2.5" style="animation-delay: 360ms">
-          <button
-            v-if="aboutConfig.projectUrl"
-            type="button"
-            @click="openExternal(aboutConfig.projectUrl)"
-            class="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl border border-black/10 bg-black/[0.03] px-3.5 py-2 text-xs font-medium text-gray-700 no-underline transition active:scale-95 hover:border-[#EC4141]/40 hover:bg-[#EC4141]/5 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:text-[#EC4141]"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.49 11.49 0 0 1 12 5.797c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.8 24 17.302 24 12c0-6.627-5.373-12-12-12Z" /></svg>
-            {{ buttonText.project }}
+        <div class="flex max-w-full flex-wrap items-center justify-center gap-2.5">
+          <button v-if="aboutConfig.projectUrl" type="button" @click="openExternal(aboutConfig.projectUrl)" class="flat-about__secondary">
+            <Github class="h-3.5 w-3.5" />{{ buttonText.project }}
           </button>
-
-          <button
-            v-if="aboutConfig.referenceProjects.length"
-            type="button"
-            @click="openReferenceProjects"
-            class="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl border border-black/10 bg-black/[0.03] px-3.5 py-2 text-xs font-medium text-gray-700 no-underline transition active:scale-95 hover:border-[#EC4141]/40 hover:bg-[#EC4141]/5 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:text-[#EC4141]"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.49 11.49 0 0 1 12 5.797c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.8 24 17.302 24 12c0-6.627-5.373-12-12-12Z" /></svg>
-            {{ buttonText.referenceProject }}
+          <button v-if="aboutConfig.referenceProjects.length" type="button" @click="openReferenceProjects" class="flat-about__secondary">
+            <Code2 class="h-3.5 w-3.5" />{{ buttonText.referenceProject }}
           </button>
-
-          <button
-            v-if="aboutConfig.acknowledgements.length"
-            type="button"
-            @click="openAcknowledgements"
-            class="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl border border-black/10 bg-black/[0.03] px-3.5 py-2 text-xs font-medium text-gray-700 no-underline transition active:scale-95 hover:border-[#EC4141]/40 hover:bg-[#EC4141]/5 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:text-[#EC4141]"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" /></svg>
-            {{ buttonText.acknowledgements }}
+          <button v-if="aboutConfig.acknowledgements.length" type="button" @click="openAcknowledgements" class="flat-about__secondary">
+            <Heart class="h-3.5 w-3.5" />{{ buttonText.acknowledgements }}
           </button>
-        </div>
-
-        <!-- 信息条 -->
-        <div class="xy-enter mt-7 flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-[11px] text-gray-400 dark:text-white/35" style="animation-delay: 440ms">
-          <span class="flex items-center gap-1">
-            <span class="text-gray-300 dark:text-white/25">{{ buttonText.version }}</span>v{{ appVersion }}
-          </span>
-          <span class="h-1 w-1 rounded-full bg-current opacity-30" />
-          <span class="flex items-center gap-1">
-            <span class="text-gray-300 dark:text-white/25">{{ buttonText.license }}</span>XSAL-1.0
-          </span>
-          <span class="h-1 w-1 rounded-full bg-current opacity-30" />
-          <span class="flex items-center gap-1">
-            <span class="text-gray-300 dark:text-white/25">{{ buttonText.tech }}</span>Vue 3 · Tauri 2 · TS
-          </span>
         </div>
       </div>
     </div>
 
-    <!-- 页脚 -->
-    <div class="relative z-10 mt-auto max-w-full shrink-0 space-y-1.5 px-6 pt-2 text-center text-xs leading-relaxed text-gray-400 dark:text-white/40">
+    <div class="max-w-full shrink-0 px-6 pt-5 text-center text-xs leading-relaxed text-gray-400 dark:text-white/40">
       <div class="flex flex-wrap items-center justify-center gap-x-1">
-        <span>开发者名单（排名不分先后）：</span><a href="https://github.com/ShenYichenCN" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@ShenYichenCN</a> <a href="https://github.com/TaXiaoQi" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@TaXiaoQi</a> <a href="https://github.com/88541" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@知难辞</a> <a href="https://github.com/" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit transition-colors hover:text-[#EC4141] dark:hover:text-[#EC4141]">@绛狐</a>
+        <span>开发者名单（排名不分先后）：</span>
+        <a v-for="developer in ['@ShenYichenCN', '@TaXiaoQi', '@知难辞', '@绛狐']" :key="developer" :href="`https://github.com/${developer.slice(1)}`" target="_blank" rel="noreferrer" class="no-underline text-inherit transition-colors hover:text-[#EC4141]" :class="{ 'developer-vanish-on-hover': developer === '@绛狐' }">{{ developer }}</a>
       </div>
-      <div>
-        Copyright © 2026 XianYu Music Developer. Source-available under XSAL-1.0.
-      </div>
+      <div>Copyright © 2026 XianYu Music Developer · 基于 XSAL-1.0 开源可见。</div>
     </div>
   </div>
 
-  <AcknowledgementsModal
-    :visible="ackModalOpen"
-    :items="aboutConfig.acknowledgements"
-    @close="ackModalOpen = false"
-  />
+  <div v-else class="glass-about relative min-h-full min-w-0 overflow-hidden pb-8">
+    <div class="glass-about__content relative z-10 mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4 px-4 py-5 sm:px-6 md:px-8">
+      <section class="glass-about__hero">
+        <div class="glass-about__logo"><img src="/logo.png" alt="Logo" class="h-16 w-16 object-contain dark:invert" /></div>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#ec4141]">
+            <span>{{ isEnglish ? 'About Xian Yu Music' : '关于弦予音乐' }}</span>
+            <button type="button" class="glass-about__version" aria-label="开发者模式入口" @pointerdown.stop.prevent="handleDeveloperModeClick">v{{ appVersion }}</button>
+          </div>
+          <h1 class="mt-2 text-3xl font-extrabold tracking-tight text-gray-800 dark:text-white">弦予音乐</h1>
+          <p class="mt-1 text-sm text-gray-500 dark:text-white/50">{{ isEnglish ? 'Give music a place to stay.' : '将音乐给予你' }}</p>
+        </div>
+        <Sparkles class="hidden h-5 w-5 shrink-0 text-[#ec4141]/75 sm:block" />
+      </section>
 
+      <div class="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+        <section class="glass-about__section">
+          <div class="glass-about__eyebrow"><BookOpen class="h-4 w-4" />{{ isEnglish ? 'The idea' : '关于这款应用' }}</div>
+          <h2>{{ isEnglish ? 'A quiet space for your whole library.' : '让整座音乐库，安静地属于你。' }}</h2>
+          <p>{{ isEnglish ? 'Local files, online sources, playlists and lyrics in one focused desktop experience.' : '本地音乐、在线音源、歌单与歌词，汇聚在一个专注的桌面体验里。' }}</p>
+          <div class="glass-about__facts">
+            <span><small>{{ buttonText.version }}</small><button type="button" class="glass-about__facts-version" aria-label="开发者模式入口" @pointerdown.stop.prevent="handleDeveloperModeClick">v{{ appVersion }}</button></span>
+            <span><small>{{ buttonText.license }}</small><strong>XSAL-1.0</strong></span>
+            <span><small>{{ buttonText.tech }}</small><strong>Vue 3 · Tauri 2</strong></span>
+          </div>
+          <div class="mt-6 flex items-center gap-2 text-xs text-gray-500 dark:text-white/45"><ShieldCheck class="h-4 w-4 text-[#ec4141]" />{{ isEnglish ? 'Open source and made for everyday listening.' : '开源、注重隐私，为日常聆听而生。' }}</div>
+        </section>
+
+        <section class="glass-about__section">
+          <div class="glass-about__eyebrow"><Sparkles class="h-4 w-4" />{{ isEnglish ? 'Quick access' : '快速入口' }}</div>
+          <button v-if="aboutConfig.updateEnabled" type="button" class="glass-about__update" :disabled="isCheckingUpdate" @click="checkUpdateManual">
+            <RefreshCw class="h-4 w-4 text-[#ec4141]" :class="{ 'animate-spin': isCheckingUpdate }" />
+            <span><strong>{{ isCheckingUpdate ? buttonText.checking : buttonText.update }}</strong><small>{{ isEnglish ? 'Check for a new version' : '检查是否有新的版本可用' }}</small></span>
+            <ArrowUpRight class="ml-auto h-4 w-4 opacity-50" />
+          </button>
+          <div class="glass-about__links">
+            <button v-if="aboutConfig.officialSiteUrl" type="button" @click="openExternal(aboutConfig.officialSiteUrl)"><Globe2 /><span>{{ buttonText.officialSite }}</span><ExternalLink /></button>
+            <button v-if="aboutConfig.joinGroupUrl" type="button" @click="openExternal(aboutConfig.joinGroupUrl)"><UsersRound /><span>{{ buttonText.joinGroup }}</span><ExternalLink /></button>
+            <button v-if="aboutConfig.projectUrl" type="button" @click="openExternal(aboutConfig.projectUrl)"><Github /><span>{{ buttonText.project }}</span><ExternalLink /></button>
+            <button v-if="aboutConfig.referenceProjects.length" type="button" @click="openReferenceProjects"><Code2 /><span>{{ buttonText.referenceProject }}</span><ArrowUpRight /></button>
+            <button v-if="aboutConfig.acknowledgements.length" type="button" @click="openAcknowledgements"><Heart /><span>{{ buttonText.acknowledgements }}</span><ArrowUpRight /></button>
+          </div>
+        </section>
+      </div>
+
+      <section class="glass-about__credits">
+        <CheckCircle2 class="h-4 w-4 shrink-0 text-[#ec4141]" />
+        <span>{{ isEnglish ? 'Made with care by developers, contributors and open-source projects.' : '感谢开发者、贡献者，以及所有优秀的开源项目。' }}</span>
+        <div class="glass-about__developers">
+          <a v-for="developer in ['@ShenYichenCN', '@TaXiaoQi', '@知难辞', '@绛狐']" :key="developer" :href="`https://github.com/${developer.slice(1)}`" target="_blank" rel="noreferrer" :class="{ 'developer-vanish-on-hover': developer === '@绛狐' }">{{ developer }}</a>
+        </div>
+      </section>
+      <footer class="text-center text-[10px] text-gray-400 dark:text-white/30">Copyright © 2026 XianYu Music Developer · XSAL-1.0</footer>
+    </div>
+  </div>
+
+  <AcknowledgementsModal :visible="ackModalOpen" :items="aboutConfig.acknowledgements" @close="ackModalOpen = false" />
   <AcknowledgementsModal
     :visible="refModalOpen"
     :items="aboutConfig.referenceProjects"
@@ -275,104 +224,474 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 入场动画：整体上浮淡入 */
-.xy-enter {
+.flat-about__body {
+  min-height: 0;
+}
+
+.flat-about__version {
+  display: block;
+  width: fit-content;
+  margin: 0 auto;
+  cursor: pointer;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 4px 10px;
+  color: rgba(71, 85, 105, 0.75);
+  font-size: 13px;
+  font-weight: 500;
+  transition: 160ms ease;
+}
+
+.flat-about__version:hover,
+.flat-about__version:active {
+  background: rgba(236, 65, 65, 0.1);
+  color: #ec4141;
+}
+
+.flat-about__primary,
+.flat-about__secondary {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 8px;
+  padding: 8px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: 160ms ease;
+}
+
+.flat-about__primary {
+  background: #ec4141;
+  color: white;
+  box-shadow: 0 6px 16px rgba(236, 65, 65, 0.18);
+}
+
+.flat-about__primary:hover {
+  background: #d83b3b;
+}
+
+.flat-about__primary:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.flat-about__secondary {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(15, 23, 42, 0.035);
+  color: rgba(51, 65, 85, 0.9);
+}
+
+.flat-about__secondary:hover {
+  border-color: rgba(236, 65, 65, 0.3);
+  background: rgba(236, 65, 65, 0.08);
+  color: #ec4141;
+}
+
+.dark .flat-about__secondary {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.dark .flat-about__version {
+  color: rgba(226, 232, 240, 0.62);
+}
+
+@media (max-width: 640px) {
+  .flat-about__primary,
+  .flat-about__secondary {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+}
+
+.glass-about {
+  isolation: isolate;
+}
+
+.glass-about__content {
+  animation: glass-about-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.glass-about__hero,
+.glass-about__section,
+.glass-about__credits {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.46);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.16)),
+    rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 -14px 24px rgba(15, 23, 42, 0.06),
+    0 18px 42px rgba(15, 23, 42, 0.12),
+    0 3px 10px rgba(15, 23, 42, 0.06);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+}
+
+.glass-about__hero::before,
+.glass-about__section::before,
+.glass-about__credits::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(120px 90px at 0% 0%, rgba(255, 255, 255, 0.26), transparent 100%),
+    radial-gradient(150px 100px at 100% 100%, rgba(236, 65, 65, 0.08), transparent 100%);
+}
+
+.dark .glass-about__hero,
+.dark .glass-about__section,
+.dark .glass-about__credits {
+  border-color: rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.018)),
+    rgba(15, 23, 42, 0.2);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035),
+    inset 0 -16px 28px rgba(0, 0, 0, 0.24),
+    0 18px 44px rgba(0, 0, 0, 0.3),
+    0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.dark .glass-about__hero::before,
+.dark .glass-about__section::before,
+.dark .glass-about__credits::before {
+  background:
+    radial-gradient(120px 90px at 0% 0%, rgba(255, 255, 255, 0.075), transparent 100%),
+    radial-gradient(150px 100px at 100% 100%, rgba(236, 65, 65, 0.08), transparent 100%);
+}
+
+.glass-about__hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  border-radius: 26px;
+  padding: 22px;
+}
+
+.glass-about__logo {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 -8px 14px rgba(15, 23, 42, 0.06),
+    0 8px 18px rgba(15, 23, 42, 0.08);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+}
+
+.dark .glass-about__logo {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 -8px 14px rgba(0, 0, 0, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.glass-about__version {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  padding: 3px 8px;
+  color: inherit;
+  font-size: 10px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.dark .glass-about__version {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.glass-about__section {
+  min-width: 0;
+  border-radius: 22px;
+  padding: 22px;
+}
+
+.glass-about__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 15px;
+  color: #ec4141;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.glass-about__section h2 {
+  color: #1f2937;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.18;
+}
+
+.dark .glass-about__section h2 {
+  color: #f8fafc;
+}
+
+.glass-about__section p {
+  margin-top: 12px;
+  color: rgba(71, 85, 105, 0.8);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.dark .glass-about__section p {
+  color: rgba(226, 232, 240, 0.58);
+}
+
+.glass-about__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.glass-about__facts span {
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.glass-about__facts small,
+.glass-about__update small {
+  display: block;
+  color: rgba(100, 116, 139, 0.75);
+  font-size: 10px;
+}
+
+.glass-about__facts strong,
+.glass-about__facts-version {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #334155;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.glass-about__facts-version {
+  width: fit-content;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-weight: 700;
+  text-align: left;
+  transition: color 160ms ease;
+}
+
+.glass-about__facts-version:hover {
+  color: #ec4141;
+}
+
+.dark .glass-about__facts-version {
+  color: #e2e8f0;
+}
+
+.dark .glass-about__facts-version:hover {
+  color: #ec4141;
+}
+
+.dark .glass-about__facts strong {
+  color: #e2e8f0;
+}
+
+.glass-about__update,
+.glass-about__links button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  color: #334155;
+  transition: 160ms ease;
+}
+
+.glass-about__update {
+  border-radius: 15px;
+  background: rgba(236, 65, 65, 0.08);
+  padding: 12px;
+}
+
+.glass-about__update:hover {
+  background: rgba(236, 65, 65, 0.14);
+}
+
+.dark .glass-about__update {
+  color: #f8fafc;
+}
+
+.glass-about__update:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.glass-about__update strong {
+  display: block;
+  font-size: 13px;
+}
+
+.dark .glass-about__update small {
+  color: rgba(226, 232, 240, 0.68);
+}
+
+.glass-about__links {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.glass-about__links button {
+  min-width: 0;
+  border-radius: 12px;
+  padding: 10px 8px;
+}
+
+.glass-about__links button:hover {
+  background: rgba(236, 65, 65, 0.08);
+  color: #ec4141;
+}
+
+.dark .glass-about__links button {
+  color: #e2e8f0;
+}
+
+.glass-about__links svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  opacity: 0.68;
+}
+
+.glass-about__links span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.glass-about__credits {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 17px;
+  padding: 13px 16px;
+  color: rgba(71, 85, 105, 0.78);
+  font-size: 11px;
+}
+
+.dark .glass-about__credits {
+  color: rgba(226, 232, 240, 0.55);
+}
+
+.glass-about__developers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.glass-about__developers a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.glass-about__developers a:hover {
+  color: #ec4141;
+}
+
+.developer-vanish-on-hover {
+  transition: opacity 160ms ease;
+}
+
+.developer-vanish-on-hover:hover {
   opacity: 0;
-  animation: xy-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-@keyframes xy-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
+@keyframes glass-about-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 700px) {
+  .glass-about__hero {
+    align-items: flex-start;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  .glass-about__logo {
+    width: 58px;
+    height: 58px;
+    border-radius: 17px;
   }
-}
 
-/* Logo 呼吸 */
-.xy-breathe {
-  animation: xy-breathe 4.5s ease-in-out infinite;
-}
-
-@keyframes xy-breathe {
-  0%,
-  100% {
-    transform: scale(1);
+  .glass-about__logo img {
+    width: 46px;
+    height: 46px;
   }
-  50% {
-    transform: scale(1.045);
+
+  .glass-about__facts {
+    grid-template-columns: 1fr 1fr;
   }
-}
 
-/* 环境光晕：用 radial-gradient 的 closest-side 尺寸关键字，
-   让椭圆半径自动等于「圆心到最近边的距离」，并把最后一个色标放在 100% 且为全透明。
-   这样四条边上的 alpha 都恰好为 0，容器再大也不会露出边界。
-   动效只用 opacity 交叉脉动（不位移、不缩放），避免把非透明区域推出裁剪范围。 */
-.xy-flow {
-  background-repeat: no-repeat;
-}
-
-.xy-flow-a {
-  background-image:
-    radial-gradient(ellipse closest-side at 50% 50%, rgba(236, 65, 65, 0.06), rgba(236, 65, 65, 0) 100%),
-    radial-gradient(ellipse closest-side at 50% 34%, rgba(236, 65, 65, 0.2), rgba(236, 65, 65, 0.07) 55%, rgba(236, 65, 65, 0) 100%),
-    radial-gradient(ellipse closest-side at 78% 70%, rgba(255, 139, 139, 0.12), rgba(255, 139, 139, 0) 100%);
-  animation: xy-flow-pulse-a 18s ease-in-out infinite;
-}
-
-.xy-flow-b {
-  background-image:
-    radial-gradient(ellipse closest-side at 20% 72%, rgba(185, 28, 28, 0.14), rgba(185, 28, 28, 0) 100%);
-  animation: xy-flow-pulse-b 18s ease-in-out infinite;
-}
-
-/* 暗色模式下更浓一点，氛围更足 */
-.dark .xy-flow-a {
-  background-image:
-    radial-gradient(ellipse closest-side at 50% 50%, rgba(236, 65, 65, 0.1), rgba(236, 65, 65, 0) 100%),
-    radial-gradient(ellipse closest-side at 50% 34%, rgba(236, 65, 65, 0.3), rgba(236, 65, 65, 0.1) 55%, rgba(236, 65, 65, 0) 100%),
-    radial-gradient(ellipse closest-side at 78% 70%, rgba(255, 139, 139, 0.17), rgba(255, 139, 139, 0) 100%);
-}
-
-.dark .xy-flow-b {
-  background-image:
-    radial-gradient(ellipse closest-side at 20% 72%, rgba(185, 28, 28, 0.22), rgba(185, 28, 28, 0) 100%);
-}
-
-/* 两层反相脉动，形成缓慢的流光错动感 */
-@keyframes xy-flow-pulse-a {
-  0%,
-  100% {
-    opacity: 0.5;
+  .glass-about__facts span:last-child {
+    grid-column: 1 / -1;
   }
-  50% {
-    opacity: 1;
+
+  .glass-about__credits {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .glass-about__developers {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: 24px;
   }
 }
 
-@keyframes xy-flow-pulse-b {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .xy-enter,
-  .xy-breathe,
-  .xy-flow-a,
-  .xy-flow-b {
-    animation: none;
+@media (max-width: 480px) {
+  .glass-about__hero {
+    gap: 12px;
+    padding: 16px;
   }
 
-  .xy-enter {
-    opacity: 1;
+  .glass-about__section {
+    padding: 17px;
+  }
+
+  .glass-about__hero h1 {
+    font-size: 27px;
   }
 }
 </style>
