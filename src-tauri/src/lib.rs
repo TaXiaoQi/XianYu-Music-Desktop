@@ -6,8 +6,8 @@ mod host_crypto; mod install_language; mod music; mod netproxy;
 mod player; mod plugin_host; mod plugins; mod power;
 mod recognize; mod remote; mod security; mod skin_image;
 mod sleep_timer; mod statistics; mod system_audio; mod system_fonts;
-mod system_info; mod taskbar; mod toolbox; mod webview_settings;
-mod window_boundary; mod window_fullscreen; mod window_material; mod window_theme;
+mod system_info; mod taskbar; mod toolbox; mod tray_capture; mod webview_settings;
+mod window_boundary; mod window_foreground; mod window_fullscreen; mod window_material; mod window_theme;
 mod window_z_order;
 
 // ---- 命令导入：运行时与应用生命周期 ----
@@ -345,6 +345,8 @@ use window_material::{
     get_window_material_capabilities,
     refresh_window_material_active_state,
 };
+use window_foreground::{describe_foreground_window, force_window_foreground};
+use tray_capture::{start_tray_mouse_capture, stop_tray_mouse_capture};
 use window_theme::{set_dark_mode_for_window};
 use window_z_order::{
     refresh_current_window_topmost,
@@ -600,6 +602,10 @@ pub fn run() {
             refresh_window_material_active_state,
             get_foreground_fullscreen_state,
             set_dark_mode_for_window,
+            force_window_foreground,
+            describe_foreground_window,
+            start_tray_mouse_capture,
+            stop_tray_mouse_capture,
             refresh_current_window_topmost,
             start_topmost_guard,
             stop_topmost_guard,

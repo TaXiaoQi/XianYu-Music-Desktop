@@ -309,7 +309,20 @@ export function useTrayMenuEvents(router: Router) {
     const position = await resolveTrayMenuPosition(anchor);
     await target.setAlwaysOnTop(true); await target.setPosition(position);
     await emitTo<TrayMenuStatePayload>(TRAY_MENU_WINDOW_LABEL, TRAY_MENU_STATE_EVENT, buildTraySnapshot());
-    await target.show(); await target.setFocus();
+    await target.show();
+    // 托盘点击授予的前台激活权在异步弹出链路里往往已失效，普通
+    // setFocus 会被系统静默拒绝，菜单窗拿不到焦点时失焦关闭永远不
+    // 触发；由 Rust 侧 AttachThreadInput 强制接管前台
+    await windowApi.forceWindowForeground(TRAY_MENU_WINDOW_LABEL);
+    await nextFrame();
+    await target.setFocus();
+    // 关外点击收起菜单：Win32 低级鼠标钩子，与原生菜单同源的机制，
+    // 不依赖焦点（托盘弹出后进程常拿不到前台，失焦关闭不可靠）
+    try {
+      await windowApi.startTrayMouseCapture(TRAY_MENU_WINDOW_LABEL);
+    } catch (error) {
+      console.warn('Failed to start tray mouse capture:', error);
+    }
   };
 
   const shutdownApp = () => appApi.exitApp();

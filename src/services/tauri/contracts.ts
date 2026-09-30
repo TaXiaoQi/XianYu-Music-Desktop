@@ -443,6 +443,12 @@ export interface ForegroundFullscreenState {
   isFullscreen: boolean;
 }
 
+/** 前台窗口快照：句柄 + 是否属于本应用（托盘菜单关外守卫轮询用）。 */
+export interface ForegroundWindowInfo {
+  hwnd: number;
+  owned_by_app: boolean;
+}
+
 export interface TaskbarTrayGeometry {
   taskbar_rect_physical: RectPhysical;
   tray_rect_physical: RectPhysical | null;
@@ -916,6 +922,10 @@ export interface TauriCommandMap {
   refresh_immersive_fullscreen: { payload: undefined; response: boolean };
   smart_toggle_maximize: { payload: undefined; response: boolean };
   set_dark_mode_for_window: { payload: { dark: boolean }; response: void };
+  force_window_foreground: { payload: { label: string }; response: void };
+  describe_foreground_window: { payload: undefined; response: ForegroundWindowInfo };
+  start_tray_mouse_capture: { payload: { label: string }; response: void };
+  stop_tray_mouse_capture: { payload: undefined; response: void };
   get_window_material_capabilities: {
     payload: undefined;
     response: WindowMaterialCapabilities;

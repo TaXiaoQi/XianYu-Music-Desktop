@@ -1,18 +1,31 @@
 import { tauriInvoke } from './invoke';
 import type {
   ForegroundFullscreenState,
+  ForegroundWindowInfo,
   NativeTrayMenuState,
   OwnerBindingState,
   TaskbarTrayGeometry,
   WindowMaterialCapabilities,
 } from './contracts';
-export type { ForegroundFullscreenState, NativeTrayMenuState, OwnerBindingState, TaskbarTrayGeometry, WindowMaterialCapabilities } from './contracts';
+export type { ForegroundFullscreenState, ForegroundWindowInfo, NativeTrayMenuState, OwnerBindingState, TaskbarTrayGeometry, WindowMaterialCapabilities } from './contracts';
 
 export const windowApi = {
   setMiniBoundaryEnabled: (enabled: boolean) =>
     tauriInvoke('set_mini_boundary_enabled', { enabled }),
   setDarkModeForWindow: (dark: boolean) =>
     tauriInvoke('set_dark_mode_for_window', { dark }),
+  /** 把指定标签的窗口强制推到前台（托盘弹窗激活兜底）。 */
+  forceWindowForeground: (label: string) =>
+    tauriInvoke('force_window_foreground', { label }),
+  /** 上报当前前台窗口句柄及是否属于本应用（关外关闭守卫轮询用）。 */
+  describeForegroundWindow: () =>
+    tauriInvoke('describe_foreground_window') as Promise<ForegroundWindowInfo>,
+  /** 托盘菜单显示期间开启关外点击捕获（Win32 低级鼠标钩子，幂等）。 */
+  startTrayMouseCapture: (label: string) =>
+    tauriInvoke('start_tray_mouse_capture', { label }),
+  /** 托盘菜单收起后关闭关外点击捕获（幂等）。 */
+  stopTrayMouseCapture: () =>
+    tauriInvoke('stop_tray_mouse_capture'),
   getWindowMaterialCapabilities: () =>
     tauriInvoke('get_window_material_capabilities') as Promise<WindowMaterialCapabilities>,
   refreshWindowMaterialActiveState: (keepActive: boolean) =>
