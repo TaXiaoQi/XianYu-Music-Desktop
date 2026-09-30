@@ -16,7 +16,7 @@ const sleepTimer = useSleepTimerStore();
 const COUNTDOWN_PRESETS = [15, 30, 45, 60, 90];
 const IDLE_PRESETS = [10, 20, 30, 60];
 
-const rowClass = 'flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10';
+const rowClass = 'flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10';
 const chipClass = 'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all';
 const chipActiveClass = 'border-[#EC4141] bg-[#EC4141]/8 text-[#EC4141]';
 const chipIdleClass = 'border-gray-200/40 bg-white/20 text-gray-700 hover:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200';
@@ -47,11 +47,11 @@ onMounted(() => {
     </div>
 
     <div :class="rowClass">
-      <span class="min-w-0">
-        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.modeLabel') }}</span>
+      <span class="min-w-[12rem] flex-1">
+        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.modeLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.modeHint') }}</span>
       </span>
-      <div class="flex shrink-0 gap-2">
+      <div class="flex shrink-0 flex-wrap justify-end gap-2">
         <button type="button" :class="selectChipClass(sleepTimer.mode === 'countdown')" @click="setMode('countdown')">
           {{ t('sleepTimer.modeCountdown') }}
         </button>
@@ -62,11 +62,11 @@ onMounted(() => {
     </div>
 
     <div v-if="sleepTimer.mode === 'countdown'" :class="rowClass">
-      <span class="min-w-0">
-        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.countdownLabel') }}</span>
+      <span class="min-w-[12rem] flex-1">
+        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.countdownLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.countdownHint') }}</span>
       </span>
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
         <button
           v-for="minutes in COUNTDOWN_PRESETS"
           :key="minutes"
@@ -88,11 +88,11 @@ onMounted(() => {
     </div>
 
     <div v-else :class="rowClass">
-      <span class="min-w-0">
-        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.idleLabel') }}</span>
+      <span class="min-w-[12rem] flex-1">
+        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.idleLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.idleHint') }}</span>
       </span>
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
         <button
           v-for="minutes in IDLE_PRESETS"
           :key="minutes"
@@ -106,11 +106,11 @@ onMounted(() => {
     </div>
 
     <div :class="rowClass">
-      <span class="min-w-0">
-        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.actionLabel') }}</span>
+      <span class="min-w-[12rem] flex-1">
+        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.actionLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.actionHint') }}</span>
       </span>
-      <div class="flex shrink-0 gap-2">
+      <div class="flex shrink-0 flex-wrap justify-end gap-2">
         <button type="button" :class="selectChipClass(sleepTimer.action === 'pause')" @click="setAction('pause')">
           {{ t('sleepTimer.actionPause') }}
         </button>
@@ -124,8 +124,8 @@ onMounted(() => {
     </div>
 
     <div :class="rowClass">
-      <span class="min-w-0">
-        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">
+      <span class="min-w-[12rem] flex-1">
+        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">
           {{ sleepTimer.running ? t('sleepTimer.runningLabel') : t('sleepTimer.idle') }}
         </span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
