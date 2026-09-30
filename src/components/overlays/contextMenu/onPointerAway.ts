@@ -8,12 +8,12 @@ export const watchPointerAway = (
   decide: (hit: EventTarget | null) => boolean,
   react: () => void,
 ) => {
-  const onPress = (down: MouseEvent) => {
+  const onPress = (down: PointerEvent) => {
     if (decide(down.target)) {
       react();
     }
   };
 
-  onMounted(() => window.addEventListener('mousedown', onPress));
-  onUnmounted(() => window.removeEventListener('mousedown', onPress));
+  onMounted(() => window.addEventListener('pointerdown', onPress, true));
+  onUnmounted(() => window.removeEventListener('pointerdown', onPress, true));
 };

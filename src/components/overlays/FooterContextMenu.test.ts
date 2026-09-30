@@ -1,6 +1,7 @@
 import { it, describe, expect } from 'vitest';
 
 import footerMenuMarkup from './FooterContextMenu.vue?raw';
+import pointerAwaySource from './contextMenu/onPointerAway.ts?raw';
 
 // 行为规格（逐字冻结）：底部播放条右键菜单必须提供的全部入口文案。
 const requiredEntryLabels = [
@@ -16,5 +17,13 @@ const requiredEntryLabels = [
 describe('播放条右键菜单入口', () => {
   it.each(requiredEntryLabels)('菜单提供入口文案：%s', (entryLabel) => {
     expect(footerMenuMarkup).toContain(entryLabel);
+  });
+});
+
+describe('播放条右键菜单关闭行为', () => {
+  it('uses capture-phase pointerdown to dismiss on outside presses', () => {
+    expect(footerMenuMarkup).toContain('watchPointerAway');
+    expect(pointerAwaySource).toContain("window.addEventListener('pointerdown', onPress, true)");
+    expect(pointerAwaySource).toContain("window.removeEventListener('pointerdown', onPress, true)");
   });
 });

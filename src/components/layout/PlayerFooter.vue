@@ -1028,6 +1028,9 @@ watch(isEffectLocked, (locked) => {
 
 const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
+  if (showContextMenu.value && !target.closest('.ctx-sheet')) {
+    showContextMenu.value = false;
+  }
   if (showFooterTools.value && footerToolsRef.value && !footerToolsRef.value.contains(target)) {
     showFooterTools.value = false;
   }
