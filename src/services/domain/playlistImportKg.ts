@@ -28,7 +28,18 @@ async function getListDetailKg(rawId: string): Promise<PlaylistImportResult> {
   if (rawId.includes('global_collection_id')) {
     const m = rawId.match(/global_collection_id=(\w+)/);
     if (m && m[1]) {
-      return getKgUserListDetail2(m[1]);
+      return getKgGcidDetail(m[1]);
+    }
+  }
+  // 纯数字酷狗码：先 t.kugou.com/command 反查（gcid → gateway 全量，
+  // 对齐移动端 kg_sheet_import），反查失败再当 specialid 走 v9 页面
+  const trimmed = rawId.trim();
+  if (/^\d{1,32}$/.test(trimmed)) {
+    try {
+      const byCode = await getKgListDetailByCode(trimmed);
+      if (byCode && byCode.songs.length > 0) return byCode;
+    } catch (e: any) {
+      log(`getListDetailKg: command 反查失败: ${e?.message}`);
     }
   }
   let id = getKgListId(rawId);
@@ -126,7 +137,7 @@ async function getKgListDetailByGcid(rawId: string): Promise<PlaylistImportResul
     return { source: 'kg', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
   }
 
-  return getKgUserListDetail2(globalCollectionId);
+  return getKgGcidDetail(globalCollectionId);
 }
 
 async function resolveKgShareUrl(url: string): Promise<string | null> {
@@ -265,6 +276,194 @@ async function getKgUserListDetail2(globalCollectionId: string): Promise<Playlis
   };
 
   return { source: 'kg', songs, total: songs.length, info: infoObj };
+}
+
+// ==================== gcid 歌单 gateway 分页（对齐移动端 kg_sheet_import） ====================
+
+/// gcid 歌单优先走 gateway get_other_list_file_nofilt 分页全量
+/// （gcid 类型歌单用 song_v2 分页会报「歌单分页数据异常」），
+/// 失败回落 getKgUserListDetail2（老歌单仍可用）。
+async function getKgGcidDetail(gcol: string): Promise<PlaylistImportResult> {
+  try {
+    const gw = await getKgGcidDetailByGateway(gcol);
+    if (gw && gw.songs.length > 0) return gw;
+  } catch (e: any) {
+    log(`getKgGcidDetail: gateway 分页失败: ${e?.message}`);
+  }
+  return getKgUserListDetail2(gcol);
+}
+
+async function getKgGcidDetailByGateway(
+  gcol: string,
+): Promise<PlaylistImportResult | null> {
+  if (gcol.length > 1000) return null;
+
+  const headers: Record<string, string> = {
+    'User-Agent': 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi',
+    'kg-rc': '1',
+    'kg-thash': '5d816a0',
+    'kg-rec': '1',
+    'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
+  };
+
+  const songs: PluginSearchResult[] = [];
+  const seen = new Set<string>();
+  let beginIdx = 0;
+  let totalCount = -1;
+  let page = 0;
+  let name = '';
+  let img = '';
+  let author = '';
+
+  while (totalCount < 0 || beginIdx < totalCount) {
+    page += 1;
+    if (page > 10000) return null; // 歌单分页超出合理范围
+    const clienttimeSec = String(Math.floor(Date.now() / 1000));
+    const params =
+      'area_code=1&appid=1005&begin_idx=' + beginIdx +
+      '&clienttime=' + clienttimeSec +
+      '&clientver=20489&extend_fields=abtags,hot_cmt,popularization' +
+      '&global_collection_id=' + encodeURIComponent(gcol) +
+      '&mode=1&pagesize=300&personal_switch=1&plat=1&type=1&uuid=-';
+    const signature = await signatureParamsKg(params, 'android', '');
+    const resp = await httpFetch(
+      'https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt?' +
+      params + '&signature=' + signature,
+      'GET',
+      headers,
+    );
+    const body = resp.body;
+    if (typeof body !== 'object' || body === null) return null;
+    const b = body as any;
+    const status = b.status ?? b.err_code ?? b.error_code ?? -1;
+    if (Number(status) !== 1) return null;
+    const data = b.data;
+    if (typeof data !== 'object' || data === null) return null;
+
+    if (typeof data.list_info === 'object' && data.list_info) {
+      const li = data.list_info;
+      if (!name) name = decodeName(String(li.name ?? ''));
+      if (!img) img = String(li.pic ?? '').replace('{size}', '400');
+      if (!author) author = decodeName(String(li.list_create_username ?? ''));
+    }
+
+    const pageSongs: any[] = Array.isArray(data.songs) ? data.songs : [];
+    if (pageSongs.length === 0) {
+      if (totalCount > 0 && beginIdx < totalCount) return null; // 分页提前结束
+      break;
+    }
+    const reported = Number(data.count ?? 0) || 0;
+    if (reported > totalCount) totalCount = reported;
+    let added = 0;
+    for (const item of pageSongs) {
+      if (typeof item !== 'object' || item === null) continue;
+      const hash = String(item.hash ?? '');
+      if (!hash) continue;
+      const key = hash + '|' + String(item.audio_id ?? item.album_audio_id ?? 0) + '|' + String(item.name ?? '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const parsed = parseGatewaySong(item);
+      if (parsed) {
+        songs.push(parsed);
+        added++;
+      }
+    }
+    if (added <= 0) return null; // 分页重复
+    beginIdx += pageSongs.length;
+    if (totalCount < 0 && pageSongs.length < 300) break;
+  }
+
+  if (songs.length === 0) return null;
+  return { source: 'kg', songs, total: songs.length, info: { name, img, desc: '', author, playCount: '' } };
+}
+
+/// gateway get_other_list_file_nofilt 条目 → PluginSearchResult。
+/// 对齐移动端 _formatGatewayItem：name 为「歌手 - 歌名」合并格式需拆分。
+function parseGatewaySong(item: any): PluginSearchResult | null {
+  const hash = String(item.hash ?? '');
+  if (!hash) return null;
+
+  const rawName = String(item.name ?? '');
+  let artist = String(item.singername ?? '');
+  let title = rawName;
+  if (rawName.includes(' - ')) {
+    const parts = rawName.split(' - ');
+    if (!artist) artist = parts[0].trim();
+    title = parts.slice(1).join(' - ').trim();
+  }
+  if (!title) {
+    const songname = String(item.songname ?? '');
+    title = songname || rawName;
+  }
+
+  const audioId = String(item.audio_id ?? item.album_audio_id ?? '');
+  const timelen = Number(item.timelen ?? 0) || 0;
+  const trans = typeof item.trans_param === 'object' && item.trans_param ? item.trans_param : {};
+  let coverUrl = String(trans.union_cover ?? item.cover ?? '');
+  coverUrl = coverUrl.replace('{size}', '400');
+  const albumName = decodeName(String(item.albuminfo?.name ?? item.remark ?? ''));
+
+  const songIdStr = audioId || hash;
+  const rawData: any = {
+    songmid: songIdStr,
+    name: title,
+    singer: artist || '未知歌手',
+    source: 'kg',
+    interval: formatPlayTime(Math.floor(timelen / 1000)),
+  };
+  if (hash) rawData.hash = hash;
+  if (audioId) rawData.audioId = audioId;
+
+  return createSearchResult({
+    id: songIdStr,
+    title,
+    artist: artist || '未知歌手',
+    album: albumName,
+    coverUrl,
+    duration: timelen,
+    platform: '酷狗',
+    sourceKey: 'kg',
+    rawData,
+  });
+}
+
+// ==================== 数字酷狗码 → t.kugou.com/command 反查 ====================
+
+async function getKgListDetailByCode(
+  code: string,
+): Promise<PlaylistImportResult | null> {
+  const resp = await httpFetch('http://t.kugou.com/command/', 'POST', {
+    'Content-Type': 'application/json',
+  }, JSON.stringify({
+    appid: 1001,
+    clientver: 9020,
+    mid: '21511157a05844bd085308bc76ef3343',
+    clienttime: 640612895,
+    key: '36164c4015e704673c588ee202b9ecb8',
+    data: code,
+  }));
+  const body = resp.body;
+  if (typeof body !== 'object' || body === null) return null;
+  const b = body as any;
+  const status = b.status ?? b.err_code ?? b.error_code ?? -1;
+  if (Number(status) !== 1) return null;
+  const data = b.data;
+  if (typeof data !== 'object' || data === null) return null;
+  const info = typeof data.info === 'object' && data.info ? data.info : {};
+  const name = decodeName(String(info.name ?? ''));
+  const gcol = String(info.global_collection_id ?? '');
+  if (gcol) {
+    const result = await getKgGcidDetail(gcol);
+    if (!result.info.name) result.info.name = name;
+    return result;
+  }
+  // 老歌单：command 直出歌曲列表
+  const list: any[] = Array.isArray(data.list) ? data.list : [];
+  const songs = list
+    .map(parseKgSong)
+    .filter((s): s is PluginSearchResult => s !== null);
+  if (songs.length === 0) return null;
+  return { source: 'kg', songs, total: songs.length, info: { name, img: '', desc: '', author: '', playCount: '' } };
 }
 
 async function getKgMusicInfos(list: any[]): Promise<PluginSearchResult[]> {

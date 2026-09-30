@@ -14,7 +14,8 @@ import { getListDetailKg } from './playlistImportKg';
 import { getListDetailKw } from './playlistImportKw';
 import { getListDetailTx } from './playlistImportTx';
 import { getListDetailWy } from './playlistImportWy';
-import type { PluginSearchResult } from '../../types';
+import { looksLikeSheetLinkOrId, sourceMatchesHostPlatform } from './pluginCatalogSearch';
+import type { PluginSearchResult, PluginSource } from '../../types';
 
 // ==================== Re-export（向后兼容入口） ====================
 export { parseLink } from './playlistImportBase';
@@ -233,6 +234,39 @@ export async function importPlaylistFromFavorites(
 
 // ==================== 主入口 ====================
 
+/// LX 生态识别不了的链接（汽水/酷狗短链等）与纯数字歌单 ID：
+/// 遍历已启用 musicfree/am 插件精确导入（插件 importPlaylist/
+/// importMusicSheet + 五平台宿主兜底链，见 pluginPlaylistSearch），
+/// 以第一个命中的音源为准。
+async function importPlaylistExactFromPlugins(
+  keyword: string,
+): Promise<PlaylistImportResult> {
+  const plugins = getStoredPlugins().filter(
+    p => p.enabled && (p.format === 'musicfree' || p.format === 'anime'),
+  );
+  // 纯数字 ID 存在跨平台歧义（酷我/网易可能恰好存在同 ID 的同名歌单，
+  // 如「幻空喜欢的音乐」酷狗/酷我各有一份），按宿主兜底顺序
+  // kg→qishui→wy→tx→kw 排序，其余插件殿后
+  const rank = (p: PluginSource): number => {
+    if (sourceMatchesHostPlatform(p, 'kg')) return 0;
+    if (sourceMatchesHostPlatform(p, 'qishui')) return 1;
+    if (sourceMatchesHostPlatform(p, 'wy')) return 2;
+    if (sourceMatchesHostPlatform(p, 'tx')) return 3;
+    if (sourceMatchesHostPlatform(p, 'kw')) return 4;
+    return 5;
+  };
+  const ordered = [...plugins].sort((a, b) => rank(a) - rank(b));
+  for (const p of ordered) {
+    try {
+      const result = await importPlaylistFromMusicFreePlugin(p, keyword);
+      if (result.songs.length > 0) return result;
+    } catch (e: any) {
+      console.warn(`[${p.name}] 自动识别精确导入失败:`, e?.message || e);
+    }
+  }
+  throw new Error('无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接');
+}
+
 export async function importPlaylist(
   source: string,
   idOrUrl: string,
@@ -251,9 +285,15 @@ export async function importPlaylist(
       actualSource = parsed.source;
       actualId = parsed.playlistId;
     } else {
-      throw new Error('无法识别歌单链接，请确认链接来自网易云/QQ音乐/酷我/酷狗');
+      // LX 生态识别不了的链接（汽水/酷狗短链等）：遍历插件精确导入
+      return importPlaylistExactFromPlugins(input);
     }
   } else if (source === 'auto') {
+    // 纯数字歌单 ID 等无法识别平台的输入：遍历插件精确导入，
+    // 以第一个命中的音源为准，也可手动切换音源重试
+    if (looksLikeSheetLinkOrId(input)) {
+      return importPlaylistExactFromPlugins(input);
+    }
     throw new Error('请选择对应音源后重试，或直接粘贴歌单链接');
   }
 

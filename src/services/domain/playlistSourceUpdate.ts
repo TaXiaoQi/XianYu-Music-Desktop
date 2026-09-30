@@ -7,9 +7,12 @@ const PLATFORM_SOURCES = new Set(['wy', 'tx', 'kw', 'kg']);
 
 /**
  * 歌单搜索结果 → 歌曲。
- * path = lx://{真实音源}/{songmid}，保证 lx 播放链路能按真实音源命中插件、
- * 并按 songmid 取到完整 musicInfo。导入、更新、收藏夹三处共用，
- * 保证更新时拉取的源端歌曲 path 与导入时一致，可用于对比。
+ * - LX 平台直连条目（wy/tx/kw/kg 详情带真实音源）：path = lx://{真实音源}/{songmid}，
+ *   lx 播放链路按真实音源命中插件、按 songmid 取完整 musicInfo。
+ * - 宿主兜底歌（_hostFallback）与 musicfree/am 插件歌：path = plugin://{pluginId}/{songmid}，
+ *   播放/来源标签走插件链——插件取链接可能走付费代理（如聆澜 X-API-Key），
+ *   lx:// 直连公开接口会拿不到播放地址，来源标签也会错标成洛雪改名音源。
+ * 导入、更新、收藏夹三处共用，保证更新时拉取的源端歌曲 path 与导入时一致。
  */
 export function importResultToSongs(songs: PluginSearchResult[]): Song[] {
   return songs.map((item) => {
@@ -17,15 +20,17 @@ export function importResultToSongs(songs: PluginSearchResult[]): Song[] {
       ? item.artist.split(/[、,/&]/).filter(Boolean).map((s) => s.trim())
       : ['未知歌手'];
     const raw = item.rawData as Record<string, any> | undefined;
-    // lx 歌单详情条目带真实音源与 songmid（如 kw/kg/tx/wy），
-    // lx:// 链路把第一段当音源 key，必须用真实 source 而非插件 pluginId。
-    const sourceKey = raw?.source || item.pluginId || 'wy';
     const songmid = raw?.songmid || item.id || item.platformId || '';
-    const path = `lx://${sourceKey}/${songmid}`;
+    const isLxDirect =
+      raw?.source && PLATFORM_SOURCES.has(raw.source) && !raw?._hostFallback;
+    const path = isLxDirect
+      ? `lx://${raw!.source}/${songmid}`
+      : `plugin://${item.pluginId}/${songmid}`;
     return {
       name: item.title,
       title: item.title,
       path,
+      plugin_id: item.pluginId,
       artist: item.artist || '未知歌手',
       artist_names: artistNames,
       effective_artist_names: artistNames,

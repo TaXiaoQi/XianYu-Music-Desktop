@@ -29,6 +29,16 @@ import type {
   PluginAlbumResult,
   PluginArtistResult,
 } from './pluginCatalogShared';
+import type { PlaylistImportResult } from './playlistImportBase';
+import { getListDetailKg } from './playlistImportKg';
+import { getListDetailWy } from './playlistImportWy';
+import { getListDetailTx } from './playlistImportTx';
+import { getListDetailKw } from './playlistImportKw';
+import {
+  getListDetailQishui,
+  isQishuiKeyword,
+  isQishuiSource,
+} from './playlistImportQishui';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -174,11 +184,103 @@ export async function pluginSearch(
 
 // 判断输入是否像歌单分享链接或纯数字歌单 ID。
 // 自己的歌单只能靠链接/ID 精确导入，公开搜索搜不到。
-function looksLikeSheetLinkOrId(keyword: string): boolean {
+export function looksLikeSheetLinkOrId(keyword: string): boolean {
   const t = (keyword || '').trim().toLowerCase();
   if (!t) return false;
   if (/^\d{6,}$/.test(t)) return true;
   return /https?:\/\/|\.com|\.cn|\.cc|netease|kugou|kuwo|qishui|douyin|qq\.com/.test(t);
+}
+
+// ==================== 宿主歌单导入兜底（酷狗→汽水→网易→QQ→酷我） ====================
+
+type HostPlatform = 'kg' | 'qishui' | 'wy' | 'tx' | 'kw';
+
+function isHostPlatformKeyword(platform: HostPlatform, keyword: string): boolean {
+  const t = (keyword || '').trim().toLowerCase();
+  switch (platform) {
+    case 'kg':
+      return t.includes('kugou.com') || t.includes('gcid_') || t.includes('global_collection_id');
+    case 'qishui':
+      return isQishuiKeyword(keyword);
+    case 'wy':
+      return t.includes('music.163.com') || t.includes('y.music.163.com') || t.includes('163cn.tv');
+    case 'tx':
+      return t.includes('y.qq.com');
+    case 'kw':
+      return t.includes('kuwo.cn');
+  }
+}
+
+export function sourceMatchesHostPlatform(source: PluginSource, platform: HostPlatform): boolean {
+  const name = (source.name || '').toLowerCase();
+  const srcs = (source.sources || []).map(s => (s || '').trim().toLowerCase());
+  const has = (v: string) => srcs.some(s => s.includes(v));
+  switch (platform) {
+    case 'kg':
+      return name.includes('酷狗') || name.includes('kugou') || has('kg') || has('kugou') || has('酷狗');
+    case 'qishui':
+      return isQishuiSource(source.name, source.sources || []);
+    case 'wy':
+      return name.includes('网易') || name.includes('netease') || has('wy') || has('netease') || has('网易');
+    case 'tx':
+      return name.includes('qq') || name.includes('企鹅') || name.includes('腾讯') || has('tx') || has('qq');
+    case 'kw':
+      return name.includes('酷我') || name.includes('kuwo') || has('kw') || has('kuwo') || has('酷我');
+  }
+}
+
+function hostSheetFallbackResult(
+  source: PluginSource,
+  keyword: string,
+  result: PlaylistImportResult,
+): PluginPlaylistSearchResult | null {
+  if (!result.songs.length) return null;
+  const title = result.info.name || `${source.name}收藏夹`;
+  return {
+    id: keyword,
+    title,
+    coverUrl: result.info.img || result.songs[0]?.coverUrl || '',
+    trackCount: result.songs.length,
+    artist: result.info.author || '',
+    platform: source.name,
+    platformId: keyword,
+    pluginId: source.id,
+    // _hostFallback 标记宿主兜底导入的歌：入库走 plugin:// 插件链而非
+    // lx:// 直连（插件取链接可能走付费代理，lx 直连公开接口拿不到地址）
+    rawData: {
+      id: keyword,
+      title,
+      _importedTracks: result.songs.map(s => ({ ...(s.rawData as Record<string, any>), _hostFallback: true })),
+    },
+  };
+}
+
+/// 插件 importMusicSheet 失败/返回空后的宿主兜底链：
+/// 链接特征直接尝试；纯数字 ID 仅在对应来源插件下尝试。
+async function hostSheetFallback(
+  source: PluginSource,
+  keyword: string,
+): Promise<PluginPlaylistSearchResult | null> {
+  const runners: [HostPlatform, () => Promise<PlaylistImportResult>][] = [
+    ['kg', () => getListDetailKg(keyword)],
+    ['qishui', () => getListDetailQishui(keyword)],
+    ['wy', () => getListDetailWy(keyword)],
+    ['tx', () => getListDetailTx(keyword)],
+    ['kw', () => getListDetailKw(keyword)],
+  ];
+  for (const [platform, run] of runners) {
+    const applicable = isHostPlatformKeyword(platform, keyword) ||
+      (looksLikeSheetLinkOrId(keyword) && sourceMatchesHostPlatform(source, platform));
+    if (!applicable) continue;
+    try {
+      const result = await run();
+      const wrapped = hostSheetFallbackResult(source, keyword, result);
+      if (wrapped) return wrapped;
+    } catch (e: any) {
+      log(`[${source.name}] 宿主 ${platform} 歌单兜底失败: ${e?.message || e}`);
+    }
+  }
+  return null;
 }
 
 export async function pluginPlaylistSearch(
@@ -238,6 +340,12 @@ export async function pluginPlaylistSearch(
       } catch (e: any) {
         console.warn(`[${source.name}] importMusicSheet 精确导入失败:`, e?.message || e);
       }
+    }
+    if (linkLike) {
+      // 插件对部分平台歌单解析失败或返回空：宿主兜底
+      // （酷狗/汽水/网易云/QQ/酷我，LX 系插件无 importMusicSheet）
+      const hostResult = await hostSheetFallback(source, keyword);
+      if (hostResult) return [hostResult];
     }
 
     let result = (await inst.instance.search(keyword, page, 'sheet')) ?? {};

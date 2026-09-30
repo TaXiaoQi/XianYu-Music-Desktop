@@ -64,6 +64,17 @@ async function pluginGetPlaylistDetailInner(
   sheetItem: any,
   page: number = 1,
 ): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
+  // 精确导入的合成歌单（_importedTracks）直接返回导入曲目，必须放在
+  // Baka 分支之前：Baka 插件对合成 raw 会落到自己的详情分页查询，
+  // 把全量数据截断成单页
+  if (Array.isArray(sheetItem?._importedTracks) && sheetItem._importedTracks.length > 0) {
+    if (page === 1) {
+      const list = sheetItem._importedTracks;
+      list.forEach((_: any) => { resetMediaItem(_, source.name); });
+      return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: true };
+    }
+    return { list: [], isEnd: true };
+  }
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
     if (isBilibiliSource(source)) {
@@ -75,15 +86,6 @@ async function pluginGetPlaylistDetailInner(
   if (!inst) return { list: [] };
 
   try {
-    if (Array.isArray(sheetItem?._importedTracks) && sheetItem._importedTracks.length > 0) {
-      if (page === 1) {
-        const list = sheetItem._importedTracks;
-        list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: true };
-      }
-      return { list: [], isEnd: true };
-    }
-
     if (sheetItem?._isAlbum) {
       if (typeof inst.instance.getAlbumInfo === 'function') {
         const getAlbumInfo = inst.instance.getAlbumInfo;
