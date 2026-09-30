@@ -1,4 +1,5 @@
 import { authApi } from '../tauri/authApi';
+import { logApplicationEvent } from '../applicationLogger';
 import {
   getAuthToken,
   triggerAccountExpired,
@@ -38,8 +39,25 @@ export async function requestAction<T>(
   fetchTimeoutMs?: number,
   skipToken = false,
 ): Promise<T> {
-  const payload = await requestEnvelope<T>(action, body, fetchTimeoutMs, skipToken);
+  let payload: ApiEnvelope<T>;
+  try {
+    payload = await requestEnvelope<T>(action, body, fetchTimeoutMs, skipToken);
+  } catch (error) {
+    logApplicationEvent(
+      'error',
+      '网络请求',
+      'signedRequest',
+      `action=${action} ${error instanceof Error ? error.message : String(error)}`,
+    );
+    throw error;
+  }
   if (Number(payload.code) !== 200) {
+    logApplicationEvent(
+      'error',
+      '网络请求',
+      'signedRequest',
+      `action=${action} code=${payload.code} ${payload.msg || ''}`.trimEnd(),
+    );
     throw new Error(payload.msg || `请求失败（code ${payload.code}）`);
   }
   return payload.data ?? ({} as T);

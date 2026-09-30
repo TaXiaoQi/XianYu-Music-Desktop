@@ -51,6 +51,7 @@ const wipeCaption = computed(() =>
 <template>
   <Teleport to="body">
     <MenuSurface
+      ref="sheet"
       :shown="visible"
       :at-x="x"
       :at-y="y"

@@ -120,6 +120,31 @@ export function clearApplicationLogs() {
   persistEntries();
 }
 
+let logEventSeq = 0;
+
+export function logApplicationEvent(
+  level: LogLevel,
+  category: string,
+  scope: string,
+  message: string,
+) {
+  if (LOG_LEVELS.indexOf(level) < LOG_LEVELS.indexOf(activeConfig.minimumLevel)) return;
+  logEventSeq += 1;
+  const entry: ApplicationLogEntry = {
+    id: `${Date.now().toString(36)}-${logEventSeq}`,
+    timestamp: Date.now(),
+    level,
+    category,
+    scope,
+    message,
+  };
+  logEntries.value = filterLogEntriesForRetention(
+    [...logEntries.value, entry],
+    activeConfig.retentionDays,
+  );
+  persistEntries();
+}
+
 export function analyzeApplicationLogs(
   source: readonly ApplicationLogEntry[],
 ): ApplicationLogAnalysis {
