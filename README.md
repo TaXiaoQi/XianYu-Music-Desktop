@@ -115,13 +115,15 @@ powershell -ExecutionPolicy Bypass -File scripts\ffmpeg\build-audio-ffmpeg.ps1  
 ```bash
 npm run tauri build              # Windows 官网版（.exe，x64）
 npm run tauri:build:arm64        # Windows ARM64 版（骁龙 X / Surface 等设备，脚本自动补齐交叉编译工具链 PATH）
-npm run tauri:build:store:msix   # Windows 微软商店版（MSIX，与官网版互不影响）
+npm run tauri:build:msix         # Windows 微软商店版（MSIX x64，与官网版互不影响）
+npm run tauri:build:msix:arm64   # Windows 微软商店版（MSIX ARM64）
 npm run tauri:build:linux        # Linux（.deb / .rpm / .AppImage）
 npm run tauri:build:mac          # macOS（.app / .dmg）
 ```
 
 - 产物自动归档到 `releases/<平台>/`：`弦予音乐v<版本>-<平台>-<架构>.<扩展名>`（如 `弦予音乐v2.0.4-Desktop-X64.exe` / `弦予音乐v2.0.4-Desktop-ARM64.exe`，架构取自 Tauri 产物名，版本号取自 `version.ts`）
 - ARM64 交叉编译为一次性环境投入：VS Installer 安装「MSVC v143 ARM64 生成工具」与「C++ CMake 工具」组件 + 安装 [LLVM](https://github.com/llvm/llvm-project/releases)（ring 依赖 clang-cl），`tauri:build:arm64` 会自动补齐 PATH
+- MSIX 商店版分 x64 / ARM64 两条指令（`tauri:build:msix` / `tauri:build:msix:arm64`，基于 `@choochmeque/tauri-windows-bundle`）；ARM64 需 `rustup target add aarch64-pc-windows-msvc`，交叉编译工具链 PATH 由 `scripts/msix-bridge.js` 自动补齐（与 `tauri:build:arm64` 同款机制）；两个架构的 ffmpeg sidecar 仓库均已附带，产物从 `src-tauri/target/msix/` 自动归档到 `releases/windows/`（仅单架构 `.msix`，`.msixbundle` 合并包留原处）
 - MSIX 版通过 `store-build` 特性禁用应用内自更新（商店接管），版本号必须为纯数字四段正式版，Identity 与 Partner Center 配置绑定勿改
 - macOS 分发需签名与公证，未签名包首次打开右键绕过 Gatekeeper
 

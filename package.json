@@ -28,7 +28,8 @@
     "release:major": "npm version major --no-git-tag-version --force",
     "release:set": "npm version",
     "version:check": "node scripts/check-version.js",
-    "tauri:build:store:msix": "node scripts/sync-version.js && tauri-windows-bundle build --runner \"node scripts/msix-bridge.js\" && node scripts/move-msix.js"
+    "tauri:build:msix": "node scripts/sync-version.js && tauri-windows-bundle build --runner \"node scripts/msix-bridge.js\" && node scripts/move-msix.js",
+    "tauri:build:msix:arm64": "node scripts/sync-version.js && tauri-windows-bundle build --runner \"node scripts/msix-bridge.js\" --arch arm64 && node scripts/move-msix.js"
   },
   "dependencies": {
     "@tanstack/vue-virtual": "^3.13.13",

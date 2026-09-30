@@ -1,7 +1,7 @@
 /**
  * MSIX 商店版构建后脚本 —— 将 MSIX 产物移动到根目录的 releases/windows/ 文件夹
  *
- * 由 npm script tauri:build:store:msix 在构建完成后调用。
+ * 由 npm script tauri:build:msix / tauri:build:msix:arm64 在构建完成后调用。
  * @choochmeque/tauri-windows-bundle 固定输出到 src-tauri/target/msix/，
  * 不会被 move-bundles.js 覆盖（后者只扫 target/release/bundle）。
  *

@@ -9,14 +9,29 @@
  *    更新必须完全交给 Microsoft Store 接管）
  * 2. 通过 node 直接调用 @tauri-apps/cli 的 tauri.js，不依赖 PATH 里有没有 tauri
  *
- * 用法（由 npm script tauri:build:store:msix 间接调用，不手动执行）：
+ * 用法（由 npm script tauri:build:msix / tauri:build:msix:arm64 间接调用，不手动执行）：
  *   node scripts/msix-bridge.js tauri build --target x86_64-pc-windows-msvc --no-bundle
  */
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// arm64 交叉编译工具链（clang-cl 编 ring、cmake 编 opus）不在默认 PATH，
+// 与 build-arm64.js 同款：仅在构建会话内临时补齐，不改系统环境；x64 构建无感知。
+const extraPaths = [
+  path.join(os.homedir(), '.cargo', 'bin'),
+  String.raw`C:\Program Files\LLVM\bin`,
+  String.raw`C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin`,
+].filter((p) => fs.existsSync(p));
+
+if (extraPaths.length > 0) {
+  const sep = process.platform === 'win32' ? ';' : ':';
+  process.env.PATH = `${extraPaths.join(sep)}${sep}${process.env.PATH ?? ''}`;
+}
 
 // 工具的命令模板固定为 "<runner> tauri build ..."，去掉前导的 "tauri"
 const forwarded = process.argv.slice(2);
