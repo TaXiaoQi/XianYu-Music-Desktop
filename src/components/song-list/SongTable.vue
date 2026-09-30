@@ -5,7 +5,7 @@ import { dragSession } from '../../composables/dragState';
 import type { Song } from '../../types';
 import { listScrollCache, songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { getDisplayCoverUrl } from '../../utils/coverProxy';
+import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
 import { useSettings } from '../../features/settings/useSettings';
 import { useRoute, useRouter } from 'vue-router';
 import { INDEX_KEYS } from '../../utils/alphabetIndex';
@@ -321,6 +321,21 @@ const coverUrlFor = (path: string | undefined) => {
   }
   return getDisplayCoverUrl(raw, (dataUrl) => {
     coverUrlMap.set(path, dataUrl);
+  });
+};
+
+// 在线封面直链被防盗链拦截时（WebView2 默认携带 tauri.localhost Referer），
+// 降级走 Rust 图片代理重试，与 OnlineSongList 的处理保持一致
+const handleCoverError = (e: Event) => {
+  const img = e.target as HTMLImageElement;
+  const src = img.src;
+  if (!src || src.startsWith('data:')) return;
+  const host = img.closest('[data-cover-path]') as HTMLElement | null;
+  const path = host?.dataset.coverPath;
+  void tryProxyImage(src).then((dataUrl) => {
+    if (dataUrl && path) {
+      coverUrlMap.set(path, dataUrl);
+    }
   });
 };
 
@@ -1002,6 +1017,8 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
               class="w-full h-full object-cover transition-opacity duration-300"
               alt="Cover"
               decoding="async"
+              referrerpolicy="no-referrer"
+              @error="handleCoverError"
             />
             <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5 opacity-40 absolute inset-0 m-auto" fill="none" stroke="currentColor">
               <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />

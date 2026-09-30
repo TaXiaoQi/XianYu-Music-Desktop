@@ -246,11 +246,23 @@ function hostSheetFallbackResult(
     platformId: keyword,
     pluginId: source.id,
     // _hostFallback 标记宿主兜底导入的歌：入库走 plugin:// 插件链而非
-    // lx:// 直连（插件取链接可能走付费代理，lx 直连公开接口拿不到地址）
+    // lx:// 直连（插件取链接可能走付费代理，lx 直连公开接口拿不到地址）。
+    // 富字段（title/artist/album/coverUrl/duration）必须一并保留——消费端
+    // _importedTracks 会经 toPluginSearchResult 回转，只留 rawData 会让
+    // 专辑/封面全部丢失（导入歌单显示「未知专辑」且无封面）
     rawData: {
       id: keyword,
       title,
-      _importedTracks: result.songs.map(s => ({ ...(s.rawData as Record<string, any>), _hostFallback: true })),
+      _importedTracks: result.songs.map(s => ({
+        ...(s.rawData as Record<string, any>),
+        _hostFallback: true,
+        id: s.id,
+        title: s.title,
+        artist: s.artist,
+        album: s.album,
+        coverUrl: s.coverUrl,
+        duration: s.duration,
+      })),
     },
   };
 }

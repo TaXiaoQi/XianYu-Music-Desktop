@@ -374,7 +374,97 @@ async function getKgGcidDetailByGateway(
   }
 
   if (songs.length === 0) return null;
+  await enrichKgGatewayCovers(songs);
   return { source: 'kg', songs, total: songs.length, info: { name, img, desc: '', author, playCount: '' } };
+}
+
+/// gateway get_other_list_file_nofilt 条目只带 albuminfo（专辑名），不带封面
+/// （union_cover/cover 常为空）。移动端展示态按 hash 懒解析所以看起来正常，
+/// 桌面端必须在导入期落库：按 hash 批量走 v2/album_audio/audio 取
+/// album_info.sizable_cover（100 首/批，签名链路与 getKgMusicInfos 一致）。
+async function enrichKgGatewayCovers(songs: PluginSearchResult[]): Promise<void> {
+  const missing = songs.filter(s => !s.coverUrl && !!(s.rawData as Record<string, any> | undefined)?.hash);
+  if (missing.length === 0) return;
+
+  const batches: PluginSearchResult[][] = [];
+  for (let i = 0; i < missing.length; i += 100) {
+    batches.push(missing.slice(i, i + 100));
+  }
+
+  await Promise.all(batches.map(async (batch) => {
+    try {
+      const key = await hostKugouRequestKey();
+      const dataObj = {
+        area_code: '1',
+        show_privilege: 1,
+        show_album_info: 1,
+        is_publish: '',
+        appid: 1005,
+        clientver: 11451,
+        mid: '1',
+        dfid: '-',
+        clienttime: Date.now(),
+        key,
+        fields: 'album_info,audio_info',
+        data: batch.map(s => ({
+          hash: String((s.rawData as Record<string, any>).hash),
+          name: s.title,
+          page_id: 0,
+          type: 'audio',
+          id: 0,
+          album_audio_id: 0,
+          album_id: '0',
+        })),
+      };
+
+      const resp = await httpFetch(
+        'http://gateway.kugou.com/v2/album_audio/audio',
+        'POST',
+        {
+          'KG-THash': '13a3164',
+          'KG-RC': '1',
+          'KG-Fake': '0',
+          'KG-RF': '00869891',
+          'User-Agent': 'Android712-AndroidPhone-11451-376-0-FeeCacheUpdate-wifi',
+          'x-router': 'kmr.service.kugou.com',
+          'Content-Type': 'application/json',
+        },
+        JSON.stringify(dataObj),
+      );
+
+      const body = resp.body;
+      if (typeof body !== 'object' || body === null) return;
+
+      const errCode = body.error_code ?? body.errcode ?? body.err_code ?? -1;
+      if (errCode !== 0) return;
+
+      const coverByHash = new Map<string, string>();
+      const dataArr = body.data || [];
+      for (const item of dataArr) {
+        const first = Array.isArray(item) ? item[0] : item;
+        if (!first) continue;
+        const hash = String(first.audio_info?.hash ?? '').toLowerCase();
+        const albumInfo = first.album_info || {};
+        const rawCover = albumInfo.sizable_cover || albumInfo.cover
+          || first.album_sizable_cover || first.union_cover || '';
+        if (hash && rawCover) {
+          coverByHash.set(hash, String(rawCover).replace('{size}', '400'));
+        }
+      }
+      if (coverByHash.size === 0) return;
+
+      for (const s of batch) {
+        const hash = String((s.rawData as Record<string, any>).hash).toLowerCase();
+        const cover = coverByHash.get(hash);
+        if (cover) {
+          s.coverUrl = cover;
+          (s.rawData as Record<string, any>).union_cover = cover;
+        }
+      }
+    } catch (e: any) {
+      log(`enrichKgGatewayCovers batch failed: ${e?.message}`);
+    }
+  }));
 }
 
 /// gateway get_other_list_file_nofilt 条目 → PluginSearchResult。
@@ -551,6 +641,8 @@ function parseKgSongDetailV2(item: any): PluginSearchResult | null {
   const singerName = decodeName(item.author_name || '');
   const songname = decodeName(item.songname || '');
   const albumName = decodeName(albumInfo.album_name || '');
+  const albumCover = String(albumInfo.sizable_cover || albumInfo.cover || '')
+    .replace('{size}', '400');
   const durationMs = audioInfo.timelength || 0;
 
   const songIdStr = audioId || hash;
@@ -568,7 +660,7 @@ function parseKgSongDetailV2(item: any): PluginSearchResult | null {
     title: songname,
     artist: singerName,
     album: albumName,
-    coverUrl: '',
+    coverUrl: albumCover,
     duration: durationMs,
     platform: '酷狗',
     sourceKey: 'kg',

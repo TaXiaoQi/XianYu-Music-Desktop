@@ -223,7 +223,11 @@ export const createPlayerLifecycle = ({
     volume,
   } = storeToRefs(playbackStore);
   const { dominantColors } = storeToRefs(uiStore);
+  // 启动水合守卫：playlists 从磁盘恢复前禁止武装持久化，否则启动期间的
+  // 曲库扫描/设置恢复会以空 playlists 触发全量 flush，覆盖磁盘上的歌单数据
+  let playlistsHydrated = false;
   const scheduleStatePersistence = () => {
+    if (!playlistsHydrated) return;
     schedulePersistedState();
   };
   const syncLoudnessSettings = async () => {
@@ -363,7 +367,7 @@ export const createPlayerLifecycle = ({
         lastPlaylistSongsSignature = currentSignature;
         libraryStore.setExtraSongsBatch(songGroups);
       }
-    }, { deep: true, immediate: true });
+    }, { deep: true });
     watch(() => JSON.stringify(settings.value), scheduleStatePersistence);
     watch(
       () => settings.value.audio.volumeBalance,
@@ -578,12 +582,23 @@ export const createPlayerLifecycle = ({
     const playbackTimePersistTimer = setInterval(persistCurrentPlaybackTime, 2000);
 
     const beforeUnloadHandler = () => {
-      flushPersistedState().catch(() => {});
+      if (playlistsHydrated) {
+        flushPersistedState().catch(() => {});
+      }
       persistCurrentPlaybackTime();
       sessionApi.flushPlaybackSession().catch(() => {});
     };
 
     onMounted(async () => {
+      // 歌单恢复必须最先执行：后续任何状态变更触发的持久化都以完整数据落盘
+      try {
+        collectionsStore.setPlaylists(await playerStorage.readPlaylistsAsync());
+      } catch (err) {
+        console.warn('[restore] readPlaylistsAsync failed:', err);
+      }
+      playlistsHydrated = true;
+      scheduleStatePersistence();
+
       const storedVolume = playerStorage.readNumber(playerStorageKeys.volume);
       if (storedVolume !== null) {
         volume.value = storedVolume;
@@ -632,15 +647,6 @@ export const createPlayerLifecycle = ({
       const extraSongGroups = [extraSongs, recentExtraSongs, queueExtraSongs, rustQueueExtraSongs].filter(g => g.length > 0);
       if (extraSongGroups.length > 0) {
         libraryStore.setExtraSongsBatch(extraSongGroups);
-      }
-
-      collectionsStore.setPlaylists(await playerStorage.readPlaylistsAsync());
-
-      const playlistSongGroups = collectionsStore.playlists
-        .filter(pl => pl.songs && pl.songs.length > 0)
-        .map(pl => pl.songs!);
-      if (playlistSongGroups.length > 0) {
-        libraryStore.setExtraSongsBatch(playlistSongGroups);
       }
 
       restoreSortSettings({

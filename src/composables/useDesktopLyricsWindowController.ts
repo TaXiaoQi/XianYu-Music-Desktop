@@ -27,6 +27,8 @@ const CENTER_SETTLE_MS = 300;
 const LOCK_WATCH_MS = 80;
 const LOCK_PROBE_HEIGHT_PX = 80;
 const LOCK_PROBE_HALF_WIDTH_PX = 56;
+// 背景隐藏时歌词文本命中框的外扩边距（逻辑像素），兼顾阴影与发光范围
+const TEXT_HIT_PAD_PX = 12;
 const DRAG_SHADOW_LINGER_MS = 1500;
 const SURFACE_LEAVE_DELAY_MS = 180;
 
@@ -46,6 +48,24 @@ export function shouldAutoHideDesktopLyrics(input: AutoHideDecision) {
   const hideOnPause = input.autoHideWhenPaused && !input.isPlaying;
 
   return hideOnFullscreen || hideOnPause;
+}
+
+// 鼠标穿透判定：自动隐藏时整体穿透；锁定时仅锁按钮热区可交互；
+// 未锁定且背景隐藏时仅歌词文本本体可交互，其余区域放行鼠标，避免透明窗口挡住底层操作。
+export function shouldIgnoreCursorEvents(input: {
+  isLocked: boolean;
+  surfaceVisible: boolean;
+  autoHidden: boolean;
+  cursorOverLockHandle: boolean;
+  cursorOverLyricsText: boolean;
+}) {
+  if (input.autoHidden) {
+    return true;
+  }
+  if (input.isLocked) {
+    return !input.cursorOverLockHandle;
+  }
+  return !input.surfaceVisible && !input.cursorOverLyricsText;
 }
 
 export function useDesktopLyricsWindowController(options: {
@@ -79,8 +99,9 @@ export function useDesktopLyricsWindowController(options: {
   const pointerOverSurface = ref(false);
   const isResizing = ref(false);
   const cursorOnLockHandle = ref(false);
+  const cursorOnLyricsText = ref(false);
 
-  let lockWatchTimer: ReturnType<typeof setInterval> | null = null;
+  let wakeWatchTimer: ReturnType<typeof setInterval> | null = null;
   let leaveTimer: ReturnType<typeof setTimeout> | null = null;
   let fullscreenProbeTimer: ReturnType<typeof setInterval> | null = null;
   let resizeHoldTimer: ReturnType<typeof setTimeout> | null = null;
@@ -119,14 +140,14 @@ export function useDesktopLyricsWindowController(options: {
     if (hidden) {
       haltClock();
       haltFullscreenWatch();
-      endLockWatch();
+      endWakeWatch();
       return;
     }
 
     startClock();
     startFullscreenWatch();
-    if (settings.value.isLocked && !autoHiddenNow.value) {
-      beginLockWatch();
+    if (!autoHiddenNow.value && (settings.value.isLocked || !surfaceShown.value)) {
+      beginWakeWatch();
     }
   }
 
@@ -188,29 +209,57 @@ export function useDesktopLyricsWindowController(options: {
     }
   }
 
-  // —— 锁定态下探测光标是否落在锁按钮热区 ——
+  // 采集歌词文本的实际渲染矩形（CSS 像素）：对内容建 Range，得到紧贴字形的包围盒
+  function collectLyricsTextRects(): DOMRect[] {
+    const nodes = document.querySelectorAll('.desktop-lyric-main, .desktop-lyric-sub, .desktop-empty-state');
+    const rects: DOMRect[] = [];
 
-  async function pollLockProximity() {
-    if (!settings.value.isLocked) return;
+    nodes.forEach((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const bounds = range.getBoundingClientRect();
+      if (bounds.width > 0 && bounds.height > 0) {
+        rects.push(bounds);
+      }
+    });
+
+    return rects;
+  }
+
+  // 轮询唤醒热区：锁定态探测锁按钮位置，背景隐藏态探测歌词文本本体
+  async function pollWakeZone() {
+    if (autoHiddenNow.value) return;
 
     try {
       const cursor = await cursorPosition();
       const origin = await lyricsWindow.outerPosition();
-      const box = await lyricsWindow.outerSize();
       const scale = await lyricsWindow.scaleFactor();
-
       const localX = cursor.x - origin.x;
       const localY = cursor.y - origin.y;
-      const hitHeight = LOCK_PROBE_HEIGHT_PX * scale;
-      const hitHalfWidth = LOCK_PROBE_HALF_WIDTH_PX * scale;
-      const midX = box.width / 2;
-      const hoveringHandle = localY >= 0
-        && localY <= hitHeight
-        && localX >= midX - hitHalfWidth
-        && localX <= midX + hitHalfWidth;
 
-      if (hoveringHandle !== cursorOnLockHandle.value) {
-        cursorOnLockHandle.value = hoveringHandle;
+      let overLockHandle = false;
+      let overLyricsText = false;
+
+      if (settings.value.isLocked) {
+        const box = await lyricsWindow.outerSize();
+        const hitHeight = LOCK_PROBE_HEIGHT_PX * scale;
+        const hitHalfWidth = LOCK_PROBE_HALF_WIDTH_PX * scale;
+        const midX = box.width / 2;
+        overLockHandle = localY >= 0
+          && localY <= hitHeight
+          && localX >= midX - hitHalfWidth
+          && localX <= midX + hitHalfWidth;
+      } else {
+        const pad = TEXT_HIT_PAD_PX * scale;
+        overLyricsText = collectLyricsTextRects().some((rect) => (
+          localX >= rect.left * scale - pad && localX <= rect.right * scale + pad
+          && localY >= rect.top * scale - pad && localY <= rect.bottom * scale + pad
+        ));
+      }
+
+      if (overLockHandle !== cursorOnLockHandle.value || overLyricsText !== cursorOnLyricsText.value) {
+        cursorOnLockHandle.value = overLockHandle;
+        cursorOnLyricsText.value = overLyricsText;
         await syncCursorPassthrough();
       }
     } catch (err) {
@@ -218,23 +267,30 @@ export function useDesktopLyricsWindowController(options: {
     }
   }
 
-  function beginLockWatch() {
-    endLockWatch();
-    lockWatchTimer = setInterval(() => {
-      void pollLockProximity();
+  function beginWakeWatch() {
+    endWakeWatch();
+    wakeWatchTimer = setInterval(() => {
+      void pollWakeZone();
     }, LOCK_WATCH_MS);
   }
 
-  function endLockWatch() {
-    if (lockWatchTimer) {
-      clearInterval(lockWatchTimer);
-      lockWatchTimer = null;
+  function endWakeWatch() {
+    if (wakeWatchTimer) {
+      clearInterval(wakeWatchTimer);
+      wakeWatchTimer = null;
     }
     cursorOnLockHandle.value = false;
+    cursorOnLyricsText.value = false;
   }
 
   async function syncCursorPassthrough() {
-    const ignoreCursor = (settings.value.isLocked && !cursorOnLockHandle.value) || autoHiddenNow.value;
+    const ignoreCursor = shouldIgnoreCursorEvents({
+      isLocked: settings.value.isLocked,
+      surfaceVisible: surfaceShown.value,
+      autoHidden: autoHiddenNow.value,
+      cursorOverLockHandle: cursorOnLockHandle.value,
+      cursorOverLyricsText: cursorOnLyricsText.value,
+    });
     await lyricsWindow.setIgnoreCursorEvents(ignoreCursor);
     await lyricsWindow.setFocusable(!ignoreCursor);
   }
@@ -532,7 +588,7 @@ export function useDesktopLyricsWindowController(options: {
 
   onUnmounted(() => {
     document.removeEventListener('visibilitychange', onDocumentVisibilityChange);
-    endLockWatch();
+    endWakeWatch();
     haltClock();
     haltFullscreenWatch();
     clearLeaveTimer();
@@ -559,19 +615,22 @@ export function useDesktopLyricsWindowController(options: {
     }
   });
 
+  // 穿透状态统一收敛：锁定态轮询锁按钮热区；未锁定时背景隐藏则仅歌词文本热区可唤醒窗口
   watch(
-    () => [settings.value.isLocked, autoHiddenNow.value],
+    () => [settings.value.isLocked, autoHiddenNow.value, surfaceShown.value],
     () => {
       if (settings.value.isLocked) {
         clearLeaveTimer();
         pointerOverSurface.value = false;
-        if (autoHiddenNow.value) {
-          endLockWatch();
-        } else {
-          beginLockWatch();
-        }
+      }
+
+      if (autoHiddenNow.value) {
+        endWakeWatch();
+      } else if (settings.value.isLocked || !surfaceShown.value) {
+        beginWakeWatch();
       } else {
-        endLockWatch();
+        // 背景可见即常规交互态，无需热区轮询
+        endWakeWatch();
       }
       void syncCursorPassthrough();
     },

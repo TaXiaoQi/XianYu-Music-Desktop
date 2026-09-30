@@ -61,6 +61,8 @@ const importRename = ref('');
 const importRenameRef = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const importError = ref('');
+// 云端导入两步式：先搜索解析出预览（不落库），用户确认后才真正导入
+const importPreview = ref<PlaylistImportResult | null>(null);
 
 const localPlaylistName = ref('');
 const localPlaylistNameRef = ref<HTMLInputElement | null>(null);
@@ -177,6 +179,7 @@ watch(
       importInput.value = '';
       importRename.value = '';
       importError.value = '';
+      importPreview.value = null;
       localPlaylistName.value = '';
       localFolderPath.value = '';
       localImportError.value = '';
@@ -232,6 +235,7 @@ const handleSelectSource = (key: string) => {
   selectedSource.value = key;
   sourceDropdownOpen.value = false;
   importError.value = '';
+  importPreview.value = null;
 };
 
 const currentSourceType = computed(() => {
@@ -352,50 +356,56 @@ const handleConfirm = async () => {
       isClosing.value = false;
     }, 200);
   } else if (activeTab.value === 'networkImport') {
-    if (!importInput.value.trim() || importing.value) return;
+    if (importing.value) return;
     importError.value = '';
-    importing.value = true;
 
-    try {
-      const currentSource = importSources.value.find(s => s.key === selectedSource.value);
-      let result: PlaylistImportResult;
+    // 第一步：搜索解析 → 预览（不落库，等用户确认）
+    if (!importPreview.value) {
+      if (!importInput.value.trim()) return;
+      importing.value = true;
 
-      if (currentSource?.type === 'favorites' && currentSource.pluginSource) {
-        result = await importPlaylistFromFavorites(
-          currentSource.pluginSource,
-          importInput.value.trim(),
-        );
-      } else if (currentSource?.type === 'musicfree' && currentSource.pluginSource) {
-        result = await importPlaylistFromMusicFreePlugin(
-          currentSource.pluginSource,
-          importInput.value.trim(),
-        );
-      } else {
-        result = await importPlaylist(selectedSource.value, importInput.value.trim());
+      try {
+        const currentSource = importSources.value.find(s => s.key === selectedSource.value);
+        let result: PlaylistImportResult;
+
+        if (currentSource?.type === 'favorites' && currentSource.pluginSource) {
+          result = await importPlaylistFromFavorites(
+            currentSource.pluginSource,
+            importInput.value.trim(),
+          );
+        } else if (currentSource?.type === 'musicfree' && currentSource.pluginSource) {
+          result = await importPlaylistFromMusicFreePlugin(
+            currentSource.pluginSource,
+            importInput.value.trim(),
+          );
+        } else {
+          result = await importPlaylist(selectedSource.value, importInput.value.trim());
+        }
+
+        if (result.songs.length === 0) {
+          importError.value = '未找到歌单或歌单为空，请检查链接是否正确';
+        } else {
+          importPreview.value = result;
+        }
+      } catch (e: any) {
+        importError.value = `解析失败: ${e?.message || e}`;
+      } finally {
+        importing.value = false;
       }
-
-      if (result.songs.length === 0) {
-        importError.value = '导入失败或歌单为空，请检查链接是否正确';
-        showToast('导入失败或歌单为空', 'error');
-      } else {
-        const rename = importRename.value.trim();
-        showToast(`成功导入 ${result.songs.length} 首歌曲`, 'success');
-        isClosing.value = true;
-        setTimeout(() => {
-          emit('import', {
-            result,
-            rename: rename.length > 0 ? rename : undefined,
-          });
-          emit('update:visible', false);
-          isClosing.value = false;
-        }, 200);
-      }
-    } catch (e: any) {
-      importError.value = `导入失败: ${e?.message || e}`;
-      showToast(`导入失败: ${e?.message || e}`, 'error');
-    } finally {
-      importing.value = false;
+      return;
     }
+
+    // 第二步：确认导入
+    const rename = importRename.value.trim();
+    isClosing.value = true;
+    setTimeout(() => {
+      emit('import', {
+        result: importPreview.value!,
+        rename: rename.length > 0 ? rename : undefined,
+      });
+      emit('update:visible', false);
+      isClosing.value = false;
+    }, 200);
   } else if (activeTab.value === 'localFolderImport') {
     const name = localPlaylistName.value.trim();
     if (!name || !localFolderPath.value || importing.value) return;
@@ -461,7 +471,8 @@ const handleConfirm = async () => {
 const canConfirm = computed(() => {
   if (activeTab.value === 'create') return createName.value.trim().length > 0;
   if (activeTab.value === 'networkImport') {
-    return importInput.value.trim().length > 0 && !importing.value;
+    if (importing.value) return false;
+    return importPreview.value ? true : importInput.value.trim().length > 0;
   }
   if (activeTab.value === 'localFolderImport') {
     return localPlaylistName.value.trim().length > 0
@@ -480,6 +491,10 @@ const canConfirm = computed(() => {
 
 const confirmText = computed(() => {
   if (activeTab.value === 'create') return '创建';
+  if (activeTab.value === 'networkImport') {
+    if (importing.value) return '搜索中…';
+    return importPreview.value ? '确认导入' : '搜索';
+  }
   if (activeTab.value === 'localFolderImport') {
     return importing.value ? '读取中…' : '读取并创建';
   }
@@ -646,6 +661,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                       ? '粘贴收藏夹分享链接或输入收藏夹 ID'
                       : '粘贴歌单分享链接或输入歌单 ID'"
                   class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50"
+                  @input="importPreview = null"
                 />
               </div>
 
@@ -663,10 +679,46 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 />
               </div>
 
+              <div
+                v-if="importPreview"
+                class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700"
+              >
+                <img
+                  v-if="importPreview.info?.img"
+                  :src="importPreview.info.img"
+                  referrerpolicy="no-referrer"
+                  class="w-12 h-12 rounded-lg object-cover shrink-0"
+                />
+                <div
+                  v-else
+                  class="w-12 h-12 rounded-lg bg-gray-200 dark:bg-gray-700 shrink-0 flex items-center justify-center"
+                >
+                  <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {{ importPreview.info?.name || '未命名歌单' }}
+                  </div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    共 {{ importPreview.songs.length }} 首歌曲 · 确认无误后点击「确认导入」
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  :disabled="importing"
+                  class="shrink-0 px-3 py-1.5 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-200/60 dark:hover:bg-white/10 transition-colors disabled:opacity-50"
+                  @click="importPreview = null"
+                >
+                  重新搜索
+                </button>
+              </div>
+
               <div class="text-xs text-gray-400 dark:text-white/40 leading-relaxed">
                 {{ currentSourceType === 'favorites'
-                  ? '打开哔哩哔哩，找到想导入的收藏夹，复制链接粘贴到上方即可一键导入。'
-                  : '打开对应平台 App，找到想导入的歌单，点击分享并复制链接，粘贴到上方输入框即可一键导入。仅支持公开歌单。' }}
+                  ? '打开哔哩哔哩，找到想导入的收藏夹，复制链接粘贴到上方，先搜索预览，确认无误后再导入。'
+                  : '打开对应平台 App，找到想导入的歌单，点击分享并复制链接，粘贴到上方，先搜索预览，确认无误后再导入。仅支持公开歌单。' }}
               </div>
 
               <div

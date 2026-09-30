@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { shouldAutoHideDesktopLyrics } from './useDesktopLyricsWindowController';
+import { shouldAutoHideDesktopLyrics, shouldIgnoreCursorEvents } from './useDesktopLyricsWindowController';
 
 vi.mock('@tauri-apps/api/event', () => {
   return {
@@ -66,10 +66,50 @@ const autoHideScenarios = [
   },
 ] as const;
 
+// shouldIgnoreCursorEvents 的行为规格表：输入组合 → 期望是否穿透（忽略鼠标）。
+const passthroughScenarios = [
+  {
+    title: 'ignores all cursor events while auto-hidden',
+    input: { isLocked: false, surfaceVisible: false, autoHidden: true, cursorOverLockHandle: false, cursorOverLyricsText: true },
+    expectIgnore: true,
+  },
+  {
+    title: 'passes through outside the lock handle while locked',
+    input: { isLocked: true, surfaceVisible: false, autoHidden: false, cursorOverLockHandle: false, cursorOverLyricsText: false },
+    expectIgnore: true,
+  },
+  {
+    title: 'stays interactive over the lock handle while locked',
+    input: { isLocked: true, surfaceVisible: false, autoHidden: false, cursorOverLockHandle: true, cursorOverLyricsText: false },
+    expectIgnore: false,
+  },
+  {
+    title: 'passes through outside lyric text when the surface is hidden',
+    input: { isLocked: false, surfaceVisible: false, autoHidden: false, cursorOverLockHandle: false, cursorOverLyricsText: false },
+    expectIgnore: true,
+  },
+  {
+    title: 'stays interactive over lyric text when the surface is hidden',
+    input: { isLocked: false, surfaceVisible: false, autoHidden: false, cursorOverLockHandle: false, cursorOverLyricsText: true },
+    expectIgnore: false,
+  },
+  {
+    title: 'stays interactive whenever the surface is visible',
+    input: { isLocked: false, surfaceVisible: true, autoHidden: false, cursorOverLockHandle: false, cursorOverLyricsText: false },
+    expectIgnore: false,
+  },
+] as const;
+
 describe('useDesktopLyricsWindowController', () => {
   for (const scenario of autoHideScenarios) {
     it(scenario.title, () => {
       expect(shouldAutoHideDesktopLyrics({ ...scenario.input })).toBe(scenario.expectHidden);
+    });
+  }
+
+  for (const scenario of passthroughScenarios) {
+    it(scenario.title, () => {
+      expect(shouldIgnoreCursorEvents({ ...scenario.input })).toBe(scenario.expectIgnore);
     });
   }
 });
