@@ -52,6 +52,10 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailVinylMaterialMatte: 'Matte',
   playerDetailVinylMaterialOak: 'Oak',
   playerDetailVinylMaterialMarble: 'Marble',
+  playerDetailVinylPlatterStyleLabel: 'Outer platter style',
+  playerDetailVinylPlatterStyleHint: 'Choose the finish of the rotating outer platter',
+  playerDetailVinylPlatterStyleMetal: 'Metal sheen',
+  playerDetailVinylPlatterStyleVinyl: 'Classic vinyl',
   playerDetailMeshBackgroundTitle: 'Polygon Flow Background',
   playerDetailMeshBackgroundHint: 'Generate randomly-shaped drifting polygons from the cover',
   playerDetailMeshBackgroundLabel: 'Use polygon flow background',
@@ -113,6 +117,10 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailVinylMaterialMatte: '哑光',
   playerDetailVinylMaterialOak: '橡木',
   playerDetailVinylMaterialMarble: '大理石',
+  playerDetailVinylPlatterStyleLabel: '外圈转盘样式',
+  playerDetailVinylPlatterStyleHint: '选择旋转外圈的材质外观',
+  playerDetailVinylPlatterStyleMetal: '金属光泽',
+  playerDetailVinylPlatterStyleVinyl: '经典黑胶',
   playerDetailMeshBackgroundTitle: '多边形流光背景',
   playerDetailMeshBackgroundHint: '由封面色场生成随机边数、缓慢漂移的多边形',
   playerDetailMeshBackgroundLabel: '使用多边形流光背景',
@@ -250,8 +258,10 @@ const {
   playerDetailMeshBackground,
   playerDetailMeshAntiAlias,
   playerDetailVinylMaterial,
+  playerDetailVinylPlatterStyle,
   setPlayerDetailMeshAntiAlias,
   setPlayerDetailVinylMaterial,
+  setPlayerDetailVinylPlatterStyle,
   setPlayerDetailMeshBackground,
 } = useSettingsThemeControls();
 
@@ -398,6 +408,18 @@ const VINYL_MATERIAL_OPTIONS = computed(() => [
     value: 'marble' as const,
     label: TEXT.value.playerDetailVinylMaterialMarble,
     swatch: 'linear-gradient(150deg, #f2f0ec 0%, #c6c3bc 100%)',
+  },
+]);
+const VINYL_PLATTER_STYLE_OPTIONS = computed(() => [
+  {
+    value: 'metal' as const,
+    label: TEXT.value.playerDetailVinylPlatterStyleMetal,
+    swatch: 'conic-gradient(from 20deg, #f5f7fa, #8d949e, #e7ebef, #7b838e, #f5f7fa)',
+  },
+  {
+    value: 'vinyl' as const,
+    label: TEXT.value.playerDetailVinylPlatterStyleVinyl,
+    swatch: 'repeating-radial-gradient(circle, #17181d 0 2px, #30323a 2px 3px, #0b0c0f 3px 5px)',
   },
 ]);
 const STYLE_OPTIONS = computed<Array<{ value: 'classic' | 'vinyl'; label: string }>>(() => [
@@ -1100,6 +1122,30 @@ onUnmounted(() => {
             ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
             : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
           @click="setPlayerDetailVinylMaterial(option.value)"
+        >
+          <span class="h-4 w-4 rounded-full ring-1 ring-black/15 dark:ring-white/15" :style="{ background: option.swatch }" />
+          <span class="text-[11px] font-medium text-gray-700 dark:text-gray-200">{{ option.label }}</span>
+        </button>
+      </div>
+    </div>
+    <div
+      v-if="playerDetailStyle === 'vinyl'"
+      class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10"
+    >
+      <span class="min-w-0">
+        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylPlatterStyleLabel }}</span>
+        <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailVinylPlatterStyleHint }}</span>
+      </span>
+      <div class="grid shrink-0 grid-cols-2 gap-1.5">
+        <button
+          v-for="option in VINYL_PLATTER_STYLE_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="flex w-[76px] flex-col items-center gap-1.5 rounded-lg border px-1.5 py-1.5 transition-all"
+          :class="playerDetailVinylPlatterStyle === option.value
+            ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+            : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
+          @click="setPlayerDetailVinylPlatterStyle(option.value)"
         >
           <span class="h-4 w-4 rounded-full ring-1 ring-black/15 dark:ring-white/15" :style="{ background: option.swatch }" />
           <span class="text-[11px] font-medium text-gray-700 dark:text-gray-200">{{ option.label }}</span>

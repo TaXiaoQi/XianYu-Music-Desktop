@@ -206,6 +206,16 @@ describe('settings store', () => {
       expect(store.theme.playerDetailVinylMaterial).toBe('oak');
     });
 
+    it('normalizes the vinyl outer platter style and keeps metal as default', () => {
+      const store = freshStore();
+
+      expect(store.theme.playerDetailVinylPlatterStyle).toBe('metal');
+      store.patchTheme({ playerDetailVinylPlatterStyle: 'vinyl' });
+      expect(store.theme.playerDetailVinylPlatterStyle).toBe('vinyl');
+      store.patchTheme({ playerDetailVinylPlatterStyle: 'glass' as 'metal' });
+      expect(store.theme.playerDetailVinylPlatterStyle).toBe('vinyl');
+    });
+
     it('accepts the full polygon mesh speed range including standstill', () => {
       const store = freshStore();
 

@@ -237,6 +237,9 @@ export interface LibraryScanSession {
 /** 写实唱机底座材质：浅灰（默认）/ 哑光深灰 / 橡木 / 大理石 */
 export type VinylPlinthMaterial = 'light' | 'matte' | 'oak' | 'marble';
 
+/** 黑胶模式外圈转盘样式：金属光泽（默认）/ 经典黑胶 */
+export type VinylPlatterStyle = 'metal' | 'vinyl';
+
 /** 睡眠定时器到点后执行的动作（与 src-tauri/src/sleep_timer.rs 的 serde snake_case 对齐） */
 export type SleepTimerAction = 'pause' | 'exit' | 'hide_to_tray';
 
@@ -278,6 +281,8 @@ export interface ThemeSettings {
   playerDetailMeshSpeed: number;
   /** 写实唱机底座材质（浅灰 / 哑光深灰 / 橡木 / 大理石） */
   playerDetailVinylMaterial: VinylPlinthMaterial;
+  /** 黑胶模式外圈转盘样式（金属光泽 / 经典黑胶） */
+  playerDetailVinylPlatterStyle: VinylPlatterStyle;
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;

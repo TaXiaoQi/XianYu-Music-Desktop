@@ -4,7 +4,7 @@
  * 与 PlayerDetailLeft 占据同一布局位（左 40% 区域中央），
  * 封面加载逻辑复用 useDetailCover。点击转盘触发封面隐藏 toggle。
  */
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useDetailCover } from '../../composables/useDetailCover';
 import { useThemeSettings } from '../../composables/useThemeSettings';
@@ -23,6 +23,83 @@ const emit = defineEmits<{
 const { isPlaying, dominantColors } = usePlaybackController();
 const isExpandedRef = computed(() => Boolean(props.isExpanded));
 
+const rotationAngle = ref(0);
+const rotationSpeed = ref(0);
+const reducedMotion = ref(false);
+let rotationRafId = 0;
+let lastRotationTime = 0;
+let rotationMotionQuery: MediaQueryList | null = null;
+
+const stopRotationLoop = () => {
+  if (rotationRafId) {
+    cancelAnimationFrame(rotationRafId);
+    rotationRafId = 0;
+  }
+};
+
+const rotationTick = (time: number) => {
+  rotationRafId = 0;
+  const last = lastRotationTime || time;
+  const dt = (time - last) / 1000;
+  lastRotationTime = time;
+
+  if (isPlaying.value) {
+    rotationSpeed.value += (60 - rotationSpeed.value) * Math.min(dt * 2, 1);
+  } else {
+    rotationSpeed.value *= Math.max(0, 1 - dt * 1.2);
+  }
+
+  rotationAngle.value = (rotationAngle.value + rotationSpeed.value * dt) % 360;
+
+  if (!isPlaying.value && rotationSpeed.value < 0.05) {
+    rotationSpeed.value = 0;
+    return;
+  }
+
+  rotationRafId = requestAnimationFrame(rotationTick);
+};
+
+const startRotationLoop = () => {
+  if (rotationRafId || reducedMotion.value || !isExpandedRef.value) return;
+  if (!isPlaying.value && rotationSpeed.value < 0.05) return;
+  lastRotationTime = 0;
+  rotationRafId = requestAnimationFrame(rotationTick);
+};
+
+const handleRotationMotionPreferenceChange = (event: MediaQueryListEvent) => {
+  reducedMotion.value = event.matches;
+  if (event.matches) {
+    stopRotationLoop();
+  } else {
+    startRotationLoop();
+  }
+};
+
+onMounted(() => {
+  rotationMotionQuery = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+  reducedMotion.value = rotationMotionQuery?.matches ?? false;
+  rotationMotionQuery?.addEventListener('change', handleRotationMotionPreferenceChange);
+  startRotationLoop();
+});
+
+watch([isPlaying, isExpandedRef], () => {
+  lastRotationTime = 0;
+  if (isPlaying.value || rotationSpeed.value >= 0.05) {
+    startRotationLoop();
+  } else {
+    stopRotationLoop();
+  }
+});
+
+onBeforeUnmount(() => {
+  stopRotationLoop();
+  rotationMotionQuery?.removeEventListener('change', handleRotationMotionPreferenceChange);
+  rotationMotionQuery = null;
+  lastRotationTime = 0;
+});
+
 const {
   currentSongPath,
   displayedLocalCoverUrl,
@@ -40,6 +117,8 @@ const accentColor = computed(() => dominantColors.value[0] || '#EC4141');
 const { theme: themeSettings } = useThemeSettings();
 /** 底座材质：浅灰（默认）/ 哑光深灰 / 橡木 / 大理石（设置 → 外观 → 底座材质） */
 const plinthMaterial = computed(() => themeSettings.value?.playerDetailVinylMaterial ?? 'light');
+/** 外圈转盘样式：金属光泽（默认）/ 经典黑胶 */
+const platterMaterial = computed(() => themeSettings.value?.playerDetailVinylPlatterStyle ?? 'metal');
 
 const detailCoverRef = ref<HTMLElement | null>(null);
 defineExpose({ detailCoverRef });
@@ -203,11 +282,15 @@ const handleCoverClick = (event: MouseEvent) => {
         </div>
 
         <!-- 转盘：拉丝铝大圆盘，封面盘直接贴在其中心 -->
-        <div class="turntable-platter absolute rounded-full" :style="platterStyle" />
+        <div
+          class="turntable-platter absolute rounded-full"
+          :class="platterMaterial === 'vinyl' ? 'turntable-platter--vinyl' : ''"
+          :style="{ ...platterStyle, transform: `rotate(${rotationAngle.toFixed(3)}deg)` }"
+        />
 
         <VinylCoverDisc
           :cover="coverUrl"
-          :is-playing="isPlaying"
+          :rotation="rotationAngle"
           :accent="accentColor"
           class="absolute"
           :style="coverStyle"
@@ -267,6 +350,29 @@ const handleCoverClick = (event: MouseEvent) => {
     inset 0 -10px 26px rgba(40, 45, 55, 0.28),
     0 12px 28px rgba(10, 12, 18, 0.42),
     0 3px 8px rgba(10, 12, 18, 0.3);
+}
+
+/* 经典黑胶：密集唱片沟槽、深色盘面和一圈柔和反射，仍由同一旋转角度驱动 */
+.turntable-platter--vinyl {
+  background:
+    repeating-radial-gradient(
+      circle at 50% 50%,
+      #090b0e 0 1.5px,
+      #272b31 1.5px 2.4px,
+      #111419 2.4px 4.2px
+    ),
+    radial-gradient(circle at 34% 25%, #454a53 0%, #1b1e24 35%, #08090b 78%, #020304 100%);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.18),
+    inset 0 2px 8px rgba(255, 255, 255, 0.12),
+    inset 0 -12px 28px rgba(0, 0, 0, 0.66),
+    0 12px 28px rgba(0, 0, 0, 0.52),
+    0 3px 8px rgba(0, 0, 0, 0.38);
+}
+
+/* 外圈与封面盘使用父组件同一份旋转角度，暂停时保留缓停后的当前角度 */
+.turntable-platter {
+  transform-origin: center;
 }
 
 /* —— 底座材质 —— */

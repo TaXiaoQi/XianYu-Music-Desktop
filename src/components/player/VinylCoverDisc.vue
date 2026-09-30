@@ -8,100 +8,25 @@
  * 帧循环只在需要时存在：暂停且已停稳、或系统开启「减少动态效果」时都不排帧，
  * 避免展开态常驻一个按刷新率空转的回调。
  */
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-
 const props = withDefaults(defineProps<{
   cover: string;
-  isPlaying: boolean;
+  rotation: number;
   /** 主题色（仅用于无封面时的占位底色） */
   accent?: string;
 }>(), {
   accent: '#EC4141',
 });
 
-const discRef = ref<HTMLDivElement | null>(null);
-const speedRef = ref(0);
-const angleRef = ref(0);
-/** 系统「减少动态效果」：挂载时采样，并跟随系统设置变化 */
-const reducedMotion = ref(false);
-let rafId = 0;
-let lastTime = 0;
-let motionQuery: MediaQueryList | null = null;
 
-const stopLoop = () => {
-  if (rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-  }
-};
-
-const tick = (time: number) => {
-  rafId = 0;
-  const last = lastTime || time;
-  const dt = (time - last) / 1000;
-  lastTime = time;
-
-  // 播放目标 60°/s；暂停缓慢减速停住（沿用原唱片盘的插值系数）
-  if (props.isPlaying) {
-    speedRef.value += (60 - speedRef.value) * Math.min(dt * 2, 1);
-  } else {
-    speedRef.value *= Math.max(0, 1 - dt * 1.2);
-  }
-
-  angleRef.value = (angleRef.value + speedRef.value * dt) % 360;
-  if (discRef.value) {
-    discRef.value.style.transform = `rotate(${angleRef.value.toFixed(3)}deg)`;
-  }
-
-  // 暂停且已经停稳：不再排帧（角度保留在上一次的 transform 上）
-  if (!props.isPlaying && speedRef.value < 0.05) {
-    speedRef.value = 0;
-    return;
-  }
-
-  rafId = requestAnimationFrame(tick);
-};
-
-const startLoop = () => {
-  if (rafId || reducedMotion.value) return;
-  lastTime = 0;
-  rafId = requestAnimationFrame(tick);
-};
-
-const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
-  reducedMotion.value = event.matches;
-  if (event.matches) stopLoop();
-  else startLoop();
-};
-
-onMounted(() => {
-  motionQuery = typeof window.matchMedia === 'function'
-    ? window.matchMedia('(prefers-reduced-motion: reduce)')
-    : null;
-  reducedMotion.value = motionQuery?.matches ?? false;
-  motionQuery?.addEventListener('change', handleMotionPreferenceChange);
-  startLoop();
-});
-
-// 播放态变化时重置时间基准，避免暂停期间累积的 dt 造成角度跳变；
-// 暂停时帧循环会自行退出，所以重新播放要把它唤醒
-watch(() => props.isPlaying, () => {
-  lastTime = 0;
-  if (props.isPlaying) startLoop();
-});
-
-onBeforeUnmount(() => {
-  stopLoop();
-  motionQuery?.removeEventListener('change', handleMotionPreferenceChange);
-  motionQuery = null;
-  lastTime = 0;
-});
 </script>
 
 <template>
   <div class="disc-root relative aspect-square w-full select-none">
     <!-- 封面本体（旋转层）：只放封面与底色，投影/光泽留在不旋转的层上 -->
-    <div ref="discRef" class="disc-body absolute inset-0 overflow-hidden rounded-full">
+    <div
+      class="disc-body absolute inset-0 overflow-hidden rounded-full"
+      :style="{ transform: `rotate(${props.rotation.toFixed(3)}deg)` }"
+    >
       <img
         v-if="props.cover"
         :key="props.cover"

@@ -163,7 +163,7 @@ export const defaultThemeSettings: ThemeSettings = {
   desktopTheme: defaultDesktopTheme,
   playerDetailCoverBehavior: 'remember', lastPlayerDetailCoverVisible: true,
   playerDetailStyle: 'classic', playerDetailMeshBackground: true, playerDetailMeshAntiAlias: true,
-  playerDetailMeshSpeed: 1, playerDetailVinylMaterial: 'light',
+  playerDetailMeshSpeed: 1, playerDetailVinylMaterial: 'light', playerDetailVinylPlatterStyle: 'metal',
   dynamicBgType: 'none', windowMaterial: 'none', keepWindowMaterialOnBlur: true,
   useCustomTrayMenu: true, useGlassSwitch: false, showLeaderboard: true,
   flowColorBoost: 25, flowDepth: 30, flowSpeed: 52, flowTexture: 34, windowBlurTint: 50,
@@ -420,6 +420,7 @@ export const mergeDownloadSettings = (base: DownloadSettings, patch: DownloadSet
 const COVER_BEHAVIOR_OPTIONS: readonly ThemeSettings['playerDetailCoverBehavior'][] = ['remember', 'hide', 'show'];
 const DETAIL_STYLE_OPTIONS: readonly ThemeSettings['playerDetailStyle'][] = ['vinyl', 'classic'];
 const VINYL_MATERIAL_OPTIONS: readonly ThemeSettings['playerDetailVinylMaterial'][] = ['marble', 'oak', 'matte', 'light'];
+const VINYL_PLATTER_STYLE_OPTIONS: readonly ThemeSettings['playerDetailVinylPlatterStyle'][] = ['metal', 'vinyl'];
 
 const legacyCoverFlagToMode = (flag: unknown): 'show' | 'hide' | undefined => {
   if (typeof flag !== 'boolean') {
@@ -484,6 +485,7 @@ export const mergeThemeSettings = (base: ThemeSettings, patch: ThemeSettingsPatc
     playerDetailMeshBackground: chooseBoolean(patch.playerDetailMeshBackground, base.playerDetailMeshBackground),
     playerDetailMeshAntiAlias: chooseBoolean(patch.playerDetailMeshAntiAlias, base.playerDetailMeshAntiAlias),
     playerDetailVinylMaterial: pickOption(patch.playerDetailVinylMaterial, base.playerDetailVinylMaterial, VINYL_MATERIAL_OPTIONS),
+    playerDetailVinylPlatterStyle: pickOption(patch.playerDetailVinylPlatterStyle, base.playerDetailVinylPlatterStyle, VINYL_PLATTER_STYLE_OPTIONS),
     lastPlayerDetailCoverVisible: chooseBoolean(patch.lastPlayerDetailCoverVisible, base.lastPlayerDetailCoverVisible),
     customBackground: {
       ...mergedBackground,

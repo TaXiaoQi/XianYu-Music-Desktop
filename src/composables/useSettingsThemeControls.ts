@@ -3,7 +3,7 @@
 import { ref, computed, onMounted } from 'vue';
 
 import { useUiStore } from '../shared/stores/ui';
-import type { ThemeSettings, VinylPlinthMaterial } from '../types';
+import type { ThemeSettings, VinylPlatterStyle, VinylPlinthMaterial } from '../types';
 import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../utils/themeColor';
 import {
   createThemeFieldBinding,
@@ -60,6 +60,7 @@ export function useSettingsThemeControls() {
   const playerDetailMeshBackground = bindThemeField('playerDetailMeshBackground');
   const playerDetailMeshAntiAlias = bindThemeField('playerDetailMeshAntiAlias');
   const playerDetailVinylMaterial = bindThemeField('playerDetailVinylMaterial');
+  const playerDetailVinylPlatterStyle = bindThemeField('playerDetailVinylPlatterStyle');
 
   // 主题模式走专用提交通道：system 需刷新系统探测，custom 需联动关停特效。
   const colorScheme = computed<ThemeSettings['mode']>({
@@ -212,6 +213,7 @@ export function useSettingsThemeControls() {
   const setPlayerDetailMeshBackground = (value: boolean) => { playerDetailMeshBackground.value = value; };
   const setPlayerDetailMeshAntiAlias = (value: boolean) => { playerDetailMeshAntiAlias.value = value; };
   const setPlayerDetailVinylMaterial = (value: VinylPlinthMaterial) => { playerDetailVinylMaterial.value = value; };
+  const setPlayerDetailVinylPlatterStyle = (value: VinylPlatterStyle) => { playerDetailVinylPlatterStyle.value = value; };
 
   onMounted(() => void probeMaterialCapabilities());
 
@@ -221,7 +223,7 @@ export function useSettingsThemeControls() {
     colorScheme, materialMode,
     keepWindowMaterialOnBlur, useCustomTrayMenu, useGlassSwitch,
     showLeaderboard,
-    playerDetailCoverBehavior, playerDetailStyle, playerDetailVinylMaterial,
+    playerDetailCoverBehavior, playerDetailStyle, playerDetailVinylMaterial, playerDetailVinylPlatterStyle,
     playerDetailMeshBackground, playerDetailMeshAntiAlias,
     isWindows11, hasWindowMaterialSelected,
     isWindowMaterialDisabled, isWindowMaterialButtonDisabled,
@@ -234,5 +236,6 @@ export function useSettingsThemeControls() {
     setKeepWindowMaterialOnBlur, setUseCustomTrayMenu, setShowLeaderboard,
     setPlayerDetailCoverBehavior, setPlayerDetailStyle,
     setPlayerDetailMeshBackground, setPlayerDetailMeshAntiAlias, setPlayerDetailVinylMaterial,
+    setPlayerDetailVinylPlatterStyle,
   };
 }
