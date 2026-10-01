@@ -745,7 +745,7 @@ watch(isGlass, (glass) => {
                 <p class="text-black dark:text-white text-[clamp(0.9rem,1.25vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
                 <p class="text-black dark:text-white text-[clamp(1.375rem,2.75vw,1.75rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatStatisticsDuration(listenDisplay.total) }}</p>
               </div>
-              <div class="hidden md:flex flex-col justify-end min-w-0" aria-hidden="false">
+              <div class="hidden md:flex flex-col min-w-0" aria-hidden="false">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.todayListenDuration }}</p>
                 <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatStatisticsDuration(listenDisplay.daily) }}</p>
               </div>

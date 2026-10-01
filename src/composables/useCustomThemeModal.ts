@@ -1,7 +1,7 @@
 import { type Ref, ref } from 'vue';
 import { open as showMediaPicker } from '@tauri-apps/plugin-dialog';
 
-import { normalizeForegroundStyle, type ThemeSettingsPatch } from '../features/settings/store';
+import { createDefaultThemeSettings, normalizeForegroundStyle, type ThemeSettingsPatch } from '../features/settings/store';
 import { tauriInvoke } from '../services/tauri/invoke';
 import type { ThemeSettings } from '../types';
 import { useThemeSettings } from './useThemeSettings';
@@ -67,6 +67,16 @@ export const useCustomThemeModal = () => {
   const handleSelectImage = () => pickMedia('image');
   const handleSelectVideo = () => pickMedia('video');
 
+  /** 恢复默认：调整参数回到出厂值；保留已选背景媒体，避免误清用户刚挑的图 */
+  const resetToDefaults = () => {
+    const defaults = createDefaultThemeSettings().customBackground;
+    previewDraft.value = {
+      ...defaults,
+      imagePath: previewDraft.value.imagePath,
+      mediaType: previewDraft.value.mediaType,
+    };
+  };
+
   const commitDraft = () => {
     if (!hasPickedMedia()) return;
     patchTheme(toCustomModePatch({ ...previewDraft.value }));
@@ -85,6 +95,7 @@ export const useCustomThemeModal = () => {
     preview: previewDraft,
     handleSelectImage,
     handleSelectVideo,
+    resetToDefaults,
     handleCancel: restoreSavedTheme,
     handleSave: commitDraft,
   };

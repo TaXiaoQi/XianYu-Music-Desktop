@@ -122,11 +122,12 @@ async function reportListenDelta(
 
     // 防全量重报护栏：baseline 丢失/重置时 delta 会等于本地全部历史累计。
     // 单次上报物理上限 = 自上次成功上报以来的墙钟时间 × 3 + 10 分钟（倍速与
-    // 时钟误差余量；首次无时间戳给 2 小时兜底），超限截断——宁可少报，绝不重报。
+    // 时钟误差余量；首次无时间戳给 10 分钟兜底，与服务端首报上限一致），
+    // 超限截断——宁可少报，绝不重报。
     const elapsedSecs = baseline.reported_at > 0
       ? Math.max(0, Math.floor((Date.now() - baseline.reported_at) / 1000))
       : -1;
-    const maxDelta = elapsedSecs >= 0 ? elapsedSecs * 3 + 600 : 7200;
+    const maxDelta = elapsedSecs >= 0 ? elapsedSecs * 3 + 600 : 600;
     if (delta.total > maxDelta) {
       delta = {
         total: maxDelta,
