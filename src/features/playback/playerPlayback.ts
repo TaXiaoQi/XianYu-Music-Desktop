@@ -1,10 +1,7 @@
 import {storeToRefs} from 'pinia';
 import {watch} from 'vue';
-import {listen} from '@tauri-apps/api/event';
 import type {QualityKey, Song} from '../../types';
-import type {AudioOutputStatus} from '../../services/tauri/contracts';
 import {playbackApi} from '../../services/tauri/playbackApi';
-import {pluginApi} from '../../services/tauri/pluginApi';
 import {useDlnaCastStore} from './castStore';
 import {usePlaybackStore} from './store';
 import {useSettingsStore} from '../settings/store';
@@ -12,52 +9,33 @@ import {useLibraryStore} from '../library/store';
 import {useUiStore} from '../../shared/stores/ui';
 import {useCoverCache} from '../../composables/useCoverCache';
 import {useRenderingPower} from '../../composables/renderingPower';
-import {fetchLxSongLyricsRaw} from '../../services/domain/lxLyricFetcher';
 import {useToast} from '../../composables/toast';
+import {listen} from '@tauri-apps/api/event';
 import {reportUserBehavior} from '../../services/domain/usageStats';
 import {useAuthStore} from '../auth/store';
 import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoader';
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
-import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/domain/pluginEngine';
-import {getFailedOnlineSource, findAlternativeOnlineSource, findSiblingPluginCandidate} from './onlineFailoverFacade';
+import {getLastPluginError} from '../../services/domain/pluginEngine';
 import {prepareOnlinePlayback} from './onlinePlaybackFacade';
 import {scheduleOnlinePrecache} from './onlinePrecache';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
-import {getPluginBilibiliCookies} from '../../services/domain/pluginCookieStore';
-import {clearOnlineLyricsUnavailable, markOnlineLyricsUnavailable} from '../../composables/lyrics/state';
+import {createPlaybackRuntime} from './playbackRuntime';
+import {createPlaybackVolumeController} from './playbackVolume';
+import {createPlaybackStatistics} from './playbackStatistics';
+import {prepareAudioTransfer} from './audioTransferPreparation';
+import {createOnlineLyricsLoader, looksWordLevel} from './onlineLyricsLoader';
+import {createOnlinePlaybackFailureController} from './onlinePlaybackFailure';
+import type {PlaySongOptions} from './playerPlaybackTypes';
 import {
   fetchQishuiPreviewInfo,
   hasQishuiPreviewCached,
-  isPluginPath,
-  isPreviewLikeStream,
   isQishuiPluginPath,
   extractPluginTrackId,
   formatPreviewClock,
   type PreviewClipInfo,
 } from './onlineFailover';
-import {
-  evaluateStallAutoNext,
-  LOW_POWER_PROGRESS_UPDATE_MS,
-  type PlaybackProgressPayload,
-} from './playbackTiming';
 import {likelyFullCoverPaths, likelyThumbnailPaths} from './coverState';
-
-interface PlaySongOptions {
-  updateShuffleHistory?: boolean;
-  clearShuffleFuture?: boolean;
-  preserveQueue?: boolean;
-  insertAfterCurrent?: boolean;
-  startTime?: number;
-  continueStatisticsSession?: boolean;
-  forceReplay?: boolean;
-  shareLinkPlayback?: boolean;
-  _sourceSwitchCtx?: {
-    originKey: string;
-    failedSources: Set<string>;
-  };
-  _siblingTriedPluginIds?: Set<string>;
-}
 
 interface SeekCompletedPayload {
   request_id: number;
@@ -72,24 +50,9 @@ interface CreatePlayerPlaybackDeps {
   onBeforePlay?: (song: Song, options: PlaySongOptions) => void;
 }
 
-let progressFrameId: number | null = null;
-let progressTimerId: ReturnType<typeof setTimeout> | null = null;
-let progressUnlisten: (() => void) | null = null;
-let progressListeningActive = false;
-let periodicFlushTimerId: ReturnType<typeof setInterval> | null = null;
-let fadeFrameId: number | null = null;
-let fadeResolveFn: (() => void) | null = null;
-let currentBackendVolume = 1;
 let togglePlayToken = 0;
 let playRequestId = 0;
 let cancelledPlayRequestId = -1;
-let lastHandledOnlineFailure: {
-  path: string;
-  requestId: number;
-  handledAt: number;
-} | null = null;
-const recentOnlineFailurePaths = new Map<string, number>();
-const knownFailedPluginPrefixes = new Set<string>();
 // 最近一次在线 Rust 起播上下文：后端流下载中途失败事件（online-stream-failed）用它定位当前歌曲并触发换源
 let onlineStreamFailureCtx: {
   url: string;
@@ -99,24 +62,10 @@ let onlineStreamFailureCtx: {
 } | null = null;
 let shareLinkPlaybackActive = false;
 let latestSeekRequestId = 0;
-let playbackAnchorTime = 0;
-let playbackStartOffset = 0;
-let sessionStartTime: number | null = null;
-let accumulatedTime = 0;
-let currentPlayCountRecorded = false;
-let hasAudioOutputDevice = true;
-let lastOutputValid = true;
-let deviceStatusUnlisten: (() => void) | null = null;
-let volumeValidityWatcher: ReturnType<typeof watch> | null = null;
 let isSeeking = false;
-let lastRawProgress = -1;
-let stalledProgressTicks = 0;
-let volumeRestoreTimerId: ReturnType<typeof setTimeout> | null = null;
-let volumeRestoreToken = 0;
 const shortTimerIds = new Set<ReturnType<typeof setTimeout>>();
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
-const ONLINE_FAILURE_LOOP_GUARD_MS = 30_000;
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 // ==================== [试听片段] 在线音源试听流处理 ====================
@@ -133,11 +82,11 @@ export const createPlayerPlayback = ({
   onBeforePlay,
 }: CreatePlayerPlaybackDeps) => {
   const playbackStore = usePlaybackStore();
-const settingsStore = useSettingsStore();
-const libraryStore = useLibraryStore();
-const uiStore = useUiStore();
-const authStore = useAuthStore();
-const dlnaCast = useDlnaCastStore();
+  const settingsStore = useSettingsStore();
+  const libraryStore = useLibraryStore();
+  const uiStore = useUiStore();
+  const authStore = useAuthStore();
+  const dlnaCast = useDlnaCastStore();
   const { showToast } = useToast();
   const { isMainWindowLowPower } = useRenderingPower();
   const {
@@ -160,6 +109,7 @@ const dlnaCast = useDlnaCastStore();
     currentTime,
     isPlaying,
     isSongLoaded,
+    volume,
     playQueue,
     playQueuePaths,
     playMode,
@@ -168,52 +118,6 @@ const dlnaCast = useDlnaCastStore();
     currentAvailableQualities,
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
-
-  const syncStatisticsValidity = () => {
-    const valid = playbackStore.volume >= 1 && hasAudioOutputDevice;
-    if (valid === lastOutputValid) return;
-    lastOutputValid = valid;
-    if (valid) {
-      if (isPlaying.value) sessionStartTime = Date.now();
-    } else if (isPlaying.value && sessionStartTime) {
-      accumulatedTime += (Date.now() - sessionStartTime) / 1000;
-      sessionStartTime = null;
-    }
-  };
-
-  const startStatisticsSession = () => {
-    sessionStartTime = (playbackStore.volume >= 1 && hasAudioOutputDevice) ? Date.now() : null;
-  };
-
-  listen<AudioOutputStatus>('audio-output-device-changed', (event) => {
-    hasAudioOutputDevice = event.payload.active_device_name != null;
-    playbackStore.activeOutputMode = event.payload.active_output_mode;
-    syncStatisticsValidity();
-  }).then(fn => { deviceStatusUnlisten = fn; }).catch(() => {});
-
-  // 在线音频流播放中途下载失败（对齐移动/腕上端中断换源）：后端表现为自然播完，这里显式接管并尝试换源
-  listen<{ url: string; reason?: string }>('online-stream-failed', async (event) => {
-    const ctx = onlineStreamFailureCtx;
-    if (!ctx || !currentSong.value || !isPlaying.value) return;
-    if (currentSong.value.path !== ctx.song.path) return;
-    const failUrl = String(event.payload.url || '');
-    if (failUrl !== ctx.url && sanitizeMediaUrl(failUrl) !== sanitizeMediaUrl(ctx.url)) return;
-    onlineStreamFailureCtx = null;
-    console.warn(`[Audio] 在线音频流播放中断，尝试自动换源: ${event.payload.reason || '未知原因'}`);
-    await handleOnlinePlaybackFailure(ctx.song, ctx.options, ctx.requestId, false);
-  }).catch(() => {});
-
-  playbackApi.getCurrentOutputDevice()
-    .then(status => {
-      hasAudioOutputDevice = status.active_device_name != null;
-      playbackStore.activeOutputMode = status.active_output_mode;
-      syncStatisticsValidity();
-    })
-    .catch(() => {});
-
-  volumeValidityWatcher = watch(() => playbackStore.volume, () => {
-    syncStatisticsValidity();
-  });
 
   const setManagedTimeout = (callback: () => void, delay: number) => {
     const timerId = setTimeout(() => {
@@ -229,35 +133,18 @@ const dlnaCast = useDlnaCastStore();
     shortTimerIds.clear();
   };
 
-  const pruneRecentOnlineFailurePaths = (now = Date.now()) => {
-    for (const [path, failedAt] of recentOnlineFailurePaths) {
-      if (now - failedAt > ONLINE_FAILURE_LOOP_GUARD_MS) {
-        recentOnlineFailurePaths.delete(path);
-      }
-    }
-  };
+  let playbackRuntimeController = undefined as unknown as ReturnType<typeof createPlaybackRuntime>;
+  let playbackVolumeController = undefined as unknown as ReturnType<typeof createPlaybackVolumeController>;
+  let playbackStatisticsController = undefined as unknown as ReturnType<typeof createPlaybackStatistics>;
+  let onlineLyricsLoader = undefined as unknown as ReturnType<typeof createOnlineLyricsLoader>;
+  let onlinePlaybackFailureController = undefined as unknown as ReturnType<typeof createOnlinePlaybackFailureController>;
 
-  const clearVolumeRestoreTimer = () => {
-    volumeRestoreToken += 1;
-    if (volumeRestoreTimerId !== null) {
-      clearTimeout(volumeRestoreTimerId);
-      shortTimerIds.delete(volumeRestoreTimerId);
-      volumeRestoreTimerId = null;
-    }
-  };
-
+  const clearVolumeRestoreTimer = () => playbackVolumeController?.clearRestoreTimer();
   const scheduleBackendVolumeRestore = (restoreVol: number, shouldRestore?: () => boolean) => {
-    clearVolumeRestoreTimer();
-    const token = ++volumeRestoreToken;
-    volumeRestoreTimerId = setManagedTimeout(() => {
-      volumeRestoreTimerId = null;
-      if (token !== volumeRestoreToken || (shouldRestore && !shouldRestore())) {
-        return;
-      }
-      currentBackendVolume = restoreVol;
-      void playbackApi.setVolume(restoreVol).catch(() => {});
-    }, 200);
+    playbackVolumeController?.scheduleBackendRestore(restoreVol, shouldRestore);
   };
+  const getCurrentBackendVolume = () => playbackVolumeController?.getCurrentVolume() ?? playbackStore.volume / 100;
+  const setCurrentBackendVolume = (value: number) => playbackVolumeController?.setCurrentVolume(value);
 
   const scheduleAddToHistory = (song: Song) => {
     const idle = typeof window !== 'undefined' && 'requestIdleCallback' in window
@@ -341,80 +228,14 @@ const dlnaCast = useDlnaCastStore();
     });
   };
 
-  const stopPlaybackRuntime = () => {
-    if (progressFrameId !== null) {
-      cancelAnimationFrame(progressFrameId);
-      progressFrameId = null;
-    }
-    if (progressTimerId !== null) {
-      clearTimeout(progressTimerId);
-      progressTimerId = null;
-    }
-    progressListeningActive = false;
-    if (progressUnlisten) {
-      progressUnlisten();
-      progressUnlisten = null;
-    }
-    if (periodicFlushTimerId !== null) {
-      clearInterval(periodicFlushTimerId);
-      periodicFlushTimerId = null;
-    }
-  };
+  const stopPlaybackRuntime = () => playbackRuntimeController?.stop();
+  const startPlaybackRuntime = () => playbackRuntimeController?.start();
+  const resetPlaybackProgressTracking = () => playbackRuntimeController?.resetProgressTracking();
+  const reanchorPlaybackClock = (time: number) => playbackRuntimeController?.reanchor(time);
 
-  const cancelFade = () => {
-    if (fadeFrameId !== null) {
-      cancelAnimationFrame(fadeFrameId);
-      fadeFrameId = null;
-    }
-    if (fadeResolveFn) {
-      const fn = fadeResolveFn;
-      fadeResolveFn = null;
-      fn();
-    }
-  };
-
-  const fadeVolumeTo = (targetVolume: number, durationMs: number, startVolumeOverride?: number): Promise<void> => {
-    return new Promise((resolve) => {
-      cancelFade();
-      const startVolume = startVolumeOverride ?? currentBackendVolume;
-      const targetVol = Math.max(0, Math.min(1, targetVolume));
-      if (Math.abs(startVolume - targetVol) < 0.005 || durationMs <= 0) {
-        currentBackendVolume = targetVol;
-        void playbackApi.setVolume(targetVol).catch(() => {});
-        resolve();
-        return;
-      }
-      const startTime = performance.now();
-      const isFadeIn = targetVol > startVolume;
-      const step = (now: number) => {
-        const elapsed = now - startTime;
-        const progress = Math.min(1, elapsed / durationMs);
-        const eased = isFadeIn
-          ? progress * progress
-          : 1 - (1 - progress) * (1 - progress);
-        const currentVol = startVolume + (targetVol - startVolume) * eased;
-        currentBackendVolume = currentVol;
-        void playbackApi.setVolume(currentVol).catch(() => {});
-        if (progress < 1) {
-          fadeFrameId = requestAnimationFrame(step);
-        } else {
-          fadeFrameId = null;
-          fadeResolveFn = null;
-          currentBackendVolume = targetVol;
-          void playbackApi.setVolume(targetVol).catch(() => {});
-          resolve();
-        }
-      };
-      fadeResolveFn = resolve;
-      fadeFrameId = requestAnimationFrame(step);
-    });
-  };
-
-  const reanchorPlaybackClock = (time: number) => {
-    playbackAnchorTime = performance.now();
-    playbackStartOffset = time;
-    currentTime.value = time;
-  };
+  const cancelFade = () => playbackVolumeController?.cancelFade();
+  const fadeVolumeTo = (targetVolume: number, durationMs: number, startVolumeOverride?: number) =>
+    playbackVolumeController?.fadeTo(targetVolume, durationMs, startVolumeOverride) ?? Promise.resolve();
 
   const handlePreviewClipDetected = async (song: Song, actualDuration: number) => {
     previewDetectedPath = song.path;
@@ -447,376 +268,20 @@ const dlnaCast = useDlnaCastStore();
     }
   };
 
-  const startPlaybackRuntime = () => {
-    stopPlaybackRuntime();
-    reanchorPlaybackClock(currentTime.value);
+  const flushPlaySession = () => playbackStatisticsController?.flush();
+  const startStatisticsSession = () => playbackStatisticsController?.startSession();
 
-    const scheduleUpdate = (update: FrameRequestCallback) => {
-      if (isMainWindowLowPower.value) {
-        progressTimerId = setTimeout(() => {
-          progressTimerId = null;
-          update(performance.now());
-        }, LOW_POWER_PROGRESS_UPDATE_MS);
-        return;
-      }
-
-      progressFrameId = requestAnimationFrame(update);
-    };
-
-    const update = () => {
-      if (!currentSong.value || !isPlaying.value) return;
-
-      if (dlnaCast.isCasting) {
-        currentTime.value = dlnaCast.interpolatedPosition();
-        const tvDur = dlnaCast.tvDuration;
-        const songForDur = currentSong.value;
-        if (tvDur > 0.5 && songForDur && (!songForDur.duration || songForDur.duration <= 0)) {
-          const newDuration = Math.floor(tvDur);
-          currentSong.value = {...songForDur, duration: newDuration};
-          libraryStore.patchSongMeta(songForDur.path, {duration: newDuration} as Partial<Song>);
-          playbackStore.patchQueueSongMeta(songForDur.path, {duration: newDuration});
-        }
-      } else {
-        const now = performance.now();
-        const delta = (now - playbackAnchorTime) / 1000.0;
-        if (isSongLoaded.value) {
-          currentTime.value = playbackStartOffset + delta;
-        } else {
-          // [修复] 在线歌曲解析/缓冲期间音频尚未起播，此处若继续推进本地时钟，
-          // 进度条会在加载中自行前进，起播后 reanchorPlaybackClock(resumeTime)
-          // 又把它拉回起点，表现为"进度条走了一段后瞬间回跳"。
-          // 未起播时把锚点钉在原位，等 isSongLoaded 为真再开始推进。
-          reanchorPlaybackClock(playbackStartOffset);
-        }
-      }
-
-      const endTime = activePreviewClip
-        ? activePreviewClip.start + activePreviewClip.duration
-        : currentSong.value.duration;
-      if (endTime > 0 && currentTime.value >= endTime - 0.3) {
-        handleAutoNext();
-        return;
-      }
-
-      scheduleUpdate(update);
-    };
-
-    scheduleUpdate(update);
-
-    periodicFlushTimerId = setInterval(() => {
-      if (isPlaying.value && currentSong.value) {
-        flushPlaySession();
-        startStatisticsSession();
-      }
-    }, 30_000);
-
-    progressListeningActive = true;
-    listen<PlaybackProgressPayload>('playback:progress', (event) => {
-      if (!progressListeningActive || !isPlaying.value || isSeeking || dlnaCast.isCasting) return;
-
-      const {position: rawTime, duration} = event.payload;
-      if (
-        activePreviewClip
-        && duration > 0
-        && Math.abs(duration - activePreviewClip.duration) > 3
-      ) {
-        activePreviewClip = null;
-        previewClipPath = '';
-        previewDetectedPath = '';
-      }
-      const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-      const previewStart = activePreviewClip?.start ?? 0;
-      const adjustedTime = Math.max(0, rawTime - offsetSec + previewStart);
-      if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
-        reanchorPlaybackClock(adjustedTime);
-      }
-
-      const songForPreviewCheck = currentSong.value;
-      if (
-        songForPreviewCheck
-        && previewDetectedPath !== songForPreviewCheck.path
-        && isPluginPath(songForPreviewCheck.path)
-        && isPreviewLikeStream(duration, songForPreviewCheck.duration)
-      ) {
-        void handlePreviewClipDetected(songForPreviewCheck, duration);
-      }
-
-      const song = currentSong.value;
-      if (song) {
-        const {stalledProgressTicks: ticks, shouldAutoAdvance} = evaluateStallAutoNext({
-          song,
-          rawTime,
-          lastRawProgress,
-          stalledProgressTicks,
-          activePreviewClip,
-        });
-        stalledProgressTicks = ticks;
-        if (shouldAutoAdvance) {
-          handleAutoNext();
-          return;
-        }
-      } else {
-        stalledProgressTicks = 0;
-      }
-      lastRawProgress = rawTime;
-
-      const songForDuration = currentSong.value;
-      if (songForDuration && (!songForDuration.duration || songForDuration.duration <= 0) && duration > 0) {
-        const newDuration = Math.floor(duration);
-        currentSong.value = {...songForDuration, duration: newDuration};
-        libraryStore.patchSongMeta(songForDuration.path, {duration: newDuration} as Partial<Song>);
-        playbackStore.patchQueueSongMeta(songForDuration.path, {duration: newDuration});
-      }
-    }).then(unlisten => {
-      if (!progressListeningActive) {
-        unlisten();
-      } else {
-        progressUnlisten = unlisten;
-      }
-    });
-  };
-
-  const flushPlaySession = () => {
-    const song = currentSong.value;
-    if (!song) return;
-
-    if (playbackStore.volume < 1 || !hasAudioOutputDevice) {
-      sessionStartTime = null;
-      return;
-    }
-
-    let currentSession = 0;
-    if (isPlaying.value && sessionStartTime) {
-      currentSession = (Date.now() - sessionStartTime) / 1000;
-    }
-
-    const totalDuration = accumulatedTime + currentSession;
-    const shouldPersist = totalDuration >= 10 || (currentPlayCountRecorded && totalDuration > 0);
-
-    const user = authStore.user;
-    let songSource = 'local';
-    if (song.path.startsWith('lx://')) {
-      songSource = song.path.slice('lx://'.length).split('/')[0] || 'lx';
-    } else if (song.path.startsWith('http://') || song.path.startsWith('https://')) {
-      songSource = 'online';
-    } else if (song.path.startsWith('plugin://')) {
-      songSource = song.path.slice('plugin://'.length).split('/')[0] || 'plugin';
-    }
-    reportUserBehavior({
-      song_id: song.id != null ? String(song.id) : song.path,
-      song_name: song.name,
-      singer: song.artist || '',
-      song_hash: song.path,
-      source: songSource,
-      action: totalDuration >= 10 ? (currentPlayCountRecorded ? 'switch' : 'play') : 'switch',
-      listen_duration: Math.floor(totalDuration),
-      play_count: totalDuration >= 10 && !currentPlayCountRecorded ? 1 : 0,
-      ciyuanxi_id: user?.ciyuanxi_id,
-      user_id: user?.id ? Number(user.id) : undefined,
-    });
-
-    if (shouldPersist) {
-      const countAsPlay = !currentPlayCountRecorded;
-      if (countAsPlay) currentPlayCountRecorded = true;
-      playbackApi.recordPlay({
-        songPath: song.path,
-        listenedMs: Math.floor(totalDuration * 1000),
-        durationMs: Math.floor(song.duration * 1000),
-        title: getSmtcTitle(song),
-        artist: song.artist || '',
-        album: song.album || '',
-        trackNumber: song.track_number,
-        countAsPlay,
-      })
-        .catch(error => console.warn('record_play failed:', error));
-    }
-
-    accumulatedTime = shouldPersist ? 0 : totalDuration;
-    sessionStartTime = null;
-  };
-
-  const trySiblingPluginPlayback = async (
-    song: Song,
-    options: PlaySongOptions,
-    requestId: number,
-  ): Promise<boolean> => {
-    const searchResult = song.rawData as { pluginId?: string; platform?: string } | undefined;
-    if (!searchResult?.pluginId) return false;
-
-    const tried = options._siblingTriedPluginIds ?? new Set<string>();
-    const sibling = findSiblingPluginCandidate(song, tried);
-    if (!sibling) return false;
-
-    if (requestId !== playRequestId || currentSong.value?.path !== song.path) return false;
-
-    console.info(`[Audio] 自动换源 · 同平台插件重试: ${sibling.pluginName} (${sibling.pluginId.slice(0, 8)}…)`);
-    searchResult.pluginId = sibling.pluginId;
-    song.plugin_id = sibling.pluginId;
-    try {
-      await playSong(song, {
-        preserveQueue: true,
-        _sourceSwitchCtx: options._sourceSwitchCtx,
-        _siblingTriedPluginIds: tried,
-      });
-      return true;
-    } catch (error) {
-      console.warn(`[Audio] 同平台插件重试异常: ${getErrorMessage(error)}`);
-      return false;
-    }
-  };
+  const preflightKnownFailedPlugin = (song: Song) =>
+    onlinePlaybackFailureController?.preflightKnownFailedPlugin(song) ?? false;
 
   const handleOnlinePlaybackFailure = async (
     song: Song,
     options: PlaySongOptions,
     requestId: number,
     shouldFade: boolean | null,
-  ): Promise<void> => {
-    const now = Date.now();
-    const isDuplicateFailure = !!(
-      lastHandledOnlineFailure
-      && lastHandledOnlineFailure.path === song.path
-      && (
-        lastHandledOnlineFailure.requestId === requestId
-        || now - lastHandledOnlineFailure.handledAt < 3000
-      )
-    );
-    if (isDuplicateFailure) {
-      console.warn('[Audio] 已忽略重复的在线播放失败处理:', {
-        path: song.path,
-        requestId,
-      });
-    } else {
-      lastHandledOnlineFailure = {
-        path: song.path,
-        requestId,
-        handledAt: now,
-      };
-      recentOnlineFailurePaths.set(song.path, now);
-      pruneRecentOnlineFailurePaths(now);
-    }
-
-    try { await playbackApi.stopAudio(); } catch {}
-    if (shouldFade) {
-      currentBackendVolume = playbackStore.volume / 100;
-      void playbackApi.setVolume(currentBackendVolume).catch(() => {});
-    }
-    isPlaying.value = false;
-    isSongLoaded.value = false;
-    stopPlaybackRuntime();
-    console.error('[Audio] 在线音频播放失败');
-
-    if (isDuplicateFailure) {
-      return;
-    }
-
-    const isSharePlayback = shareLinkPlaybackActive;
-    const shareFailureBehavior = settingsStore.settings.sharePlaybackFailureBehavior ?? 'pause';
-    if (isSharePlayback && song.path.startsWith('lx://') && shareFailureBehavior === 'pause') {
-      showToast('分享歌曲播放失败，已暂停', 'error');
-      return;
-    }
-    const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
-    const autoSwitchEnabled = failureBehavior === 'autoswitch';
-    const isPluginSong = song.path.startsWith('plugin://');
-    const allowAutoSwitch = (song.path.startsWith('lx://') || isPluginSong)
-      && (autoSwitchEnabled || (isSharePlayback && shareFailureBehavior === 'replace'));
-    if (allowAutoSwitch) {
-      if (isPluginSong) {
-        const switched = await trySiblingPluginPlayback(song, options, requestId);
-        if (switched) return;
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
-      }
-
-      const switchCtx = options._sourceSwitchCtx ?? {
-        originKey: `${song.name}|${song.artist}`,
-        failedSources: new Set<string>(),
-      };
-      switchCtx.failedSources.add(getFailedOnlineSource(song));
-
-      const alternativeSource = await findAlternativeOnlineSource(song, switchCtx.failedSources);
-      if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-        return;
-      }
-
-      if (alternativeSource) {
-        const { song: alternativeSong, source, displayName } = alternativeSource;
-        if (!alternativeSong.cover_thumb_path && song.cover_thumb_path) {
-          alternativeSong.cover_thumb_path = song.cover_thumb_path;
-        }
-        showToast(`已自动切换到 ${displayName} 音源`, 'info');
-        console.info(`[Audio] 自动换源成功: ${source}`);
-        await playSong(alternativeSong, {
-          preserveQueue: true,
-          _sourceSwitchCtx: switchCtx,
-          _siblingTriedPluginIds: options._siblingTriedPluginIds,
-        });
-        return;
-      }
-    }
-
-    if (isSharePlayback) {
-      showToast('分享歌曲播放失败，未找到可替换音源', 'error');
-      return;
-    }
-
-    if (allowAutoSwitch) {
-      showToast('已自动换源无果，请重试或更换音源', 'error');
-      return;
-    }
-
-    if (failureBehavior === 'skip') {
-      if (song.path.startsWith('plugin://')) {
-        const withoutScheme = song.path.slice('plugin://'.length);
-        const slashIdx = withoutScheme.indexOf('/');
-        if (slashIdx >= 0) {
-          const prefix = 'plugin://' + withoutScheme.slice(0, slashIdx + 1);
-          knownFailedPluginPrefixes.add(prefix);
-        }
-      }
-
-      const isLikelyPlayable = (item: Song): boolean => {
-        if (recentOnlineFailurePaths.has(item.path)) return false;
-        if (item.path.startsWith('plugin://')) {
-          for (const prefix of knownFailedPluginPrefixes) {
-            if (item.path.startsWith(prefix)) return false;
-          }
-        }
-        return true;
-      };
-
-      const queueSongs = [...playbackStore.tempQueue, ...playbackStore.playQueue];
-      const hasAlternativeQueueSong = queueSongs.some(item =>
-        item.path !== song.path && isLikelyPlayable(item),
-      );
-
-      if (!hasAlternativeQueueSong) {
-        if (knownFailedPluginPrefixes.size > 0 && queueSongs.every(item =>
-          !isLikelyPlayable(item) || item.path === song.path,
-        )) {
-          showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
-        }
-        console.warn('[Audio] 在线音频播放失败，但队列中没有其它未失败歌曲，停止而不是循环请求');
-        return;
-      }
-
-      if (knownFailedPluginPrefixes.size > 0) {
-        const now = Date.now();
-        for (const item of queueSongs) {
-          if (item.path === song.path) continue;
-          if (!item.path.startsWith('plugin://')) continue;
-          for (const prefix of knownFailedPluginPrefixes) {
-            if (item.path.startsWith(prefix)) {
-              recentOnlineFailurePaths.set(item.path, now);
-              break;
-            }
-          }
-        }
-      }
-
-      setManagedTimeout(() => {
-        if (currentSong.value?.path === song.path) handleAutoNext();
-      }, 400);
-    }
+  ) => {
+    await onlinePlaybackFailureController?.handleFailure(song, options, requestId, shouldFade);
+    if (shouldFade) setCurrentBackendVolume(playbackStore.volume / 100);
   };
 
   const playSong = async (song: Song, options: PlaySongOptions = {}) => {
@@ -837,49 +302,14 @@ const dlnaCast = useDlnaCastStore();
     }
 
     if (song.path.startsWith('plugin://') && !options._sourceSwitchCtx) {
-      const withoutScheme = song.path.slice('plugin://'.length);
-      const slashIdx = withoutScheme.indexOf('/');
-      if (slashIdx >= 0) {
-        const prefix = 'plugin://' + withoutScheme.slice(0, slashIdx + 1);
-        if (knownFailedPluginPrefixes.has(prefix)) {
-          const alreadyFailedRecently = recentOnlineFailurePaths.has(song.path);
-          recentOnlineFailurePaths.set(song.path, Date.now());
-          const queueSongs = [...playbackStore.tempQueue, ...playbackStore.playQueue];
-          const hasPlayable = queueSongs.some(item => {
-            if (recentOnlineFailurePaths.has(item.path)) return false;
-            if (!item.path.startsWith('plugin://')) return true;
-            const ws = item.path.slice('plugin://'.length);
-            const si = ws.indexOf('/');
-            if (si < 0) return true;
-            return !knownFailedPluginPrefixes.has('plugin://' + ws.slice(0, si + 1));
-          });
-          if (!hasPlayable) {
-            showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
-            console.warn('[Audio] 队列中无可播放歌曲（所有 plugin:// 均属于已知失败来源），停止');
-            try { await playbackApi.stopAudio(); } catch {}
-            isPlaying.value = false;
-            isSongLoaded.value = false;
-            stopPlaybackRuntime();
-            return;
-          }
-          if (alreadyFailedRecently) {
-            return;
-          }
-          handleAutoNext();
-          return;
-        }
-      }
+      const preflightResult = preflightKnownFailedPlugin(song);
+      if (preflightResult instanceof Promise ? await preflightResult : preflightResult) return;
     }
 
     const requestId = ++playRequestId;
     clearVolumeRestoreTimer();
 
     cancelledPlayRequestId = -1;
-    if (lastHandledOnlineFailure?.path !== song.path) {
-      lastHandledOnlineFailure = null;
-    }
-    pruneRecentOnlineFailurePaths();
-
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
@@ -891,9 +321,8 @@ const dlnaCast = useDlnaCastStore();
     const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
 
     const shouldStopPreviousAudioBeforeOnlineResolve = isOriginalOnlineSong
-      && isPlaying.value
-      && !!previousSong
-      && (previousSong.path !== song.path || isQualitySwitch);
+      && (isPlaying.value || playbackStore.isPlaying)
+      && (previousSong?.path !== song.path || isQualitySwitch);
 
     const shouldFadeOnSwitch = fadeEnabled
       && isPlaying.value
@@ -917,106 +346,15 @@ const dlnaCast = useDlnaCastStore();
     // 歌词链独立于音源解析并行发起（而非等音频 resolve 后再跑），在线歌词往往比音频多
     // 次后端往返（am lyricBoth/lyricWord），串行会进一步拉大「歌词晚到」的差距。
     // 必须定义在音源解析分支之外——音源解析失败时歌词链路仍需独立可用。
-    const wordTimestampPattern = /<\d{1,3}:\d{2}/;
-    // QRC XML 的词级时间是属性式（<src="..." start="21550">），无尖括号时间戳，
-    // 需单独识别，否则解密产物无法覆盖旧的逐行 LRC 缓存（一直显示行级）
-    const qrcXmlPattern = /<(?:QrcInfos|src=")/;
-    const looksWordLevel = (text: string): boolean =>
-      wordTimestampPattern.test(text) || qrcXmlPattern.test(text);
-    const coreLyricsFetch = async () => {
-      const existingLyricsRaw = song.lyrics_raw?.trim() || '';
-      const canUpgradeToWordLyrics = !!existingLyricsRaw && !looksWordLevel(existingLyricsRaw);
+    // 与音频解析并行发起，不等音频 resolve。
+    void onlineLyricsLoader?.loadForSong(song, requestId);
 
-      // lx:// 旧版歌词升级链路
-      if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
-        clearOnlineLyricsUnavailable(song.path);
-        void fetchLxSongLyricsRaw(song)
-          .then((lyricsRaw) => {
-            if (!lyricsRaw) {
-              console.warn('[Lyrics] LX 歌词获取返回空:', song.path);
-              if (requestId === playRequestId && currentSong.value?.path === song.path) {
-                markOnlineLyricsUnavailable(song.path);
-              }
-              return;
-            }
-            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-              return;
-            }
-
-            song.lyrics_raw = lyricsRaw;
-            libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
-            playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
-            currentSong.value = {...currentSong.value, lyrics_raw: lyricsRaw};
-            void loadLyrics(lyricsRaw);
-          })
-          .catch(error => {
-            console.warn('[Lyrics] LX 在线歌词获取失败:', error);
-            if (requestId === playRequestId && currentSong.value?.path === song.path) {
-              markOnlineLyricsUnavailable(song.path);
-            }
-          });
-        return;
-      }
-
-      // plugin:// 歌词链：同 getMediaSource 链，旧数据为逐行而新数据含词级尖括号时升级覆盖
-      if (song.path.startsWith('plugin://') && (!existingLyricsRaw || canUpgradeToWordLyrics)) {
-        clearOnlineLyricsUnavailable(song.path);
-        const pluginSearchResult = song.rawData;
-        if (pluginSearchResult?.pluginId) {
-          void (async () => {
-            try {
-              const plugins = getStoredPlugins();
-              const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-              if (!pluginSource) {
-                console.warn('[Lyrics] plugin:// 未找到启用的插件:', pluginSearchResult.pluginId);
-                if (requestId === playRequestId && currentSong.value?.path === song.path) {
-                  markOnlineLyricsUnavailable(song.path);
-                }
-                return;
-              }
-              console.log('[Lyrics] plugin:// 取词开始:', pluginSource.name, song.path.slice(0, 48), 'existingLen=', existingLyricsRaw.length);
-              const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
-              if (!lyricData?.lyricsRaw) {
-                console.warn('[Lyrics] plugin:// 歌词获取为空:', pluginSource.name);
-                if (requestId === playRequestId && currentSong.value?.path === song.path) {
-                  markOnlineLyricsUnavailable(song.path);
-                }
-                return;
-              }
-              if (
-                requestId !== playRequestId
-                || currentSong.value?.path !== song.path
-              ) {
-                return;
-              }
-              // 写入时刻实时读当前值（而非链路启动时的快照）：getLyric 可能比
-              // getMediaSource 副产物晚到数秒，快照会误判为空、用逐行覆盖先到的逐字。
-              // 仅首次写入，或当前为逐行而新数据含词级尖括号（升级）时覆盖
-              const currentLyricsRaw = song.lyrics_raw?.trim() || '';
-              const shouldWriteLyrics = !currentLyricsRaw
-                || (!looksWordLevel(currentLyricsRaw) && looksWordLevel(lyricData.lyricsRaw));
-              if (shouldWriteLyrics) {
-                song.lyrics_raw = lyricData.lyricsRaw;
-                libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
-                playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw });
-                currentSong.value = {...currentSong.value, lyrics_raw: lyricData.lyricsRaw};
-                void loadLyrics(lyricData.lyricsRaw);
-              }
-            } catch (error) {
-              console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
-              if (requestId === playRequestId && currentSong.value?.path === song.path) {
-                markOnlineLyricsUnavailable(song.path);
-              }
-            }
-          })();
-        } else {
-          console.warn('[Lyrics] plugin:// rawData 缺失或无 pluginId，取词跳过:', song.path.slice(0, 48), 'rawData?', !!song.rawData, 'keys=', song.rawData ? Object.keys(song.rawData).slice(0, 10).join(',') : '');
-          markOnlineLyricsUnavailable(song.path);
-        }
-      }
-    };
-    // 与音频解析并行发起，不等音频 resolve
-    void coreLyricsFetch();
+    const previousAudioStopPromise = shouldStopPreviousAudioBeforeOnlineResolve
+      ? playbackApi.stopAudio().then(() => {}).catch(() => {})
+      : null;
+    if (shouldStopPreviousAudioBeforeOnlineResolve) {
+      stopPlaybackRuntime();
+    }
 
     const onlineAudioPreparationPromise = prepareOnlinePlayback({
       audioFilePath,
@@ -1043,15 +381,12 @@ const dlnaCast = useDlnaCastStore();
     if (requestId !== playRequestId) return;
 
     flushPlaySession();
-    if (shouldStopPreviousAudioBeforeOnlineResolve) {
-      try { await playbackApi.stopAudio(); } catch {}
-      stopPlaybackRuntime();
-      sessionStartTime = null;
+    if (previousAudioStopPromise) {
+      await previousAudioStopPromise;
       if (requestId !== playRequestId) return;
     }
     if (!options.continueStatisticsSession) {
-      accumulatedTime = 0;
-      currentPlayCountRecorded = false;
+      playbackStatisticsController.reset();
     }
     onBeforePlay?.(song, options);
 
@@ -1168,11 +503,8 @@ const dlnaCast = useDlnaCastStore();
       );
     }
     reanchorPlaybackClock(resumeTime);
+    resetPlaybackProgressTracking();
     startPlaybackRuntime();
-    accumulatedTime = 0;
-    sessionStartTime = null;
-    lastRawProgress = -1;
-    stalledProgressTicks = 0;
 
     let historyRecordedForRequest = false;
     const recordStartedSongToHistory = () => {
@@ -1300,42 +632,8 @@ const dlnaCast = useDlnaCastStore();
         return;
       }
 
-      let actualAudioPath = audioFilePath;
-      if (isNetworkAudio && (audioFilePath.includes('.m4s') || audioFilePath.includes('bilivideo.com') || audioFilePath.includes('bilivideo.cn'))) {
-        try {
-          const m4sHeaders: Record<string, string> = { ...(pluginHeaders ?? {}) };
-          const ensureEffectiveHeader = (want: string, value: string): void => {
-            const lower = want.toLowerCase();
-            let foundKey: string | null = null;
-            let foundVal = '';
-            for (const [k, v] of Object.entries(m4sHeaders)) {
-              if (k.toLowerCase() === lower) {
-                foundKey = k;
-                foundVal = String(v ?? '');
-                break;
-              }
-            }
-            if (!foundKey || !/^https?:\/\//i.test(foundVal)) {
-              if (foundKey) delete m4sHeaders[foundKey];
-              m4sHeaders[want] = value;
-            }
-          };
-          ensureEffectiveHeader('Referer', 'https://www.bilibili.com');
-          ensureEffectiveHeader('Origin', 'https://www.bilibili.com');
-          if (!Object.keys(m4sHeaders).some(key => key.toLowerCase() === 'cookie')) {
-            const bilibiliCookies = await getPluginBilibiliCookies();
-            if (bilibiliCookies) {
-              m4sHeaders.Cookie = bilibiliCookies;
-            }
-          }
-          const tempPath = await pluginApi.downloadAudioToTemp(audioFilePath, m4sHeaders);
-          if (tempPath) {
-            actualAudioPath = tempPath;
-          }
-        } catch (error) {
-          console.warn('[Audio] m4s 下载到临时文件失败:', getErrorMessage(error));
-        }
-      }
+      const preparedAudioTransfer = await prepareAudioTransfer(audioFilePath, pluginHeaders);
+      const actualAudioPath = preparedAudioTransfer.audioPath;
 
       const isM4sLocal = actualAudioPath !== audioFilePath;
 
@@ -1484,8 +782,8 @@ const dlnaCast = useDlnaCastStore();
         if (cancelledPlayRequestId === requestId) {
           try { await playbackApi.stopAudio(); } catch {}
           if (shouldFadeOnSwitch) {
-            currentBackendVolume = playbackStore.volume / 100;
-            void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+            setCurrentBackendVolume(playbackStore.volume / 100);
+            void playbackApi.setVolume(getCurrentBackendVolume()).catch(() => {});
           }
           isPlaying.value = false;
           isSongLoaded.value = false;
@@ -1495,13 +793,13 @@ const dlnaCast = useDlnaCastStore();
 
         if (rustOk) {
           if (shouldFadeOnSwitch) {
-            currentBackendVolume = 0;
+            setCurrentBackendVolume(0);
             try { await playbackApi.setVolume(0); } catch {}
             finishRustPlaybackStart();
             void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
           } else {
-            currentBackendVolume = playbackStore.volume / 100;
-            try { await playbackApi.setVolume(currentBackendVolume); } catch {}
+            setCurrentBackendVolume(playbackStore.volume / 100);
+            try { await playbackApi.setVolume(getCurrentBackendVolume()); } catch {}
             finishRustPlaybackStart();
           }
           scheduleOnlinePrecache(
@@ -1619,13 +917,13 @@ const dlnaCast = useDlnaCastStore();
 
         if (shouldFadeOnSwitch) {
           if (!playBeforeFlyCover) {
-            currentBackendVolume = 0;
+            setCurrentBackendVolume(0);
             try { await playbackApi.setVolume(0); } catch {}
           }
           void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
         } else {
-          currentBackendVolume = playbackStore.volume / 100;
-          void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+          setCurrentBackendVolume(playbackStore.volume / 100);
+          void playbackApi.setVolume(getCurrentBackendVolume()).catch(() => {});
         }
 
         void currentThumbnailLoad
@@ -1660,22 +958,106 @@ const dlnaCast = useDlnaCastStore();
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
       if (shouldFadeOnSwitch) {
-        currentBackendVolume = playbackStore.volume / 100;
-        void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+        setCurrentBackendVolume(playbackStore.volume / 100);
+        void playbackApi.setVolume(getCurrentBackendVolume()).catch(() => {});
       }
       isPlaying.value = false;
       isSongLoaded.value = false;
-      sessionStartTime = null;
+      playbackStatisticsController.pauseSession();
       stopPlaybackRuntime();
     }
   };
 
-  const pauseSong = async () => {
-    if (isPlaying.value && sessionStartTime) {
-      accumulatedTime += (Date.now() - sessionStartTime) / 1000;
-      sessionStartTime = null;
-    }
+  playbackVolumeController = createPlaybackVolumeController({
+    setBackendVolume: (nextVolume) => playbackApi.setVolume(nextVolume),
+    setManagedTimeout,
+    clearManagedTimeout: (timerId) => {
+      shortTimerIds.delete(timerId);
+      clearTimeout(timerId);
+    },
+  });
 
+  playbackStatisticsController = createPlaybackStatistics({
+    volume,
+    isPlaying,
+    getCurrentSong: () => currentSong.value,
+    getUser: () => authStore.user,
+    setActiveOutputMode: (mode) => { playbackStore.activeOutputMode = mode; },
+    reportBehavior: (payload) => reportUserBehavior(payload as unknown as Parameters<typeof reportUserBehavior>[0]),
+    recordPlay: (payload) => playbackApi.recordPlay(payload),
+    getTitle: getSmtcTitle,
+    getCurrentTime: () => currentTime.value,
+    getOutputDevice: () => playbackApi.getCurrentOutputDevice(),
+  });
+
+  onlineLyricsLoader = createOnlineLyricsLoader({
+    getCurrentSong: () => currentSong.value,
+    setCurrentSong: (nextSong) => { currentSong.value = nextSong; },
+    patchSongMeta: (path, patch) => libraryStore.patchSongMeta(path, patch),
+    patchQueueSongMeta: (path, patch) => playbackStore.patchQueueSongMeta(path, patch),
+    loadLyrics,
+    isCurrentRequest: (nextSong, requestId) => requestId === playRequestId && currentSong.value?.path === nextSong.path,
+  });
+
+  playbackRuntimeController = createPlaybackRuntime({
+    currentSong,
+    currentTime,
+    isPlaying,
+    isSongLoaded,
+    isMainWindowLowPower,
+    isSeeking: () => isSeeking,
+    isCasting: () => dlnaCast.isCasting,
+    getCastPosition: () => dlnaCast.interpolatedPosition(),
+    getCastDuration: () => dlnaCast.tvDuration,
+    patchSongDuration: (targetSong, duration) => {
+      currentSong.value = {...targetSong, duration};
+      libraryStore.patchSongMeta(targetSong.path, {duration} as Partial<Song>);
+      playbackStore.patchQueueSongMeta(targetSong.path, {duration});
+    },
+    getActivePreviewClip: () => activePreviewClip,
+    setActivePreviewClip: (clip) => { activePreviewClip = clip; },
+    getPreviewPath: () => previewClipPath,
+    setPreviewPath: (path) => { previewClipPath = path; },
+    getPreviewDetectedPath: () => previewDetectedPath,
+    setPreviewDetectedPath: (path) => { previewDetectedPath = path; },
+    onPreviewDetected: handlePreviewClipDetected,
+    onAutoNext: handleAutoNext,
+    flushStatistics: flushPlaySession,
+    startStatisticsSession,
+  });
+
+  onlinePlaybackFailureController = createOnlinePlaybackFailureController({
+    playbackApi: {
+      stopAudio: () => playbackApi.stopAudio(),
+      setVolume: (nextVolume) => playbackApi.setVolume(nextVolume),
+    },
+    playbackStore,
+    settingsStore,
+    getCurrentSong: () => currentSong.value,
+    setIsPlaying: (playing) => { isPlaying.value = playing; },
+    setIsSongLoaded: (loaded) => { isSongLoaded.value = loaded; },
+    stopPlaybackRuntime,
+    showToast: (message, type) => showToast(message, type as 'success' | 'error' | 'info' | undefined),
+    handleAutoNext,
+    playSong,
+    getPlayRequestId: () => playRequestId,
+    isShareLinkPlaybackActive: () => shareLinkPlaybackActive,
+  });
+
+  // 在线音频流播放中途下载失败：后端通常表现为自然播完，这里显式接管换源。
+  listen<{url: string; reason?: string}>('online-stream-failed', async (event) => {
+    const ctx = onlineStreamFailureCtx;
+    if (!ctx || !currentSong.value || !isPlaying.value) return;
+    if (currentSong.value.path !== ctx.song.path) return;
+    const failUrl = String(event.payload.url || '');
+    if (failUrl !== ctx.url && sanitizeMediaUrl(failUrl) !== sanitizeMediaUrl(ctx.url)) return;
+    onlineStreamFailureCtx = null;
+    console.warn(`[Audio] 在线音频流播放中断，尝试自动换源: ${event.payload.reason || '未知原因'}`);
+    await handleOnlinePlaybackFailure(ctx.song, ctx.options, ctx.requestId, false);
+  }).catch(() => {});
+
+  const pauseSong = async () => {
+    playbackStatisticsController.pauseSession();
     flushPlaySession();
 
     if (!isSongLoaded.value) {
@@ -1714,11 +1096,7 @@ const dlnaCast = useDlnaCastStore();
 
     if (wasPlaying) {
       // === 暂停分支 ===
-      if (sessionStartTime) {
-        accumulatedTime += (Date.now() - sessionStartTime) / 1000;
-        sessionStartTime = null;
-      }
-
+      playbackStatisticsController.pauseSession();
       flushPlaySession();
 
       if (!isSongLoaded.value) {
@@ -1756,11 +1134,12 @@ const dlnaCast = useDlnaCastStore();
 
     if (fadeEnabled) {
       const targetVol = playbackStore.volume / 100;
-      const startVol = currentBackendVolume < targetVol - 0.01
-        ? currentBackendVolume
+      const currentVolume = getCurrentBackendVolume();
+      const startVol = currentVolume < targetVol - 0.01
+        ? currentVolume
         : 0;
       if (startVol === 0) {
-        currentBackendVolume = 0;
+        setCurrentBackendVolume(0);
         try { await playbackApi.setVolume(0); } catch {}
       }
       if (myToken !== togglePlayToken) return;
@@ -1778,10 +1157,7 @@ const dlnaCast = useDlnaCastStore();
   const seekTo = async (newTime: number) => {
     if (!currentSong.value) return;
 
-    if (isPlaying.value && sessionStartTime) {
-      accumulatedTime += (Date.now() - sessionStartTime) / 1000;
-      sessionStartTime = Date.now();
-    }
+    playbackStatisticsController.accumulateForSeek();
 
     isSeeking = true;
     stopPlaybackRuntime();
@@ -1859,32 +1235,20 @@ const dlnaCast = useDlnaCastStore();
   };
 
   const dispose = () => {
+    playbackRuntimeController.dispose();
+    playbackVolumeController.dispose();
+    playbackStatisticsController.dispose();
+    onlinePlaybackFailureController.reset();
     stopPlaybackRuntime();
     cancelFade();
     clearVolumeRestoreTimer();
     clearManagedShortTimers();
-    progressUnlisten = null;
-    progressListeningActive = false;
-    deviceStatusUnlisten?.();
-    deviceStatusUnlisten = null;
-    volumeValidityWatcher?.();
-    volumeValidityWatcher = null;
-    currentBackendVolume = playbackStore.volume / 100;
+    onlineStreamFailureCtx = null;
     togglePlayToken += 1;
     playRequestId += 1;
     cancelledPlayRequestId = -1;
-    lastHandledOnlineFailure = null;
-    recentOnlineFailurePaths.clear();
-    knownFailedPluginPrefixes.clear();
     latestSeekRequestId += 1;
-    playbackAnchorTime = 0;
-    playbackStartOffset = 0;
-    sessionStartTime = null;
-    accumulatedTime = 0;
-    currentPlayCountRecorded = false;
     isSeeking = false;
-    lastRawProgress = -1;
-    stalledProgressTicks = 0;
     stopPowerModeWatcher();
   };
 
