@@ -1,4 +1,4 @@
-import type { createPlayerFileManager } from '../playback/playerFileManager';
+import type { createPlayerLibraryFileFacade } from '../playback/playerLibraryFileFacade';
 import type { FolderNode, Song } from '../../types';
 import type { ScanLibraryOptions } from './libraryScan';
 import type { createLibraryFolderImport } from './libraryFolderImport';
@@ -8,7 +8,7 @@ import type { LibraryRefreshSummary } from './libraryRefreshSummary';
 import { useStatisticsStore } from '../statistics/store';
 
 interface CreateLibraryCoreActionsDeps {
-  playerFileManager: ReturnType<typeof createPlayerFileManager>;
+  libraryFileFacade: ReturnType<typeof createPlayerLibraryFileFacade>;
   libraryFolderTree: ReturnType<typeof createLibraryFolderTree>;
   libraryFolderImport: ReturnType<typeof createLibraryFolderImport>;
   libraryRuntime: ReturnType<typeof createLibraryRuntime>;
@@ -17,7 +17,7 @@ interface CreateLibraryCoreActionsDeps {
 }
 
 export const createLibraryCoreActions = ({
-  playerFileManager,
+  libraryFileFacade,
   libraryFolderTree,
   libraryFolderImport,
   libraryRuntime,
@@ -25,10 +25,10 @@ export const createLibraryCoreActions = ({
   refreshLibraryAndCollectSummary,
 }: CreateLibraryCoreActionsDeps) => {
   const deleteFolder = (path: string) =>
-    playerFileManager.deleteFolder(path);
+    libraryFileFacade.deleteFolder(path);
 
   const moveFilePhysical = (sourcePath: string, targetFolderPath: string) =>
-    playerFileManager.moveFilePhysical(sourcePath, targetFolderPath);
+    libraryFileFacade.moveFilePhysical(sourcePath, targetFolderPath);
 
   const scanLibrary = (options: ScanLibraryOptions = {}) =>
     libraryRuntime.scanLibrary(options);
@@ -52,10 +52,10 @@ export const createLibraryCoreActions = ({
     libraryFolderImport.getSongsInFolder(folderPath);
 
   const moveFilesToFolder = (paths: string[], targetFolder: string) =>
-    playerFileManager.moveFilesToFolder(paths, targetFolder);
+    libraryFileFacade.moveFilesToFolder(paths, targetFolder);
 
   const refreshFolder = async (folderPath: string) => {
-    const summary = await playerFileManager.refreshFolder(folderPath);
+    const summary = await libraryFileFacade.refreshFolder(folderPath);
     if (summary && typeof summary === 'object' && 'hasChanges' in summary && !summary.hasChanges) {
       return summary;
     }
@@ -66,7 +66,7 @@ export const createLibraryCoreActions = ({
   };
 
   const removeFolder = (folderPath: string) => {
-    playerFileManager.removeFolder(folderPath);
+    libraryFileFacade.removeFolder(folderPath);
   };
 
   const clearLocalMusic = () => {
@@ -77,16 +77,16 @@ export const createLibraryCoreActions = ({
     libraryFolderImport.addFolder();
 
   const generateOrganizedPath = (song: Song): string =>
-    playerFileManager.generateOrganizedPath(song);
+    libraryFileFacade.generateOrganizedPath(song);
 
   const moveFile = (song: Song, newPath: string) =>
-    playerFileManager.moveFile(song, newPath);
+    libraryFileFacade.moveFile(song, newPath);
 
   const openInFinder = (path: string) =>
-    playerFileManager.openInFinder(path);
+    libraryFileFacade.openInFinder(path);
 
   const deleteFromDisk = (song: Song) =>
-    playerFileManager.deleteFromDisk(song);
+    libraryFileFacade.deleteFromDisk(song);
 
   const refreshAllFolders = () =>
     refreshLibraryAndCollectSummary({

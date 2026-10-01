@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia';
 import { useLyrics } from '../../composables/lyrics';
 import { useToast } from '../../composables/toast';
 import { createPlayerFileManager } from './playerFileManager';
+import { createPlayerLibraryFileFacade } from './playerLibraryFileFacade';
 import { createLibraryFolderImport } from '../library/libraryFolderImport';
 import { createLibraryFolderTree } from '../library/libraryFolderTree';
 import { createLibraryBatch } from '../library/libraryBatch';
@@ -189,6 +190,7 @@ function createPlayerCore() {
     removeFromHistory: (songPaths: string[]) => collectionsActions.removeFromHistory(songPaths),
     showToast,
   });
+  const libraryFileFacade = createPlayerLibraryFileFacade({ playerFileManager });
 
   const {
     fetchLibraryFolders,
@@ -253,7 +255,7 @@ function createPlayerCore() {
   });
 
   libraryCoreActions = createLibraryCoreActions({
-    playerFileManager,
+    libraryFileFacade,
     libraryFolderTree,
     libraryFolderImport,
     libraryRuntime,
