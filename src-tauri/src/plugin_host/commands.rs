@@ -1,6 +1,7 @@
 use super::store::CookieEntry;
-use super::{EngineCallResult, EngineLoadResult, PluginEngine};
+use super::{EngineCallResult, EngineLoadResult, PluginEngine, PluginEventEmitter};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tauri::Manager;
 
 pub struct PluginEngineState {
@@ -13,8 +14,14 @@ pub fn init_engine_state(app: &tauri::AppHandle) -> PluginEngineState {
         .app_data_dir()
         .ok()
         .map(|dir| dir.join("plugin_host_store.json"));
+    // LX 插件 updateAlert 自报更新 → 经 Tauri 事件推给前端弹窗展示
+    let app_handle = app.clone();
+    let emitter: PluginEventEmitter = Arc::new(move |event, payload| {
+        use tauri::Emitter;
+        let _ = app_handle.emit(event, payload);
+    });
     PluginEngineState {
-        engine: PluginEngine::new(store_path),
+        engine: PluginEngine::with_emitter(store_path, Some(emitter)),
     }
 }
 

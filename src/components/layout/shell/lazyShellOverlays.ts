@@ -18,5 +18,6 @@ export const LazyShareLinkDialog = defineAsyncComponent(() => import('../../comm
 export const LazySongInfoModal = defineAsyncComponent(() => import('../../overlays/SongInfoModal.vue'));
 export const LazyDownloadDialog = defineAsyncComponent(() => import('../../overlays/DownloadDialog.vue'));
 export const LazyAnnouncementModal = defineAsyncComponent(() => import('../../overlays/AnnouncementModal.vue'));
+export const LazyLxUpdateAlertModal = defineAsyncComponent(() => import('../../overlays/LxUpdateAlertModal.vue'));
 export const LazyUpdateModal = defineAsyncComponent(() => import('../../overlays/UpdateModal.vue'));
 export const LazyCustomSkinModal = defineAsyncComponent(() => import('../../settings/CustomSkinModal.vue'));

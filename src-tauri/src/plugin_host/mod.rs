@@ -74,10 +74,18 @@ pub struct PluginInstance {
     call_lock: AsyncMutex<()>,
 }
 
+/// 插件运行时事件出口（如 LX 插件 updateAlert 自报更新）。
+/// 生产环境由 AppHandle::emit 实现，测试可注入捕获闭包。
+pub type PluginEventEmitter = Arc<dyn Fn(&'static str, serde_json::Value) + Send + Sync>;
+
+/// 前端监听的 LX 插件更新事件名。
+pub const PLUGIN_LX_UPDATE_ALERT_EVENT: &str = "plugin-lx-update-alert";
+
 pub struct PluginEngine {
     http: Arc<HttpBridge>,
     store: Arc<PluginStore>,
     instances: AsyncMutex<HashMap<String, Arc<PluginInstance>>>,
+    emitter: Option<PluginEventEmitter>,
 }
 
 fn now_ms() -> i64 {
@@ -187,6 +195,7 @@ fn register_bridges<'js>(
     store: &Arc<PluginStore>,
     logs: &Arc<StdMutex<Vec<EngineLog>>>,
     current_call: &Arc<AtomicU64>,
+    update_alert: &Option<(String, PluginEventEmitter)>,
 ) -> rquickjs::Result<()> {
     let globals = ctx.globals();
 
@@ -439,6 +448,30 @@ fn register_bridges<'js>(
         globals.set("__xyNativeStorageRemove", f)?;
     }
 
+    // ---- __xyNativeUpdateAlert(json) 同步（LX 插件自报更新出口）----
+    // shim 已完成 LX 语义校验（log 必填/截断、updateUrl 格式），此处打包 pluginId
+    // 并经 emitter 推给宿主前端展示更新提示；未配置 emitter 时静默忽略。
+    {
+        let update_alert = update_alert.clone();
+        let f = Function::new(
+            ctx.clone(),
+            move |json: String| -> rquickjs::Result<()> {
+                if let Some((plugin_id, emitter)) = &update_alert {
+                    let value: serde_json::Value =
+                        serde_json::from_str(&json).unwrap_or(serde_json::Value::Null);
+                    let payload = serde_json::json!({
+                        "pluginId": plugin_id,
+                        "log": value.get("log").and_then(|x| x.as_str()).unwrap_or(""),
+                        "updateUrl": value.get("updateUrl").and_then(|x| x.as_str()),
+                    });
+                    emitter(PLUGIN_LX_UPDATE_ALERT_EVENT, payload);
+                }
+                Ok(())
+            },
+        )?;
+        globals.set("__xyNativeUpdateAlert", f)?;
+    }
+
     Ok(())
 }
 
@@ -514,12 +547,20 @@ fn chain_result_serialization<'js>(
 
 impl PluginEngine {
     pub fn new(store_path: Option<std::path::PathBuf>) -> Self {
+        Self::with_emitter(store_path, None)
+    }
+
+    pub fn with_emitter(
+        store_path: Option<std::path::PathBuf>,
+        emitter: Option<PluginEventEmitter>,
+    ) -> Self {
         let store = Arc::new(PluginStore::load(store_path));
         let http = Arc::new(HttpBridge::new(store.clone()));
         Self {
             http,
             store,
             instances: AsyncMutex::new(HashMap::new()),
+            emitter,
         }
     }
 
@@ -559,15 +600,20 @@ impl PluginEngine {
 
     async fn setup_context(
         &self,
+        plugin_id: &str,
         ctx: &AsyncContext,
         logs: &Arc<StdMutex<Vec<EngineLog>>>,
         current_call: &Arc<AtomicU64>,
     ) -> Result<(), String> {
         let http = self.http.clone();
         let store = self.store.clone();
+        let update_alert = self
+            .emitter
+            .as_ref()
+            .map(|e| (plugin_id.to_string(), e.clone()));
         ctx.async_with(async |ctx| {
             let inner: rquickjs::Result<()> = (|| {
-                register_bridges(&ctx, &http, &store, logs, current_call)?;
+                register_bridges(&ctx, &http, &store, logs, current_call, &update_alert)?;
                 ctx.eval::<(), _>(HOST_SHIM_JS)?;
                 ctx.eval::<(), _>(PACKAGES_BUNDLE_JS)?;
                 let globals = ctx.globals();
@@ -603,7 +649,7 @@ impl PluginEngine {
         let script_owned = script.to_string();
         let user_vars_owned = user_vars_json.to_string();
 
-        let setup_result = self.setup_context(&ctx, &logs, &current_call).await;
+        let setup_result = self.setup_context(plugin_id, &ctx, &logs, &current_call).await;
         let load_json: Result<String, String> = match setup_result {
             Err(e) => Err(e),
             Ok(()) => {
@@ -711,7 +757,7 @@ impl PluginEngine {
         let script_owned = script.to_string();
         let script_info_owned = script_info_json.to_string();
 
-        let setup_result = self.setup_context(&ctx, &logs, &current_call).await;
+        let setup_result = self.setup_context(plugin_id, &ctx, &logs, &current_call).await;
         let load_json: Result<String, String> = match setup_result {
             Err(e) => Err(e),
             Ok(()) => {
@@ -775,6 +821,10 @@ impl PluginEngine {
                 .get("initInfo")
                 .cloned()
                 .unwrap_or(serde_json::Value::Null);
+            // LX 脚本常在 init 中自调 checkUpdate()（异步 HTTP），其响应往往在
+            // send(inited) 之后才到达；届时 load 已返回、无人驱动 executor，
+            // 需后台驱动至挂起任务落定（上限 20s，防止脚本请求悬挂拖住运行时）。
+            let rt_handle = runtime.clone();
             let instance = Arc::new(PluginInstance {
                 id: plugin_id.to_string(),
                 kind: PluginKind::Lx,
@@ -791,6 +841,9 @@ impl PluginEngine {
                 .lock()
                 .await
                 .insert(plugin_id.to_string(), instance);
+            tokio::spawn(async move {
+                let _ = tokio::time::timeout(Duration::from_secs(20), rt_handle.idle()).await;
+            });
             EngineLoadResult {
                 ok: true,
                 error: None,
@@ -1086,6 +1139,88 @@ mod tests {
             started.elapsed().as_millis()
         );
         assert!(result.ok, "lx load failed: {:?}", result.error);
+    }
+
+    #[tokio::test]
+    async fn lx_update_alert_sync_before_inited() {
+        let script = r#"
+            (async () => {
+                lx.on('request', async () => null);
+                lx.send(lx.EVENT_NAMES.updateAlert, {
+                    log: '修复若干问题',
+                    updateUrl: 'https://example.com/script.js',
+                }).catch(() => {});
+                await lx.send(lx.EVENT_NAMES.inited, { sources: {} });
+            })();
+        "#;
+        let captured: Arc<StdMutex<Vec<(String, serde_json::Value)>>> =
+            Arc::new(StdMutex::new(Vec::new()));
+        let sink = captured.clone();
+        let emitter: PluginEventEmitter = Arc::new(move |event, payload| {
+            sink.lock().unwrap().push((event.to_string(), payload));
+        });
+        let engine = PluginEngine::with_emitter(None, Some(emitter));
+        let result = engine
+            .load_lx(
+                "test-lx-alert",
+                script,
+                r#"{"name":"test-lx-alert","version":"1.0.0","author":"t"}"#,
+            )
+            .await;
+        assert!(result.ok, "lx load failed: {:?}", result.error);
+
+        let events = captured.lock().unwrap();
+        assert_eq!(
+            events.len(),
+            1,
+            "expected exactly one updateAlert: {:?}",
+            *events
+        );
+        assert_eq!(events[0].0, PLUGIN_LX_UPDATE_ALERT_EVENT);
+        assert_eq!(events[0].1["pluginId"], "test-lx-alert");
+        assert_eq!(events[0].1["log"], "修复若干问题");
+        assert_eq!(events[0].1["updateUrl"], "https://example.com/script.js");
+    }
+
+    #[tokio::test]
+    async fn lx_update_alert_async_after_load_is_driven() {
+        let script = r#"
+            (async () => {
+                lx.on('request', async () => null);
+                await lx.send(lx.EVENT_NAMES.inited, { sources: {} });
+                setTimeout(() => {
+                    lx.send(lx.EVENT_NAMES.updateAlert, { log: '异步更新提醒' }).catch(() => {});
+                }, 30);
+            })();
+        "#;
+        let captured: Arc<StdMutex<Vec<(String, serde_json::Value)>>> =
+            Arc::new(StdMutex::new(Vec::new()));
+        let sink = captured.clone();
+        let emitter: PluginEventEmitter = Arc::new(move |event, payload| {
+            sink.lock().unwrap().push((event.to_string(), payload));
+        });
+        let engine = PluginEngine::with_emitter(None, Some(emitter));
+        let result = engine
+            .load_lx(
+                "test-lx-alert-async",
+                script,
+                r#"{"name":"test-lx-alert-async","version":"1.0.0","author":"t"}"#,
+            )
+            .await;
+        assert!(result.ok, "lx load failed: {:?}", result.error);
+
+        // load 返回后 executor 无人驱动，依赖 load_lx spawn 的后台 settle 驱动
+        tokio::time::sleep(Duration::from_millis(2000)).await;
+        let events = captured.lock().unwrap();
+        assert_eq!(
+            events.len(),
+            1,
+            "expected settle-driven updateAlert: {:?}",
+            *events
+        );
+        assert_eq!(events[0].1["pluginId"], "test-lx-alert-async");
+        assert_eq!(events[0].1["log"], "异步更新提醒");
+        assert!(events[0].1["updateUrl"].is_null());
     }
 
     #[tokio::test]
