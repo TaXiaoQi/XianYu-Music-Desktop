@@ -4,23 +4,16 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
-import { checkDownloadExists, type DownloadRecord } from '../../services/domain/downloadHistory';
-import { downloadApi } from '../../services/tauri/downloadApi';
 import { useSettings } from '../../features/settings/useSettings';
 
 import { usePluginHostStore } from '../../features/pluginHost/store';
-import { useDownloadStore } from '../../features/download/store';
-import { downloadToLocal } from '../../composables/useDownloadToLocal';
-import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useRenderingPower } from '../../composables/renderingPower';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
-import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
-import { MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
+import type { QualityKey, RemoteDownloadProgress } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
   readStoredProgressHidden
@@ -31,7 +24,6 @@ import {
   getAudioExtLabel,
   localQualityLabel,
   qualityAbbr,
-  resolveEffectiveDownloadQuality,
 } from './footer/footerQuality';
 import { useFooterProgressDrag } from './footer/useFooterProgressDrag';
 import { useFooterVolumeDrag } from './footer/useFooterVolumeDrag';
@@ -40,6 +32,7 @@ import { useFooterIdleAutohide } from './footer/useFooterIdleAutohide';
 import { useFooterQualityProbe } from './footer/useFooterQualityProbe';
 import { useFooterShare } from './footer/useFooterShare';
 import { useFooterMv } from './footer/useFooterMv';
+import { useFooterDownload } from './footer/useFooterDownload';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -69,7 +62,6 @@ const handleOpenDetail = () => {
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
 const { settings, footerLayout } = useSettings();
 const { isMainWindowLowPower } = useRenderingPower();
-const downloadStore = useDownloadStore();
 
 // --- 底部栏容器化布局 ---
 import {
@@ -91,21 +83,9 @@ const middleRightItem = computed(() => normalizedLayout.value.middleRight && !no
 const rightItems = computed(() => normalizedLayout.value.right.filter(key => !normalizedLayout.value.hidden.includes(key) && isFooterItemVisible(key)));
 const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value).filter(isFooterItemVisible));
 
-// --- 下载功能 ---
-const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
+const { showToast } = useToast();
 
-const downloadedRecord = ref<DownloadRecord | null>(null);
-const showRedownloadConfirm = ref(false);
-const showMvDownloadQualityModal = ref(false);
-const isDownloading = computed(() => {
-  if (!downloadStore.isDownloading) return false;
-  const song = currentSong.value;
-  if (!song) return false;
-  const songPath = song.cue_source_path || song.path;
-  return downloadStore.downloadingSongPath === songPath;
-});
-let downloadCheckId = 0;
-
+// --- 音质探测（下载菜单与音质菜单共用）---
 const {
   footerAvailableQualityKeys,
   footerQualityUrls,
@@ -119,190 +99,39 @@ const {
   getCurrentPlayingQuality: () => currentPlayingQuality.value,
 });
 
-const refreshDownloadedState = async () => {
-  const requestId = ++downloadCheckId;
-  const song = currentSong.value;
-  const songPath = song?.cue_source_path || song?.path || '';
-
-  if (!isOnlineSong.value || !songPath) {
-    downloadedRecord.value = null;
-    return;
-  }
-
-  const record = await checkDownloadExists(songPath);
-  if (requestId !== downloadCheckId) return;
-  downloadedRecord.value = record;
-};
-
-watch(
-  () => currentSong.value?.cue_source_path || currentSong.value?.path,
-  () => {
-    resetQualityInfo();
-    void refreshDownloadedState();
-  },
-  { immediate: true },
-);
-
-watch(
-  () => downloadStore.isDownloading,
-  (downloading, wasDownloading) => {
-    if (wasDownloading && !downloading) {
-      void refreshDownloadedState();
-    }
-  },
-);
-
-const showDownloadQualityMenu = ref(false);
-const downloadQualityButtonRef = ref<HTMLElement | null>(null);
-const downloadQualityMenuRef = ref<HTMLElement | null>(null);
-
-const DOWNLOAD_QUALITY_OPTIONS = computed(() => {
-  if (footerAvailableQualityKeys.value !== null) {
-    return ALL_QUALITY_OPTIONS.filter(opt => footerAvailableQualityKeys.value!.includes(opt.value));
-  }
-  return [];
+// --- 下载功能 ---
+const {
+  isOnlineSong,
+  downloadedRecord,
+  showRedownloadConfirm,
+  showMvDownloadQualityModal,
+  isMvVideoDownloading,
+  isDownloading,
+  showDownloadQualityMenu,
+  downloadQualityButtonRef,
+  downloadQualityMenuRef,
+  DOWNLOAD_QUALITY_OPTIONS,
+  selectedDownloadQuality,
+  activeDownloadQualityKey,
+  handleDownloadClick,
+  mvDownloadQualityOptions,
+  mvDownloadDefaultQuality,
+  downloadMvWithQuality,
+  handleConfirmRedownload,
+  startDownload,
+  downloadButtonTitle,
+  redownloadContent,
+} = useFooterDownload({
+  currentSong,
+  getDownloadSettings: () => settings.value.download,
+  getCurrentPlayingQuality: () => currentPlayingQuality.value,
+  footerAvailableQualityKeys,
+  ensureFooterQualityInfo,
+  resetQualityInfo,
+  closeQualityMenu: () => { showQualityMenu.value = false; },
+  getMvActive: () => mvActive.value,
+  showToast,
 });
-
-const selectedDownloadQuality = computed<DownloadQuality>(
-  () => resolveEffectiveDownloadQuality(
-    (settings.value.download.quality as DownloadQuality) ?? '320k',
-    footerAvailableQualityKeys.value,
-    settings.value.download.qualityFallbackBehavior,
-  ),
-);
-
-const activeDownloadQualityKey = computed<DownloadQuality>(() => {
-  const playingQuality = currentPlayingQuality.value;
-  if (
-    playingQuality
-    && (
-      footerAvailableQualityKeys.value === null
-      || footerAvailableQualityKeys.value.includes(playingQuality)
-    )
-  ) {
-    return playingQuality;
-  }
-  return selectedDownloadQuality.value;
-});
-
-const { openDownloadDialog } = useDownloadDialog();
-
-const openDownloadByBehavior = () => {
-  if (!currentSong.value) return;
-  showQualityMenu.value = false;
-  if ((settings.value.download.behavior ?? 'default') === 'ask') {
-    showDownloadQualityMenu.value = false;
-    openDownloadDialog(currentSong.value, activeDownloadQualityKey.value);
-    return;
-  }
-  showDownloadQualityMenu.value = !showDownloadQualityMenu.value;
-  if (showDownloadQualityMenu.value) {
-    void ensureFooterQualityInfo();
-  }
-};
-
-const handleDownloadClick = () => {
-  if (mvActive.value) {
-    if (isMvVideoDownloading.value) return;
-    showDownloadQualityMenu.value = false;
-    showQualityMenu.value = false;
-    showMvDownloadQualityModal.value = true;
-    return;
-  }
-  if (!isOnlineSong.value || isDownloading.value) return;
-  if (!currentSong.value) return;
-  if (downloadedRecord.value) {
-    showRedownloadConfirm.value = true;
-    return;
-  }
-  openDownloadByBehavior();
-};
-
-const mvDownloadQualityOptions = computed<Array<{ key: string; label: string }>>(() => {
-  const available = videoBackground.availableQualities.value;
-  if (available.length) {
-    return available.map(quality => ({ key: quality.key, label: quality.label || quality.key }));
-  }
-  return MV_QUALITY_KEYS.map(key => ({ key, label: MV_QUALITY_META[key].label }));
-});
-
-const mvDownloadDefaultQuality = computed(() => {
-  const configured = settings.value.download.mvDefaultQuality;
-  const keys = mvDownloadQualityOptions.value.map(option => option.key);
-  if (configured && keys.includes(configured)) return configured;
-  return keys.includes(videoBackground.activeQuality.value)
-    ? videoBackground.activeQuality.value
-    : keys[keys.length - 1] ?? '720P';
-});
-
-const downloadMvWithQuality = async (qualityKey: string) => {
-  showMvDownloadQualityModal.value = false;
-  const song = currentSong.value;
-  if (!song) return;
-  const downloadDir = settings.value.download.downloadPath;
-  if (!downloadDir) {
-    showToast('请先在设置 - 下载中选择下载目录', 'error');
-    return;
-  }
-
-  const sanitize = (text: string) => text.replace(/[\\/:*?"<>|]/g, ' ').trim();
-  const title = sanitize(song.title || song.name || 'video');
-  const artist = sanitize(song.artist || '');
-  const fileName = `${title}${artist ? ` - ${artist}` : ''} (${qualityKey}).mp4`;
-
-  isMvVideoDownloading.value = true;
-  try {
-    const source = await videoBackground.resolveDownloadSource(song, qualityKey);
-    const destPath = await downloadApi.resolveDownloadPath(fileName, false);
-    const idx = Math.max(destPath.lastIndexOf('\\'), destPath.lastIndexOf('/'));
-    const destFileName = idx === -1 ? fileName : destPath.slice(idx + 1);
-    const candidates = [source.url, ...(source.backupUrls || [])];
-    let savedPath = '';
-    let lastError: unknown = null;
-    for (const candidate of candidates) {
-      try {
-        savedPath = await downloadApi.downloadOnlineSong(candidate, destFileName, null, source.headers || null);
-        if (savedPath) break;
-      } catch (downloadError) {
-        lastError = downloadError;
-      }
-    }
-    if (!savedPath) throw (lastError instanceof Error ? lastError : new Error('下载失败'));
-    showToast(`MV 已下载：${fileName}`, 'success');
-  } catch (e: any) {
-    console.warn('[MV] 视频下载失败:', e?.message || e);
-    showToast(e?.message || 'MV 下载失败', 'error');
-  } finally {
-    isMvVideoDownloading.value = false;
-  }
-};
-
-const handleConfirmRedownload = () => {
-  if (!currentSong.value) return;
-  openDownloadByBehavior();
-};
-
-const startDownload = async (qualityKey: DownloadQuality) => {
-  showDownloadQualityMenu.value = false;
-  if (!currentSong.value) return;
-  await downloadToLocal(currentSong.value, { quality: qualityKey });
-};
-
-const downloadButtonTitle = computed(() => {
-  if (mvActive.value) return isMvVideoDownloading.value ? 'MV 视频下载中…' : '下载 MV 视频';
-  if (!isOnlineSong.value) return '本地文件';
-  if (isDownloading.value) return '下载中…';
-  if (downloadedRecord.value) return `已下载：${downloadedRecord.value.fileName}（点击重新下载）`;
-  return '下载歌曲';
-});
-
-const redownloadContent = computed(() => {
-  const name = downloadedRecord.value?.fileName || '';
-  return name
-    ? `此歌曲已下载过了（${name}），是否要重新下载？`
-    : '此歌曲已下载过了，是否要重新下载？';
-});
-
 // --- Context Menu State ---
 const showContextMenu = ref(false);
 const contextMenuX = ref(0);
@@ -325,8 +154,6 @@ const wrapToggleComment = () => {
 };
 
 // --- MV 背景视频 ---
-const { showToast } = useToast();
-const isMvVideoDownloading = ref(false);
 const {
   videoBackground,
   mvActive,
