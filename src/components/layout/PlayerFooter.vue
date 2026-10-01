@@ -48,6 +48,7 @@ import {
 import { useFooterProgressDrag } from './footer/useFooterProgressDrag';
 import { useFooterVolumeDrag } from './footer/useFooterVolumeDrag';
 import { useFooterMarquee } from './footer/useFooterMarquee';
+import { useFooterIdleAutohide } from './footer/useFooterIdleAutohide';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -866,86 +867,26 @@ const handleWindowClick = (e: MouseEvent) => {
 };
 
 // --- Idle State for Auto-Hide ---
-const isPinnedFooter = ref(localStorage.getItem('footer_pinned') !== 'false');
-const isPinnedDetail = ref(localStorage.getItem('footer_pinned_detail') === 'true');
-const isPinned = computed(() => showPlayerDetail.value ? isPinnedDetail.value : isPinnedFooter.value);
-
-const isIdleFooter = ref(false);
-const isIdleDetail = ref(false);
-const isIdle = computed(() => showPlayerDetail.value ? isIdleDetail.value : isIdleFooter.value);
-const isMvCollapsed = computed(() =>
-  Boolean(showPlayerDetail.value && mvVideoActive.value && isIdle.value),
-);
-const isMarqueeAnimationPaused = computed(() =>
-  isMarqueePaused.value || isIdle.value || isMainWindowLowPower.value
-);
-let idleTimer: any = null;
-
-const clearIdle = () => {
-  if (showPlayerDetail.value) {
-    isIdleDetail.value = false;
-  } else {
-    isIdleFooter.value = false;
-  }
-};
-
-const togglePin = () => {
-  if (showPlayerDetail.value) {
-    isPinnedDetail.value = !isPinnedDetail.value;
-    localStorage.setItem('footer_pinned_detail', isPinnedDetail.value.toString());
-    if (!isPinnedDetail.value) {
-      startIdleTimer();
-    } else {
-      isIdleDetail.value = false;
-      if (idleTimer) clearTimeout(idleTimer);
-    }
-  } else {
-    isPinnedFooter.value = !isPinnedFooter.value;
-    localStorage.setItem('footer_pinned', isPinnedFooter.value.toString());
-    if (!isPinnedFooter.value) {
-      startIdleTimer();
-    } else {
-      isIdleFooter.value = false;
-      if (idleTimer) clearTimeout(idleTimer);
-    }
-  }
-};
-
-const startIdleTimer = () => {
-  if (idleTimer) clearTimeout(idleTimer);
-  if (showContextMenu.value || isDraggingProgress.value || isDraggingVolume.value || showVolumeSlider.value || isPinned.value) return;
-
-  idleTimer = setTimeout(() => {
-    if (showPlayerDetail.value) {
-      isIdleDetail.value = true;
-    } else {
-      isIdleFooter.value = true;
-    }
-  }, 2000);
-};
-
-const isPointerOverFooter = ref(false);
-
-const handleFooterMouseEnter = () => {
-  isPointerOverFooter.value = true;
-  clearIdle();
-  if (idleTimer) clearTimeout(idleTimer);
-};
-
-const handleFooterMouseMove = () => {
-  if (isIdle.value) clearIdle();
-  if (idleTimer) clearTimeout(idleTimer);
-};
-
-const handleFooterMouseLeave = () => {
-  isPointerOverFooter.value = false;
-  startIdleTimer();
-};
-
-watch(showPlayerDetail, () => {
-  clearIdle();
-  if (idleTimer) clearTimeout(idleTimer);
-  startIdleTimer();
+const {
+  isPinned,
+  isIdle,
+  isMvCollapsed,
+  isMarqueeAnimationPaused,
+  clearIdle,
+  togglePin,
+  startIdleTimer,
+  isPointerOverFooter,
+  handleFooterMouseEnter,
+  handleFooterMouseMove,
+  handleFooterMouseLeave,
+  disposeIdle,
+} = useFooterIdleAutohide({
+  isShowingDetail: showPlayerDetail,
+  isMvVideoActive: mvVideoActive,
+  isLowPower: isMainWindowLowPower,
+  isMarqueePaused,
+  isExternallyBusy: () =>
+    showContextMenu.value || isDraggingProgress.value || isDraggingVolume.value || showVolumeSlider.value,
 });
 
 // --- 向 FooterControlItem 共享上下文 ---
@@ -1040,7 +981,7 @@ onUnmounted(() => {
   window.removeEventListener('click', handleWindowClick);
   window.removeEventListener('resize', checkMarquee);
   disposeMarquee();
-  if (idleTimer) clearTimeout(idleTimer);
+  disposeIdle();
   abortFooterQualityInfoProbe();
   unlistenRemoteDownload?.();
   unlistenRemoteDownload = null;
