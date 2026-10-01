@@ -1041,6 +1041,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn load_lx_with_pending_init_request() {
+        // 复现真实音源脚本（EM音源）的初始化形态：init 阶段先 fire-and-forget 发一次
+        // 网络请求，随后不 await 地 send(inited)。此时 __xySetupLx 返回后，运行时上
+        // 仍挂着一个未完成的异步任务。
+        let script = r#"
+            lx.on(lx.EVENT_NAMES.request, async () => 'ok');
+            lx.request('https://example.invalid/check', { method: 'GET' }, function () {});
+            lx.send(lx.EVENT_NAMES.inited, {
+                sources: {
+                    test: { name: '测试', type: 'music', actions: ['musicUrl'], qualitys: ['320k'] },
+                },
+            });
+        "#;
+        let engine = engine();
+        let result = engine
+            .load_lx("test-lx-pending", script, r#"{"name":"test-lx-pending"}"#)
+            .await;
+        assert!(result.ok, "lx load failed: {:?}", result.error);
+        assert!(result.metadata.unwrap()["sources"]["test"].is_object());
+    }
+
+    #[tokio::test]
     async fn sync_infinite_loop_killed_by_deadline() {
         let script = r#"
             module.exports = {

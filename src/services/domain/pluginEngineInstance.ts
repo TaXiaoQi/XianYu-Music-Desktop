@@ -28,11 +28,17 @@ import { BakaPluginManager } from './bakaPluginManager';
 
 // ==================== 插件加载（与 MusicFree Plugin.mountPlugin() 完全一致）====================
 
+/** 最近一次插件加载失败的原始原因：供 UI 展示，避免只报「插件加载失败」而无从排查。 */
+let lastPluginLoadError = '';
+
+export const getLastPluginLoadError = (): string => lastPluginLoadError;
+
 export async function loadPluginFromScript(
   script: string,
   uri: string,
   userVarsPluginId?: string,
 ): Promise<import('../../types').PluginSource | null> {
+  lastPluginLoadError = '';
   try {
     const bytes = new TextEncoder().encode(script);
     if (bytes.length > MAX_PLUGIN_SIZE) {
@@ -114,7 +120,8 @@ export async function loadPluginFromScript(
 
     throw new Error('插件沙箱未启用，已拒绝在主线程直接执行插件源码');
   } catch (e: any) {
-    log(`[loadPluginFromScript] 插件加载失败 (uri=${uri}): ${e?.message || e}`);
+    lastPluginLoadError = e?.message ? String(e.message) : String(e);
+    log(`[loadPluginFromScript] 插件加载失败 (uri=${uri}): ${lastPluginLoadError}`);
     return null;
   }
 }

@@ -4,9 +4,8 @@ import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download,
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
-import { ensureNetworkProxyLoaded, isNetworkProxyEnabled } from '../../composables/useNetworkProxy';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/domain/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, getLastPluginLoadError, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
@@ -20,33 +19,25 @@ import type { SyncDeleteScope } from '../overlays/SyncDeleteScopeModal.vue';
 const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
 
 /**
- * 取远程脚本文本。启用网络代理时优先走 Rust——浏览器 fetch 的网络栈不受代理覆盖，
- * 需要代理才能联网的环境下会白等一次失败。未启用代理时维持原有「先 fetch、失败回退 Rust」
- * 的顺序，不改变普通用户的行为。
+ * 取远程脚本文本。
+ *
+ * 优先走 Rust 原生请求：WebView 的 fetch 受同源策略约束，而不少音源站点只在错误响应上
+ * 带 CORS 头（正常的 200 反而不带），浏览器侧必然被拦；原生请求还会带上统一 UA，避免被
+ * 站点按 UA 拦截（移动端同类问题即由「改用带头的原生请求」解决）。启用网络代理时也只有
+ * Rust 的网络栈走代理，浏览器 fetch 不受代理覆盖。
+ * WebView fetch 仅作兜底，留给个别依赖浏览器会话/证书的场景。
  */
 async function fetchRemoteScript(url: string): Promise<string> {
-  let preferRust = false;
   try {
-    await ensureNetworkProxyLoaded();
-    preferRust = isNetworkProxyEnabled();
-  } catch { /* 读不到代理设置就按未启用处理 */ }
-
-  if (preferRust) {
-    try {
-      return await pluginApi.fetchPluginUrl(url);
-    } catch { /* 回退浏览器 fetch */ }
-  }
+    return await pluginApi.fetchPluginUrl(url);
+  } catch { /* 回退浏览器 fetch */ }
 
   try {
     const resp = await fetch(url, { method: 'GET', headers: { 'Accept': '*/*' } });
     if (resp.ok) return await resp.text();
-  } catch { /* ignore, try Tauri backend */ }
+  } catch { /* ignore */ }
 
-  try {
-    return await pluginApi.fetchPluginUrl(url);
-  } catch {
-    return '';
-  }
+  return '';
 }
 const props = withDefaults(defineProps<{
   overlayZClass?: string;
@@ -578,7 +569,8 @@ function compareVer(a: string, b: string): number {
 async function installPluginFromScript(script: string, filePath: string) {
   const source = await loadPluginFromScript(script, filePath);
   if (!source) {
-    showToast('插件加载失败', 'error');
+    const reason = getLastPluginLoadError();
+    showToast(reason ? `插件加载失败: ${reason}` : '插件加载失败', 'error');
     return;
   }
 
