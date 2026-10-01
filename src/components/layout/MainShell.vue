@@ -10,6 +10,7 @@ import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useFeedbackNotification } from '../../composables/useFeedbackNotification';
 import { useNicknameChangeNotification } from '../../composables/useNicknameChangeNotification';
 import { useListenResetNotification } from '../../composables/useListenResetNotification';
+import { useLxUpdateAlert } from '../../composables/useLxUpdateAlert';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
 import { useSettingsStore } from '../../features/settings/store';
@@ -38,6 +39,7 @@ import {
   LazySongInfoModal,
   LazyDownloadDialog,
   LazyUpdateModal,
+  LazyLxUpdateAlertModal,
 } from './shell/lazyShellOverlays';
 
 defineProps<{
@@ -118,6 +120,15 @@ const {
 } = useListenResetNotification();
 
 const {
+  lxUpdateAlertVisible: lxUpdateAlertShown,
+  currentLxUpdateAlert: lxUpdateAlertData,
+  isApplyingLxUpdate,
+  startLxUpdateAlertListener,
+  dismissLxUpdateAlert: dismissLxUpdateAlert,
+  confirmLxUpdateAlert: applyLxUpdate,
+} = useLxUpdateAlert();
+
+const {
   updateVisible: upgradeShown,
   latestUpdate: upgradeInfo,
   closeUpdate: dismissUpgrade,
@@ -174,6 +185,8 @@ onMounted(() => {
   if (!showOnboarding.value) {
     void runBetaAccessGate().then(runStartupChecks);
   }
+
+  void startLxUpdateAlertListener();
 
   const notificationTicker = setInterval(() => {
     pollFeedback(noticeShown.value);
@@ -325,6 +338,15 @@ onMounted(() => {
           @close-feedback="dismissFeedback"
           @close-nickname="dismissNickname"
           @close-listen-reset="dismissListenReset"
+        />
+
+        <LazyLxUpdateAlertModal
+          v-if="!isMiniMode"
+          :visible="lxUpdateAlertShown"
+          :alert="lxUpdateAlertData"
+          :is-updating="isApplyingLxUpdate"
+          @close="dismissLxUpdateAlert"
+          @confirm="applyLxUpdate"
         />
 
         <LazyUpdateModal

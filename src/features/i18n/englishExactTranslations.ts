@@ -1122,6 +1122,10 @@ export const exactEnglishTranslations: Record<string, string> = {
   '当前设备已受限': 'This device is restricted',
   '可更新': 'Update available',
   '立即更新': 'Update now',
+  // LX 音源插件自报更新弹窗（src/components/overlays/LxUpdateAlertModal.vue）
+  '音源插件更新': 'Source plugin update',
+  '自报有新版本可用': 'reports a new version is available',
+  '更新中…': 'Updating…',
   '有新版本可用，建议更新以获取最新功能与修复。': 'A new version is available with the latest features and fixes.',
   '当前版本 v': 'Current version v',
   '发现新版本 v': 'New version v',
