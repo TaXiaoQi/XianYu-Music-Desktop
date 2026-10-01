@@ -5,15 +5,6 @@ import { useLibraryCollections } from '../../features/collections/useLibraryColl
 import { useLyrics } from '../../composables/lyrics';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
-import {
-  ensureSharedQualityProbe,
-  ensureProbeRequestedUrls,
-  onSharedProbeUpdate,
-  sharedProbeAvailable,
-  getSongKey,
-} from '../../services/domain/qualitySharedProbe';
-import { probeSizesForKeys } from '../../services/domain/qualitySizeMeta';
-import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import { checkDownloadExists, type DownloadRecord } from '../../services/domain/downloadHistory';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import { useSettings } from '../../features/settings/useSettings';
@@ -49,6 +40,7 @@ import { useFooterProgressDrag } from './footer/useFooterProgressDrag';
 import { useFooterVolumeDrag } from './footer/useFooterVolumeDrag';
 import { useFooterMarquee } from './footer/useFooterMarquee';
 import { useFooterIdleAutohide } from './footer/useFooterIdleAutohide';
+import { useFooterQualityProbe } from './footer/useFooterQualityProbe';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -115,23 +107,18 @@ const isDownloading = computed(() => {
 });
 let downloadCheckId = 0;
 
-const footerAvailableQualityKeys = ref<QualityKey[] | null>(null);
-const footerQualityUrls = ref<Partial<Record<QualityKey, string>>>({});
-const footerQualitySizes = ref<Partial<Record<QualityKey, number>>>({});
-const isFooterQualityInfoProbing = ref(false);
-const footerQualityInfoSongPath = ref('');
-let footerSharedProbeOff: (() => void) | null = null;
-const footerQualitySizesProbed = new Set<QualityKey>();
-
-const releaseFooterSharedProbe = () => {
-  footerSharedProbeOff?.();
-  footerSharedProbeOff = null;
-};
-
-const abortFooterQualityInfoProbe = () => {
-  releaseFooterSharedProbe();
-  isFooterQualityInfoProbing.value = false;
-};
+const {
+  footerAvailableQualityKeys,
+  footerQualityUrls,
+  footerQualitySizes,
+  isFooterQualityInfoProbing,
+  abortFooterQualityInfoProbe,
+  resetQualityInfo,
+  ensureFooterQualityInfo,
+} = useFooterQualityProbe({
+  getCurrentSong: () => currentSong.value,
+  getCurrentPlayingQuality: () => currentPlayingQuality.value,
+});
 
 const refreshDownloadedState = async () => {
   const requestId = ++downloadCheckId;
@@ -151,12 +138,7 @@ const refreshDownloadedState = async () => {
 watch(
   () => currentSong.value?.cue_source_path || currentSong.value?.path,
   () => {
-    abortFooterQualityInfoProbe();
-    footerQualityInfoSongPath.value = '';
-    footerAvailableQualityKeys.value = null;
-    footerQualityUrls.value = {};
-    footerQualitySizes.value = {};
-    footerQualitySizesProbed.clear();
+    resetQualityInfo();
     void refreshDownloadedState();
   },
   { immediate: true },
@@ -535,92 +517,6 @@ const footerQualityExtraText = (key: string) => {
   // 对齐移动端：探测不到体积就不显示后缀，不展示「未知体积」
   if (isFooterQualityInfoProbing.value) return `${ext} · 探测中`;
   return ext;
-};
-
-const probeFooterQualitySizes = async (
-  song: Song,
-  keys: QualityKey[],
-  urlFor: (q: QualityKey) => string | undefined,
-) => {
-  const targets = keys.filter(k => !footerQualitySizesProbed.has(k));
-  targets.forEach(k => footerQualitySizesProbed.add(k));
-  // 只有真正拿到体积的档位才算探测完成，失败的等直链到位后重试
-  const sized = await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
-    footerQualitySizes.value = { ...footerQualitySizes.value, [q]: bytes };
-  });
-  targets.forEach(k => {
-    if (!sized.has(k)) footerQualitySizesProbed.delete(k);
-  });
-};
-
-const ensureFooterQualityInfo = async () => {
-  const song = currentSong.value;
-  const songPath = song?.cue_source_path || song?.path || '';
-  if (!song || !isDownloadableOnlineSong(song) || !songPath) return;
-  const songKey = getSongKey(song);
-  if (
-    footerQualityInfoSongPath.value === songKey
-    && (isFooterQualityInfoProbing.value || footerAvailableQualityKeys.value !== null)
-  ) {
-    return;
-  }
-
-  releaseFooterSharedProbe();
-  footerQualityInfoSongPath.value = songKey;
-  footerAvailableQualityKeys.value = null;
-  footerQualityUrls.value = {};
-  footerQualitySizes.value = {};
-  footerQualitySizesProbed.clear();
-  isFooterQualityInfoProbing.value = true;
-
-  const isCurrent = () => (currentSong.value ? getSongKey(currentSong.value) === songKey : false);
-
-  let declaredQualities: QualityKey[] | null = null;
-  try {
-    declaredQualities = await getOnlineAvailableQualities(songPath, song);
-  } catch {
-    declaredQualities = null;
-  }
-  if (!isCurrent()) return;
-
-  const probe = await ensureSharedQualityProbe(song, declaredQualities, { full: true });
-  if (!probe || !isCurrent()) {
-    if (isCurrent()) isFooterQualityInfoProbing.value = false;
-    return;
-  }
-
-  const apply = () => {
-    const shown = sharedProbeAvailable(probe);
-    footerAvailableQualityKeys.value = shown;
-    footerQualityUrls.value = { ...probe.resolvedUrls };
-    const urlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
-    void probeFooterQualitySizes(song, shown, urlFor);
-    if (probe.done) {
-      isFooterQualityInfoProbing.value = false;
-      // 主探测已收尾：等补解析与体积探测补齐后再释放订阅，
-      // 避免晚到的直链（主探测失败档位的补解析）没机会补体积
-      void (async () => {
-        try {
-          await ensureProbeRequestedUrls(probe, song, sharedProbeAvailable(probe));
-          const lateUrlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
-          await probeFooterQualitySizes(song, sharedProbeAvailable(probe), lateUrlFor);
-          // 收尾后仍无体积的档位视为假音质，从菜单剔除（保留当前播放档）
-          const keep = currentPlayingQuality.value;
-          footerAvailableQualityKeys.value = sharedProbeAvailable(probe).filter(k =>
-            k === keep
-            || (typeof footerQualitySizes.value[k] === 'number' && footerQualitySizes.value[k]! > 0),
-          );
-        } finally {
-          releaseFooterSharedProbe();
-        }
-      })();
-    } else {
-      void ensureProbeRequestedUrls(probe, song, shown);
-    }
-  };
-
-  footerSharedProbeOff = onSharedProbeUpdate(probe, apply);
-  if (isCurrent()) apply();
 };
 
 watch(
