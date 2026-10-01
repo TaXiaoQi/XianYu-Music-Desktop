@@ -5,7 +5,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, getLastPluginLoadError, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/domain/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, getLastPluginLoadError, log, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
@@ -30,13 +30,19 @@ const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/Sync
 async function fetchRemoteScript(url: string): Promise<string> {
   try {
     return await pluginApi.fetchPluginUrl(url);
-  } catch { /* 回退浏览器 fetch */ }
+  } catch (e: any) {
+    log(`[fetchRemoteScript] 原生请求失败，回退 WebView fetch: ${e?.message || e}`);
+  }
 
   try {
     const resp = await fetch(url, { method: 'GET', headers: { 'Accept': '*/*' } });
     if (resp.ok) return await resp.text();
-  } catch { /* ignore */ }
+    log(`[fetchRemoteScript] WebView fetch 返回 HTTP ${resp.status}`);
+  } catch (e: any) {
+    log(`[fetchRemoteScript] WebView fetch 失败（跨域被拦时即为此项）: ${e?.message || e}`);
+  }
 
+  log(`[fetchRemoteScript] 两种取数方式均失败: ${url}`);
   return '';
 }
 const props = withDefaults(defineProps<{
