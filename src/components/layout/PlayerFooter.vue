@@ -47,6 +47,7 @@ import {
 } from './footer/footerQuality';
 import { useFooterProgressDrag } from './footer/useFooterProgressDrag';
 import { useFooterVolumeDrag } from './footer/useFooterVolumeDrag';
+import { useFooterMarquee } from './footer/useFooterMarquee';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -738,69 +739,21 @@ const remoteDownloadText = computed(() => {
 });
 
 // --- 歌名滚动（marquee）---
-const songTitleWrapperRef = ref<HTMLElement | null>(null);
-const songTitleTextRef = ref<HTMLElement | null>(null);
-const shouldMarquee = ref(false);
-const marqueeDuration = ref(12);
-const isMarqueePaused = ref(false);
-let marqueeResizeObserver: ResizeObserver | null = null;
-let marqueeCheckFrame: number | null = null;
-
-const songTitleText = computed(() => {
-  if (!currentSong.value) return '听我想听的音乐';
-  return currentSong.value.title || currentSong.value.name.replace(/\.[^/.]+$/, "");
+const {
+  songTitleWrapperRef,
+  songTitleTextRef,
+  shouldMarquee,
+  marqueeDuration,
+  isMarqueePaused,
+  songTitleText,
+  checkMarquee,
+  setupMarqueeObserver,
+  disposeMarquee,
+} = useFooterMarquee({
+  currentSong,
+  isShowingDetail: showPlayerDetail,
+  footerLayout,
 });
-
-const checkMarquee = () => {
-  nextTick(() => {
-    if (marqueeCheckFrame !== null) {
-      cancelAnimationFrame(marqueeCheckFrame);
-    }
-
-    marqueeCheckFrame = requestAnimationFrame(() => {
-      marqueeCheckFrame = null;
-      const wrapper = songTitleWrapperRef.value;
-      const span = songTitleTextRef.value;
-      if (!wrapper || !span) {
-        shouldMarquee.value = false;
-        return;
-      }
-
-      const wrapperWidth = wrapper.getBoundingClientRect().width;
-      const textWidth = span.getBoundingClientRect().width;
-      const overflow = textWidth - wrapperWidth;
-      if (overflow > 0) {
-        shouldMarquee.value = true;
-        marqueeDuration.value = Math.max(8, Math.min(30, 6 + overflow / 25));
-      } else {
-        shouldMarquee.value = false;
-        isMarqueePaused.value = false;
-      }
-    });
-  });
-};
-
-const setupMarqueeObserver = () => {
-  marqueeResizeObserver?.disconnect();
-  if (typeof ResizeObserver === 'undefined') {
-    checkMarquee();
-    return;
-  }
-
-  marqueeResizeObserver = new ResizeObserver(() => checkMarquee());
-  if (songTitleWrapperRef.value) {
-    marqueeResizeObserver.observe(songTitleWrapperRef.value);
-  }
-  if (songTitleTextRef.value) {
-    marqueeResizeObserver.observe(songTitleTextRef.value);
-  }
-  checkMarquee();
-};
-
-watch(songTitleText, () => checkMarquee());
-watch(showPlayerDetail, () => checkMarquee());
-watch(footerLayout, () => checkMarquee(), { deep: true });
-watch(currentSong, () => nextTick(() => checkMarquee()), { deep: false });
 
 // --- 音量拖拽逻辑 / 音量滑块显示逻辑 ---
 const {
@@ -1086,12 +1039,7 @@ onUnmounted(() => {
   window.removeEventListener('pointercancel', onGlobalPointerCancel);
   window.removeEventListener('click', handleWindowClick);
   window.removeEventListener('resize', checkMarquee);
-  marqueeResizeObserver?.disconnect();
-  marqueeResizeObserver = null;
-  if (marqueeCheckFrame !== null) {
-    cancelAnimationFrame(marqueeCheckFrame);
-    marqueeCheckFrame = null;
-  }
+  disposeMarquee();
   if (idleTimer) clearTimeout(idleTimer);
   abortFooterQualityInfoProbe();
   unlistenRemoteDownload?.();
