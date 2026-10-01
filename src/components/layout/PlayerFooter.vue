@@ -14,13 +14,12 @@ import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useRenderingPower } from '../../composables/renderingPower';
-import { useBilibiliVideoBackground, supportsMusicVideo, probeMvFor, probeQueueMvs, mvProbeVerdict } from '../../composables/useBilibiliVideoBackground';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
-import type { DownloadQuality, QualityKey, RemoteDownloadProgress, Song } from '../../types';
+import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
 import { MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
@@ -40,6 +39,7 @@ import { useFooterMarquee } from './footer/useFooterMarquee';
 import { useFooterIdleAutohide } from './footer/useFooterIdleAutohide';
 import { useFooterQualityProbe } from './footer/useFooterQualityProbe';
 import { useFooterShare } from './footer/useFooterShare';
+import { useFooterMv } from './footer/useFooterMv';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -325,15 +325,24 @@ const wrapToggleComment = () => {
 };
 
 // --- MV 背景视频 ---
-const videoBackground = useBilibiliVideoBackground();
-const mvActive = videoBackground.requested;
-const mvLoading = videoBackground.loading;
-const mvPhase = videoBackground.phase;
-const mvBufferedSec = videoBackground.bufferedSec;
-const mvVideoActive = videoBackground.active;
-const mvSupport = supportsMusicVideo;
 const { showToast } = useToast();
 const isMvVideoDownloading = ref(false);
+const {
+  videoBackground,
+  mvActive,
+  mvLoading,
+  mvPhase,
+  mvBufferedSec,
+  mvVideoActive,
+  mvSupport,
+  toggleMv,
+} = useFooterMv({
+  currentSong,
+  getPlayQueue: () => playbackStore.playQueue || [],
+  getPlayMode: () => playMode.value,
+  showToast,
+  closeFooterTools: () => { showFooterTools.value = false; },
+});
 
 const playbackStore = usePlaybackStore();
 
@@ -350,49 +359,6 @@ const {
   showToast,
   closeFooterTools: () => { showFooterTools.value = false; },
 });
-
-const toggleMv = async () => {
-  if (!currentSong.value) return;
-  showFooterTools.value = false;
-  try {
-    await videoBackground.toggle(currentSong.value);
-  } catch (e: any) {
-    console.warn('[MV] 切换失败:', e?.message || e);
-    showToast(e?.message || 'MV 打开失败', 'error');
-  }
-};
-
-watch(
-  () => currentSong.value?.path,
-  (path) => {
-    if (!path) {
-      void videoBackground.stop();
-      return;
-    }
-    // 起播/切歌后静默探测当前歌与队列后续 4 首的 MV 可用性
-    // （真实解析结论决定 MV 入口显隐，与移动端一致）。
-    const cur = currentSong.value;
-    if (cur) {
-      void probeMvFor(cur);
-      const q = playbackStore.playQueue || [];
-      const idx = q.findIndex((s: Song) => s.path === cur.path);
-      if (idx >= 0 && q.length > 1 && playMode.value !== 1) {
-        const upcoming: Song[] = [];
-        for (let k = 1; k <= 4; k++) upcoming.push(q[(idx + k) % q.length]);
-        void probeQueueMvs(upcoming);
-      }
-    }
-    if (!videoBackground.requested.value) return;
-    const song = currentSong.value!;
-    // MV 开启中切歌：只有「探测明确无 MV」才停；未探测的交给 start 内部
-    // 解析自行验证，避免探测未完成时误停正在播放的 MV。
-    if (mvProbeVerdict(song) === false) {
-      void videoBackground.stop();
-      return;
-    }
-    videoBackground.start(song).catch(() => {});
-  },
-);
 
 const handleContextMenu = (e: MouseEvent) => {
   if (!currentSong.value) return;
