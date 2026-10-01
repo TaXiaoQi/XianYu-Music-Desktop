@@ -35,7 +35,6 @@ import type { DownloadQuality, QualityKey, RemoteDownloadProgress, Song } from '
 import { MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
-  getProgressVisualState,
   readStoredProgressHidden
 } from './playerFooterProgress';
 import {
@@ -46,7 +45,8 @@ import {
   qualityAbbr,
   resolveEffectiveDownloadQuality,
 } from './footer/footerQuality';
-import { progressTimeFromPointer, volumePercentFromPointer } from './footer/footerDragMath';
+import { useFooterProgressDrag } from './footer/useFooterProgressDrag';
+import { useFooterVolumeDrag } from './footer/useFooterVolumeDrag';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -702,60 +702,28 @@ const toggleProgressVisibility = () => {
 };
 
 // --- 进度条拖拽逻辑 ---
-const isDraggingProgress = ref(false);
-const progressBarRef = ref<HTMLElement | null>(null);
-const dragTime = ref(0);
-
-const displayProgress = computed(() => {
-  if (!currentSong.value || currentSong.value.duration <= 0) return 0;
-  const time = isDraggingProgress.value ? dragTime.value : currentTime.value;
-  return Math.max(0, Math.min(100, (time / currentSong.value.duration) * 100));
+const {
+  isDraggingProgress,
+  progressBarRef,
+  displayProgress,
+  progressFillClass,
+  progressTrackClass,
+  progressThumbClass,
+  progressVisualState,
+  startProgressDrag,
+  stopProgressDrag,
+  updateProgressFromEvent,
+  currentTimeStr,
+  totalTimeStr,
+} = useFooterProgressDrag({
+  getCurrentSong: () => currentSong.value,
+  getCurrentTime: () => currentTime.value,
+  seekTo,
+  formatDuration,
+  isProgressHidden,
+  isShowingDetail: showPlayerDetail,
 });
 
-const progressFillClass = computed(() => 'bg-zinc-300/30');
-
-const progressTrackClass = computed(() => 'bg-transparent');
-
-const progressThumbClass = computed(() => (
-  showPlayerDetail.value
-    ? 'border-white/45 bg-white'
-    : 'border-black/10 dark:border-white/20 bg-white'
-));
-
-const progressVisualState = computed(() => getProgressVisualState(isProgressHidden.value, isDraggingProgress.value));
-
-const startProgressDrag = (e: PointerEvent) => { 
-  if (!currentSong.value || currentSong.value.duration <= 0) return;
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-  e.preventDefault();
-  (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
-  isDraggingProgress.value = true; 
-  updateProgressFromEvent(e); 
-};
-
-const stopProgressDrag = async (commit = true) => { 
-  if (isDraggingProgress.value) { 
-    const targetTime = dragTime.value;
-    isDraggingProgress.value = false; 
-    if (commit) {
-      await seekTo(targetTime);
-    }
-  } 
-};
-
-const updateProgressFromEvent = (e: PointerEvent) => {
-  if (!progressBarRef.value || !currentSong.value || currentSong.value.duration <= 0) return;
-  dragTime.value = progressTimeFromPointer(
-    e.clientX,
-    progressBarRef.value.getBoundingClientRect(),
-    currentSong.value.duration,
-  );
-};
-
-const currentTimeStr = computed(() => {
-  return formatDuration(isDraggingProgress.value ? dragTime.value : currentTime.value);
-});
-const totalTimeStr = computed(() => currentSong.value ? formatDuration(currentSong.value.duration) : '0:00');
 const isCurrentRemoteDownloadActive = computed(() => {
   const progress = remoteDownloadProgress.value;
   return !!progress
@@ -834,23 +802,21 @@ watch(showPlayerDetail, () => checkMarquee());
 watch(footerLayout, () => checkMarquee(), { deep: true });
 watch(currentSong, () => nextTick(() => checkMarquee()), { deep: false });
 
-// --- 音量拖拽逻辑 ---
-const isDraggingVolume = ref(false);
-const volumeBarRef = ref<HTMLElement | null>(null);
-
-const updateVolume = (clientY: number) => {
-  if (!volumeBarRef.value) return;
-  const newVol = volumePercentFromPointer(clientY, volumeBarRef.value.getBoundingClientRect());
-  handleVolume({ target: { value: newVol.toString() } } as any);
-};
-
-const startDrag = (e: PointerEvent) => {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-  e.preventDefault();
-  (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
-  isDraggingVolume.value = true;
-  updateVolume(e.clientY);
-};
+// --- 音量拖拽逻辑 / 音量滑块显示逻辑 ---
+const {
+  isDraggingVolume,
+  volumeBarRef,
+  showVolumeSlider,
+  updateVolume,
+  startDrag,
+  endDrag,
+  handleVolumeEnter,
+  handleVolumeLeave,
+} = useFooterVolumeDrag({
+  setVolume: (volume) => handleVolume({ target: { value: volume.toString() } } as any),
+  onPointerEnter: () => handleFooterMouseEnter(),
+  onResumeIdle: () => startIdleTimer(),
+});
 
 const onGlobalPointerMove = (e: PointerEvent) => {
   if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); }
@@ -862,31 +828,12 @@ const onGlobalPointerMove = (e: PointerEvent) => {
 };
 
 const onGlobalPointerEnd = (commitProgress = true) => {
-  isDraggingVolume.value = false;
+  endDrag();
   stopProgressDrag(commitProgress);
 };
 
 const onGlobalPointerUp = () => onGlobalPointerEnd(true);
 const onGlobalPointerCancel = () => onGlobalPointerEnd(false);
-
-// --- 音量滑块显示逻辑 ---
-const showVolumeSlider = ref(false);
-let volumeTimer: any = null;
-
-const handleVolumeEnter = () => {
-  if (volumeTimer) clearTimeout(volumeTimer);
-  showVolumeSlider.value = true;
-  handleFooterMouseEnter();
-};
-
-const handleVolumeLeave = () => {
-  volumeTimer = setTimeout(() => {
-    if (!isDraggingVolume.value) {
-      showVolumeSlider.value = false;
-      startIdleTimer();
-    }
-  }, 300);
-};
 
 // --- EQ Panel State ---
 const showEqPanel = ref(false);
