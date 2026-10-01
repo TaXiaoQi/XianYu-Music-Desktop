@@ -19,7 +19,7 @@ import {useAuthStore} from '../auth/store';
 import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoader';
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/domain/pluginEngine';
-import {describePlatform, findMatchingPlugin} from '../../services/domain/pluginBackupSong';
+import {getFailedOnlineSource, findAlternativeOnlineSource, findSiblingPluginCandidate} from './onlineFailoverFacade';
 import {prepareOnlinePlayback} from './onlinePlaybackFacade';
 import {scheduleOnlinePrecache} from './onlinePrecache';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
@@ -640,32 +640,19 @@ const dlnaCast = useDlnaCastStore();
     options: PlaySongOptions,
     requestId: number,
   ): Promise<boolean> => {
+    const searchResult = song.rawData as { pluginId?: string; platform?: string } | undefined;
+    if (!searchResult?.pluginId) return false;
+
+    const tried = options._siblingTriedPluginIds ?? new Set<string>();
+    const sibling = findSiblingPluginCandidate(song, tried);
+    if (!sibling) return false;
+
+    if (requestId !== playRequestId || currentSong.value?.path !== song.path) return false;
+
+    console.info(`[Audio] 自动换源 · 同平台插件重试: ${sibling.pluginName} (${sibling.pluginId.slice(0, 8)}…)`);
+    searchResult.pluginId = sibling.pluginId;
+    song.plugin_id = sibling.pluginId;
     try {
-      const searchResult = song.rawData as { pluginId?: string; platform?: string } | undefined;
-      if (!searchResult?.pluginId) return false;
-
-      let platformLabel = searchResult.platform || '';
-      if (!platformLabel.trim()) {
-        const segment = (song.cue_source_path || song.path || '').slice('plugin://'.length).split('/')[0] || '';
-        try { platformLabel = decodeURIComponent(segment); } catch { platformLabel = segment; }
-      }
-      if (!platformLabel.trim()) {
-        // 对齐移动端：搜索结果无 platform 字段时从失败插件已存元数据兜底（如 Baka 插件 "QQ音乐[L1]"）
-        platformLabel = getStoredPlugins().find(p => p.id === searchResult.pluginId)?.name || '';
-      }
-      if (!platformLabel.trim()) return false;
-
-      const tried = options._siblingTriedPluginIds ?? new Set<string>();
-      tried.add(searchResult.pluginId);
-      const candidates = getStoredPlugins().filter(p => p.enabled && !tried.has(p.id));
-      const sibling = findMatchingPlugin(describePlatform(platformLabel), candidates, 'musicfree');
-      if (!sibling) return false;
-
-      if (requestId !== playRequestId || currentSong.value?.path !== song.path) return false;
-
-      console.info(`[Audio] 自动换源 · 同平台插件重试: ${sibling.name} (${sibling.id.slice(0, 8)}…)`);
-      searchResult.pluginId = sibling.id;
-      song.plugin_id = sibling.id;
       await playSong(song, {
         preserveQueue: true,
         _sourceSwitchCtx: options._sourceSwitchCtx,
@@ -744,40 +731,20 @@ const dlnaCast = useDlnaCastStore();
         originKey: `${song.name}|${song.artist}`,
         failedSources: new Set<string>(),
       };
-      if (song.path.startsWith('lx://')) {
-        switchCtx.failedSources.add(song.path.slice('lx://'.length).split('/')[0]);
-      } else {
-        const searchResult = song.rawData as { platform?: string; pluginId?: string } | undefined;
-        let platformLabel = searchResult?.platform || '';
-        if (!platformLabel.trim()) {
-          const segment = (song.cue_source_path || song.path || '').slice('plugin://'.length).split('/')[0] || '';
-          try { platformLabel = decodeURIComponent(segment); } catch { platformLabel = segment; }
-        }
-        if (!platformLabel.trim() && searchResult?.pluginId) {
-          platformLabel = getStoredPlugins().find(p => p.id === searchResult.pluginId)?.name || '';
-        }
-        switchCtx.failedSources.add(describePlatform(platformLabel).lxSource ?? 'plugin');
-      }
+      switchCtx.failedSources.add(getFailedOnlineSource(song));
 
-      let alternativeSong: Song | null = null;
-      try {
-        const { findAlternativeLxSource } = await import('../../services/domain/lxSourceFallback');
-        alternativeSong = await findAlternativeLxSource(song, switchCtx.failedSources);
-      } catch (error) {
-        console.warn(`[Audio] 自动换源查找异常: ${getErrorMessage(error)}`);
-      }
-
+      const alternativeSource = await findAlternativeOnlineSource(song, switchCtx.failedSources);
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
         return;
       }
 
-      if (alternativeSong) {
-        const { getLxSourceDisplayName } = await import('../../services/domain/lxSourceFallback');
-        const newSource = alternativeSong.path.slice('lx://'.length).split('/')[0];
+      if (alternativeSource) {
+        const { song: alternativeSong, source, displayName } = alternativeSource;
         if (!alternativeSong.cover_thumb_path && song.cover_thumb_path) {
           alternativeSong.cover_thumb_path = song.cover_thumb_path;
         }
-        showToast(`已自动切换到 ${getLxSourceDisplayName(newSource)} 音源`, 'info');
+        showToast(`已自动切换到 ${displayName} 音源`, 'info');
+        console.info(`[Audio] 自动换源成功: ${source}`);
         await playSong(alternativeSong, {
           preserveQueue: true,
           _sourceSwitchCtx: switchCtx,
