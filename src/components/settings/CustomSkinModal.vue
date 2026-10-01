@@ -6,6 +6,7 @@ import SkinPreviewStage from './customSkin/SkinPreviewStage.vue';
 import SkinAdjustmentPanel from './customSkin/SkinAdjustmentPanel.vue';
 import { useSkinDraftMedia } from './customSkin/useSkinDraftMedia';
 import WallpaperGallery from './WallpaperGallery.vue';
+import ThemeGallery from './ThemeGallery.vue';
 
 const emit = defineEmits<{ (event: 'close'): void; }>();
 
@@ -13,6 +14,7 @@ const themeModal = useCustomThemeModal();
 const preview = themeModal.preview;
 const handleSelectImage = themeModal.handleSelectImage;
 const handleSelectVideo = themeModal.handleSelectVideo;
+const resetSkinDefaults = themeModal.resetToDefaults;
 const discardThemeDraft = themeModal.handleCancel;
 const applyThemeDraft = themeModal.handleSave;
 
@@ -37,8 +39,9 @@ const beginClose = () => {
 const cancelAndClose = () => { discardThemeDraft(); beginClose(); };
 const saveAndClose = () => { applyThemeDraft(); beginClose(); };
 
-// —— 壁纸中心弹层 ——
+// —— 壁纸中心 / 主题中心弹层 ——
 const galleryOpen = ref(false);
+const themeOpen = ref(false);
 
 onUnmounted(() => { if (fadeOutTimer) { clearTimeout(fadeOutTimer); fadeOutTimer = null; } });
 
@@ -57,10 +60,13 @@ const ICON_PATHS = {
         <div class="border-b border-white/10 px-6 py-4">
           <div class="flex items-center justify-between">
             <span class="font-bold text-base">自定义皮肤</span>
-            <button class="text-white/50 transition hover:text-white" @click="cancelAndClose">
+            <div class="flex items-center gap-3">
+              <button class="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition hover:bg-white/10" @click="resetSkinDefaults">恢复默认</button>
+              <button class="text-white/50 transition hover:text-white" @click="cancelAndClose">
               <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                 <path fill-rule="evenodd" clip-rule="evenodd" :d="ICON_PATHS.closeModal" /></svg></button></div>
-          <div class="mt-3 flex gap-3">
+          </div>
+          <div class="mt-3 flex gap-2">
             <button class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-md transition hover:bg-white/10 active:scale-95 shadow-sm cursor-pointer" @click="adoptLocalImage">
               <svg class="h-3.5 w-3.5 text-white/70" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                 <path fill-rule="evenodd" clip-rule="evenodd" :d="ICON_PATHS.localImage" /></svg>
@@ -75,6 +81,14 @@ const ICON_PATHS = {
                 <circle cx="8.5" cy="8.5" r="1.5"></circle>
                 <polyline points="21 15 16 10 5 21"></polyline></svg>
               <span>壁纸中心</span></button>
+            <button class="flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-[#EC4141]/30 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-semibold text-[#ff8a8a] backdrop-blur-md transition hover:bg-[#EC4141]/20 active:scale-95 shadow-sm cursor-pointer" @click="themeOpen = true">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle>
+                <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle>
+                <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle>
+                <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle>
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
+              <span>主题中心</span></button>
           </div></div>
 
         <!-- 主体：预览舞台 + 参数调节 -->
@@ -100,6 +114,11 @@ const ICON_PATHS = {
       :current-path="preview.imagePath"
       @close="galleryOpen = false"
       @select="applyGalleryWallpaper"
+    />
+
+    <ThemeGallery
+      v-if="themeOpen"
+      @close="themeOpen = false"
     />
   </Teleport>
 </template>

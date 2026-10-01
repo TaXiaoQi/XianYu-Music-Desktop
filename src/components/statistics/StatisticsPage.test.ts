@@ -228,9 +228,9 @@ describe('glass look gains layered glass polish (corner refraction + hover sheen
 });
 
 describe('Settings appearance section title', () => {
-  it('renames the section from 开关样式 to 样式 (zh / en)', () => {
-    expect(settingsSource).toContain("switchStyleTitle: '样式',");
-    expect(settingsSource).toContain("switchStyleTitle: 'Style',");
+  it('renames the section to 组件样式 (zh / en)', () => {
+    expect(settingsSource).toContain("switchStyleTitle: '组件样式',");
+    expect(settingsSource).toContain("switchStyleTitle: 'Component Style',");
     expect(settingsSource).not.toContain('开关样式');
     expect(settingsSource).not.toContain("switchStyleTitle: 'Switch Style'");
   });
