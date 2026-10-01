@@ -52,7 +52,10 @@ export async function readImageBase64(path: string): Promise<{ mime: string; bas
 async function fetchPluginUrl(url: string): Promise<string> {
   const resp = await tauriInvoke('plugin_http_request', { method: 'GET', url });
   if (resp.status < 200 || resp.status >= 300) {
-    throw new Error(`HTTP ${resp.status}`);
+    // 带上响应体片段：站点的 403/4xx 往往在 body 里说明原因（如 User-Agent 校验、
+    // 限流、key 失效），只报状态码会让这类失败无从排查。
+    const detail = String(resp.body ?? '').trim().slice(0, 200);
+    throw new Error(`HTTP ${resp.status}${detail ? ` ${detail}` : ''}`);
   }
   return resp.body;
 }
