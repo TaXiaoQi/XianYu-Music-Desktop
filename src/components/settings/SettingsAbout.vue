@@ -150,7 +150,7 @@ onUnmounted(() => {
     <div class="max-w-full shrink-0 px-6 pt-5 text-center text-xs leading-relaxed text-gray-400 dark:text-white/40">
       <div class="flex flex-wrap items-center justify-center gap-x-1">
         <span>开发者名单（排名不分先后）：</span>
-        <a v-for="developer in ['@ShenYichenCN', '@TaXiaoQi', '@知难辞', '@绛狐']" :key="developer" :href="`https://github.com/${developer.slice(1)}`" target="_blank" rel="noreferrer" class="no-underline text-inherit transition-colors hover:text-[#EC4141]" :class="{ 'developer-vanish-on-hover': developer === '@绛狐' }">{{ developer }}</a>
+        <a v-for="developer in ['@ShenYichenCN', '@TaXiaoQi', '@知难辞']" :key="developer" :href="`https://github.com/${developer.slice(1)}`" target="_blank" rel="noreferrer" class="no-underline text-inherit transition-colors hover:text-[#EC4141]">{{ developer }}</a>
       </div>
       <div>Copyright © 2026 XianYu Music Developer · 基于 XSAL-1.0 开源可见。</div>
     </div>
@@ -205,7 +205,7 @@ onUnmounted(() => {
         <CheckCircle2 class="h-4 w-4 shrink-0 text-[#ec4141]" />
         <span>{{ isEnglish ? 'Made with care by developers, contributors and open-source projects.' : '感谢开发者、贡献者，以及所有优秀的开源项目。' }}</span>
         <div class="glass-about__developers">
-          <a v-for="developer in ['@ShenYichenCN', '@TaXiaoQi', '@知难辞', '@绛狐']" :key="developer" :href="`https://github.com/${developer.slice(1)}`" target="_blank" rel="noreferrer" :class="{ 'developer-vanish-on-hover': developer === '@绛狐' }">{{ developer }}</a>
+          <a v-for="developer in ['@ShenYichenCN', '@TaXiaoQi', '@知难辞']" :key="developer" :href="`https://github.com/${developer.slice(1)}`" target="_blank" rel="noreferrer">{{ developer }}</a>
         </div>
       </section>
       <footer class="text-center text-[10px] text-gray-400 dark:text-white/30">Copyright © 2026 XianYu Music Developer · XSAL-1.0</footer>
@@ -629,14 +629,6 @@ onUnmounted(() => {
 
 .glass-about__developers a:hover {
   color: #ec4141;
-}
-
-.developer-vanish-on-hover {
-  transition: opacity 160ms ease;
-}
-
-.developer-vanish-on-hover:hover {
-  opacity: 0;
 }
 
 @keyframes glass-about-rise {
