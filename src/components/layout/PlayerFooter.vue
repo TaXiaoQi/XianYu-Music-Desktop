@@ -17,7 +17,7 @@ import type { QualityKey, RemoteDownloadProgress } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
   readStoredProgressHidden
-} from './playerFooterProgress';
+} from './footer/playerFooterProgress';
 import {
   ALL_QUALITY_OPTIONS,
   compactFileSize,

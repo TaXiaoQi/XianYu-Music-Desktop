@@ -1,7 +1,7 @@
 import { computed, ref, type Ref } from 'vue';
 
 import type { Song } from '../../../types';
-import { getProgressVisualState } from '../playerFooterProgress';
+import { getProgressVisualState } from './playerFooterProgress';
 import { progressTimeFromPointer } from './footerDragMath';
 
 interface ProgressDragDeps {
