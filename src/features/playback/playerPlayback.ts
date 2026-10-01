@@ -32,15 +32,11 @@ import {
   hasQishuiPreviewCached,
   isQishuiPluginPath,
   extractPluginTrackId,
-  formatPreviewClock,
-  type PreviewClipInfo,
 } from './onlineFailover';
 import {likelyFullCoverPaths, likelyThumbnailPaths} from './coverState';
-
-interface SeekCompletedPayload {
-  request_id: number;
-  time: number;
-}
+import {createPlaybackTimers} from './playbackTimers';
+import {createPreviewPlayback} from './previewPlayback';
+import {createPlaybackSeek} from './playbackSeek';
 
 interface CreatePlayerPlaybackDeps {
   getDisplaySongList: () => Song[];
@@ -61,18 +57,8 @@ let onlineStreamFailureCtx: {
   requestId: number;
 } | null = null;
 let shareLinkPlaybackActive = false;
-let latestSeekRequestId = 0;
-let isSeeking = false;
-const shortTimerIds = new Set<ReturnType<typeof setTimeout>>();
-
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
-
-// ==================== [试听片段] 在线音源试听流处理 ====================
-
-let activePreviewClip: PreviewClipInfo | null = null;
-let previewClipPath = '';
-let previewDetectedPath = '';
 
 export const createPlayerPlayback = ({
   getDisplaySongList,
@@ -119,19 +105,11 @@ export const createPlayerPlayback = ({
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
 
-  const setManagedTimeout = (callback: () => void, delay: number) => {
-    const timerId = setTimeout(() => {
-      shortTimerIds.delete(timerId);
-      callback();
-    }, delay);
-    shortTimerIds.add(timerId);
-    return timerId;
-  };
-
-  const clearManagedShortTimers = () => {
-    shortTimerIds.forEach(timerId => clearTimeout(timerId));
-    shortTimerIds.clear();
-  };
+  const {
+    setManagedTimeout,
+    clearManagedTimeout,
+    clearManagedShortTimers,
+  } = createPlaybackTimers();
 
   let playbackRuntimeController = undefined as unknown as ReturnType<typeof createPlaybackRuntime>;
   let playbackVolumeController = undefined as unknown as ReturnType<typeof createPlaybackVolumeController>;
@@ -237,36 +215,46 @@ export const createPlayerPlayback = ({
   const fadeVolumeTo = (targetVolume: number, durationMs: number, startVolumeOverride?: number) =>
     playbackVolumeController?.fadeTo(targetVolume, durationMs, startVolumeOverride) ?? Promise.resolve();
 
-  const handlePreviewClipDetected = async (song: Song, actualDuration: number) => {
-    previewDetectedPath = song.path;
-    const trackId = isQishuiPluginPath(song.path) ? extractPluginTrackId(song.path) : '';
-    const previewInfo = trackId ? await fetchQishuiPreviewInfo(trackId) : null;
+  const previewPlayback = createPreviewPlayback({
+    getCurrentSong: () => currentSong.value,
+    getCurrentTime: () => currentTime.value,
+    reanchorPlaybackClock,
+    patchCurrentSong: (song) => { currentSong.value = song; },
+    patchQueueSongMeta: (path, patch) => playbackStore.patchQueueSongMeta(path, patch),
+    showToast: (message, type) => showToast(message, type),
+  });
+  const {
+    getActivePreviewClip,
+    setActivePreviewClip,
+    getPreviewPath,
+    setPreviewPath,
+    getPreviewDetectedPath,
+    setPreviewDetectedPath,
+    handlePreviewClipDetected,
+  } = previewPlayback;
 
-    if (currentSong.value?.path !== song.path) return;
-
-    if (previewInfo && Math.abs(previewInfo.duration - actualDuration) <= 3) {
-      activePreviewClip = { start: previewInfo.start, duration: actualDuration };
-      previewClipPath = song.path;
-      reanchorPlaybackClock(previewInfo.start + currentTime.value);
-      showToast(
-        `「${getSmtcTitle(song)}」为 VIP 试听片段（${Math.round(actualDuration)} 秒，${formatPreviewClock(previewInfo.start)} 起），完整播放请配置插件登录或更换音源`,
-        'info',
-      );
-    } else {
-      activePreviewClip = { start: 0, duration: actualDuration };
-      previewClipPath = song.path;
-      const flooredDuration = Math.floor(actualDuration);
-      if (song.duration !== flooredDuration) {
-        currentSong.value = { ...song, duration: flooredDuration };
-        playbackStore.patchQueueSongMeta(song.path, { duration: flooredDuration });
-      }
-      reanchorPlaybackClock(Math.min(currentTime.value, actualDuration));
-      showToast(
-        `当前音源仅为试听片段（约 ${flooredDuration} 秒），完整播放请更换音源或配置插件登录`,
-        'info',
-      );
-    }
-  };
+  const seek = createPlaybackSeek({
+    getCurrentSong: () => currentSong.value,
+    getCurrentTime: () => currentTime.value,
+    isPlaying: () => isPlaying.value,
+    isCasting: () => dlnaCast.isCasting,
+    castSeek: (time) => dlnaCast.castSeek(time),
+    seekAudio: (payload) => playbackApi.seekAudio(payload),
+    accumulateForSeek: () => playbackStatisticsController.accumulateForSeek(),
+    stopPlaybackRuntime,
+    startPlaybackRuntime,
+    reanchorPlaybackClock,
+    getActivePreviewClip,
+    setManagedTimeout,
+    togglePlay: () => togglePlay(),
+  });
+  const {
+    seekTo,
+    playAt,
+    handleSeek,
+    stepSeek,
+    handleSeekCompleted,
+  } = seek;
 
   const flushPlaySession = () => playbackStatisticsController?.flush();
   const startStatisticsSession = () => playbackStatisticsController?.startSession();
@@ -485,10 +473,10 @@ export const createPlayerPlayback = ({
     let resumeTime = Math.max(0, Math.min(requestedStartTime, song.duration || requestedStartTime));
 
     stopPlaybackRuntime();
-    if (previewClipPath !== song.path) {
-      activePreviewClip = null;
-      previewClipPath = '';
-      previewDetectedPath = '';
+    if (getPreviewPath() !== song.path) {
+      setActivePreviewClip(null);
+      setPreviewPath('');
+      setPreviewDetectedPath('');
       if (isQishuiPluginPath(song.path)) {
         const prewarmTrackId = extractPluginTrackId(song.path);
         if (prewarmTrackId && !hasQishuiPreviewCached(prewarmTrackId)) {
@@ -496,10 +484,11 @@ export const createPlayerPlayback = ({
         }
       }
     }
-    if (activePreviewClip) {
+    const activeClip = getActivePreviewClip();
+    if (activeClip) {
       resumeTime = Math.max(
-        activePreviewClip.start,
-        Math.min(resumeTime, activePreviewClip.start + activePreviewClip.duration - 1),
+        activeClip.start,
+        Math.min(resumeTime, activeClip.start + activeClip.duration - 1),
       );
     }
     reanchorPlaybackClock(resumeTime);
@@ -522,7 +511,7 @@ export const createPlayerPlayback = ({
     };
 
     const startOffsetMs = cueStartOffset
-      + Math.round((resumeTime - (activePreviewClip?.start ?? 0)) * 1000);
+      + Math.round((resumeTime - (activeClip?.start ?? 0)) * 1000);
 
     try {
       const preparedOnlineAudio = await onlineAudioPreparationPromise;
@@ -971,10 +960,7 @@ export const createPlayerPlayback = ({
   playbackVolumeController = createPlaybackVolumeController({
     setBackendVolume: (nextVolume) => playbackApi.setVolume(nextVolume),
     setManagedTimeout,
-    clearManagedTimeout: (timerId) => {
-      shortTimerIds.delete(timerId);
-      clearTimeout(timerId);
-    },
+    clearManagedTimeout,
   });
 
   playbackStatisticsController = createPlaybackStatistics({
@@ -1005,7 +991,7 @@ export const createPlayerPlayback = ({
     isPlaying,
     isSongLoaded,
     isMainWindowLowPower,
-    isSeeking: () => isSeeking,
+    isSeeking: seek.isSeeking,
     isCasting: () => dlnaCast.isCasting,
     getCastPosition: () => dlnaCast.interpolatedPosition(),
     getCastDuration: () => dlnaCast.tvDuration,
@@ -1014,12 +1000,12 @@ export const createPlayerPlayback = ({
       libraryStore.patchSongMeta(targetSong.path, {duration} as Partial<Song>);
       playbackStore.patchQueueSongMeta(targetSong.path, {duration});
     },
-    getActivePreviewClip: () => activePreviewClip,
-    setActivePreviewClip: (clip) => { activePreviewClip = clip; },
-    getPreviewPath: () => previewClipPath,
-    setPreviewPath: (path) => { previewClipPath = path; },
-    getPreviewDetectedPath: () => previewDetectedPath,
-    setPreviewDetectedPath: (path) => { previewDetectedPath = path; },
+    getActivePreviewClip,
+    setActivePreviewClip,
+    getPreviewPath,
+    setPreviewPath,
+    getPreviewDetectedPath,
+    setPreviewDetectedPath,
     onPreviewDetected: handlePreviewClipDetected,
     onAutoNext: handleAutoNext,
     flushStatistics: flushPlaySession,
@@ -1154,86 +1140,6 @@ export const createPlayerPlayback = ({
     }
   };
 
-  const seekTo = async (newTime: number) => {
-    if (!currentSong.value) return;
-
-    playbackStatisticsController.accumulateForSeek();
-
-    isSeeking = true;
-    stopPlaybackRuntime();
-    const trackDuration = currentSong.value.duration;
-    let targetTime = trackDuration > 0
-      ? Math.max(0, Math.min(newTime, trackDuration))
-      : Math.max(0, newTime);
-    if (activePreviewClip) {
-      targetTime = Math.max(
-        activePreviewClip.start,
-        Math.min(targetTime, activePreviewClip.start + activePreviewClip.duration - 0.5),
-      );
-    }
-    const requestId = ++latestSeekRequestId;
-    reanchorPlaybackClock(targetTime);
-
-    try {
-      const offsetSec = (currentSong.value.cue_start_offset || 0) / 1000;
-      const seekClipTime = targetTime + offsetSec - (activePreviewClip?.start ?? 0);
-      if (dlnaCast.isCasting) {
-        await dlnaCast.castSeek(Math.max(0, seekClipTime));
-        isSeeking = false;
-      } else {
-        await playbackApi.seekAudio({
-          time: Math.max(0, seekClipTime),
-          isPlaying: isPlaying.value,
-          requestId,
-        });
-      }
-      reanchorPlaybackClock(targetTime);
-      if (isPlaying.value) {
-        startPlaybackRuntime();
-      }
-    } catch (error) {
-      isSeeking = false;
-      if (isPlaying.value) {
-        startPlaybackRuntime();
-      }
-      throw error;
-    }
-  };
-
-  const playAt = async (time: number) => {
-    await seekTo(time);
-    if (!isPlaying.value) {
-      setManagedTimeout(() => {
-        if (!isPlaying.value) {
-          void togglePlay().catch(error => console.warn('[Audio] playAt togglePlay failed:', error));
-        }
-      }, 150);
-    }
-  };
-
-  const handleSeek = async (event: MouseEvent) => {
-    if (!currentSong.value) return;
-
-    const target = event.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    const progress = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    await seekTo(progress * currentSong.value.duration);
-  };
-
-  const stepSeek = async (step: number) => {
-    if (!currentSong.value) return;
-    await seekTo(currentTime.value + step);
-  };
-
-  const handleSeekCompleted = (payload: SeekCompletedPayload) => {
-    if (payload.request_id !== latestSeekRequestId) return;
-
-    isSeeking = false;
-    const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-    const trackTime = Math.max(0, payload.time - offsetSec + (activePreviewClip?.start ?? 0));
-    reanchorPlaybackClock(trackTime);
-  };
-
   const dispose = () => {
     playbackRuntimeController.dispose();
     playbackVolumeController.dispose();
@@ -1247,13 +1153,12 @@ export const createPlayerPlayback = ({
     togglePlayToken += 1;
     playRequestId += 1;
     cancelledPlayRequestId = -1;
-    latestSeekRequestId += 1;
-    isSeeking = false;
+    seek.invalidateSeek();
     stopPowerModeWatcher();
   };
 
   const stopPowerModeWatcher = watch(isMainWindowLowPower, () => {
-    if (currentSong.value && isPlaying.value && !isSeeking) {
+    if (currentSong.value && isPlaying.value && !seek.isSeeking()) {
       startPlaybackRuntime();
     }
   });
