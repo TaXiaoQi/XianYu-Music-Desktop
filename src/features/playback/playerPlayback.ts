@@ -20,8 +20,7 @@ import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoade
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/domain/pluginEngine';
 import {describePlatform, findMatchingPlugin} from '../../services/domain/pluginBackupSong';
-import {checkDownloadExists} from '../../services/domain/downloadHistory';
-import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
+import {prepareOnlinePlayback} from './onlinePlaybackFacade';
 import {scheduleOnlinePrecache} from './onlinePrecache';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
@@ -1052,52 +1051,14 @@ const dlnaCast = useDlnaCastStore();
     // 与音频解析并行发起，不等音频 resolve
     void coreLyricsFetch();
 
-    const onlineAudioPreparationPromise = (async () => {
-      let preparedAudioFilePath = audioFilePath;
-      let preparedUsingDownloadedAudioFile = false;
-      let preparedAvailableQualities: QualityKey[] | null = null;
-
-      if (isOriginalOnlineSong) {
-        const downloadedRecord = await checkDownloadExists(preparedAudioFilePath);
-        if (downloadedRecord?.filePath) {
-          preparedAudioFilePath = downloadedRecord.filePath;
-          preparedUsingDownloadedAudioFile = true;
-        }
-      }
-
-      if (isOriginalOnlineSong && !preparedUsingDownloadedAudioFile) {
-        try {
-          preparedAvailableQualities = await getOnlineAvailableQualities(preparedAudioFilePath, song);
-        } catch { /* ignore: 音质列表获取失败不影响播放 */ }
-      }
-
-      if (isOriginalOnlineSong && !preparedUsingDownloadedAudioFile) {
-        const requestedQuality = (playbackStore.sessionQualityOverride
-          || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
-        const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-        const resolvedOnlineAudio = await resolveOnlineAudio({
-          audioFilePath: preparedAudioFilePath,
-          song,
-          requestedQuality,
-          fallbackBehavior,
-          availableQualities: preparedAvailableQualities,
-          preFetchedUrl: song.remote_source_id,
-        });
-        return {
-          audioFilePath: resolvedOnlineAudio.audioFilePath,
-          usingDownloadedAudioFile: preparedUsingDownloadedAudioFile,
-          availableQualities: preparedAvailableQualities,
-          resolvedOnlineAudio,
-        };
-      }
-
-      return {
-        audioFilePath: preparedAudioFilePath,
-        usingDownloadedAudioFile: preparedUsingDownloadedAudioFile,
-        availableQualities: preparedAvailableQualities,
-        resolvedOnlineAudio: null,
-      };
-    })().catch((error) => {
+    const onlineAudioPreparationPromise = prepareOnlinePlayback({
+      audioFilePath,
+      song,
+      requestedQuality: (playbackStore.sessionQualityOverride
+        || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey,
+      fallbackBehavior: settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower',
+      preFetchedUrl: song.remote_source_id,
+    }).catch((error) => {
       console.warn('[Audio] 在线音频预解析失败:', error);
       return {
         audioFilePath,
@@ -1106,7 +1067,6 @@ const dlnaCast = useDlnaCastStore();
         resolvedOnlineAudio: null,
       };
     });
-
     if (shouldFadeOnSwitch) {
       fadeVolumeTo(0, effectiveFadeDuration).catch(() => {});
     } else {
