@@ -17,8 +17,6 @@ import { useRenderingPower } from '../../composables/renderingPower';
 import { useBilibiliVideoBackground, supportsMusicVideo, probeMvFor, probeQueueMvs, mvProbeVerdict } from '../../composables/useBilibiliVideoBackground';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
-import { useSettingsStore } from '../../features/settings/store';
-import { createShareUrl, getCachedShareUrl, preloadShareUrl, reportShareAction } from '../../services/domain/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
@@ -41,6 +39,7 @@ import { useFooterVolumeDrag } from './footer/useFooterVolumeDrag';
 import { useFooterMarquee } from './footer/useFooterMarquee';
 import { useFooterIdleAutohide } from './footer/useFooterIdleAutohide';
 import { useFooterQualityProbe } from './footer/useFooterQualityProbe';
+import { useFooterShare } from './footer/useFooterShare';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -337,84 +336,19 @@ const { showToast } = useToast();
 const isMvVideoDownloading = ref(false);
 
 const playbackStore = usePlaybackStore();
-const isShareLoading = ref(false);
-const settingsStore = useSettingsStore();
 
-const showDlnaCastDialog = ref(false);
-const openDlnaCastDialog = () => {
-  showDlnaCastDialog.value = true;
-};
-
-const showShareDialog = ref(false);
-const openShareDialog = () => {
-  showFooterTools.value = false;
-  showShareDialog.value = true;
-};
-const handleShareCopy = () => {
-  showShareDialog.value = false;
-  const song = currentSong.value;
-  if (song) void handleShareSong(song);
-};
-const handleShareCast = () => {
-  showShareDialog.value = false;
-  showDlnaCastDialog.value = true;
-};
-
-function shareBodyExtra() {
-  return {
-    expireMinutes: settingsStore.settings.shareLinkValidityMinutes,
-    source: '',
-  };
-}
-
-function resolveShareCover(): string {
-  return playbackStore.currentCoverFull || '';
-}
-
-async function copyShareLink(url: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(url);
-    showToast('分享链接已复制', 'success');
-  } catch {
-    showToast('复制失败，请手动选中链接复制', 'error');
-  }
-}
-
-async function handleShareSong(song: Song) {
-  if (!song) {
-    showToast('当前没有可分享的歌曲', 'error');
-    return;
-  }
-  showFooterTools.value = false;
-  const cached = getCachedShareUrl(song);
-  if (cached) {
-    reportShareAction();
-    await copyShareLink(cached);
-    return;
-  }
-  if (isShareLoading.value) return;
-  isShareLoading.value = true;
-  try {
-    const url = await createShareUrl(song, resolveShareCover(), shareBodyExtra());
-    if (url) {
-      reportShareAction();
-      await copyShareLink(url);
-    } else {
-      showToast('生成分享链接失败', 'error');
-    }
-  } catch (e: any) {
-    showToast(e?.message || '生成分享链接失败', 'error');
-  } finally {
-    isShareLoading.value = false;
-  }
-}
-
-let sharePreloadTimer: ReturnType<typeof setTimeout> | null = null;
-watch(currentSong, song => {
-  if (sharePreloadTimer) clearTimeout(sharePreloadTimer);
-  sharePreloadTimer = null;
-  if (!song) return;
-  sharePreloadTimer = setTimeout(() => preloadShareUrl(song, resolveShareCover(), shareBodyExtra()), 600);
+// --- 分享与投屏弹窗 ---
+const {
+  showShareDialog,
+  openShareDialog,
+  showDlnaCastDialog,
+  openDlnaCastDialog,
+  handleShareCopy,
+  handleShareCast,
+} = useFooterShare({
+  currentSong,
+  showToast,
+  closeFooterTools: () => { showFooterTools.value = false; },
 });
 
 const toggleMv = async () => {
