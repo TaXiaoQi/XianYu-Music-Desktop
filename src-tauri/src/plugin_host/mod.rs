@@ -1041,10 +1041,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_lx_with_pending_init_request() {
-        // 复现真实音源脚本（EM音源）的初始化形态：init 阶段先 fire-and-forget 发一次
-        // 网络请求，随后不 await 地 send(inited)。此时 __xySetupLx 返回后，运行时上
-        // 仍挂着一个未完成的异步任务。
+    async fn load_lx_tolerates_pending_init_request() {
+        // 守卫：真实音源脚本（如 EM音源）常在 init 阶段 fire-and-forget 发一次网络请求，
+        // 随后不 await 地 send(inited)。这类「加载结算时仍有未完成异步任务」的形态
+        // 不得拖住加载。
         let script = r#"
             lx.on(lx.EVENT_NAMES.request, async () => 'ok');
             lx.request('https://example.invalid/check', { method: 'GET' }, function () {});
@@ -1060,6 +1060,32 @@ mod tests {
             .await;
         assert!(result.ok, "lx load failed: {:?}", result.error);
         assert!(result.metadata.unwrap()["sources"]["test"].is_object());
+    }
+
+    #[tokio::test]
+    async fn load_lx_tolerates_hanging_init_request() {
+        // 上一条的加强版：init 阶段的请求长时间不结束（指向不可路由地址，连接挂到超时），
+        // 加载仍必须立刻返回，而不是等到请求超时。
+        let script = r#"
+            lx.on(lx.EVENT_NAMES.request, async () => 'ok');
+            lx.request('http://192.0.2.1/hang', { method: 'GET' }, function () {});
+            lx.send(lx.EVENT_NAMES.inited, {
+                sources: {
+                    test: { name: '测试', type: 'music', actions: ['musicUrl'], qualitys: ['320k'] },
+                },
+            });
+        "#;
+        let engine = engine();
+        let started = std::time::Instant::now();
+        let result = engine
+            .load_lx("test-lx-hang", script, r#"{"name":"test-lx-hang"}"#)
+            .await;
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "init 期挂起的请求拖住了加载: {}ms",
+            started.elapsed().as_millis()
+        );
+        assert!(result.ok, "lx load failed: {:?}", result.error);
     }
 
     #[tokio::test]
