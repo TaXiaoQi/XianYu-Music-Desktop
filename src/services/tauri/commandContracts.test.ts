@@ -64,7 +64,7 @@ describe('Tauri 命令契约一致性', () => {
     read('src-tauri/permissions/app-commands.toml'),
   );
   const contracted = extractContractCommands(
-    read('src/services/tauri/contracts.ts'),
+    read('src/services/tauri/contractsCommands.ts'),
   );
 
   it('lib.rs 注册的命令 == ACL 允许的命令（新增命令必须三处同步）', () => {
