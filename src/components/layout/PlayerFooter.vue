@@ -16,7 +16,6 @@ import { probeSizesForKeys } from '../../services/domain/qualitySizeMeta';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import { checkDownloadExists, type DownloadRecord } from '../../services/domain/downloadHistory';
 import { downloadApi } from '../../services/tauri/downloadApi';
-import { formatFileSize } from '../../utils/format';
 import { useSettings } from '../../features/settings/useSettings';
 
 import { usePluginHostStore } from '../../features/pluginHost/store';
@@ -33,12 +32,21 @@ import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nex
 import FooterControlItem from './FooterControlItem.vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress, Song } from '../../types';
-import { QUALITY_META, MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
+import { MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
   getProgressVisualState,
   readStoredProgressHidden
 } from './playerFooterProgress';
+import {
+  ALL_QUALITY_OPTIONS,
+  compactFileSize,
+  getAudioExtLabel,
+  localQualityLabel,
+  qualityAbbr,
+  resolveEffectiveDownloadQuality,
+} from './footer/footerQuality';
+import { progressTimeFromPointer, volumePercentFromPointer } from './footer/footerDragMath';
 
 const { sticker, surfaceStyle } = useDesktopTheme();
 
@@ -172,30 +180,11 @@ const DOWNLOAD_QUALITY_OPTIONS = computed(() => {
   return [];
 });
 
-const resolveEffectiveDownloadQuality = (
-  preferred: DownloadQuality,
-  available: QualityKey[] | null,
-): DownloadQuality => {
-  if (!available || available.length === 0 || available.includes(preferred)) {
-    return preferred;
-  }
-
-  const fallbackBehavior = settings.value.download.qualityFallbackBehavior ?? 'lower';
-  const preferredRank = QUALITY_META[preferred]?.rank ?? QUALITY_META['320k'].rank;
-  const sorted = [...available].sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
-
-  if (fallbackBehavior === 'higher') {
-    return sorted.find(q => QUALITY_META[q].rank > preferredRank)
-      ?? sorted[sorted.length - 1];
-  }
-  return [...sorted].reverse().find(q => QUALITY_META[q].rank < preferredRank)
-    ?? sorted[0];
-};
-
 const selectedDownloadQuality = computed<DownloadQuality>(
   () => resolveEffectiveDownloadQuality(
     (settings.value.download.quality as DownloadQuality) ?? '320k',
     footerAvailableQualityKeys.value,
+    settings.value.download.qualityFallbackBehavior,
   ),
 );
 
@@ -508,15 +497,6 @@ const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
 let unlistenRemoteDownload: UnlistenFn | null = null;
 
 
-const ALL_QUALITY_OPTIONS: Array<{ label: string; value: QualityKey; description: string }> =
-  (Object.keys(QUALITY_META) as QualityKey[])
-    .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
-    .map(k => ({
-      label: QUALITY_META[k].label,
-      value: k,
-      description: QUALITY_META[k].description,
-    }));
-
 const QUALITY_OPTIONS = computed<Array<{ label: string; value: string; description: string }>>(() => {
   if (mvActive.value) {
     return videoBackground.availableQualities.value.map(quality => ({
@@ -530,23 +510,6 @@ const QUALITY_OPTIONS = computed<Array<{ label: string; value: string; descripti
   }
   return [];
 });
-
-const compactFileSize = (bytes: number) =>
-  formatFileSize(bytes).replace(/\s*MB$/, 'M').replace(/\s*GB$/, 'G').replace(/\s*KB$/, 'K');
-
-const getAudioExtLabel = (key: QualityKey, url?: string) => {
-  if (url) {
-    try {
-      const pathname = new URL(url).pathname.toLowerCase();
-      const match = pathname.match(/\.([a-z0-9]+)$/);
-      if (match?.[1]) return match[1].toUpperCase();
-    } catch {
-      const match = url.toLowerCase().match(/\.([a-z0-9]+)(?:[?#]|$)/);
-      if (match?.[1]) return match[1].toUpperCase();
-    }
-  }
-  return QUALITY_META[key]?.isLossless ? 'FLAC' : 'MP3';
-};
 
 const footerQualityExtraText = (key: string) => {
   if (mvActive.value) {
@@ -666,58 +629,16 @@ watch(
   { immediate: true },
 );
 
-const QUALITY_ABBR: Record<QualityKey, string> = {
-  mgg: 'LQ',
-  '128k': '128',
-  '192k': '192',
-  '320k': 'HQ',
-  flac: 'SQ',
-  flac24bit: 'HR',
-  hires: 'HRA',
-  vinyl: 'VL',
-  dolby: 'DA',
-  atmos: 'AT',
-  atmos_plus: 'AT+',
-  master: 'MS',
-};
-
 const selectedQualityKey = computed<QualityKey>(
   () => sessionQualityOverride.value
     ?? (settings.value.audio.onlineDefaultQuality as QualityKey) ?? '320k',
 );
-const currentQualityLabel = computed(
-  () => QUALITY_ABBR[currentPlayingQuality.value ?? selectedQualityKey.value] ?? 'HQ',
-);
-
-const localFormatLabel = computed(() => {
-  const song = currentSong.value;
-  if (!song) return '';
-  const raw = song.format || song.codec || song.container;
-  if (raw) return raw.toUpperCase();
-  const ext = song.path.split('.').pop();
-  return ext ? ext.toUpperCase() : '';
-});
-
-const localQualityLabel = computed(() => {
-  const song = currentSong.value;
-  if (!song) return 'HQ';
-  if (song.bit_depth && song.bit_depth >= 24) return QUALITY_ABBR.flac24bit;
-  const fmt = (song.format || song.codec || song.container || '').toLowerCase();
-  const losslessFormats = ['flac', 'ape', 'wav', 'alac', 'aiff', 'dsd', 'dff', 'dsf', 'wv', 'wavpack'];
-  if (losslessFormats.some(f => fmt.includes(f))) return QUALITY_ABBR.flac;
-  const bitrateKbps = song.bitrate
-    ? (song.bitrate > 1000 ? Math.round(song.bitrate / 1000) : song.bitrate)
-    : 0;
-  if (bitrateKbps >= 320) return QUALITY_ABBR['320k'];
-  if (bitrateKbps >= 192) return QUALITY_ABBR['192k'];
-  if (bitrateKbps >= 128) return QUALITY_ABBR['128k'];
-  if (bitrateKbps > 0) return QUALITY_ABBR.mgg;
-  return localFormatLabel.value || 'HQ';
-});
-
 const qualityButtonLabel = computed(() => {
   if (mvActive.value) return videoBackground.activeQuality.value || '画质';
-  return isQualitySelectableSong.value ? currentQualityLabel.value : localQualityLabel.value;
+  if (isQualitySelectableSong.value) {
+    return qualityAbbr(currentPlayingQuality.value ?? selectedQualityKey.value);
+  }
+  return localQualityLabel(currentSong.value);
 });
 
 const isQualitySelectableSong = computed(() => {
@@ -824,9 +745,11 @@ const stopProgressDrag = async (commit = true) => {
 
 const updateProgressFromEvent = (e: PointerEvent) => {
   if (!progressBarRef.value || !currentSong.value || currentSong.value.duration <= 0) return;
-  const rect = progressBarRef.value.getBoundingClientRect();
-  const offsetX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-  dragTime.value = (offsetX / rect.width) * currentSong.value.duration;
+  dragTime.value = progressTimeFromPointer(
+    e.clientX,
+    progressBarRef.value.getBoundingClientRect(),
+    currentSong.value.duration,
+  );
 };
 
 const currentTimeStr = computed(() => {
@@ -917,11 +840,7 @@ const volumeBarRef = ref<HTMLElement | null>(null);
 
 const updateVolume = (clientY: number) => {
   if (!volumeBarRef.value) return;
-  const rect = volumeBarRef.value.getBoundingClientRect();
-  const height = rect.height;
-  const distance = rect.bottom - clientY;
-  const percent = Math.max(0, Math.min(1, distance / height));
-  const newVol = Math.round(percent * 100);
+  const newVol = volumePercentFromPointer(clientY, volumeBarRef.value.getBoundingClientRect());
   handleVolume({ target: { value: newVol.toString() } } as any);
 };
 
