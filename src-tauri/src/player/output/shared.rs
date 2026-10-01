@@ -80,10 +80,7 @@ impl SharedOutputBackend {
         Self::from_device(&fallback, active_name)
     }
 
-    fn from_device(
-        device: &cpal::Device,
-        active_device_name: String,
-    ) -> Result<Self, OutputError> {
+    fn from_device(device: &cpal::Device, active_device_name: String) -> Result<Self, OutputError> {
         init_high_resolution_timer();
         let (stream, handle) = OutputStream::try_from_device(device)
             .map_err(|error| OutputError::Stream(error.to_string()))?;
@@ -131,7 +128,7 @@ fn open_restore_reader(
             });
     }
     if let Some(stream) = remote_stream {
-        return crate::player::runtime::RemoteRangeReader::new(stream.clone())
+        return crate::player::remote_reader::RemoteRangeReader::new(stream.clone())
             .map(|reader| Box::new(reader) as Box<dyn ReadSeek + Send + Sync>)
             .map_err(|error| {
                 eprintln!("[Audio][rust] restore 重建远程流失败: {error}");
@@ -139,7 +136,7 @@ fn open_restore_reader(
             });
     }
     if let Some((bridged, _codec)) =
-        crate::player::runtime::bridge_local_file(Path::new(current_path))
+        crate::player::source_pipeline::bridge_local_file(Path::new(current_path))
     {
         // 桥接读取器自带 Read+Seek，经 blanket impl 直接适配本模块的 ReadSeek。
         return Ok(Box::new(bridged));
@@ -196,7 +193,11 @@ pub(crate) fn restore_current_playback(
     // 与主播放路径一致：超过双声道先下混为立体声。
     let source_channels = decoded.channels();
     progress.channels.store(
-        if source_channels > 2 { 2 } else { source_channels as u32 },
+        if source_channels > 2 {
+            2
+        } else {
+            source_channels as u32
+        },
         Ordering::Relaxed,
     );
     let raw_source = decoded.convert_samples::<f32>();
