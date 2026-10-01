@@ -49,8 +49,21 @@ export async function readImageBase64(path: string): Promise<{ mime: string; bas
   return tauriInvoke('read_image_base64', { path });
 }
 
+/**
+ * 取插件脚本文本。
+ *
+ * 显式带上 WebView 自身的 User-Agent：部分音源站点按 UA 白名单放行，Rust 侧默认的
+ * Chrome UA 会被判成「该 Key 不允许当前客户端（User-Agent 已被限制）」而 403，
+ * 站点认得的恰是浏览器/WebView 的 UA。这样原生请求既绕开了 CORS，又保持与浏览器
+ * 一致的客户端标识。
+ */
 async function fetchPluginUrl(url: string): Promise<string> {
-  const resp = await tauriInvoke('plugin_http_request', { method: 'GET', url });
+  const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  const resp = await tauriInvoke('plugin_http_request', {
+    method: 'GET',
+    url,
+    headers: userAgent ? { 'User-Agent': userAgent } : null,
+  });
   if (resp.status < 200 || resp.status >= 300) {
     // 带上响应体片段：站点的 403/4xx 往往在 body 里说明原因（如 User-Agent 校验、
     // 限流、key 失效），只报状态码会让这类失败无从排查。
