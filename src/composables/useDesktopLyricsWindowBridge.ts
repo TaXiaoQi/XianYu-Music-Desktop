@@ -1,21 +1,21 @@
-import { emitTo, listen } from '@tauri-apps/api/event';
-import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
+import { emitTo, listen } from '@tauri-apps/api/event'; // 实现
+import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'; // 实现
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'; // 实现
+import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window'; // 实现
 import { toRaw, nextTick, onMounted, onUnmounted, watch } from 'vue';
-import { storeToRefs } from 'pinia';
+import { storeToRefs } from 'pinia'; // 实现
 import { useRouter } from 'vue-router';
 
-import { useLyrics } from './lyrics';
+import { useLyrics } from './lyrics'; // 实现
 import { usePlayer } from '../features/playback';
-import { usePlaybackStore } from '../features/playback/store';
-import { useSettingsStore } from '../features/settings/store';
-import { useUiStore } from '../shared/stores/ui';
+import { usePlaybackStore } from '../features/playback/store'; // 实现
+import { useSettingsStore } from '../features/settings/store'; // 实现
+import { useUiStore } from '../shared/stores/ui'; // 实现
 import { useRenderingPower } from './renderingPower';
 import {
-  applyDesktopLyricsVisibilityPreference,
-  persistDesktopLyricsVisibilityPreference,
-} from '../features/desktopLyrics/visibilityPreference';
+  applyDesktopLyricsVisibilityPreference, // 实现
+  persistDesktopLyricsVisibilityPreference, // 实现
+} from '../features/desktopLyrics/visibilityPreference'; // 实现
 import {
   DESKTOP_LYRICS_ACTION_EVENT, DESKTOP_LYRICS_BOUNDS_EVENT, DESKTOP_LYRICS_BOUNDS_KEY,
   DESKTOP_LYRICS_PLAYBACK_EVENT, DESKTOP_LYRICS_READY_EVENT, DESKTOP_LYRICS_RESET_BOUNDS_EVENT,
@@ -25,8 +25,8 @@ import {
   createDesktopLyricsSongSnapshot, resolveDesktopLyricsWorkArea, restoreDesktopLyricsBounds,
   type DesktopLyricsAction, type DesktopLyricsPlaybackPayload, type DesktopLyricsStatePayload,
   type DesktopLyricsWorkArea, type DesktopLyricsWindowBounds,
-} from '../features/desktopLyrics/shared';
-import { normalizeLyricsSyncOffsetSeconds } from '../features/settings/lyricsSyncOffset';
+} from '../features/desktopLyrics/shared'; // 实现
+import { normalizeLyricsSyncOffsetSeconds } from '../features/settings/lyricsSyncOffset'; // 实现
 
 // 主窗口侧的桌面歌词桥：负责歌词窗口的创建/销毁、边界持久化与状态推送。
 
@@ -86,7 +86,7 @@ export function createDesktopLyricsReadyGate(timeoutMs = READY_WAIT_TIMEOUT_MS) 
   }
 
   return {
-    markReady() {
+    markReady() { // 实现
       ready = true;
       releaseWaiters();
       discardWaiter();
@@ -97,7 +97,7 @@ export function createDesktopLyricsReadyGate(timeoutMs = READY_WAIT_TIMEOUT_MS) 
     },
     wait() {
       if (ready) {
-        return Promise.resolve();
+        return Promise.resolve(); // 实现
       }
 
       if (!pendingWait) {
@@ -128,11 +128,11 @@ function readPersistedBounds(): DesktopLyricsWindowBounds | null {
   try {
     parsed = JSON.parse(raw) as Partial<DesktopLyricsWindowBounds>;
   } catch {
-    return null;
+    return null; // 实现
   }
 
   if (!Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) {
-    return null;
+    return null; // 实现
   }
 
   // 宽高缺省时回退到默认值，且不允许低于窗口最小尺寸。
@@ -148,19 +148,19 @@ function readPersistedBounds(): DesktopLyricsWindowBounds | null {
 }
 
 function persistBounds(bounds: DesktopLyricsWindowBounds) {
-  if (typeof localStorage === 'undefined') return;
+  if (typeof localStorage === 'undefined') return; // 实现
   const rounded = {
-    x: Math.round(bounds.x),
-    y: Math.round(bounds.y),
-    width: Math.round(bounds.width),
-    height: Math.round(bounds.height),
+    x: Math.round(bounds.x), // 实现
+    y: Math.round(bounds.y), // 实现
+    width: Math.round(bounds.width), // 实现
+    height: Math.round(bounds.height), // 实现
   };
   localStorage.setItem(DESKTOP_LYRICS_BOUNDS_KEY, JSON.stringify(rounded));
 }
 
-export function clearDesktopLyricsStoredBounds() {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.removeItem(DESKTOP_LYRICS_BOUNDS_KEY);
+export function clearDesktopLyricsStoredBounds() { // 实现
+  if (typeof localStorage === 'undefined') return; // 实现
+  localStorage.removeItem(DESKTOP_LYRICS_BOUNDS_KEY); // 实现
 }
 
 // 结合显示器工作区还原边界；可选择在所在工作区内水平居中。
@@ -186,37 +186,37 @@ async function computeRestoredBounds(shouldCenter: boolean) {
         restored.x = area.x + Math.round((area.width - restored.width) / 2);
       }
     }
-    return restored;
+    return restored; // 实现
   } catch {
     return stored;
   }
 }
 
 function findLyricsWindow() {
-  return WebviewWindow.getByLabel(DESKTOP_LYRICS_WINDOW_LABEL);
+  return WebviewWindow.getByLabel(DESKTOP_LYRICS_WINDOW_LABEL); // 实现
 }
 
-export function createDesktopLyricsWindowOptions({
-  hasStoredBounds,
+export function createDesktopLyricsWindowOptions({ // 实现
+  hasStoredBounds, // 实现
 }: {
-  alwaysOnTop: boolean;
-  hasStoredBounds: boolean;
+  alwaysOnTop: boolean; // 实现
+  hasStoredBounds: boolean; // 实现
 }) {
   // 窗口初始不可见且透明，等状态就绪后再展示，避免白屏闪烁。
   return {
     url: '/',
     title: 'XianYu Music Desktop Lyrics',
-    visible: false,
-    decorations: false,
-    transparent: true,
-    shadow: false,
-    skipTaskbar: true,
-    focusable: true,
+    visible: false, // 实现
+    decorations: false, // 实现
+    transparent: true, // 实现
+    shadow: false, // 实现
+    skipTaskbar: true, // 实现
+    focusable: true, // 实现
     focus: false,
     minimizable: false,
-    maximizable: false,
+    maximizable: false, // 实现
     alwaysOnTop: true,
-    center: !hasStoredBounds,
+    center: !hasStoredBounds, // 实现
     width: DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
     height: DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT,
     minWidth: DESKTOP_LYRICS_WINDOW_MIN_WIDTH,
@@ -226,7 +226,7 @@ export function createDesktopLyricsWindowOptions({
 
 async function acquireLyricsWindow(alwaysOnTop: boolean, centerHorizontally: boolean) {
   const existing = await findLyricsWindow();
-  if (existing) return existing;
+  if (existing) return existing; // 实现
 
   if (pendingWindowCreation) {
     return pendingWindowCreation;
@@ -272,24 +272,24 @@ async function acquireLyricsWindow(alwaysOnTop: boolean, centerHorizontally: boo
   return pendingWindowCreation;
 }
 
-export function useDesktopLyricsWindowBridge() {
-  const mainWindow = getCurrentWindow();
+export function useDesktopLyricsWindowBridge() { // 实现
+  const mainWindow = getCurrentWindow(); // 实现
   const router = useRouter();
   const {
-    showDesktopLyrics,
-    parsedLyrics,
-    lyricsStatus,
-    currentLyricLine,
-    lyricsSettings,
-    desktopLyricsSettings,
-  } = useLyrics();
+    showDesktopLyrics, // 实现
+    parsedLyrics, // 实现
+    lyricsStatus, // 实现
+    currentLyricLine, // 实现
+    lyricsSettings, // 实现
+    desktopLyricsSettings, // 实现
+  } = useLyrics(); // 实现
   const { togglePlay, prevSong, nextSong, isFavorite, toggleFavorite } = usePlayer();
-  const playbackStore = usePlaybackStore();
-  const uiStore = useUiStore();
-  const settingsStore = useSettingsStore();
-  const { currentSong, currentTime, isPlaying } = storeToRefs(playbackStore);
-  const { audioDelay } = storeToRefs(settingsStore);
-  const { dominantColors } = storeToRefs(uiStore);
+  const playbackStore = usePlaybackStore(); // 实现
+  const uiStore = useUiStore(); // 实现
+  const settingsStore = useSettingsStore(); // 实现
+  const { currentSong, currentTime, isPlaying } = storeToRefs(playbackStore); // 实现
+  const { audioDelay } = storeToRefs(settingsStore); // 实现
+  const { dominantColors } = storeToRefs(uiStore); // 实现
   const { isMainWindowLowPower } = useRenderingPower();
   const clock = createDesktopLyricsPlaybackClockTracker();
 
@@ -357,10 +357,10 @@ export function useDesktopLyricsWindowBridge() {
   };
 
   const buildPlaybackPayload = (): DesktopLyricsPlaybackPayload => ({
-    playbackTime: currentTime.value,
+    playbackTime: currentTime.value, // 实现
     syncedAt: clock.resolveSyncedAt(currentTime.value),
-    isPlaying: isPlaying.value,
-    audioDelay: audioDelay.value,
+    isPlaying: isPlaying.value, // 实现
+    audioDelay: audioDelay.value, // 实现
   });
 
   // —— 全量状态推送（带 30ms 冷却；immediate 表示跳过冷却立即发送） ——
@@ -392,13 +392,13 @@ export function useDesktopLyricsWindowBridge() {
     }
 
     try {
-      await emitTo<DesktopLyricsStatePayload>(
-        DESKTOP_LYRICS_WINDOW_LABEL,
-        DESKTOP_LYRICS_STATE_EVENT,
+      await emitTo<DesktopLyricsStatePayload>( // 实现
+        DESKTOP_LYRICS_WINDOW_LABEL, // 实现
+        DESKTOP_LYRICS_STATE_EVENT, // 实现
         buildStatePayload(),
       );
     } finally {
-      if (!immediate) {
+      if (!immediate) { // 实现
         cooldownTimer = setTimeout(() => {
           cooldownTimer = null;
           stateEmitCoolingDown = false;
@@ -415,9 +415,9 @@ export function useDesktopLyricsWindowBridge() {
     const target = await findLyricsWindow();
     if (!target) return;
 
-    await emitTo<DesktopLyricsPlaybackPayload>(
-      DESKTOP_LYRICS_WINDOW_LABEL,
-      DESKTOP_LYRICS_PLAYBACK_EVENT,
+    await emitTo<DesktopLyricsPlaybackPayload>( // 实现
+      DESKTOP_LYRICS_WINDOW_LABEL, // 实现
+      DESKTOP_LYRICS_PLAYBACK_EVENT, // 实现
       buildPlaybackPayload(),
     );
   }
@@ -426,7 +426,7 @@ export function useDesktopLyricsWindowBridge() {
     const target = await findLyricsWindow();
     if (!target) return;
 
-    await emitTo(DESKTOP_LYRICS_WINDOW_LABEL, DESKTOP_LYRICS_REVEAL_SURFACE_EVENT);
+    await emitTo(DESKTOP_LYRICS_WINDOW_LABEL, DESKTOP_LYRICS_REVEAL_SURFACE_EVENT); // 实现
   }
 
   async function applyWindowFlags() {
@@ -438,8 +438,8 @@ export function useDesktopLyricsWindowBridge() {
 
   async function openLyricsWindow() {
     const target = await acquireLyricsWindow(
-      desktopLyricsSettings.isAlwaysOnTop,
-      desktopLyricsSettings.centerHorizontally,
+      desktopLyricsSettings.isAlwaysOnTop, // 实现
+      desktopLyricsSettings.centerHorizontally, // 实现
     );
     await readyGate.wait();
     await applyWindowFlags();
@@ -461,7 +461,7 @@ export function useDesktopLyricsWindowBridge() {
   function launchTickLoop() {
     haltTickLoop();
     tickLoopHandle = setInterval(() => {
-      if (!showDesktopLyrics.value) return;
+      if (!showDesktopLyrics.value) return; // 实现
       void pushPlaybackTick().catch((error) => {
         reportBridgeFailure('sync playback to', error);
       });
@@ -471,14 +471,14 @@ export function useDesktopLyricsWindowBridge() {
   // —— 处理来自歌词窗口的动作指令 ——
 
   async function applyLyricsAction(action: DesktopLyricsAction) {
-    switch (action.type) {
-      case 'toggle-play':
-        await togglePlay();
+    switch (action.type) { // 实现
+      case 'toggle-play': // 实现
+        await togglePlay(); // 实现
         break;
-      case 'prev-song':
+      case 'prev-song': // 实现
         prevSong();
         break;
-      case 'next-song':
+      case 'next-song': // 实现
         nextSong();
         break;
       case 'toggle-favorite':
@@ -493,32 +493,32 @@ export function useDesktopLyricsWindowBridge() {
         await mainWindow.setFocus();
         break;
       }
-      case 'adjust-offset': {
+      case 'adjust-offset': { // 实现
         const base = settingsStore.settings.lyricsSyncOffset;
-        settingsStore.settings.lyricsSyncOffset = normalizeLyricsSyncOffsetSeconds(
+        settingsStore.settings.lyricsSyncOffset = normalizeLyricsSyncOffsetSeconds( // 实现
           base + action.delta,
         );
         break;
       }
-      case 'close':
-        showDesktopLyrics.value = false;
+      case 'close': // 实现
+        showDesktopLyrics.value = false; // 实现
         break;
-      case 'update-settings': {
+      case 'update-settings': { // 实现
         const {
-          showTranslation,
+          showTranslation, // 实现
           showRomaji,
-          ...desktopPatch
-        } = action.patch;
+          ...desktopPatch // 实现
+        } = action.patch; // 实现
 
-        if (typeof showTranslation === 'boolean') {
-          lyricsSettings.showTranslation = showTranslation;
+        if (typeof showTranslation === 'boolean') { // 实现
+          lyricsSettings.showTranslation = showTranslation; // 实现
         }
 
-        if (typeof showRomaji === 'boolean') {
-          lyricsSettings.showRomaji = showRomaji;
+        if (typeof showRomaji === 'boolean') { // 实现
+          lyricsSettings.showRomaji = showRomaji; // 实现
         }
 
-        Object.assign(desktopLyricsSettings, desktopPatch);
+        Object.assign(desktopLyricsSettings, desktopPatch); // 实现
         break;
       }
       default:
@@ -532,29 +532,29 @@ export function useDesktopLyricsWindowBridge() {
 
     try {
       await target.destroy();
-    } catch (error) {
-      console.warn('Failed to destroy desktop lyrics window during shutdown:', error);
+    } catch (error) { // 实现
+      console.warn('Failed to destroy desktop lyrics window during shutdown:', error); // 实现
     } finally {
       pendingWindowCreation = null;
       readyGate.reset();
     }
   }
 
-  onMounted(async () => {
+  onMounted(async () => { // 实现
     // 未开启“记住锁定状态”时，每次启动都解除锁定。
-    if (!desktopLyricsSettings.persistLock && desktopLyricsSettings.isLocked) {
-      desktopLyricsSettings.isLocked = false;
+    if (!desktopLyricsSettings.persistLock && desktopLyricsSettings.isLocked) { // 实现
+      desktopLyricsSettings.isLocked = false; // 实现
     }
 
     trackDisposer(await mainWindow.onCloseRequested(async (event) => {
-      if (settingsStore.settings.closeToTray) return;
+      if (settingsStore.settings.closeToTray) return; // 实现
       if (mainWindowClosing) return;
 
       mainWindowClosing = true;
-      event.preventDefault();
+      event.preventDefault(); // 实现
       haltTickLoop();
       await closeLyricsWindow();
-      await mainWindow.close();
+      await mainWindow.close(); // 实现
     }));
 
     trackDisposer(await listen(DESKTOP_LYRICS_REQUEST_STATE_EVENT, () => {
@@ -578,7 +578,7 @@ export function useDesktopLyricsWindowBridge() {
 
     trackDisposer(await listen<{ visible: boolean }>(DESKTOP_LYRICS_VISIBILITY_EVENT, (event) => {
       if (mainWindowClosing) return;
-      showDesktopLyrics.value = event.payload.visible;
+      showDesktopLyrics.value = event.payload.visible; // 实现
     }));
 
     trackDisposer(await listen<DesktopLyricsWindowBounds>(DESKTOP_LYRICS_BOUNDS_EVENT, (event) => {
@@ -586,28 +586,28 @@ export function useDesktopLyricsWindowBridge() {
     }));
 
     trackDisposer(await listen(DESKTOP_LYRICS_RESET_BOUNDS_EVENT, async () => {
-      clearDesktopLyricsStoredBounds();
-      if (!showDesktopLyrics.value) return;
+      clearDesktopLyricsStoredBounds(); // 实现
+      if (!showDesktopLyrics.value) return; // 实现
 
       // 重建窗口以应用重置后的边界。
       haltTickLoop();
       await closeLyricsWindow();
       await openLyricsWindow().catch((error) => {
         reportBridgeFailure('reopen', error);
-        showDesktopLyrics.value = false;
+        showDesktopLyrics.value = false; // 实现
       });
     }));
   });
 
-  onUnmounted(() => {
+  onUnmounted(() => { // 实现
     haltTickLoop();
     disposers.splice(0).forEach((dispose) => dispose());
   });
 
-  watch(showDesktopLyrics, async (visible) => {
-    persistDesktopLyricsVisibilityPreference(
-      settingsStore.settings,
-      settingsStore.patchSettings,
+  watch(showDesktopLyrics, async (visible) => { // 实现
+    persistDesktopLyricsVisibilityPreference( // 实现
+      settingsStore.settings, // 实现
+      settingsStore.patchSettings, // 实现
       visible,
     );
 
@@ -619,7 +619,7 @@ export function useDesktopLyricsWindowBridge() {
 
     try {
       await openLyricsWindow();
-    } catch (error) {
+    } catch (error) { // 实现
       reportBridgeFailure('open', error);
       haltTickLoop();
       pendingWindowCreation = null;
@@ -637,20 +637,20 @@ export function useDesktopLyricsWindowBridge() {
   });
 
   watch(
-    currentTime,
+    currentTime, // 实现
     (time) => {
-      if (!showDesktopLyrics.value) return;
+      if (!showDesktopLyrics.value) return; // 实现
       clock.markPlaybackTimeSample(time);
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   watch(
-    () => settingsStore.settings.showDesktopLyrics,
+    () => settingsStore.settings.showDesktopLyrics, // 实现
     (preferred) => {
       applyDesktopLyricsVisibilityPreference(showDesktopLyrics, preferred);
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   // 歌词内容 / 歌曲信息 / 歌词偏好等任一变化时，向歌词窗口同步最新状态。
@@ -660,13 +660,13 @@ export function useDesktopLyricsWindowBridge() {
 
   watch(
     [
-      parsedLyrics,
-      lyricsStatus,
-      () => currentSong.value?.path,
-      () => currentSong.value?.title,
-      () => currentSong.value?.name,
-      () => currentSong.value?.artist,
-      () => currentSong.value?.duration,
+      parsedLyrics, // 实现
+      lyricsStatus, // 实现
+      () => currentSong.value?.path, // 实现
+      () => currentSong.value?.title, // 实现
+      () => currentSong.value?.name, // 实现
+      () => currentSong.value?.artist, // 实现
+      () => currentSong.value?.duration, // 实现
       isPlaying,
       audioDelay,
       () => ls.showTranslation,
@@ -698,11 +698,11 @@ export function useDesktopLyricsWindowBridge() {
       () => ds.playerOffsetY,
       () => ds.playerAlignment,
       () => ds.playerFontPreset,
-      () => settingsStore.settings.customLyricsFonts,
-      dominantColors,
+      () => settingsStore.settings.customLyricsFonts, // 实现
+      dominantColors, // 实现
     ],
     (next, prev) => {
-      if (!showDesktopLyrics.value) return;
+      if (!showDesktopLyrics.value) return; // 实现
 
       const coreIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8];
       const immediate = !prev || coreIndices.some((index) => next[index] !== prev[index]);

@@ -1,109 +1,109 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest'; // 实现
 
 import type { PluginSource } from '../../types';
 import { describeBackupVersion, preparePluginBackupImport } from './pluginBackupImport';
 
-function plugin(overrides: Partial<PluginSource>): PluginSource {
+function plugin(overrides: Partial<PluginSource>): PluginSource { // 实现
   return {
-    id: 'plugin-id',
-    name: '网易云音乐',
-    format: 'musicfree',
-    version: '1.0.0',
-    author: 'tester',
-    description: '',
-    filePath: 'C:\\plugins\\source.js',
-    importedAt: 1,
-    enabled: true,
-    sources: ['网易云音乐'],
-    ...overrides,
+    id: 'plugin-id', // 实现
+    name: '网易云音乐', // 实现
+    format: 'musicfree', // 实现
+    version: '1.0.0', // 实现
+    author: 'tester', // 实现
+    description: '', // 实现
+    filePath: 'C:\\plugins\\source.js', // 实现
+    importedAt: 1, // 实现
+    enabled: true, // 实现
+    sources: ['网易云音乐'], // 实现
+    ...overrides, // 实现
   };
 }
 
-describe('preparePluginBackupImport', () => {
-  it('matches each platform to an installed plugin and reports missing platforms', () => {
-    const backup = JSON.stringify({
-      schema: 'bakamusic.music-sheet-backup',
+describe('preparePluginBackupImport', () => { // 实现
+  it('matches each platform to an installed plugin and reports missing platforms', () => { // 实现
+    const backup = JSON.stringify({ // 实现
+      schema: 'bakamusic.music-sheet-backup', // 实现
       version: 2,
       data: {
-        musicSheets: [{
-          title: '收藏',
-          musicList: [
-            { id: 'wy-1', title: '云歌曲', artist: '歌手甲', album: '专辑甲', duration: 210, platform: '网易云音乐', qualities: { flac: { size: '20MB' } } },
-            { id: 'qq-1', songmid: 'qq-mid', title: 'QQ歌曲', artist: '歌手乙', album: '专辑乙', duration: 180, platform: 'QQ音乐' },
-            { id: 'bv-1', title: '视频歌曲', artist: '歌手丙', platform: 'bilibili' },
-            { id: '', title: '', platform: '' },
+        musicSheets: [{ // 实现
+          title: '收藏', // 实现
+          musicList: [ // 实现
+            { id: 'wy-1', title: '云歌曲', artist: '歌手甲', album: '专辑甲', duration: 210, platform: '网易云音乐', qualities: { flac: { size: '20MB' } } }, // 实现
+            { id: 'qq-1', songmid: 'qq-mid', title: 'QQ歌曲', artist: '歌手乙', album: '专辑乙', duration: 180, platform: 'QQ音乐' }, // 实现
+            { id: 'bv-1', title: '视频歌曲', artist: '歌手丙', platform: 'bilibili' }, // 实现
+            { id: '', title: '', platform: '' }, // 实现
           ],
         }],
       },
     });
-    const result = preparePluginBackupImport(backup, [
-      plugin({ id: 'mf-wy' }),
-      plugin({ id: 'lx-wy', name: '备用落雪音源', format: 'lx', sources: ['wy'] }),
-      plugin({ id: 'lx-tx', name: '落雪音源', format: 'lx', sources: ['tx'], enabled: false }),
+    const result = preparePluginBackupImport(backup, [ // 实现
+      plugin({ id: 'mf-wy' }), // 实现
+      plugin({ id: 'lx-wy', name: '备用落雪音源', format: 'lx', sources: ['wy'] }), // 实现
+      plugin({ id: 'lx-tx', name: '落雪音源', format: 'lx', sources: ['tx'], enabled: false }), // 实现
     ]);
 
-    expect(result.format).toBe('bakamusic');
-    expect(result.totalSongCount).toBe(4);
-    expect(result.importedSongCount).toBe(2);
-    expect(result.playlists).toHaveLength(1);
-    expect(result.playlists[0].songs).toHaveLength(2);
-    expect(result.playlists[0].songs[0]).toMatchObject({
-      path: 'plugin://%E7%BD%91%E6%98%93%E4%BA%91%E9%9F%B3%E4%B9%90/wy-1',
-      plugin_id: 'mf-wy',
-      duration: 210,
+    expect(result.format).toBe('bakamusic'); // 实现
+    expect(result.totalSongCount).toBe(4); // 实现
+    expect(result.importedSongCount).toBe(2); // 实现
+    expect(result.playlists).toHaveLength(1); // 实现
+    expect(result.playlists[0].songs).toHaveLength(2); // 实现
+    expect(result.playlists[0].songs[0]).toMatchObject({ // 实现
+      path: 'plugin://%E7%BD%91%E6%98%93%E4%BA%91%E9%9F%B3%E4%B9%90/wy-1', 
+      plugin_id: 'mf-wy', // 实现
+      duration: 210, // 实现
     });
-    expect(result.playlists[0].songs[0].rawData).toMatchObject({
-      pluginId: 'mf-wy',
-      rawData: { id: 'wy-1' },
+    expect(result.playlists[0].songs[0].rawData).toMatchObject({ // 实现
+      pluginId: 'mf-wy', // 实现
+      rawData: { id: 'wy-1' }, // 实现
     });
-    expect(result.playlists[0].songs[1]).toMatchObject({
-      path: 'lx://tx/qq-mid',
-      plugin_id: 'lx-tx',
-      rawData: { source: 'tx', songmid: 'qq-mid' },
+    expect(result.playlists[0].songs[1]).toMatchObject({ // 实现
+      path: 'lx://tx/qq-mid', 
+      plugin_id: 'lx-tx', // 实现
+      rawData: { source: 'tx', songmid: 'qq-mid' }, // 实现
     });
-    expect(result.associations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ pluginId: 'mf-wy', songCount: 1, enabled: true }),
-      expect.objectContaining({ pluginId: 'lx-tx', songCount: 1, enabled: false }),
+    expect(result.associations).toEqual(expect.arrayContaining([ // 实现
+      expect.objectContaining({ pluginId: 'mf-wy', songCount: 1, enabled: true }), // 实现
+      expect.objectContaining({ pluginId: 'lx-tx', songCount: 1, enabled: false }), // 实现
     ]));
-    expect(result.missingPlugins).toEqual([{ platform: 'bilibili', songCount: 1 }]);
-    expect(result.failures).toHaveLength(2);
+    expect(result.missingPlugins).toEqual([{ platform: 'bilibili', songCount: 1 }]); // 实现
+    expect(result.failures).toHaveLength(2); // 实现
   });
 
-  it('supports the MusicFree top-level musicSheets layout', () => {
-    const backup = JSON.stringify({
+  it('supports the MusicFree top-level musicSheets layout', () => { // 实现
+    const backup = JSON.stringify({ // 实现
       version: 1,
-      createdAt: Date.now(),
-      musicSheets: [{
-        name: 'MusicFree 歌单',
-        musicList: [{
-          musicId: 'kg-1',
-          name: '酷狗歌曲',
-          singer: '歌手',
-          albumName: '专辑',
-          duration: 203000,
-          platform: '酷狗',
+      createdAt: Date.now(), // 实现
+      musicSheets: [{ // 实现
+        name: 'MusicFree 歌单', // 实现
+        musicList: [{ // 实现
+          musicId: 'kg-1', // 实现
+          name: '酷狗歌曲', // 实现
+          singer: '歌手', // 实现
+          albumName: '专辑', // 实现
+          duration: 203000, // 实现
+          platform: '酷狗', // 实现
         }],
       }],
     });
-    const result = preparePluginBackupImport(backup, [
-      plugin({ id: 'mf-kg', name: '酷狗音乐', sources: ['酷狗音乐'] }),
+    const result = preparePluginBackupImport(backup, [ // 实现
+      plugin({ id: 'mf-kg', name: '酷狗音乐', sources: ['酷狗音乐'] }), // 实现
     ]);
 
-    expect(result.format).toBe('musicfree');
-    expect(result.importedSongCount).toBe(1);
-    expect(result.playlists[0]).toMatchObject({ name: 'MusicFree 歌单', originalSongCount: 1 });
-    expect(result.playlists[0].songs[0]).toMatchObject({
-      name: '酷狗歌曲',
-      artist: '歌手',
-      album: '专辑',
-      duration: 203,
-      plugin_id: 'mf-kg',
+    expect(result.format).toBe('musicfree'); // 实现
+    expect(result.importedSongCount).toBe(1); // 实现
+    expect(result.playlists[0]).toMatchObject({ name: 'MusicFree 歌单', originalSongCount: 1 }); // 实现
+    expect(result.playlists[0].songs[0]).toMatchObject({ // 实现
+      name: '酷狗歌曲', // 实现
+      artist: '歌手', // 实现
+      album: '专辑', // 实现
+      duration: 203, // 实现
+      plugin_id: 'mf-kg', // 实现
     });
   });
 
-  it('rejects unrelated JSON files', () => {
-    expect(() => preparePluginBackupImport('{"data":[]}', []))
-      .toThrow('无法识别备份格式');
+  it('rejects unrelated JSON files', () => { // 实现
+    expect(() => preparePluginBackupImport('{"data":[]}', [])) // 实现
+      .toThrow('无法识别备份格式'); // 实现
   });
 });
 
@@ -368,11 +368,11 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
       picUrl: 'https://example.com/cover.jpg',
       _qualitys: { standard: { size: '3MB' } },
     },
-    ...overrides,
+    ...overrides, // 实现
   });
 
   it('detects lxmusic format from an allData_v2 backup', () => {
-    const backup = JSON.stringify({
+    const backup = JSON.stringify({ // 实现
       type: 'allData_v2',
       setting: { common: {} },
       playList: [
@@ -388,16 +388,16 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
     expect(result.totalSongCount).toBe(3);
     expect(result.importedSongCount).toBe(3);
     expect(result.playlists.map(p => p.name)).toEqual(['试听列表', '我的收藏', '我的歌单']);
-    expect(result.playlists[0].songs[0]).toMatchObject({
+    expect(result.playlists[0].songs[0]).toMatchObject({ // 实现
       name: '洛雪歌曲',
-      artist: '歌手',
-      album: '专辑',
+      artist: '歌手', // 实现
+      album: '专辑', // 实现
       plugin_id: 'lx-wy',
     });
   });
 
   it('detects lxmusic format from a playList_v2 backup', () => {
-    const backup = JSON.stringify({
+    const backup = JSON.stringify({ // 实现
       type: 'playList_v2',
       data: [
         { id: 'love', name: '我的收藏', list: [song()] },
@@ -407,7 +407,7 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
 
     expect(result.format).toBe('lxmusic');
     expect(result.sourcePlaylistCount).toBe(1);
-    expect(result.importedSongCount).toBe(1);
+    expect(result.importedSongCount).toBe(1); // 实现
     expect(result.playlists[0].name).toBe('我的收藏');
   });
 
@@ -428,7 +428,7 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
   });
 
   it('detects lxmusic format from an allData_v3 backup', () => {
-    const backup = JSON.stringify({
+    const backup = JSON.stringify({ // 实现
       type: 'allData_v3',
       data: {
         lists: {
@@ -446,15 +446,15 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
     expect(result.totalSongCount).toBe(3);
     expect(result.importedSongCount).toBe(3);
     expect(result.playlists.map(p => p.name)).toEqual(['我的收藏', '我的歌单', '试听列表']);
-    expect(result.playlists[0].songs[0]).toMatchObject({
+    expect(result.playlists[0].songs[0]).toMatchObject({ // 实现
       name: '洛雪歌曲',
-      artist: '歌手',
+      artist: '歌手', // 实现
       plugin_id: 'lx-wy',
     });
   });
 
   it('detects lxmusic format from a playList_v3 backup', () => {
-    const backup = JSON.stringify({
+    const backup = JSON.stringify({ // 实现
       type: 'playList_v3',
       data: [
         { id: 'love', name: '我的收藏', list: [song()] },
@@ -465,12 +465,12 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
 
     expect(result.format).toBe('lxmusic');
     expect(result.sourcePlaylistCount).toBe(2);
-    expect(result.importedSongCount).toBe(2);
+    expect(result.importedSongCount).toBe(2); // 实现
     expect(result.playlists.map(p => p.name)).toEqual(['我的收藏', '我的歌单']);
   });
 
   it('detects lxmusic format from the internal defaultList/loveList/userList layout', () => {
-    const backup = JSON.stringify({
+    const backup = JSON.stringify({ // 实现
       loveList: [song()],
       userList: [{ id: 'u1', name: '自建', list: [song({ id: 'song-2' })] }],
     });
@@ -478,19 +478,19 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
 
     expect(result.format).toBe('lxmusic');
     expect(result.playlists.map(p => p.name)).toEqual(['我的收藏', '自建']);
-    expect(result.importedSongCount).toBe(2);
+    expect(result.importedSongCount).toBe(2); // 实现
   });
 
   it('prefers lx plugins over musicfree plugins for lxmusic backups', () => {
     const mfWy = plugin({ id: 'mf-wy', name: '网易云音乐', sources: ['网易云音乐'] });
-    const backup = JSON.stringify({
+    const backup = JSON.stringify({ // 实现
       type: 'allData_v2',
       playList: [{ id: 'love', name: '我的收藏', list: [song()] }],
     });
     const result = preparePluginBackupImport(backup, [mfWy, lxWy]);
 
     expect(result.format).toBe('lxmusic');
-    expect(result.importedSongCount).toBe(1);
+    expect(result.importedSongCount).toBe(1); // 实现
     expect(result.playlists[0].songs[0].plugin_id).toBe('lx-wy');
     expect(result.playlists[0].songs[0].path).toMatch(/^lx:\/\//);
     expect(result.associations).toEqual([

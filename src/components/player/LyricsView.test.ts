@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest'; // 实现
 
-import source from './LyricsView.vue?raw';
+import source from './LyricsView.vue?raw'; // 实现
 
 describe('LyricsView', () => { // 实现
   it('passes enableWordEffect to convertLyricsToAmlLines and computes wordFadeWidth', () => { // 实现
@@ -37,10 +37,10 @@ describe('LyricsView', () => { // 实现
     expect(source).toContain('逐字歌词效果'); // 实现
   });
 
-  it('uses a readable blurred glass background for lyrics settings panels', () => {
-    expect(source.match(/lyrics-settings-glass/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(source).toContain('background: rgba(8, 8, 12, 0.74);');
-    expect(source).toContain('backdrop-filter: blur(32px) saturate(135%);');
-    expect(source).not.toContain('border-white/10 bg-black/30');
+  it('uses a readable blurred glass background for lyrics settings panels', () => { // 实现
+    expect(source.match(/lyrics-settings-glass/g)?.length).toBeGreaterThanOrEqual(3); // 实现
+    expect(source).toContain('background: rgba(8, 8, 12, 0.74);'); // 实现
+    expect(source).toContain('backdrop-filter: blur(32px) saturate(135%);'); // 实现
+    expect(source).not.toContain('border-white/10 bg-black/30'); // 实现
   });
 });

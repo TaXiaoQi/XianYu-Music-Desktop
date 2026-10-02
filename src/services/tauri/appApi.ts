@@ -1,12 +1,12 @@
-import { tauriInvoke } from './invoke';
+import { tauriInvoke } from './invoke'; // 实现
 
-export const appApi = {
+export const appApi = { // 实现
   clearAllAppData: (confirm = true) => tauriInvoke('clear_all_app_data', { confirm }),
-  clearCoverCache: () => tauriInvoke('clear_cover_cache'),
-  openExternalProgram: (path: string, args: string[] = []) =>
-    tauriInvoke('open_external_program', { path, args }),
+  clearCoverCache: () => tauriInvoke('clear_cover_cache'), // 实现
+  openExternalProgram: (path: string, args: string[] = []) => // 实现
+    tauriInvoke('open_external_program', { path, args }), // 实现
   registerExternalProgram: () => tauriInvoke('register_external_program') as Promise<string>,
-  consumePendingOpenPaths: () => tauriInvoke('consume_pending_open_paths'),
+  consumePendingOpenPaths: () => tauriInvoke('consume_pending_open_paths'), // 实现
   consumePendingDeepLinks: () => tauriInvoke('consume_pending_deep_links'),
   openDevtools: () => tauriInvoke('open_devtools'),
   exitApp: () => tauriInvoke('exit_app'),

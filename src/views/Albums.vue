@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 专辑视图：按首字母分组的虚拟滚动网格，负责封面按需加载、视口快照缓存与拖拽排序。
 defineOptions({
   name: 'Albums',
@@ -99,7 +99,7 @@ function syncLayoutMetrics() {
 }
 
 async function remeasureCardHeight() {
-  await nextTick();
+  await nextTick(); // 实现
   const firstCard = scrollBoxRef.value?.querySelector<HTMLElement>('[data-album-card]');
   if (!firstCard) return;
   const measured = firstCard.offsetHeight;
@@ -137,10 +137,10 @@ function persistSnapshotCovers() {
   for (const element of Array.from(box.querySelectorAll<HTMLElement>('[data-cover-path]'))) {
     if (picked.length >= SNAPSHOT_MAX_COUNT) break;
 
-    const path = element.dataset.coverPath;
+    const path = element.dataset.coverPath; // 实现
     if (!path || seen.has(path)) continue;
 
-    const rect = element.getBoundingClientRect();
+    const rect = element.getBoundingClientRect(); // 实现
     if (rect.bottom < upperEdge || rect.top > lowerEdge) continue;
     if (!resolveCoverSrc(path)) continue;
 
@@ -218,7 +218,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     for (let offset = 0; offset < group.entries.length; offset += cols) {
       const groupTail = offset + cols >= group.entries.length;
       rows.push({
-        type: 'items',
+        type: 'items', // 实现
         key: ['items', group.key, String(offset)].join('::'),
         items: group.entries.slice(offset, offset + cols),
         bottomGap: groupTail ? GROUP_GAP_Y : GRID_GAP_Y,
@@ -226,7 +226,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     }
   }
 
-  return rows;
+  return rows; // 实现
 });
 
 // 为每行累计 top / height，得到可直接用于布局的测量结果。
@@ -234,7 +234,7 @@ const measuredSectionRows = computed<MeasuredGroupRow[]>(() => {
   let cursor = 0;
 
   return sectionRows.value.map((row) => {
-    const height = row.type === 'header'
+    const height = row.type === 'header' // 实现
       ? GROUP_TITLE_HEIGHT
       : cardMeasuredHeight.value > 0
         ? cardMeasuredHeight.value + row.bottomGap
@@ -286,7 +286,7 @@ const floatingGroupTitle = computed(() => {
   if (titleRows.length === 0) return null;
 
   const scrollTop = currentScrollTop.value;
-  let activeIndex = 0;
+  let activeIndex = 0; // 实现
   for (let i = 0; i < titleRows.length; i += 1) {
     if (titleRows[i].top > scrollTop) break;
     activeIndex = i;
@@ -342,7 +342,7 @@ const coverPathsInView = computed(() => {
 });
 
 async function setupCoverObserver() {
-  await nextTick();
+  await nextTick(); // 实现
   const box = scrollBoxRef.value;
   if (!box) return;
 
@@ -500,11 +500,11 @@ function onCardPointerMove(_event: PointerEvent, albumKey: string) {
 }
 
 function onDocClick(event: MouseEvent) {
-  const target = event.target as HTMLElement;
+  const target = event.target as HTMLElement; // 实现
   if (!target.closest('.relative.z-50')) sortMenuOpen.value = false;
 }
 
-onMounted(() => {
+onMounted(() => { // 实现
   syncLayoutMetrics();
   window.addEventListener('pointermove', onWindowPointerMove);
   window.addEventListener('pointerup', onWindowPointerUp);
@@ -521,7 +521,7 @@ onMounted(() => {
     layoutResizeObserver.observe(box);
   }
 
-  requestAnimationFrame(() => {
+  requestAnimationFrame(() => { // 实现
     void remeasureCardHeight();
     queueObserverRefresh();
   });
@@ -529,7 +529,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => { persistSnapshotCovers(); });
 
-onUnmounted(() => {
+onUnmounted(() => { // 实现
   window.removeEventListener('pointermove', onWindowPointerMove);
   window.removeEventListener('pointerup', onWindowPointerUp);
   window.removeEventListener('pointercancel', onWindowPointerCancel);
@@ -553,17 +553,17 @@ onUnmounted(() => {
 
 <template>
   <div class="flex-1 flex flex-col overflow-hidden bg-transparent h-full min-h-0" @click="closeSortMenu">
-    <header class="h-auto px-6 pt-2 pb-3 shrink-0 select-none flex flex-col justify-center z-10 relative">
-      <div class="flex items-center justify-between">
+    <header class="h-auto px-6 pt-2 pb-3 shrink-0 select-none flex flex-col justify-center z-10 relative"> 
+      <div class="flex items-center justify-between"> 
         <div class="flex items-center gap-2 pb-1"><h2 class="text-xl font-bold text-gray-900 dark:text-white">专辑列表</h2></div>
 
-        <div class="relative z-50 flex items-center gap-2">
+        <div class="relative z-50 flex items-center gap-2"> 
           <button title="排序方式" @click.stop="toggleSortMenu" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
-            <SortModeIcon class="h-4 w-4" />
+            <SortModeIcon class="h-4 w-4" /> 
           </button>
 
           <div v-if="sortMenuOpen" class="absolute right-0 top-full mt-2 w-48 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md rounded-xl shadow-xl border border-gray-100 dark:border-white/10 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-            <div class="py-1">
+            <div class="py-1"> 
               <button @click="pickSortMode('artist')" :class="sortOptionClass('artist')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"><span>按专辑艺人排序</span><svg v-if="albumSortMode === 'artist'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
               <button @click="pickSortMode('name')" :class="sortOptionClass('name')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"><span>按名称排序 (A-Z)</span><svg v-if="albumSortMode === 'name'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
               <button @click="pickSortMode('count')" :class="sortOptionClass('count')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"><span>按数量排序 (多->少)</span><svg v-if="albumSortMode === 'count'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
@@ -589,18 +589,18 @@ onUnmounted(() => {
 
           <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6" :style="{ paddingBottom: `${row.bottomGap}px` }">
             <div v-for="item in row.items" :key="item.album.key" data-album-card @pointerdown="onCardPress($event, item.index, item.album)" @pointermove="onCardPointerMove($event, item.album.key)" @click="openAlbumTarget(item.album.key)" :class="albumCardClass(item.album.key)" class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5 [touch-action:none]">
-              <div class="relative w-full aspect-square mb-3 mt-1" :data-cover-path="item.album.firstSongPath">
-                <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]">
+              <div class="relative w-full aspect-square mb-3 mt-1" :data-cover-path="item.album.firstSongPath"> 
+                <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]"> 
                   <div class="absolute inset-0 rounded-t-full border border-white/5 scale-90"></div><div class="absolute inset-0 rounded-t-full border border-white/5 scale-75"></div><div class="absolute inset-0 rounded-t-full border border-white/5 scale-50"></div>
                 </div>
 
-                <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300">
+                <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300"> 
                   <img v-if="resolveCoverSrc(item.album.firstSongPath)" :src="resolveCoverSrc(item.album.firstSongPath)" :alt="item.album.name" class="w-full h-full rounded-sm object-cover select-none" loading="lazy" decoding="async" draggable="false" />
                   <div v-else :class="{ 'animate-pulse': coverLoadingNow(item.album.firstSongPath) }" class="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-white/5 dark:to-white/10 rounded-sm flex items-center justify-center text-4xl font-bold text-gray-300 dark:text-gray-600 shadow-inner">{{ albumInitial(item.album.name) }}</div>
                 </div>
               </div>
 
-              <div class="flex flex-col items-start px-1 z-20">
+              <div class="flex flex-col items-start px-1 z-20"> 
                 <h3 class="font-bold text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-tight">{{ item.album.name }}</h3>
                 <p class="text-xs text-gray-500 dark:text-gray-400 truncate w-full mt-1.5 flex items-center gap-1.5 opacity-80"><span class="font-medium">{{ albumCountText(item.album) }}</span><span class="w-0.5 h-0.5 rounded-full bg-gray-400"></span><span>{{ item.album.artist }}</span></p>
               </div>
@@ -611,18 +611,18 @@ onUnmounted(() => {
 
       <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6 gap-y-10" :style="{ paddingTop: flatViewState.paddingTop, paddingBottom: flatViewState.paddingBottom }">
         <div v-for="item in flatViewState.items" :key="item.album.key" data-album-card @pointerdown="onCardPress($event, item.index, item.album)" @pointermove="onCardPointerMove($event, item.album.key)" @click="openAlbumTarget(item.album.key)" :class="albumCardClass(item.album.key)" class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5 [touch-action:none]">
-          <div class="relative w-full aspect-square mb-3 mt-1" :data-cover-path="item.album.firstSongPath">
-            <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]">
+          <div class="relative w-full aspect-square mb-3 mt-1" :data-cover-path="item.album.firstSongPath"> 
+            <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]"> 
               <div class="absolute inset-0 rounded-t-full border border-white/5 scale-90"></div><div class="absolute inset-0 rounded-t-full border border-white/5 scale-75"></div><div class="absolute inset-0 rounded-t-full border border-white/5 scale-50"></div>
             </div>
 
-            <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300">
+            <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300"> 
               <img v-if="resolveCoverSrc(item.album.firstSongPath)" :src="resolveCoverSrc(item.album.firstSongPath)" :alt="item.album.name" class="w-full h-full rounded-sm object-cover select-none" loading="lazy" decoding="async" draggable="false" />
               <div v-else :class="{ 'animate-pulse': coverLoadingNow(item.album.firstSongPath) }" class="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-white/5 dark:to-white/10 rounded-sm flex items-center justify-center text-4xl font-bold text-gray-300 dark:text-gray-600 shadow-inner">{{ albumInitial(item.album.name) }}</div>
             </div>
           </div>
 
-          <div class="flex flex-col items-start px-1 z-20">
+          <div class="flex flex-col items-start px-1 z-20"> 
             <h3 class="font-bold text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-tight">{{ item.album.name }}</h3>
             <p class="text-xs text-gray-500 dark:text-gray-400 truncate w-full mt-1.5 flex items-center gap-1.5 opacity-80"><span class="font-medium">{{ albumCountText(item.album) }}</span><span class="w-0.5 h-0.5 rounded-full bg-gray-400"></span><span>{{ item.album.artist }}</span></p>
           </div>
@@ -633,7 +633,7 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 /* 关闭滚动锚定，避免虚拟列表占位高度变化时浏览器自行调整滚动位置。 */
 .albums-scroll-container { overflow-anchor: none; }
 </style>

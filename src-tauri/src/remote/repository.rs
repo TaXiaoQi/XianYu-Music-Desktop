@@ -124,8 +124,8 @@ pub(crate) fn list_sources(
     conn: &rusqlite::Connection,
 ) -> Result<Vec<RemoteSource>, String> {
     let sql = "SELECT id, name, provider, base_url, username, password, root_path, enabled,
-                    last_sync_at, last_sync_error, created_at, updated_at
-             FROM remote_sources
+                    last_sync_at, last_sync_error, created_at, updated_at 
+             FROM remote_sources 
              ORDER BY created_at DESC";
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], credentials_from_row).map_err(|e| e.to_string())?;
@@ -136,12 +136,12 @@ pub(crate) fn list_sources(
         .collect())
 }
 
-pub(crate) fn get_source(
+pub(crate) fn get_source( // get_source
     conn: &rusqlite::Connection, source_id: &str,
-) -> Result<RemoteSourceCredentials, String> {
+) -> Result<RemoteSourceCredentials, String> { // 实现
     let sql = "SELECT id, name, provider, base_url, username, password, root_path, enabled,
-                last_sync_at, last_sync_error, created_at, updated_at
-         FROM remote_sources
+                last_sync_at, last_sync_error, created_at, updated_at 
+         FROM remote_sources 
          WHERE id = ?1";
     let lookup = conn.query_row(sql, [source_id], credentials_from_row);
     let found = lookup.optional().map_err(|e| e.to_string())?;
@@ -155,7 +155,7 @@ pub(crate) fn get_source(
 }
 
 /// 按 remote URI 定位音源；同时返回 remote_files 表里登记的 etag 与规范 URI。
-pub(crate) fn get_source_for_remote_uri(
+pub(crate) fn get_source_for_remote_uri( // get_source_for_remote_uri
     conn: &rusqlite::Connection, uri: &str,
 ) -> Result<(RemoteSourceCredentials, String, Option<String>, Option<String>), String> {
     let Some((source_id, remote_path)) = remote_path_from_uri(uri) else {
@@ -180,9 +180,9 @@ pub(crate) fn get_source_for_remote_uri(
 // 写入
 // ---------------------------------------------------------------------------
 
-pub(crate) fn save_source(
+pub(crate) fn save_source( // save_source
     conn: &rusqlite::Connection, input: RemoteSourceInput,
-) -> Result<RemoteSource, String> {
+) -> Result<RemoteSource, String> { // 实现
     if input.provider.ne("webdav") {
         return Err(String::from("第一版仅支持 WebDAV"));
     }
@@ -207,21 +207,21 @@ pub(crate) fn save_source(
     let db_password: Option<String> = match password.as_deref() {
         Some(pw) if password_persisted_correctly(&id, pw) => None,
         Some(_) => return Err(String::from("系统凭据管理器不可用，无法安全保存密码")),
-        None => None,
+        None => None, // 实现
     };
 
     let insert_sql = "INSERT INTO remote_sources (
-            id, name, provider, base_url, username, password, root_path, enabled,
-            created_at, updated_at
+            id, name, provider, base_url, username, password, root_path, enabled, 
+            created_at, updated_at 
          )
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9)
-         ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            provider = excluded.provider,
-            base_url = excluded.base_url,
-            username = excluded.username,
-            password = excluded.password,
-            root_path = excluded.root_path,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9) 
+         ON CONFLICT(id) DO UPDATE SET 
+            name = excluded.name, 
+            provider = excluded.provider, 
+            base_url = excluded.base_url, 
+            username = excluded.username, 
+            password = excluded.password, 
+            root_path = excluded.root_path, 
             updated_at = excluded.updated_at";
     conn.execute(insert_sql, params![
             &id, name, "webdav", base_url, &input.username, &db_password, &root_path,
@@ -233,13 +233,13 @@ pub(crate) fn save_source(
 }
 
 /// 删除音源及其关联歌曲、索引行与凭据。
-pub(crate) fn remove_source(
+pub(crate) fn remove_source( // remove_source
     conn: &mut rusqlite::Connection, source_id: &str,
-) -> Result<(), String> {
+) -> Result<(), String> { // 实现
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM songs WHERE remote_source_id = ?1", [source_id])
+    tx.execute("DELETE FROM songs WHERE remote_source_id = ?1", [source_id]) // 实现
         .map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM remote_sources WHERE id = ?1", [source_id])
+    tx.execute("DELETE FROM remote_sources WHERE id = ?1", [source_id]) // 实现
         .map_err(|e| e.to_string())?;
     purge_passwords(source_id);
     // 清理失去歌曲引用的孤儿歌手。
@@ -250,22 +250,22 @@ pub(crate) fn remove_source(
 }
 
 /// 用最新扫描结果整体替换某音源的 remote_files 索引。
-pub(crate) fn replace_remote_files(
+pub(crate) fn replace_remote_files( // replace_remote_files
     conn: &mut rusqlite::Connection, source_id: &str, files: &[RemoteFileEntry],
-) -> Result<(), String> {
+) -> Result<(), String> { // 实现
     let indexed_at = now_seconds();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM remote_files WHERE source_id = ?1", [source_id])
+    tx.execute("DELETE FROM remote_files WHERE source_id = ?1", [source_id]) // 实现
         .map_err(|e| e.to_string())?;
 
     {
         let insert_sql = "INSERT INTO remote_files (
-                    source_id, remote_path, remote_uri, name, size, etag, modified_at, is_audio, indexed_at
+                    source_id, remote_path, remote_uri, name, size, etag, modified_at, is_audio, indexed_at 
                  )
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
         let mut stmt = tx.prepare(insert_sql).map_err(|e| e.to_string())?;
         for item in files {
-            stmt.execute(params![
+            stmt.execute(params![ // 实现
                 source_id, &item.remote_path, item.remote_uri(source_id), &item.name,
                 item.size.min(i64::MAX as u64) as i64, &item.etag, &item.modified_at,
                 if item.is_dir { 0 } else { 1 }, indexed_at
@@ -278,12 +278,12 @@ pub(crate) fn replace_remote_files(
 }
 
 /// 记录同步完成时间（或失败原因）。
-pub(crate) fn update_sync_status(
+pub(crate) fn update_sync_status( // update_sync_status
     conn: &rusqlite::Connection, source_id: &str, error: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), String> { // 实现
     let moment = now_seconds();
     let sql = "UPDATE remote_sources
-         SET last_sync_at = ?1, last_sync_error = ?2, updated_at = ?1
+         SET last_sync_at = ?1, last_sync_error = ?2, updated_at = ?1 
          WHERE id = ?3";
     conn.execute(sql, params![moment, error, source_id])
         .map_err(|e| e.to_string())?;
@@ -291,9 +291,9 @@ pub(crate) fn update_sync_status(
 }
 
 /// 回写歌曲的本地缓存路径。
-pub(crate) fn update_song_cache_path(
+pub(crate) fn update_song_cache_path( // update_song_cache_path
     conn: &rusqlite::Connection, remote_uri: &str, cache_path: &str,
-) -> Result<(), String> {
+) -> Result<(), String> { // 实现
     let sql = "UPDATE songs SET cache_path = ?1 WHERE path = ?2";
     conn.execute(sql, params![cache_path, remote_uri])
         .map_err(|e| e.to_string())?;
@@ -301,9 +301,9 @@ pub(crate) fn update_song_cache_path(
 }
 
 /// 查询歌曲已登记的本地缓存路径（可能为 NULL 或行不存在）。
-pub(crate) fn get_song_cache_path(
+pub(crate) fn get_song_cache_path( // get_song_cache_path
     conn: &rusqlite::Connection, remote_uri: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, String> { // 实现
     let lookup: Result<Option<String>, _> = conn.query_row(
             "SELECT cache_path FROM songs WHERE path = ?1",
             [remote_uri],

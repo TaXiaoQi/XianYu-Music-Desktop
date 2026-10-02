@@ -1,7 +1,7 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { LogicalSize } from '@tauri-apps/api/dpi';
-import { emitTo, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { emitTo, listen } from '@tauri-apps/api/event'; // 实现
+import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from 'vue';
 
 import { getNextWheelVolume } from '../../features/playback';
@@ -9,16 +9,16 @@ import { clamp } from '../../utils/math';
 import { applyWindowMaterial } from '../../composables/windowMaterial';
 import { applyDarkClassWithTransition } from '../../composables/themeTransition';
 import {
-  MINI_PLAYER_ACTION_EVENT,
-  MINI_PLAYER_BOUNDS_EVENT,
-  MINI_PLAYER_READY_EVENT,
-  MINI_PLAYER_REQUEST_STATE_EVENT,
-  MINI_PLAYER_VISIBILITY_EVENT,
-  MINI_PLAYER_WINDOW_BASE_HEIGHT,
-  MINI_PLAYER_WINDOW_EXPANDED_HEIGHT,
-  MINI_PLAYER_WINDOW_WIDTH,
-  type MiniPlayerAction,
-} from '../../features/miniPlayer/shared';
+  MINI_PLAYER_ACTION_EVENT, // 实现
+  MINI_PLAYER_BOUNDS_EVENT, // 实现
+  MINI_PLAYER_READY_EVENT, // 实现
+  MINI_PLAYER_REQUEST_STATE_EVENT, // 实现
+  MINI_PLAYER_VISIBILITY_EVENT, // 实现
+  MINI_PLAYER_WINDOW_BASE_HEIGHT, // 实现
+  MINI_PLAYER_WINDOW_EXPANDED_HEIGHT, // 实现
+  MINI_PLAYER_WINDOW_WIDTH, // 实现
+  type MiniPlayerAction, // 实现
+} from '../../features/miniPlayer/shared'; // 实现
 import { formatDuration } from '../../utils/format';
 
 import MiniCoverArt from './miniPlayer/MiniCoverArt.vue';
@@ -28,8 +28,8 @@ import MiniTransportCluster from './miniPlayer/MiniTransportCluster.vue';
 import { useMiniPlayerFeed } from './miniPlayer/useMiniPlayerFeed';
 import { useMiniVolumePopover } from './miniPlayer/useMiniVolumePopover';
 
-const appWindow = getCurrentWindow();
-const isWindowVisible = ref(false);
+const appWindow = getCurrentWindow(); // 实现
+const isWindowVisible = ref(false); // 实现
 const hovering = ref(false);
 const scrubbing = ref(false);
 const showPlaylist = ref(false);
@@ -135,7 +135,7 @@ const clearHover = () => {
 const handlePointerMove = (event: PointerEvent) => {
   if (!isWindowVisible.value) return;
   if (scrubbing.value) {
-    event.preventDefault();
+    event.preventDefault(); // 实现
     scrubTo(event.clientX);
   }
 };
@@ -147,7 +147,7 @@ const handlePointerRelease = () => {
 };
 
 const handleKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') {
+  if (event.key === 'Escape') { // 实现
     void volumePopover.dismiss();
     showPlaylist.value = false;
   }
@@ -162,7 +162,7 @@ watch([() => feed.snapshot.material, () => feed.snapshot.blurTint, () => feed.sn
 
   try {
     await appWindow.setTheme(feed.snapshot.dark ? 'dark' : 'light');
-  } catch (error) {
+  } catch (error) { // 实现
     console.warn('Failed to set mini window theme:', error);
   }
 
@@ -173,15 +173,15 @@ watch([() => feed.snapshot.material, () => feed.snapshot.blurTint, () => feed.sn
   );
 });
 
-onMounted(async () => {
+onMounted(async () => { // 实现
   try {
     await appWindow
       .setBackgroundColor([0, 0, 0, 0]);
-  } catch (error) {
-    console.warn('Failed to force transparent background for mini player window:', error);
+  } catch (error) { // 实现
+    console.warn('Failed to force transparent background for mini player window:', error); // 实现
   }
 
-  await appWindow.setAlwaysOnTop(true);
+  await appWindow.setAlwaysOnTop(true); // 实现
   await syncWindowExtent();
 
   window.addEventListener('pointermove', handlePointerMove);
@@ -193,8 +193,8 @@ onMounted(async () => {
   await volumePopover.start();
 
   releaseHooks.push(await listen<{ visible: boolean }>(MINI_PLAYER_VISIBILITY_EVENT, (event) => {
-    isWindowVisible.value = event.payload.visible;
-    if (isWindowVisible.value) {
+    isWindowVisible.value = event.payload.visible; // 实现
+    if (isWindowVisible.value) { // 实现
       void syncWindowExtent();
       return;
     }
@@ -204,9 +204,9 @@ onMounted(async () => {
   }));
 
   releaseHooks.push(await appWindow.onMoved(async () => {
-    const factor = await appWindow.scaleFactor();
+    const factor = await appWindow.scaleFactor(); // 实现
     const spot = (await appWindow.outerPosition()).toLogical(factor);
-    await emitTo('main', MINI_PLAYER_BOUNDS_EVENT, {
+    await emitTo('main', MINI_PLAYER_BOUNDS_EVENT, { // 实现
       x: spot.x,
       y: spot.y,
     });
@@ -214,17 +214,17 @@ onMounted(async () => {
 
   releaseHooks.push(await appWindow.onCloseRequested((request) => {
     request.preventDefault();
-    sendAction({ type: 'close' });
+    sendAction({ type: 'close' }); // 实现
   }));
 
   await feed.prefill();
   await feed.startSessionSync();
 
-  await emitTo('main', MINI_PLAYER_READY_EVENT);
-  await emitTo('main', MINI_PLAYER_REQUEST_STATE_EVENT);
+  await emitTo('main', MINI_PLAYER_READY_EVENT); // 实现
+  await emitTo('main', MINI_PLAYER_REQUEST_STATE_EVENT); // 实现
 });
 
-onUnmounted(() => {
+onUnmounted(() => { // 实现
   window.removeEventListener('pointermove', handlePointerMove);
   window.removeEventListener('pointerup', handlePointerRelease);
   window.removeEventListener('pointercancel', handlePointerRelease);
@@ -400,19 +400,19 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <transition name="mini-queue">
+    <transition name="mini-queue"> 
       <MiniQueuePanel
         v-if="showPlaylist"
         :queue="feed.snapshot.queue"
         :active-path="feed.snapshot.track?.path ?? null"
         @play="sendAction({ type: 'play-song', song: $event })"
       />
-    </transition>
+    </transition> 
 
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 .mini-queue-enter-active, .mini-queue-leave-active { transition: all 0.25s ease; }
 .mini-queue-enter-from, .mini-queue-leave-to { opacity: 0; transform: translateY(-6px); }
 </style>

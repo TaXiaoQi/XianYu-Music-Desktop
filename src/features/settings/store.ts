@@ -1,31 +1,31 @@
-import { defineStore } from 'pinia';
+import { defineStore } from 'pinia'; // 实现
 import { computed, ref } from 'vue';
 
-import type {
+import type { // 实现
   ThemeSettings, SidebarSettings, FooterLayoutSettings, TopBarLayoutSettings,
   AudioSettings, LyricsSettings, DesktopLyricsSettings,
   DownloadSettings, UploadSettings, PluginSettings, AutoSyncConfig, LogSettings,
   ImportedLyricsFont, EqualizerPreset, MvQualityKey, AppSettings, DesktopThemeSurface, DesktopThemeVisuals,
-} from '../../types';
+} from '../../types'; // 实现
 import { MV_QUALITY_KEYS, ALL_QUALITY_KEYS } from '../../types';
 import { AUDIO_FILE_ASSOCIATION_EXTENSIONS } from './audioFileAssociations';
 import { normalizeThemeColor, DEFAULT_THEME_COLOR } from '../../utils/themeColor';
 import {
   normalizeImportedLyricsFonts,
-  mergeDesktopLyricsSettings,
-  mergeLyricsSettings,
+  mergeDesktopLyricsSettings, // 实现
+  mergeLyricsSettings, // 实现
   createDefaultDesktopLyricsSettings,
   createDefaultLyricsSettings,
 } from '../../composables/lyrics/constants';
 import {
   type ShortcutSettingsPatch,
-  createDefaultShortcutSettings,
-  mergeShortcutSettings,
-} from './shortcuts';
+  createDefaultShortcutSettings, // 实现
+  mergeShortcutSettings, // 实现
+} from './shortcuts'; // 实现
 import { normalizeSidebarOrder, DEFAULT_SIDEBAR_ORDER } from './sidebarItems';
 import { normalizeFooterLayout, DEFAULT_FOOTER_LAYOUT } from './footerItems';
 import { normalizeTopBarLayout, DEFAULT_TOPBAR_LAYOUT } from './topBarItems';
-import { normalizeLyricsSyncOffsetSeconds } from './lyricsSyncOffset';
+import { normalizeLyricsSyncOffsetSeconds } from './lyricsSyncOffset'; // 实现
 import { playerStorage } from '../../services/storage/playerStorage';
 
 /**
@@ -109,11 +109,11 @@ export type PluginSettingsPatch = OptionalFields<PluginSettings>;
 export type AutoSyncConfigPatch = OptionalFields<AutoSyncConfig>;
 export type LogSettingsPatch = OptionalFields<LogSettings>;
 
-export interface AppSettingsPatch
+export interface AppSettingsPatch // 实现
   extends OptionalFields<Omit<AppSettings, 'logging' | 'autoSync' | 'plugins' | 'upload' | 'download' | 'customLyricsFonts' | 'audio' | 'desktopLyrics' | 'lyrics' | 'shortcuts' | 'topBarLayout' | 'footerLayout' | 'sidebar' | 'theme'>> {
   theme?: ThemeSettingsPatch; sidebar?: SidebarSettingsPatch;
   footerLayout?: FooterLayoutSettingsPatch; topBarLayout?: TopBarLayoutSettingsPatch;
-  shortcuts?: ShortcutSettingsPatch;
+  shortcuts?: ShortcutSettingsPatch; // 实现
   lyrics?: LyricsSettingsPatch; desktopLyrics?: DesktopLyricsSettingsPatch;
   audio?: AudioSettingsPatch; customLyricsFonts?: ImportedLyricsFontsPatch;
   download?: DownloadSettingsPatch; upload?: UploadSettingsPatch;
@@ -122,7 +122,7 @@ export interface AppSettingsPatch
 
 export type DeprecatedAppSettingsPatch = AppSettingsPatch & {
   /** 旧版「关闭即最小化到托盘」开关，仅存在于历史持久化数据中，合并时直接忽略。 */
-  minimizeToTray?: boolean;
+  minimizeToTray?: boolean; // 实现
 };
 
 /* ---------------------------------------------------------------------- */
@@ -134,7 +134,7 @@ const FOREGROUND_STYLE_BY_VALUE: Record<string, ThemeSettings['customBackground'
 };
 
 export function normalizeForegroundStyle(
-  foregroundStyle: string | null | undefined,
+  foregroundStyle: string | null | undefined, // 实现
 ): ThemeSettings['customBackground']['foregroundStyle'] {
   return FOREGROUND_STYLE_BY_VALUE[foregroundStyle ?? ''] ?? 'light';
 }
@@ -158,7 +158,7 @@ const defaultDesktopTheme: DesktopThemeVisuals = {
   surfaces: {},
 };
 
-export const defaultThemeSettings: ThemeSettings = {
+export const defaultThemeSettings: ThemeSettings = { // 实现
   mode: 'system', accentColor: DEFAULT_THEME_COLOR,
   desktopTheme: defaultDesktopTheme,
   playerDetailCoverBehavior: 'remember', lastPlayerDetailCoverVisible: true,
@@ -168,14 +168,14 @@ export const defaultThemeSettings: ThemeSettings = {
   useCustomTrayMenu: true, useGlassSwitch: false, showLeaderboard: true,
   flowColorBoost: 25, flowDepth: 30, flowSpeed: 52, flowTexture: 34, windowBlurTint: 50,
   customBgPath: '', opacity: 0.8, blur: 20,
-  customBackground: {
+  customBackground: { // 实现
     imagePath: '', mediaType: 'image', blur: 20, opacity: 1,
     maskColor: '#000000', maskAlpha: 0.4, scale: 1, foregroundStyle: 'light',
     translateX: 0, translateY: 0,
   },
 };
 
-export const defaultSidebarSettings: SidebarSettings = {
+export const defaultSidebarSettings: SidebarSettings = { // 实现
   showLocalMusic: true, showArtists: true, showAlbums: true, showFavorites: true,
   showRecent: true, showFolders: true, showStatistics: true, showPlugins: true,
   showAccount: true,
@@ -196,12 +196,12 @@ export const defaultTopBarLayoutSettings: TopBarLayoutSettings = {
   hidden: DEFAULT_TOPBAR_LAYOUT.hidden.slice(),
 };
 
-export const defaultAudioSettings: AudioSettings = {
+export const defaultAudioSettings: AudioSettings = { // 实现
   outputMode: 'shared', outputBitPerfect: false, dsdNativePassthrough: false,
-  volumeBalance: {
+  volumeBalance: { // 实现
     enabled: false, gainOffsetDb: 0, preventClipping: true,
   },
-  equalizer: {
+  equalizer: { // 实现
     enabled: false, preamp: 0.0, gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
   showEqualizerInFooter: true, onlineDefaultQuality: 'flac',
@@ -210,7 +210,7 @@ export const defaultAudioSettings: AudioSettings = {
   fadeInOutEnabled: true, fadeInOutDurationMs: 500, mvDefaultQuality: '720P',
 };
 
-export const defaultDownloadSettings: DownloadSettings = {
+export const defaultDownloadSettings: DownloadSettings = { // 实现
   downloadPath: '', behavior: 'default', batchDownloadLimit: 2,
   format: 'mp3', quality: 'flac', downloadLyrics: false,
   lyricsFormat: 'lrc', lyricsStyle: 'word-by-word',
@@ -221,7 +221,7 @@ export const defaultDownloadSettings: DownloadSettings = {
   mvDefaultQuality: '720P',
 };
 
-export const defaultUploadSettings: UploadSettings = {
+export const defaultUploadSettings: UploadSettings = { // 实现
   playlists: true, history: true, favorites: true, plugins: true, settings: true,
 };
 
@@ -233,11 +233,11 @@ export const defaultAutoSyncConfig: AutoSyncConfig = { // 自动同步默认配�
   enabled: true, syncIntervalSeconds: 3600, maxDelayMinutes: 5,
   delayedCount: 0, lastSyncAttemptAt: 0, lastSyncSuccessAt: 0, nextSyncAt: 0,
 }; // 默认值结束
-export const defaultLogSettings: LogSettings = {
+export const defaultLogSettings: LogSettings = { // 实现
   minimumLevel: 'info', retentionDays: 1, autoAnalyze: true,
 };
 
-export const defaultAppSettings: AppSettings = {
+export const defaultAppSettings: AppSettings = { // 实现
   language: 'system', closeToTray: true, launchOnStartup: false,
   launchOnStartupMinimized: false, preventSleepWhilePlaying: true,
   audioFileAssociations: [...AUDIO_FILE_ASSOCIATION_EXTENSIONS],
@@ -249,7 +249,7 @@ export const defaultAppSettings: AppSettings = {
   lyrics: createDefaultLyricsSettings(), desktopLyrics: createDefaultDesktopLyricsSettings(),
   theme: defaultThemeSettings, sidebar: defaultSidebarSettings,
   footerLayout: defaultFooterLayoutSettings, topBarLayout: defaultTopBarLayoutSettings,
-  shortcuts: createDefaultShortcutSettings(),
+  shortcuts: createDefaultShortcutSettings(), // 实现
   showTaskbarPlayer: false, taskbarPlayerCanDrag: false,
   gpuAcceleration: true, performanceMode: 'auto',
   checkUpdateOnStartup: true, showWelcomeToastOnStartup: true, writeArtistAvatarToTags: false,
@@ -302,7 +302,7 @@ export function createDefaultAudioSettings(): AudioSettings {
   const snapshot = { ...defaultAudioSettings };
   snapshot.volumeBalance = { ...defaultAudioSettings.volumeBalance };
   snapshot.equalizer = {
-    ...defaultAudioSettings.equalizer,
+    ...defaultAudioSettings.equalizer, // 实现
     gains: defaultAudioSettings.equalizer.gains.slice(),
   };
   return snapshot;
@@ -464,7 +464,7 @@ const mergeDesktopTheme = (
 
 export const mergeThemeSettings = (base: ThemeSettings, patch: ThemeSettingsPatch): ThemeSettings => {
   const { showPlayerDetailCoverByDefault: legacyCoverVisible, ...usablePatch } = patch as ThemeSettingsPatch & {
-    showPlayerDetailCoverByDefault?: unknown;
+    showPlayerDetailCoverByDefault?: unknown; // 实现
   };
   const mergedBackground = { ...base.customBackground, ...(patch.customBackground ?? {}) };
   const coverBehavior = pickOption(
@@ -485,7 +485,7 @@ export const mergeThemeSettings = (base: ThemeSettings, patch: ThemeSettingsPatc
     playerDetailVinylMaterial: pickOption(patch.playerDetailVinylMaterial, base.playerDetailVinylMaterial, VINYL_MATERIAL_OPTIONS),
     playerDetailVinylPlatterStyle: pickOption(patch.playerDetailVinylPlatterStyle, base.playerDetailVinylPlatterStyle, VINYL_PLATTER_STYLE_OPTIONS),
     lastPlayerDetailCoverVisible: chooseBoolean(patch.lastPlayerDetailCoverVisible, base.lastPlayerDetailCoverVisible),
-    customBackground: {
+    customBackground: { // 实现
       ...mergedBackground,
       foregroundStyle: normalizeForegroundStyle(mergedBackground.foregroundStyle),
     },
@@ -698,10 +698,10 @@ export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettings
     language: pickOption(languagePatch, base.language, APP_LANGUAGE_OPTIONS),
     preventSleepWhilePlaying: chooseBoolean(preventSleepPatch, base.preventSleepWhilePlaying),
     showWelcomeToastOnStartup: chooseBoolean(showWelcomeToastPatch, base.showWelcomeToastOnStartup),
-    lyricsSyncOffset: normalizeLyricsSyncOffsetSeconds(
+    lyricsSyncOffset: normalizeLyricsSyncOffsetSeconds( // 实现
       withFallback(patch.lyricsSyncOffset, base.lyricsSyncOffset),
     ),
-    libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds(
+    libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds( // 实现
       withFallback(libraryMinPatch, base.libraryMinDurationSeconds),
     ),
     lyrics: lyricsPatch ? mergeLyricsSettings(base.lyrics, lyricsPatch) : base.lyrics,
@@ -804,7 +804,7 @@ export const useSettingsStore = defineStore(
     const userPresets = computed(() => equalizerPresets.value.filter(preset => !preset.isBuiltin));
 
     const persistUserPresets = () => {
-      playerStorage.writeEqualizerPresets(userPresets.value);
+      playerStorage.writeEqualizerPresets(userPresets.value); // 实现
     };
     const snapshotEqualizer = () => settingsState.value.audio.equalizer;
     const applyEqualizerState = (next: AudioSettings['equalizer']) => {

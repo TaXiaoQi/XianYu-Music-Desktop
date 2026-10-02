@@ -10,29 +10,29 @@
 //! 除此之外还提供：CUE 音轨的虚拟曲目合成、按路径清单批量解析、
 //! 以及“同目录同专辑”分组下的专辑歌手/合辑/折叠语义裁决。
 
-use super::super::cue::CueTrack;
+use crate::music::cue::CueTrack;
 use super::super::tags::{
     extract_detail_metadata, find_embedded_artist_picture, read_tagged_file_from_path_for_scan,
 };
-use super::super::types::Song;
-use super::super::utils::{is_supported_library_extension, normalize_path};
-use super::{
+use crate::music::types::Song;
+use super::super::utils::{normalize_path, is_supported_library_extension};
+use super::{ // 实现
     album_identity_key, display_artist_of, fold_tag_text_into_fields, key_component_normalized,
     reads_as_absent, split_into_artist_names, ALBUM_FALLBACK_TEXT, ARTIST_FALLBACK_TEXT,
     COMPILATION_ARTIST_CEILING, COMPILATION_ARTIST_NAME, ScanOptions,
 };
-use lofty::file::FileType;
-use lofty::prelude::*;
-use std::collections::{HashMap, HashSet};
+use lofty::file::{FileType};
+use lofty::prelude::*; // 实现
+use std::collections::{HashSet, HashMap};
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
-use symphonia::core::codecs::CODEC_TYPE_NULL;
-use symphonia::core::formats::FormatOptions;
+use std::path::{PathBuf, Path};
+use std::time::{UNIX_EPOCH};
+use symphonia::core::codecs::{CODEC_TYPE_NULL};
+use symphonia::core::formats::{FormatOptions};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
-use symphonia::core::meta::{Limit, MetadataOptions};
-use symphonia::core::probe::Hint;
-use symphonia::core::units::TimeBase;
+use symphonia::core::meta::{MetadataOptions, Limit};
+use symphonia::core::probe::{Hint};
+use symphonia::core::units::{TimeBase};
 
 // ---------- 解析草稿 ----------
 
@@ -290,7 +290,7 @@ pub(crate) fn parse_song_from_file(
     path: &Path,
     path_str: &str,
     format: &str,
-) -> Option<Song> {
+) -> Option<Song> { // 实现
     let mut draft = DecodedDraft::blank_for(format);
     draft.absorb_fs(path);
 
@@ -320,7 +320,7 @@ pub(super) fn parse_given_paths(paths: Vec<String>, options: ScanOptions) -> Vec
         }
 
         let Some(ext) = file_path
-            .extension()
+            .extension() // 实现
             .and_then(|piece| piece.to_str())
             .map(|piece| piece.to_ascii_lowercase())
         else {
@@ -347,19 +347,19 @@ pub(super) fn parse_given_paths(paths: Vec<String>, options: ScanOptions) -> Vec
 
 /// lofty 识别的文件类型 → 统一容器名。
 fn container_of_file_type(file_type: FileType) -> &'static str {
-    match file_type {
-        FileType::Aac => "aac",
-        FileType::Aiff => "aiff",
-        FileType::Ape => "ape",
-        FileType::Flac => "flac",
-        FileType::Mpeg => "mpeg",
-        FileType::Mp4 => "mp4",
-        FileType::Mpc => "mpc",
-        FileType::Opus | FileType::Speex | FileType::Vorbis => "ogg",
-        FileType::Wav => "wav",
-        FileType::WavPack => "wavpack",
-        FileType::Custom(name) => name,
-        _ => "unknown",
+    match file_type { // 实现
+        FileType::Aac => "aac", // 实现
+        FileType::Aiff => "aiff", // 实现
+        FileType::Ape => "ape", // 实现
+        FileType::Flac => "flac", // 实现
+        FileType::Mpeg => "mpeg", // 实现
+        FileType::Mp4 => "mp4", // 实现
+        FileType::Mpc => "mpc", // 实现
+        FileType::Opus | FileType::Speex | FileType::Vorbis => "ogg", // 实现
+        FileType::Wav => "wav", // 实现
+        FileType::WavPack => "wavpack", // 实现
+        FileType::Custom(name) => name, // 实现
+        _ => "unknown", // 实现
     }
 }
 
@@ -367,12 +367,12 @@ fn container_of_file_type(file_type: FileType) -> &'static str {
 fn container_from_extension(ext: &str) -> String {
     let lowered = ext.to_ascii_lowercase();
     match lowered.as_str() {
-        "aif" | "aiff" => "aiff".to_string(),
-        "m4a" | "m4b" | "m4p" | "mp4" => "mp4".to_string(),
-        "mp1" | "mp2" | "mp3" => "mpeg".to_string(),
-        "oga" | "ogg" | "opus" | "spx" | "speex" | "vorbis" => "ogg".to_string(),
-        "wav" | "wave" => "wav".to_string(),
-        "wv" => "wavpack".to_string(),
+        "aif" | "aiff" => "aiff".to_string(), // 实现
+        "m4a" | "m4b" | "m4p" | "mp4" => "mp4".to_string(), // 实现
+        "mp1" | "mp2" | "mp3" => "mpeg".to_string(), // 实现
+        "oga" | "ogg" | "opus" | "spx" | "speex" | "vorbis" => "ogg".to_string(), // 实现
+        "wav" | "wave" => "wav".to_string(), // 实现
+        "wv" => "wavpack".to_string(), // 实现
         anything_else => anything_else.to_string(),
     }
 }
@@ -381,9 +381,9 @@ fn container_from_extension(ext: &str) -> String {
 fn encoder_label(short_name: &str) -> String {
     let lowered = short_name.to_ascii_lowercase();
     if lowered.starts_with("pcm_") {
-        "pcm".to_string()
+        "pcm".to_string() // 实现
     } else if lowered.starts_with("adpcm_") {
-        "adpcm".to_string()
+        "adpcm".to_string() // 实现
     } else {
         lowered
     }
@@ -443,16 +443,16 @@ fn probe_identity(path: &Path, ext: &str) -> ProbedIdentity {
     };
 
     let stream = MediaSourceStream::new(media_source, Default::default());
-    let mut hint = Hint::new();
+    let mut hint = Hint::new(); // 实现
     hint.with_extension(actual_ext);
 
-    let probed = match symphonia::default::get_probe().format(
+    let probed = match symphonia::default::get_probe().format( // 实现
         &hint,
         stream,
-        &FormatOptions::default(),
-        &MetadataOptions {
-            limit_visual_bytes: Limit::Maximum(0),
-            ..Default::default()
+        &FormatOptions::default(), // 实现
+        &MetadataOptions { // 实现
+            limit_visual_bytes: Limit::Maximum(0), // 实现
+            ..Default::default() // 实现
         },
     ) {
         Ok(found) => found,
@@ -472,14 +472,14 @@ fn probe_identity(path: &Path, ext: &str) -> ProbedIdentity {
         first_track.codec_params.time_base,
         first_track.codec_params.n_frames,
     ) {
-        (Some(time_base), Some(frames)) if frames > 0 => {
+        (Some(time_base), Some(frames)) if frames > 0 => { // 实现
             Some(round_up_to_seconds(time_base, frames))
         }
         _ => None,
     };
     let depth = first_track
-        .codec_params
-        .bits_per_sample
+        .codec_params // 实现
+        .bits_per_sample // 实现
         .or(first_track.codec_params.bits_per_coded_sample)
         .and_then(|bits| u8::try_from(bits).ok());
     let encoder = symphonia::default::get_codecs()
@@ -548,7 +548,7 @@ fn resolve_album_group(group: &[Song]) -> (String, bool, bool) {
     if let Some(first_tagged) = tagged_album_artists.first() {
         let tagged_variants: HashSet<String> = tagged_album_artists
             .iter()
-            .map(|name| name.to_lowercase())
+            .map(|name| name.to_lowercase()) // 实现
             .collect();
         let conflicting =
             tagged_variants.len() > 1 && distinct_leads.len() > 1;
@@ -576,13 +576,13 @@ fn resolve_album_group(group: &[Song]) -> (String, bool, bool) {
         *votes.entry(name.clone()).or_insert(0) += 1;
     }
     let dominant = votes
-        .into_iter()
+        .into_iter() // 实现
         .max_by(|(left_name, left_votes), (right_name, right_votes)| {
             left_votes
                 .cmp(right_votes)
-                .then_with(|| right_name.cmp(left_name))
+                .then_with(|| right_name.cmp(left_name)) // 实现
         })
-        .map(|(name, _)| name)
+        .map(|(name, _)| name) // 实现
         .unwrap_or_else(|| ARTIST_FALLBACK_TEXT.to_string());
 
     let everyone_distinct = distinct_leads.len() == group.len();
@@ -642,18 +642,18 @@ pub(super) fn apply_album_grouping(songs: &mut [Song]) {
 
 /// 由 CUE 音轨装配虚拟曲目（合成路径形如 `<cue>::trackNN`）。
 pub(super) fn assemble_cue_track_song(
-    cue_path: &str,
+    cue_path: &str, // 实现
     audio_path: &str,
-    track: &CueTrack,
+    track: &CueTrack, // 实现
     sheet_album: Option<&str>,
     sheet_performer: Option<&str>,
     audio_duration_ms: u32,
-) -> Option<Song> {
+) -> Option<Song> { // 实现
     let title = match &track.title {
         Some(text) => text.clone(),
         None => format!("Track {:02}", track.track_number),
     };
-    let performer = track
+    let performer = track // 实现
         .performer
         .clone()
         .unwrap_or_else(|| ARTIST_FALLBACK_TEXT.to_string());
@@ -676,41 +676,41 @@ pub(super) fn assemble_cue_track_song(
 
     Some(Song {
         id: None,
-        artist_avatar_bytes: None,
+        artist_avatar_bytes: None, // 实现
         name: display_name,
         path: virtual_path,
         title,
-        artist: performer.clone(),
+        artist: performer.clone(), // 实现
         artist_names: names.clone(),
         effective_artist_names: names,
         album,
-        album_artist,
+        album_artist, // 实现
         album_key: album_identity_key(
             sheet_album.unwrap_or(ALBUM_FALLBACK_TEXT),
             sheet_performer.unwrap_or(&performer),
         ),
-        is_various_artists_album: false,
-        collapse_artist_credits: false,
+        is_various_artists_album: false, // 实现
+        collapse_artist_credits: false, // 实现
         duration: track_secs,
         cover_thumb_path: thumb,
         bitrate: kbps,
         sample_rate: hz,
         bit_depth: depth,
-        format: "flac".to_string(),
-        container: Some("flac".to_string()),
+        format: "flac".to_string(), // 实现
+        container: Some("flac".to_string()), // 实现
         codec: encoder,
         file_size: std::fs::metadata(&audio_file)
             .map(|meta| meta.len())
-            .unwrap_or(0),
-        track_number: Some(track.track_number.to_string()),
-        disc_number: None,
-        added_at: None,
-        file_modified_at: None,
+            .unwrap_or(0), // 实现
+        track_number: Some(track.track_number.to_string()), // 实现
+        disc_number: None, // 实现
+        added_at: None, // 实现
+        file_modified_at: None, // 实现
         cue_source_path: Some(audio_path.to_string()),
-        cue_start_offset: Some(track.index01_start_ms as u32),
+        cue_start_offset: Some(track.index01_start_ms as u32), // 实现
         cue_end_offset: Some(tail_ms as u32),
-        comment: None,
-        artist_avatar_path: None,
+        comment: None, // 实现
+        artist_avatar_path: None, // 实现
     })
 }
 
@@ -718,7 +718,7 @@ pub(super) fn assemble_cue_track_song(
 /// 封面与编码名暂不提供。
 fn read_flac_playback_properties(
     audio: &Path,
-) -> (Option<String>, u32, u32, Option<u8>, Option<String>) {
+) -> (Option<String>, u32, u32, Option<u8>, Option<String>) { // 实现
     let tagged = read_tagged_file_from_path_for_scan(audio).ok();
     let props = tagged.as_ref().map(|file| file.properties());
     (

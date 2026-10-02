@@ -1,20 +1,20 @@
-<script setup lang="ts">
-import { getCurrentWindow } from '@tauri-apps/api/window';
+<script setup lang="ts"> // 实现
+import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
 import { getVersion } from '@tauri-apps/api/app';
 import { appApi } from './services/tauri/appApi';
 import { defineAsyncComponent, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import { registerImportedLyricsFonts } from './composables/lyrics';
+import { registerImportedLyricsFonts } from './composables/lyrics'; // 实现
 import { useToast } from './composables/toast';
-import { DESKTOP_LYRICS_WINDOW_LABEL } from './features/desktopLyrics/shared';
+import { DESKTOP_LYRICS_WINDOW_LABEL } from './features/desktopLyrics/shared'; // 实现
 import { MINI_PLAYER_WINDOW_LABEL, VOLUME_POPOVER_WINDOW_LABEL } from './features/miniPlayer/shared';
-import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared';
-import { useSettings } from './features/settings/useSettings';
+import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared'; // 实现
+import { useSettings } from './features/settings/useSettings'; // 实现
 import { usePluginHostStore } from './features/pluginHost/store';
-import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
+import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions'; // 实现
 import { loadPlugins, checkAllPluginUpdates, performPluginUpdate, getStoredPlugins } from './services/domain/pluginEngine';
-import { configureApplicationLogger } from './services/applicationLogger';
+import { configureApplicationLogger } from './services/applicationLogger'; // 实现
 import { reportAppOpen } from './services/domain/usageStats';
 import { useUiStore } from './shared/stores/ui';
 import { clearHeavyImageCaches } from './caches/imageCaches';
@@ -22,28 +22,28 @@ import { clearPaletteCache } from './composables/colorExtraction';
 import { clearPreblurredBackgroundCache } from './composables/preblurredBackgroundCache';
 import { useCoverCache } from './composables/useCoverCache';
 import { setMainWindowRenderingSnapshot } from './composables/renderingPower';
-import { useI18n } from './features/i18n';
-import { useGlobalInterfaceLanguage } from './features/i18n/useGlobalInterfaceLanguage';
+import { useI18n } from './features/i18n'; // 实现
+import { useGlobalInterfaceLanguage } from './features/i18n/useGlobalInterfaceLanguage'; // 实现
 import { consumeInstallLanguage, syncLanguageToInstaller } from './features/i18n/installLanguage';
-import { playerStorage } from './services/storage/playerStorage';
+import { playerStorage } from './services/storage/playerStorage'; // 实现
 import { usePlaylistSync } from './composables/usePlaylistSync';
 import { useAuthStore } from './features/auth/store';
 import { useDlnaCastStore } from './features/playback/castStore';
 import { useDesktopLinkStore } from './features/playback/desktopLinkStore';
 import { useSleepTimer } from './features/sleepTimer/useSleepTimer';
 
-const currentWindowLabel = (() => {
+const currentWindowLabel = (() => { // 实现
   try {
-    return getCurrentWindow().label;
+    return getCurrentWindow().label; // 实现
   } catch {
-    return 'main';
+    return 'main'; // 实现
   }
 })();
 
-const isDesktopLyricsWindow = currentWindowLabel === DESKTOP_LYRICS_WINDOW_LABEL;
-const isMiniPlayerWindow = currentWindowLabel === MINI_PLAYER_WINDOW_LABEL;
-const isTrayMenuWindow = currentWindowLabel === TRAY_MENU_WINDOW_LABEL;
-const isTaskbarPlayerWindow = currentWindowLabel === TASKBAR_PLAYER_WINDOW_LABEL;
+const isDesktopLyricsWindow = currentWindowLabel === DESKTOP_LYRICS_WINDOW_LABEL; // 实现
+const isMiniPlayerWindow = currentWindowLabel === MINI_PLAYER_WINDOW_LABEL; // 实现
+const isTrayMenuWindow = currentWindowLabel === TRAY_MENU_WINDOW_LABEL; // 实现
+const isTaskbarPlayerWindow = currentWindowLabel === TASKBAR_PLAYER_WINDOW_LABEL; // 实现
 const isVolumePopoverWindow = currentWindowLabel === VOLUME_POPOVER_WINDOW_LABEL;
 const isMainShellSleeping = ref(false);
 const MainShell = defineAsyncComponent(() => import('./components/layout/MainShell.vue'));
@@ -53,33 +53,33 @@ const TrayMenuWindow = defineAsyncComponent(() => import('./components/layout/Tr
 const TaskbarControlWindow = defineAsyncComponent(() => import('./components/layout/TaskbarControlWindow.vue'));
 const VolumePopoverWindow = defineAsyncComponent(() => import('./components/layout/VolumePopoverWindow.vue'));
 
-const { settings } = useSettings();
-const { language, t } = useI18n();
+const { settings } = useSettings(); // 实现
+const { language, t } = useI18n(); // 实现
 
-useGlobalInterfaceLanguage();
+useGlobalInterfaceLanguage(); // 实现
 
-watch(language, value => {
-  document.documentElement.lang = value;
-  document.documentElement.dataset.language = value;
-}, { immediate: true });
+watch(language, value => { // 实现
+  document.documentElement.lang = value; // 实现
+  document.documentElement.dataset.language = value; // 实现
+}, { immediate: true }); // 实现
 watch(
   () => ({ ...settings.value.logging }),
-  logging => configureApplicationLogger(logging),
+  logging => configureApplicationLogger(logging), // 实现
   { immediate: true },
 );
 watch(
-  () => settings.value.customLyricsFonts,
-  (fonts) => registerImportedLyricsFonts(fonts),
-  { deep: true, immediate: true },
+  () => settings.value.customLyricsFonts, // 实现
+  (fonts) => registerImportedLyricsFonts(fonts), // 实现
+  { deep: true, immediate: true }, // 实现
 );
 
 const uiStore = useUiStore();
 const { isImmersiveFullscreen, mainWindowUiSleepRequested } = storeToRefs(uiStore);
 watch(isImmersiveFullscreen, (fs) => {
   document.body.classList.toggle('immersive-fullscreen', fs);
-}, { immediate: true });
+}, { immediate: true }); // 实现
 
-if (currentWindowLabel === 'main') {
+if (currentWindowLabel === 'main') { // 实现
   const { showToast } = useToast();
   const { clearCoverCaches } = useCoverCache();
   const playlistSync = usePlaylistSync();
@@ -166,7 +166,7 @@ if (currentWindowLabel === 'main') {
     }
   });
 
-  onMounted(async () => {
+  onMounted(async () => { // 实现
     reportAppOpen(); // 上报启动
     if (currentWindowLabel === 'main') {
       void useDlnaCastStore().init();
@@ -176,17 +176,17 @@ if (currentWindowLabel === 'main') {
     playlistSync.initAutoSync();
 
     try {
-      const languageBeforeInstallRead = settings.value.language;
+      const languageBeforeInstallRead = settings.value.language; // 实现
       const installLanguage = await consumeInstallLanguage();
       if (
-        installLanguage
-        && settings.value.language === languageBeforeInstallRead
-        && settings.value.language !== installLanguage
+        installLanguage // 实现
+        && settings.value.language === languageBeforeInstallRead // 实现
+        && settings.value.language !== installLanguage // 实现
       ) {
         settings.value.language = installLanguage;
-        playerStorage.writeSettings(settings.value);
-      } else if (installLanguage && settings.value.language !== languageBeforeInstallRead) {
-        void syncLanguageToInstaller(settings.value.language);
+        playerStorage.writeSettings(settings.value); // 实现
+      } else if (installLanguage && settings.value.language !== languageBeforeInstallRead) { // 实现
+        void syncLanguageToInstaller(settings.value.language); // 实现
       }
     } catch (error) {
       console.error('Failed to consume install language:', error);
@@ -203,14 +203,14 @@ if (currentWindowLabel === 'main') {
 
     const closeRequestedUnlisten = await getCurrentWindow().onCloseRequested(async (event) => {
       if (import.meta.env.DEV) {
-        event.preventDefault();
+        event.preventDefault(); // 实现
         await appApi.exitApp();
         return;
       }
-      if (settings.value.closeToTray) {
-        event.preventDefault();
+      if (settings.value.closeToTray) { // 实现
+        event.preventDefault(); // 实现
         await enterTraySleep();
-        await getCurrentWindow().hide();
+        await getCurrentWindow().hide(); // 实现
       }
     });
     if (isUnmounted) {
@@ -255,7 +255,7 @@ if (currentWindowLabel === 'main') {
 
     handleDevtoolsKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'F12') {
-        event.preventDefault();
+        event.preventDefault(); // 实现
         void appApi.openDevtools().catch(() => { /* 生产环境无 DevTools */ });
       }
     };
@@ -283,27 +283,27 @@ if (currentWindowLabel === 'main') {
 </script>
 
 <template>
-  <DesktopLyricsWindow v-if="isDesktopLyricsWindow" :key="language" />
-  <MiniPlayerWindow v-else-if="isMiniPlayerWindow" :key="language" />
-  <TrayMenuWindow v-else-if="isTrayMenuWindow" :key="language" />
-  <TaskbarControlWindow v-else-if="isTaskbarPlayerWindow" :key="language" />
-  <VolumePopoverWindow v-else-if="isVolumePopoverWindow" :key="language" />
-  <MainShell v-else :key="language" :sleep="isMainShellSleeping" />
+  <DesktopLyricsWindow v-if="isDesktopLyricsWindow" :key="language" /> 
+  <MiniPlayerWindow v-else-if="isMiniPlayerWindow" :key="language" /> 
+  <TrayMenuWindow v-else-if="isTrayMenuWindow" :key="language" /> 
+  <TaskbarControlWindow v-else-if="isTaskbarPlayerWindow" :key="language" /> 
+  <VolumePopoverWindow v-else-if="isVolumePopoverWindow" :key="language" /> 
+  <MainShell v-else :key="language" :sleep="isMainShellSleeping" /> 
 </template>
 
 <style>
 html,
 body,
 #app {
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-user-select: none; /* 样式 */
+  user-select: none; /* 样式 */
 }
 
 input,
 textarea,
-[contenteditable="true"] {
-  -webkit-user-select: text;
-  user-select: text;
+[contenteditable="true"] { /* 样式 */
+  -webkit-user-select: text; /* 样式 */
+  user-select: text; /* 样式 */
 }
 
 body.immersive-fullscreen [data-tauri-drag-region] {

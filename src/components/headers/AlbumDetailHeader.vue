@@ -1,43 +1,43 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 专辑详情头部：封面解析缓存、滚动收缩、批量工具条与专辑内排序菜单
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { albumHeaderCache } from '../../caches/imageCaches';
-import { useCoverCache } from '../../composables/useCoverCache';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'; // 实现
+import { albumHeaderCache } from '../../caches/imageCaches'; // 实现
+import { useCoverCache } from '../../composables/useCoverCache'; // 实现
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
-import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
-import SortModeIcon from '../common/SortModeIcon.vue';
+import SortModeIcon from '../common/SortModeIcon.vue'; // 实现
 import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
 import SortOptionPopover from './sortPopover/SortOptionPopover.vue';
 
-const props = defineProps<{
-  albumName: string;
-  albumArtist: string;
-  isBatchMode: boolean;
-  selectedCount?: number;
+const props = defineProps<{ // 实现
+  albumName: string; // 实现
+  albumArtist: string; // 实现
+  isBatchMode: boolean; // 实现
+  selectedCount?: number; // 实现
   totalSongCount?: number;
-  songs?: Array<{ path: string }>;
+  songs?: Array<{ path: string }>; // 实现
   readOnly?: boolean;
   coverUrlOverride?: string;
   favoriteEntry?: FavoriteCollectionEntry | null;
   scrollContainerRef?: HTMLElement | null;
 }>();
 
-const emit = defineEmits([
-  'update:isBatchMode',
+const emit = defineEmits([ // 实现
+  'update:isBatchMode', // 实现
   'playAll',
-  'batchPlay',
-  'addToPlaylist',
-  'batchDelete',
+  'batchPlay', // 实现
+  'addToPlaylist', // 实现
+  'batchDelete', // 实现
   'batchMove',
   'selectAll',
 ]);
 
 const {
-  albumDetailSortMode,
-  setAlbumDetailSortMode,
-} = usePlayerViewState();
+  albumDetailSortMode, // 实现
+  setAlbumDetailSortMode, // 实现
+} = usePlayerViewState(); // 实现
 
 const trackAmount = computed(() => props.totalSongCount ?? props.songs?.length ?? 0);
 const isAllSelected = computed(() => trackAmount.value > 0 && (props.selectedCount ?? 0) === trackAmount.value);
@@ -141,7 +141,7 @@ watch(
 );
 
 watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([cacheKey, tracks, coverOverride]) => {
-  const requestId = ++coverRequestId;
+  const requestId = ++coverRequestId; // 实现
 
   if (props.readOnly && coverOverride) {
     applyCoverState(coverOverride);
@@ -167,7 +167,7 @@ watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([
     return;
   }
 
-  isLoading.value = true;
+  isLoading.value = true; // 实现
   try {
     const resolved = await loadCover(leadTrackPath);
     if (isStale(requestId)) return;
@@ -176,28 +176,28 @@ watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([
       albumHeaderCache.set(cacheKey, resolved);
       coverUrl.value = resolved;
     } else {
-      coverUrl.value = '';
+      coverUrl.value = ''; // 实现
     }
   } catch {
     if (isStale(requestId)) return;
-    coverUrl.value = '';
+    coverUrl.value = ''; // 实现
   } finally {
     if (!isStale(requestId)) {
-      isLoading.value = false;
+      isLoading.value = false; // 实现
     }
   }
-}, { immediate: true });
+}, { immediate: true }); // 实现
 
 // 按专辑名稳定散列到一组渐变底色（无封面时的占位）
 const GRADIENT_PALETTE = [
-  'from-blue-500 to-cyan-500',
-  'from-purple-500 to-pink-500',
-  'from-emerald-400 to-teal-500',
-  'from-orange-400 to-rose-400',
-  'from-indigo-500 to-purple-500',
-  'from-rose-400 to-red-500',
-  'from-fuchsia-500 to-pink-500',
-  'from-amber-400 to-orange-500',
+  'from-blue-500 to-cyan-500', // 实现
+  'from-purple-500 to-pink-500', // 实现
+  'from-emerald-400 to-teal-500', // 实现
+  'from-orange-400 to-rose-400', // 实现
+  'from-indigo-500 to-purple-500', // 实现
+  'from-rose-400 to-red-500', // 实现
+  'from-fuchsia-500 to-pink-500', // 实现
+  'from-amber-400 to-orange-500', // 实现
 ];
 
 const gradientForAlbum = (albumTitle: string) => {
@@ -245,8 +245,8 @@ const detailButtonClass =
 
 <template>
   <div class="px-8 shrink-0 select-none flex flex-col pt-6 pb-0 h-auto justify-start border-b border-black/5 dark:border-white/5 relative z-20 w-full bg-transparent">
-    <div v-if="isBatchMode" class="flex items-center justify-between mb-4 animate-in fade-in slide-in-from-top-1 duration-200">
-      <div class="flex items-center gap-3">
+    <div v-if="isBatchMode" class="flex items-center justify-between mb-4 animate-in fade-in slide-in-from-top-1 duration-200"> 
+      <div class="flex items-center gap-3"> 
         <button
           v-for="action in batchActions"
           :key="action.key"
@@ -272,8 +272,8 @@ const detailButtonClass =
           {{ action.caption }}
         </button>
       </div>
-      <div class="flex items-center gap-4">
-        <button @click="emit('update:isBatchMode', false)" class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1 rounded transition">完成</button>
+      <div class="flex items-center gap-4"> 
+        <button @click="emit('update:isBatchMode', false)" class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1 rounded transition">完成</button> 
       </div>
     </div>
 
@@ -282,7 +282,7 @@ const detailButtonClass =
         class="rounded-lg shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10"
         :style="{ width: coverSize, height: coverSize }"
       >
-        <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div>
+        <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div> 
         <img
           v-else-if="displayedCover"
           :src="displayedCover"
@@ -303,22 +303,22 @@ const detailButtonClass =
       <div class="pt-2 pb-1 flex-1 min-w-0 relative z-20 flex flex-col justify-start" :style="{ minHeight: columnHeight }">
         <div :style="{ marginBottom: titleMarginBottom }">
           <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight flex items-center gap-2">
-            <span class="bg-[#EC4141] text-white text-[12px] px-1.5 py-0.5 rounded border border-[#EC4141] font-normal leading-none -mt-1 relative top-[1px]">专辑</span>
-            {{ albumName }}
+            <span class="bg-[#EC4141] text-white text-[12px] px-1.5 py-0.5 rounded border border-[#EC4141] font-normal leading-none -mt-1 relative top-[1px]">专辑</span> 
+            {{ albumName }} 
           </h1>
           <p
             class="text-[14px] text-gray-500 dark:text-gray-400 mt-2 truncate w-full flex items-center gap-2 overflow-hidden"
             :style="{ opacity: artistOpacity, maxHeight: artistMaxHeight }"
           >
-            <span>专辑艺人:</span>
-            <span class="text-[#507DAF] dark:text-[#6a9adb]">{{ artistName }}</span>
+            <span>专辑艺人:</span> 
+            <span class="text-[#507DAF] dark:text-[#6a9adb]">{{ artistName }}</span> 
           </p>
         </div>
 
-        <div class="flex items-center gap-3 mt-auto">
+        <div class="flex items-center gap-3 mt-auto"> 
           <button :class="detailButtonClass" class="px-6 py-2" @click="emit('playAll')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 5.5v13l10-6.5-10-6.5Z" />
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"> 
+              <path d="M9 5.5v13l10-6.5-10-6.5Z" /> 
             </svg>
             全部播放
           </button>
@@ -331,8 +331,8 @@ const detailButtonClass =
           <CollectionFavoriteButton :entry="favoriteEntry ?? null" />
 
           <button v-if="!readOnly" :class="detailButtonClass" class="px-5 py-2" title="批量操作" @click="emit('update:isBatchMode', true)">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"> 
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /> 
             </svg>
             管理
           </button>
@@ -363,10 +363,10 @@ const detailButtonClass =
       </div>
     </div>
 
-    <div class="flex gap-8 text-[15px] font-medium mt-auto w-full">
-      <div class="pb-1.5 transition-colors relative text-gray-900 dark:text-white font-bold">
+    <div class="flex gap-8 text-[15px] font-medium mt-auto w-full"> 
+      <div class="pb-1.5 transition-colors relative text-gray-900 dark:text-white font-bold"> 
         歌曲
-        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-[3px] bg-[#EC4141] rounded-t-full"></div>
+        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-[3px] bg-[#EC4141] rounded-t-full"></div> 
       </div>
     </div>
   </div>

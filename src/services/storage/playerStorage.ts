@@ -1,6 +1,6 @@
-import type { AppSettings, HistoryItem, Playlist, Song, EqualizerPreset } from '../../types';
+import type { AppSettings, HistoryItem, Playlist, Song, EqualizerPreset } from '../../types'; // 实现
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
-import { localStore } from './localStore';
+import { localStore } from './localStore'; // 实现
 import { fileStore } from './fileStore'; // 文件存储
 
 // —— 排序模式相关类型（仅是各视图可选排序项的联合） ——
@@ -22,20 +22,20 @@ export type PlaylistSortMode =
  * 播放器全部存储键的集中登记处。
  * 键名一旦发布即不可变更，此处仅按域分组陈列。
  */
-export const playerStorageKeys = {
+export const playerStorageKeys = { // 实现
   settings: 'player_settings', volume: 'player_volume', playMode: 'player_mode',
   lastTime: 'player_last_time', outputDevice: 'player_output_device',
   outputDeviceMode: 'player_output_device_mode', watchedFolders: 'player_watched_folders',
   favorites: 'player_favorites', favoriteSongMeta: 'player_favorite_song_meta',
   favoriteCollections: 'player_favorite_collections', recentSongMeta: 'player_recent_song_meta',
   recentOnlineHistory: 'player_recent_online_history', queueSongMeta: 'player_queue_song_meta',
-  playlists: 'player_custom_playlists',
+  playlists: 'player_custom_playlists', // 实现
   artistSortMode: 'player_artist_sort_mode', albumSortMode: 'player_album_sort_mode',
   albumDetailSortMode: 'player_album_detail_sort_mode', folderSortMode: 'player_folder_sort_mode',
   localSortMode: 'player_local_sort_mode', playlistSortMode: 'player_playlist_sort_mode',
   artistCustomOrder: 'player_artist_custom_order', albumCustomOrder: 'player_album_custom_order',
   folderCustomOrder: 'player_folder_custom_order', localCustomOrder: 'player_local_custom_order',
-  legacyAppSettings: 'app_settings',
+  legacyAppSettings: 'app_settings', // 实现
   equalizerPresets: 'player_equalizer_presets', soundEffectState: 'player_sound_effect_state',
   pluginHostRack: 'player_plugin_host_rack', pluginHostExtraDirs: 'player_plugin_host_extra_dirs',
   consumedInstallLanguage: 'player_consumed_install_language',
@@ -53,7 +53,7 @@ function looksLikeSong(candidate: unknown): candidate is Song {
 /** 把历史条目归一化成 { path, playedAt }；无法识别时返回 null。 */
 function coerceHistoryEntry(candidate: unknown): HistoryItem | null {
   if (candidate === null || typeof candidate !== 'object') {
-    return null;
+    return null; // 实现
   }
 
   const entry = candidate as HistoryItem & { song?: Song };
@@ -66,13 +66,13 @@ function coerceHistoryEntry(candidate: unknown): HistoryItem | null {
     return { path: entry.song.path, playedAt: entry.playedAt };
   }
 
-  return null;
+  return null; // 实现
 }
 
 /** 校验值是否为「非数组普通对象」。 */
 function asPlainRecord(candidate: unknown): Record<string, unknown> | null {
   if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
-    return null;
+    return null; // 实现
   }
   return candidate as Record<string, unknown>;
 }
@@ -134,14 +134,14 @@ function isValidFavoriteCollectionEntry(candidate: unknown): candidate is Favori
   return typeof entry.key === 'string' && typeOk && typeof entry.title === 'string';
 }
 
-export const playerStorage = {
+export const playerStorage = { // 实现
   // 原样透传基础读写能力，保持调用面不变。
   getString: (key: string) => localStore.getString(key),
   setString: (key: string, value: string) => localStore.setString(key, value),
   remove: (key: string) => localStore.remove(key),
 
-  readStringArray(key: string): string[] | null {
-    const parsed = localStore.getJson<unknown>(key);
+  readStringArray(key: string): string[] | null { // 实现
+    const parsed = localStore.getJson<unknown>(key); // 实现
     if (!Array.isArray(parsed)) return null;
 
     const cleaned: string[] = [];
@@ -151,8 +151,8 @@ export const playerStorage = {
     return cleaned;
   },
 
-  readSongArray(key: string): Song[] {
-    const parsed = localStore.getJson<unknown>(key);
+  readSongArray(key: string): Song[] { // 实现
+    const parsed = localStore.getJson<unknown>(key); // 实现
     if (!Array.isArray(parsed)) return [];
 
     const songs: Song[] = [];
@@ -162,13 +162,13 @@ export const playerStorage = {
     return songs;
   },
 
-  readSong(key: string): Song | null {
-    const parsed = localStore.getJson<unknown>(key);
+  readSong(key: string): Song | null { // 实现
+    const parsed = localStore.getJson<unknown>(key); // 实现
     return looksLikeSong(parsed) ? parsed : null;
   },
 
-  readHistory(key: string): HistoryItem[] {
-    const parsed = localStore.getJson<unknown>(key);
+  readHistory(key: string): HistoryItem[] { // 实现
+    const parsed = localStore.getJson<unknown>(key); // 实现
     if (!Array.isArray(parsed)) return [];
 
     const history: HistoryItem[] = [];
@@ -179,33 +179,33 @@ export const playerStorage = {
     return history;
   },
 
-  readSettings<T extends AppSettings>(key = playerStorageKeys.settings): T | null {
+  readSettings<T extends AppSettings>(key = playerStorageKeys.settings): T | null { // 实现
     const parsed = asPlainRecord(localStore.getJson<unknown>(key));
     return parsed === null ? null : (parsed as T);
   },
 
-  readObject<T extends object>(key: string): T | null {
+  readObject<T extends object>(key: string): T | null { // 实现
     const parsed = asPlainRecord(localStore.getJson<unknown>(key));
     return parsed === null ? null : (parsed as T);
   },
 
-  writeSettings(settings: AppSettings, key = playerStorageKeys.settings) {
-    localStore.setJson(key, settings);
+  writeSettings(settings: AppSettings, key = playerStorageKeys.settings) { // 实现
+    localStore.setJson(key, settings); // 实现
   },
 
-  readNumber(key: string): number | null {
-    const raw = localStore.getString(key);
+  readNumber(key: string): number | null { // 实现
+    const raw = localStore.getString(key); // 实现
     if (raw === null || raw === '') return null;
 
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
+    const parsed = Number(raw); // 实现
+    return Number.isFinite(parsed) ? parsed : null; // 实现
   },
 
-  writeNumber(key: string, value: number) {
-    localStore.setString(key, value.toString());
+  writeNumber(key: string, value: number) { // 实现
+    localStore.setString(key, value.toString()); // 实现
   },
 
-  readPlaylists(key = playerStorageKeys.playlists): Playlist[] {
+  readPlaylists(key = playerStorageKeys.playlists): Playlist[] { // 实现
     return pickValidPlaylists(localStore.getJson<unknown>(key));
   },
 
@@ -223,8 +223,8 @@ export const playerStorage = {
       localStore.remove(key); // 移除旧值
     } // 兜底结束
   }, // 写入结束
-  readEqualizerPresets(): EqualizerPreset[] {
-    const parsed = localStore.getJson<unknown>(playerStorageKeys.equalizerPresets);
+  readEqualizerPresets(): EqualizerPreset[] { // 实现
+    const parsed = localStore.getJson<unknown>(playerStorageKeys.equalizerPresets); // 实现
     if (!Array.isArray(parsed)) return [];
 
     const presets: EqualizerPreset[] = [];
@@ -261,7 +261,7 @@ export const playerStorage = {
     return pickSongMetaTable(localStore.getJson<unknown>(playerStorageKeys.queueSongMeta));
   },
 
-  writeEqualizerPresets(presets: EqualizerPreset[]) {
+  writeEqualizerPresets(presets: EqualizerPreset[]) { // 实现
     const { equalizerPresets: presetKey } = playerStorageKeys;
     localStore.setJson(presetKey, presets);
   },
@@ -271,25 +271,25 @@ export const playerStorage = {
    * 写入顺序即数组排列顺序；最后清理两个遗留键。
    */
   writePlayerState(state: {
-    playlistPathKey: string;
-    queuePathKey: string;
-    legacyPlaylistKey: string;
-    legacyQueueKey: string;
-    sourceSongPaths: string[];
-    watchedFolders: string[];
-    favoritePaths: string[];
+    playlistPathKey: string; // 实现
+    queuePathKey: string; // 实现
+    legacyPlaylistKey: string; // 实现
+    legacyQueueKey: string; // 实现
+    sourceSongPaths: string[]; // 实现
+    watchedFolders: string[]; // 实现
+    favoritePaths: string[]; // 实现
     favoriteSongMeta: Record<string, Song>;
     favoriteCollections: FavoriteCollectionEntry[];
     recentSongMeta: Record<string, Song>;
     recentOnlineHistory: HistoryItem[];
     queueSongMeta: Record<string, Song>;
-    playlists: Playlist[];
-    settings: AppSettings;
-    playQueuePaths: string[];
-    artistCustomOrder: string[];
-    albumCustomOrder: string[];
-    folderCustomOrder: Record<string, string[]>;
-    localCustomOrder: string[];
+    playlists: Playlist[]; // 实现
+    settings: AppSettings; // 实现
+    playQueuePaths: string[]; // 实现
+    artistCustomOrder: string[]; // 实现
+    albumCustomOrder: string[]; // 实现
+    folderCustomOrder: Record<string, string[]>; // 实现
+    localCustomOrder: string[]; // 实现
   }) {
     const pendingWrites: Array<[storageKey: string, payload: unknown]> = [
       [state.playlistPathKey, state.sourceSongPaths],

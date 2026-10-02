@@ -1,11 +1,11 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog'; // 实现
 
-import { downloadToLocal } from '../../composables/useDownloadToLocal';
-import { useSettings } from '../../features/settings/useSettings';
+import { downloadToLocal } from '../../composables/useDownloadToLocal'; // 实现
+import { useSettings } from '../../features/settings/useSettings'; // 实现
 import { usePlaybackStore } from '../../features/playback/store';
-import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
+import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver'; // 实现
 import {
   ensureSharedQualityProbe,
   ensureProbeRequestedUrls,
@@ -14,7 +14,7 @@ import {
 } from '../../services/domain/qualitySharedProbe';
 import { probeSizesForKeys } from '../../services/domain/qualitySizeMeta';
 import { formatFileSize } from '../../utils/format';
-import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
+import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types'; // 实现
 import type { Song, DownloadFileNameStyle, DownloadQuality, QualityKey } from '../../types';
 
 const props = defineProps<{
@@ -22,16 +22,16 @@ const props = defineProps<{
   song: Song | null;
   initialQuality?: DownloadQuality | null;
 }>();
-const emit = defineEmits<{ (e: 'close'): void }>();
+const emit = defineEmits<{ (e: 'close'): void }>(); // 实现
 
-const { settings } = useSettings();
+const { settings } = useSettings(); // 实现
 const playbackStore = usePlaybackStore();
 
-const selectedQuality = ref<DownloadQuality>('320k');
-const downloadDir = ref('');
+const selectedQuality = ref<DownloadQuality>('320k'); // 实现
+const downloadDir = ref(''); // 实现
 const selectedFileNameStyle = ref<DownloadFileNameStyle>('artist-title');
 const downloadLyrics = ref(false);
-const availableQualities = ref<QualityKey[] | null>(null);
+const availableQualities = ref<QualityKey[] | null>(null); // 实现
 const declaredQualities = ref<QualityKey[] | null>(null);
 const probedUrls = ref<Partial<Record<QualityKey, string>>>({});
 const qualitySizes = ref<Partial<Record<QualityKey, number>>>({});
@@ -46,7 +46,7 @@ const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; de
 ];
 
 const dialogTitle = computed(() => {
-  const song = props.song;
+  const song = props.song; // 实现
   if (!song) return '下载歌曲';
   const title = song.title || song.name || '未知歌曲';
   const artist = song.artist || '未知歌手';
@@ -151,16 +151,16 @@ const probeQualitySizesIncremental = async (
   });
 };
 
-const supportedQualityKeys = computed<QualityKey[]>(() => {
+const supportedQualityKeys = computed<QualityKey[]>(() => { // 实现
   if (isProbing.value) {
     const declared = declaredQualities.value;
     return (declared && declared.length > 0)
       ? ALL_QUALITY_KEYS.filter(k => declared.includes(k))
       : [];
   }
-  const list = availableQualities.value;
+  const list = availableQualities.value; // 实现
   if (list === null) return [];
-  return ALL_QUALITY_KEYS.filter(k => list.includes(k));
+  return ALL_QUALITY_KEYS.filter(k => list.includes(k)); // 实现
 });
 
 const hasNoQualityOptions = computed(() => supportedQualityKeys.value.length === 0);
@@ -320,23 +320,23 @@ watch(
 
 onUnmounted(abortProbe);
 
-const chooseDir = async () => {
-  const selected = await open({ directory: true, multiple: false, title: '选择下载目录' });
-  if (selected && typeof selected === 'string') {
-    downloadDir.value = selected;
+const chooseDir = async () => { // 实现
+  const selected = await open({ directory: true, multiple: false, title: '选择下载目录' }); // 实现
+  if (selected && typeof selected === 'string') { // 实现
+    downloadDir.value = selected; // 实现
   }
 };
 
-const handleDownload = async () => {
-  if (!props.song) return;
-  const song = props.song;
+const handleDownload = async () => { // 实现
+  if (!props.song) return; // 实现
+  const song = props.song; // 实现
   const preResolvedUrls = probedUrls.value;
-  emit('close');
-  await downloadToLocal(song, {
-    quality: selectedQuality.value,
-    downloadDir: downloadDir.value || undefined,
+  emit('close'); // 实现
+  await downloadToLocal(song, { // 实现
+    quality: selectedQuality.value, // 实现
+    downloadDir: downloadDir.value || undefined, // 实现
     downloadAudio: true,
-    downloadLyrics: downloadLyrics.value,
+    downloadLyrics: downloadLyrics.value, // 实现
     downloadCover: false,
     fileNameStyle: selectedFileNameStyle.value,
     preResolvedUrls,
@@ -345,12 +345,12 @@ const handleDownload = async () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="modal-pop">
+  <Teleport to="body"> 
+    <Transition name="modal-pop"> 
       <div
-        v-if="visible"
-        class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-        @click.self="emit('close')"
+        v-if="visible" 
+        class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm" 
+        @click.self="emit('close')" 
       >
         <div class="modal-content bg-white/80 dark:bg-gray-900/90 rounded-xl shadow-2xl w-[380px] max-w-[84vw] overflow-hidden">
           <div class="px-3.5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
@@ -359,8 +359,8 @@ const handleDownload = async () => {
               :title="dialogTitle"
             >{{ dialogTitle }}</h3>
             <button
-              @click="emit('close')"
-              class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              @click="emit('close')" 
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" 
             >
               ✕
             </button>
@@ -368,7 +368,7 @@ const handleDownload = async () => {
 
           <div class="px-3.5 py-2.5 space-y-2.5 max-h-[64vh] overflow-y-auto custom-scrollbar">
             <div>
-              <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
+              <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2"> 
                 下载音质
                 <span v-if="isProbing" class="text-gray-400 font-normal">（正在探测可用音质…）</span>
               </div>
@@ -436,18 +436,18 @@ const handleDownload = async () => {
             </div>
 
             <div>
-              <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">下载目录</div>
-              <div class="flex items-center gap-2">
+              <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">下载目录</div> 
+              <div class="flex items-center gap-2"> 
                 <div
-                  class="flex-1 min-w-0 px-3 py-2 text-xs rounded-md bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 truncate"
-                  :title="downloadDir"
+                  class="flex-1 min-w-0 px-3 py-2 text-xs rounded-md bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 truncate" 
+                  :title="downloadDir" 
                 >
-                  {{ downloadDir || '未选择（点击右侧按钮选择）' }}
+                  {{ downloadDir || '未选择（点击右侧按钮选择）' }} 
                 </div>
                 <button
-                  type="button"
+                  type="button" 
                   class="shrink-0 px-3 py-2 text-xs font-medium rounded-md bg-[#EC4141] text-white hover:bg-[#d13b3b] transition-colors"
-                  @click="chooseDir"
+                  @click="chooseDir" 
                 >
                   选择
                 </button>
@@ -460,7 +460,7 @@ const handleDownload = async () => {
                 <button
                   v-for="option in FILE_NAME_STYLE_OPTIONS"
                   :key="option.value"
-                  type="button"
+                  type="button" 
                   class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center flex flex-col items-center gap-0.5"
                   :class="selectedFileNameStyle === option.value
                     ? 'bg-[#EC4141] text-white shadow-sm'
@@ -503,22 +503,22 @@ const handleDownload = async () => {
 
           <div class="px-3.5 py-2.5 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2">
             <button
-              type="button"
-              class="px-4 py-2 text-sm font-medium rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-              @click="emit('close')"
+              type="button" 
+              class="px-4 py-2 text-sm font-medium rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors" 
+              @click="emit('close')" 
             >
               取消
             </button>
             <button
-              type="button"
-              class="px-4 py-2 text-sm font-medium rounded-md bg-[#EC4141] text-white hover:bg-[#d63a3a] transition-colors"
-              @click="handleDownload"
+              type="button" 
+              class="px-4 py-2 text-sm font-medium rounded-md bg-[#EC4141] text-white hover:bg-[#d63a3a] transition-colors" 
+              @click="handleDownload" 
             >
               下载
             </button>
           </div>
         </div>
       </div>
-    </Transition>
+    </Transition> 
   </Teleport>
 </template>

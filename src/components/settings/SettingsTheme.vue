@@ -1,10 +1,10 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { Check, ChevronDown, FileUp, Loader2 } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
-import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
+import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls'; // 实现
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
-import { useI18n } from '../../features/i18n';
+import { useI18n } from '../../features/i18n'; // 实现
 import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import {
@@ -26,26 +26,26 @@ const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue
 const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
 const SettingsTopBarLayout = defineAsyncComponent(() => import('./SettingsTopBarLayout.vue'));
 
-const TEXT = computed(() => isEnglish.value ? {
-  paletteTitle: 'Color Scheme',
-  darkScheme: 'Dark',
-  lightScheme: 'Light',
-  systemScheme: 'Use System Setting',
-  customEmoji: '🎨',
-  customTitle: 'Custom Skin',
-  customHint: 'Use an image, overlay, and foreground styles',
-  customShort: 'Custom',
-  accentTitle: 'Accent Color',
-  accentHint: 'Used for buttons, selections, and interface accents',
-  accentCustom: 'Custom Color',
-  accentHex: 'HEX Value',
-  accentReset: 'Reset to Default',
-  playerDetailCoverTitle: 'Lyrics Page Cover',
-  playerDetailCoverHint: 'Choose what to show whenever the Now Playing page opens',
-  playerDetailCoverLabel: 'When opening the Now Playing page',
-  playerDetailCoverShow: 'Always Show Cover',
-  playerDetailCoverHide: 'Always Hide Cover',
-  playerDetailCoverRemember: 'Remember Last Choice',
+const TEXT = computed(() => isEnglish.value ? { // 实现
+  paletteTitle: 'Color Scheme', // 实现
+  darkScheme: 'Dark', // 实现
+  lightScheme: 'Light', // 实现
+  systemScheme: 'Use System Setting', // 实现
+  customEmoji: '🎨', // 实现
+  customTitle: 'Custom Skin', // 实现
+  customHint: 'Use an image, overlay, and foreground styles', // 实现
+  customShort: 'Custom', // 实现
+  accentTitle: 'Accent Color', // 实现
+  accentHint: 'Used for buttons, selections, and interface accents', // 实现
+  accentCustom: 'Custom Color', // 实现
+  accentHex: 'HEX Value', // 实现
+  accentReset: 'Reset to Default', // 实现
+  playerDetailCoverTitle: 'Lyrics Page Cover', // 实现
+  playerDetailCoverHint: 'Choose what to show whenever the Now Playing page opens', // 实现
+  playerDetailCoverLabel: 'When opening the Now Playing page', // 实现
+  playerDetailCoverShow: 'Always Show Cover', // 实现
+  playerDetailCoverHide: 'Always Hide Cover', // 实现
+  playerDetailCoverRemember: 'Remember Last Choice', // 实现
   playerDetailStyleTitle: 'Now Playing Page Style',
   playerDetailStyleHint: 'Choose the layout skin of the Now Playing page',
   playerDetailStyleLabel: 'Page style',
@@ -66,28 +66,28 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailMeshBackgroundLabel: 'Use polygon flow background',
   playerDetailMeshAntiAliasLabel: 'Smooth polygon edges',
   playerDetailMeshAntiAliasHint: 'Anti-alias polygon edges and render at a higher resolution: smoother, crisper edges at a higher GPU cost',
-  dynamicTitle: 'Dynamic Background',
-  dynamicHint: 'Changes with the album cover',
-  dynamicOff: 'Off',
-  dynamicFlow: 'Flowing Light',
-  dynamicBlur: 'Static Blur',
-  dynamicDisabledHint: 'Dynamic backgrounds are disabled while a custom skin or window material is active.',
-  windowMaterialTitle: 'Window Material',
-  windowMaterialBlur: 'Acrylic Blur',
-  windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.',
-  windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.',
-  windowMaterialConflictHint: 'Available after turning off the dynamic background or custom skin.',
-  windowMaterialWin11Only: 'Windows 11 only',
-  keepWindowMaterialOnBlur: 'Keep Material When Unfocused',
-  keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.',
-  trayMenuTitle: 'Tray Menu',
-  customTrayMenu: 'Use Custom Tray Menu',
+  dynamicTitle: 'Dynamic Background', // 实现
+  dynamicHint: 'Changes with the album cover', // 实现
+  dynamicOff: 'Off', // 实现
+  dynamicFlow: 'Flowing Light', // 实现
+  dynamicBlur: 'Static Blur', // 实现
+  dynamicDisabledHint: 'Dynamic backgrounds are disabled while a custom skin or window material is active.', // 实现
+  windowMaterialTitle: 'Window Material', // 实现
+  windowMaterialBlur: 'Acrylic Blur', // 实现
+  windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.', // 实现
+  windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.', // 实现
+  windowMaterialConflictHint: 'Available after turning off the dynamic background or custom skin.', // 实现
+  windowMaterialWin11Only: 'Windows 11 only', // 实现
+  keepWindowMaterialOnBlur: 'Keep Material When Unfocused', // 实现
+  keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.', // 实现
+  trayMenuTitle: 'Tray Menu', // 实现
+  customTrayMenu: 'Use Custom Tray Menu', // 实现
   customTrayMenuHint: 'Use the tray menu drawn by XianYu Music. Turn this off to use the native system menu.',
-  customTrayMenuOn: 'Custom',
-  customTrayMenuOff: 'System',
-  leaderboardTitle: 'Home Leaderboard',
-  leaderboardEnable: 'Show the listening leaderboard on Home',
-  leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.',
+  customTrayMenuOn: 'Custom', // 实现
+  customTrayMenuOff: 'System', // 实现
+  leaderboardTitle: 'Home Leaderboard', // 实现
+  leaderboardEnable: 'Show the listening leaderboard on Home', // 实现
+  leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.', // 实现
   switchStyleTitle: 'Component Style',
   useGlassSwitch: 'Liquid Glass Switches',
   useGlassSwitchHint: 'Enable translucent glassmorphic refraction and sheen sweep for switches. Turn this off to use classic flat style.',
@@ -160,106 +160,106 @@ const TEXT = computed(() => isEnglish.value ? {
   squareEntry: '主题中心',
 });
 
-const FLOW_TEXT = computed(() => isEnglish.value ? {
-  panelTitle: 'Flowing Light Tuning',
-  colorBoost: 'Color Intensity',
-  depth: 'Light and Dark Depth',
-  speed: 'Flow Speed',
-  texture: 'Texture Intensity',
-  subtle: 'Subtle',
-  vivid: 'Vivid',
-  airy: 'Airy',
-  deep: 'Deep',
-  calm: 'Calm',
-  brisk: 'Lively',
-  clean: 'Clean',
-  textured: 'Textured',
-  toggleLabel: 'Expand or collapse Flowing Light tuning',
+const FLOW_TEXT = computed(() => isEnglish.value ? { // 实现
+  panelTitle: 'Flowing Light Tuning', // 实现
+  colorBoost: 'Color Intensity', // 实现
+  depth: 'Light and Dark Depth', // 实现
+  speed: 'Flow Speed', // 实现
+  texture: 'Texture Intensity', // 实现
+  subtle: 'Subtle', // 实现
+  vivid: 'Vivid', // 实现
+  airy: 'Airy', // 实现
+  deep: 'Deep', // 实现
+  calm: 'Calm', // 实现
+  brisk: 'Lively', // 实现
+  clean: 'Clean', // 实现
+  textured: 'Textured', // 实现
+  toggleLabel: 'Expand or collapse Flowing Light tuning', // 实现
 } : {
-  panelTitle: '\u6d41\u5149\u5fae\u8c03',
-  colorBoost: '\u8272\u5f69\u5f3a\u5ea6',
-  depth: '\u660e\u6697\u6df1\u5ea6',
-  speed: '\u6d41\u52a8\u901f\u5ea6',
-  texture: '\u7eb9\u7406\u5f3a\u5ea6',
-  subtle: '\u67d4\u548c',
-  vivid: '\u9c9c\u8273',
-  airy: '\u901a\u900f',
-  deep: '\u6df1\u9083',
-  calm: '\u8212\u7f13',
-  brisk: '\u7075\u52a8',
-  clean: '\u5e72\u51c0',
-  textured: '\u7ec6\u817b',
-  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6d41\u5149\u5fae\u8c03',
+  panelTitle: '\u6d41\u5149\u5fae\u8c03', // 实现
+  colorBoost: '\u8272\u5f69\u5f3a\u5ea6', // 实现
+  depth: '\u660e\u6697\u6df1\u5ea6', // 实现
+  speed: '\u6d41\u52a8\u901f\u5ea6', // 实现
+  texture: '\u7eb9\u7406\u5f3a\u5ea6', // 实现
+  subtle: '\u67d4\u548c', // 实现
+  vivid: '\u9c9c\u8273', // 实现
+  airy: '\u901a\u900f', // 实现
+  deep: '\u6df1\u9083', // 实现
+  calm: '\u8212\u7f13', // 实现
+  brisk: '\u7075\u52a8', // 实现
+  clean: '\u5e72\u51c0', // 实现
+  textured: '\u7ec6\u817b', // 实现
+  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6d41\u5149\u5fae\u8c03', // 实现
 });
 
-const BLUR_TEXT = computed(() => isEnglish.value ? {
-  panelTitle: 'Overlay Intensity',
-  tint: 'Overlay Opacity',
-  clear: 'Clear',
-  solid: 'Solid',
-  toggleLabel: 'Expand or collapse Static Blur tuning',
+const BLUR_TEXT = computed(() => isEnglish.value ? { // 实现
+  panelTitle: 'Overlay Intensity', // 实现
+  tint: 'Overlay Opacity', // 实现
+  clear: 'Clear', // 实现
+  solid: 'Solid', // 实现
+  toggleLabel: 'Expand or collapse Static Blur tuning', // 实现
 } : {
-  panelTitle: '\u906e\u7f69\u6d53\u5ea6',
-  tint: '\u906e\u7f69\u6d53\u6de1',
-  clear: '\u901a\u900f',
-  solid: '\u5b9e\u8272',
-  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6bdb\u73bb\u7483\u5fae\u8c03',
+  panelTitle: '\u906e\u7f69\u6d53\u5ea6', // 实现
+  tint: '\u906e\u7f69\u6d53\u6de1', // 实现
+  clear: '\u901a\u900f', // 实现
+  solid: '\u5b9e\u8272', // 实现
+  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6bdb\u73bb\u7483\u5fae\u8c03', // 实现
 });
 
-const ACCENT_COLOR_PRESETS = computed(() => isEnglish.value ? [
-  { label: 'Classic Red', value: '#EC4141' },
-  { label: 'Coral', value: '#F9735B' },
-  { label: 'Amber', value: '#F59E0B' },
-  { label: 'Emerald', value: '#22C55E' },
-  { label: 'Cyan', value: '#06B6D4' },
-  { label: 'Lake Blue', value: '#3B82F6' },
-  { label: 'Iris', value: '#8B5CF6' },
-  { label: 'Rose', value: '#EC4899' },
+const ACCENT_COLOR_PRESETS = computed(() => isEnglish.value ? [ // 实现
+  { label: 'Classic Red', value: '#EC4141' }, // 实现
+  { label: 'Coral', value: '#F9735B' }, // 实现
+  { label: 'Amber', value: '#F59E0B' }, // 实现
+  { label: 'Emerald', value: '#22C55E' }, // 实现
+  { label: 'Cyan', value: '#06B6D4' }, // 实现
+  { label: 'Lake Blue', value: '#3B82F6' }, // 实现
+  { label: 'Iris', value: '#8B5CF6' }, // 实现
+  { label: 'Rose', value: '#EC4899' }, // 实现
 ] : [
-  { label: '\u7ecf\u5178\u7ea2', value: '#EC4141' },
-  { label: '\u73ca\u745a', value: '#F9735B' },
-  { label: '\u7425\u73c0', value: '#F59E0B' },
-  { label: '\u7fe1\u7fe0', value: '#22C55E' },
-  { label: '\u9752\u7eff', value: '#06B6D4' },
-  { label: '\u6e56\u84dd', value: '#3B82F6' },
-  { label: '\u9e22\u5c3e\u7d2b', value: '#8B5CF6' },
-  { label: '\u8537\u8587', value: '#EC4899' },
+  { label: '\u7ecf\u5178\u7ea2', value: '#EC4141' }, // 实现
+  { label: '\u73ca\u745a', value: '#F9735B' }, // 实现
+  { label: '\u7425\u73c0', value: '#F59E0B' }, // 实现
+  { label: '\u7fe1\u7fe0', value: '#22C55E' }, // 实现
+  { label: '\u9752\u7eff', value: '#06B6D4' }, // 实现
+  { label: '\u6e56\u84dd', value: '#3B82F6' }, // 实现
+  { label: '\u9e22\u5c3e\u7d2b', value: '#8B5CF6' }, // 实现
+  { label: '\u8537\u8587', value: '#EC4899' }, // 实现
 ]);
 
 const {
   theme,
-  colorScheme,
-  materialMode,
+  colorScheme, // 实现
+  materialMode, // 实现
   keepWindowMaterialOnBlur,
   useCustomTrayMenu,
   showLeaderboard,
-  playerDetailCoverBehavior,
-  isWindowMaterialDisabled,
-  isWindowMaterialButtonDisabled,
-  getWindowMaterialModeDisabledReason,
-  windowMaterialDisabledReason,
-  isDynamicBgDisabled,
-  showFlowTuning,
-  showBlurTuning,
-  setColorScheme,
-  setAccentColor,
-  resetAccentColor,
-  setDynamicType,
-  toggleWindowMaterial,
-  openCustomModal,
-  toggleFlowTuning,
-  toggleBlurTuning,
-  setFlowColorBoost,
-  setFlowDepth,
-  setFlowSpeed,
-  setFlowTexture,
-  setWindowBlurTint,
+  playerDetailCoverBehavior, // 实现
+  isWindowMaterialDisabled, // 实现
+  isWindowMaterialButtonDisabled, // 实现
+  getWindowMaterialModeDisabledReason, // 实现
+  windowMaterialDisabledReason, // 实现
+  isDynamicBgDisabled, // 实现
+  showFlowTuning, // 实现
+  showBlurTuning, // 实现
+  setColorScheme, // 实现
+  setAccentColor, // 实现
+  resetAccentColor, // 实现
+  setDynamicType, // 实现
+  toggleWindowMaterial, // 实现
+  openCustomModal, // 实现
+  toggleFlowTuning, // 实现
+  toggleBlurTuning, // 实现
+  setFlowColorBoost, // 实现
+  setFlowDepth, // 实现
+  setFlowSpeed, // 实现
+  setFlowTexture, // 实现
+  setWindowBlurTint, // 实现
   setKeepWindowMaterialOnBlur,
   setUseCustomTrayMenu,
   useGlassSwitch,
   setUseGlassSwitch,
   setShowLeaderboard,
-  setPlayerDetailCoverBehavior,
+  setPlayerDetailCoverBehavior, // 实现
   playerDetailStyle,
   setPlayerDetailStyle,
   playerDetailMeshBackground,
@@ -270,12 +270,12 @@ const {
   setPlayerDetailVinylMaterial,
   setPlayerDetailVinylPlatterStyle,
   setPlayerDetailMeshBackground,
-} = useSettingsThemeControls();
+} = useSettingsThemeControls(); // 实现
 
-const commitAccentColor = (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  setAccentColor(input.value);
-  input.value = theme.value.accentColor;
+const commitAccentColor = (event: Event) => { // 实现
+  const input = event.target as HTMLInputElement; // 实现
+  setAccentColor(input.value); // 实现
+  input.value = theme.value.accentColor; // 实现
 };
 
 const isImportingTheme = ref(false);
@@ -547,16 +547,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        {{ TEXT.paletteTitle }}
+  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300"> 
+    <section class="space-y-3"> 
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
+        {{ TEXT.paletteTitle }} 
       </h2>
-      <div class="">
+      <div class=""> 
         <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <button
-            type="button"
+            type="button" 
             class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
             :class="colorScheme === 'system' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="setColorScheme('system')"
@@ -566,7 +566,7 @@ onUnmounted(() => {
           </button>
 
           <button
-            type="button"
+            type="button" 
             class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
             :class="colorScheme === 'light' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="setColorScheme('light')"
@@ -576,7 +576,7 @@ onUnmounted(() => {
           </button>
 
           <button
-            type="button"
+            type="button" 
             class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
             :class="colorScheme === 'dark' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="setColorScheme('dark')"
@@ -586,21 +586,21 @@ onUnmounted(() => {
           </button>
 
           <button
-            type="button"
+            type="button" 
             class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
             :class="colorScheme === 'custom' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="openCustomSkin()"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"></path></svg>
-            <span class="text-sm font-semibold">{{ TEXT.customShort }}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"></path></svg> 
+            <span class="text-sm font-semibold">{{ TEXT.customShort }}</span> 
           </button>
         </div>
       </div>
     </section>
 
-    <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+    <section class="space-y-3"> 
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
         {{ isEnglish ? 'Desktop theme package' : '桌面主题包' }}
       </h2>
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -628,9 +628,9 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+    <section class="space-y-3"> 
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
         {{ TEXT.switchStyleTitle }}
       </h2>
       <div class="grid grid-cols-2 gap-3">
@@ -660,7 +660,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -668,86 +668,86 @@ onUnmounted(() => {
         </span>
         <SettingHint :text="isDynamicBgDisabled ? `${TEXT.dynamicHint} ${TEXT.dynamicDisabledHint}` : TEXT.dynamicHint" />
       </h2>
-      <div class="space-y-4">
-        <div :class="isDynamicBgDisabled ? 'pointer-events-none opacity-50' : ''">
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div class="space-y-4"> 
+        <div :class="isDynamicBgDisabled ? 'pointer-events-none opacity-50' : ''"> 
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-3"> 
             <button
-              type="button"
-              class="rounded-xl border px-4 py-3 text-left transition-all"
-              :class="theme.dynamicBgType === 'none'
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+              type="button" 
+              class="rounded-xl border px-4 py-3 text-left transition-all" 
+              :class="theme.dynamicBgType === 'none' 
+                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
                 : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
-              @click="setDynamicType('none')"
+              @click="setDynamicType('none')" 
             >
-              <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicOff }}</div>
+              <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicOff }}</div> 
             </button>
 
-            <div class="relative">
+            <div class="relative"> 
               <button
-                type="button"
-                class="w-full rounded-xl border px-4 py-3 pr-12 text-left transition-all"
-                :class="theme.dynamicBgType === 'flow'
-                  ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+                type="button" 
+                class="w-full rounded-xl border px-4 py-3 pr-12 text-left transition-all" 
+                :class="theme.dynamicBgType === 'flow' 
+                  ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
                   : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
-                @click="setDynamicType('flow')"
+                @click="setDynamicType('flow')" 
               >
-                <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicFlow }}</div>
+                <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicFlow }}</div> 
               </button>
 
               <button
-                type="button"
-                class="absolute bottom-3 right-3 rounded-full p-1 text-[#EC4141]/70 opacity-40 transition-all duration-300 hover:bg-[#EC4141]/10 hover:opacity-100"
-                :class="showFlowTuning && theme.dynamicBgType === 'flow' ? 'bg-[#EC4141]/10 opacity-100' : ''"
-                :aria-label="FLOW_TEXT.toggleLabel"
-                @click.stop="toggleFlowTuning"
+                type="button" 
+                class="absolute bottom-3 right-3 rounded-full p-1 text-[#EC4141]/70 opacity-40 transition-all duration-300 hover:bg-[#EC4141]/10 hover:opacity-100" 
+                :class="showFlowTuning && theme.dynamicBgType === 'flow' ? 'bg-[#EC4141]/10 opacity-100' : ''" 
+                :aria-label="FLOW_TEXT.toggleLabel" 
+                @click.stop="toggleFlowTuning" 
               >
                 <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4 transition-transform duration-300"
-                  :class="showFlowTuning && theme.dynamicBgType === 'flow' ? 'rotate-180' : ''"
+                  xmlns="http://www.w3.org/2000/svg" 
+                  class="h-4 w-4 transition-transform duration-300" 
+                  :class="showFlowTuning && theme.dynamicBgType === 'flow' ? 'rotate-180' : ''" 
                   fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor" 
                 >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /> 
                 </svg>
               </button>
             </div>
 
             <button
-              type="button"
-              class="rounded-xl border px-4 py-3 text-left transition-all"
-              :class="theme.dynamicBgType === 'blur'
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+              type="button" 
+              class="rounded-xl border px-4 py-3 text-left transition-all" 
+              :class="theme.dynamicBgType === 'blur' 
+                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
                 : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
-              @click="setDynamicType('blur')"
+              @click="setDynamicType('blur')" 
             >
-              <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicBlur }}</div>
+              <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicBlur }}</div> 
             </button>
           </div>
 
-          <transition name="flow-panel">
+          <transition name="flow-panel"> 
             <div
-              v-if="theme.dynamicBgType === 'flow' && showFlowTuning && !isDynamicBgDisabled"
+              v-if="theme.dynamicBgType === 'flow' && showFlowTuning && !isDynamicBgDisabled" 
               class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
             >
-              <div class="mb-4 flex items-center justify-between gap-3">
+              <div class="mb-4 flex items-center justify-between gap-3"> 
                 <div>
-                  <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ FLOW_TEXT.panelTitle }}</div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ FLOW_TEXT.panelTitle }}</div> 
                   <div class="text-xs text-gray-600 dark:text-white/60">XianYu Music Flow</div>
                 </div>
-                <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]">
-                  {{ theme.flowColorBoost }} / {{ theme.flowDepth }} / {{ theme.flowSpeed }} / {{ theme.flowTexture }}
+                <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]"> 
+                  {{ theme.flowColorBoost }} / {{ theme.flowDepth }} / {{ theme.flowSpeed }} / {{ theme.flowTexture }} 
                 </div>
               </div>
 
-              <div class="space-y-4">
-              <label class="block">
-                <div class="mb-1.5 flex items-center justify-between gap-4">
+              <div class="space-y-4"> 
+              <label class="block"> 
+                <div class="mb-1.5 flex items-center justify-between gap-4"> 
                   <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.colorBoost }}</div>
+                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.colorBoost }}</div> 
                   </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowColorBoost }}</div>
+                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowColorBoost }}</div> 
                 </div>
                 <RangeSlider
                   :model-value="theme.flowColorBoost"
@@ -757,18 +757,18 @@ onUnmounted(() => {
                   variant="brand"
                   @update:model-value="setFlowColorBoost"
                 />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
-                  <span>{{ FLOW_TEXT.subtle }}</span>
-                  <span>{{ FLOW_TEXT.vivid }}</span>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
+                  <span>{{ FLOW_TEXT.subtle }}</span> 
+                  <span>{{ FLOW_TEXT.vivid }}</span> 
                 </div>
               </label>
 
-              <label class="block">
-                <div class="mb-1.5 flex items-center justify-between gap-4">
+              <label class="block"> 
+                <div class="mb-1.5 flex items-center justify-between gap-4"> 
                   <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.depth }}</div>
+                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.depth }}</div> 
                   </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowDepth }}</div>
+                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowDepth }}</div> 
                 </div>
                 <RangeSlider
                   :model-value="theme.flowDepth"
@@ -778,18 +778,18 @@ onUnmounted(() => {
                   variant="brand"
                   @update:model-value="setFlowDepth"
                 />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
-                  <span>{{ FLOW_TEXT.airy }}</span>
-                  <span>{{ FLOW_TEXT.deep }}</span>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
+                  <span>{{ FLOW_TEXT.airy }}</span> 
+                  <span>{{ FLOW_TEXT.deep }}</span> 
                 </div>
               </label>
 
-              <label class="block">
-                <div class="mb-1.5 flex items-center justify-between gap-4">
+              <label class="block"> 
+                <div class="mb-1.5 flex items-center justify-between gap-4"> 
                   <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.speed }}</div>
+                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.speed }}</div> 
                   </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowSpeed }}</div>
+                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowSpeed }}</div> 
                 </div>
                 <RangeSlider
                   :model-value="theme.flowSpeed"
@@ -799,18 +799,18 @@ onUnmounted(() => {
                   variant="brand"
                   @update:model-value="setFlowSpeed"
                 />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
-                  <span>{{ FLOW_TEXT.calm }}</span>
-                  <span>{{ FLOW_TEXT.brisk }}</span>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
+                  <span>{{ FLOW_TEXT.calm }}</span> 
+                  <span>{{ FLOW_TEXT.brisk }}</span> 
                 </div>
               </label>
 
-              <label class="block">
-                <div class="mb-1.5 flex items-center justify-between gap-4">
+              <label class="block"> 
+                <div class="mb-1.5 flex items-center justify-between gap-4"> 
                   <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.texture }}</div>
+                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.texture }}</div> 
                   </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowTexture }}</div>
+                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowTexture }}</div> 
                 </div>
                 <RangeSlider
                   :model-value="theme.flowTexture"
@@ -820,20 +820,20 @@ onUnmounted(() => {
                   variant="brand"
                   @update:model-value="setFlowTexture"
                 />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
-                  <span>{{ FLOW_TEXT.clean }}</span>
-                  <span>{{ FLOW_TEXT.textured }}</span>
+                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
+                  <span>{{ FLOW_TEXT.clean }}</span> 
+                  <span>{{ FLOW_TEXT.textured }}</span> 
                 </div>
               </label>
             </div>
           </div>
-        </transition>
+        </transition> 
 
       </div>
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -850,82 +850,82 @@ onUnmounted(() => {
       </h2>
       <div
         class=""
-        :class="isWindowMaterialDisabled ? 'opacity-50' : ''"
+        :class="isWindowMaterialDisabled ? 'opacity-50' : ''" 
       >
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3"> 
           <button
-            type="button"
-            class="rounded-xl border px-4 py-3 text-left transition-all"
+            type="button" 
+            class="rounded-xl border px-4 py-3 text-left transition-all" 
             :class="[
-              materialMode === 'acrylic'
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+              materialMode === 'acrylic' 
+                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
                 : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
-              isWindowMaterialButtonDisabled('acrylic') ? 'cursor-not-allowed opacity-45' : '',
+              isWindowMaterialButtonDisabled('acrylic') ? 'cursor-not-allowed opacity-45' : '', 
             ]"
-            :disabled="isWindowMaterialButtonDisabled('acrylic')"
-            :aria-disabled="isWindowMaterialButtonDisabled('acrylic')"
-            :title="getWindowMaterialModeDisabledReason('acrylic') === 'windows11' ? TEXT.windowMaterialWin11Only : ''"
-            @click="toggleWindowMaterial('acrylic')"
+            :disabled="isWindowMaterialButtonDisabled('acrylic')" 
+            :aria-disabled="isWindowMaterialButtonDisabled('acrylic')" 
+            :title="getWindowMaterialModeDisabledReason('acrylic') === 'windows11' ? TEXT.windowMaterialWin11Only : ''" 
+            @click="toggleWindowMaterial('acrylic')" 
           >
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Acrylic</span>
+            <div class="flex items-center justify-between gap-3"> 
+              <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Acrylic</span> 
             </div>
           </button>
 
           <button
-            type="button"
-            class="rounded-xl border px-4 py-3 text-left transition-all"
+            type="button" 
+            class="rounded-xl border px-4 py-3 text-left transition-all" 
             :class="[
-              materialMode === 'mica'
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+              materialMode === 'mica' 
+                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
                 : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
-              isWindowMaterialButtonDisabled('mica') ? 'cursor-not-allowed opacity-45' : '',
+              isWindowMaterialButtonDisabled('mica') ? 'cursor-not-allowed opacity-45' : '', 
             ]"
-            :disabled="isWindowMaterialButtonDisabled('mica')"
-            :aria-disabled="isWindowMaterialButtonDisabled('mica')"
-            :title="getWindowMaterialModeDisabledReason('mica') === 'windows11' ? TEXT.windowMaterialWin11Only : ''"
-            @click="toggleWindowMaterial('mica')"
+            :disabled="isWindowMaterialButtonDisabled('mica')" 
+            :aria-disabled="isWindowMaterialButtonDisabled('mica')" 
+            :title="getWindowMaterialModeDisabledReason('mica') === 'windows11' ? TEXT.windowMaterialWin11Only : ''" 
+            @click="toggleWindowMaterial('mica')" 
           >
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Mica</span>
+            <div class="flex items-center justify-between gap-3"> 
+              <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Mica</span> 
             </div>
           </button>
 
-          <div class="relative">
+          <div class="relative"> 
             <button
-              type="button"
-              class="w-full rounded-xl border px-4 py-3 pr-12 text-left transition-all"
+              type="button" 
+              class="w-full rounded-xl border px-4 py-3 pr-12 text-left transition-all" 
               :class="[
-                materialMode === 'blur'
-                  ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+                materialMode === 'blur' 
+                  ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
                   : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
-                isWindowMaterialButtonDisabled('blur') ? 'cursor-not-allowed opacity-45' : '',
+                isWindowMaterialButtonDisabled('blur') ? 'cursor-not-allowed opacity-45' : '', 
               ]"
-              :disabled="isWindowMaterialButtonDisabled('blur')"
-              :aria-disabled="isWindowMaterialButtonDisabled('blur')"
-              @click="toggleWindowMaterial('blur')"
+              :disabled="isWindowMaterialButtonDisabled('blur')" 
+              :aria-disabled="isWindowMaterialButtonDisabled('blur')" 
+              @click="toggleWindowMaterial('blur')" 
             >
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.windowMaterialBlur }}</span>
+              <div class="flex items-center justify-between gap-3"> 
+                <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.windowMaterialBlur }}</span> 
               </div>
             </button>
 
             <button
-              type="button"
-              class="absolute bottom-3 right-3 rounded-full p-1 text-[#EC4141]/70 opacity-40 transition-all duration-300 hover:bg-[#EC4141]/10 hover:opacity-100"
-              :class="showBlurTuning && materialMode === 'blur' ? 'bg-[#EC4141]/10 opacity-100' : ''"
-              :aria-label="BLUR_TEXT.toggleLabel"
-              @click.stop="toggleBlurTuning"
+              type="button" 
+              class="absolute bottom-3 right-3 rounded-full p-1 text-[#EC4141]/70 opacity-40 transition-all duration-300 hover:bg-[#EC4141]/10 hover:opacity-100" 
+              :class="showBlurTuning && materialMode === 'blur' ? 'bg-[#EC4141]/10 opacity-100' : ''" 
+              :aria-label="BLUR_TEXT.toggleLabel" 
+              @click.stop="toggleBlurTuning" 
             >
               <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-4 w-4 transition-transform duration-300"
-                :class="showBlurTuning && materialMode === 'blur' ? 'rotate-180' : ''"
+                xmlns="http://www.w3.org/2000/svg" 
+                class="h-4 w-4 transition-transform duration-300" 
+                :class="showBlurTuning && materialMode === 'blur' ? 'rotate-180' : ''" 
                 fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+                viewBox="0 0 24 24" 
+                stroke="currentColor" 
               >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /> 
               </svg>
             </button>
           </div>
@@ -948,19 +948,19 @@ onUnmounted(() => {
           </span>
         </div>
 
-        <transition name="flow-panel">
+        <transition name="flow-panel"> 
           <div
-            v-if="materialMode === 'blur' && showBlurTuning"
+            v-if="materialMode === 'blur' && showBlurTuning" 
             class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
           >
-            <div class="mb-4 flex items-center justify-between gap-3">
-              <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ BLUR_TEXT.panelTitle }}</div>
-              <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]">
-                {{ theme.windowBlurTint }}
+            <div class="mb-4 flex items-center justify-between gap-3"> 
+              <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ BLUR_TEXT.panelTitle }}</div> 
+              <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]"> 
+                {{ theme.windowBlurTint }} 
               </div>
             </div>
 
-            <label class="block">
+            <label class="block"> 
               <RangeSlider
                 :model-value="theme.windowBlurTint"
                 :min="0"
@@ -969,17 +969,17 @@ onUnmounted(() => {
                 variant="brand"
                 @update:model-value="setWindowBlurTint"
               />
-              <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
-                <span>{{ BLUR_TEXT.clear }}</span>
-                <span>{{ BLUR_TEXT.solid }}</span>
+              <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
+                <span>{{ BLUR_TEXT.clear }}</span> 
+                <span>{{ BLUR_TEXT.solid }}</span> 
               </div>
             </label>
           </div>
-        </transition>
+        </transition> 
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -993,7 +993,7 @@ onUnmounted(() => {
           <button
             v-for="preset in ACCENT_COLOR_PRESETS"
             :key="preset.value"
-            type="button"
+            type="button" 
             class="group flex min-w-0 flex-col items-center gap-2 rounded-xl border px-2 py-3 transition-all"
             :class="theme.accentColor === preset.value
               ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
@@ -1051,7 +1051,7 @@ onUnmounted(() => {
           </label>
 
           <button
-            type="button"
+            type="button" 
             class="h-9 shrink-0 rounded-lg border border-gray-200/60 bg-white/30 px-3 text-xs font-medium text-gray-600 transition hover:border-[#EC4141]/40 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
             :disabled="theme.accentColor === '#EC4141'"
             :class="theme.accentColor === '#EC4141' ? 'cursor-not-allowed opacity-40' : ''"
@@ -1063,7 +1063,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -1254,7 +1254,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -1279,7 +1279,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -1309,16 +1309,16 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
-.flow-panel-enter-active,
-.flow-panel-leave-active {
+<style scoped> /* 样式 */
+.flow-panel-enter-active, /* 样式 */
+.flow-panel-leave-active { /* 样式 */
   transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: top center;
 }
 
-.flow-panel-enter-from,
-.flow-panel-leave-to {
+.flow-panel-enter-from, /* 样式 */
+.flow-panel-leave-to { /* 样式 */
   opacity: 0;
   transform: scale(0.96) translateY(-10px);
 }

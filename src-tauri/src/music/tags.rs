@@ -18,22 +18,22 @@ use lofty::tag::{Accessor, ItemKey, Tag, TagItem, TagType};
 
 // 标题/歌手/专辑/专辑歌手四要素快照。
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub struct TagTextMetadata {
+pub struct TagTextMetadata { // TagTextMetadata
     pub title: Option<String>, pub artist: Option<String>,
     pub album: Option<String>, pub album_artist: Option<String>,
 }
 
 // 详情面板字段快照：流派/年份/轨号/碟号/备注。
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub struct TagDetailMetadata {
+pub struct TagDetailMetadata { // TagDetailMetadata
     pub genre: Option<String>, pub year: Option<String>,
     pub track_number: Option<String>, pub disc_number: Option<String>,
-    pub comment: Option<String>,
+    pub comment: Option<String>, // 实现
 }
 
 // 命中歌词字段时的定位信息：覆写回写时需要按这三元组找到原条目。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EmbeddedLyricsMatch {
+pub struct EmbeddedLyricsMatch { // EmbeddedLyricsMatch
     pub tag_type: TagType, pub item_key: ItemKey,
     pub description: String, pub text: String,
 }
@@ -410,9 +410,9 @@ fn repair_latin1_misdecoded(text: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // 实现
 mod tag_extraction_tests {
-    use super::{
+    use super::{ // 实现
         contains_lrc_timestamp, extract_detail_metadata, extract_embedded_lyrics,
         extract_text_metadata, find_embedded_picture, repair_latin1_misdecoded,
     };
@@ -439,9 +439,9 @@ mod tag_extraction_tests {
 
         let metadata = extract_text_metadata(&container_with(vec![riff_sheet, id3_sheet]));
 
-        assert_eq!(metadata.title.as_deref(), Some("ID3 Title"));
-        assert_eq!(metadata.artist.as_deref(), Some("ID3 Artist"));
-        assert_eq!(metadata.album.as_deref(), Some("ID3 Album"));
+        assert_eq!(metadata.title.as_deref(), Some("ID3 Title")); // 实现
+        assert_eq!(metadata.artist.as_deref(), Some("ID3 Artist")); // 实现
+        assert_eq!(metadata.album.as_deref(), Some("ID3 Album")); // 实现
     }
 
     #[test] fn riff_info_serves_as_text_fallback() {
@@ -452,16 +452,16 @@ mod tag_extraction_tests {
 
         let metadata = extract_text_metadata(&container_with(vec![riff_sheet]));
 
-        assert_eq!(metadata.title.as_deref(), Some("Wave Title"));
-        assert_eq!(metadata.artist.as_deref(), Some("Wave Artist"));
-        assert_eq!(metadata.album.as_deref(), Some("Wave Album"));
+        assert_eq!(metadata.title.as_deref(), Some("Wave Title")); // 实现
+        assert_eq!(metadata.artist.as_deref(), Some("Wave Artist")); // 实现
+        assert_eq!(metadata.album.as_deref(), Some("Wave Album")); // 实现
     }
 
     #[test] fn lyrics_hidden_in_comment_field_are_found() {
         let mut id3_sheet = Tag::new(TagType::Id3v2);
         id3_sheet.insert(TagItem::new(
-            ItemKey::Comment,
-            ItemValue::Text("[00:01.00]line one\n[00:02.00]line two".to_string()),
+            ItemKey::Comment, // 实现
+            ItemValue::Text("[00:01.00]line one\n[00:02.00]line two".to_string()), // 实现
         ));
 
         let lyrics = extract_embedded_lyrics(&container_with(vec![id3_sheet]));
@@ -488,8 +488,8 @@ mod tag_extraction_tests {
 
         let metadata = extract_detail_metadata(&container_with(vec![id3_sheet]));
 
-        assert_eq!(metadata.track_number.as_deref(), Some("7"));
-        assert_eq!(metadata.disc_number.as_deref(), Some("2"));
+        assert_eq!(metadata.track_number.as_deref(), Some("7")); // 实现
+        assert_eq!(metadata.disc_number.as_deref(), Some("2")); // 实现
     }
 
     #[test] fn front_cover_is_preferred_over_other_picture_types() {
@@ -506,8 +506,8 @@ mod tag_extraction_tests {
         let tagged_file = container_with(vec![id3_sheet, riff_sheet]);
         let picture = find_embedded_picture(&tagged_file).expect("front cover expected");
 
-        assert_eq!(picture.pic_type(), PictureType::CoverFront);
-        assert_eq!(picture.data(), &[4, 5, 6]);
+        assert_eq!(picture.pic_type(), PictureType::CoverFront); // 实现
+        assert_eq!(picture.data(), &[4, 5, 6]); // 实现
     }
 
     #[test] fn lrc_timestamp_detection_covers_both_formats() {

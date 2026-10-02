@@ -1,19 +1,19 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { FileDown, FileUp, Loader2, Trash2, UploadCloud, X } from 'lucide-vue-next';
 
-import { useToast } from '../../composables/toast';
-import { useCollectionsStore } from '../../features/collections/store';
-import { useLibraryStore } from '../../features/library/store';
-import { useSettings } from '../../features/settings/useSettings';
+import { useToast } from '../../composables/toast'; // 实现
+import { useCollectionsStore } from '../../features/collections/store'; // 实现
+import { useLibraryStore } from '../../features/library/store'; // 实现
+import { useSettings } from '../../features/settings/useSettings'; // 实现
 import { useApplicationLogs } from '../../services/applicationLogger';
 import { getStoredPlugins } from '../../services/domain/pluginEngine';
 import {
   describeBackupVersion,
   preparePluginBackupImport,
-  type PreparedPluginBackupImport,
+  type PreparedPluginBackupImport, // 实现
 } from '../../services/domain/pluginBackupImport';
 import {
   exportAppBackup,
@@ -28,20 +28,20 @@ import { extractJsonFromZip } from '../../services/zipReader';
 import { gunzipSync } from '../../services/pureInflate';
 import { debugApi } from '../../services/tauri/debugApi';
 import { modalDragInterceptActive } from '../../composables/dragState';
-import ConfirmModal from '../overlays/ConfirmModal.vue';
-import BackupImportResultModal from './BackupImportResultModal.vue';
+import ConfirmModal from '../overlays/ConfirmModal.vue'; // 实现
+import BackupImportResultModal from './BackupImportResultModal.vue'; // 实现
 import AppBackupResultModal from './AppBackupResultModal.vue';
-import LogExportActions from './LogExportActions.vue';
+import LogExportActions from './LogExportActions.vue'; // 实现
 import ExportBackupDialog, {
   type ExportSelection,
 } from './ExportBackupDialog.vue';
 
-const { showToast } = useToast();
+const { showToast } = useToast(); // 实现
 const { patchSettings, replaceSettings } = useSettings();
-const { entries, clearLogs } = useApplicationLogs();
-const collectionsStore = useCollectionsStore();
-const libraryStore = useLibraryStore();
-const showDeleteConfirmation = ref(false);
+const { entries, clearLogs } = useApplicationLogs(); // 实现
+const collectionsStore = useCollectionsStore(); // 实现
+const libraryStore = useLibraryStore(); // 实现
+const showDeleteConfirmation = ref(false); // 实现
 
 const entryCount = ref(entries.value.length);
 watch(
@@ -49,10 +49,10 @@ watch(
   () => { entryCount.value = entries.value.length; },
   { flush: 'post' },
 );
-const importingBackup = ref(false);
-const backupImportResult = ref<PreparedPluginBackupImport | null>(null);
-const createdPlaylistCount = ref(0);
-const showBackupImportResult = ref(false);
+const importingBackup = ref(false); // 实现
+const backupImportResult = ref<PreparedPluginBackupImport | null>(null); // 实现
+const createdPlaylistCount = ref(0); // 实现
+const showBackupImportResult = ref(false); // 实现
 
 const exportingAppBackup = ref(false);
 const importingAppBackup = ref(false);
@@ -71,10 +71,10 @@ let unlistenDragDrop: UnlistenFn | null = null;
 let unlistenDragOver: UnlistenFn | null = null;
 let unlistenDragLeave: UnlistenFn | null = null;
 
-const confirmDeleteLogs = () => {
-  clearLogs();
-  showDeleteConfirmation.value = false;
-  showToast('日志已全部删除', 'success');
+const confirmDeleteLogs = () => { // 实现
+  clearLogs(); // 实现
+  showDeleteConfirmation.value = false; // 实现
+  showToast('日志已全部删除', 'success'); // 实现
 };
 
 // ==================== 应用备份导出 ====================
@@ -328,8 +328,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-8">
-    <section class="space-y-3">
+  <div class="space-y-8"> 
+    <section class="space-y-3"> 
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -366,7 +366,7 @@ onUnmounted(() => {
       </p>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -377,7 +377,7 @@ onUnmounted(() => {
       <LogExportActions />
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -396,19 +396,19 @@ onUnmounted(() => {
       </button>
     </section>
 
-    <ConfirmModal
-      :visible="showDeleteConfirmation"
-      title="确认删除全部日志"
-      content="此操作会永久删除当前设备上保存的全部应用日志，且无法恢复。确定继续吗？"
-      @confirm="confirmDeleteLogs"
-      @cancel="showDeleteConfirmation = false"
+    <ConfirmModal 
+      :visible="showDeleteConfirmation" 
+      title="确认删除全部日志" 
+      content="此操作会永久删除当前设备上保存的全部应用日志，且无法恢复。确定继续吗？" 
+      @confirm="confirmDeleteLogs" 
+      @cancel="showDeleteConfirmation = false" 
     />
 
-    <BackupImportResultModal
-      :visible="showBackupImportResult"
-      :result="backupImportResult"
-      :created-playlist-count="createdPlaylistCount"
-      @close="showBackupImportResult = false"
+    <BackupImportResultModal 
+      :visible="showBackupImportResult" 
+      :result="backupImportResult" 
+      :created-playlist-count="createdPlaylistCount" 
+      @close="showBackupImportResult = false" 
     />
 
     <AppBackupResultModal

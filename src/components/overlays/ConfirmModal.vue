@@ -1,14 +1,14 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 通用确认框：遮罩点击等同取消，底部并排两个操作按钮
 type ConfirmChoice = 'confirm' | 'cancel';
 
-defineProps<{
-  visible: boolean;
-  title: string;
+defineProps<{ // 实现
+  visible: boolean; // 实现
+  title: string; // 实现
   content?: string;
 }>();
 
-const emit = defineEmits(['confirm', 'cancel']);
+const emit = defineEmits(['confirm', 'cancel']); // 实现
 
 interface ConfirmActionSpec {
   choice: ConfirmChoice;
@@ -37,7 +37,7 @@ const dismissFromBackdrop = () => settleWith('cancel');
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body"> 
     <Transition name="modal-pop">
       <div
         v-if="visible"

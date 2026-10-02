@@ -1,16 +1,16 @@
-<script setup lang="ts">
-import { computed, ref } from 'vue';
+<script setup lang="ts"> // 实现
+import { computed, ref } from 'vue'; // 实现
 
-import { useGlobalShortcutStatus } from '../../composables/useKeyboardShortcuts';
-import { useToast } from '../../composables/toast';
-import { useSettings } from '../../features/settings/useSettings';
+import { useGlobalShortcutStatus } from '../../composables/useKeyboardShortcuts'; // 实现
+import { useToast } from '../../composables/toast'; // 实现
+import { useSettings } from '../../features/settings/useSettings'; // 实现
 import SettingHint from './SettingHint.vue';
 import ShortcutCaptureButton from './shortcutsPanel/ShortcutCaptureButton.vue';
 import {
   areShortcutBindingsEqual, createDefaultShortcutSettings, formatShortcutBinding, getShortcutBindingFromEvent,
   isSystemReservedShortcutEvent, shortcutActionLabels, shortcutActionOrder,
-} from '../../features/settings/shortcuts';
-import type { ShortcutActionId } from '../../types';
+} from '../../features/settings/shortcuts'; // 实现
+import type { ShortcutActionId } from '../../types'; // 实现
 
 const settingsStore = useSettings();
 const settings = settingsStore.settings;
@@ -42,7 +42,7 @@ const writeBinding = (scope: BindingScope, actionId: ShortcutActionId, nextBindi
   slotTable[actionId] = nextBinding;
 };
 
-const restoreDefaults = () => {
+const restoreDefaults = () => { // 实现
   settings.value.shortcuts = createDefaultShortcutSettings(); endCapture();
 };
 
@@ -92,7 +92,7 @@ const hasClashingGlobals = computed(() => occupiedActionIdSet.value.size > 0);
 </script>
 
 <template>
-  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300"> 
     <!-- 快捷键绑定表 -->
     <div class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">

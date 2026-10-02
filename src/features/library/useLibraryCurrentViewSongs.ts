@@ -1,47 +1,47 @@
-import { computed, ref, watch, type ComputedRef, type Ref } from 'vue';
+import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'; // 实现
 
-import { useLibraryStore } from './store';
+import { useLibraryStore } from './store'; // 实现
 
 import {
-  isStaleLibraryPathRequestError,
-  useLibraryAllSongPathCache,
-} from '../../composables/useLibraryAllSongPathCache';
-import { useLibraryCollectionSongPathCache } from '../../composables/useLibraryCollectionSongPathCache';
-import { useLibraryDetailSongPathCache } from '../../composables/useLibraryDetailSongPathCache';
-import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolderSongPathCache';
-import type { AlbumDetailSortMode, FolderSortMode, LocalSortMode, PlaylistSortMode } from '../../services/storage/playerStorage';
-import type { HistoryItem, Playlist, Song } from '../../types';
-import { sortItemsByAlphabetIndex } from '../../utils/alphabetIndex';
+  isStaleLibraryPathRequestError, // 实现
+  useLibraryAllSongPathCache, // 实现
+} from '../../composables/useLibraryAllSongPathCache'; // 实现
+import { useLibraryCollectionSongPathCache } from '../../composables/useLibraryCollectionSongPathCache'; // 实现
+import { useLibraryDetailSongPathCache } from '../../composables/useLibraryDetailSongPathCache'; // 实现
+import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolderSongPathCache'; // 实现
+import type { AlbumDetailSortMode, FolderSortMode, LocalSortMode, PlaylistSortMode } from '../../services/storage/playerStorage'; // 实现
+import type { HistoryItem, Playlist, Song } from '../../types'; // 实现
+import { sortItemsByAlphabetIndex } from '../../utils/alphabetIndex'; // 实现
 import {
-  getSongArtistSearchText,
-  getSongFileNameLabel,
-  getSongTitleLabel,
-  matchesAlbumKey,
-  songHasArtist,
-} from './playerLibraryViewShared';
+  getSongArtistSearchText, // 实现
+  getSongFileNameLabel, // 实现
+  getSongTitleLabel, // 实现
+  matchesAlbumKey, // 实现
+  songHasArtist, // 实现
+} from './playerLibraryViewShared'; // 实现
 import { orderPathsByAlbumDetailMode, orderPathsBySortMode } from './viewSortOrdering';
 import { createPlaylistDurationFixer, isStreamedPath } from './streamDurationProbe';
 
-interface UseLibraryCurrentViewSongsOptions {
-  canonicalSongPaths: Ref<string[]>;
-  playlists: Ref<Playlist[]>;
-  recentSongs: Ref<HistoryItem[]>;
-  songLookup: ComputedRef<Map<string, Song>>;
-  favoriteSongPaths: ComputedRef<string[]>;
-  currentFolderSongPaths: ComputedRef<string[]>;
-  currentViewMode: Ref<string>;
-  searchQuery: Ref<string>;
-  localMusicTab: Ref<'default' | 'artist' | 'album'>;
-  currentArtistFilter: Ref<string>;
-  currentAlbumFilter: Ref<string>;
-  currentFolderFilter: Ref<string>;
-  filterCondition: Ref<string>;
+interface UseLibraryCurrentViewSongsOptions { // 实现
+  canonicalSongPaths: Ref<string[]>; // 实现
+  playlists: Ref<Playlist[]>; // 实现
+  recentSongs: Ref<HistoryItem[]>; // 实现
+  songLookup: ComputedRef<Map<string, Song>>; // 实现
+  favoriteSongPaths: ComputedRef<string[]>; // 实现
+  currentFolderSongPaths: ComputedRef<string[]>; // 实现
+  currentViewMode: Ref<string>; // 实现
+  searchQuery: Ref<string>; // 实现
+  localMusicTab: Ref<'default' | 'artist' | 'album'>; // 实现
+  currentArtistFilter: Ref<string>; // 实现
+  currentAlbumFilter: Ref<string>; // 实现
+  currentFolderFilter: Ref<string>; // 实现
+  filterCondition: Ref<string>; // 实现
   favTab: Ref<'songs' | 'playlists' | 'albums'>;
-  folderSortMode: Ref<FolderSortMode>;
-  localSortMode: Ref<LocalSortMode>;
-  albumDetailSortMode: Ref<AlbumDetailSortMode>;
-  localCustomOrder: Ref<string[]>;
-  playlistSortMode: Ref<PlaylistSortMode>;
+  folderSortMode: Ref<FolderSortMode>; // 实现
+  localSortMode: Ref<LocalSortMode>; // 实现
+  albumDetailSortMode: Ref<AlbumDetailSortMode>; // 实现
+  localCustomOrder: Ref<string[]>; // 实现
+  playlistSortMode: Ref<PlaylistSortMode>; // 实现
 }
 
 // 异步加载竞态保护：只有最新一次请求有权写入结果。
@@ -249,7 +249,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         }
       }
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   watch(
@@ -271,7 +271,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
 
       try {
         const ordered = await fetchFavoritePaths({
-          favoritePaths: paths,
+          favoritePaths: paths, // 实现
           query,
           sortMode,
         });
@@ -285,7 +285,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         }
       }
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   watch(
@@ -306,7 +306,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
 
       try {
         const ordered = await fetchRecentPaths({
-          recentSongs: items,
+          recentSongs: items, // 实现
           query,
           sortMode,
         });
@@ -320,7 +320,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         }
       }
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   watch(
@@ -357,7 +357,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         }
       }
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   watch(
@@ -381,7 +381,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         }
       }
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   watch(
@@ -405,7 +405,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         }
       }
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   watch(
@@ -432,7 +432,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         }
       }
     },
-    { immediate: true },
+    { immediate: true }, // 实现
   );
 
   const activePlaylistPaths = computed(() => {
@@ -441,7 +441,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
     }
 
     const playlist = playlistSource.value.find(item => item.id === detailFilter.value);
-    if (!playlist) {
+    if (!playlist) { // 实现
       return [];
     }
 
@@ -611,7 +611,7 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
     searchInput.value.trim() ? resolveQueriedViewPaths() : resolvePlainViewPaths(),
   );
 
-  const currentViewSongs = computed(() => {
+  const currentViewSongs = computed(() => { // 实现
     canonicalSeq.value;
     const paths = currentViewSongPaths.value; // 取当前视图路径
     const resolved = paths
@@ -695,9 +695,9 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
   );
 
   return {
-    currentViewSongPaths,
-    currentViewSongCount,
-    currentViewSongs,
+    currentViewSongPaths, // 实现
+    currentViewSongCount, // 实现
+    currentViewSongs, // 实现
     resolveSongByPath,
   };
 }

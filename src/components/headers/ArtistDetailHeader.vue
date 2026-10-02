@@ -1,7 +1,7 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, ref, watch } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { useLibraryStore } from '../../features/library/store';
+import { convertFileSrc } from '@tauri-apps/api/core'; // 实现
+import { useLibraryStore } from '../../features/library/store'; // 实现
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import type { ArtistTabId } from '../../utils/artistTabsOrder';
 import ArtistBatchBar from './artistDetail/ArtistBatchBar.vue';
@@ -13,13 +13,13 @@ import { useArtistCover, gradientClassFor } from './artistDetail/useArtistCover'
 import { useAvatarWriter } from './artistDetail/useAvatarWriter';
 import { useHeroShrink } from './artistDetail/useHeroShrink';
 
-const props = defineProps<{
-  artistName: string;
+const props = defineProps<{ // 实现
+  artistName: string; // 实现
   activeTab: ArtistTabId;
-  isBatchMode: boolean;
-  selectedCount?: number;
+  isBatchMode: boolean; // 实现
+  selectedCount?: number; // 实现
   totalSongCount?: number;
-  songs?: any[];
+  songs?: any[]; // 实现
   readOnly?: boolean;
   hasArtistDetail?: boolean;
   coverUrlOverride?: string;
@@ -36,7 +36,7 @@ const everythingPicked = computed(() => {
   return total > 0 && (props.selectedCount ?? 0) === total;
 });
 
-const libraryStore = useLibraryStore();
+const libraryStore = useLibraryStore(); // 实现
 
 const artistEntry = computed(() =>
   libraryStore.artistCatalog.find(entry => entry.name === props.artistName),
@@ -55,7 +55,7 @@ const { coverUrl, resolving } = useArtistCover(() => props.artistName, () => pro
 const shownCover = computed(() => {
   if (props.readOnly && props.coverUrlOverride) return overrideArtwork.value;
   if (artistEntry.value?.avatarPath) return convertFileSrc(artistEntry.value.avatarPath);
-  return coverUrl.value;
+  return coverUrl.value; // 实现
 });
 
 // 简介文案：优先显式 description，其次从原始数据字段中按优先级取值

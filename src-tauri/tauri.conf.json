@@ -1,33 +1,33 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "https://schema.tauri.app/config/2", 
   "productName": "弦予音乐",
   "mainBinaryName": "弦予音乐",
   "version": "2.0.4",
   "identifier": "com.xymusic.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "npm run dev", 
+    "devUrl": "http://localhost:1420", 
+    "beforeBuildCommand": "npm run build", 
+    "frontendDist": "../dist" 
   },
   "app": {
-    "windows": [
+    "windows": [ 
       {
-        "label": "main",
+        "label": "main", 
         "title": "弦予音乐",
         "width": 960,
         "height": 635,
-        "minWidth": 960,
+        "minWidth": 960, 
         "minHeight": 635,
-        "decorations": false,
-        "transparent": true,
-        "visible": false,
-        "center": true
+        "decorations": false, 
+        "transparent": true, 
+        "visible": false, 
+        "center": true 
       }
     ],
-    "security": {
-      "assetProtocol": {
-        "enable": true,
+    "security": { 
+      "assetProtocol": { 
+        "enable": true, 
         "scope": [
           "$APPDATA/**",
           "$APPCACHE/**"
@@ -37,7 +37,7 @@
     }
   },
   "bundle": {
-    "active": true,
+    "active": true, 
     "targets": [
       "nsis"
     ],
@@ -45,9 +45,9 @@
       "bin/ffmpeg"
     ],
     "copyright": "Copyright © 2026 XianYu Music Team",
-    "shortDescription": "A beautiful local music player powered by Tauri.",
+    "shortDescription": "A beautiful local music player powered by Tauri.", 
     "license": "XSAL-1.0",
-    "fileAssociations": [
+    "fileAssociations": [ 
       {
         "ext": [
           "aac",
@@ -64,7 +64,7 @@
         ],
         "name": "XianYu Music Audio",
         "description": "XianYu Music Audio File",
-        "role": "Viewer"
+        "role": "Viewer" 
       },
       {
         "ext": [
@@ -72,19 +72,19 @@
         ],
         "name": "XianYu Music Plugin Script",
         "description": "XianYu Music Plugin Script",
-        "role": "Viewer"
+        "role": "Viewer" 
       }
     ],
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/32x32.png", 
+      "icons/128x128.png", 
+      "icons/128x128@2x.png", 
+      "icons/icon.icns", 
+      "icons/icon.ico" 
     ],
-    "windows": {
-      "webviewInstallMode": {
-        "type": "skip"
+    "windows": { 
+      "webviewInstallMode": { 
+        "type": "skip" 
       },
       "nsis": {
         "installMode": "perMachine",

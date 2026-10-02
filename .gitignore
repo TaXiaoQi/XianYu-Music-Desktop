@@ -1,8 +1,8 @@
-# --- 📦 依赖包 (体积巨大，必须忽略) ---
-node_modules/
+# --- 📦 依赖包 (体积巨大，必须忽略) --- 
+node_modules/ 
 /tools/appimage/
 
-# --- 🏗️ 前端构建输出 ---
+# --- 🏗️ 前端构建输出 --- 
 dist/
 dist-ssr/
 *.local
@@ -11,17 +11,17 @@ releases/
 # --- 🗑️ 旧版 Electron Forge 构建产物（项目已迁移至 Tauri + Vite）---
 .webpack/
 
-# --- 🦀 Tauri/Rust 后端核心 (最重要部分) ---
-# Rust 的编译产物，体积极大，包含大量二进制文件
-src-tauri/target/
-# Tauri v2 生成的移动端/Schema 缓存文件
+# --- 🦀 Tauri/Rust 后端核心 (最重要部分) --- 
+# Rust 的编译产物，体积极大，包含大量二进制文件 
+src-tauri/target/ 
+# Tauri v2 生成的移动端/Schema 缓存文件 
 # gen/windows/ 例外：MSIX 商店包的 AppxManifest 模板与 bundle.config.json 需要纳入版本管理
 # （注意必须用 /* 配合否定规则，写成 src-tauri/gen/ 会导致 git 不再进入目录、例外失效）
 src-tauri/gen/*
 !src-tauri/gen/windows
 # src-tauri/bin/ 的内置 ffmpeg sidecar 产物需入库（参考移动端 jniLibs 预编译做法），他人无需重编即可打包
 
-# --- 🔧 IDE 与 编辑器配置 ---
+# --- 🔧 IDE 与 编辑器配置 --- 
 .vscode/
 .idea/
 .vs/
@@ -32,26 +32,26 @@ src-tauri/gen/*
 *.sln
 *.sw?
 
-# --- 🖥️ 操作系统生成的垃圾文件 ---
+# --- 🖥️ 操作系统生成的垃圾文件 --- 
 .DS_Store
 Thumbs.db
 Desktop.ini
 
-# --- 🔐 环境变量与密钥 (安全防范) ---
+# --- 🔐 环境变量与密钥 (安全防范) --- 
 .env
 .env.local
-.env.*.local
+.env.*.local 
 
-# --- 📝 日志文件 ---
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
+# --- 📝 日志文件 --- 
+npm-debug.log* 
+yarn-debug.log* 
+pnpm-debug.log* 
 *.log
 image.png
 
 # --- 🔧 本地开发脚本 ---
-scripts/bump-version.js
-src-tauri/examples/*_probe.rs
+scripts/bump-version.js 
+src-tauri/examples/*_probe.rs 
 
 # --- 🎛️ 内置 ffmpeg 构建工作区（产物不入库，脚本在 scripts/ffmpeg/）---
 scripts/ffmpeg/src/
@@ -75,18 +75,18 @@ MD/
 
 website/
 
-# --- 本地临时文档与设计草稿 ---
+# --- 本地临时文档与设计草稿 --- 
 *.resolved
-lyrics_architecture_analysis.md
-lyrics_refactor_plan.md
+lyrics_architecture_analysis.md 
+lyrics_refactor_plan.md 
 
-# --- Claude Code 本地配置 ---
+# --- Claude Code 本地配置 --- 
 .claude/
 
-# --- CD 镜像文件目录 ---
+# --- CD 镜像文件目录 --- 
 CDImage/
 
-# --- Local Agent Configurations ---
+# --- Local Agent Configurations --- 
 .agents/
 AGENTS.md
 

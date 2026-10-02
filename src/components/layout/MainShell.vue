@@ -1,18 +1,18 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, onMounted, onUnmounted } from 'vue';
-import { storeToRefs } from 'pinia';
+import { storeToRefs } from 'pinia'; // 实现
 
-import { useAppShell } from '../../composables/useAppShell';
+import { useAppShell } from '../../composables/useAppShell'; // 实现
 import { useWindowMaterial } from '../../composables/windowMaterial';
-import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
-import { useUiStore } from '../../shared/stores/ui';
+import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge'; // 实现
+import { useUiStore } from '../../shared/stores/ui'; // 实现
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useFeedbackNotification } from '../../composables/useFeedbackNotification';
 import { useNicknameChangeNotification } from '../../composables/useNicknameChangeNotification';
 import { useListenResetNotification } from '../../composables/useListenResetNotification';
 import { useLxUpdateAlert } from '../../composables/useLxUpdateAlert';
 import { useUpdateCheck } from '../../composables/useUpdateCheck'; // 更新检查
-import { useOnboarding } from '../../composables/useOnboarding';
+import { useOnboarding } from '../../composables/useOnboarding'; // 实现
 import { useSettingsStore } from '../../features/settings/store';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
@@ -21,10 +21,10 @@ import { fetchBetaAccess } from '../../utils/update';
 import { appApi } from '../../services/tauri/appApi';
 import { APP_VERSION } from '../../../version';
 
-import Sidebar from './Sidebar.vue';
-import TitleBar from './TitleBar.vue';
-import PlayerFooter from './PlayerFooter.vue';
-import GlobalBackground from './GlobalBackground.vue';
+import Sidebar from './Sidebar.vue'; // 实现
+import TitleBar from './TitleBar.vue'; // 实现
+import PlayerFooter from './PlayerFooter.vue'; // 实现
+import GlobalBackground from './GlobalBackground.vue'; // 实现
 import StartupCompositionMask from './shell/StartupCompositionMask.vue';
 import DragDropHint from './shell/DragDropHint.vue';
 import LibraryScanToast from './shell/LibraryScanToast.vue';
@@ -48,36 +48,36 @@ defineProps<{
 
 const {
   isMiniMode,
-  isExternalDragActive,
-  libraryScanProgress,
-  libraryScanPhaseLabel,
-  libraryScanFolderLabel,
-  libraryScanPercent,
-  isFooterVisible,
-  mainContainerClass,
-  mainBlurStyle,
-  footerContainerClass,
-  footerBlurStyle,
-  showAddToPlaylistModal,
-  playlistAddTargetSongs,
+  isExternalDragActive, // 实现
+  libraryScanProgress, // 实现
+  libraryScanPhaseLabel, // 实现
+  libraryScanFolderLabel, // 实现
+  libraryScanPercent, // 实现
+  isFooterVisible, // 实现
+  mainContainerClass, // 实现
+  mainBlurStyle, // 实现
+  footerContainerClass, // 实现
+  footerBlurStyle, // 实现
+  showAddToPlaylistModal, // 实现
+  playlistAddTargetSongs, // 实现
   excludedPlaylistId,
-  closeAddToPlaylistDialog,
-  handleGlobalAdd,
-} = useAppShell();
+  closeAddToPlaylistDialog, // 实现
+  handleGlobalAdd, // 实现
+} = useAppShell(); // 实现
 
 const {
   isSongInfoVisible: trackInfoShown,
   currentSongInfo: trackInfoData,
   songInfoInitialAction: trackInfoEntry,
   closeSongInfo: dismissTrackInfo,
-} = useSongInfoDialog();
+} = useSongInfoDialog(); // 实现
 
 const {
   isDownloadDialogVisible: downloadShown,
   currentDownloadSong: downloadTarget,
   currentDownloadInitialQuality: downloadEntry,
   closeDownloadDialog: dismissDownload,
-} = useDownloadDialog();
+} = useDownloadDialog(); // 实现
 
 const {
   startupCompositionMaskVisible: bootVeilShown,
@@ -88,7 +88,7 @@ const {
   materialSwitching: materialVeilActive,
 } = useWindowMaterial();
 
-useDesktopLyricsWindowBridge();
+useDesktopLyricsWindowBridge(); // 实现
 
 const {
   announcementVisible: noticeShown,
@@ -138,7 +138,7 @@ const { // 解构更新状态
   checkUpdateOnStartup: pollUpgradeOnStartup,
 } = useUpdateCheck(); // 解构结束
 /* --- 首次启动引导与启动期例行检查 --- */
-const { showOnboarding, completeOnboarding } = useOnboarding();
+const { showOnboarding, completeOnboarding } = useOnboarding(); // 实现
 const preferenceHub = useSettingsStore();
 
 /* --- 启动时主界面外观样式（毛玻璃强度透传） --- */

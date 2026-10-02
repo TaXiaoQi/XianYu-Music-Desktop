@@ -1,27 +1,27 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 底栏歌曲右键菜单：本地歌曲走本地导航/歌曲信息，在线歌曲走插件检索打开详情页。
 // 面板外观与入场动画走 Footer 专属主题（无弹出过渡包裹，关闭即卸载）。
 import { computed, ref, type Component } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter } from 'vue-router'; // 实现
 import { Disc3, FileText, Folder, Heart, Image, Info, Plus, UserRound, Video } from 'lucide-vue-next';
 
 import { usePlayer } from '../../features/playback';
-import { useHomeNavigation } from '../../composables/useHomeNavigation';
-import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
-import { useToast } from '../../composables/toast';
-import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import { useHomeNavigation } from '../../composables/useHomeNavigation'; // 实现
+import { useSongInfoDialog } from '../../composables/useSongInfoDialog'; // 实现
+import { useToast } from '../../composables/toast'; // 实现
+import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog'; // 实现
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
 import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from '../../features/library/playerLibraryViewShared';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
 import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/domain/pluginEngine';
 import { supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
-import type { Song } from '../../types';
+import type { Song } from '../../types'; // 实现
 
 import MenuSurface from './contextMenu/MenuSurface.vue';
 import { FOOTER_SHEET } from './contextMenu/sheetChrome';
 import { watchPointerAway } from './contextMenu/onPointerAway';
 
-const props = defineProps<{
+const props = defineProps<{ // 实现
   visible: boolean;
   x: number;
   y: number;
@@ -228,12 +228,12 @@ const act = (id: FooterCommand) => {
     return;
   }
   ACT[id](props.song);
-  emit('close');
+  emit('close'); // 实现
 };
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body"> 
     <MenuSurface
       :shown="visible"
       :at-x="x"

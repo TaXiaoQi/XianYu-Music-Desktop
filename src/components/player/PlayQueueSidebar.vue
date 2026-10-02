@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { usePlayer } from '../../features/playback';
@@ -90,11 +90,11 @@ const ejectTrack = (track: Song) => {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body"> 
     <!-- 点击空白处关闭面板 -->
     <transition name="queue-veil">
       <QueueDimmer v-if="panelVisible" @dismiss="flipPanel" />
-    </transition>
+    </transition> 
 
     <transition name="queue-shelf">
       <aside
@@ -126,13 +126,13 @@ const ejectTrack = (track: Song) => {
           </div>
         </div>
       </aside>
-    </transition>
+    </transition> 
 
     <QueueWipeConfirm v-model:shown="wipeDialogShown" @confirmed="performWipe" />
   </Teleport>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 .queue-shelf-enter-active,
 .queue-shelf-leave-active {
   transition: all .25s cubic-bezier(.4, 0, .2, 1);

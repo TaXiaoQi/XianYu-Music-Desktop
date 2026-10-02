@@ -1,10 +1,10 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { ChevronUp } from 'lucide-vue-next';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { useLyrics } from '../../composables/lyrics';
-import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { useSettings } from '../../features/settings/useSettings';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'; // 实现
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
+import { useLyrics } from '../../composables/lyrics'; // 实现
+import { usePlaybackController } from '../../features/playback/usePlaybackController'; // 实现
+import { useSettings } from '../../features/settings/useSettings'; // 实现
 
 import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useRenderingPower } from '../../composables/renderingPower';
@@ -15,8 +15,8 @@ import FooterControlItem from './FooterControlItem.vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import type { QualityKey, RemoteDownloadProgress } from '../../types';
 import {
-  FOOTER_PROGRESS_HIDDEN_KEY,
-  readStoredProgressHidden
+  FOOTER_PROGRESS_HIDDEN_KEY, // 实现
+  readStoredProgressHidden // 实现
 } from './footer/playerFooterProgress';
 import {
   ALL_QUALITY_OPTIONS,
@@ -44,7 +44,7 @@ const DlnaCastDialog = defineAsyncComponent(() => import('../overlays/DlnaCastDi
 const ShareSongDialog = defineAsyncComponent(() => import('../overlays/ShareSongDialog.vue'));
 
 const {
-  currentSong,
+  currentSong, // 实现
   currentPlayingQuality,
   sessionQualityOverride,
   setSessionQualityOverride,
@@ -52,11 +52,11 @@ const {
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute,
   toggleMode, togglePlaylist, toggleComment,
   togglePlayerDetail, seekTo, formatDuration, playSong,
-} = usePlaybackController();
-const { isFavorite, toggleFavorite } = useLibraryCollections();
+} = usePlaybackController(); // 实现
+const { isFavorite, toggleFavorite } = useLibraryCollections(); // 实现
 
-const handleOpenDetail = () => {
-  togglePlayerDetail();
+const handleOpenDetail = () => { // 实现
+  togglePlayerDetail(); // 实现
 };
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
@@ -75,10 +75,10 @@ const normalizedLayout = computed(() => normalizeFooterLayout(footerLayout.value
 const isFooterItemVisible = (key: FooterItemKey) => showPlayerDetail.value || key !== 'mv';
 const leftItems = computed(() => normalizedLayout.value.left.filter(key => !normalizedLayout.value.hidden.includes(key) && isFooterItemVisible(key)));
 const middleLeftItem = computed(() => normalizedLayout.value.middleLeft && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleLeft) && isFooterItemVisible(normalizedLayout.value.middleLeft)
-  ? normalizedLayout.value.middleLeft
+  ? normalizedLayout.value.middleLeft // 实现
   : null);
 const middleRightItem = computed(() => normalizedLayout.value.middleRight && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleRight) && isFooterItemVisible(normalizedLayout.value.middleRight)
-  ? normalizedLayout.value.middleRight
+  ? normalizedLayout.value.middleRight // 实现
   : null);
 const rightItems = computed(() => normalizedLayout.value.right.filter(key => !normalizedLayout.value.hidden.includes(key) && isFooterItemVisible(key)));
 const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value).filter(isFooterItemVisible));
@@ -132,10 +132,10 @@ const {
   getMvActive: () => mvActive.value,
   showToast,
 });
-// --- Context Menu State ---
-const showContextMenu = ref(false);
-const contextMenuX = ref(0);
-const contextMenuY = ref(0);
+// --- Context Menu State --- 
+const showContextMenu = ref(false); // 实现
+const contextMenuX = ref(0); // 实现
+const contextMenuY = ref(0); // 实现
 const lyricsReplacementVisible = ref(false);
 
 // --- Comment State (复用全局 UI store，弹窗挂在 MainShell 上) ---
@@ -148,7 +148,7 @@ const isPluginSong = computed(() => {
 const wrapToggleComment = () => {
   if (!isPluginSong.value) return;
   if (!showComment.value) {
-    showFooterTools.value = false;
+    showFooterTools.value = false; // 实现
   }
   toggleComment();
 };
@@ -187,25 +187,25 @@ const {
   closeFooterTools: () => { showFooterTools.value = false; },
 });
 
-const handleContextMenu = (e: MouseEvent) => {
-  if (!currentSong.value) return;
-  e.preventDefault();
-  contextMenuX.value = e.clientX;
-  contextMenuY.value = e.clientY;
-  showContextMenu.value = true;
+const handleContextMenu = (e: MouseEvent) => { // 实现
+  if (!currentSong.value) return; // 实现
+  e.preventDefault(); // 实现
+  contextMenuX.value = e.clientX; // 实现
+  contextMenuY.value = e.clientY; // 实现
+  showContextMenu.value = true; // 实现
 };
 
-const toggleLyrics = () => { showDesktopLyrics.value = !showDesktopLyrics.value; };
-const toggleLyricsPlayerSettings = () => {
-  showLyricsPlayerSettingsPanel.value = !showLyricsPlayerSettingsPanel.value;
-  if (showLyricsPlayerSettingsPanel.value) {
-    showFooterTools.value = false;
+const toggleLyrics = () => { showDesktopLyrics.value = !showDesktopLyrics.value; }; // 实现
+const toggleLyricsPlayerSettings = () => { // 实现
+  showLyricsPlayerSettingsPanel.value = !showLyricsPlayerSettingsPanel.value; // 实现
+  if (showLyricsPlayerSettingsPanel.value) { // 实现
+    showFooterTools.value = false; // 实现
   }
 };
-const isVisualizerEnabled = ref(localStorage.getItem('footer_visualizer_enabled') !== 'false');
-const isProgressHidden = ref(readStoredProgressHidden(localStorage));
-const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
-let unlistenRemoteDownload: UnlistenFn | null = null;
+const isVisualizerEnabled = ref(localStorage.getItem('footer_visualizer_enabled') !== 'false'); // 实现
+const isProgressHidden = ref(readStoredProgressHidden(localStorage)); // 实现
+const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null); // 实现
+let unlistenRemoteDownload: UnlistenFn | null = null; // 实现
 
 
 const QUALITY_OPTIONS = computed<Array<{ label: string; value: string; description: string }>>(() => {
@@ -307,26 +307,26 @@ const selectQuality = async (qualityKey: string) => {
   showQualityMenu.value = false;
 
   if (qualityKey !== prev && isQualitySelectableSong.value && currentSong.value) {
-    await playSong(currentSong.value, {
-      startTime: currentTime.value,
-      preserveQueue: true,
-      continueStatisticsSession: true,
+    await playSong(currentSong.value, { // 实现
+      startTime: currentTime.value, // 实现
+      preserveQueue: true, // 实现
+      continueStatisticsSession: true, // 实现
     });
   }
 };
 
-const toggleVisualizer = () => {
+const toggleVisualizer = () => { // 实现
   showFooterTools.value = false;
-  isVisualizerEnabled.value = !isVisualizerEnabled.value;
-  localStorage.setItem('footer_visualizer_enabled', isVisualizerEnabled.value.toString());
+  isVisualizerEnabled.value = !isVisualizerEnabled.value; // 实现
+  localStorage.setItem('footer_visualizer_enabled', isVisualizerEnabled.value.toString()); // 实现
 };
 
-const toggleProgressVisibility = () => {
-  isProgressHidden.value = !isProgressHidden.value;
-  localStorage.setItem(FOOTER_PROGRESS_HIDDEN_KEY, isProgressHidden.value.toString());
+const toggleProgressVisibility = () => { // 实现
+  isProgressHidden.value = !isProgressHidden.value; // 实现
+  localStorage.setItem(FOOTER_PROGRESS_HIDDEN_KEY, isProgressHidden.value.toString()); // 实现
 };
 
-// --- 进度条拖拽逻辑 ---
+// --- 进度条拖拽逻辑 --- 
 const {
   isDraggingProgress,
   progressBarRef,
@@ -349,17 +349,17 @@ const {
   isShowingDetail: showPlayerDetail,
 });
 
-const isCurrentRemoteDownloadActive = computed(() => {
-  const progress = remoteDownloadProgress.value;
-  return !!progress
-    && !progress.done
-    && !!currentSong.value
-    && progress.uri === currentSong.value.path;
+const isCurrentRemoteDownloadActive = computed(() => { // 实现
+  const progress = remoteDownloadProgress.value; // 实现
+  return !!progress // 实现
+    && !progress.done // 实现
+    && !!currentSong.value // 实现
+    && progress.uri === currentSong.value.path; // 实现
 });
-const remoteDownloadText = computed(() => {
-  const progress = remoteDownloadProgress.value;
-  if (!progress || progress.percent === null) return '正在加载远程歌曲';
-  return `正在加载远程歌曲 ${Math.round(progress.percent)}%`;
+const remoteDownloadText = computed(() => { // 实现
+  const progress = remoteDownloadProgress.value; // 实现
+  if (!progress || progress.percent === null) return '正在加载远程歌曲'; // 实现
+  return `正在加载远程歌曲 ${Math.round(progress.percent)}%`; // 实现
 });
 
 // --- 歌名滚动（marquee）---
@@ -395,25 +395,25 @@ const {
   onResumeIdle: () => startIdleTimer(),
 });
 
-const onGlobalPointerMove = (e: PointerEvent) => {
-  if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); }
-  if (isDraggingProgress.value) { e.preventDefault(); updateProgressFromEvent(e); }
+const onGlobalPointerMove = (e: PointerEvent) => { // 实现
+  if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); } // 实现
+  if (isDraggingProgress.value) { e.preventDefault(); updateProgressFromEvent(e); } // 实现
   if (showPlayerDetail.value && mvVideoActive.value && !isPointerOverFooter.value) {
     if (isIdle.value) clearIdle();
     startIdleTimer();
   }
 };
 
-const onGlobalPointerEnd = (commitProgress = true) => {
+const onGlobalPointerEnd = (commitProgress = true) => { // 实现
   endDrag();
-  stopProgressDrag(commitProgress);
+  stopProgressDrag(commitProgress); // 实现
 };
 
-const onGlobalPointerUp = () => onGlobalPointerEnd(true);
-const onGlobalPointerCancel = () => onGlobalPointerEnd(false);
+const onGlobalPointerUp = () => onGlobalPointerEnd(true); // 实现
+const onGlobalPointerCancel = () => onGlobalPointerEnd(false); // 实现
 
-// --- EQ Panel State ---
-const showEqPanel = ref(false);
+// --- EQ Panel State --- 
+const showEqPanel = ref(false); // 实现
 
 // --- Bit-perfect / DSD 直通时禁用底栏音量与音质 UI ---
 const isBitPerfectActive = computed(() =>
@@ -451,31 +451,31 @@ const toggleFooterTools = () => {
 };
 
 watch(
-  () => settings.value.audio.showEqualizerInFooter,
+  () => settings.value.audio.showEqualizerInFooter, // 实现
   (show) => {
-    if (show === false) {
-      showEqPanel.value = false;
+    if (show === false) { // 实现
+      showEqPanel.value = false; // 实现
     }
   }
 );
 
-const toggleEqPanel = (e: MouseEvent) => {
-  e.stopPropagation();
+const toggleEqPanel = (e: MouseEvent) => { // 实现
+  e.stopPropagation(); // 实现
   if (isEffectLocked.value) return;
-  showEqPanel.value = !showEqPanel.value;
+  showEqPanel.value = !showEqPanel.value; // 实现
 };
 
 watch(isEffectLocked, (locked) => {
   if (locked) showEqPanel.value = false;
 });
 
-const handleWindowClick = (e: MouseEvent) => {
+const handleWindowClick = (e: MouseEvent) => { // 实现
   const target = e.target as HTMLElement;
   if (showContextMenu.value && !target.closest('.ctx-sheet')) {
     showContextMenu.value = false;
   }
   if (showFooterTools.value && footerToolsRef.value && !footerToolsRef.value.contains(target)) {
-    showFooterTools.value = false;
+    showFooterTools.value = false; // 实现
   }
   if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
     if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
@@ -489,7 +489,7 @@ const handleWindowClick = (e: MouseEvent) => {
   }
 };
 
-// --- Idle State for Auto-Hide ---
+// --- Idle State for Auto-Hide --- 
 const {
   isPinned,
   isIdle,
@@ -514,7 +514,7 @@ const {
 
 // --- 向 FooterControlItem 共享上下文 ---
 provide('footerContext', {
-  currentSong,
+  currentSong, // 实现
   showPlayerDetail,
   footerQualityExtraText,
   isFooterQualityInfoProbing,
@@ -593,8 +593,8 @@ onMounted(async () => {
   await nextTick();
   setupMarqueeObserver();
   startIdleTimer();
-  unlistenRemoteDownload = await listen<RemoteDownloadProgress>('remote-download-progress', event => {
-    remoteDownloadProgress.value = event.payload;
+  unlistenRemoteDownload = await listen<RemoteDownloadProgress>('remote-download-progress', event => { // 实现
+    remoteDownloadProgress.value = event.payload; // 实现
   });
 });
 onUnmounted(() => {
@@ -606,8 +606,8 @@ onUnmounted(() => {
   disposeMarquee();
   disposeIdle();
   abortFooterQualityInfoProbe();
-  unlistenRemoteDownload?.();
-  unlistenRemoteDownload = null;
+  unlistenRemoteDownload?.(); // 实现
+  unlistenRemoteDownload = null; // 实现
 });
 </script>
 
@@ -615,9 +615,9 @@ onUnmounted(() => {
   <footer 
     class="player-footer h-20 flex items-center justify-between px-4 z-[60] relative select-none bg-transparent"
     :style="surfaceStyle('nav.bar')"
-    @mouseenter="handleFooterMouseEnter"
-    @mousemove="handleFooterMouseMove"
-    @mouseleave="handleFooterMouseLeave"
+    @mouseenter="handleFooterMouseEnter" 
+    @mousemove="handleFooterMouseMove" 
+    @mouseleave="handleFooterMouseLeave" 
   >
     <img
       v-if="sticker('player.corner')"
@@ -628,18 +628,18 @@ onUnmounted(() => {
 
     <div
       v-if="showPlayerDetail && currentSong && isVisualizerEnabled && !mvVideoActive"
-      class="pointer-events-none absolute left-5 right-5 top-[-76px] h-16 z-40 transition-opacity duration-500 [mask-image:linear-gradient(90deg,transparent,black_1.5%,black_98.5%,transparent)]"
-      :class="isIdle ? 'opacity-25' : 'opacity-100'"
+      class="pointer-events-none absolute left-5 right-5 top-[-76px] h-16 z-40 transition-opacity duration-500 [mask-image:linear-gradient(90deg,transparent,black_1.5%,black_98.5%,transparent)]" 
+      :class="isIdle ? 'opacity-25' : 'opacity-100'" 
     >
-      <AudioVisualizer
+      <AudioVisualizer 
         :active="showPlayerDetail && isVisualizerEnabled && !mvVideoActive"
-        :is-playing="isPlaying"
-        :song-path="currentSong.path"
+        :is-playing="isPlaying" 
+        :song-path="currentSong.path" 
       />
     </div>
 
     <div
-      ref="progressBarRef"
+      ref="progressBarRef" 
       class="absolute top-[-10px] left-0 w-full h-[22px] cursor-pointer group/progress z-50 [touch-action:none] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
       :class="[
         isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0',
@@ -648,36 +648,36 @@ onUnmounted(() => {
         // 音量控件上，松开鼠标 300ms 后弹窗关闭，命中区随即可用。
         showVolumeSlider && !isDraggingProgress ? 'pointer-events-none' : '',
       ]"
-      @pointerdown="startProgressDrag"
+      @pointerdown="startProgressDrag" 
     >
-      <div class="absolute inset-y-0 left-0 right-0 flex items-center">
+      <div class="absolute inset-y-0 left-0 right-0 flex items-center"> 
         <div
-          class="relative w-full rounded-full transition-[height] duration-200"
-          :class="isDraggingProgress ? 'h-[5px]' : 'h-[2px] group-hover/progress:h-[5px]'"
+          class="relative w-full rounded-full transition-[height] duration-200" 
+          :class="isDraggingProgress ? 'h-[5px]' : 'h-[2px] group-hover/progress:h-[5px]'" 
         >
-          <div class="absolute inset-0 rounded-full transition-colors duration-200" :class="progressTrackClass"></div>
+          <div class="absolute inset-0 rounded-full transition-colors duration-200" :class="progressTrackClass"></div> 
           <div
-            class="absolute inset-y-0 left-0 rounded-full transition-[background-color,opacity] duration-200 overflow-visible"
-            :class="[progressFillClass, progressVisualState.trackClass]"
-            :style="{ width: displayProgress + '%' }"
+            class="absolute inset-y-0 left-0 rounded-full transition-[background-color,opacity] duration-200 overflow-visible" 
+            :class="[progressFillClass, progressVisualState.trackClass]" 
+            :style="{ width: displayProgress + '%' }" 
           >
             <div
-              class="absolute right-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 translate-x-1/2 rounded-full transition-all duration-150 z-40 border shadow-[0_2.5px_6px_rgba(0,0,0,0.15)]"
+              class="absolute right-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 translate-x-1/2 rounded-full transition-all duration-150 z-40 border shadow-[0_2.5px_6px_rgba(0,0,0,0.15)]" 
               :class="[progressThumbClass, isDraggingProgress && !isProgressHidden ? 'opacity-100 scale-100' : (isMvCollapsed ? 'opacity-0 scale-75' : progressVisualState.thumbClass)]"
             ></div>
 
             <div 
-              class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-0 h-0 overflow-visible pointer-events-none z-50"
+              class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-0 h-0 overflow-visible pointer-events-none z-50" 
             >
-              <transition name="fade-scale">
+              <transition name="fade-scale"> 
                 <div
-                  v-if="isDraggingProgress && !isProgressHidden"
-                  class="absolute bottom-4 left-[-42px] w-[84px] px-2 py-0.5 rounded-md bg-zinc-900/95 text-white text-[10px] font-semibold font-mono tracking-wider whitespace-nowrap shadow-lg border border-white/10 backdrop-blur-sm pointer-events-none select-none flex items-center justify-center text-center"
+                  v-if="isDraggingProgress && !isProgressHidden" 
+                  class="absolute bottom-4 left-[-42px] w-[84px] px-2 py-0.5 rounded-md bg-zinc-900/95 text-white text-[10px] font-semibold font-mono tracking-wider whitespace-nowrap shadow-lg border border-white/10 backdrop-blur-sm pointer-events-none select-none flex items-center justify-center text-center" 
                 >
-                  {{ currentTimeStr }}/{{ totalTimeStr }}
-                  <div class="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-x-4 border-t-4 border-x-transparent border-t-zinc-900/95"></div>
+                  {{ currentTimeStr }}/{{ totalTimeStr }} 
+                  <div class="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-x-4 border-t-4 border-x-transparent border-t-zinc-900/95"></div> 
                 </div>
-              </transition>
+              </transition> 
             </div>
           </div>
         </div>
@@ -693,7 +693,7 @@ onUnmounted(() => {
       @contextmenu="handleContextMenu"
     >
       <div
-        data-footer-cover
+        data-footer-cover 
         @click.stop="handleOpenDetail"
         class="group relative w-12 h-12 rounded-lg flex-shrink-0 cursor-pointer active:scale-95 z-10"
       ></div>
@@ -704,8 +704,8 @@ onUnmounted(() => {
       >
         <div class="footer-track-info overflow-hidden w-28 relative h-full shrink-0">
         <div
-          class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
-          :class="showPlayerDetail ? 'opacity-0 translate-y-4 pointer-events-none' : 'opacity-100 translate-y-0 text-gray-800 dark:text-white'"
+          class="absolute inset-0 flex flex-col justify-center transition-all duration-500" 
+          :class="showPlayerDetail ? 'opacity-0 translate-y-4 pointer-events-none' : 'opacity-100 translate-y-0 text-gray-800 dark:text-white'" 
         >
           <div
             class="overflow-hidden w-28 cursor-pointer"
@@ -726,19 +726,19 @@ onUnmounted(() => {
               <span v-if="shouldMarquee" class="text-sm font-bold tracking-wide cursor-default pr-2">{{ songTitleText }}</span>
             </div>
           </div>
-          <div class="text-[11px] font-medium mt-0.5 cursor-default truncate text-gray-500 dark:text-gray-400">
-            {{ isCurrentRemoteDownloadActive ? remoteDownloadText : (currentSong ? currentSong.artist : 'My Music') }}
+          <div class="text-[11px] font-medium mt-0.5 cursor-default truncate text-gray-500 dark:text-gray-400"> 
+            {{ isCurrentRemoteDownloadActive ? remoteDownloadText : (currentSong ? currentSong.artist : 'My Music') }} 
           </div>
         </div>
 
         <div
-          class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
+          class="absolute inset-0 flex flex-col justify-center transition-all duration-500" 
           :class="showPlayerDetail
             ? (isIdle ? 'opacity-0 translate-y-4 pointer-events-none text-white/90' : 'opacity-100 translate-y-0 text-white/90')
             : 'opacity-0 -translate-y-4 pointer-events-none'"
         >
-          <div class="text-[12px] font-semibold tabular-nums cursor-default tracking-wide">
-            {{ currentTimeStr }} <span class="opacity-50 mx-1">/</span> {{ totalTimeStr }}
+          <div class="text-[12px] font-semibold tabular-nums cursor-default tracking-wide"> 
+            {{ currentTimeStr }} <span class="opacity-50 mx-1">/</span> {{ totalTimeStr }} 
           </div>
         </div>
         </div>
@@ -754,32 +754,32 @@ onUnmounted(() => {
 
     <div
       class="footer-center-section flex items-center justify-center flex-1 gap-6 transition-opacity duration-700"
-      :class="{ 'opacity-0 pointer-events-none': isIdle }"
+      :class="{ 'opacity-0 pointer-events-none': isIdle }" 
     >
       <FooterControlItem v-if="middleLeftItem" :item-key="middleLeftItem" />
 
       <button @click="prevSong"
-        class="transition-colors hover:scale-110 transform duration-200"
-        :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
+        class="transition-colors hover:scale-110 transform duration-200" 
+        :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'" 
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg> 
       </button>
 
       <button @click="togglePlay"
-        class="flex items-center justify-center transition-all active:scale-95 shrink-0 w-11 h-11 rounded-full border"
+        class="flex items-center justify-center transition-all active:scale-95 shrink-0 w-11 h-11 rounded-full border" 
         :class="showPlayerDetail
           ? 'text-white bg-white/10 hover:bg-white/20 border-white/5'
-          : 'text-gray-800 dark:text-white bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 border-black/5 dark:border-white/5'"
+          : 'text-gray-800 dark:text-white bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 border-black/5 dark:border-white/5'" 
       >
-        <svg v-if="isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 fill-current" viewBox="0 0 24 24"><path d="M8.3 5v14l11-7z" /></svg>
+        <svg v-if="isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg> 
+        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 fill-current" viewBox="0 0 24 24"><path d="M8.3 5v14l11-7z" /></svg> 
       </button>
 
       <button @click="nextSong"
-        class="transition-colors hover:scale-110 transform duration-200"
-        :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
+        class="transition-colors hover:scale-110 transform duration-200" 
+        :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'" 
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg> 
       </button>
 
       <FooterControlItem v-if="middleRightItem" :item-key="middleRightItem" />
@@ -787,7 +787,7 @@ onUnmounted(() => {
 
     <div 
       class="footer-right-section flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
-      :class="{ 'opacity-0 pointer-events-none': isIdle }"
+      :class="{ 'opacity-0 pointer-events-none': isIdle }" 
     > 
       <FooterControlItem v-for="key in rightItems" :key="key" :item-key="key" />
 
@@ -800,7 +800,7 @@ onUnmounted(() => {
           >
             <FooterControlItem v-for="key in collapsedItems" :key="'collapsed-' + key" :item-key="key" />
           </div>
-        </transition>
+        </transition> 
 
         <button
           @click="toggleFooterTools"
@@ -821,10 +821,10 @@ onUnmounted(() => {
           :visible="showContextMenu"
           :x="contextMenuX"
           :y="contextMenuY"
-          :song="currentSong"
+          :song="currentSong" 
           :video-background-requested="mvActive"
           :video-background-loading="mvLoading"
-          @close="showContextMenu = false"
+          @close="showContextMenu = false" 
           @change-lyrics="lyricsReplacementVisible = true"
           @toggle-video-background="toggleMv"
         />
@@ -851,7 +851,7 @@ onUnmounted(() => {
 
         <ShareSongDialog
           v-model:visible="showShareDialog"
-          :song="currentSong"
+          :song="currentSong" 
           @copy="handleShareCopy"
           @cast="handleShareCast"
         />
@@ -901,16 +901,16 @@ onUnmounted(() => {
 
     </template>
 
-<style scoped>
-.fade-scale-enter-active,
-.fade-scale-leave-active {
-  transition: opacity 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+<style scoped> /* 样式 */
+.fade-scale-enter-active, /* 样式 */
+.fade-scale-leave-active { /* 样式 */
+  transition: opacity 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); /* 样式 */
 }
 
-.fade-scale-enter-from,
-.fade-scale-leave-to {
+.fade-scale-enter-from, /* 样式 */
+.fade-scale-leave-to { /* 样式 */
   opacity: 0;
-  transform: translateY(6px) scale(0.85);
+  transform: translateY(6px) scale(0.85); /* 样式 */
 }
 
 .footer-tools-enter-active,

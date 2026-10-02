@@ -7,19 +7,19 @@ import { useLibraryRuntimeActions } from '../features/library/useLibraryRuntimeA
 import { QUALITY_META } from '../types';
 import type { Song, QualityKey, DownloadQuality, DownloadFileNameStyle } from '../types';
 
-export interface DownloadLocalOptions {
-  quality?: DownloadQuality;
-  downloadDir?: string;
-  downloadAudio?: boolean;
-  downloadLyrics?: boolean;
-  downloadCover?: boolean;
+export interface DownloadLocalOptions { // 实现
+  quality?: DownloadQuality; // 实现
+  downloadDir?: string; // 实现
+  downloadAudio?: boolean; // 实现
+  downloadLyrics?: boolean; // 实现
+  downloadCover?: boolean; // 实现
   fileNameStyle?: DownloadFileNameStyle;
   preResolvedUrls?: Partial<Record<QualityKey, string>>;
 }
 
 export async function downloadToLocal(
   song: Song,
-  options?: DownloadLocalOptions,
+  options?: DownloadLocalOptions, // 实现
 ): Promise<boolean> {
   const { showToast } = useToast();
   const { settings } = useSettings();
@@ -30,26 +30,26 @@ export async function downloadToLocal(
     return false;
   }
 
-  const downloadDir = options?.downloadDir || settings.value.download.downloadPath;
+  const downloadDir = options?.downloadDir || settings.value.download.downloadPath; // 实现
   if (!downloadDir) {
     showToast('请先在设置 - 下载中选择下载目录', 'error');
     return false;
   }
 
-  const downloadAudio = options?.downloadAudio ?? true;
-  const downloadLyrics = options?.downloadLyrics ?? settings.value.download.downloadLyrics;
-  const downloadCover = options?.downloadCover ?? settings.value.download.embedCover;
+  const downloadAudio = options?.downloadAudio ?? true; // 实现
+  const downloadLyrics = options?.downloadLyrics ?? settings.value.download.downloadLyrics; // 实现
+  const downloadCover = options?.downloadCover ?? settings.value.download.embedCover; // 实现
   const fileNameStyle = options?.fileNameStyle ?? settings.value.download.fileNameStyle;
 
-  if (!downloadAudio && !downloadLyrics && !downloadCover) {
-    showToast('请至少选择一项下载内容', 'info');
+  if (!downloadAudio && !downloadLyrics && !downloadCover) { // 实现
+    showToast('请至少选择一项下载内容', 'info'); // 实现
     return false;
   }
 
-  const songPath = song.cue_source_path || song.path;
+  const songPath = song.cue_source_path || song.path; // 实现
   const songLabel = song.title || song.name || '未知歌曲';
 
-  const quality = options?.quality
+  const quality = options?.quality // 实现
     ?? (settings.value.download.quality as DownloadQuality)
     ?? '320k';
 
@@ -57,63 +57,63 @@ export async function downloadToLocal(
   showToast(`开始下载：${songLabel}`, 'info');
 
   try {
-    if (downloadAudio) {
-      const result = await downloadSong(song, {
+    if (downloadAudio) { // 实现
+      const result = await downloadSong(song, { // 实现
         quality,
         qualityFallbackBehavior: settings.value.download.qualityFallbackBehavior,
-        downloadDir,
-        keepSourceFilename: settings.value.download.keepSourceFilename,
+        downloadDir, // 实现
+        keepSourceFilename: settings.value.download.keepSourceFilename, // 实现
         fileNameStyle,
-        overwriteExisting: settings.value.download.overwriteExisting,
-        downloadLyrics,
-        lyricsFormat: settings.value.download.lyricsFormat,
-        lyricsStyle: settings.value.download.lyricsStyle,
-        embedMetadata: settings.value.download.embedMetadata,
-        embedLyrics: settings.value.download.embedLyrics,
-        embedCover: settings.value.download.embedCover,
-        downloadCover,
+        overwriteExisting: settings.value.download.overwriteExisting, // 实现
+        downloadLyrics, // 实现
+        lyricsFormat: settings.value.download.lyricsFormat, // 实现
+        lyricsStyle: settings.value.download.lyricsStyle, // 实现
+        embedMetadata: settings.value.download.embedMetadata, // 实现
+        embedLyrics: settings.value.download.embedLyrics, // 实现
+        embedCover: settings.value.download.embedCover, // 实现
+        downloadCover, // 实现
         preResolvedUrls: options?.preResolvedUrls,
-        onProgress: (percent: number) => downloadStore.setProgress(percent),
+        onProgress: (percent: number) => downloadStore.setProgress(percent), // 实现
       });
 
-      await recordDownload({
+      await recordDownload({ // 实现
         songPath,
-        filePath: result.filePath,
-        fileName: fileNameFromPath(result.filePath),
-        quality: result.hitQuality,
-        downloadedAt: Date.now(),
-        title: song.title || song.name,
-        artist: song.artist,
+        filePath: result.filePath, // 实现
+        fileName: fileNameFromPath(result.filePath), // 实现
+        quality: result.hitQuality, // 实现
+        downloadedAt: Date.now(), // 实现
+        title: song.title || song.name, // 实现
+        artist: song.artist, // 实现
       });
 
-      const hitMeta = QUALITY_META[result.hitQuality as QualityKey];
-      const selectedMeta = QUALITY_META[quality as QualityKey];
-      const degraded = selectedMeta && hitMeta
-        ? hitMeta.rank < selectedMeta.rank
-        : result.hitQuality !== quality;
-      const extras: string[] = [];
-      if (result.lyricsSaved) extras.push('含歌词');
-      if (result.coverSaved) extras.push('含封面');
-      const extraNote = extras.length > 0 ? `（${extras.join('、')}）` : '';
-      const note = degraded
-        ? `（实际下载音质：${hitMeta?.label ?? result.hitQuality}）`
+      const hitMeta = QUALITY_META[result.hitQuality as QualityKey]; // 实现
+      const selectedMeta = QUALITY_META[quality as QualityKey]; // 实现
+      const degraded = selectedMeta && hitMeta // 实现
+        ? hitMeta.rank < selectedMeta.rank // 实现
+        : result.hitQuality !== quality; // 实现
+      const extras: string[] = []; // 实现
+      if (result.lyricsSaved) extras.push('含歌词'); // 实现
+      if (result.coverSaved) extras.push('含封面'); // 实现
+      const extraNote = extras.length > 0 ? `（${extras.join('、')}）` : ''; // 实现
+      const note = degraded // 实现
+        ? `（实际下载音质：${hitMeta?.label ?? result.hitQuality}）` // 实现
         : '';
-      showToast(`下载完成${note}${extraNote}`, degraded ? 'info' : 'success');
+      showToast(`下载完成${note}${extraNote}`, degraded ? 'info' : 'success'); // 实现
     } else {
-      const result = await downloadSongExtras(song, {
-        downloadDir,
+      const result = await downloadSongExtras(song, { // 实现
+        downloadDir, // 实现
         fileNameStyle,
-        downloadLyrics,
-        lyricsFormat: settings.value.download.lyricsFormat,
-        lyricsStyle: settings.value.download.lyricsStyle,
-        downloadCover,
+        downloadLyrics, // 实现
+        lyricsFormat: settings.value.download.lyricsFormat, // 实现
+        lyricsStyle: settings.value.download.lyricsStyle, // 实现
+        downloadCover, // 实现
       });
 
-      const extras: string[] = [];
-      if (result.lyricsSaved) extras.push('歌词');
-      if (result.coverSaved) extras.push('封面');
-      const extraNote = extras.length > 0 ? `（${extras.join('、')}）` : '';
-      showToast(`下载完成${extraNote}`, 'success');
+      const extras: string[] = []; // 实现
+      if (result.lyricsSaved) extras.push('歌词'); // 实现
+      if (result.coverSaved) extras.push('封面'); // 实现
+      const extraNote = extras.length > 0 ? `（${extras.join('、')}）` : ''; // 实现
+      showToast(`下载完成${extraNote}`, 'success'); // 实现
     }
 
     try {

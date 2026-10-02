@@ -49,35 +49,35 @@ describe('extractCoverUrl netease picId fallback', () => {
   });
 });
 
-describe('extractCoverUrl Baka plugin cover fields', () => {
-  it('extracts coverImg (Baka top list / playlist cover)', () => {
-    expect(extractCoverUrl({ coverImg: 'https://d.musicapp.migu.cn/cover.png' }))
-      .toBe('https://d.musicapp.migu.cn/cover.png');
+describe('extractCoverUrl Baka plugin cover fields', () => { // 实现
+  it('extracts coverImg (Baka top list / playlist cover)', () => { // 实现
+    expect(extractCoverUrl({ coverImg: 'https://d.musicapp.migu.cn/cover.png' })) 
+      .toBe('https://d.musicapp.migu.cn/cover.png'); 
   });
 
-  it('extracts imgUrl (camelCase variant)', () => {
-    expect(extractCoverUrl({ imgUrl: 'https://example.com/img.jpg' }))
-      .toBe('https://example.com/img.jpg');
+  it('extracts imgUrl (camelCase variant)', () => { // 实现
+    expect(extractCoverUrl({ imgUrl: 'https://example.com/img.jpg' })) 
+      .toBe('https://example.com/img.jpg'); 
   });
 
-  it('extracts imgurl (lowercase variant)', () => {
-    expect(extractCoverUrl({ imgurl: 'https://example.com/img.jpg' }))
-      .toBe('https://example.com/img.jpg');
+  it('extracts imgurl (lowercase variant)', () => { // 实现
+    expect(extractCoverUrl({ imgurl: 'https://example.com/img.jpg' })) 
+      .toBe('https://example.com/img.jpg'); 
   });
 
-  it('extracts picurl (lowercase variant)', () => {
-    expect(extractCoverUrl({ picurl: 'https://example.com/pic.jpg' }))
-      .toBe('https://example.com/pic.jpg');
+  it('extracts picurl (lowercase variant)', () => { // 实现
+    expect(extractCoverUrl({ picurl: 'https://example.com/pic.jpg' })) 
+      .toBe('https://example.com/pic.jpg'); 
   });
 
-  it('extracts coverImg from rawData nested object', () => {
-    expect(extractCoverUrl({ rawData: { coverImg: 'https://example.com/cover.png' } }))
-      .toBe('https://example.com/cover.png');
+  it('extracts coverImg from rawData nested object', () => { // 实现
+    expect(extractCoverUrl({ rawData: { coverImg: 'https://example.com/cover.png' } })) 
+      .toBe('https://example.com/cover.png'); 
   });
 
-  it('upgrades http:// coverImg to https://', () => {
-    expect(extractCoverUrl({ coverImg: 'http://example.com/cover.png' }))
-      .toBe('https://example.com/cover.png');
+  it('upgrades http:// coverImg to https://', () => { 
+    expect(extractCoverUrl({ coverImg: 'http://example.com/cover.png' })) 
+      .toBe('https://example.com/cover.png'); 
   });
 });
 

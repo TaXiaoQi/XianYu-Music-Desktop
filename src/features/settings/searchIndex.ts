@@ -1,221 +1,221 @@
-import { FOOTER_ITEMS } from './footerItems';
-import { shortcutActionLabels } from './shortcuts';
-import { SIDEBAR_ITEMS } from './sidebarItems';
+import { FOOTER_ITEMS } from './footerItems'; // 实现
+import { shortcutActionLabels } from './shortcuts'; // 实现
+import { SIDEBAR_ITEMS } from './sidebarItems'; // 实现
 
-export type SettingsTabId =
+export type SettingsTabId = // 实现
   | 'general'
   | 'theme'
-  | 'desktopLyrics'
+  | 'desktopLyrics' // 实现
   | 'sleepTimer'
-  | 'audioOutput'
-  | 'download'
+  | 'audioOutput' // 实现
+  | 'download' // 实现
   | 'toolbox'
   | 'library'
   | 'plugins'
-  | 'shortcuts'
+  | 'shortcuts' // 实现
   | 'account'
   | 'network'
-  | 'advanced'
+  | 'advanced' // 实现
   | 'linkage'
   | 'feedback'
   | 'about';
 
-export interface SettingsSearchItem {
+export interface SettingsSearchItem { // 实现
   id: string;
-  tab: SettingsTabId;
-  tabName: string;
-  section: string;
-  label: string;
-  target: string;
-  keywords: string;
-  kind: 'category' | 'section' | 'setting';
+  tab: SettingsTabId; // 实现
+  tabName: string; // 实现
+  section: string; // 实现
+  label: string; // 实现
+  target: string; // 实现
+  keywords: string; // 实现
+  kind: 'category' | 'section' | 'setting'; // 实现
 }
 
-type SearchItemInput = string | {
-  label: string;
-  target?: string;
-  keywords?: string;
+type SearchItemInput = string | { // 实现
+  label: string; // 实现
+  target?: string; // 实现
+  keywords?: string; // 实现
 };
 
-const TAB_NAMES: Record<SettingsTabId, string> = {
-  account: '账号',
-  general: '常规',
+const TAB_NAMES: Record<SettingsTabId, string> = { // 实现
+  account: '账号', // 实现
+  general: '常规', // 实现
   plugins: '音源',
-  theme: '外观',
-  audioOutput: '播放',
-  download: '下载',
-  library: '音乐库',
-  toolbox: '工具箱',
-  desktopLyrics: '桌面歌词',
+  theme: '外观', // 实现
+  audioOutput: '播放', // 实现
+  download: '下载', // 实现
+  library: '音乐库', // 实现
+  toolbox: '工具箱', // 实现
+  desktopLyrics: '桌面歌词', // 实现
   sleepTimer: '睡眠定时',
   shortcuts: '快捷按键',
   network: '网络',
-  advanced: '高级设置',
+  advanced: '高级设置', // 实现
   linkage: '联动',
   feedback: '问题反馈',
-  about: '关于',
+  about: '关于', // 实现
 };
 
-const makeItems = (
-  tab: SettingsTabId,
-  section: string,
-  items: SearchItemInput[],
-): SettingsSearchItem[] => items.map((item, index) => {
-  const normalized = typeof item === 'string' ? { label: item } : item;
+const makeItems = ( // 实现
+  tab: SettingsTabId, // 实现
+  section: string, // 实现
+  items: SearchItemInput[], // 实现
+): SettingsSearchItem[] => items.map((item, index) => { // 实现
+  const normalized = typeof item === 'string' ? { label: item } : item; // 实现
   return {
-    id: `${tab}-${section}-${index}`,
+    id: `${tab}-${section}-${index}`, // 实现
     tab,
-    tabName: TAB_NAMES[tab],
+    tabName: TAB_NAMES[tab], // 实现
     section,
-    label: normalized.label,
-    target: normalized.target ?? normalized.label,
-    keywords: normalized.keywords ?? '',
-    kind: 'setting',
+    label: normalized.label, // 实现
+    target: normalized.target ?? normalized.label, // 实现
+    keywords: normalized.keywords ?? '', // 实现
+    kind: 'setting', // 实现
   };
 });
 
-const staticItems: SettingsSearchItem[] = [
-  ...makeItems('theme', '\u4e3b\u9898\u8272', [
+const staticItems: SettingsSearchItem[] = [ // 实现
+  ...makeItems('theme', '\u4e3b\u9898\u8272', [ // 实现
     {
-      label: '\u4e3b\u9898\u8272',
-      keywords: '\u54c1\u724c\u8272 \u5f3a\u8c03\u8272 \u989c\u8272 HEX \u9884\u8bbe \u81ea\u5b9a\u4e49',
+      label: '\u4e3b\u9898\u8272', // 实现
+      keywords: '\u54c1\u724c\u8272 \u5f3a\u8c03\u8272 \u989c\u8272 HEX \u9884\u8bbe \u81ea\u5b9a\u4e49', // 实现
     },
   ]),
-  ...makeItems('theme', '\u6b4c\u8bcd\u9875\u5c01\u9762', [
+  ...makeItems('theme', '\u6b4c\u8bcd\u9875\u5c01\u9762', [ // 实现
     {
-      label: '\u9ed8\u8ba4\u5c55\u793a\u5c01\u9762',
-      target: '\u6b4c\u8bcd\u9875\u5c01\u9762',
-      keywords: '\u64ad\u653e\u8be6\u60c5\u9875 \u6b4c\u8bcd \u5c01\u9762 \u5206\u680f \u5c45\u4e2d \u9690\u85cf',
+      label: '\u9ed8\u8ba4\u5c55\u793a\u5c01\u9762', // 实现
+      target: '\u6b4c\u8bcd\u9875\u5c01\u9762', // 实现
+      keywords: '\u64ad\u653e\u8be6\u60c5\u9875 \u6b4c\u8bcd \u5c01\u9762 \u5206\u680f \u5c45\u4e2d \u9690\u85cf', // 实现
     },
   ]),
-  ...makeItems('general', '常规与启动', [
+  ...makeItems('general', '常规与启动', [ // 实现
     { label: '软件语言', keywords: '语言 简体中文 繁體中文 English 跟随系统' },
-    { label: '开机自动运行', keywords: '启动 自启动' },
+    { label: '开机自动运行', keywords: '启动 自启动' }, // 实现
     { label: '启动检测更新', keywords: '更新 检查 版本' },
-    { label: 'GPU 加速', keywords: '硬件 图形 性能' },
+    { label: 'GPU 加速', keywords: '硬件 图形 性能' }, // 实现
     { label: '性能模式', keywords: '高性能 低性能 自动 满特效 性能优先 流畅 卡顿' },
-    { label: '关闭时最小化至托盘', keywords: '退出 后台 托盘' },
-    { label: '显示音质标识', keywords: '无损 Hi-Res 标签' },
-    { label: '显示歌曲注释', keywords: '备注 注释' },
+    { label: '关闭时最小化至托盘', keywords: '退出 后台 托盘' }, // 实现
+    { label: '显示音质标识', keywords: '无损 Hi-Res 标签' }, // 实现
+    { label: '显示歌曲注释', keywords: '备注 注释' }, // 实现
     { label: '显示回到顶部按钮', keywords: '滚动 顶部' },
-    { label: '启用任务栏快捷播控', keywords: '任务栏 播放控制' },
-    { label: '修改歌手头像时同步写回音频标签', keywords: '头像 tag 标签 写入' },
+    { label: '启用任务栏快捷播控', keywords: '任务栏 播放控制' }, // 实现
+    { label: '修改歌手头像时同步写回音频标签', keywords: '头像 tag 标签 写入' }, // 实现
   ]),
-  ...makeItems('general', '存储空间', [
-    { label: '播放缓存上限', keywords: '在线 缓存 容量 GB' },
-    { label: '清理在线播放缓存', keywords: '删除 清空 缓存' },
-    { label: '重置数据', keywords: '恢复初始 清空设置' },
-  ]),
-
-  ...makeItems('theme', '配色方案', [
-    { label: '深色', keywords: '暗色 黑夜 主题' },
-    { label: '浅色', keywords: '明亮 白天 主题' },
-    { label: '跟随系统', keywords: '自动 系统主题' },
-    { label: '自定义皮肤', target: '自定义', keywords: '壁纸 背景 图片 字体颜色 遮罩' },
-  ]),
-  ...makeItems('theme', '动态背景', [
-    { label: '关闭动态背景', target: '关闭', keywords: '禁用 动态背景' },
-    { label: '流光背景', target: '流光', keywords: '动态 封面' },
-    { label: '静态模糊背景', target: '静态模糊', keywords: '封面 毛玻璃' },
-    { label: '色彩强度', target: '动态背景', keywords: '流光微调 柔和 鲜艳' },
-    { label: '明暗深度', target: '动态背景', keywords: '流光微调 通透 深邃' },
-    { label: '流动速度', target: '动态背景', keywords: '流光微调 舒缓 灵动' },
-    { label: '纹理强度', target: '动态背景', keywords: '流光微调 干净 细腻' },
-  ]),
-  ...makeItems('theme', '窗口材质', [
-    { label: 'Acrylic', keywords: '亚克力 Windows 11 透明' },
-    { label: 'Mica', keywords: '云母 Windows 11 材质' },
-    { label: '毛玻璃', keywords: 'Blur 模糊 材质' },
-    { label: '遮罩浓淡', target: '窗口材质', keywords: '通透 实色 模糊微调' },
-    { label: '失焦保持材质', keywords: '窗口 失去焦点' },
-  ]),
-  ...makeItems('theme', '侧边栏管理', [
-    { label: '侧边栏管理', keywords: '显示 隐藏 排序 导航' },
-    { label: '首页', keywords: '侧边栏 导航' },
-    ...SIDEBAR_ITEMS.map(item => ({
-      label: item.label,
-      keywords: `侧边栏 导航 显示 隐藏 ${item.description ?? ''}`,
-    })),
-    { label: '恢复默认顺序', keywords: '侧边栏 排序 重置' },
-  ]),
-  ...makeItems('theme', '底部栏布局', [
-    { label: '底部栏布局与预览', keywords: '播放栏 按钮 拖拽 排序 显示 隐藏 开关' },
-    ...FOOTER_ITEMS.map(item => ({
-      label: item.label,
-      keywords: `底部栏 播放栏 控件 ${item.description}`,
-    })),
+  ...makeItems('general', '存储空间', [ // 实现
+    { label: '播放缓存上限', keywords: '在线 缓存 容量 GB' }, // 实现
+    { label: '清理在线播放缓存', keywords: '删除 清空 缓存' }, // 实现
+    { label: '重置数据', keywords: '恢复初始 清空设置' }, // 实现
   ]),
 
-  ...makeItems('audioOutput', '音频处理', [
-    { label: '渐入渐出', keywords: '淡入淡出 爆音 播放 暂停' },
-    { label: '音量平衡', keywords: 'ReplayGain 响度 标准化' },
-    { label: '整体增益偏移', keywords: 'ReplayGain dB 音量' },
-    { label: '防削波破音保护', keywords: '峰值 clipping 音量增益' },
+  ...makeItems('theme', '配色方案', [ // 实现
+    { label: '深色', keywords: '暗色 黑夜 主题' }, // 实现
+    { label: '浅色', keywords: '明亮 白天 主题' }, // 实现
+    { label: '跟随系统', keywords: '自动 系统主题' }, // 实现
+    { label: '自定义皮肤', target: '自定义', keywords: '壁纸 背景 图片 字体颜色 遮罩' }, // 实现
+  ]),
+  ...makeItems('theme', '动态背景', [ // 实现
+    { label: '关闭动态背景', target: '关闭', keywords: '禁用 动态背景' }, // 实现
+    { label: '流光背景', target: '流光', keywords: '动态 封面' }, // 实现
+    { label: '静态模糊背景', target: '静态模糊', keywords: '封面 毛玻璃' }, // 实现
+    { label: '色彩强度', target: '动态背景', keywords: '流光微调 柔和 鲜艳' }, // 实现
+    { label: '明暗深度', target: '动态背景', keywords: '流光微调 通透 深邃' }, // 实现
+    { label: '流动速度', target: '动态背景', keywords: '流光微调 舒缓 灵动' }, // 实现
+    { label: '纹理强度', target: '动态背景', keywords: '流光微调 干净 细腻' }, // 实现
+  ]),
+  ...makeItems('theme', '窗口材质', [ // 实现
+    { label: 'Acrylic', keywords: '亚克力 Windows 11 透明' }, // 实现
+    { label: 'Mica', keywords: '云母 Windows 11 材质' }, // 实现
+    { label: '毛玻璃', keywords: 'Blur 模糊 材质' }, // 实现
+    { label: '遮罩浓淡', target: '窗口材质', keywords: '通透 实色 模糊微调' }, // 实现
+    { label: '失焦保持材质', keywords: '窗口 失去焦点' }, // 实现
+  ]),
+  ...makeItems('theme', '侧边栏管理', [ // 实现
+    { label: '侧边栏管理', keywords: '显示 隐藏 排序 导航' }, // 实现
+    { label: '首页', keywords: '侧边栏 导航' }, // 实现
+    ...SIDEBAR_ITEMS.map(item => ({ // 实现
+      label: item.label, // 实现
+      keywords: `侧边栏 导航 显示 隐藏 ${item.description ?? ''}`, // 实现
+    })),
+    { label: '恢复默认顺序', keywords: '侧边栏 排序 重置' }, // 实现
+  ]),
+  ...makeItems('theme', '底部栏布局', [ // 实现
+    { label: '底部栏布局与预览', keywords: '播放栏 按钮 拖拽 排序 显示 隐藏 开关' }, // 实现
+    ...FOOTER_ITEMS.map(item => ({ // 实现
+      label: item.label, // 实现
+      keywords: `底部栏 播放栏 控件 ${item.description}`, // 实现
+    })),
+  ]),
+
+  ...makeItems('audioOutput', '音频处理', [ // 实现
+    { label: '渐入渐出', keywords: '淡入淡出 爆音 播放 暂停' }, // 实现
+    { label: '音量平衡', keywords: 'ReplayGain 响度 标准化' }, // 实现
+    { label: '整体增益偏移', keywords: 'ReplayGain dB 音量' }, // 实现
+    { label: '防削波破音保护', keywords: '峰值 clipping 音量增益' }, // 实现
     { label: '单声道合并', keywords: '声道 单声道 mono 合并 立体声 单耳 耳机' },
   ]),
-  ...makeItems('audioOutput', '在线播放', [
-    { label: '默认播放音质', keywords: '在线 无损 Hi-Res 320k' },
+  ...makeItems('audioOutput', '在线播放', [ // 实现
+    { label: '默认播放音质', keywords: '在线 无损 Hi-Res 320k' }, // 实现
     { label: 'MV 默认画质', keywords: 'MV 视频 背景 画质 720P 1080P 4K' },
-    { label: '默认音质播放失败行为', keywords: '音质 回退 降级' },
-    { label: '起播失败行为', keywords: '播放失败 在线引擎' },
+    { label: '默认音质播放失败行为', keywords: '音质 回退 降级' }, // 实现
+    { label: '起播失败行为', keywords: '播放失败 在线引擎' }, // 实现
   ]),
-  ...makeItems('audioOutput', '均衡器', [
-    { label: '在播放栏显示均衡器按钮', keywords: '底栏 EQ 快捷入口' },
-    { label: '启用均衡器', keywords: 'EQ 音效 频段' },
+  ...makeItems('audioOutput', '均衡器', [ // 实现
+    { label: '在播放栏显示均衡器按钮', keywords: '底栏 EQ 快捷入口' }, // 实现
+    { label: '启用均衡器', keywords: 'EQ 音效 频段' }, // 实现
   ]),
-  ...makeItems('audioOutput', '播放设置', [
-    { label: '自动播放', keywords: '启动 播放' },
+  ...makeItems('audioOutput', '播放设置', [ // 实现
+    { label: '自动播放', keywords: '启动 播放' }, // 实现
     { label: '双击播放歌曲', keywords: '单击 双击 播放 触发' },
-    { label: '播放时阻止电脑睡眠', keywords: '防休眠 保持唤醒 电源' },
-    { label: '播放设备', keywords: '输出设备 声卡 扬声器 耳机' },
-    { label: 'WASAPI 独占模式', keywords: 'Windows 声卡 输出 独占' },
+    { label: '播放时阻止电脑睡眠', keywords: '防休眠 保持唤醒 电源' }, // 实现
+    { label: '播放设备', keywords: '输出设备 声卡 扬声器 耳机' }, // 实现
+    { label: 'WASAPI 独占模式', keywords: 'Windows 声卡 输出 独占' }, // 实现
     { label: '原生 DSD 直通', keywords: 'DSD DoP 直通 独占 无损' },
     { label: 'Bit-perfect 输出', keywords: '位完美 直出 采样率 独占 无损' },
-    { label: '歌词同步补偿', keywords: '延迟 偏移 ms 输出设备' },
+    { label: '歌词同步补偿', keywords: '延迟 偏移 ms 输出设备' }, // 实现
   ]),
 
-  ...makeItems('audioOutput', '播放设置', [
+  ...makeItems('audioOutput', '播放设置', [ // 实现
     { label: '音效插件机架', keywords: 'VST3 CLAP 原生 效果 DSP 串联 均衡器 Bit-perfect DSD 独占 互斥' },
   ]),
   ...makeItems('audioOutput', '可用插件', [
     { label: '重新扫描', keywords: 'VST3 CLAP 目录 扫描 发现 安装' },
   ]),
 
-  ...makeItems('download', '下载位置', [
-    { label: '下载目录', keywords: '保存路径 文件夹' },
+  ...makeItems('download', '下载位置', [ // 实现
+    { label: '下载目录', keywords: '保存路径 文件夹' }, // 实现
   ]),
-  ...makeItems('download', '下载音质', [
-    { label: '默认下载音质', keywords: '无损 Hi-Res 320k' },
-    { label: '音质缺失行为', keywords: '回退 降级 不可用' },
+  ...makeItems('download', '下载音质', [ // 实现
+    { label: '默认下载音质', keywords: '无损 Hi-Res 320k' }, // 实现
+    { label: '音质缺失行为', keywords: '回退 降级 不可用' }, // 实现
     { label: 'MV 默认画质', keywords: 'MV 视频 下载 画质 720P 1080P 4K' },
   ]),
-  ...makeItems('download', '文件名与歌词', [
-    { label: '文件名样式', keywords: '命名 歌手 歌名' },
-    { label: '保留源文件名', keywords: '原始 名称' },
-    { label: '同时下载歌词', keywords: '歌词文件 lrc' },
-    { label: '歌词格式', keywords: 'LRC YRC 逐字' },
+  ...makeItems('download', '文件名与歌词', [ // 实现
+    { label: '文件名样式', keywords: '命名 歌手 歌名' }, // 实现
+    { label: '保留源文件名', keywords: '原始 名称' }, // 实现
+    { label: '同时下载歌词', keywords: '歌词文件 lrc' }, // 实现
+    { label: '歌词格式', keywords: 'LRC YRC 逐字' }, // 实现
     { label: '歌词样式', keywords: '逐字 逐行 内置' },
   ]),
-  ...makeItems('download', '文件覆盖', [
-    { label: '覆盖已存在的文件', keywords: '重复 替换' },
+  ...makeItems('download', '文件覆盖', [ // 实现
+    { label: '覆盖已存在的文件', keywords: '重复 替换' }, // 实现
   ]),
 
-  ...makeItems('desktopLyrics', '显示与行为', [
+  ...makeItems('desktopLyrics', '显示与行为', [ // 实现
     '窗口置顶',
     '始终显示阴影背景',
     '全屏时自动隐藏',
     '暂停时自动隐藏',
-    { label: '逐字效果', keywords: '卡拉OK' },
+    { label: '逐字效果', keywords: '卡拉OK' }, // 实现
     '歌词描边',
-    { label: '锁定位置并启用鼠标穿透', keywords: '穿透 点击 锁定' },
+    { label: '锁定位置并启用鼠标穿透', keywords: '穿透 点击 锁定' }, // 实现
     '记住锁定状态',
     '桌面歌词自动居中',
     '重置窗口位置',
   ]),
-  ...makeItems('desktopLyrics', '歌词同步', [
-    { label: '同步偏移', keywords: '延迟 提前 ms' },
+  ...makeItems('desktopLyrics', '歌词同步', [ // 实现
+    { label: '同步偏移', keywords: '延迟 提前 ms' }, // 实现
   ]),
-  ...makeItems('desktopLyrics', '排版与字体', [
+  ...makeItems('desktopLyrics', '排版与字体', [ // 实现
     '字号',
     '行距',
     '不透明度',
@@ -234,75 +234,75 @@ const staticItems: SettingsSearchItem[] = [
     '翻译',
   ]),
 
-  ...makeItems('library', '本地音乐库', [
-    { label: '导入音乐文件夹', target: '点击导入文件夹', keywords: '添加 扫描 拖入 音频' },
-    { label: '局域网共享文件夹', keywords: 'NAS SMB UNC 网络共享 映射驱动器' },
-    { label: '排除短音频', keywords: '最短时长 秒 过滤' },
+  ...makeItems('library', '本地音乐库', [ // 实现
+    { label: '导入音乐文件夹', target: '点击导入文件夹', keywords: '添加 扫描 拖入 音频' }, // 实现
+    { label: '局域网共享文件夹', keywords: 'NAS SMB UNC 网络共享 映射驱动器' }, // 实现
+    { label: '排除短音频', keywords: '最短时长 秒 过滤' }, // 实现
   ]),
-  ...makeItems('library', '远程音乐库', [
-    { label: '远程音乐库', target: '远程', keywords: 'WebDAV 网络服务器' },
-    { label: '名称', keywords: '远程音乐库' },
-    { label: '服务器地址', keywords: '远程 URL WebDAV' },
+  ...makeItems('library', '远程音乐库', [ // 实现
+    { label: '远程音乐库', target: '远程', keywords: 'WebDAV 网络服务器' }, // 实现
+    { label: '名称', keywords: '远程音乐库' }, // 实现
+    { label: '服务器地址', keywords: '远程 URL WebDAV' }, // 实现
     { label: '弦予号', keywords: '远程 登录 账号 昵称' },
-    { label: '密码', keywords: '远程 登录' },
-    { label: '根目录', keywords: '远程 路径 文件夹' },
+    { label: '密码', keywords: '远程 登录' }, // 实现
+    { label: '根目录', keywords: '远程 路径 文件夹' }, // 实现
   ]),
 
-  ...makeItems('plugins', '插件安装', [
-    { label: '本地文件安装', target: '通过插件扩展音乐源', keywords: '导入 JS JSON 拖拽' },
-    { label: '插件地址', keywords: 'URL 网络安装 链接' },
-    { label: '订阅管理', keywords: '订阅源 同步 插件列表' },
+  ...makeItems('plugins', '插件安装', [ // 实现
+    { label: '本地文件安装', target: '通过插件扩展音乐源', keywords: '导入 JS JSON 拖拽' }, // 实现
+    { label: '插件地址', keywords: 'URL 网络安装 链接' }, // 实现
+    { label: '订阅管理', keywords: '订阅源 同步 插件列表' }, // 实现
   ]),
-  ...makeItems('plugins', '插件设置', [
-    '启动时自动更新插件',
-    { label: '插件懒加载', keywords: '启动速度 延迟初始化' },
-    { label: '安装时不校验版本', keywords: '降级 相同版本' },
+  ...makeItems('plugins', '插件设置', [ // 实现
+    '启动时自动更新插件', // 实现
+    { label: '插件懒加载', keywords: '启动速度 延迟初始化' }, // 实现
+    { label: '安装时不校验版本', keywords: '降级 相同版本' }, // 实现
   ]),
-  ...makeItems('plugins', '已安装插件', [
-    { label: '搜索已安装插件', target: '已安装插件', keywords: '名称 平台 作者' },
-    { label: '检查全部更新', target: '已安装插件', keywords: '插件 升级' },
-    { label: '卸载全部插件', keywords: '删除 清空插件' },
+  ...makeItems('plugins', '已安装插件', [ // 实现
+    { label: '搜索已安装插件', target: '已安装插件', keywords: '名称 平台 作者' }, // 实现
+    { label: '检查全部更新', target: '已安装插件', keywords: '插件 升级' }, // 实现
+    { label: '卸载全部插件', keywords: '删除 清空插件' }, // 实现
   ]),
 
-  ...makeItems('shortcuts', '快捷键', [
-    ...Object.values(shortcutActionLabels).map(label => ({
+  ...makeItems('shortcuts', '快捷键', [ // 实现
+    ...Object.values(shortcutActionLabels).map(label => ({ // 实现
       label,
-      keywords: '窗口内 全局 键盘 按键',
+      keywords: '窗口内 全局 键盘 按键', // 实现
     })),
   ]),
-  ...makeItems('shortcuts', '选项', [
+  ...makeItems('shortcuts', '选项', [ // 实现
     '启用窗口内快捷键',
     '启用全局快捷键',
-    { label: '使用系统媒体快捷键', keywords: '媒体键 播放 暂停 上一首 下一首' },
+    { label: '使用系统媒体快捷键', keywords: '媒体键 播放 暂停 上一首 下一首' }, // 实现
   ]),
 
-  ...makeItems('account', '账号', [
-    { label: '账号状态', keywords: '登录 用户 资料' },
-    { label: '后端地址', keywords: '服务器 API 自建服务' },
-    { label: '歌单上传', target: '歌单', keywords: '云端同步' },
-    { label: '插件上传', target: '插件', keywords: '云端同步' },
-    { label: '本地设置上传', target: '设置', keywords: '云端同步' },
-    { label: '手动同步', keywords: '上传 下载 云端' },
-    { label: '启用自动同步', keywords: '定时 云端' },
-    { label: '同步间隔', keywords: '小时 自动同步' },
-    { label: '最大延迟', keywords: '分钟 自动同步' },
-    { label: '退出登录', keywords: '注销 账号' },
+  ...makeItems('account', '账号', [ // 实现
+    { label: '账号状态', keywords: '登录 用户 资料' }, // 实现
+    { label: '后端地址', keywords: '服务器 API 自建服务' }, // 实现
+    { label: '歌单上传', target: '歌单', keywords: '云端同步' }, // 实现
+    { label: '插件上传', target: '插件', keywords: '云端同步' }, // 实现
+    { label: '本地设置上传', target: '设置', keywords: '云端同步' }, // 实现
+    { label: '手动同步', keywords: '上传 下载 云端' }, // 实现
+    { label: '启用自动同步', keywords: '定时 云端' }, // 实现
+    { label: '同步间隔', keywords: '小时 自动同步' }, // 实现
+    { label: '最大延迟', keywords: '分钟 自动同步' }, // 实现
+    { label: '退出登录', keywords: '注销 账号' }, // 实现
   ]),
 
-  ...makeItems('toolbox', '音乐整理工具箱', [
-    { label: 'MusicTag 路径', keywords: '程序 exe 标签写入' },
-    { label: '目标文件夹', keywords: '歌曲目录 整理路径' },
-    { label: '去除序号前缀', keywords: '预处理 文件名' },
-    { label: '命名模板', keywords: '重命名 歌手 歌名' },
-    { label: '完成前刷新音乐库', keywords: '重新扫描 更新' },
+  ...makeItems('toolbox', '音乐整理工具箱', [ // 实现
+    { label: 'MusicTag 路径', keywords: '程序 exe 标签写入' }, // 实现
+    { label: '目标文件夹', keywords: '歌曲目录 整理路径' }, // 实现
+    { label: '去除序号前缀', keywords: '预处理 文件名' }, // 实现
+    { label: '命名模板', keywords: '重命名 歌手 歌名' }, // 实现
+    { label: '完成前刷新音乐库', keywords: '重新扫描 更新' }, // 实现
   ]),
 
-  ...makeItems('advanced', '高级设置', [
-    { label: '备份与恢复', keywords: 'BakaMusic MusicFree 导入 歌单 JSON 插件' },
-    { label: '从 BakaMusic 或 MusicFree 软件导入歌单', keywords: '备份 恢复 插件关联 缺失插件' },
-    { label: '日志保留时长', keywords: '日志 保存 自动清理 天数' },
+  ...makeItems('advanced', '高级设置', [ // 实现
+    { label: '备份与恢复', keywords: 'BakaMusic MusicFree 导入 歌单 JSON 插件' }, // 实现
+    { label: '从 BakaMusic 或 MusicFree 软件导入歌单', keywords: '备份 恢复 插件关联 缺失插件' }, // 实现
+    { label: '日志保留时长', keywords: '日志 保存 自动清理 天数' }, // 实现
     { label: '导出日志', keywords: '日志 调试 反馈 全部 导出' },
-    { label: '删除全部日志', keywords: '日志 清空 删除' },
+    { label: '删除全部日志', keywords: '日志 清空 删除' }, // 实现
   ]),
 
   ...makeItems('linkage', 'DLNA 投放', [
@@ -326,82 +326,82 @@ const staticItems: SettingsSearchItem[] = [
     { label: '附上错误日志', target: '附上错误日志', keywords: '反馈 日志 诊断 排查' },
   ]),
 
-  ...makeItems('about', '关于', [
-    { label: '弦予音乐', keywords: '版本 开发者 软件信息' },
+  ...makeItems('about', '关于', [ // 实现
+    { label: '弦予音乐', keywords: '版本 开发者 软件信息' }, // 实现
   ]),
 ];
 
-const categoryItems: SettingsSearchItem[] = (Object.entries(TAB_NAMES) as Array<[SettingsTabId, string]>)
-  .map(([tab, tabName]) => ({
-    id: `category-${tab}`,
+const categoryItems: SettingsSearchItem[] = (Object.entries(TAB_NAMES) as Array<[SettingsTabId, string]>) // 实现
+  .map(([tab, tabName]) => ({ // 实现
+    id: `category-${tab}`, // 实现
     tab,
     tabName,
-    section: '设置分类',
-    label: tabName,
+    section: '设置分类', // 实现
+    label: tabName, // 实现
     target: '',
-    keywords: `${tabName} 设置 分类`,
-    kind: 'category',
+    keywords: `${tabName} 设置 分类`, // 实现
+    kind: 'category', // 实现
   }));
 
-const seenSections = new Set<string>();
-const sectionItems: SettingsSearchItem[] = [];
-for (const item of staticItems) {
-  const key = `${item.tab}:${item.section}`;
-  if (seenSections.has(key)) continue;
-  seenSections.add(key);
-  sectionItems.push({
-    id: `section-${key}`,
-    tab: item.tab,
-    tabName: item.tabName,
-    section: item.section,
-    label: item.section,
-    target: item.section,
-    keywords: `${item.tabName} ${item.section} 分组`,
-    kind: 'section',
+const seenSections = new Set<string>(); // 实现
+const sectionItems: SettingsSearchItem[] = []; // 实现
+for (const item of staticItems) { // 实现
+  const key = `${item.tab}:${item.section}`; // 实现
+  if (seenSections.has(key)) continue; // 实现
+  seenSections.add(key); // 实现
+  sectionItems.push({ // 实现
+    id: `section-${key}`, // 实现
+    tab: item.tab, // 实现
+    tabName: item.tabName, // 实现
+    section: item.section, // 实现
+    label: item.section, // 实现
+    target: item.section, // 实现
+    keywords: `${item.tabName} ${item.section} 分组`, // 实现
+    kind: 'section', // 实现
   });
 }
 
-export const SETTINGS_SEARCH_ITEMS = [...categoryItems, ...sectionItems, ...staticItems];
+export const SETTINGS_SEARCH_ITEMS = [...categoryItems, ...sectionItems, ...staticItems]; // 实现
 
-const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' '); // 实现
 
-export function searchSettings(query: string, limit = 24): SettingsSearchItem[] {
-  const normalizedQuery = normalize(query);
-  if (!normalizedQuery) return [];
+export function searchSettings(query: string, limit = 24): SettingsSearchItem[] { // 实现
+  const normalizedQuery = normalize(query); // 实现
+  if (!normalizedQuery) return []; // 实现
 
-  const exactCategory = categoryItems.find(item => normalize(item.label) === normalizedQuery);
-  if (exactCategory) return [exactCategory];
+  const exactCategory = categoryItems.find(item => normalize(item.label) === normalizedQuery); // 实现
+  if (exactCategory) return [exactCategory]; // 实现
 
-  const exactSections = sectionItems.filter(item => normalize(item.label) === normalizedQuery);
-  if (exactSections.length > 0) return exactSections.slice(0, limit);
+  const exactSections = sectionItems.filter(item => normalize(item.label) === normalizedQuery); // 实现
+  if (exactSections.length > 0) return exactSections.slice(0, limit); // 实现
 
-  const tokens = normalizedQuery.split(' ').filter(Boolean);
+  const tokens = normalizedQuery.split(' ').filter(Boolean); // 实现
 
-  return SETTINGS_SEARCH_ITEMS
-    .map(item => {
-      const label = normalize(item.label);
-      const section = normalize(item.section);
-      const tabName = normalize(item.tabName);
-      const searchable = normalize(`${item.label} ${item.section} ${item.tabName} ${item.keywords}`);
+  return SETTINGS_SEARCH_ITEMS // 实现
+    .map(item => { // 实现
+      const label = normalize(item.label); // 实现
+      const section = normalize(item.section); // 实现
+      const tabName = normalize(item.tabName); // 实现
+      const searchable = normalize(`${item.label} ${item.section} ${item.tabName} ${item.keywords}`); // 实现
 
-      if (!tokens.every(token => searchable.includes(token))) return null;
+      if (!tokens.every(token => searchable.includes(token))) return null; // 实现
 
-      const score = label === normalizedQuery
+      const score = label === normalizedQuery // 实现
         ? 0
-        : label.startsWith(normalizedQuery)
+        : label.startsWith(normalizedQuery) // 实现
           ? 1
-          : label.includes(normalizedQuery)
+          : label.includes(normalizedQuery) // 实现
             ? 2
-            : section.includes(normalizedQuery)
+            : section.includes(normalizedQuery) // 实现
               ? 3
-              : tabName.includes(normalizedQuery)
+              : tabName.includes(normalizedQuery) // 实现
                 ? 4
                 : 5;
 
-      return { item, score };
+      return { item, score }; // 实现
     })
-    .filter((result): result is { item: SettingsSearchItem; score: number } => result !== null)
-    .sort((a, b) => a.score - b.score || a.item.label.localeCompare(b.item.label, 'zh-CN'))
-    .slice(0, limit)
-    .map(result => result.item);
+    .filter((result): result is { item: SettingsSearchItem; score: number } => result !== null) // 实现
+    .sort((a, b) => a.score - b.score || a.item.label.localeCompare(b.item.label, 'zh-CN')) // 实现
+    .slice(0, limit) // 实现
+    .map(result => result.item); // 实现
 }

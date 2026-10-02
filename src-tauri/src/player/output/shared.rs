@@ -5,20 +5,20 @@
 // 源链组装顺序（下混 → 缓冲 → 归一化 → EQ → 音效 → 插件 → 音量 → 限幅 → 计时）
 // 与进度换算公式为既有行为，冻结不改。
 
-use crate::player::equalizer::EqualizerHandle;
+use crate::player::equalizer::{EqualizerHandle};
 use crate::player::loudness::{VolumeNormalizer, VolumeNormalizerHandle};
-use crate::player::output::{OutputBackend, OutputError};
+use crate::player::output::{OutputError, OutputBackend};
 use crate::player::sound_effect::{SoundEffectSource, SoundEffectHandle};
-use crate::player::types::{SharedProgress, TimedSource};
+use crate::player::types::{TimedSource, SharedProgress};
 use crate::remote::cache::RemoteStreamSource;
-use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
-use std::fs::File;
+use cpal::traits::{HostTrait, DeviceTrait};
+use rodio::{Source, Sink, OutputStreamHandle, OutputStream, Decoder};
+use std::fs::{File};
 use std::io::{BufReader, Read, Seek};
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{Ordering, AtomicU32};
+use std::sync::{Arc};
+use core::time::Duration;
 
 #[cfg(windows)]
 #[link(name = "winmm")] // 链接系统库
@@ -45,73 +45,73 @@ impl<T: Read + Seek> ReadSeek for T {}
 const READER_BUF_BYTES: usize = 512 * 1024;
 
 /// 共享模式后端：持有输出流与 Sink 工厂。
-pub(crate) struct SharedOutputBackend {
-    _stream: OutputStream,
-    handle: OutputStreamHandle,
-    active_device_name: String,
+pub(crate) struct SharedOutputBackend { // 实现
+    _stream: OutputStream, // 实现
+    handle: OutputStreamHandle, // 实现
+    active_device_name: String, // 实现
 }
 
-impl SharedOutputBackend {
+impl SharedOutputBackend { // SharedOutputBackend
     /// 优先打开与设备名完全一致的设备；失败则回退系统默认设备。
-    pub(crate) fn open(host: &cpal::Host, device_name: Option<&str>) -> Result<Self, OutputError> {
-        if let Some(name) = device_name {
+    pub(crate) fn open(host: &cpal::Host, device_name: Option<&str>) -> Result<Self, OutputError> { // open
+        if let Some(name) = device_name { // 实现
             if let Ok(devices) = host.output_devices() {
                 let wanted = devices
                     .filter_map(|device| device.name().ok().map(|n| (device, n == name)))
                     .find(|(_, matched)| *matched)
                     .map(|(device, _)| device);
                 if let Some(device) = wanted {
-                    if let Ok(output) = Self::from_device(&device, name.to_string()) {
-                        return Ok(output);
+                    if let Ok(output) = Self::from_device(&device, name.to_string()) { // 实现
+                        return Ok(output); // 实现
                     }
                 }
             }
         }
 
         let fallback = host
-            .default_output_device()
-            .ok_or(OutputError::DeviceUnavailable)?;
+            .default_output_device() // 实现
+            .ok_or(OutputError::DeviceUnavailable)?; // 实现
         let active_name = fallback
             .name()
-            .map_err(|error| OutputError::Stream(error.to_string()))?;
+            .map_err(|error| OutputError::Stream(error.to_string()))?; // 实现
         Self::from_device(&fallback, active_name)
     }
 
     fn from_device(device: &cpal::Device, active_device_name: String) -> Result<Self, OutputError> {
         init_high_resolution_timer(); // 启用高精度定时
-        let (stream, handle) = OutputStream::try_from_device(device)
-            .map_err(|error| OutputError::Stream(error.to_string()))?;
+        let (stream, handle) = OutputStream::try_from_device(device) // 实现
+            .map_err(|error| OutputError::Stream(error.to_string()))?; // 实现
 
         Ok(Self {
-            _stream: stream,
+            _stream: stream, // 实现
             handle,
-            active_device_name,
+            active_device_name, // 实现
         })
     }
 }
 
-impl OutputBackend for SharedOutputBackend {
-    fn active_device_name(&self) -> &str {
-        &self.active_device_name
+impl OutputBackend for SharedOutputBackend { // OutputBackend
+    fn active_device_name(&self) -> &str { // active_device_name
+        &self.active_device_name // 实现
     }
 
-    fn create_sink(&self) -> Result<Sink, OutputError> {
-        Sink::try_new(&self.handle).map_err(|error| OutputError::Sink(error.to_string()))
+    fn create_sink(&self) -> Result<Sink, OutputError> { // create_sink
+        Sink::try_new(&self.handle).map_err(|error| OutputError::Sink(error.to_string())) // 实现
     }
 }
 
 /// 由已播采样数换算播放秒数；格式未知时返回 0。
-pub(crate) fn progress_seconds_from_samples(samples: u64, rate: u32, channels: u32) -> f64 {
-    if rate == 0 || channels == 0 {
+pub(crate) fn progress_seconds_from_samples(samples: u64, rate: u32, channels: u32) -> f64 { // progress_seconds_from_samples
+    if rate == 0 || channels == 0 { // 实现
         return 0.0;
     }
 
-    samples as f64 / (rate as u64 * channels as u64) as f64
+    samples as f64 / (rate as u64 * channels as u64) as f64 // 实现
 }
 
 /// 为恢复播放准备解码输入：流式临时文件 / 远端流 / 桥接本地文件 / 普通文件。
 fn open_restore_reader(
-    current_path: &str,
+    current_path: &str, // 实现
     remote_stream: Option<&RemoteStreamSource>,
     streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) -> Result<Box<dyn ReadSeek + Send + Sync>, String> {
@@ -151,21 +151,21 @@ fn open_restore_reader(
 
 /// 中断后的原地恢复：重建 Sink 与源链，按已播进度跳转后续播或暂停。
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn restore_current_playback(
-    output: &Option<SharedOutputBackend>,
-    current_sink: &mut Option<Sink>,
-    current_path: &str,
-    is_playing_flag: bool,
-    progress: &Arc<SharedProgress>,
-    equalizer_handle: Arc<EqualizerHandle>,
+pub(crate) fn restore_current_playback( // restore_current_playback
+    output: &Option<SharedOutputBackend>, // 实现
+    current_sink: &mut Option<Sink>, // 实现
+    current_path: &str, // 实现
+    is_playing_flag: bool, // 实现
+    progress: &Arc<SharedProgress>, // 实现
+    equalizer_handle: Arc<EqualizerHandle>, // 实现
     sound_effect_handle: Arc<SoundEffectHandle>, // 音效句柄
-    user_volume: Arc<AtomicU32>,
+    user_volume: Arc<AtomicU32>, // 实现
     volume_balance_gain: f32,
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     remote_stream: Option<&RemoteStreamSource>,
     streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
-    if current_path.is_empty() {
+    if current_path.is_empty() { // 实现
         return;
     }
     let Some(output) = output else { return };

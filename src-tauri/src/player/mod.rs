@@ -2,27 +2,27 @@ pub(crate) mod audio_head_cache;
 pub mod buffered_source;
 pub(crate) mod cenc;
 pub mod channel_downmix;
-mod commands;
+mod commands; // 实现
 mod device;
 pub(crate) mod dolby_bridge;
 pub mod dsd_dop;
-pub mod equalizer;
-pub mod loudness;
+pub mod equalizer; // 实现
+pub mod loudness; // 实现
 pub mod mv_stream_proxy;
 mod output;
 mod output_runtime;
 pub mod plugin_host;
 pub(crate) mod qmc2;
 mod remote_reader;
-mod runtime;
+mod runtime; // 实现
 mod session;
 pub mod sound_effect; // 音效引擎模块
 mod source_pipeline;
-mod spectrum;
+mod spectrum; // 实现
 pub mod stream_cache;
 pub(crate) mod types;
 
-pub use commands::{
+pub use commands::{ // 实现
     clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_playback_duration,
     get_playback_progress, get_playback_ready, get_playback_start_failed,
     get_playback_start_failed_info, get_playback_start_failed_reason, get_stream_cache_dir,
@@ -31,7 +31,7 @@ pub use commands::{
     set_sound_effect_settings, set_stream_cache_dir, set_stream_cache_max_size, set_volume,
     stop_audio, update_loudness_settings, update_playback_metadata,
 };
-pub use device::{
+pub use device::{ // 实现
     get_audio_device_formats, get_current_output_device, get_output_devices, set_audio_output_mode,
     set_output_device,
 };
@@ -42,7 +42,7 @@ pub use plugin_host::manager::{
     plugin_host_load_preset, plugin_host_open_editor, plugin_host_scan_plugins,
     plugin_host_set_parameter, plugin_host_set_rack, plugin_host_take_process_error,
 };
-pub use runtime::init_player;
+pub use runtime::init_player; // 实现
 pub use session::{
     flush_playback_session, get_playback_session, load_playback_session, save_playback_session,
     update_playback_position, PlaybackSessionState,

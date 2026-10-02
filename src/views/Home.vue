@@ -2,19 +2,19 @@
   <div class="flex h-full flex-col">
     <HomeViewPane v-bind="paneProps" v-on="paneListeners" />
 
-    <DragGhost />
+    <DragGhost /> 
 
     <HomeDialogStack v-bind="dialogProps" />
   </div>
 </template>
 
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 defineOptions({ name: 'Home' });
 
 import { computed, defineAsyncComponent } from 'vue';
 import type { Song } from '../types';
-import { useHomePageModel } from '../composables/useHomePageModel';
-import { useI18n } from '../features/i18n';
+import { useHomePageModel } from '../composables/useHomePageModel'; // 实现
+import { useI18n } from '../features/i18n'; // 实现
 import { default as HomeViewPane } from '../components/home/HomeViewPane.vue';
 import HomeDialogStack from '../components/home/dialogs/HomeDialogStack.vue';
 
@@ -93,7 +93,7 @@ const {
   renameInitialCoverPath: renameSeedCover,
   editingPlaylistId: renameTargetId,
   confirmRename: applyRename,
-} = useHomePageModel();
+} = useHomePageModel(); // 实现
 
 const tableScrollContainer = computed(() => tableHandle.value?.containerRef ?? null);
 

@@ -1,10 +1,10 @@
 import { it, describe, expect } from 'vitest';
-import type { LyricLine, SemanticLine } from './types';
+import type { LyricLine, SemanticLine } from './types'; // 实现
 import { semanticLineToLyricLine, convertLyricsToAmlLines, getCurrentLyricDisplayLines } from './converters';
 
 /** 播放器会在相邻 ruby 片段之间插入不可见分隔符，比对前先去掉。 */
 function stripRubyGlue(text: string): string {
-  return text.replace(/\u00a0/g, '');
+  return text.replace(/\u00a0/g, ''); // 实现
 }
 
 /** 造一条最小展示行：未给字段与真实解析产物保持一致。 */
@@ -93,18 +93,18 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
   it('独立词级罗马音时间轴原样透传，供播放器渲染 ruby 卡拉OK', () => {
     const rows = [
       displayRow({
-        time: 98.981,
-        endTime: 104.179,
-        text: '拙い祈りが織りなす波',
-        translation: '笨拙的祈愿交织而成汹涌的巨浪',
-        romaji: 'tsu ta na i i no ri ga o ri na su na mi',
+        time: 98.981, // 实现
+        endTime: 104.179, // 实现
+        text: '拙い祈りが織りなす波', // 实现
+        translation: '笨拙的祈愿交织而成汹涌的巨浪', // 实现
+        romaji: 'tsu ta na i i no ri ga o ri na su na mi', // 实现
         words: [
           { start: 98.981, end: 99.565, text: '拙', romaji: '' },
           { start: 99.565, end: 99.837, text: 'い', romaji: '' },
         ],
-        romajiWords: [
-          { text: 'tsu ', start: 98.981, end: 99.033 },
-          { text: 'ta ', start: 99.033, end: 99.521 },
+        romajiWords: [ // 实现
+          { text: 'tsu ', start: 98.981, end: 99.033 }, // 实现
+          { text: 'ta ', start: 99.033, end: 99.521 }, // 实现
         ],
       }),
     ];
@@ -113,28 +113,28 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
 
     expect(result[0]?.romanLyric).toBe('tsu ta na i i no ri ga o ri na su na mi');
     expect(result[0]?.romajiWords).toEqual([
-      { text: 'tsu ', startTime: 98981, endTime: 99033 },
-      { text: 'ta ', startTime: 99033, endTime: 99521 },
+      { text: 'tsu ', startTime: 98981, endTime: 99033 }, // 实现
+      { text: 'ta ', startTime: 99033, endTime: 99521 }, // 实现
     ]);
   });
 
   it('每个主词都带罗马音时优先词级 ruby，行级 romajiWords 在场也不影响', () => {
     const rows = [
       displayRow({
-        time: 54.353,
-        endTime: 59.487,
-        text: '本当の世界で笑えるか?',
-        translation: '在现实世界里还能够展颜欢笑吗',
-        romaji: 'ho n to u no se ka i de wa ra e ru ka',
+        time: 54.353, // 实现
+        endTime: 59.487, // 实现
+        text: '本当の世界で笑えるか?', // 实现
+        translation: '在现实世界里还能够展颜欢笑吗', // 实现
+        romaji: 'ho n to u no se ka i de wa ra e ru ka', // 实现
         words: [
           { start: 54.664, end: 54.944, text: '本', romaji: 'ho n ' },
           { start: 54.944, end: 54.981, text: '当', romaji: 'to u ' },
           { start: 54.981, end: 55.597, text: 'の', romaji: 'no ' },
         ],
-        romajiWords: [
-          { text: 'ho ', start: 54.353, end: 54.508 },
-          { text: 'n ', start: 54.508, end: 54.663 },
-          { text: 'to ', start: 54.664, end: 54.803 },
+        romajiWords: [ // 实现
+          { text: 'ho ', start: 54.353, end: 54.508 }, // 实现
+          { text: 'n ', start: 54.508, end: 54.663 }, // 实现
+          { text: 'to ', start: 54.664, end: 54.803 }, // 实现
         ],
       }),
     ];
@@ -149,11 +149,11 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
     const glue = '\u00a0';
     const rows = [
       displayRow({
-        time: 54.353,
-        endTime: 59.487,
-        text: '本当の世界で笑えるか?',
-        translation: '在现实世界里还能够展颜欢笑吗',
-        romaji: 'ho n to u no se ka i de wa ra e ru ka',
+        time: 54.353, // 实现
+        endTime: 59.487, // 实现
+        text: '本当の世界で笑えるか?', // 实现
+        translation: '在现实世界里还能够展颜欢笑吗', // 实现
+        romaji: 'ho n to u no se ka i de wa ra e ru ka', // 实现
         words: [
           { start: 54.664, end: 54.944, text: '本', romaji: 'ho n' },
           { start: 54.944, end: 54.981, text: '当', romaji: 'to u' },
@@ -191,11 +191,11 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
   it('任一主词缺罗马音时，整体退回行级罗马音文本', () => {
     const rows = [
       displayRow({
-        time: 12.651,
-        endTime: 18.056,
-        text: 'か弱い光が指差す先',
-        translation: '追寻着那道微弱光线所指的方向',
-        romaji: 'ka yo wa i hi ka ri ga yu bi sa su sa ki',
+        time: 12.651, // 实现
+        endTime: 18.056, // 实现
+        text: 'か弱い光が指差す先', // 实现
+        translation: '追寻着那道微弱光线所指的方向', // 实现
+        romaji: 'ka yo wa i hi ka ri ga yu bi sa su sa ki', // 实现
         words: [
           { start: 12.651, end: 12.884, text: 'か', romaji: 'ka' },
           { start: 12.884, end: 13.476, text: '弱', romaji: 'yo wa' },
@@ -249,11 +249,11 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
     const glue = '\u00a0';
     const rows = [
       displayRow({
-        time: 25.014,
+        time: 25.014, // 实现
         endTime: 30.71,
-        text: '6/8のリズム 掻き乱される',
-        translation: '八六原本平和的旋律开始被打乱',
-        romaji: 'ha chi ro ku no ri zu mu ka ki mi da sa re ru',
+        text: '6/8のリズム 掻き乱される', // 实现
+        translation: '八六原本平和的旋律开始被打乱', // 实现
+        romaji: 'ha chi ro ku no ri zu mu ka ki mi da sa re ru', // 实现
         words: [
           { start: 25.014, end: 25.654, text: '6', romaji: 'ha chi' },
           { start: 25.654, end: 25.654, text: '/', romaji: '' },
@@ -299,7 +299,7 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
       startMs: 44915, endMs: 51121,
       mainText: 'あの日なくした Avidity', romanText: 'a no hi na ku shi ta Avidity',
       translationText: '还有那一日我所遗失的热忱',
-      mainWords: [
+      mainWords: [ // 实现
         { startMs: 44915, endMs: 45077, text: 'あ', romanText: 'a' },
         { startMs: 45077, endMs: 45349, text: 'の', romanText: 'no' },
         { startMs: 45349, endMs: 45379, text: '日', romanText: 'hi' },
@@ -310,15 +310,15 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
         { startMs: 47769, endMs: 47769, text: ' ', romanText: '' },
         { startMs: 47769, endMs: 51121, text: 'Avidity', romanText: 'Avidity' },
       ],
-      romanWords: [
-        { text: 'a', startMs: 44915, endMs: 45076 },
-        { text: 'no', startMs: 45076, endMs: 45348 },
-        { text: 'hi', startMs: 45348, endMs: 45378 },
-        { text: 'na', startMs: 45378, endMs: 45671 },
-        { text: 'ku', startMs: 45671, endMs: 45992 },
-        { text: 'shi', startMs: 45992, endMs: 46600 },
-        { text: 'ta', startMs: 46600, endMs: 47767 },
-        { text: 'Avidity', startMs: 47768, endMs: 51120 },
+      romanWords: [ // 实现
+        { text: 'a', startMs: 44915, endMs: 45076 }, // 实现
+        { text: 'no', startMs: 45076, endMs: 45348 }, // 实现
+        { text: 'hi', startMs: 45348, endMs: 45378 }, // 实现
+        { text: 'na', startMs: 45378, endMs: 45671 }, // 实现
+        { text: 'ku', startMs: 45671, endMs: 45992 }, // 实现
+        { text: 'shi', startMs: 45992, endMs: 46600 }, // 实现
+        { text: 'ta', startMs: 46600, endMs: 47767 }, // 实现
+        { text: 'Avidity', startMs: 47768, endMs: 51120 }, // 实现
       ],
     });
 
@@ -363,7 +363,7 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
       startMs: 44915, endMs: 51121,
       mainText: 'あの日なくした Avidity', romanText: 'a no hi na ku shi ta Avidity',
       translationText: '还有那一日我所遗失的热忱',
-      mainWords: [
+      mainWords: [ // 实现
         { startMs: 44915, endMs: 45077, text: 'あ', romanText: 'a' },
         { startMs: 45077, endMs: 45349, text: 'の', romanText: 'no' },
         { startMs: 45349, endMs: 45379, text: '日', romanText: 'hi' },
@@ -374,15 +374,15 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
         { startMs: 47769, endMs: 47769, text: ' ' },
         { startMs: 47769, endMs: 51121, text: 'Avidity' },
       ],
-      romanWords: [
-        { text: 'a', startMs: 44915, endMs: 45076 },
-        { text: 'no', startMs: 45076, endMs: 45348 },
-        { text: 'hi', startMs: 45348, endMs: 45378 },
-        { text: 'na', startMs: 45378, endMs: 45671 },
-        { text: 'ku', startMs: 45671, endMs: 45992 },
-        { text: 'shi', startMs: 45992, endMs: 46600 },
-        { text: 'ta', startMs: 46600, endMs: 47767 },
-        { text: 'Avidity', startMs: 47768, endMs: 51120 },
+      romanWords: [ // 实现
+        { text: 'a', startMs: 44915, endMs: 45076 }, // 实现
+        { text: 'no', startMs: 45076, endMs: 45348 }, // 实现
+        { text: 'hi', startMs: 45348, endMs: 45378 }, // 实现
+        { text: 'na', startMs: 45378, endMs: 45671 }, // 实现
+        { text: 'ku', startMs: 45671, endMs: 45992 }, // 实现
+        { text: 'shi', startMs: 45992, endMs: 46600 }, // 实现
+        { text: 'ta', startMs: 46600, endMs: 47767 }, // 实现
+        { text: 'Avidity', startMs: 47768, endMs: 51120 }, // 实现
       ],
     });
 
@@ -398,24 +398,24 @@ describe('展示行 → 播放器行（convertLyricsToAmlLines）', () => {
 
   it('当前行展示时，罗马音副行使用独立的逐词时间轴', () => {
     const shown = getCurrentLyricDisplayLines(displayRow({
-      time: 98.981,
-      endTime: 104.179,
-      text: '拙い祈りが織りなす波',
-      translation: '笨拙的祈愿交织而成汹涌的巨浪',
-      romaji: 'tsu ta na i',
+      time: 98.981, // 实现
+      endTime: 104.179, // 实现
+      text: '拙い祈りが織りなす波', // 实现
+      translation: '笨拙的祈愿交织而成汹涌的巨浪', // 实现
+      romaji: 'tsu ta na i', // 实现
       words: [
         { start: 98.981, end: 99.565, text: '拙', romaji: '' },
       ],
-      romajiWords: [
-        { text: 'tsu ', start: 98.981, end: 99.033 },
-        { text: 'ta ', start: 99.033, end: 99.521 },
+      romajiWords: [ // 实现
+        { text: 'tsu ', start: 98.981, end: 99.033 }, // 实现
+        { text: 'ta ', start: 99.033, end: 99.521 }, // 实现
       ],
     }), true, true);
 
     expect(shown[1]?.kind).toBe('romaji');
     expect(shown[1]?.words).toEqual([
-      { text: 'tsu ', start: 98.981, end: 99.033 },
-      { text: 'ta ', start: 99.033, end: 99.521 },
+      { text: 'tsu ', start: 98.981, end: 99.033 }, // 实现
+      { text: 'ta ', start: 99.033, end: 99.521 }, // 实现
     ]);
   });
 });

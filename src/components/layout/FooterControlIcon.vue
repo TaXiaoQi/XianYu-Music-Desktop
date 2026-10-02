@@ -1,29 +1,29 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { AudioLines, CircleCheck, Clapperboard, Download, Eye, EyeOff, MessageCircle, Palette, Share2, SlidersHorizontal } from 'lucide-vue-next';
-import type { FooterItemKey } from '../../types';
+import type { FooterItemKey } from '../../types'; // 实现
 import { useDownloadStore } from '../../features/download/store';
 import { computed } from 'vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 
-defineOptions({ inheritAttrs: false });
+defineOptions({ inheritAttrs: false }); // 实现
 
 const downloadStore = useDownloadStore();
 
 const props = withDefaults(defineProps<{
-  itemKey: FooterItemKey;
-  active?: boolean;
-  loading?: boolean;
-  completed?: boolean;
-  playMode?: number;
-  volume?: number;
-  qualityLabel?: string;
+  itemKey: FooterItemKey; // 实现
+  active?: boolean; // 实现
+  loading?: boolean; // 实现
+  completed?: boolean; // 实现
+  playMode?: number; // 实现
+  volume?: number; // 实现
+  qualityLabel?: string; // 实现
 }>(), {
-  active: false,
-  loading: false,
-  completed: false,
-  playMode: 0,
-  volume: 100,
-  qualityLabel: 'SQ',
+  active: false, // 实现
+  loading: false, // 实现
+  completed: false, // 实现
+  playMode: 0, // 实现
+  volume: 100, // 实现
+  qualityLabel: 'SQ', // 实现
 });
 const { icon } = useDesktopTheme();
 const footerIconSlots: Partial<Record<FooterItemKey, string>> = {
@@ -41,7 +41,7 @@ const customIcon = computed(() => {
 <template>
   <img v-if="customIcon && !loading" v-bind="$attrs" :src="customIcon" alt="" class="object-contain" />
   <svg v-else-if="itemKey === 'favorite'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" :fill="active ? 'currentColor' : 'none'" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /> 
   </svg>
   <div v-else-if="itemKey === 'download' && loading" v-bind="$attrs" class="relative inline-flex items-center justify-center">
     <svg class="h-full w-full -rotate-90" viewBox="0 0 24 24">
@@ -55,22 +55,22 @@ const customIcon = computed(() => {
       />
     </svg>
   </div>
-  <CircleCheck v-else-if="itemKey === 'download' && completed" v-bind="$attrs" />
-  <Download v-else-if="itemKey === 'download'" v-bind="$attrs" />
-  <template v-else-if="itemKey === 'playMode'">
+  <CircleCheck v-else-if="itemKey === 'download' && completed" v-bind="$attrs" /> 
+  <Download v-else-if="itemKey === 'download'" v-bind="$attrs" /> 
+  <template v-else-if="itemKey === 'playMode'"> 
     <svg v-if="playMode === 0" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m17 2 4 4-4 4" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 11v-1a4 4 0 0 1 4-4h14" /><path stroke-linecap="round" stroke-linejoin="round" d="m7 22-4-4 4-4" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 13v1a4 4 0 0 1-4 4H3" /></svg>
     <svg v-else-if="playMode === 1" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m17 2 4 4-4 4" /><path stroke-linecap="round" stroke-linejoin="round" d="M3 11v-1a4 4 0 0 1 4-4h14" /><path stroke-linecap="round" stroke-linejoin="round" d="m7 22-4-4 4-4" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 13v1a4 4 0 0 1-4 4H3" /><path stroke-linecap="round" stroke-linejoin="round" d="M11 10h1v4" /></svg>
-    <svg v-else v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>
+    <svg v-else v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg> 
   </template>
-  <span v-else-if="itemKey === 'desktopLyrics'" v-bind="$attrs" class="text-[14px] font-bold leading-none">词</span>
-  <span v-else-if="itemKey === 'quality'" v-bind="$attrs" class="whitespace-nowrap text-[11px] font-semibold leading-none">{{ qualityLabel }}</span>
-  <template v-else-if="itemKey === 'volume'">
-    <svg v-if="volume === 0" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
-    <svg v-else-if="volume < 30" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /></svg>
-    <svg v-else-if="volume < 70" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
-    <svg v-else v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>
+  <span v-else-if="itemKey === 'desktopLyrics'" v-bind="$attrs" class="text-[14px] font-bold leading-none">词</span> 
+  <span v-else-if="itemKey === 'quality'" v-bind="$attrs" class="whitespace-nowrap text-[11px] font-semibold leading-none">{{ qualityLabel }}</span> 
+  <template v-else-if="itemKey === 'volume'"> 
+    <svg v-if="volume === 0" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg> 
+    <svg v-else-if="volume < 30" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /></svg> 
+    <svg v-else-if="volume < 70" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg> 
+    <svg v-else v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg> 
   </template>
-  <SlidersHorizontal v-else-if="itemKey === 'equalizer'" v-bind="$attrs" :stroke-width="2.2" />
+  <SlidersHorizontal v-else-if="itemKey === 'equalizer'" v-bind="$attrs" :stroke-width="2.2" /> 
   <svg v-else-if="itemKey === 'playlist'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zm16-6v6.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5v4z" /></svg>
   <MessageCircle v-else-if="itemKey === 'comment'" v-bind="$attrs" :stroke-width="2.2" />
   <Clapperboard v-else-if="itemKey === 'mv'" v-bind="$attrs" :stroke-width="2.2" />

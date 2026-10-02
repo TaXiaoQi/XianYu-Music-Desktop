@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, ref, watch } from 'vue';
 
 import { dragSession as dragCtx } from '../../composables/dragState';
@@ -103,6 +103,6 @@ const stackSize = computed(() => (dragCtx.type === 'song' ? dragCtx.songs.length
           {{ stackSize }}
         </div>
       </div>
-    </transition>
+    </transition> 
   </Teleport>
 </template>

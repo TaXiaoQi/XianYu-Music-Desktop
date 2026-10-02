@@ -5,46 +5,46 @@
  * 所有导出的 interface / type 名称与字段形状均需保持稳定。
  */
 
-import type {
-  DesktopLyricsSettings,
-  DesktopLyricsPlayerAlignment,
-  ImportedLyricsFont,
-  LyricsColorScheme,
-  LyricsFontPreset,
-  LyricsPlayerAlignment,
-  LyricsPlayerRenderMode,
-  LyricsSettings,
-} from '../../types';
+import type { // 实现
+  DesktopLyricsSettings, // 实现
+  DesktopLyricsPlayerAlignment, // 实现
+  ImportedLyricsFont, // 实现
+  LyricsColorScheme, // 实现
+  LyricsFontPreset, // 实现
+  LyricsPlayerAlignment, // 实现
+  LyricsPlayerRenderMode, // 实现
+  LyricsSettings, // 实现
+} from '../../types'; // 实现
 
-export type {
-  DesktopLyricsSettings,
-  DesktopLyricsPlayerAlignment,
-  ImportedLyricsFont,
-  LyricsColorScheme,
-  LyricsFontPreset,
-  LyricsPlayerAlignment,
-  LyricsPlayerRenderMode,
-  LyricsSettings,
+export type { // 实现
+  DesktopLyricsSettings, // 实现
+  DesktopLyricsPlayerAlignment, // 实现
+  ImportedLyricsFont, // 实现
+  LyricsColorScheme, // 实现
+  LyricsFontPreset, // 实现
+  LyricsPlayerAlignment, // 实现
+  LyricsPlayerRenderMode, // 实现
+  LyricsSettings, // 实现
 };
 
 /* ==================== 展示层模型 ==================== */
 
 export interface LyricWord {
-  text: string;
+  text: string; // 实现
   start: number;
   end: number;
   romaji?: string;
 }
 
-export interface LyricLine {
-  time: number;
-  endTime: number;
-  text: string;
-  translation: string;
-  romaji: string;
-  words?: LyricWord[];
-  romajiWords?: LyricWord[];
-  secondary?: string[];
+export interface LyricLine { // 实现
+  time: number; // 实现
+  endTime: number; // 实现
+  text: string; // 实现
+  translation: string; // 实现
+  romaji: string; // 实现
+  words?: LyricWord[]; // 实现
+  romajiWords?: LyricWord[]; // 实现
+  secondary?: string[]; // 实现
   speaker?: string;
   isBG: boolean;
   isDuet: boolean;
@@ -53,34 +53,34 @@ export interface LyricLine {
   isRomanized?: boolean;
 }
 
-export interface CurrentLyricDisplayLine {
-  kind: 'main' | 'romaji' | 'translation';
-  text: string;
-  words?: LyricWord[];
+export interface CurrentLyricDisplayLine { // 实现
+  kind: 'main' | 'romaji' | 'translation'; // 实现
+  text: string; // 实现
+  words?: LyricWord[]; // 实现
 }
 
-export interface CurrentLyricDisplayState {
-  text: string;
-  lines: string[];
-  displayLines: CurrentLyricDisplayLine[];
+export interface CurrentLyricDisplayState { // 实现
+  text: string; // 实现
+  lines: string[]; // 实现
+  displayLines: CurrentLyricDisplayLine[]; // 实现
 }
 
 export interface DisplayFragment {
-  text: string;
+  text: string; // 实现
   startMs?: number;
-  endMs?: number;
+  endMs?: number; // 实现
 }
 
 export interface RenderLine {
-  startMs: number;
-  endMs: number;
+  startMs: number; // 实现
+  endMs: number; // 实现
   main: DisplayFragment[];
   translation?: DisplayFragment[];
   roman?: DisplayFragment[];
   secondary?: DisplayFragment[];
 }
 
-export type LyricsStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error';
+export type LyricsStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error'; // 实现
 
 export interface LyricsPayload {
   rawLyrics: string;
@@ -91,118 +91,118 @@ export interface LyricsPayload {
 
 /* ==================== 解析层模型 ==================== */
 
-export type ParsedLineSourceFormat =
+export type ParsedLineSourceFormat = // 实现
   | 'lrc'
-  | 'enhanced_lrc'
+  | 'enhanced_lrc' // 实现
   | 'eslrc'
   | 'yrc'
   | 'qrc'
   | 'lys'
   | 'ttml';
 
-export interface ParsedWord {
-  text: string;
-  startMs: number;
-  endMs: number;
-  romanText?: string;
+export interface ParsedWord { // 实现
+  text: string; // 实现
+  startMs: number; // 实现
+  endMs: number; // 实现
+  romanText?: string; // 实现
 }
 
-export type ExplicitLineRole = 'translation' | 'roman';
+export type ExplicitLineRole = 'translation' | 'roman'; // 实现
 
-export interface ParsedLine {
-  startMs: number;
-  endMs?: number;
-  text: string;
-  words?: ParsedWord[];
-  translatedText?: string;
-  romanText?: string;
-  sourceFormat: ParsedLineSourceFormat;
-  sourceIndex: number;
-  explicitRole?: ExplicitLineRole;
+export interface ParsedLine { // 实现
+  startMs: number; // 实现
+  endMs?: number; // 实现
+  text: string; // 实现
+  words?: ParsedWord[]; // 实现
+  translatedText?: string; // 实现
+  romanText?: string; // 实现
+  sourceFormat: ParsedLineSourceFormat; // 实现
+  sourceIndex: number; // 实现
+  explicitRole?: ExplicitLineRole; // 实现
 }
 
 /* ==================== 轨道划分与语义行 ==================== */
 
-export type ClassificationConfidence = 'explicit' | 'parser-native' | 'heuristic';
+export type ClassificationConfidence = 'explicit' | 'parser-native' | 'heuristic'; // 实现
 
-export type LyricTrackRole =
+export type LyricTrackRole = // 实现
   | 'main'
-  | 'translation'
-  | 'romanization'
-  | 'secondary'
-  | 'alternate-main'
-  | 'background'
-  | 'metadata'
-  | 'unknown';
+  | 'translation' // 实现
+  | 'romanization' // 实现
+  | 'secondary' // 实现
+  | 'alternate-main' // 实现
+  | 'background' // 实现
+  | 'metadata' // 实现
+  | 'unknown'; // 实现
 
-export type LyricTimingMode = 'line' | 'word' | 'syllable' | 'none';
+export type LyricTimingMode = 'line' | 'word' | 'syllable' | 'none'; // 实现
 
-export interface LyricIssue {
-  code: string;
-  message: string;
-  severity: 'info' | 'warning' | 'error';
+export interface LyricIssue { // 实现
+  code: string; // 实现
+  message: string; // 实现
+  severity: 'info' | 'warning' | 'error'; // 实现
 }
 
-export interface LyricTrackLine {
+export interface LyricTrackLine { // 实现
   id: string;
-  startMs: number;
-  endMs: number;
-  text: string;
-  words?: ParsedWord[];
-  sourceIndex: number;
-  explicitRole?: ExplicitLineRole;
-  roleSource?: ClassificationConfidence;
-  clusterIndex?: number;
-  slotIndex?: number;
+  startMs: number; // 实现
+  endMs: number; // 实现
+  text: string; // 实现
+  words?: ParsedWord[]; // 实现
+  sourceIndex: number; // 实现
+  explicitRole?: ExplicitLineRole; // 实现
+  roleSource?: ClassificationConfidence; // 实现
+  clusterIndex?: number; // 实现
+  slotIndex?: number; // 实现
 }
 
-export interface LyricTrackAttachment {
-  trackId: string;
-  role: Extract<LyricTrackRole, 'translation' | 'romanization' | 'secondary'>;
-  confidence: number;
-  lineMatchRatio: number;
+export interface LyricTrackAttachment { // 实现
+  trackId: string; // 实现
+  role: Extract<LyricTrackRole, 'translation' | 'romanization' | 'secondary'>; // 实现
+  confidence: number; // 实现
+  lineMatchRatio: number; // 实现
 }
 
-export interface LyricTrackScores {
-  main: number;
-  translation: number;
-  romanization: number;
+export interface LyricTrackScores { // 实现
+  main: number; // 实现
+  translation: number; // 实现
+  romanization: number; // 实现
 }
 
-export interface LyricTrack {
+export interface LyricTrack { // 实现
   id: string;
-  role: LyricTrackRole;
-  lang?: string;
-  timingMode: LyricTimingMode;
-  sourceFormat: ParsedLineSourceFormat | 'mixed';
-  confidence: number;
-  dominantScript: DominantScript;
-  lines: LyricTrackLine[];
-  attachments: LyricTrackAttachment[];
-  scores?: LyricTrackScores;
+  role: LyricTrackRole; // 实现
+  lang?: string; // 实现
+  timingMode: LyricTimingMode; // 实现
+  sourceFormat: ParsedLineSourceFormat | 'mixed'; // 实现
+  confidence: number; // 实现
+  dominantScript: DominantScript; // 实现
+  lines: LyricTrackLine[]; // 实现
+  attachments: LyricTrackAttachment[]; // 实现
+  scores?: LyricTrackScores; // 实现
 }
 
-export interface LyricDocument {
+export interface LyricDocument { // 实现
   metadata: {
-    totalLines: number;
-    sourceFormats: ParsedLineSourceFormat[];
+    totalLines: number; // 实现
+    sourceFormats: ParsedLineSourceFormat[]; // 实现
   };
-  tracks: LyricTrack[];
-  issues: LyricIssue[];
-  confidence: number;
-  displayTrackId?: string;
+  tracks: LyricTrack[]; // 实现
+  issues: LyricIssue[]; // 实现
+  confidence: number; // 实现
+  displayTrackId?: string; // 实现
 }
 
-export interface SemanticLine {
-  startMs: number;
-  endMs: number;
-  mainText: string;
-  mainWords?: ParsedWord[];
-  translationText?: string;
-  romanText?: string;
-  romanWords?: ParsedWord[];
-  secondaryTexts?: string[];
-  confidence: ClassificationConfidence;
+export interface SemanticLine { // 实现
+  startMs: number; // 实现
+  endMs: number; // 实现
+  mainText: string; // 实现
+  mainWords?: ParsedWord[]; // 实现
+  translationText?: string; // 实现
+  romanText?: string; // 实现
+  romanWords?: ParsedWord[]; // 实现
+  secondaryTexts?: string[]; // 实现
+  confidence: ClassificationConfidence; // 实现
   speaker?: string;
   isBG: boolean;
   isDuet: boolean;
@@ -216,21 +216,21 @@ export interface ClassifiedGroupResult {
   translationLine: ParsedLine | null;
   romajiLine: ParsedLine | null;
   secondaryLines: ParsedLine[];
-  confidence: ClassificationConfidence;
+  confidence: ClassificationConfidence; // 实现
   /** 启发式判定：本组发生了「CJK 主行 + 拉丁音译副行」的交换（无显式标记时）。 */
   isRomanized: boolean;
 }
 
 /* ==================== 文字类型分析 ==================== */
 
-export type DominantScript = 'latin' | 'han' | 'kana' | 'hangul' | 'mixed' | 'other';
+export type DominantScript = 'latin' | 'han' | 'kana' | 'hangul' | 'mixed' | 'other'; // 实现
 
-export interface LineScriptProfile {
-  latinCount: number;
-  hanCount: number;
-  kanaCount: number;
-  hangulCount: number;
-  dominantScript: DominantScript;
+export interface LineScriptProfile { // 实现
+  latinCount: number; // 实现
+  hanCount: number; // 实现
+  kanaCount: number; // 实现
+  hangulCount: number; // 实现
+  dominantScript: DominantScript; // 实现
 }
 
 /* ==================== 内部 AML 行类型（替代上游 wasm / core 类型） ==================== */
@@ -238,16 +238,16 @@ export interface LineScriptProfile {
 /** 解析器内部使用的词级条目；字段允许缺省以兼容各格式产出的中间形态。 */
 export interface AmlLyricWord {
   startTime: number;
-  endTime: number;
+  endTime: number; // 实现
   word: string;
   romanWord?: string;
 }
 
 /** 独立的罗马音时间轴条目（播放器端 ruby 渲染用）。 */
 export interface AmlRomajiWord {
-  text: string;
+  text: string; // 实现
   startTime: number;
-  endTime: number;
+  endTime: number; // 实现
 }
 
 /** 各格式解析器的统一中间行表示。 */
@@ -269,7 +269,7 @@ export interface AmlLyricLine {
  */
 export interface AmlPlayerWord {
   startTime: number;
-  endTime: number;
+  endTime: number; // 实现
   word: string;
   romanWord: string;
   obscene: boolean;
@@ -280,7 +280,7 @@ export interface AmlPlayerLine {
   translatedLyric: string;
   romanLyric: string;
   startTime: number;
-  endTime: number;
+  endTime: number; // 实现
   isBG: boolean;
   isDuet: boolean;
   romajiWords?: AmlRomajiWord[];

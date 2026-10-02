@@ -7,21 +7,21 @@
  *   包含词级罗马音 ruby 时间轴与防非单调的钳制规则。
  */
 
-import type {
+import type { // 实现
   AmlPlayerLine,
   AmlPlayerWord,
   AmlRomajiWord,
-  CurrentLyricDisplayLine,
-  DisplayFragment,
+  CurrentLyricDisplayLine, // 实现
+  DisplayFragment, // 实现
   LyricLine,
   LyricWord,
   RenderLine,
-  SemanticLine,
-} from './types';
+  SemanticLine, // 实现
+} from './types'; // 实现
 
 /** 秒 → 毫秒，负值归零，四舍五入到整数毫秒。 */
 function secondsToMs(seconds: number): number {
-  return Math.max(0, Math.round(seconds * 1000));
+  return Math.max(0, Math.round(seconds * 1000)); // 实现
 }
 
 /** 行首导入时长上限：下一行开始前至多提前这么多毫秒结束。 */
@@ -40,45 +40,45 @@ const ROMAJI_TAIL_FALLBACK_SECONDS = 200;
 /* ==================== 语义行 → 渲染行 ==================== */
 
 function singleFragment(text: string): DisplayFragment[] | undefined {
-  return text ? [{ text }] : undefined;
+  return text ? [{ text }] : undefined; // 实现
 }
 
 function wordFragments(words: SemanticLine['mainWords']): DisplayFragment[] | undefined {
-  if (!words || words.length === 0) return undefined;
+  if (!words || words.length === 0) return undefined; // 实现
   return words.map((word) => ({ text: word.text, startMs: word.startMs, endMs: word.endMs }));
 }
 
 function romanFragments(line: SemanticLine): DisplayFragment[] | undefined {
-  if (line.romanWords && line.romanWords.length > 0) {
+  if (line.romanWords && line.romanWords.length > 0) { // 实现
     return line.romanWords.map((word) => ({ text: word.text, startMs: word.startMs, endMs: word.endMs }));
   }
   return singleFragment(line.romanText || '');
 }
 
-export function toRenderLine(line: SemanticLine, options?: {
-  showTranslation?: boolean;
-  showRomaji?: boolean;
-}): RenderLine {
-  const showTranslation = options?.showTranslation ?? true;
-  const showRomaji = options?.showRomaji ?? true;
+export function toRenderLine(line: SemanticLine, options?: { // 实现
+  showTranslation?: boolean; // 实现
+  showRomaji?: boolean; // 实现
+}): RenderLine { // 实现
+  const showTranslation = options?.showTranslation ?? true; // 实现
+  const showRomaji = options?.showRomaji ?? true; // 实现
 
   return {
-    startMs: line.startMs,
-    endMs: line.endMs,
+    startMs: line.startMs, // 实现
+    endMs: line.endMs, // 实现
     main: wordFragments(line.mainWords) ?? [{ text: line.mainText }],
     translation: showTranslation ? singleFragment(line.translationText || '') : undefined,
     // 判定为罗马化音译的行：罗马音子行无视全局开关，始终渲染（中文大字 + 粤拼小字）。
     roman: (showRomaji || line.isRomanized) ? romanFragments(line) : undefined,
-    secondary: line.secondaryTexts?.map((text) => ({ text })),
+    secondary: line.secondaryTexts?.map((text) => ({ text })), // 实现
   };
 }
 
 /* ==================== 语义行 → 展示行 ==================== */
 
 function joinRomanText(line: SemanticLine): string {
-  if (line.romanText) return line.romanText;
-  if (!line.romanWords || line.romanWords.length === 0) return '';
-  return line.romanWords.map((word) => word.text).join('');
+  if (line.romanText) return line.romanText; // 实现
+  if (!line.romanWords || line.romanWords.length === 0) return ''; // 实现
+  return line.romanWords.map((word) => word.text).join(''); // 实现
 }
 
 function overlapMs(
@@ -109,8 +109,8 @@ function bestOverlapRomanWord(
   return matched;
 }
 
-export function semanticLineToLyricLine(line: SemanticLine): LyricLine {
-  const renderLine = toRenderLine(line);
+export function semanticLineToLyricLine(line: SemanticLine): LyricLine { // 实现
+  const renderLine = toRenderLine(line); // 实现
 
   const words: LyricWord[] = (line.mainWords || []).map((word) => {
     const exactMatch = line.romanWords?.find((romanWord) => (
@@ -120,26 +120,26 @@ export function semanticLineToLyricLine(line: SemanticLine): LyricLine {
       ?? (line.romanWords ? bestOverlapRomanWord(word, line.romanWords) : undefined);
 
     return {
-      text: word.text,
-      start: word.startMs / 1000,
-      end: word.endMs / 1000,
+      text: word.text, // 实现
+      start: word.startMs / 1000, // 实现
+      end: word.endMs / 1000, // 实现
       romaji: word.romanText || timedRomaji?.text || '',
     };
   });
 
   return {
-    time: line.startMs / 1000,
-    endTime: line.endMs / 1000,
-    text: line.mainText || renderLine.main[0]?.text || '',
-    translation: line.translationText || '',
+    time: line.startMs / 1000, // 实现
+    endTime: line.endMs / 1000, // 实现
+    text: line.mainText || renderLine.main[0]?.text || '', // 实现
+    translation: line.translationText || '', // 实现
     romaji: joinRomanText(line),
-    words: words.length > 0 ? words : undefined,
+    words: words.length > 0 ? words : undefined, // 实现
     romajiWords: line.romanWords?.map((word) => ({
-      text: word.text,
-      start: word.startMs / 1000,
-      end: word.endMs / 1000,
+      text: word.text, // 实现
+      start: word.startMs / 1000, // 实现
+      end: word.endMs / 1000, // 实现
     })),
-    secondary: line.secondaryTexts ? [...line.secondaryTexts] : undefined,
+    secondary: line.secondaryTexts ? [...line.secondaryTexts] : undefined, // 实现
     speaker: line.speaker,
     isBG: line.isBG,
     isDuet: line.isDuet,
@@ -203,10 +203,10 @@ function clampWordTiming(word: LyricWord, wordIndex: number, orderedWords: Lyric
   return { startTime: wordStart, endTime: wordEnd };
 }
 
-export function convertLyricsToAmlLines(
-  lines: LyricLine[],
-  showTranslation: boolean,
-  showRomaji: boolean,
+export function convertLyricsToAmlLines( // 实现
+  lines: LyricLine[], // 实现
+  showTranslation: boolean, // 实现
+  showRomaji: boolean, // 实现
   enableWordEffect = true, // 实现
 ): AmlPlayerLine[] {
   const usableLines = lines.filter((line) => !isDividerLine(line) && hasRenderableContent(line));
@@ -229,7 +229,7 @@ export function convertLyricsToAmlLines(
     // 与语义行→渲染行同一套碎片规则，行级回退文本从这里取。
     const mainFragments: DisplayFragment[] = effectiveWords
       ? effectiveWords.map((word) => ({
-        text: word.text,
+        text: word.text, // 实现
         startMs: secondsToMs(word.start),
         endMs: secondsToMs(word.end),
       }))
@@ -260,11 +260,11 @@ export function convertLyricsToAmlLines(
     const builtWords: AmlPlayerWord[] = orderedWords.map((word, wordIndex) => {
       const timing = clampWordTiming(word, wordIndex, orderedWords, startTime, endTime);
       return {
-        word: word.text,
+        word: word.text, // 实现
         startTime: timing.startTime,
         endTime: timing.endTime,
         romanWord: perWordRomajiReady ? (word.romaji || '') : '',
-        obscene: false,
+        obscene: false, // 实现
       };
     });
     const separatedWords = attachRomajiSeparators(builtWords);
@@ -307,14 +307,14 @@ export function convertLyricsToAmlLines(
 
 /* ==================== 副歌词展示 ==================== */
 
-export function getCurrentLyricDisplayLines(
-  line: LyricLine,
-  showTranslation: boolean,
-  showRomaji: boolean,
-): CurrentLyricDisplayLine[] {
-  const displayLines: CurrentLyricDisplayLine[] = [{
-    kind: 'main',
-    text: line.text || line.words?.map((word) => word.text).join('') || '',
+export function getCurrentLyricDisplayLines( // 实现
+  line: LyricLine, // 实现
+  showTranslation: boolean, // 实现
+  showRomaji: boolean, // 实现
+): CurrentLyricDisplayLine[] { // 实现
+  const displayLines: CurrentLyricDisplayLine[] = [{ // 实现
+    kind: 'main', // 实现
+    text: line.text || line.words?.map((word) => word.text).join('') || '', // 实现
   }];
 
   // 罗马化音译行无视「显示罗马音」开关，其余行保持全局语义。
@@ -327,25 +327,25 @@ export function getCurrentLyricDisplayLines(
         .filter((word) => (word.romaji || '').length > 0)
         .map((word) => ({ text: word.romaji || '', start: word.start, end: word.end }));
 
-    displayLines.push({
-      kind: 'romaji',
-      text: line.romaji,
+    displayLines.push({ // 实现
+      kind: 'romaji', // 实现
+      text: line.romaji, // 实现
       words: timedRomaji.length > 0 ? timedRomaji : undefined,
     });
   }
 
-  if (showTranslation && line.translation) {
+  if (showTranslation && line.translation) { // 实现
     displayLines.push({ kind: 'translation', text: line.translation });
   }
 
-  return displayLines;
+  return displayLines; // 实现
 }
 
 /** 桌面歌词双行副歌词：罗马音在上、翻译在下，按开关过滤。 */
-export function getDisplaySubtitles(
-  line: Pick<LyricLine, 'translation' | 'romaji'>,
-  showTranslation: boolean,
-  showRomaji: boolean,
+export function getDisplaySubtitles( // 实现
+  line: Pick<LyricLine, 'translation' | 'romaji'>, // 实现
+  showTranslation: boolean, // 实现
+  showRomaji: boolean, // 实现
 ) {
   const stacked: string[] = [];
   if (showRomaji && line.romaji) stacked.push(line.romaji);

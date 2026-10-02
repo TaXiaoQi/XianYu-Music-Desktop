@@ -6,15 +6,15 @@
  * 最终折叠成语义行（SemanticLine）供展示层消费。
  */
 
-import type {
-  ClassifiedGroupResult,
-  ClassificationConfidence,
-  DominantScript,
-  LineScriptProfile,
+import type { // 实现
+  ClassifiedGroupResult, // 实现
+  ClassificationConfidence, // 实现
+  DominantScript, // 实现
+  LineScriptProfile, // 实现
   ParsedLine,
   ParsedWord,
-  SemanticLine,
-} from './types';
+  SemanticLine, // 实现
+} from './types'; // 实现
 
 /** 相邻行归入同组的时间容差上限。 */
 const GROUP_TOLERANCE_MS = 50;
@@ -37,7 +37,7 @@ function detectScriptKind(char: string): ScriptKind | null {
   if (/[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]/u.test(char)) return 'kana';
   if (/[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]/u.test(char)) return 'hangul';
   if (/\p{Script=Han}/u.test(char)) return 'han';
-  return null;
+  return null; // 实现
 }
 
 /**
@@ -46,14 +46,14 @@ function detectScriptKind(char: string): ScriptKind | null {
  */
 function pickDominantScript(profile: Omit<LineScriptProfile, 'dominantScript'>): DominantScript {
   const tally: Array<[ScriptKind, number]> = [
-    ['latin', profile.latinCount],
-    ['han', profile.hanCount],
-    ['kana', profile.kanaCount],
-    ['hangul', profile.hangulCount],
+    ['latin', profile.latinCount], // 实现
+    ['han', profile.hanCount], // 实现
+    ['kana', profile.kanaCount], // 实现
+    ['hangul', profile.hangulCount], // 实现
   ];
 
   const total = tally.reduce((sum, [, count]) => sum + count, 0);
-  if (total === 0) return 'other';
+  if (total === 0) return 'other'; // 实现
 
   let leader: ScriptKind = tally[0][0];
   let leaderCount = tally[0][1];
@@ -74,10 +74,10 @@ function pickDominantScript(profile: Omit<LineScriptProfile, 'dominantScript'>):
   return leader;
 }
 
-export function getLineScriptProfile(text: string): LineScriptProfile {
+export function getLineScriptProfile(text: string): LineScriptProfile { // 实现
   const counts = { latinCount: 0, hanCount: 0, kanaCount: 0, hangulCount: 0 };
 
-  for (const char of text) {
+  for (const char of text) { // 实现
     const kind = detectScriptKind(char);
     if (kind === 'latin') counts.latinCount += 1;
     else if (kind === 'han') counts.hanCount += 1;
@@ -98,22 +98,22 @@ function profileOf(line: ParsedLine): LineScriptProfile {
   return getLineScriptProfile(contentTextOf(line));
 }
 
-function isPureLatin(profile: LineScriptProfile): boolean {
-  return profile.latinCount > 0
+function isPureLatin(profile: LineScriptProfile): boolean { // 实现
+  return profile.latinCount > 0 // 实现
     && profile.hanCount + profile.kanaCount + profile.hangulCount === 0;
 }
 
-function isPureHan(profile: LineScriptProfile): boolean {
-  return profile.hanCount > 0
+function isPureHan(profile: LineScriptProfile): boolean { // 实现
+  return profile.hanCount > 0 // 实现
     && profile.latinCount + profile.kanaCount + profile.hangulCount === 0;
 }
 
 /** 汉字占优且没有假名/谚文，视为中文行。 */
 function isChineseLike(profile: LineScriptProfile): boolean {
-  return profile.hanCount > 0
-    && profile.hanCount > profile.latinCount
-    && profile.kanaCount === 0
-    && profile.hangulCount === 0;
+  return profile.hanCount > 0 // 实现
+    && profile.hanCount > profile.latinCount // 实现
+    && profile.kanaCount === 0 // 实现
+    && profile.hangulCount === 0; // 实现
 }
 
 // 英文功能词：出现即强烈暗示该拉丁行是英文，而非 CJK 歌词的罗马化音译。
@@ -184,11 +184,11 @@ function isLatinRomanizationOf(latinLine: ParsedLine, cjkLine: ParsedLine): bool
   return tokenToHanRatio >= MIN_ROMAN_TOKEN_HAN_RATIO && tokenToHanRatio <= MAX_ROMAN_TOKEN_HAN_RATIO;
 }
 
-function isJapaneseLike(profile: LineScriptProfile): boolean {
+function isJapaneseLike(profile: LineScriptProfile): boolean { // 实现
   return profile.kanaCount > 0 && profile.hangulCount === 0;
 }
 
-function isKoreanLike(profile: LineScriptProfile): boolean {
+function isKoreanLike(profile: LineScriptProfile): boolean { // 实现
   return profile.hangulCount > 0 && profile.kanaCount === 0;
 }
 
@@ -214,7 +214,7 @@ function boundaryStartMs(lines: ParsedLine[], anchor: number, step: -1 | 1): num
     if (Math.abs(candidateStart - anchorStart) > GROUP_TOLERANCE_MS) return candidateStart;
   }
 
-  return null;
+  return null; // 实现
 }
 
 function toleranceAtAnchor(lines: ParsedLine[], anchor: number): number {
@@ -229,7 +229,7 @@ function toleranceAtAnchor(lines: ParsedLine[], anchor: number): number {
 
 /** 把按时间排序的行按容差切成若干组，每组内首行锚定容差。 */
 function splitIntoGroups(lines: ParsedLine[]): ParsedLine[][] {
-  if (lines.length === 0) return [];
+  if (lines.length === 0) return []; // 实现
 
   const groups: ParsedLine[][] = [[lines[0]]];
   let anchorIndex = 0;
@@ -246,7 +246,7 @@ function splitIntoGroups(lines: ParsedLine[]): ParsedLine[][] {
     }
   }
 
-  return groups;
+  return groups; // 实现
 }
 
 /* ==================== 组内角色判定 ==================== */
@@ -264,7 +264,7 @@ function chooseMainLine(lines: ParsedLine[]): { mainLine: ParsedLine; romanizedS
   if (koreanLine) return { mainLine: koreanLine, romanizedSwap: false };
 
   // 恰好两行且一行为中文时，非中文的那行更可能是原文。
-  if (lines.length === 2) {
+  if (lines.length === 2) { // 实现
     const chineseLine = lines.find((line) => isChineseLike(profileOf(line)));
     const foreignLine = lines.find((line) => isForeignTextLine(line));
     if (chineseLine && foreignLine) {
@@ -287,10 +287,10 @@ function inferRole(main: ParsedLine, candidate: ParsedLine): HeuristicRole {
   const mainProfile = profileOf(main);
   const candidateProfile = profileOf(candidate);
 
-  if (isJapaneseLike(mainProfile) || isKoreanLike(mainProfile)) {
-    if (isPureLatin(candidateProfile)) return 'romaji';
+  if (isJapaneseLike(mainProfile) || isKoreanLike(mainProfile)) { // 实现
+    if (isPureLatin(candidateProfile)) return 'romaji'; // 实现
     if (isChineseLike(candidateProfile)) return 'translation';
-    return 'secondary';
+    return 'secondary'; // 实现
   }
 
   if (mainProfile.dominantScript === 'han') {
@@ -300,7 +300,7 @@ function inferRole(main: ParsedLine, candidate: ParsedLine): HeuristicRole {
   return isChineseLike(candidateProfile) ? 'translation' : 'secondary';
 }
 
-export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
+export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult { // 实现
   const markedTranslations = group.filter((line) => line.explicitRole === 'translation');
   const markedRomaji = group.filter((line) => line.explicitRole === 'roman');
   const plainLines = group.filter((line) => !line.explicitRole);
@@ -318,7 +318,7 @@ export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
 
   let translationLine: ParsedLine | null = markedTranslations[0] ?? null;
   let romajiLine: ParsedLine | null = markedRomaji[0] ?? null;
-  const secondaryLines: ParsedLine[] = [
+  const secondaryLines: ParsedLine[] = [ // 实现
     ...markedTranslations.slice(1),
     ...markedRomaji.slice(1),
   ];
@@ -328,22 +328,22 @@ export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
   for (const line of leftovers) {
     const role = inferRole(main, line);
 
-    if (role === 'translation' && !translationLine && !main.translatedText) {
-      translationLine = line;
+    if (role === 'translation' && !translationLine && !main.translatedText) { // 实现
+      translationLine = line; // 实现
       continue;
     }
     if (role === 'romaji' && !romajiLine && !mainHasRomanText) {
-      romajiLine = line;
+      romajiLine = line; // 实现
       continue;
     }
-    secondaryLines.push(line);
+    secondaryLines.push(line); // 实现
   }
 
-  let confidence: ClassificationConfidence = 'heuristic';
+  let confidence: ClassificationConfidence = 'heuristic'; // 实现
   if (main.explicitRole || markedTranslations.length > 0 || markedRomaji.length > 0) {
-    confidence = 'explicit';
+    confidence = 'explicit'; // 实现
   } else if (carriesInlineSecondary(main)) {
-    confidence = 'parser-native';
+    confidence = 'parser-native'; // 实现
   }
 
   return { main, translationLine, romajiLine, secondaryLines, confidence, isRomanized };
@@ -352,7 +352,7 @@ export function classifyGroupLines(group: ParsedLine[]): ClassifiedGroupResult {
 /* ==================== 罗马音词对齐 ==================== */
 
 function tidyRomanText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
+  return text.replace(/\s+/g, ' ').trim(); // 实现
 }
 
 type RomanWordCandidate = { text: string; startMs: number; endMs: number };
@@ -365,8 +365,8 @@ function allNonEmpty(words: RomanWordCandidate[]): boolean {
 function nativeRomanWords(mainWords: ParsedWord[]): RomanWordCandidate[] | undefined {
   const mapped = mainWords.map((word) => ({
     text: tidyRomanText(word.romanText || ''),
-    startMs: word.startMs,
-    endMs: word.endMs,
+    startMs: word.startMs, // 实现
+    endMs: word.endMs, // 实现
   }));
   return allNonEmpty(mapped) ? mapped : undefined;
 }
@@ -385,8 +385,8 @@ function alignedRomanWords(
 
   const mapped = romajiWords.map((word) => ({
     text: tidyRomanText(word.text),
-    startMs: word.startMs,
-    endMs: word.endMs,
+    startMs: word.startMs, // 实现
+    endMs: word.endMs, // 实现
   }));
   return allNonEmpty(mapped) ? mapped : undefined;
 }
@@ -398,14 +398,14 @@ function reassignedRomanWords(
 ): RomanWordCandidate[] | undefined {
   const bucketTexts = mainWords.map(() => '');
 
-  for (const romajiWord of romajiWords) {
-    const romajiCenter = (romajiWord.startMs + romajiWord.endMs) / 2;
+  for (const romajiWord of romajiWords) { // 实现
+    const romajiCenter = (romajiWord.startMs + romajiWord.endMs) / 2; // 实现
     let target = -1;
-    let bestOverlap = Number.NEGATIVE_INFINITY;
-    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestOverlap = Number.NEGATIVE_INFINITY; // 实现
+    let bestDistance = Number.POSITIVE_INFINITY; // 实现
 
-    for (let index = 0; index < mainWords.length; index += 1) {
-      const mainWord = mainWords[index];
+    for (let index = 0; index < mainWords.length; index += 1) { // 实现
+      const mainWord = mainWords[index]; // 实现
       const windowStart = mainWord.startMs - ROMAJI_WORD_TOLERANCE_MS;
       const windowEnd = mainWord.endMs + ROMAJI_WORD_TOLERANCE_MS;
       const overlap = Math.min(windowEnd, romajiWord.endMs) - Math.max(windowStart, romajiWord.startMs);
@@ -413,8 +413,8 @@ function reassignedRomanWords(
 
       if (overlap > bestOverlap || (overlap === bestOverlap && distance < bestDistance)) {
         target = index;
-        bestOverlap = overlap;
-        bestDistance = distance;
+        bestOverlap = overlap; // 实现
+        bestDistance = distance; // 实现
       }
     }
 
@@ -423,8 +423,8 @@ function reassignedRomanWords(
 
   const merged = mainWords.map((word, index) => ({
     text: tidyRomanText(bucketTexts[index]),
-    startMs: word.startMs,
-    endMs: word.endMs,
+    startMs: word.startMs, // 实现
+    endMs: word.endMs, // 实现
   }));
   return allNonEmpty(merged) ? merged : undefined;
 }
@@ -455,28 +455,28 @@ function resolveRomanWords(main: ParsedLine, romajiLine: ParsedLine | null): Sem
 
 /* ==================== 语义行装配 ==================== */
 
-export function buildSemanticLines(lines: ParsedLine[]): SemanticLine[] {
+export function buildSemanticLines(lines: ParsedLine[]): SemanticLine[] { // 实现
   return splitIntoGroups(lines)
-    .map((group) => {
+    .map((group) => { // 实现
       const { main, translationLine, romajiLine, secondaryLines, confidence, isRomanized } = classifyGroupLines(group);
 
-      const endMs = Math.max(
-        main.endMs ?? main.startMs,
-        ...group.map((line) => line.endMs ?? line.startMs),
+      const endMs = Math.max( // 实现
+        main.endMs ?? main.startMs, // 实现
+        ...group.map((line) => line.endMs ?? line.startMs), // 实现
       );
-      const secondaryTexts = secondaryLines
-        .map((line) => line.text)
-        .filter((text) => text.length > 0);
+      const secondaryTexts = secondaryLines // 实现
+        .map((line) => line.text) // 实现
+        .filter((text) => text.length > 0); // 实现
 
       const semantic: SemanticLine = {
-        startMs: main.startMs,
+        startMs: main.startMs, // 实现
         endMs,
-        mainText: main.text,
-        mainWords: main.words,
-        translationText: main.translatedText || translationLine?.text || undefined,
-        romanText: main.romanText || romajiLine?.text || undefined,
+        mainText: main.text, // 实现
+        mainWords: main.words, // 实现
+        translationText: main.translatedText || translationLine?.text || undefined, // 实现
+        romanText: main.romanText || romajiLine?.text || undefined, // 实现
         romanWords: resolveRomanWords(main, romajiLine),
-        secondaryTexts: secondaryTexts.length > 0 ? secondaryTexts : undefined,
+        secondaryTexts: secondaryTexts.length > 0 ? secondaryTexts : undefined, // 实现
         confidence,
         speaker: undefined,
         isBG: false,

@@ -2,8 +2,8 @@ import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk'
 import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngine';
 import type { PluginSource } from '../types';
 
-export const isRemoteSong = (song: { path?: string; source_type?: string } | null | undefined) =>
-  song?.source_type === 'remote' || song?.path?.startsWith('remote://') === true;
+export const isRemoteSong = (song: { path?: string; source_type?: string } | null | undefined) => // 实现
+  song?.source_type === 'remote' || song?.path?.startsWith('remote://') === true; 
 
 export const parseIntervalToSeconds = (interval?: string | null): number => {
   if (!interval) return 0;

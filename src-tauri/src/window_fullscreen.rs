@@ -1,10 +1,10 @@
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 use std::sync::atomic::Ordering;
 
 #[cfg(target_os = "windows")]
 use std::sync::Mutex;
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 use crate::window_boundary::FULLSCREEN_ENABLED;
 
 #[cfg(target_os = "windows")]
@@ -28,13 +28,13 @@ unsafe impl Send for SavedPlacement {}
 #[cfg(target_os = "windows")]
 static SAVED_PLACEMENT: Mutex<Option<SavedPlacement>> = Mutex::new(None);
 
-#[cfg(target_os = "windows")]
-static SAVED_EXSTYLE: Mutex<Option<i32>> = Mutex::new(None);
+#[cfg(windows)]
+static SAVED_EXSTYLE: Mutex<Option<i32>> = Mutex::new(None); // 实现
 
-#[cfg(target_os = "windows")]
-static SAVED_STYLE: Mutex<Option<i32>> = Mutex::new(None);
+#[cfg(windows)]
+static SAVED_STYLE: Mutex<Option<i32>> = Mutex::new(None); // 实现
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 static SAVED_NORMAL_RECT: Mutex<Option<RECT>> = Mutex::new(None);
 
 #[cfg(target_os = "windows")]
@@ -110,15 +110,15 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 *SAVED_STYLE.lock().map_err(|e| e.to_string())? = Some(style);
                 const STYLE_BORDER_MASK: i32 =
                     (WS_CAPTION as i32) | (WS_THICKFRAME as i32) | (WS_MAXIMIZE as i32);
-                if style & STYLE_BORDER_MASK != 0 {
-                    SetWindowLongW(hwnd, GWL_STYLE, style & !STYLE_BORDER_MASK);
+                if style & STYLE_BORDER_MASK != 0 { // 实现
+                    SetWindowLongW(hwnd, GWL_STYLE, style & !STYLE_BORDER_MASK); // 实现
                 }
 
-                const EX_BORDER_MASK: i32 = 0x1C0;
-                let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+                const EX_BORDER_MASK: i32 = 0x1C0; // 实现
+                let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE); // 实现
                 *SAVED_EXSTYLE.lock().map_err(|e| e.to_string())? = Some(ex_style);
-                if ex_style & EX_BORDER_MASK != 0 {
-                    SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !EX_BORDER_MASK);
+                if ex_style & EX_BORDER_MASK != 0 { // 实现
+                    SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !EX_BORDER_MASK); // 实现
                 }
 
                 FULLSCREEN_ENABLED.store(true, Ordering::Relaxed);
@@ -138,11 +138,11 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
 
                 if SetWindowPos(
                     hwnd,
-                    std::ptr::null_mut(),
+                    std::ptr::null_mut(), // 实现
                     left,
                     top,
-                    right - left,
-                    bottom - top,
+                    right - left, // 实现
+                    bottom - top, // 实现
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 ) == 0
                 {
@@ -155,10 +155,10 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 FULLSCREEN_ENABLED.store(false, Ordering::Relaxed);
 
                 if let Some(saved_ex) = SAVED_EXSTYLE.lock().map_err(|e| e.to_string())?.take() {
-                    SetWindowLongW(hwnd, GWL_EXSTYLE, saved_ex);
+                    SetWindowLongW(hwnd, GWL_EXSTYLE, saved_ex); // 实现
                 }
                 if let Some(saved_style) = SAVED_STYLE.lock().map_err(|e| e.to_string())?.take() {
-                    SetWindowLongW(hwnd, GWL_STYLE, saved_style);
+                    SetWindowLongW(hwnd, GWL_STYLE, saved_style); // 实现
                 }
                 let saved = SAVED_PLACEMENT.lock().map_err(|e| e.to_string())?.take();
                 let was_maximized = saved
@@ -177,14 +177,14 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                         }
                     }
                 }
-                SetWindowPos(
+                SetWindowPos( // 实现
                     hwnd,
-                    std::ptr::null_mut(),
+                    std::ptr::null_mut(), // 实现
                     0,
                     0,
                     0,
                     0,
-                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED, // 实现
                 );
                 mark_taskbar_fullscreen(hwnd, false);
                 if was_maximized {

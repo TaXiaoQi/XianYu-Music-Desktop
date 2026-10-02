@@ -1,10 +1,10 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { Check, ChevronDown, CircleHelp, Minus, Plus } from 'lucide-vue-next';
-import { useSettings } from '../../features/settings/useSettings';
+import { useSettings } from '../../features/settings/useSettings'; // 实现
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
 import { usePluginHostStore } from '../../features/pluginHost/store';
-import { useI18n } from '../../features/i18n';
+import { useI18n } from '../../features/i18n'; // 实现
 import { useToast } from '../../composables/toast';
 import SettingsPluginHost from './SettingsPluginHost.vue';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
@@ -21,13 +21,13 @@ import {
 import RangeSlider from '../common/RangeSlider.vue';
 import SettingHint from './SettingHint.vue';
 import {
-  LYRICS_SYNC_OFFSET_MAX_MS,
-  LYRICS_SYNC_OFFSET_MIN_MS,
-  LYRICS_SYNC_OFFSET_STEP_MS,
-  normalizeLyricsSyncOffsetMs,
-} from '../../features/settings/lyricsSyncOffset';
+  LYRICS_SYNC_OFFSET_MAX_MS, // 实现
+  LYRICS_SYNC_OFFSET_MIN_MS, // 实现
+  LYRICS_SYNC_OFFSET_STEP_MS, // 实现
+  normalizeLyricsSyncOffsetMs, // 实现
+} from '../../features/settings/lyricsSyncOffset'; // 实现
 
-const { settings, patchSettings } = useSettings();
+const { settings, patchSettings } = useSettings(); // 实现
 const playbackStore = usePlaybackStore();
 const soundEffectStore = useSoundEffectStore();
 const pluginHostStore = usePluginHostStore();
@@ -97,7 +97,7 @@ function handleRackSupportPopoverOutsideClick(event: MouseEvent) {
   }
 }
 
-const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
+const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。'; // 实现
 const showVolumeBalancePopover = ref(false);
 const volumeBalancePopoverRef = ref<HTMLElement | null>(null);
 const volumeBalanceTriggerRef = ref<HTMLElement | null>(null);
@@ -173,9 +173,9 @@ const showFallbackBehaviorModal = ref(false);
 const showMvQualityModal = ref(false);
 const showShareFailureBehaviorModal = ref(false);
 
-const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
-  { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
-  { label: 'Stop Playback', description: 'Stop playback and wait for manual action', value: 'stop' },
+const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [ // 实现
+  { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' }, // 实现
+  { label: 'Stop Playback', description: 'Stop playback and wait for manual action', value: 'stop' }, // 实现
   { label: 'Auto Switch Source', description: 'Retry via sibling plugins / alternative sources for the same song; falls back to stop when exhausted', value: 'autoswitch' },
 ] : [
   { label: '跳到下一首', description: '自动播放队列中的下一首歌曲', value: 'skip' },
@@ -183,10 +183,10 @@ const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; 
   { label: '自动换源',   description: '同平台插件重试 + 跨平台换源重播同一首歌，全部无果后停止', value: 'autoswitch' },
 ]);
 
-const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [
-  { label: 'Pause', description: 'Do not try another quality; pause and wait for manual action', value: 'pause' },
-  { label: 'Play Lower Quality', description: 'Automatically use the nearest lower available quality', value: 'lower' },
-  { label: 'Play Higher Quality', description: 'Automatically use the nearest higher available quality', value: 'higher' },
+const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [ // 实现
+  { label: 'Pause', description: 'Do not try another quality; pause and wait for manual action', value: 'pause' }, // 实现
+  { label: 'Play Lower Quality', description: 'Automatically use the nearest lower available quality', value: 'lower' }, // 实现
+  { label: 'Play Higher Quality', description: 'Automatically use the nearest higher available quality', value: 'higher' }, // 实现
 ] : [
   { label: '暂停',         description: '不尝试其他音质，暂停等待用户操作', value: 'pause' },
   { label: '播放更低音质', description: '自动降级到可用的更低音质',         value: 'lower' },
@@ -217,13 +217,13 @@ const handleValidityChange = (value: number) => {
   patchSettings({ shareLinkValidityMinutes: Math.max(5, Math.min(1440, num)) });
 };
 
-const ENGLISH_QUALITY_LABELS: Partial<Record<OnlineDefaultQuality, string>> = {
-  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ',
-  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos',
-  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master',
+const ENGLISH_QUALITY_LABELS: Partial<Record<OnlineDefaultQuality, string>> = { // 实现
+  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ', // 实现
+  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos', // 实现
+  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master', // 实现
 };
-const qualityLabel = (key: OnlineDefaultQuality) => (
-  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label
+const qualityLabel = (key: OnlineDefaultQuality) => ( // 实现
+  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label // 实现
 );
 
 const isPlayingOnlineSong = () => {
@@ -240,11 +240,11 @@ const patchOnlineQuality = (value: OnlineDefaultQuality) => {
   if (isPlayingOnlineSong()) {
     const available = playbackStore.currentAvailableQualities;
     if (available && !available.includes(value)) {
-      showToast(isEnglish.value
-        ? `This track does not support ${qualityLabel(value)}. The new setting will apply to the next track.`
-        : `当前歌曲不支持 ${QUALITY_META[value].label}，新设置将在下一首生效`, 'info');
+      showToast(isEnglish.value // 实现
+        ? `This track does not support ${qualityLabel(value)}. The new setting will apply to the next track.` // 实现
+        : `当前歌曲不支持 ${QUALITY_META[value].label}，新设置将在下一首生效`, 'info'); // 实现
     } else {
-      showToast(isEnglish.value ? 'The quality setting will apply to the next track' : '音质设置将在下一首歌曲生效', 'info');
+      showToast(isEnglish.value ? 'The quality setting will apply to the next track' : '音质设置将在下一首歌曲生效', 'info'); // 实现
     }
   }
 };
@@ -277,7 +277,7 @@ const handleFallbackBehaviorSelect = (value: OnlineQualityFallbackBehavior) => {
 const patchQualityFallback = (value: OnlineQualityFallbackBehavior) => {
   patchSettings({ audio: { ...settings.value.audio, onlineQualityFallbackBehavior: value } });
   if (isPlayingOnlineSong()) {
-    showToast(isEnglish.value ? 'The fallback behavior will apply to the next track' : '回退行为将在下一首歌曲生效', 'info');
+    showToast(isEnglish.value ? 'The fallback behavior will apply to the next track' : '回退行为将在下一首歌曲生效', 'info'); // 实现
   }
 };
 
@@ -297,10 +297,10 @@ const wasapiExclusiveSideEffectTip = '开启后会独占播放设备：其他软
 let unlistenAudioOutput: UnlistenFn | null = null;
 
 const lyricsSyncOffsetMs = computed({
-  get: () => normalizeLyricsSyncOffsetMs(settings.value.lyricsSyncOffset * 1000),
+  get: () => normalizeLyricsSyncOffsetMs(settings.value.lyricsSyncOffset * 1000), // 实现
   set: (value: number | string) => {
     const numericValue = typeof value === 'string' ? parseFloat(value) : value;
-    const next = normalizeLyricsSyncOffsetMs(numericValue);
+    const next = normalizeLyricsSyncOffsetMs(numericValue); // 实现
     settings.value.lyricsSyncOffset = next / 1000;
   }
 });
@@ -308,7 +308,7 @@ const lyricsSyncOffsetMs = computed({
 const handleLyricsSyncOffsetChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const numericValue = parseFloat(target.value);
-  const next = normalizeLyricsSyncOffsetMs(numericValue);
+  const next = normalizeLyricsSyncOffsetMs(numericValue); // 实现
   target.value = String(next);
   lyricsSyncOffsetMs.value = next;
 };
@@ -325,10 +325,10 @@ const isWasapiExclusiveEnabled = computed(
 
 let suppressModeReplay = false;
 
-const defaultOutputDeviceName = computed(() => isEnglish.value ? 'System Default' : '系统默认');
-const outputDeviceOptions = computed(() => buildAudioOutputDeviceOptions(
-  audioOutputDevices.value,
-  defaultOutputDeviceName.value,
+const defaultOutputDeviceName = computed(() => isEnglish.value ? 'System Default' : '系统默认'); // 实现
+const outputDeviceOptions = computed(() => buildAudioOutputDeviceOptions( // 实现
+  audioOutputDevices.value, // 实现
+  defaultOutputDeviceName.value, // 实现
 ));
 
 const selectedOutputDeviceLabel = computed(() => (
@@ -336,7 +336,7 @@ const selectedOutputDeviceLabel = computed(() => (
     outputDeviceOptions.value,
     selectedOutputDeviceId.value,
     audioOutputStatus.value,
-    defaultOutputDeviceName.value,
+    defaultOutputDeviceName.value, // 实现
   )
 ));
 
@@ -389,7 +389,7 @@ const handleOutputDeviceSelect = async (deviceId: string) => {
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
   } catch (error) {
     console.error('Failed to update audio output device:', error);
-    showToast(isEnglish.value ? 'Could not switch the playback device' : '切换播放设备失败', 'error');
+    showToast(isEnglish.value ? 'Could not switch the playback device' : '切换播放设备失败', 'error'); // 实现
     selectedOutputDeviceId.value = audioOutputStatus.value?.selected_device_id ?? '';
   } finally {
     isChangingOutputDevice.value = false;
@@ -415,7 +415,7 @@ const toggleWasapiExclusive = async () => {
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice(), { skipModeSync: true });
   } catch (error) {
     console.error('Failed to update audio output mode:', error);
-    showToast(isEnglish.value ? 'Could not switch the audio output mode' : '切换音频输出模式失败', 'error');
+    showToast(isEnglish.value ? 'Could not switch the audio output mode' : '切换音频输出模式失败', 'error'); // 实现
   } finally {
     suppressModeReplay = false;
   }
@@ -528,8 +528,8 @@ const resetLyricsSyncOffset = () => {
   lyricsSyncOffsetMs.value = 0;
 };
 
-const adjustLyricsSyncOffset = (delta: number) => {
-  lyricsSyncOffsetMs.value = lyricsSyncOffsetMs.value + delta;
+const adjustLyricsSyncOffset = (delta: number) => { // 实现
+  lyricsSyncOffsetMs.value = lyricsSyncOffsetMs.value + delta; // 实现
 };
 
 onMounted(async () => {
@@ -549,20 +549,20 @@ onScopeDispose(() => {
 </script>
 
 <template>
-  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300"> 
+    <section class="space-y-3"> 
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
         音频处理
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">渐入渐出</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">播放/暂停时音量平滑过渡，避免爆音</div>
           </div>
           <button
-            type="button"
+            type="button" 
             class="glass-switch"
             :class="{ 'is-checked': settings.audio.fadeInOutEnabled }"
             @click="settings.audio.fadeInOutEnabled = !settings.audio.fadeInOutEnabled"
@@ -572,18 +572,18 @@ onScopeDispose(() => {
         <Transition name="settings-pop-panel">
           <div v-if="settings.audio.fadeInOutEnabled" class="flex flex-col">
           <div class="desktop-setting-row pl-8">
-            <div class="flex-1 space-y-1">
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <div class="flex-1 space-y-1"> 
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2"> 
                 渐入渐出时长
-                <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400"> 
                   {{ (settings.audio.fadeInOutDurationMs / 1000).toFixed(1) }} 秒
                 </span>
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl"> 
                 设置音量从零渐变到目标值的过渡时间，范围 0.1 ~ 2 秒。
               </div>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3"> 
               <RangeSlider
                 v-model="settings.audio.fadeInOutDurationMs"
                 :min="100"
@@ -601,12 +601,12 @@ onScopeDispose(() => {
           class="desktop-setting-row"
         >
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">音量平衡</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">音量平衡</div> 
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3"> 
             <button
               ref="volumeBalanceTriggerRef"
-              type="button"
+              type="button" 
               class="volume-balance-hint-btn"
               :class="{ 'volume-balance-hint-btn--active': showVolumeBalancePopover }"
               :aria-expanded="showVolumeBalancePopover"
@@ -616,31 +616,31 @@ onScopeDispose(() => {
               <CircleHelp class="h-4 w-4" aria-hidden="true" />
             </button>
             <button
-              type="button"
+              type="button" 
               class="glass-switch"
               :class="{ 'is-checked': settings.audio.volumeBalance.enabled }"
-              @click="settings.audio.volumeBalance.enabled = !settings.audio.volumeBalance.enabled"
+              @click="settings.audio.volumeBalance.enabled = !settings.audio.volumeBalance.enabled" 
             ></button>
           </div>
         </div>
 
         <div
-          v-if="settings.audio.volumeBalance.enabled"
+          v-if="settings.audio.volumeBalance.enabled" 
           class="flex flex-col bg-white/20 transition-all duration-300 animate-in fade-in dark:bg-black/10"
         >
           <div class="desktop-setting-row pl-8">
-            <div class="flex-1 space-y-1">
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <div class="flex-1 space-y-1"> 
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2"> 
                 整体增益偏移
-                <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                  {{ settings.audio.volumeBalance.gainOffsetDb > 0 ? '+' : '' }}{{ settings.audio.volumeBalance.gainOffsetDb }} dB
+                <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400"> 
+                  {{ settings.audio.volumeBalance.gainOffsetDb > 0 ? '+' : '' }}{{ settings.audio.volumeBalance.gainOffsetDb }} dB 
                 </span>
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-                默认 0 dB，表示完全按 ReplayGain 标签播放。调高会整体更响，调低会保留更多余量。
+              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl"> 
+                默认 0 dB，表示完全按 ReplayGain 标签播放。调高会整体更响，调低会保留更多余量。 
               </div>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3"> 
               <RangeSlider
                 v-model="settings.audio.volumeBalance.gainOffsetDb"
                 :min="-12"
@@ -653,20 +653,20 @@ onScopeDispose(() => {
           </div>
 
           <div class="desktop-setting-row pl-8">
-            <div class="flex-1 space-y-1">
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
+            <div class="flex-1 space-y-1"> 
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200"> 
                 防削波破音保护
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-                当音量增益过大可能超出 0 dB 极限时自动降低音频信号。无峰值标签曲目会降级为不应用任何正增益。
+              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl"> 
+                当音量增益过大可能超出 0 dB 极限时自动降低音频信号。无峰值标签曲目会降级为不应用任何正增益。 
               </div>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3"> 
               <button
-                type="button"
+                type="button" 
                 class="glass-switch"
                 :class="{ 'is-checked': settings.audio.volumeBalance.preventClipping }"
-                @click="settings.audio.volumeBalance.preventClipping = !settings.audio.volumeBalance.preventClipping"
+                @click="settings.audio.volumeBalance.preventClipping = !settings.audio.volumeBalance.preventClipping" 
               ></button>
             </div>
           </div>
@@ -693,22 +693,22 @@ onScopeDispose(() => {
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
 
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认播放音质</div>
           </div>
           <button
-            type="button"
+            type="button" 
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showQualityModal = true"
           >
-            <span>{{ qualityLabel(settings.audio.onlineDefaultQuality) }}</span>
+            <span>{{ qualityLabel(settings.audio.onlineDefaultQuality) }}</span> 
             <span class="text-xs text-gray-400">{{ QUALITY_META[settings.audio.onlineDefaultQuality].description }}</span>
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
           </button>
         </div>
 
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MV 默认画质</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
@@ -716,7 +716,7 @@ onScopeDispose(() => {
             </div>
           </div>
           <button
-            type="button"
+            type="button" 
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showMvQualityModal = true"
           >
@@ -726,12 +726,12 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认音质播放失败行为</div>
           </div>
           <button
-            type="button"
+            type="button" 
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showFallbackBehaviorModal = true"
           >
@@ -740,7 +740,7 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">起播失败行为</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
@@ -748,7 +748,7 @@ onScopeDispose(() => {
             </div>
           </div>
           <button
-            type="button"
+            type="button" 
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showFailureBehaviorModal = true"
           >
@@ -757,7 +757,7 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接有效时长</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
@@ -780,7 +780,7 @@ onScopeDispose(() => {
           </div>
         </div>
 
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接播放失败行为</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
@@ -788,7 +788,7 @@ onScopeDispose(() => {
             </div>
           </div>
           <button
-            type="button"
+            type="button" 
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showShareFailureBehaviorModal = true"
           >
@@ -845,7 +845,7 @@ onScopeDispose(() => {
                   :title="QUALITY_META[key].description"
                   @click="handleQualitySelect(key)"
                 >
-                  <span>{{ qualityLabel(key) }}</span>
+                  <span>{{ qualityLabel(key) }}</span> 
                   <span
                     class="text-[10px] font-normal opacity-75"
                     :class="settings.audio.onlineDefaultQuality === key ? '' : 'text-gray-400 dark:text-gray-500'"
@@ -918,7 +918,7 @@ onScopeDispose(() => {
               <button
                 v-for="option in QUALITY_FALLBACK_OPTIONS"
                 :key="option.value"
-                type="button"
+                type="button" 
                 class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
                 :class="settings.audio.onlineQualityFallbackBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
                 @click="handleFallbackBehaviorSelect(option.value)"
@@ -958,7 +958,7 @@ onScopeDispose(() => {
               <button
                 v-for="option in FAILURE_BEHAVIOR_OPTIONS"
                 :key="option.value"
-                type="button"
+                type="button" 
                 class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
                 :class="settings.audio.onlineFailureBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
                 @click="handleFailureBehaviorSelect(option.value)"
@@ -998,7 +998,7 @@ onScopeDispose(() => {
               <button
                 v-for="option in SHARE_FAILURE_BEHAVIOR_OPTIONS"
                 :key="option.value"
-                type="button"
+                type="button" 
                 class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
                 :class="settings.sharePlaybackFailureBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
                 @click="handleShareFailureBehaviorSelect(option.value)"
@@ -1019,7 +1019,7 @@ onScopeDispose(() => {
       </Transition>
     </Teleport>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         播放设置
@@ -1036,27 +1036,27 @@ onScopeDispose(() => {
             @click="autoPlay = !autoPlay"
           ></button>
         </div>
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.songClickAction') }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">{{ t('general.songClickActionHint') }}</div>
           </div>
           <button
-            type="button"
+            type="button" 
             class="glass-switch"
             :class="{ 'is-checked': songClickActionEnabled }"
             @click="toggleSongClickAction"
           ></button>
         </div>
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放时阻止电脑睡眠</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放时阻止电脑睡眠</div> 
           </div>
           <button
-            type="button"
+            type="button" 
             class="glass-switch"
             :class="{ 'is-checked': settings.preventSleepWhilePlaying }"
-            @click="patchSettings({ preventSleepWhilePlaying: !settings.preventSleepWhilePlaying })"
+            @click="patchSettings({ preventSleepWhilePlaying: !settings.preventSleepWhilePlaying })" 
           ></button>
         </div>
         <div class="desktop-setting-row">
@@ -1064,7 +1064,7 @@ onScopeDispose(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放设备</div>
           </div>
           <button
-            type="button"
+            type="button" 
             :disabled="isChangingOutputDevice"
             class="flex max-w-[260px] shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showOutputDeviceModal = true"
@@ -1075,7 +1075,7 @@ onScopeDispose(() => {
         </div>
         <div>
           <button
-            type="button"
+            type="button" 
             @click="showLyricsSyncOffsetPanel = !showLyricsSyncOffsetPanel"
             class="desktop-setting-row w-full"
           >
@@ -1105,46 +1105,46 @@ onScopeDispose(() => {
             <div v-if="showLyricsSyncOffsetPanel" class="px-4 pb-4">
               <div class="settings-expand-panel">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center">
-                  <div class="flex min-w-[240px] flex-1 items-center gap-2">
+                  <div class="flex min-w-[240px] flex-1 items-center gap-2"> 
                     <button
-                      type="button"
+                      type="button" 
                       class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
-                      :disabled="lyricsSyncOffsetMs <= LYRICS_SYNC_OFFSET_MIN_MS"
-                      aria-label="歌词偏移减少 5 毫秒"
-                      @click="adjustLyricsSyncOffset(-LYRICS_SYNC_OFFSET_STEP_MS)"
+                      :disabled="lyricsSyncOffsetMs <= LYRICS_SYNC_OFFSET_MIN_MS" 
+                      aria-label="歌词偏移减少 5 毫秒" 
+                      @click="adjustLyricsSyncOffset(-LYRICS_SYNC_OFFSET_STEP_MS)" 
                     >
-                      <Minus class="h-4 w-4" />
+                      <Minus class="h-4 w-4" /> 
                     </button>
                     <RangeSlider
-                      v-model="lyricsSyncOffsetMs"
-                      :min="LYRICS_SYNC_OFFSET_MIN_MS"
-                      :max="LYRICS_SYNC_OFFSET_MAX_MS"
-                      :step="LYRICS_SYNC_OFFSET_STEP_MS"
+                      v-model="lyricsSyncOffsetMs" 
+                      :min="LYRICS_SYNC_OFFSET_MIN_MS" 
+                      :max="LYRICS_SYNC_OFFSET_MAX_MS" 
+                      :step="LYRICS_SYNC_OFFSET_STEP_MS" 
                       variant="native"
                       class="min-w-0 flex-1 h-1.5 cursor-pointer"
                     />
                     <button
-                      type="button"
+                      type="button" 
                       class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
-                      :disabled="lyricsSyncOffsetMs >= LYRICS_SYNC_OFFSET_MAX_MS"
-                      aria-label="歌词偏移增加 5 毫秒"
-                      @click="adjustLyricsSyncOffset(LYRICS_SYNC_OFFSET_STEP_MS)"
+                      :disabled="lyricsSyncOffsetMs >= LYRICS_SYNC_OFFSET_MAX_MS" 
+                      aria-label="歌词偏移增加 5 毫秒" 
+                      @click="adjustLyricsSyncOffset(LYRICS_SYNC_OFFSET_STEP_MS)" 
                     >
-                      <Plus class="h-4 w-4" />
+                      <Plus class="h-4 w-4" /> 
                     </button>
                   </div>
                   <div class="flex items-center gap-3">
                     <input
                       :value="lyricsSyncOffsetMs"
                       type="number"
-                      :min="LYRICS_SYNC_OFFSET_MIN_MS"
-                      :max="LYRICS_SYNC_OFFSET_MAX_MS"
-                      :step="LYRICS_SYNC_OFFSET_STEP_MS"
+                      :min="LYRICS_SYNC_OFFSET_MIN_MS" 
+                      :max="LYRICS_SYNC_OFFSET_MAX_MS" 
+                      :step="LYRICS_SYNC_OFFSET_STEP_MS" 
                       class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                       @change="handleLyricsSyncOffsetChange"
                     />
                     <button
-                      type="button"
+                      type="button" 
                       @click="resetLyricsSyncOffset"
                       class="settings-action-button settings-action-button--soft"
                     >
@@ -1156,11 +1156,11 @@ onScopeDispose(() => {
             </div>
           </transition>
         </div>
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3"> 
             <SettingHint severity="warning" :text="wasapiExclusiveSideEffectTip" />
             <button
               type="button"
@@ -1232,7 +1232,7 @@ onScopeDispose(() => {
             </transition>
           </div>
         </transition>
-        <div class="desktop-setting-row">
+        <div class="desktop-setting-row"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="flex items-center gap-1.5">
               <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.enableRack') }}</span>
@@ -1240,7 +1240,7 @@ onScopeDispose(() => {
           </div>
           <div class="flex shrink-0 items-center gap-3">
             <button
-              type="button"
+              type="button" 
               ref="rackSupportTriggerRef"
               class="grid h-5 w-5 shrink-0 place-items-center rounded-md text-gray-400 transition hover:bg-black/5 hover:text-gray-600 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/70"
               :aria-expanded="showRackSupportPopover"
@@ -1249,7 +1249,7 @@ onScopeDispose(() => {
               <CircleHelp class="h-4 w-4" aria-hidden="true" />
             </button>
             <button
-              type="button"
+              type="button" 
               class="glass-switch"
               :class="[
                 rackMasterEnabled ? 'is-checked' : '',
@@ -1292,7 +1292,7 @@ onScopeDispose(() => {
               <button
                 v-for="device in outputDeviceOptions"
                 :key="device.id || 'default'"
-                type="button"
+                type="button" 
                 class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
                 :class="selectedOutputDeviceId === device.id ? 'bg-gray-50 dark:bg-white/5' : ''"
                 @click="handleOutputDeviceSelect(device.id)"
@@ -1316,22 +1316,22 @@ onScopeDispose(() => {
   </div>
 </template>
 
-<style scoped>
-.desktop-setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+<style scoped> /* 样式 */
+.desktop-setting-row { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: space-between; /* 样式 */
   gap: 16px;
-  padding: 16px;
-  text-align: left;
-  transition: background-color 160ms ease;
+  padding: 16px; /* 样式 */
+  text-align: left; /* 样式 */
+  transition: background-color 160ms ease; /* 样式 */
 }
 
-.desktop-setting-row:hover {
+.desktop-setting-row:hover { /* 样式 */
   background: rgba(255, 255, 255, 0.4);
 }
 
-:global(.dark) .desktop-setting-row:hover {
+:global(.dark) .desktop-setting-row:hover { /* 样式 */
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -1458,7 +1458,7 @@ onScopeDispose(() => {
   height: 20px;
   width: 20px;
   flex: 0 0 auto;
-  align-items: center;
+  align-items: center; /* 样式 */
   justify-content: center;
   border-radius: 999px;
   color: #9ca3af;

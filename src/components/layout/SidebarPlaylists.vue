@@ -1,8 +1,8 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { ref } from 'vue';
 import { Download } from 'lucide-vue-next';
 
-import type { Playlist } from '../../types';
+import type { Playlist } from '../../types'; // 实现
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import FavoriteCollectionPanel from './sidebar/FavoriteCollectionPanel.vue';
 
@@ -89,20 +89,20 @@ const itemActionClass = 'absolute right-2 top-1/2 -translate-y-1/2 opacity-0 gro
         <TransitionGroup name="row-slide">
           <li v-for="(list, index) in playlists" :key="list.id" :class="[rowBaseClass, rowStateClass(list)]"
             :data-playlist-id="list.id" :data-playlist-name="list.name"
-            @pointerdown="$emit('pointerDown', $event, index, list)"
-            @pointermove="$emit('itemPointerMove', $event, list.id)"
+            @pointerdown="$emit('pointerDown', $event, index, list)" 
+            @pointermove="$emit('itemPointerMove', $event, list.id)" 
             @click.stop="$emit('playlistClick', $event, list.id)" @contextmenu="$emit('playlistContextMenu', $event, list)">
             <div class="w-9 h-9 shrink-0 rounded border border-gray-100/50 bg-gray-200/50 mr-3 flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-110">
               <img v-if="coverFor(list.id)" :src="coverFor(list.id)" class="w-full h-full object-cover" alt="Cover" loading="lazy" decoding="async" />
               <svg v-else class="h-5 w-5 text-gray-400 dark:text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" xmlns="http://www.w3.org/2000/svg"><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg></div>
             <div class="flex min-w-0 flex-1 flex-col justify-center">
-              <span class="text-sm truncate leading-tight mb-0.5">{{ list.name }}</span>
+              <span class="text-sm truncate leading-tight mb-0.5">{{ list.name }}</span> 
               <span class="text-[10px] text-gray-600 dark:text-gray-300 leading-tight">{{ list.songPaths.length }} 首</span></div>
             <button :class="itemActionClass" title="删除歌单" @click.stop="$emit('deletePlaylist', list.id, list.name)">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></li>
-        </TransitionGroup>
+        </TransitionGroup> 
       </ul>
-    </Transition>
+    </Transition> 
 
     <!-- 收藏歌单分组 -->
     <FavoriteCollectionPanel
@@ -116,7 +116,7 @@ const itemActionClass = 'absolute right-2 top-1/2 -translate-y-1/2 opacity-0 gro
   </section>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 /* 条目进出场动画 */
 .row-slide-enter-active,
 .row-slide-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }

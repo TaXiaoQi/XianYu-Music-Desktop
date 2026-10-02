@@ -1,29 +1,29 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 歌单/列表详情页头部：滚动收缩封面、批量工具条、排序弹出菜单
 import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue';
 import { convertFileSrc as toAssetProtocolUrl } from '@tauri-apps/api/core';
 import { ListChecks, ListPlus, PencilLine, RefreshCw } from 'lucide-vue-next';
-import type { Song } from '../../types';
-import { usePlayerViewState } from '../../composables/usePlayerViewState';
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { useCoverCache } from '../../composables/useCoverCache';
+import type { Song } from '../../types'; // 实现
+import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
+import { useCoverCache } from '../../composables/useCoverCache'; // 实现
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useLibraryStore } from '../../features/library/store';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
-import SortModeIcon from '../common/SortModeIcon.vue';
+import SortModeIcon from '../common/SortModeIcon.vue'; // 实现
 import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
 import SortOptionPopover from './sortPopover/SortOptionPopover.vue';
 import HeaderOverflowMenu from './HeaderOverflowMenu.vue';
 
-const props = defineProps<{
-  title: string;
-  subtitle?: string;
-  songs: Song[];
-  isBatchMode: boolean;
-  selectedCount: number;
+const props = defineProps<{ // 实现
+  title: string; // 实现
+  subtitle?: string; // 实现
+  songs: Song[]; // 实现
+  isBatchMode: boolean; // 实现
+  selectedCount: number; // 实现
   totalSongCount?: number;
-  showRename?: boolean;
+  showRename?: boolean; // 实现
   readOnly?: boolean;
   showAddToPlaylist?: boolean;
   showHeaderAddToPlaylist?: boolean;
@@ -33,12 +33,12 @@ const props = defineProps<{
   scrollContainerRef?: HTMLElement | null;
 }>();
 
-const emit = defineEmits([
-  'update:isBatchMode',
+const emit = defineEmits([ // 实现
+  'update:isBatchMode', // 实现
   'playAll',
-  'batchPlay',
-  'batchDelete',
-  'openAddToPlaylist',
+  'batchPlay', // 实现
+  'batchDelete', // 实现
+  'openAddToPlaylist', // 实现
   'batchAddToFavorites',
   'batchDownload',
   'rename',
@@ -160,9 +160,9 @@ const batchActions = computed(() => {
 });
 
 // ===== 头图封面解析 =====
-const headerCover = ref('');
+const headerCover = ref(''); // 实现
 const displayedHeaderCover = ref('');
-let coverRequestId = 0;
+let coverRequestId = 0; // 实现
 const { loadCover, loadFullCover, primeCoverPath } = useCoverCache(); // 封面缓存
 
 watch(
@@ -304,8 +304,8 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - 3 * 
 
 <template>
   <div class="relative z-20 w-full px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(8px,1.4vh,16px)] h-auto justify-start">
-    <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
-      <div class="flex items-center gap-3">
+    <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200"> 
+      <div class="flex items-center gap-3"> 
         <button
           v-for="action in batchActions"
           :key="action.key"
@@ -331,8 +331,8 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - 3 * 
           {{ action.caption }}
         </button>
       </div>
-      <div class="flex items-center gap-4">
-        <button @click="emit('update:isBatchMode', false)" class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1 rounded transition">完成</button>
+      <div class="flex items-center gap-4"> 
+        <button @click="emit('update:isBatchMode', false)" class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1 rounded transition">完成</button> 
       </div>
     </div>
 
@@ -368,7 +368,7 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - 3 * 
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3"> 
           <button :class="pillButtonClass" title="播放全部" @click="emit('playAll')">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 5.5v13l10-6.5-10-6.5Z" />

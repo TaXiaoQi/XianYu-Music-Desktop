@@ -11,21 +11,21 @@ use crate::player::loudness::VolumeNormalizerHandle;
 use crate::player::output::shared::{
     progress_seconds_from_samples, restore_current_playback, SharedOutputBackend,
 };
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 use crate::player::output::wasapi_exclusive::WasapiExclusivePlayback;
-use crate::player::output::OutputBackend;
-use crate::player::types::{
+use crate::player::output::{OutputBackend};
+use crate::player::types::{ // 实现
     AudioCommand, AudioOutputMode, AudioOutputStatus, AudioSource, BufferedMonitor,
     PlaybackBufferPayload, PlaybackProgressPayload, PlayerState, SeekCompletedPayload,
     SharedProgress, SharedVisualizer,
 };
-use crate::remote::cache::RemoteStreamSource;
+use crate::remote::cache::{RemoteStreamSource};
 use rodio::Sink;
 use souvlaki::{MediaPlayback, MediaPosition};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::mpsc::{RecvTimeoutError, channel};
+use std::sync::{Mutex, Arc};
+use core::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 #[cfg(test)]
@@ -97,7 +97,7 @@ pub(super) fn wipe_progress_bookkeeping(progress: &Arc<SharedProgress>) {
     if let Ok(mut reason_slot) = progress.start_failed_reason.lock() {
         *reason_slot = None;
     }
-    progress.visualizer.reset();
+    progress.visualizer.reset(); // 实现
 }
 
 // 系统默认输出设备变化时是否值得整体重建输出链
@@ -192,7 +192,7 @@ fn survey_stream_health(
     }
 }
 
-pub fn init_player(app: &AppHandle) -> PlayerState {
+pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
     let (command_tx, command_rx) = channel::<AudioCommand>();
     let runtime_progress = Arc::new(SharedProgress {
         is_playing: Arc::new(AtomicBool::new(false)),
@@ -213,7 +213,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
     let worker_controls = media_hub.clone();
 
     let worker_eq = Arc::new(crate::player::equalizer::EqualizerHandle::new(
-        crate::player::equalizer::EqualizerSettings::default(),
+        crate::player::equalizer::EqualizerSettings::default(), // 实现
     ));
     let worker_se = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
         crate::player::sound_effect::SoundEffectSettings::default(), // 默认音效参数
@@ -226,7 +226,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         let mut chosen_device: Option<String> = None;
         let mut shared_out = SharedOutputBackend::open(&audio_host, None).ok();
         let mut sink_slot: Option<Sink> = None;
-        #[cfg(target_os = "windows")]
+        #[cfg(windows)]
         let mut exclusive_session: Option<WasapiExclusivePlayback> = None;
         let mut active_file_path = String::new();
         let mut speaker_gain = 1.0_f32;
@@ -804,7 +804,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         );
                     }
                 }
-                Err(RecvTimeoutError::Timeout) => {
+                Err(RecvTimeoutError::Timeout) => { // 实现
                     if chosen_device.is_none() {
                         let refreshed_default = default_output_device_name(&audio_host);
 
@@ -816,7 +816,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         if needs_output_salvage {
                             last_output_salvage = std::time::Instant::now();
                             if let Some(sink) = &sink_slot {
-                                sink.stop();
+                                sink.stop(); // 实现
                             }
                             sink_slot = None;
                             confine_device_fault(|| {
@@ -873,14 +873,14 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         {
                             prior_system_default = refreshed_default;
                             if let Some(sink) = &sink_slot {
-                                sink.stop();
+                                sink.stop(); // 实现
                             }
                             sink_slot = None;
                             shared_out = None;
-                            #[cfg(target_os = "windows")]
+                            #[cfg(windows)]
                             teardown_exclusive_session(&mut exclusive_session);
 
-                            #[cfg(target_os = "windows")]
+                            #[cfg(windows)]
                             confine_device_fault(|| {
                                 rebuild_output_stack(
                                     &chosen_device,
@@ -977,7 +977,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         }
     });
 
-    PlayerState {
+    PlayerState { // 实现
         tx: Mutex::new(command_tx),
         progress: runtime_progress,
         playback_id: Arc::new(AtomicU64::default()),
@@ -987,9 +987,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(test)] mod tests {
+    use super::*; // 实现
     use std::io::Write as _;
     use std::net::TcpListener;
 
@@ -1286,16 +1285,16 @@ mod tests {
         assert_eq!(remaining, 2205 * 2, "seek 到 50ms 后应剩余一半样本");
     }
 
-    fn test_progress_at(seconds: f64) -> Arc<SharedProgress> {
-        let sample_rate = 44_100_u32;
-        let channels = 2_u32;
-        let samples = (seconds * sample_rate as f64 * channels as f64).round() as u64;
+    fn test_progress_at(seconds: f64) -> Arc<SharedProgress> { // test_progress_at
+        let sample_rate = 44_100_u32; // 实现
+        let channels = 2_u32; // 实现
+        let samples = (seconds * sample_rate as f64 * channels as f64).round() as u64; // 实现
 
-        Arc::new(SharedProgress {
-            samples_played: Arc::new(AtomicU64::new(samples)),
-            sample_rate: Arc::new(AtomicU32::new(sample_rate)),
-            channels: Arc::new(AtomicU32::new(channels)),
-            visualizer: Arc::new(SharedVisualizer::new()),
+        Arc::new(SharedProgress { // 实现
+            samples_played: Arc::new(AtomicU64::new(samples)), // 实现
+            sample_rate: Arc::new(AtomicU32::new(sample_rate)), // 实现
+            channels: Arc::new(AtomicU32::new(channels)), // 实现
+            visualizer: Arc::new(SharedVisualizer::new()), // 实现
             start_failed: Arc::new(AtomicBool::new(false)),
             start_failed_reason: Arc::new(std::sync::Mutex::new(None)),
             buffered: Arc::new(BufferedMonitor::new()),
@@ -1305,66 +1304,66 @@ mod tests {
     }
 
     #[test]
-    fn handle_play_resets_progress_even_when_new_source_cannot_open() {
-        let progress = test_progress_at(206.0);
-        let mut current_sink = None;
-        let mut current_path = String::new();
-        let mut is_playing_flag = false;
-        let mut current_normalizer_handle = None;
+    fn handle_play_resets_progress_even_when_new_source_cannot_open() { // handle_play_resets_progress_even_when_new_source_cannot_open
+        let progress = test_progress_at(206.0); // 实现
+        let mut current_sink = None; // 实现
+        let mut current_path = String::new(); // 实现
+        let mut is_playing_flag = false; // 实现
+        let mut current_normalizer_handle = None; // 实现
 
-        let eq_handle = Arc::new(crate::player::equalizer::EqualizerHandle::new(
-            crate::player::equalizer::EqualizerSettings::default(),
+        let eq_handle = Arc::new(crate::player::equalizer::EqualizerHandle::new( // 实现
+            crate::player::equalizer::EqualizerSettings::default(), // 实现
         ));
         let se_handle = Arc::new(crate::player::sound_effect::SoundEffectHandle::new( // 默认音效句柄
             crate::player::sound_effect::SoundEffectSettings::default(), // 默认参数
         )); // 构造完成
-        let user_volume = Arc::new(std::sync::atomic::AtomicU32::new(1.0_f32.to_bits()));
+        let user_volume = Arc::new(std::sync::atomic::AtomicU32::new(1.0_f32.to_bits())); // 实现
 
-        handle_play(
-            AudioSource::LocalFile("Z:\\missing\\song.flac".to_string()),
+        handle_play( // 实现
+            AudioSource::LocalFile("Z:\\missing\\song.flac".to_string()), // 实现
             &None,
-            &mut current_sink,
-            &mut current_path,
-            &mut is_playing_flag,
+            &mut current_sink, // 实现
+            &mut current_path, // 实现
+            &mut is_playing_flag, // 实现
             &progress,
             None,
             1.0,
-            &mut current_normalizer_handle,
+            &mut current_normalizer_handle, // 实现
             eq_handle,
             se_handle, // 挂载音效句柄
-            user_volume,
+            user_volume, // 实现
         );
 
-        assert_eq!(progress.samples_played.load(Ordering::Relaxed), 0);
+        assert_eq!(progress.samples_played.load(Ordering::Relaxed), 0); // 实现
     }
 
     #[test]
-    fn default_device_monitor_ignores_active_output_display_name() {
-        let selected_device_name = None;
-        let last_default_device_name = Some("CPAL default device".to_string());
-        let next_default_device_name = Some("CPAL default device".to_string());
-        let active_device_name = Some("WASAPI friendly device".to_string());
+    fn default_device_monitor_ignores_active_output_display_name() { // default_device_monitor_ignores_active_output_display_name
+        let selected_device_name = None; // 实现
+        let last_default_device_name = Some("CPAL default device".to_string()); // 实现
+        let next_default_device_name = Some("CPAL default device".to_string()); // 实现
+        let active_device_name = Some("WASAPI friendly device".to_string()); // 实现
 
-        assert!(!should_restore_for_default_device_change(
-            &selected_device_name,
-            &last_default_device_name,
-            &next_default_device_name,
-            &active_device_name,
+        assert!(!should_restore_for_default_device_change( // 实现
+            &selected_device_name, // 实现
+            &last_default_device_name, // 实现
+            &next_default_device_name, // 实现
+            &active_device_name, // 实现
         ));
     }
 
     #[test]
     fn default_device_monitor_ignores_transient_enumeration_failure() {
-        let selected_device_name = None;
+        let selected_device_name = None; // 实现
         let last_default_device_name = Some("扬声器".to_string());
         let next_default_device_name: Option<String> = None;
         let active_device_name = Some("扬声器".to_string());
 
-        assert!(!should_restore_for_default_device_change(
-            &selected_device_name,
-            &last_default_device_name,
-            &next_default_device_name,
-            &active_device_name,
+        assert!(!should_restore_for_default_device_change( // 实现
+            &selected_device_name, // 实现
+            &last_default_device_name, // 实现
+            &next_default_device_name, // 实现
+            &active_device_name, // 实现
         ));
     }
 

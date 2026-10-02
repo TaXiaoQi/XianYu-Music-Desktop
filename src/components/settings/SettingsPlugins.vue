@@ -46,9 +46,9 @@ async function fetchRemoteScript(url: string): Promise<string> {
   return '';
 }
 const props = withDefaults(defineProps<{
-  overlayZClass?: string;
+  overlayZClass?: string; // 实现
 }>(), {
-  overlayZClass: 'z-[200]',
+  overlayZClass: 'z-[200]', // 实现
 });
 
 const overlayZMatch = props.overlayZClass.match(/z-\[(\d+)\]/);
@@ -590,7 +590,7 @@ async function installPluginFromScript(script: string, filePath: string) { // �
   showToast(`成功安装插件: ${source.name} (${formatLabel})`, 'success');
 } // 实现
 // ==================== 插件管理 ==================== 
-const showUninstallAllConfirm = ref(false);
+const showUninstallAllConfirm = ref(false); // 实现
 
 const showPluginDeleteScope = ref(false);
 const pluginDeleteScopeIds = ref<string[]>([]);
@@ -598,46 +598,46 @@ const pluginScopeCanDeleteCloud = computed(() =>
   pluginDeleteScopeIds.value.some(id => getSyncedPluginIds().has(id)),
 );
 
-function handleUninstallAll() {
+function handleUninstallAll() { // 实现
   if (plugins.value.length === 0) return; // 实现
   if (getCiyuanxiId() && plugins.value.some(p => isPluginSynced(p.id))) {
     pluginDeleteScopeIds.value = plugins.value.map(p => p.id);
     showPluginDeleteScope.value = true;
     return;
   }
-  showUninstallAllConfirm.value = true;
+  showUninstallAllConfirm.value = true; // 实现
 }
 
-function confirmUninstallAll() {
+function confirmUninstallAll() { // 实现
   for (const p of [...plugins.value]) { // 实现
     removePluginSource(p.id); // 实现
   } // 实现
   refreshPluginList(); // 实现
-  showUninstallAllConfirm.value = false;
+  showUninstallAllConfirm.value = false; // 实现
   showToast('已卸载全部插件', 'success'); // 实现
 }
 
-const showUninstallPluginConfirm = ref(false);
-const pendingUninstallPlugin = ref<PluginSource | null>(null);
+const showUninstallPluginConfirm = ref(false); // 实现
+const pendingUninstallPlugin = ref<PluginSource | null>(null); // 实现
 
-function handleUninstallPlugin(plugin: PluginSource) {
+function handleUninstallPlugin(plugin: PluginSource) { // 实现
   if (getCiyuanxiId() && isPluginSynced(plugin.id)) {
     pluginDeleteScopeIds.value = [plugin.id];
     showPluginDeleteScope.value = true;
     return;
   }
-  pendingUninstallPlugin.value = plugin;
-  showUninstallPluginConfirm.value = true;
+  pendingUninstallPlugin.value = plugin; // 实现
+  showUninstallPluginConfirm.value = true; // 实现
 }
 
-function confirmUninstallPlugin() {
-  const plugin = pendingUninstallPlugin.value;
-  if (!plugin) return;
-  removePluginSource(plugin.id);
-  refreshPluginList();
-  showUninstallPluginConfirm.value = false;
-  pendingUninstallPlugin.value = null;
-  showToast(`已卸载 ${plugin.name}`, 'success');
+function confirmUninstallPlugin() { // 实现
+  const plugin = pendingUninstallPlugin.value; // 实现
+  if (!plugin) return; // 实现
+  removePluginSource(plugin.id); // 实现
+  refreshPluginList(); // 实现
+  showUninstallPluginConfirm.value = false; // 实现
+  pendingUninstallPlugin.value = null; // 实现
+  showToast(`已卸载 ${plugin.name}`, 'success'); // 实现
 }
 
 async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
@@ -677,7 +677,7 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
     removePluginSource(id);
   }
   addDownloadSkipIds(ids);
-  refreshPluginList();
+  refreshPluginList(); // 实现
   showToast(`已从本机删除 ${ids.length} 个插件（云端保留）`, 'success');
 }
 
@@ -911,26 +911,26 @@ function formatRelativeTime(ts: number | undefined): string { // 实现
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; // 实现
 }
 
-const showRemoveSubscriptionConfirm = ref(false);
+const showRemoveSubscriptionConfirm = ref(false); // 实现
 const pendingRemoveSubscription = ref<PluginSubscription | null>(null); // 实现
 
 function handleRemoveSubscription(sub: PluginSubscription) { // 实现
-  pendingRemoveSubscription.value = sub;
-  showRemoveSubscriptionConfirm.value = true;
+  pendingRemoveSubscription.value = sub; // 实现
+  showRemoveSubscriptionConfirm.value = true; // 实现
 }
 
-function confirmRemoveSubscription() {
-  const sub = pendingRemoveSubscription.value;
-  if (!sub) return;
+function confirmRemoveSubscription() { // 实现
+  const sub = pendingRemoveSubscription.value; // 实现
+  if (!sub) return; // 实现
   removeSubscription(sub.id); // 实现
   subscriptions.value = getSubscriptions(); // 实现
-  showRemoveSubscriptionConfirm.value = false;
-  pendingRemoveSubscription.value = null;
+  showRemoveSubscriptionConfirm.value = false; // 实现
+  pendingRemoveSubscription.value = null; // 实现
   showToast(`已移除订阅 ${sub.name}`, 'success');
 }
 
-// ==================== 插件详情弹窗 ====================
-const detailPlugin = ref<PluginSource | null>(null);
+// ==================== 插件详情弹窗 ==================== 
+const detailPlugin = ref<PluginSource | null>(null); // 实现
 
 // ==================== 用户变量编辑 ====================
 const detailUserVariables = ref<PluginUserVariable[]>([]);
@@ -939,7 +939,7 @@ const savingUserVars = ref(false);
 const loadingUserVars = ref(false);
 
 async function openPluginDetail(plugin: PluginSource) {
-  detailPlugin.value = plugin;
+  detailPlugin.value = plugin; // 实现
   detailUserVariables.value = getPluginUserVariables(plugin.id);
   detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
   migrateOldVarKeys(detailUserVariables.value, detailUserVarValues.value);
@@ -992,20 +992,20 @@ function migrateOldVarKeys(vars: PluginUserVariable[], values: Record<string, st
   }
 }
 
-function closePluginDetail() {
-  detailPlugin.value = null;
+function closePluginDetail() { // 实现
+  detailPlugin.value = null; // 实现
   detailUserVariables.value = [];
   detailUserVarValues.value = {};
   loadingUserVars.value = false;
 }
 
-async function copyPluginLink() {
-  if (!detailPlugin.value?.filePath) return;
+async function copyPluginLink() { // 实现
+  if (!detailPlugin.value?.filePath) return; // 实现
   try {
-    await navigator.clipboard.writeText(detailPlugin.value.filePath);
-    showToast('插件链接已复制', 'success');
+    await navigator.clipboard.writeText(detailPlugin.value.filePath); // 实现
+    showToast('插件链接已复制', 'success'); // 实现
   } catch {
-    showToast('复制失败，请手动选择复制', 'error');
+    showToast('复制失败，请手动选择复制', 'error'); // 实现
   }
 }
 
@@ -1099,12 +1099,12 @@ async function saveUserVariables() {
                 <div class="settings-plugin-dropzone-title">
                   点击选择文件或拖拽到此处
                 </div>
-                <SettingHint severity="warning" class="absolute right-4 top-4" text="支持 .js 或 .json 格式的插件文件" />
+                <SettingHint severity="warning" class="absolute right-4 top-4" text="支持 .js 或 .json 格式的插件文件" /> 
               </div>
               <div class="flex justify-end mt-3">
                 <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--ghost"
+                  type="button" 
+                  class="settings-plugin-button settings-plugin-button--ghost" 
                   @click="toggleInstallFromFilePanel"
                 >
                   取消
@@ -1120,7 +1120,7 @@ async function saveUserVariables() {
               <div class="flex items-center justify-between gap-4">
                 <div class="shrink-0 text-sm font-medium text-gray-800 dark:text-gray-200">插件地址</div>
                 <div class="flex min-w-0 flex-1 items-center gap-3">
-                  <SettingHint severity="warning" text="粘贴插件的 JS 文件直链或 JSON 索引地址" />
+                  <SettingHint severity="warning" text="粘贴插件的 JS 文件直链或 JSON 索引地址" /> 
                   <input
                     v-model="installUrl"
                     type="text"
@@ -1154,7 +1154,7 @@ async function saveUserVariables() {
               <div class="flex items-center justify-between mb-3 gap-2"> 
                 <div class="text-sm font-medium text-gray-800 dark:text-gray-200">订阅管理</div>
                 <div class="flex shrink-0 items-center gap-3">
-                  <SettingHint severity="warning" text="订阅可自动同步远端插件列表，方便一次性安装多个来源" />
+                  <SettingHint severity="warning" text="订阅可自动同步远端插件列表，方便一次性安装多个来源" /> 
                   <button 
                     type="button" 
                     class="settings-plugin-button settings-plugin-button--sm settings-plugin-button--secondary" 
@@ -1281,9 +1281,9 @@ async function saveUserVariables() {
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">启动时自动更新插件</p>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint severity="warning" text="软件启动时自动检查并安装插件更新" />
+            <SettingHint severity="warning" text="软件启动时自动检查并安装插件更新" /> 
             <button
-              type="button"
+              type="button" 
               class="glass-switch"
               :class="{ 'is-checked': pluginSettings.autoUpdateOnStartup }"
               @click="togglePluginSetting('autoUpdateOnStartup')"
@@ -1298,7 +1298,7 @@ async function saveUserVariables() {
           <div class="flex items-center gap-3">
             <SettingHint text="首次使用时才初始化插件，加快启动速度" />
             <button
-              type="button"
+              type="button" 
               class="glass-switch"
               :class="{ 'is-checked': pluginSettings.lazyLoad }"
               @click="togglePluginSetting('lazyLoad')"
@@ -1311,9 +1311,9 @@ async function saveUserVariables() {
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">安装时不校验版本</p>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint severity="warning" text="允许安装相同或更低版本的插件" />
+            <SettingHint severity="warning" text="允许安装相同或更低版本的插件" /> 
             <button
-              type="button"
+              type="button" 
               class="glass-switch"
               :class="{ 'is-checked': pluginSettings.skipVersionCheck }"
               @click="togglePluginSetting('skipVersionCheck')"
@@ -1461,12 +1461,12 @@ async function saveUserVariables() {
 
           <div class="flex items-center gap-1.5 shrink-0">
             <button
-              type="button"
-              class="settings-plugin-icon-button"
-              title="详情信息"
-              @click="openPluginDetail(plugin)"
+              type="button" 
+              class="settings-plugin-icon-button" 
+              title="详情信息" 
+              @click="openPluginDetail(plugin)" 
             >
-              <Info class="h-4 w-4" />
+              <Info class="h-4 w-4" /> 
             </button>
             <button
               type="button"
@@ -1503,114 +1503,114 @@ async function saveUserVariables() {
       </div>
     </section>
 
-    <Teleport to="body">
-      <Transition name="plugin-detail">
+    <Teleport to="body"> 
+      <Transition name="plugin-detail"> 
         <div
-          v-if="showUninstallAllConfirm"
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          :class="overlayZClass"
-          @click.self="showUninstallAllConfirm = false"
+          v-if="showUninstallAllConfirm" 
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
+          :class="overlayZClass" 
+          @click.self="showUninstallAllConfirm = false" 
         >
-          <div class="plugin-detail-card">
-            <div class="plugin-detail-header">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500">
-                  <Trash2 class="h-5 w-5" />
+          <div class="plugin-detail-card"> 
+            <div class="plugin-detail-header"> 
+              <div class="flex items-center gap-3 min-w-0"> 
+                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500"> 
+                  <Trash2 class="h-5 w-5" /> 
                 </div>
-                <div class="min-w-0">
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载全部插件</div>
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div>
+                <div class="min-w-0"> 
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载全部插件</div> 
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div> 
                 </div>
               </div>
               <button
-                type="button"
-                class="plugin-detail-close"
-                aria-label="关闭"
-                @click="showUninstallAllConfirm = false"
+                type="button" 
+                class="plugin-detail-close" 
+                aria-label="关闭" 
+                @click="showUninstallAllConfirm = false" 
               >
-                <X class="h-4 w-4" />
+                <X class="h-4 w-4" /> 
               </button>
             </div>
-            <div class="plugin-detail-body">
-              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed">
-                确认要卸载全部 <strong class="text-[#EC4141]">{{ plugins.length }}</strong> 个插件吗？卸载后无法恢复，需重新安装。
+            <div class="plugin-detail-body"> 
+              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed"> 
+                确认要卸载全部 <strong class="text-[#EC4141]">{{ plugins.length }}</strong> 个插件吗？卸载后无法恢复，需重新安装。 
               </p>
-              <div class="flex justify-end gap-2 pt-1">
+              <div class="flex justify-end gap-2 pt-1"> 
                 <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--ghost"
-                  @click="showUninstallAllConfirm = false"
+                  type="button" 
+                  class="settings-plugin-button settings-plugin-button--ghost" 
+                  @click="showUninstallAllConfirm = false" 
                 >
                   取消
                 </button>
                 <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--danger"
-                  @click="confirmUninstallAll"
+                  type="button" 
+                  class="settings-plugin-button settings-plugin-button--danger" 
+                  @click="confirmUninstallAll" 
                 >
-                  <Trash2 class="h-4 w-4" />
+                  <Trash2 class="h-4 w-4" /> 
                   确认卸载
                 </button>
               </div>
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="plugin-detail">
+    <Teleport to="body"> 
+      <Transition name="plugin-detail"> 
         <div
-          v-if="showUninstallPluginConfirm"
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          :class="overlayZClass"
-          @click.self="showUninstallPluginConfirm = false"
+          v-if="showUninstallPluginConfirm" 
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
+          :class="overlayZClass" 
+          @click.self="showUninstallPluginConfirm = false" 
         >
-          <div class="plugin-detail-card">
-            <div class="plugin-detail-header">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500">
-                  <Trash2 class="h-5 w-5" />
+          <div class="plugin-detail-card"> 
+            <div class="plugin-detail-header"> 
+              <div class="flex items-center gap-3 min-w-0"> 
+                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500"> 
+                  <Trash2 class="h-5 w-5" /> 
                 </div>
-                <div class="min-w-0">
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载插件</div>
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div>
+                <div class="min-w-0"> 
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载插件</div> 
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div> 
                 </div>
               </div>
               <button
-                type="button"
-                class="plugin-detail-close"
-                aria-label="关闭"
-                @click="showUninstallPluginConfirm = false"
+                type="button" 
+                class="plugin-detail-close" 
+                aria-label="关闭" 
+                @click="showUninstallPluginConfirm = false" 
               >
-                <X class="h-4 w-4" />
+                <X class="h-4 w-4" /> 
               </button>
             </div>
-            <div class="plugin-detail-body">
-              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed">
-                确认要卸载插件 <strong class="text-[#EC4141]">{{ pendingUninstallPlugin?.name }}</strong> 吗？卸载后无法恢复，需重新安装。
+            <div class="plugin-detail-body"> 
+              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed"> 
+                确认要卸载插件 <strong class="text-[#EC4141]">{{ pendingUninstallPlugin?.name }}</strong> 吗？卸载后无法恢复，需重新安装。 
               </p>
-              <div class="flex justify-end gap-2 pt-1">
+              <div class="flex justify-end gap-2 pt-1"> 
                 <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--ghost"
-                  @click="showUninstallPluginConfirm = false"
+                  type="button" 
+                  class="settings-plugin-button settings-plugin-button--ghost" 
+                  @click="showUninstallPluginConfirm = false" 
                 >
                   取消
                 </button>
                 <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--danger"
-                  @click="confirmUninstallPlugin"
+                  type="button" 
+                  class="settings-plugin-button settings-plugin-button--danger" 
+                  @click="confirmUninstallPlugin" 
                 >
-                  <Trash2 class="h-4 w-4" />
+                  <Trash2 class="h-4 w-4" /> 
                   确认卸载
                 </button>
               </div>
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
     <SyncDeleteScopeModal
@@ -1623,126 +1623,126 @@ async function saveUserVariables() {
       @scope="confirmPluginDeleteScope"
     />
 
-    <Teleport to="body">
-      <Transition name="plugin-detail">
+    <Teleport to="body"> 
+      <Transition name="plugin-detail"> 
         <div
-          v-if="showRemoveSubscriptionConfirm"
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          :class="overlayZClass"
-          @click.self="showRemoveSubscriptionConfirm = false"
+          v-if="showRemoveSubscriptionConfirm" 
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
+          :class="overlayZClass" 
+          @click.self="showRemoveSubscriptionConfirm = false" 
         >
-          <div class="plugin-detail-card">
-            <div class="plugin-detail-header">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500">
-                  <Trash2 class="h-5 w-5" />
+          <div class="plugin-detail-card"> 
+            <div class="plugin-detail-header"> 
+              <div class="flex items-center gap-3 min-w-0"> 
+                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500"> 
+                  <Trash2 class="h-5 w-5" /> 
                 </div>
-                <div class="min-w-0">
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">移除订阅</div>
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div>
+                <div class="min-w-0"> 
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">移除订阅</div> 
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div> 
                 </div>
               </div>
               <button
-                type="button"
-                class="plugin-detail-close"
-                aria-label="关闭"
-                @click="showRemoveSubscriptionConfirm = false"
+                type="button" 
+                class="plugin-detail-close" 
+                aria-label="关闭" 
+                @click="showRemoveSubscriptionConfirm = false" 
               >
-                <X class="h-4 w-4" />
+                <X class="h-4 w-4" /> 
               </button>
             </div>
-            <div class="plugin-detail-body">
-              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed">
-                确认要移除订阅 <strong class="text-[#EC4141]">{{ pendingRemoveSubscription?.name }}</strong> 吗？移除后需重新添加。
+            <div class="plugin-detail-body"> 
+              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed"> 
+                确认要移除订阅 <strong class="text-[#EC4141]">{{ pendingRemoveSubscription?.name }}</strong> 吗？移除后需重新添加。 
               </p>
-              <div class="flex justify-end gap-2 pt-1">
+              <div class="flex justify-end gap-2 pt-1"> 
                 <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--ghost"
-                  @click="showRemoveSubscriptionConfirm = false"
+                  type="button" 
+                  class="settings-plugin-button settings-plugin-button--ghost" 
+                  @click="showRemoveSubscriptionConfirm = false" 
                 >
                   取消
                 </button>
                 <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--danger"
-                  @click="confirmRemoveSubscription"
+                  type="button" 
+                  class="settings-plugin-button settings-plugin-button--danger" 
+                  @click="confirmRemoveSubscription" 
                 >
-                  <Trash2 class="h-4 w-4" />
+                  <Trash2 class="h-4 w-4" /> 
                   确认移除
                 </button>
               </div>
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="plugin-detail">
+    <Teleport to="body"> 
+      <Transition name="plugin-detail"> 
         <div
-          v-if="detailPlugin"
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          :class="overlayZClass"
+          v-if="detailPlugin" 
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
+          :class="overlayZClass" 
           @click.self="closePluginDetail"
         >
-          <div class="plugin-detail-card">
-            <div class="plugin-detail-header">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12 flex items-center justify-center shrink-0 text-[#EC4141]">
-                  <Puzzle class="h-5 w-5" />
+          <div class="plugin-detail-card"> 
+            <div class="plugin-detail-header"> 
+              <div class="flex items-center gap-3 min-w-0"> 
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12 flex items-center justify-center shrink-0 text-[#EC4141]"> 
+                  <Puzzle class="h-5 w-5" /> 
                 </div>
-                <div class="min-w-0">
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{{ detailPlugin.name }}</div>
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">
+                <div class="min-w-0"> 
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{{ detailPlugin.name }}</div> 
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5"> 
                     {{ detailPlugin.format === 'lx' ? '落雪格式' : detailPlugin.format === 'anime' ? 'anime 格式' : 'MusicFree 格式' }}
                   </div>
                 </div>
               </div>
               <button
-                type="button"
-                class="plugin-detail-close"
-                aria-label="关闭"
-                @click="closePluginDetail"
+                type="button" 
+                class="plugin-detail-close" 
+                aria-label="关闭" 
+                @click="closePluginDetail" 
               >
-                <X class="h-4 w-4" />
+                <X class="h-4 w-4" /> 
               </button>
             </div>
 
-            <div class="plugin-detail-body">
-              <div class="plugin-detail-row">
-                <span class="plugin-detail-label">版本</span>
-                <span class="plugin-detail-value">v{{ detailPlugin.version || '—' }}</span>
+            <div class="plugin-detail-body"> 
+              <div class="plugin-detail-row"> 
+                <span class="plugin-detail-label">版本</span> 
+                <span class="plugin-detail-value">v{{ detailPlugin.version || '—' }}</span> 
               </div>
-              <div class="plugin-detail-row">
-                <span class="plugin-detail-label">作者</span>
-                <span class="plugin-detail-value">{{ detailPlugin.author || '—' }}</span>
+              <div class="plugin-detail-row"> 
+                <span class="plugin-detail-label">作者</span> 
+                <span class="plugin-detail-value">{{ detailPlugin.author || '—' }}</span> 
               </div>
-              <div class="plugin-detail-row">
-                <span class="plugin-detail-label">描述</span>
-                <span class="plugin-detail-value">{{ detailPlugin.description || '—' }}</span>
+              <div class="plugin-detail-row"> 
+                <span class="plugin-detail-label">描述</span> 
+                <span class="plugin-detail-value">{{ detailPlugin.description || '—' }}</span> 
               </div>
-              <div class="plugin-detail-row">
-                <span class="plugin-detail-label">音源</span>
-                <div class="flex flex-wrap gap-1.5">
+              <div class="plugin-detail-row"> 
+                <span class="plugin-detail-label">音源</span> 
+                <div class="flex flex-wrap gap-1.5"> 
                   <span
-                    v-for="src in detailPlugin.sources"
+                    v-for="src in detailPlugin.sources" 
                     :key="src"
-                    class="settings-plugin-tag"
-                  >{{ src }}</span>
-                  <span v-if="detailPlugin.sources.length === 0" class="plugin-detail-value">—</span>
+                    class="settings-plugin-tag" 
+                  >{{ src }}</span> 
+                  <span v-if="detailPlugin.sources.length === 0" class="plugin-detail-value">—</span> 
                 </div>
               </div>
-              <div class="plugin-detail-row">
-                <span class="plugin-detail-label">插件链接</span>
+              <div class="plugin-detail-row"> 
+                <span class="plugin-detail-label">插件链接</span> 
                 <button
-                  type="button"
-                  class="plugin-detail-link"
-                  :title="detailPlugin.filePath || ''"
-                  @click="copyPluginLink"
+                  type="button" 
+                  class="plugin-detail-link" 
+                  :title="detailPlugin.filePath || ''" 
+                  @click="copyPluginLink" 
                 >
-                  <Copy class="h-3.5 w-3.5 shrink-0" />
-                  <span class="truncate">{{ detailPlugin.filePath || '—' }}</span>
+                  <Copy class="h-3.5 w-3.5 shrink-0" /> 
+                  <span class="truncate">{{ detailPlugin.filePath || '—' }}</span> 
                 </button>
               </div>
             </div>
@@ -1809,7 +1809,7 @@ async function saveUserVariables() {
               </div>
               <div class="plugin-detail-user-vars-footer">
                 <button
-                  type="button"
+                  type="button" 
                   class="plugin-detail-var-cancel"
                   :disabled="savingUserVars"
                   @click="closePluginDetail"
@@ -1817,7 +1817,7 @@ async function saveUserVariables() {
                   取消
                 </button>
                 <button
-                  type="button"
+                  type="button" 
                   class="plugin-detail-var-save"
                   :disabled="savingUserVars"
                   @click="saveUserVariables"
@@ -1830,7 +1830,7 @@ async function saveUserVariables() {
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
   </div>
 </template>
@@ -1868,13 +1868,13 @@ async function saveUserVariables() {
 
 .settings-plugin-button--active {
   border-color: rgba(236, 65, 65, 0.5);
-  background: rgba(236, 65, 65, 0.14);
+  background: rgba(236, 65, 65, 0.14); /* 样式 */
   color: #c42f2f;
 }
 
 .settings-plugin-button--active:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.6);
-  background: rgba(236, 65, 65, 0.18);
+  border-color: rgba(236, 65, 65, 0.6); /* 样式 */
+  background: rgba(236, 65, 65, 0.18); /* 样式 */
 }
 
 .settings-plugin-toolbar {
@@ -1972,12 +1972,12 @@ async function saveUserVariables() {
 }
 
 .settings-plugin-icon-button--update-available {
-  background: rgba(236, 65, 65, 0.12);
-  color: #ec4141;
+  background: rgba(236, 65, 65, 0.12); /* 样式 */
+  color: #ec4141; /* 样式 */
 }
 
 .settings-plugin-icon-button--update-available:hover {
-  background: rgba(236, 65, 65, 0.2);
+  background: rgba(236, 65, 65, 0.2); /* 样式 */
   color: #c42f2f;
 }
 
@@ -2012,16 +2012,16 @@ async function saveUserVariables() {
 
 .settings-plugin-dropzone {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: flex; /* 样式 */
+  flex-direction: column; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
   gap: 8px;
   padding: 32px 20px;
   border: 2px dashed rgba(148, 163, 184, 0.35);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.4);
-  cursor: pointer;
+  cursor: pointer; /* 样式 */
   transition:
     border-color 200ms ease,
     background-color 200ms ease,
@@ -2029,26 +2029,26 @@ async function saveUserVariables() {
 }
 
 .settings-plugin-dropzone:hover {
-  border-color: rgba(236, 65, 65, 0.4);
+  border-color: rgba(236, 65, 65, 0.4); /* 样式 */
   background: rgba(236, 65, 65, 0.04);
   transform: translateY(-1px);
 }
 
 .settings-plugin-dropzone--active {
-  border-color: rgba(236, 65, 65, 0.6);
+  border-color: rgba(236, 65, 65, 0.6); /* 样式 */
   background: rgba(236, 65, 65, 0.08);
   transform: scale(1.01);
 }
 
 .settings-plugin-dropzone-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
   width: 56px;
   height: 56px;
-  border-radius: 16px;
+  border-radius: 16px; /* 样式 */
   background: rgba(236, 65, 65, 0.08);
-  color: #ec4141;
+  color: #ec4141; /* 样式 */
   transition: background-color 200ms ease, color 200ms ease;
 }
 
@@ -2058,15 +2058,15 @@ async function saveUserVariables() {
 
 .settings-plugin-dropzone-title {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 600; /* 样式 */
   color: rgba(55, 65, 81, 0.9);
 }
 
 .settings-plugin-dropzone-hint {
-  display: flex;
-  align-items: center;
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
   gap: 5px;
-  font-size: 12px;
+  font-size: 12px; /* 样式 */
   color: rgba(100, 116, 139, 0.8);
 }
 
@@ -2082,11 +2082,11 @@ async function saveUserVariables() {
   align-items: center;
   gap: 16px;
   padding: 14px 16px;
-  border: none;
+  border: none; /* 样式 */
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 0;
   background: transparent;
-  transition: background-color 160ms ease;
+  transition: background-color 160ms ease; /* 样式 */
 }
 
 .settings-plugin-card:last-child {
@@ -2121,7 +2121,7 @@ async function saveUserVariables() {
   cursor: not-allowed; /* 样式 */
 } /* 样式 */
 .settings-plugin-card--dragging { /* 样式 */
-  background: rgba(236, 65, 65, 0.06);
+  background: rgba(236, 65, 65, 0.06); /* 样式 */
 }
 
 .plugin-sort-move {
@@ -2165,7 +2165,7 @@ async function saveUserVariables() {
 }
 
 .settings-plugin-tag--musicfree {
-  background: rgba(249, 115, 22, 0.1);
+  background: rgba(249, 115, 22, 0.1); /* 样式 */
   color: #c2410c;
 }
 
@@ -2175,8 +2175,8 @@ async function saveUserVariables() {
 }
 
 .settings-plugin-tag--vars {
-  display: inline-flex;
-  align-items: center;
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
   flex-shrink: 0;
   white-space: nowrap;
   word-break: keep-all;
@@ -2248,94 +2248,94 @@ async function saveUserVariables() {
     padding: 0 8px; /* 样式 */
   } /* 样式 */
 } /* 样式 */
-.plugin-detail-card {
-  width: min(92vw, 460px);
-  background: #ffffff;
-  color: #1f2937;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+.plugin-detail-card { /* 样式 */
+  width: min(92vw, 460px); /* 样式 */
+  background: #ffffff; /* 样式 */
+  color: #1f2937; /* 样式 */
+  border-radius: 16px; /* 样式 */
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08); /* 样式 */
+  overflow: hidden; /* 样式 */
+  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
-.plugin-detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.plugin-detail-header { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: space-between; /* 样式 */
   gap: 12px;
-  padding: 16px 18px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 16px 18px; /* 样式 */
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
-.plugin-detail-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  color: rgba(75, 85, 99, 0.8);
-  transition: background-color 160ms ease, color 160ms ease;
-  cursor: pointer;
-  flex-shrink: 0;
+.plugin-detail-close { /* 样式 */
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
+  width: 32px; /* 样式 */
+  height: 32px; /* 样式 */
+  border-radius: 999px; /* 样式 */
+  color: rgba(75, 85, 99, 0.8); /* 样式 */
+  transition: background-color 160ms ease, color 160ms ease; /* 样式 */
+  cursor: pointer; /* 样式 */
+  flex-shrink: 0; /* 样式 */
 }
 
-.plugin-detail-close:hover {
-  background: rgba(15, 23, 42, 0.06);
-  color: rgb(17 24 39);
+.plugin-detail-close:hover { /* 样式 */
+  background: rgba(15, 23, 42, 0.06); /* 样式 */
+  color: rgb(17 24 39); /* 样式 */
 }
 
-.plugin-detail-body {
-  padding: 14px 18px 18px;
-  display: flex;
-  flex-direction: column;
+.plugin-detail-body { /* 样式 */
+  padding: 14px 18px 18px; /* 样式 */
+  display: flex; /* 样式 */
+  flex-direction: column; /* 样式 */
   gap: 14px;
 }
 
-.plugin-detail-row {
-  display: flex;
-  align-items: flex-start;
+.plugin-detail-row { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: flex-start; /* 样式 */
   gap: 14px;
 }
 
-.plugin-detail-label {
-  flex-shrink: 0;
-  width: 64px;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(100, 116, 139, 0.9);
-  padding-top: 2px;
+.plugin-detail-label { /* 样式 */
+  flex-shrink: 0; /* 样式 */
+  width: 64px; /* 样式 */
+  font-size: 12px; /* 样式 */
+  font-weight: 600; /* 样式 */
+  color: rgba(100, 116, 139, 0.9); /* 样式 */
+  padding-top: 2px; /* 样式 */
 }
 
-.plugin-detail-value {
-  min-width: 0;
+.plugin-detail-value { /* 样式 */
+  min-width: 0; /* 样式 */
   flex: 1;
-  font-size: 13px;
-  color: #1f2937;
-  line-height: 1.55;
-  word-break: break-word;
+  font-size: 13px; /* 样式 */
+  color: #1f2937; /* 样式 */
+  line-height: 1.55; /* 样式 */
+  word-break: break-word; /* 样式 */
 }
 
-.plugin-detail-link {
-  display: inline-flex;
-  align-items: center;
+.plugin-detail-link { /* 样式 */
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
   gap: 6px;
-  min-width: 0;
+  min-width: 0; /* 样式 */
   flex: 1;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(236, 65, 65, 0.06);
-  color: #ec4141;
-  font-size: 12px;
-  font-weight: 500;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  transition: background-color 160ms ease;
-  cursor: pointer;
-  border: none;
+  padding: 6px 10px; /* 样式 */
+  border-radius: 8px; /* 样式 */
+  background: rgba(236, 65, 65, 0.06); /* 样式 */
+  color: #ec4141; /* 样式 */
+  font-size: 12px; /* 样式 */
+  font-weight: 500; /* 样式 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; /* 样式 */
+  transition: background-color 160ms ease; /* 样式 */
+  cursor: pointer; /* 样式 */
+  border: none; /* 样式 */
 }
 
-.plugin-detail-link:hover {
-  background: rgba(236, 65, 65, 0.12);
+.plugin-detail-link:hover { /* 样式 */
+  background: rgba(236, 65, 65, 0.12); /* 样式 */
 }
 
 .plugin-detail-user-vars {
@@ -2348,33 +2348,33 @@ async function saveUserVariables() {
 }
 
 .plugin-detail-user-vars-header {
-  display: flex;
-  align-items: center;
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
   gap: 8px;
   margin-bottom: 12px;
 }
 
 .plugin-detail-user-vars-body {
-  display: flex;
-  flex-direction: column;
+  display: flex; /* 样式 */
+  flex-direction: column; /* 样式 */
   gap: 12px;
 }
 
 .plugin-detail-var-row {
-  display: flex;
-  flex-direction: column;
+  display: flex; /* 样式 */
+  flex-direction: column; /* 样式 */
   gap: 4px;
 }
 
 .plugin-detail-var-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 12px; /* 样式 */
+  font-weight: 600; /* 样式 */
   color: #374151;
   user-select: none;
 }
 
 .dark .plugin-detail-var-label {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.8); /* 样式 */
 }
 
 .plugin-detail-var-desc {
@@ -2385,7 +2385,7 @@ async function saveUserVariables() {
 }
 
 .dark .plugin-detail-var-desc {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.4); /* 样式 */
 }
 
 .plugin-detail-var-input,
@@ -2394,24 +2394,24 @@ async function saveUserVariables() {
   height: 34px;
   padding: 0 10px;
   border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
+  border-radius: 8px; /* 样式 */
   background: rgba(0, 0, 0, 0.02);
-  font-size: 12px;
-  color: #1f2937;
+  font-size: 12px; /* 样式 */
+  color: #1f2937; /* 样式 */
   outline: none;
   transition: border-color 160ms ease, background-color 160ms ease;
 }
 
 .dark .plugin-detail-var-input,
 .dark .plugin-detail-var-select {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  background: rgba(255, 255, 255, 0.05); /* 样式 */
+  color: rgba(255, 255, 255, 0.9); /* 样式 */
 }
 
 .plugin-detail-var-input:focus,
 .plugin-detail-var-select:focus {
-  border-color: rgba(236, 65, 65, 0.4);
+  border-color: rgba(236, 65, 65, 0.4); /* 样式 */
   background: rgba(236, 65, 65, 0.04);
 }
 
@@ -2422,7 +2422,7 @@ async function saveUserVariables() {
 }
 
 .plugin-detail-user-vars-footer {
-  display: flex;
+  display: flex; /* 样式 */
   justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
@@ -2430,18 +2430,18 @@ async function saveUserVariables() {
 
 .plugin-detail-var-cancel,
 .plugin-detail-var-save {
-  display: inline-flex;
-  align-items: center;
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
   gap: 6px;
   height: 34px;
   padding: 0 16px;
-  border: none;
-  border-radius: 8px;
+  border: none; /* 样式 */
+  border-radius: 8px; /* 样式 */
   background: #EC4141;
   color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
+  font-size: 12px; /* 样式 */
+  font-weight: 600; /* 样式 */
+  cursor: pointer; /* 样式 */
   transition: background-color 160ms ease, opacity 160ms ease;
 }
 
@@ -2452,8 +2452,8 @@ async function saveUserVariables() {
 }
 
 .dark .plugin-detail-var-cancel {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  background: rgba(255, 255, 255, 0.06); /* 样式 */
   color: rgba(255, 255, 255, 0.72);
 }
 
@@ -2462,11 +2462,11 @@ async function saveUserVariables() {
 }
 
 .dark .plugin-detail-var-cancel:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.1); /* 样式 */
 }
 
 .plugin-detail-var-save {
-  border: none;
+  border: none; /* 样式 */
   background: #EC4141;
   color: #fff;
 }
@@ -2481,93 +2481,93 @@ async function saveUserVariables() {
   cursor: not-allowed;
 }
 
-.plugin-detail-enter-active,
-.plugin-detail-leave-active {
-  transition: opacity 0.2s ease;
+.plugin-detail-enter-active, /* 样式 */
+.plugin-detail-leave-active { /* 样式 */
+  transition: opacity 0.2s ease; /* 样式 */
 }
 
-.plugin-detail-enter-active .plugin-detail-card,
-.plugin-detail-leave-active .plugin-detail-card {
-  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+.plugin-detail-enter-active .plugin-detail-card, /* 样式 */
+.plugin-detail-leave-active .plugin-detail-card { /* 样式 */
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); /* 样式 */
 }
 
-.plugin-detail-enter-from,
-.plugin-detail-leave-to {
+.plugin-detail-enter-from, /* 样式 */
+.plugin-detail-leave-to { /* 样式 */
   opacity: 0;
 }
 
-.plugin-detail-enter-from .plugin-detail-card,
-.plugin-detail-leave-to .plugin-detail-card {
+.plugin-detail-enter-from .plugin-detail-card, /* 样式 */
+.plugin-detail-leave-to .plugin-detail-card { /* 样式 */
   opacity: 0;
-  transform: scale(0.92) translateY(8px);
+  transform: scale(0.92) translateY(8px); /* 样式 */
 }
 </style>
 
 <style>
-/* ==================== 暗色模式适配 ==================== */
-.dark .plugin-drag-handle {
-  color: rgba(255, 255, 255, 0.5);
+/* ==================== 暗色模式适配 ==================== */ 
+.dark .plugin-drag-handle { /* 样式 */
+  color: rgba(255, 255, 255, 0.5); /* 样式 */
 }
 
-.dark .plugin-drag-handle:hover {
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.1);
+.dark .plugin-drag-handle:hover { /* 样式 */
+  color: rgba(255, 255, 255, 0.8); /* 样式 */
+  background: rgba(255, 255, 255, 0.1); /* 样式 */
 }
 
-.dark .settings-plugin-card--dragging {
-  background: rgba(236, 65, 65, 0.1);
+.dark .settings-plugin-card--dragging { /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
 }
 
 .dark .settings-plugin-button {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  background: rgba(255, 255, 255, 0.05); /* 样式 */
+  color: rgba(255, 255, 255, 0.85); /* 样式 */
 }
 
 .dark .settings-plugin-button:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.96);
+  border-color: rgba(255, 255, 255, 0.18); /* 样式 */
+  background: rgba(255, 255, 255, 0.09); /* 样式 */
+  color: rgba(255, 255, 255, 0.96); /* 样式 */
 }
 
-.dark .settings-plugin-button--secondary {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.85);
+.dark .settings-plugin-button--secondary { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  background: rgba(255, 255, 255, 0.05); /* 样式 */
+  color: rgba(255, 255, 255, 0.85); /* 样式 */
 }
 
-.dark .settings-plugin-button--secondary:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.96);
+.dark .settings-plugin-button--secondary:hover:not(:disabled) { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.18); /* 样式 */
+  background: rgba(255, 255, 255, 0.09); /* 样式 */
+  color: rgba(255, 255, 255, 0.96); /* 样式 */
 }
 
-.dark .settings-plugin-button--active {
-  border-color: rgba(236, 65, 65, 0.55);
-  background: rgba(236, 65, 65, 0.2);
-  color: #ff8b8b;
+.dark .settings-plugin-button--active { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.55); /* 样式 */
+  background: rgba(236, 65, 65, 0.2); /* 样式 */
+  color: #ff8b8b; /* 样式 */
 }
 
-.dark .settings-plugin-button--active:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.65);
-  background: rgba(236, 65, 65, 0.24);
+.dark .settings-plugin-button--active:hover:not(:disabled) { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.65); /* 样式 */
+  background: rgba(236, 65, 65, 0.24); /* 样式 */
 }
 
-.dark .settings-plugin-button--ghost {
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.65);
+.dark .settings-plugin-button--ghost { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  color: rgba(255, 255, 255, 0.65); /* 样式 */
 }
 
-.dark .settings-plugin-button--ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
+.dark .settings-plugin-button--ghost:hover:not(:disabled) { /* 样式 */
+  background: rgba(255, 255, 255, 0.06); /* 样式 */
+  color: rgba(255, 255, 255, 0.9); /* 样式 */
 }
 
-.dark .settings-plugin-button--disabled,
-.dark .settings-plugin-button:disabled {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.35);
+.dark .settings-plugin-button--disabled, /* 样式 */
+.dark .settings-plugin-button:disabled { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
+  background: rgba(255, 255, 255, 0.04); /* 样式 */
+  color: rgba(255, 255, 255, 0.35); /* 样式 */
 }
 
 .dark .settings-plugin-button--danger {
@@ -2581,68 +2581,68 @@ async function saveUserVariables() {
   background: #c42f2f;
 }
 
-.dark .settings-plugin-input {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.92);
+.dark .settings-plugin-input { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  background: rgba(255, 255, 255, 0.05); /* 样式 */
+  color: rgba(255, 255, 255, 0.92); /* 样式 */
 }
 
-.dark .settings-plugin-input:focus {
-  border-color: rgba(236, 65, 65, 0.4);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
+.dark .settings-plugin-input:focus { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.4); /* 样式 */
+  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14); /* 样式 */
 }
 
-.dark .settings-plugin-inline-panel {
-  border-top-color: rgba(255, 255, 255, 0.08);
+.dark .settings-plugin-inline-panel { /* 样式 */
+  border-top-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
-.dark .settings-plugin-dropzone {
-  border-color: rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.03);
+.dark .settings-plugin-dropzone { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.15); /* 样式 */
+  background: rgba(255, 255, 255, 0.03); /* 样式 */
 }
 
-.dark .settings-plugin-dropzone:hover {
-  border-color: rgba(236, 65, 65, 0.45);
-  background: rgba(236, 65, 65, 0.06);
+.dark .settings-plugin-dropzone:hover { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.45); /* 样式 */
+  background: rgba(236, 65, 65, 0.06); /* 样式 */
 }
 
-.dark .settings-plugin-dropzone--active {
-  border-color: rgba(236, 65, 65, 0.6);
-  background: rgba(236, 65, 65, 0.1);
+.dark .settings-plugin-dropzone--active { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.6); /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
 }
 
-.dark .settings-plugin-dropzone-icon {
-  background: rgba(236, 65, 65, 0.14);
-  color: #ff6b6b;
+.dark .settings-plugin-dropzone-icon { /* 样式 */
+  background: rgba(236, 65, 65, 0.14); /* 样式 */
+  color: #ff6b6b; /* 样式 */
 }
 
-.dark .settings-plugin-dropzone--active .settings-plugin-dropzone-icon {
-  background: rgba(236, 65, 65, 0.22);
+.dark .settings-plugin-dropzone--active .settings-plugin-dropzone-icon { /* 样式 */
+  background: rgba(236, 65, 65, 0.22); /* 样式 */
 }
 
-.dark .settings-plugin-dropzone-title {
-  color: rgba(255, 255, 255, 0.9);
+.dark .settings-plugin-dropzone-title { /* 样式 */
+  color: rgba(255, 255, 255, 0.9); /* 样式 */
 }
 
-.dark .settings-plugin-dropzone-hint {
-  color: rgba(255, 255, 255, 0.45);
+.dark .settings-plugin-dropzone-hint { /* 样式 */
+  color: rgba(255, 255, 255, 0.45); /* 样式 */
 }
 
-.dark .settings-plugin-empty {
-  color: rgba(255, 255, 255, 0.4);
+.dark .settings-plugin-empty { /* 样式 */
+  color: rgba(255, 255, 255, 0.4); /* 样式 */
 }
 
-.dark .settings-plugin-card {
+.dark .settings-plugin-card { /* 样式 */
   border-bottom-color: rgba(255, 255, 255, 0.06);
 }
 
-.dark .settings-plugin-card:hover {
-  background: rgba(255, 255, 255, 0.05);
+.dark .settings-plugin-card:hover { /* 样式 */
+  background: rgba(255, 255, 255, 0.05); /* 样式 */
 }
 
-.dark .settings-plugin-tag {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+.dark .settings-plugin-tag { /* 样式 */
+  background: rgba(255, 255, 255, 0.08); /* 样式 */
+  color: rgba(255, 255, 255, 0.8); /* 样式 */
 }
 
 .dark .settings-plugin-tag--lx {
@@ -2665,9 +2665,9 @@ async function saveUserVariables() {
   color: #fdba74;
 }
 
-.dark .settings-plugin-tag--accent {
-  background: rgba(236, 65, 65, 0.18);
-  color: #ff8b8b;
+.dark .settings-plugin-tag--accent { /* 样式 */
+  background: rgba(236, 65, 65, 0.18); /* 样式 */
+  color: #ff8b8b; /* 样式 */
 }
 
 .dark .settings-plugin-tag--vars {
@@ -2680,74 +2680,74 @@ async function saveUserVariables() {
   color: #f0b25a;
 }
 
-.dark .settings-plugin-icon-button {
-  color: rgba(255, 255, 255, 0.85);
+.dark .settings-plugin-icon-button { /* 样式 */
+  color: rgba(255, 255, 255, 0.85); /* 样式 */
 }
 
-.dark .settings-plugin-icon-button:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 1);
+.dark .settings-plugin-icon-button:hover { /* 样式 */
+  background: rgba(255, 255, 255, 0.12); /* 样式 */
+  color: rgba(255, 255, 255, 1); /* 样式 */
 }
 
-.dark .settings-plugin-icon-button--danger:hover {
-  background: rgba(220, 38, 38, 0.18);
-  color: #ff6b6b;
+.dark .settings-plugin-icon-button--danger:hover { /* 样式 */
+  background: rgba(220, 38, 38, 0.18); /* 样式 */
+  color: #ff6b6b; /* 样式 */
 }
 
-.dark .settings-plugin-icon-button--update-available {
-  background: rgba(236, 65, 65, 0.2);
-  color: #ff8b8b;
+.dark .settings-plugin-icon-button--update-available { /* 样式 */
+  background: rgba(236, 65, 65, 0.2); /* 样式 */
+  color: #ff8b8b; /* 样式 */
 }
 
-.dark .settings-plugin-icon-button--update-available:hover {
-  background: rgba(236, 65, 65, 0.28);
-  color: #ffa6a6;
+.dark .settings-plugin-icon-button--update-available:hover { /* 样式 */
+  background: rgba(236, 65, 65, 0.28); /* 样式 */
+  color: #ffa6a6; /* 样式 */
 }
 
-.dark .settings-plugin-import-btn {
-  border-color: rgba(249, 115, 22, 0.2);
-  background: rgba(249, 115, 22, 0.1);
-  color: rgb(251, 146, 60);
+.dark .settings-plugin-import-btn { /* 样式 */
+  border-color: rgba(249, 115, 22, 0.2); /* 样式 */
+  background: rgba(249, 115, 22, 0.1); /* 样式 */
+  color: rgb(251, 146, 60); /* 样式 */
 }
 
-.dark .settings-plugin-import-btn:hover {
-  border-color: rgba(249, 115, 22, 0.36);
-  background: rgba(249, 115, 22, 0.16);
+.dark .settings-plugin-import-btn:hover { /* 样式 */
+  border-color: rgba(249, 115, 22, 0.36); /* 样式 */
+  background: rgba(249, 115, 22, 0.16); /* 样式 */
 }
 
-.dark .plugin-detail-card {
+.dark .plugin-detail-card { /* 样式 */
   background: #262626;
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92); /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
-.dark .plugin-detail-header {
-  border-bottom-color: rgba(255, 255, 255, 0.08);
+.dark .plugin-detail-header { /* 样式 */
+  border-bottom-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
-.dark .plugin-detail-close {
-  color: rgba(255, 255, 255, 0.7);
+.dark .plugin-detail-close { /* 样式 */
+  color: rgba(255, 255, 255, 0.7); /* 样式 */
 }
 
-.dark .plugin-detail-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.96);
+.dark .plugin-detail-close:hover { /* 样式 */
+  background: rgba(255, 255, 255, 0.08); /* 样式 */
+  color: rgba(255, 255, 255, 0.96); /* 样式 */
 }
 
-.dark .plugin-detail-label {
-  color: rgba(255, 255, 255, 0.5);
+.dark .plugin-detail-label { /* 样式 */
+  color: rgba(255, 255, 255, 0.5); /* 样式 */
 }
 
-.dark .plugin-detail-value {
-  color: rgba(255, 255, 255, 0.88);
+.dark .plugin-detail-value { /* 样式 */
+  color: rgba(255, 255, 255, 0.88); /* 样式 */
 }
 
-.dark .plugin-detail-link {
-  background: rgba(236, 65, 65, 0.14);
-  color: #ff8b8b;
+.dark .plugin-detail-link { /* 样式 */
+  background: rgba(236, 65, 65, 0.14); /* 样式 */
+  color: #ff8b8b; /* 样式 */
 }
 
-.dark .plugin-detail-link:hover {
-  background: rgba(236, 65, 65, 0.22);
+.dark .plugin-detail-link:hover { /* 样式 */
+  background: rgba(236, 65, 65, 0.22); /* 样式 */
 }
 </style>

@@ -85,7 +85,7 @@ const baseOptions = {
   keepSourceFilename: false,
   overwriteExisting: true,
   downloadLyrics: false,
-  downloadCover: false,
+  downloadCover: false, // 实现
   lyricsFormat: 'lrc' as const,
 };
 

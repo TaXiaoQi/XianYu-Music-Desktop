@@ -1,31 +1,31 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
 
-import { useAuthStore } from '../../features/auth/store';
-import { useSettingsStore } from '../../features/settings/store';
-import { useToast } from '../../composables/toast';
+import { useAuthStore } from '../../features/auth/store'; // 实现
+import { useSettingsStore } from '../../features/settings/store'; // 实现
+import { useToast } from '../../composables/toast'; // 实现
 import { usePlaylistSync } from '../../composables/usePlaylistSync'; // 实现
 import { showChangePasswordDialog } from '../../composables/useChangePasswordDialog';
 import { showDeleteAccountDialog } from '../../composables/useDeleteAccountDialog';
 import { logout } from '../../services/auth/authService';
 import {
-  DEFAULT_AUTH_BASE_URL,
+  DEFAULT_AUTH_BASE_URL, // 实现
   getAuthApiSecret,
-  getAuthBaseUrl,
+  getAuthBaseUrl, // 实现
   setAuthApiSecret,
-  setAuthBaseUrl,
-} from '../../services/auth/authService';
+  setAuthBaseUrl, // 实现
+} from '../../services/auth/authService'; // 实现
 import SettingHint from './SettingHint.vue';
 
-const authStore = useAuthStore();
-const settingsStore = useSettingsStore();
-const { showToast } = useToast();
+const authStore = useAuthStore(); // 实现
+const settingsStore = useSettingsStore(); // 实现
+const { showToast } = useToast(); // 实现
 const playlistSync = usePlaylistSync(); // 实现
 
 const pad = (n: number) => n.toString().padStart(2, '0');
 
-const draftBaseUrl = ref(getAuthBaseUrl());
+const draftBaseUrl = ref(getAuthBaseUrl()); // 实现
 const draftApiSecret = ref(getAuthApiSecret() ?? '');
 const pwdVisible = reactive<Record<string, boolean>>({});
 
@@ -36,15 +36,15 @@ const isDirty = computed(() =>
 );
 
 watch(
-  () => authStore.baseUrl,
-  (value) => {
-    draftBaseUrl.value = value;
+  () => authStore.baseUrl, // 实现
+  (value) => { // 实现
+    draftBaseUrl.value = value; // 实现
   },
 );
 
 watch(
   () => authStore.apiSecret,
-  (value) => {
+  (value) => { // 实现
     draftApiSecret.value = value ?? '';
   },
 );
@@ -61,7 +61,7 @@ watch( // 实现
   }, // 实现
 ); // 实现
 async function handleSaveBaseUrl() {
-  const next = draftBaseUrl.value.trim();
+  const next = draftBaseUrl.value.trim(); // 实现
   const nextSecret = draftApiSecret.value.trim();
   try {
     await setAuthBaseUrl(next);
@@ -73,7 +73,7 @@ async function handleSaveBaseUrl() {
 }
 
 async function handleResetBaseUrl() {
-  draftBaseUrl.value = DEFAULT_AUTH_BASE_URL;
+  draftBaseUrl.value = DEFAULT_AUTH_BASE_URL; // 实现
   draftApiSecret.value = '';
   try {
     await setAuthBaseUrl(DEFAULT_AUTH_BASE_URL);
@@ -84,21 +84,21 @@ async function handleResetBaseUrl() {
   }
 }
 
-const showLogoutConfirm = ref(false);
+const showLogoutConfirm = ref(false); // 实现
 
-function handleLogout() {
-  showLogoutConfirm.value = true;
+function handleLogout() { // 实现
+  showLogoutConfirm.value = true; // 实现
 }
 
 async function confirmLogout() {
-  showLogoutConfirm.value = false;
+  showLogoutConfirm.value = false; // 实现
   try {
     await logout();
   } catch {
     // 忽略登出接口异常，本地登出照常执行
   }
-  authStore.reset();
-  showToast('已退出登录', 'info');
+  authStore.reset(); // 实现
+  showToast('已退出登录', 'info'); // 实现
 }
 
 function handleChangePassword() {
@@ -109,18 +109,18 @@ function handleDeleteAccount() {
   void showDeleteAccountDialog();
 }
 
-const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; label: string; desc: string }> = [
-  { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' },
+const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; label: string; desc: string }> = [ // 实现
+  { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' }, // 实现
   { key: 'favorites', label: '收藏', desc: '同步我的收藏歌曲' },
-  { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' },
+  { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' }, // 实现
   { key: 'settings', label: '本地设置', desc: '同步播放设置、歌词设置、快捷键等偏好配置' }, // 实现
 ];
 
-function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
-  settingsStore.patchSettings({
+function toggleUpload(key: keyof typeof settingsStore.settings.upload) { // 实现
+  settingsStore.patchSettings({ // 实现
     upload: {
-      ...settingsStore.settings.upload,
-      [key]: !settingsStore.settings.upload[key],
+      ...settingsStore.settings.upload, // 实现
+      [key]: !settingsStore.settings.upload[key], // 实现
     },
   });
 }
@@ -241,73 +241,73 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
 </script>
 
 <template>
-  <div class="w-full space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <section class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+  <div class="w-full space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300"> 
+    <section class="space-y-3"> 
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"> 
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span> 
         账号状态
       </h2>
-      <div class="flex items-center justify-between gap-4 flex-wrap">
-        <div class="flex items-center gap-3 min-w-0">
+      <div class="flex items-center justify-between gap-4 flex-wrap"> 
+        <div class="flex items-center gap-3 min-w-0"> 
           <div
-            class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-sm font-black"
+            class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-sm font-black" 
           >
             <img
-              v-if="authStore.isLoggedIn && authStore.user?.avatar"
-              :src="authStore.user.avatar"
+              v-if="authStore.isLoggedIn && authStore.user?.avatar" 
+              :src="authStore.user.avatar" 
               alt=""
-              class="h-full w-full object-cover"
+              class="h-full w-full object-cover" 
             />
-            <span v-else-if="authStore.isLoggedIn">
-              {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}
+            <span v-else-if="authStore.isLoggedIn"> 
+              {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }} 
             </span>
             <svg
               v-else
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
+              xmlns="http://www.w3.org/2000/svg" 
+              class="h-5 w-5" 
               fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
+              viewBox="0 0 24 24" 
+              stroke="currentColor" 
+              stroke-width="2" 
             >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /> 
             </svg>
           </div>
-          <div class="min-w-0">
-            <div class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
-              <template v-if="authStore.isLoggedIn">
-                {{ authStore.user?.nickname || authStore.user?.username }}
+          <div class="min-w-0"> 
+            <div class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate"> 
+              <template v-if="authStore.isLoggedIn"> 
+                {{ authStore.user?.nickname || authStore.user?.username }} 
               </template>
-              <template v-else>未登录</template>
+              <template v-else>未登录</template> 
             </div>
-            <div class="text-xs text-gray-500 dark:text-white/50 truncate mt-0.5">
-              <template v-if="authStore.isLoggedIn">
+            <div class="text-xs text-gray-500 dark:text-white/50 truncate mt-0.5"> 
+              <template v-if="authStore.isLoggedIn"> 
                 {{ authStore.user?.ciyuanxi_id ? `弦予号：${authStore.user.ciyuanxi_id}` : authStore.user?.email || '未设置' }}
               </template>
-              <template v-else>登录后可同步个人资料到云端服务器</template>
+              <template v-else>登录后可同步个人资料到云端服务器</template> 
             </div>
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0 flex-wrap">
           <button
-            v-if="authStore.isLoggedIn"
-            type="button"
+            v-if="authStore.isLoggedIn" 
+            type="button" 
             class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer"
             @click="handleChangePassword"
           >
             修改密码
           </button>
           <button
-            v-if="authStore.isLoggedIn"
-            type="button"
+            v-if="authStore.isLoggedIn" 
+            type="button" 
             class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer"
-            @click="handleLogout"
+            @click="handleLogout" 
           >
             退出登录
           </button>
           <button
-            v-if="authStore.isLoggedIn"
-            type="button"
+            v-if="authStore.isLoggedIn" 
+            type="button" 
             class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer"
             @click="handleDeleteAccount"
           >
@@ -317,7 +317,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
@@ -363,24 +363,24 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
       </div>
       <div class="flex items-stretch gap-2 flex-wrap">
         <button
-          type="button"
-          class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          :disabled="!isDirty"
-          @click="handleSaveBaseUrl"
+          type="button" 
+          class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
+          :disabled="!isDirty" 
+          @click="handleSaveBaseUrl" 
         >
           保存
         </button>
         <button
-          type="button"
-          class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer"
-          @click="handleResetBaseUrl"
+          type="button" 
+          class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer" 
+          @click="handleResetBaseUrl" 
         >
           恢复默认
         </button>
       </div>
     </section>
 
-    <section class="space-y-3">
+    <section class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
@@ -391,11 +391,11 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div
           v-for="item in uploadItems"
-          :key="item.key"
+          :key="item.key" 
           class="flex items-center justify-between gap-4 p-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
         >
-          <div class="upload-copy">
-            <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div>
+          <div class="upload-copy"> 
+            <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div> 
           </div>
           <div class="flex items-center gap-3">
             <SettingHint :text="item.desc" />
@@ -437,7 +437,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <button
-                type="button"
+                type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.syncing.value"
                 @click="playlistSync.uploadOnly()"
@@ -448,7 +448,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 同步至服务器
               </button>
               <button
-                type="button"
+                type="button" 
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.syncing.value"
                 @click="playlistSync.downloadOnly()"
@@ -479,7 +479,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <button
-                type="button"
+                type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.pluginSyncing.value"
                 @click="playlistSync.uploadPluginsOnly()"
@@ -490,7 +490,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 同步至服务器
               </button>
               <button
-                type="button"
+                type="button" 
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.pluginSyncing.value"
                 @click="playlistSync.downloadPluginsOnly()"
@@ -521,7 +521,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <button
-                type="button"
+                type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.settingsSyncing.value"
                 @click="playlistSync.uploadSettingsOnly()"
@@ -532,7 +532,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 同步至服务器
               </button>
               <button
-                type="button"
+                type="button" 
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.settingsSyncing.value"
                 @click="playlistSync.downloadSettingsOnly()"
@@ -564,7 +564,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <button
-                type="button"
+                type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.favoritesSyncing.value"
                 @click="playlistSync.uploadFavoritesOnly()"
@@ -575,7 +575,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 同步至服务器
               </button>
               <button
-                type="button"
+                type="button" 
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.favoritesSyncing.value"
                 @click="playlistSync.downloadFavoritesOnly()"
@@ -663,48 +663,48 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
         </template>
       </div> 
     </section> 
-    <Teleport to="body">
-      <Transition name="logout-modal">
+    <Teleport to="body"> 
+      <Transition name="logout-modal"> 
         <div
-          v-if="showLogoutConfirm"
-          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          @click.self="showLogoutConfirm = false"
+          v-if="showLogoutConfirm" 
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
+          @click.self="showLogoutConfirm = false" 
         >
-          <div class="logout-confirm-card">
-            <div class="logout-confirm-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          <div class="logout-confirm-card"> 
+            <div class="logout-confirm-icon"> 
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /> 
               </svg>
             </div>
-            <h3 class="logout-confirm-title">退出登录</h3>
-            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p>
-            <div class="logout-confirm-actions">
+            <h3 class="logout-confirm-title">退出登录</h3> 
+            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p> 
+            <div class="logout-confirm-actions"> 
               <button
-                type="button"
-                class="logout-btn logout-btn--ghost"
-                @click="showLogoutConfirm = false"
+                type="button" 
+                class="logout-btn logout-btn--ghost" 
+                @click="showLogoutConfirm = false" 
               >
                 取消
               </button>
               <button
-                type="button"
-                class="logout-btn logout-btn--danger"
-                @click="confirmLogout"
+                type="button" 
+                class="logout-btn logout-btn--danger" 
+                @click="confirmLogout" 
               >
                 确认退出
               </button>
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 .manual-sync-head {
-  display: flex;
-  align-items: center;
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
   justify-content: space-between;
   gap: 12px;
   width: 100%;
@@ -712,12 +712,12 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
 
 .manual-sync-head > .upload-copy {
   flex: 1 1 0%;
-  min-width: 0;
+  min-width: 0; /* 样式 */
 }
 
 .manual-sync-sub {
-  font-size: 0.72rem;
-  line-height: 1.4;
+  font-size: 0.72rem; /* 样式 */
+  line-height: 1.4; /* 样式 */
   margin-top: 2px;
 }
 
@@ -727,51 +727,51 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
   margin-top: 4px;
 }
 
-.upload-copy {
-  min-width: 0;
+.upload-copy { /* 样式 */
+  min-width: 0; /* 样式 */
 }
 
-.upload-label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  margin-bottom: 2px;
+.upload-label { /* 样式 */
+  font-size: 0.875rem; /* 样式 */
+  font-weight: 600; /* 样式 */
+  margin-bottom: 2px; /* 样式 */
 }
 
-.upload-desc {
-  font-size: 0.72rem;
-  line-height: 1.4;
+.upload-desc { /* 样式 */
+  font-size: 0.72rem; /* 样式 */
+  line-height: 1.4; /* 样式 */
 }
 
-.upload-switch {
-  position: relative;
+.upload-switch { /* 样式 */
+  position: relative; /* 样式 */
   width: 44px;
   height: 24px;
-  border-radius: 9999px;
-  background: rgba(0, 0, 0, 0.25);
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
+  border-radius: 9999px; /* 样式 */
+  background: rgba(0, 0, 0, 0.25); /* 样式 */
+  border: none; /* 样式 */
+  cursor: pointer; /* 样式 */
+  flex-shrink: 0; /* 样式 */
   padding: 0;
-  transition: background 0.25s ease;
+  transition: background 0.25s ease; /* 样式 */
 }
 
-.upload-switch.is-on {
-  background: #EC4141;
+.upload-switch.is-on { /* 样式 */
+  background: #EC4141; /* 样式 */
 }
 
-.upload-switch-thumb {
-  position: absolute;
+.upload-switch-thumb { /* 样式 */
+  position: absolute; /* 样式 */
   top: 4px;
   left: 2px;
   width: 16px;
   height: 16px;
-  border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 9999px; /* 样式 */
+  background: #ffffff; /* 样式 */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); /* 样式 */
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); /* 样式 */
 }
 
-.upload-switch.is-on .upload-switch-thumb {
+.upload-switch.is-on .upload-switch-thumb { /* 样式 */
   transform: translateX(24px);
 }
 
@@ -824,99 +824,99 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
   font-size: 0.72rem; /* 样式 */
   line-height: 1.5; /* 样式 */
 } /* 样式 */
-.logout-confirm-card {
-  width: min(86vw, 360px);
+.logout-confirm-card { /* 样式 */
+  width: min(86vw, 360px); /* 样式 */
   background: rgba(255, 255, 255, 0.8);
-  color: #1f2937;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
-  padding: 24px 22px 20px;
-  text-align: center;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #1f2937; /* 样式 */
+  border-radius: 16px; /* 样式 */
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08); /* 样式 */
+  padding: 24px 22px 20px; /* 样式 */
+  text-align: center; /* 样式 */
+  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
-.logout-confirm-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  background: rgba(236, 65, 65, 0.1);
-  color: #EC4141;
-  margin: 0 auto 14px;
+.logout-confirm-icon { /* 样式 */
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
+  width: 48px; /* 样式 */
+  height: 48px; /* 样式 */
+  border-radius: 999px; /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
+  color: #EC4141; /* 样式 */
+  margin: 0 auto 14px; /* 样式 */
 }
 
-.logout-confirm-title {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #1f2937;
-  margin: 0 0 8px;
+.logout-confirm-title { /* 样式 */
+  font-size: 1.05rem; /* 样式 */
+  font-weight: 700; /* 样式 */
+  color: #1f2937; /* 样式 */
+  margin: 0 0 8px; /* 样式 */
 }
 
-.logout-confirm-desc {
-  font-size: 0.85rem;
-  line-height: 1.55;
-  color: rgba(75, 85, 99, 0.9);
-  margin: 0 0 20px;
+.logout-confirm-desc { /* 样式 */
+  font-size: 0.85rem; /* 样式 */
+  line-height: 1.55; /* 样式 */
+  color: rgba(75, 85, 99, 0.9); /* 样式 */
+  margin: 0 0 20px; /* 样式 */
 }
 
-.logout-confirm-actions {
-  display: flex;
+.logout-confirm-actions { /* 样式 */
+  display: flex; /* 样式 */
   gap: 10px;
-  justify-content: center;
+  justify-content: center; /* 样式 */
 }
 
-.logout-btn {
+.logout-btn { /* 样式 */
   flex: 1;
-  height: 38px;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
-  border: 1px solid transparent;
+  height: 38px; /* 样式 */
+  border-radius: 999px; /* 样式 */
+  font-size: 0.85rem; /* 样式 */
+  font-weight: 600; /* 样式 */
+  cursor: pointer; /* 样式 */
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease; /* 样式 */
+  border: 1px solid transparent; /* 样式 */
 }
 
-.logout-btn--ghost {
-  border-color: rgba(148, 163, 184, 0.24);
-  background: transparent;
-  color: rgba(100, 116, 139, 0.9);
+.logout-btn--ghost { /* 样式 */
+  border-color: rgba(148, 163, 184, 0.24); /* 样式 */
+  background: transparent; /* 样式 */
+  color: rgba(100, 116, 139, 0.9); /* 样式 */
 }
 
-.logout-btn--ghost:hover {
-  background: rgba(15, 23, 42, 0.04);
-  color: rgb(31 41 55);
+.logout-btn--ghost:hover { /* 样式 */
+  background: rgba(15, 23, 42, 0.04); /* 样式 */
+  color: rgb(31 41 55); /* 样式 */
 }
 
-.logout-btn--danger {
-  background: #EC4141;
-  color: #ffffff;
+.logout-btn--danger { /* 样式 */
+  background: #EC4141; /* 样式 */
+  color: #ffffff; /* 样式 */
 }
 
-.logout-btn--danger:hover {
-  background: #d13b3b;
+.logout-btn--danger:hover { /* 样式 */
+  background: #d13b3b; /* 样式 */
 }
 
-.logout-modal-enter-active,
-.logout-modal-leave-active {
-  transition: opacity 0.2s ease;
+.logout-modal-enter-active, /* 样式 */
+.logout-modal-leave-active { /* 样式 */
+  transition: opacity 0.2s ease; /* 样式 */
 }
 
-.logout-modal-enter-active .logout-confirm-card,
-.logout-modal-leave-active .logout-confirm-card {
-  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+.logout-modal-enter-active .logout-confirm-card, /* 样式 */
+.logout-modal-leave-active .logout-confirm-card { /* 样式 */
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); /* 样式 */
 }
 
-.logout-modal-enter-from,
-.logout-modal-leave-to {
+.logout-modal-enter-from, /* 样式 */
+.logout-modal-leave-to { /* 样式 */
   opacity: 0;
 }
 
-.logout-modal-enter-from .logout-confirm-card,
-.logout-modal-leave-to .logout-confirm-card {
+.logout-modal-enter-from .logout-confirm-card, /* 样式 */
+.logout-modal-leave-to .logout-confirm-card { /* 样式 */
   opacity: 0;
-  transform: scale(0.92) translateY(8px);
+  transform: scale(0.92) translateY(8px); /* 样式 */
 }
 
 </style>
@@ -941,30 +941,30 @@ html.dark .sync-notice {
 
 html.dark .logout-confirm-card {
   background: rgba(17, 24, 39, 0.9);
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92); /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
 html.dark .logout-confirm-icon {
-  background: rgba(236, 65, 65, 0.18);
-  color: #ff8b8b;
+  background: rgba(236, 65, 65, 0.18); /* 样式 */
+  color: #ff8b8b; /* 样式 */
 }
 
 html.dark .logout-confirm-title {
-  color: rgba(255, 255, 255, 0.96);
+  color: rgba(255, 255, 255, 0.96); /* 样式 */
 }
 
 html.dark .logout-confirm-desc {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.6); /* 样式 */
 }
 
 html.dark .logout-btn--ghost {
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.12); /* 样式 */
+  color: rgba(255, 255, 255, 0.7); /* 样式 */
 }
 
 html.dark .logout-btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.06); /* 样式 */
+  color: rgba(255, 255, 255, 0.96); /* 样式 */
 }
 </style>

@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
+import { describe, expect, it, vi } from 'vitest'; // 实现
+import { ref } from 'vue'; // 实现
 
-import { useDesktopLyricsDisplay } from './useDesktopLyricsDisplay';
-import type { DesktopLyricsStatePayload } from '../features/desktopLyrics/shared';
+import { useDesktopLyricsDisplay } from './useDesktopLyricsDisplay'; // 实现
+import type { DesktopLyricsStatePayload } from '../features/desktopLyrics/shared'; // 实现
 
 vi.mock('@tauri-apps/api/event', () => ({ emitTo: vi.fn() }));
 
@@ -57,15 +57,15 @@ function buildStatePayload(wordEffectOn = true, overrides: Partial<DesktopLyrics
   return {
     song: null,
     parsedLyrics: [ENGLISH_TIMED_LINE],
-    lyricsStatus: 'ready',
-    fallbackText: 'Instrumental / No lyrics',
-    playbackTime: 2,
-    syncedAt: Date.now(),
-    isPlaying: false,
+    lyricsStatus: 'ready', // 实现
+    fallbackText: 'Instrumental / No lyrics', // 实现
+    playbackTime: 2, // 实现
+    syncedAt: Date.now(), // 实现
+    isPlaying: false, // 实现
     isFavorite: false,
-    audioDelay: 0,
-    themeColors: [],
-    customLyricsFonts: [],
+    audioDelay: 0, // 实现
+    themeColors: [], // 实现
+    customLyricsFonts: [], // 实现
     settings: {
       showTranslation: true, showRomaji: false, isAlwaysOnTop: false, alwaysShowShadowBackground: false,
       autoHideWhenFullscreen: true, autoHideWhenPaused: false, showDoubleLine: false, enableWordEffect: wordEffectOn,
@@ -167,11 +167,11 @@ describe('useDesktopLyricsDisplay 桌面歌词显示逻辑', () => {
       const view = freshDisplay();
 
       view.handlePayload(patchStateSettings({
-        textOpacity: 0.82,
-        textShadowColor: '#112233',
+        textOpacity: 0.82, // 实现
+        textShadowColor: '#112233', // 实现
         enableTextOutline: true,
-        firstLineTextShadowStrength: 25,
-        secondLineTextShadowStrength: 75,
+        firstLineTextShadowStrength: 25, // 实现
+        secondLineTextShadowStrength: 75, // 实现
       }));
 
       expect(view.widgetStyle.value).toMatchObject({

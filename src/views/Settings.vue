@@ -1,7 +1,7 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, defineAsyncComponent, h, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch, type Component } from 'vue';
-import { Search, X } from 'lucide-vue-next';
-import { useRoute, useRouter } from 'vue-router';
+import { Search, X } from 'lucide-vue-next'; // 实现
+import { useRoute, useRouter } from 'vue-router'; // 实现
 
 const settingsLoaders = {
   about: () => import("../components/settings/SettingsAbout.vue").then(m => m.default),
@@ -63,34 +63,34 @@ const SettingsNetwork = lazySettings(settingsLoaders.network);
 const SettingsAdvanced = lazySettings(settingsLoaders.advanced);
 const SettingsLinkage = lazySettings(settingsLoaders.linkage);
 const SettingsFeedback = lazySettings(settingsLoaders.feedback);
-import { useDeveloperMode } from '../features/settings/developerMode';
+import { useDeveloperMode } from '../features/settings/developerMode'; // 实现
 import {
-  searchSettings,
-  type SettingsSearchItem,
-  type SettingsTabId,
-} from '../features/settings/searchIndex';
+  searchSettings, // 实现
+  type SettingsSearchItem, // 实现
+  type SettingsTabId, // 实现
+} from '../features/settings/searchIndex'; // 实现
 import { clamp } from '../utils/math';
-import { useI18n } from '../features/i18n';
+import { useI18n } from '../features/i18n'; // 实现
 
-type SettingsViewTabId = SettingsTabId | 'debug';
+type SettingsViewTabId = SettingsTabId | 'debug'; // 实现
 
 const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'sleepTimer', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'network', 'advanced', 'linkage', 'feedback', 'debug', 'about'];
 
-const route = useRoute();
-const router = useRouter();
-const { isDeveloperMode } = useDeveloperMode();
-const { t } = useI18n();
+const route = useRoute(); // 实现
+const router = useRouter(); // 实现
+const { isDeveloperMode } = useDeveloperMode(); // 实现
+const { t } = useI18n(); // 实现
 
-const canOpenTab = (tab: string): tab is SettingsViewTabId => (
-  VALID_TABS.includes(tab as SettingsViewTabId) && (tab !== 'debug' || isDeveloperMode.value)
+const canOpenTab = (tab: string): tab is SettingsViewTabId => ( // 实现
+  VALID_TABS.includes(tab as SettingsViewTabId) && (tab !== 'debug' || isDeveloperMode.value) // 实现
 );
 
-const initialTab = (() => {
-  const q = route.query.tab as string | undefined;
-  return (q && canOpenTab(q)) ? q : 'general';
+const initialTab = (() => { // 实现
+  const q = route.query.tab as string | undefined; // 实现
+  return (q && canOpenTab(q)) ? q : 'general'; // 实现
 })();
 
-const activeTab = ref<SettingsViewTabId>(initialTab);
+const activeTab = ref<SettingsViewTabId>(initialTab); // 实现
 
 const tabRenderError = ref<Error | null>(null);
 onErrorCaptured((error) => {
@@ -99,10 +99,10 @@ onErrorCaptured((error) => {
 });
 const mainRef = ref<HTMLElement | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
-const settingsQuery = ref('');
-const activeSearchResultIndex = ref(0);
-const searchResults = computed(() => searchSettings(settingsQuery.value));
-let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+const settingsQuery = ref(''); // 实现
+const activeSearchResultIndex = ref(0); // 实现
+const searchResults = computed(() => searchSettings(settingsQuery.value)); // 实现
+let highlightTimer: ReturnType<typeof setTimeout> | null = null; // 实现
 
 // --- 侧边栏拖拽调整宽度逻辑 ---
 const STORAGE_KEY_SIDEBAR_WIDTH = 'settings_sidebar_width';
@@ -165,25 +165,25 @@ const resetSidebarWidth = () => {
 };
 
 let pushedTab: SettingsViewTabId = initialTab;
-watch(() => route.query.tab, (q) => {
-  const next = (q as string | undefined) ?? '';
+watch(() => route.query.tab, (q) => { // 实现
+  const next = (q as string | undefined) ?? ''; // 实现
   if (next && canOpenTab(next) && next !== pushedTab) {
     pushedTab = next;
-    activeTab.value = next;
+    activeTab.value = next; // 实现
   }
 });
 
-watch(activeTab, (t) => {
+watch(activeTab, (t) => { // 实现
   tabRenderError.value = null;
   if (pushedTab !== t) {
     pushedTab = t;
-    void router.replace({ query: { ...route.query, tab: t } });
+    void router.replace({ query: { ...route.query, tab: t } }); // 实现
   }
 });
 
-watch(isDeveloperMode, (enabled) => {
-  if (!enabled && activeTab.value === 'debug') {
-    activeTab.value = 'about';
+watch(isDeveloperMode, (enabled) => { // 实现
+  if (!enabled && activeTab.value === 'debug') { // 实现
+    activeTab.value = 'about'; // 实现
   }
 });
 
@@ -210,97 +210,97 @@ const waitForTabEnter = (): Promise<void> => {
   });
 };
 
-watch(settingsQuery, () => {
-  activeSearchResultIndex.value = 0;
+watch(settingsQuery, () => { // 实现
+  activeSearchResultIndex.value = 0; // 实现
 });
 
-const normalizeElementText = (element: Element) => (
-  element.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+const normalizeElementText = (element: Element) => ( // 实现
+  element.textContent?.replace(/\s+/g, ' ').trim() ?? '' // 实现
 );
 
-const findSearchTarget = (targetText: string): HTMLElement | null => {
-  const root = contentRef.value;
-  if (!root) return null;
+const findSearchTarget = (targetText: string): HTMLElement | null => { // 实现
+  const root = contentRef.value; // 实现
+  if (!root) return null; // 实现
 
-  const normalizedTarget = targetText.replace(/\s+/g, ' ').trim();
-  const candidates = Array.from(root.querySelectorAll<HTMLElement>('*'))
-    .map(element => ({ element, text: normalizeElementText(element) }))
-    .filter(candidate => candidate.text.includes(normalizedTarget));
+  const normalizedTarget = targetText.replace(/\s+/g, ' ').trim(); // 实现
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>('*')) // 实现
+    .map(element => ({ element, text: normalizeElementText(element) })) // 实现
+    .filter(candidate => candidate.text.includes(normalizedTarget)); // 实现
 
-  candidates.sort((a, b) => {
-    const exactDifference = Number(a.text !== normalizedTarget) - Number(b.text !== normalizedTarget);
-    return exactDifference || a.text.length - b.text.length;
+  candidates.sort((a, b) => { // 实现
+    const exactDifference = Number(a.text !== normalizedTarget) - Number(b.text !== normalizedTarget); // 实现
+    return exactDifference || a.text.length - b.text.length; // 实现
   });
 
-  return candidates[0]?.element ?? null;
+  return candidates[0]?.element ?? null; // 实现
 };
 
-const getHighlightContainer = (target: HTMLElement): HTMLElement => {
-  const root = contentRef.value;
-  let current = target;
+const getHighlightContainer = (target: HTMLElement): HTMLElement => { // 实现
+  const root = contentRef.value; // 实现
+  let current = target; // 实现
 
-  while (current.parentElement && current.parentElement !== root) {
-    const parent = current.parentElement;
-    const textLength = normalizeElementText(parent).length;
-    if (parent.getBoundingClientRect().height > 180 || textLength > 480) break;
-    current = parent;
+  while (current.parentElement && current.parentElement !== root) { // 实现
+    const parent = current.parentElement; // 实现
+    const textLength = normalizeElementText(parent).length; // 实现
+    if (parent.getBoundingClientRect().height > 180 || textLength > 480) break; // 实现
+    current = parent; // 实现
   }
 
-  return current;
+  return current; // 实现
 };
 
-const revealSearchResult = async (item: SettingsSearchItem) => {
+const revealSearchResult = async (item: SettingsSearchItem) => { // 实现
   const needSwitch = activeTab.value !== item.tab;
   if (needSwitch) {
     const enterPromise = waitForTabEnter();
     activeTab.value = item.tab;
     await enterPromise;
   }
-  settingsQuery.value = '';
+  settingsQuery.value = ''; // 实现
 
-  if (!item.target) {
-    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
+  if (!item.target) { // 实现
+    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' }); // 实现
     return;
   }
 
-  const target = findSearchTarget(item.target);
-  if (!target) {
-    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
+  const target = findSearchTarget(item.target); // 实现
+  if (!target) { // 实现
+    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' }); // 实现
     return;
   }
 
-  const highlightTarget = getHighlightContainer(target);
-  document.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight');
-  highlightTarget.classList.add('settings-search-highlight');
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const highlightTarget = getHighlightContainer(target); // 实现
+  document.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight'); // 实现
+  highlightTarget.classList.add('settings-search-highlight'); // 实现
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' }); // 实现
 
-  if (highlightTimer) clearTimeout(highlightTimer);
-  highlightTimer = setTimeout(() => {
-    highlightTarget.classList.remove('settings-search-highlight');
-    highlightTimer = null;
+  if (highlightTimer) clearTimeout(highlightTimer); // 实现
+  highlightTimer = setTimeout(() => { // 实现
+    highlightTarget.classList.remove('settings-search-highlight'); // 实现
+    highlightTimer = null; // 实现
   }, 2200);
 };
 
-const clearSettingsSearch = () => {
-  settingsQuery.value = '';
+const clearSettingsSearch = () => { // 实现
+  settingsQuery.value = ''; // 实现
 };
 
-const handleSearchKeydown = (event: KeyboardEvent) => {
-  const results = searchResults.value;
-  if (!settingsQuery.value || results.length === 0) return;
+const handleSearchKeydown = (event: KeyboardEvent) => { // 实现
+  const results = searchResults.value; // 实现
+  if (!settingsQuery.value || results.length === 0) return; // 实现
 
-  if (event.key === 'ArrowDown') {
-    event.preventDefault();
-    activeSearchResultIndex.value = (activeSearchResultIndex.value + 1) % results.length;
-  } else if (event.key === 'ArrowUp') {
-    event.preventDefault();
-    activeSearchResultIndex.value = (activeSearchResultIndex.value - 1 + results.length) % results.length;
-  } else if (event.key === 'Enter') {
-    event.preventDefault();
-    const result = results[activeSearchResultIndex.value];
-    if (result) void revealSearchResult(result);
-  } else if (event.key === 'Escape') {
-    clearSettingsSearch();
+  if (event.key === 'ArrowDown') { // 实现
+    event.preventDefault(); // 实现
+    activeSearchResultIndex.value = (activeSearchResultIndex.value + 1) % results.length; // 实现
+  } else if (event.key === 'ArrowUp') { // 实现
+    event.preventDefault(); // 实现
+    activeSearchResultIndex.value = (activeSearchResultIndex.value - 1 + results.length) % results.length; // 实现
+  } else if (event.key === 'Enter') { // 实现
+    event.preventDefault(); // 实现
+    const result = results[activeSearchResultIndex.value]; // 实现
+    if (result) void revealSearchResult(result); // 实现
+  } else if (event.key === 'Escape') { // 实现
+    clearSettingsSearch(); // 实现
   }
 };
 
@@ -322,38 +322,38 @@ onMounted(() => {
   }
 });
 
-onBeforeUnmount(() => {
+onBeforeUnmount(() => { // 实现
   cancelWarmup?.();
-  if (highlightTimer) clearTimeout(highlightTimer);
+  if (highlightTimer) clearTimeout(highlightTimer); // 实现
   stopSidebarResize();
 });
 
-const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => [
-  { id: 'account', name: t('settings.account') },
-  { id: 'general', name: t('settings.general') },
-  { id: 'theme', name: t('settings.theme') },
+const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => [ // 实现
+  { id: 'account', name: t('settings.account') }, // 实现
+  { id: 'general', name: t('settings.general') }, // 实现
+  { id: 'theme', name: t('settings.theme') }, // 实现
   { id: 'plugins', name: t('settings.plugins') },
-  { id: 'audioOutput', name: t('settings.playback') },
-  { id: 'download', name: t('settings.download') },
+  { id: 'audioOutput', name: t('settings.playback') }, // 实现
+  { id: 'download', name: t('settings.download') }, // 实现
   { id: 'linkage', name: t('settings.linkage') },
-  { id: 'library', name: t('settings.library') },
-  { id: 'toolbox', name: t('settings.toolbox') },
-  { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
+  { id: 'library', name: t('settings.library') }, // 实现
+  { id: 'toolbox', name: t('settings.toolbox') }, // 实现
+  { id: 'desktopLyrics', name: t('settings.desktopLyrics') }, // 实现
   { id: 'sleepTimer', name: t('settings.sleepTimer') },
-  { id: 'shortcuts', name: t('settings.shortcuts') },
+  { id: 'shortcuts', name: t('settings.shortcuts') }, // 实现
   { id: 'network', name: t('settings.network') },
-  { id: 'advanced', name: t('settings.advanced') },
+  { id: 'advanced', name: t('settings.advanced') }, // 实现
   { id: 'feedback', name: t('settings.feedback') },
-  { id: 'about', name: t('settings.about') },
+  { id: 'about', name: t('settings.about') }, // 实现
 ]);
 
-const tabs = computed(() => {
-  if (!isDeveloperMode.value) return baseTabs.value;
-  const aboutIndex = baseTabs.value.findIndex(tab => tab.id === 'about');
+const tabs = computed(() => { // 实现
+  if (!isDeveloperMode.value) return baseTabs.value; // 实现
+  const aboutIndex = baseTabs.value.findIndex(tab => tab.id === 'about'); // 实现
   return [
-    ...baseTabs.value.slice(0, aboutIndex),
-    { id: 'debug' as const, name: t('settings.debug') },
-    ...baseTabs.value.slice(aboutIndex),
+    ...baseTabs.value.slice(0, aboutIndex), // 实现
+    { id: 'debug' as const, name: t('settings.debug') }, // 实现
+    ...baseTabs.value.slice(aboutIndex), // 实现
   ];
 });
 </script>
@@ -370,73 +370,73 @@ const tabs = computed(() => {
       <div class="relative mb-3 shrink-0">
         <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 dark:text-white/40" />
         <input
-          v-model="settingsQuery"
-          type="search"
-          autocomplete="off"
-          :placeholder="t('settings.search')"
-          :aria-label="t('settings.search')"
-          class="settings-search-input h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-7 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-          @keydown="handleSearchKeydown"
+          v-model="settingsQuery" 
+          type="search" 
+          autocomplete="off" 
+          :placeholder="t('settings.search')" 
+          :aria-label="t('settings.search')" 
+          class="settings-search-input h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-7 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10" 
+          @keydown="handleSearchKeydown" 
         />
         <button
-          v-if="settingsQuery"
-          type="button"
+          v-if="settingsQuery" 
+          type="button" 
           class="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-md text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
-          :aria-label="t('settings.clearSearch')"
-          @click="clearSettingsSearch"
+          :aria-label="t('settings.clearSearch')" 
+          @click="clearSettingsSearch" 
         >
           <X class="h-3 w-3" />
         </button>
       </div>
 
       <div
-        v-if="settingsQuery"
+        v-if="settingsQuery" 
         class="custom-scrollbar min-h-0 flex-1 -mr-2.5 overflow-y-auto overflow-x-hidden"
-        aria-live="polite"
+        aria-live="polite" 
       >
-        <div class="mb-2 px-1 text-[11px] font-medium text-gray-500 dark:text-white/45">
-          {{ searchResults.length > 0 ? t('settings.results', { count: searchResults.length }) : t('settings.noResults') }}
+        <div class="mb-2 px-1 text-[11px] font-medium text-gray-500 dark:text-white/45"> 
+          {{ searchResults.length > 0 ? t('settings.results', { count: searchResults.length }) : t('settings.noResults') }} 
         </div>
-        <div v-if="searchResults.length" class="space-y-1">
+        <div v-if="searchResults.length" class="space-y-1"> 
           <button
-            v-for="(result, index) in searchResults"
-            :key="result.id"
-            type="button"
+            v-for="(result, index) in searchResults" 
+            :key="result.id" 
+            type="button" 
             class="w-full rounded-lg px-2.5 py-2 text-left transition"
-            :class="index === activeSearchResultIndex
-              ? 'bg-[#EC4141]/10 text-[#EC4141] ring-1 ring-inset ring-[#EC4141]/15'
-              : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/5'"
-            @mouseenter="activeSearchResultIndex = index"
-            @click="revealSearchResult(result)"
+            :class="index === activeSearchResultIndex 
+              ? 'bg-[#EC4141]/10 text-[#EC4141] ring-1 ring-inset ring-[#EC4141]/15' 
+              : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/5'" 
+            @mouseenter="activeSearchResultIndex = index" 
+            @click="revealSearchResult(result)" 
           >
             <div class="truncate text-xs font-medium">{{ result.label }}</div>
             <div class="mt-0.5 truncate text-[10px] opacity-60">{{ result.tabName }} · {{ result.section }}</div>
           </button>
         </div>
         <div v-else class="px-2 py-6 text-center text-xs leading-5 text-gray-400 dark:text-white/35">
-          {{ t('settings.searchHint') }}
+          {{ t('settings.searchHint') }} 
         </div>
       </div>
 
       <nav v-else class="custom-scrollbar flex-1 -mr-2.5 space-y-1 overflow-y-auto overflow-x-hidden">
         <button
-          v-for="tab in tabs"
-          :key="tab.id"
+          v-for="tab in tabs" 
+          :key="tab.id" 
           class="relative flex w-full cursor-pointer items-center rounded-md px-3 py-2 text-left text-xs sm:text-sm transition-all duration-300 active:scale-[0.97]"
           :class="activeTab === tab.id ? 'translate-x-0.5 bg-black/10 font-semibold text-black shadow-sm dark:bg-white/10 dark:text-white' : 'font-medium text-gray-800 hover:translate-x-0.5 hover:bg-black/5 hover:text-black dark:text-gray-200 dark:hover:bg-white/5 dark:hover:text-white'"
-          @click="activeTab = tab.id"
+          @click="activeTab = tab.id" 
         >
           <div
-            v-if="activeTab === tab.id"
+            v-if="activeTab === tab.id" 
             class="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-r-md bg-[#EC4141]"
           ></div>
-          {{ tab.name }}
+          {{ tab.name }} 
         </button>
       </nav>
 
       <div
         class="group absolute -right-1 top-0 bottom-0 z-20 w-2 cursor-col-resize touch-none flex items-center justify-center"
-        :title="t('settings.resizeHint')"
+        :title="t('settings.resizeHint')" 
         @pointerdown="startSidebarResize"
         @dblclick="resetSidebarWidth"
       >
@@ -483,8 +483,8 @@ const tabs = computed(() => {
           <SettingsDebug v-else-if="activeTab === 'debug'" key="debug" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
           <div v-else class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
-            <div class="text-4xl opacity-50">{{ t('settings.building') }}</div>
-            <div>{{ t('settings.buildingHint') }}</div>
+            <div class="text-4xl opacity-50">{{ t('settings.building') }}</div> 
+            <div>{{ t('settings.buildingHint') }}</div> 
           </div>
           </div>
         </transition>
@@ -494,15 +494,15 @@ const tabs = computed(() => {
 </template>
 
 <style>
-.settings-search-input::-webkit-search-cancel-button {
-  display: none;
-  -webkit-appearance: none;
-  appearance: none;
+.settings-search-input::-webkit-search-cancel-button { /* 样式 */
+  display: none; /* 样式 */
+  -webkit-appearance: none; /* 样式 */
+  appearance: none; /* 样式 */
 }
 
-.settings-search-input::-ms-clear,
-.settings-search-input::-ms-reveal {
-  display: none;
+.settings-search-input::-ms-clear, /* 样式 */
+.settings-search-input::-ms-reveal { /* 样式 */
+  display: none; /* 样式 */
   width: 0;
   height: 0;
 }
@@ -522,17 +522,17 @@ const tabs = computed(() => {
   transform: translateY(-10px);
 }
 
-@keyframes settings-search-pulse {
+@keyframes settings-search-pulse { /* 样式 */
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(236, 65, 65, 0);
+    box-shadow: 0 0 0 0 rgba(236, 65, 65, 0); /* 样式 */
   }
   20%, 75% {
-    box-shadow: 0 0 0 2px rgba(236, 65, 65, 0.48), 0 8px 24px rgba(236, 65, 65, 0.12);
+    box-shadow: 0 0 0 2px rgba(236, 65, 65, 0.48), 0 8px 24px rgba(236, 65, 65, 0.12); /* 样式 */
   }
 }
 
-.settings-search-highlight {
-  border-radius: 12px;
-  animation: settings-search-pulse 2.2s ease-out;
+.settings-search-highlight { /* 样式 */
+  border-radius: 12px; /* 样式 */
+  animation: settings-search-pulse 2.2s ease-out; /* 样式 */
 }
 </style>

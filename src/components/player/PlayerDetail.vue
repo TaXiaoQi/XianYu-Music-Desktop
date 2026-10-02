@@ -1,12 +1,12 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getCurrentWindow as locateHostWindow } from '@tauri-apps/api/window';
 import { storeToRefs } from 'pinia';
 import { isFlyingCover } from '../../composables/useFlyingCover';
-import { loadLyrics, lyricsSettings, lyricsStatus } from '../../composables/lyrics/state';
+import { loadLyrics, lyricsSettings, lyricsStatus } from '../../composables/lyrics/state'; // 实现
 import { useSharedTransition as useEntranceSync } from '../../composables/useSharedTransition';
 import { useToast as useNotifier } from '../../composables/toast';
-import { useBilibiliVideoBackground } from '../../composables/useBilibiliVideoBackground';
+import { useBilibiliVideoBackground } from '../../composables/useBilibiliVideoBackground'; // 实现
 import { usePlaybackController as useStageControl } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useUiStore } from '../../shared/stores/ui';
@@ -34,7 +34,7 @@ const {
   closePlayerDetail: dismissDetail,
 } = useStageControl();
 
-const { settings, patchTheme } = useSettings();
+const { settings, patchTheme } = useSettings(); // 实现
 const { isImmersiveFullscreen: isFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
 const { showToast } = useNotifier();
 const {
@@ -44,7 +44,7 @@ const {
   videoUrl: filmVideoUrl,
   start: startFilmBackground,
   stop: stopFilmBackground,
-} = useBilibiliVideoBackground();
+} = useBilibiliVideoBackground(); // 实现
 
 const isCinemaMode = computed(() => filmRequested.value && Boolean(filmVideoUrl.value));
 
@@ -148,30 +148,30 @@ const doMinimize = () => hostWindow.minimize();
 
 const applyImmersive = async (enter: boolean) => {
   await windowApi.setImmersiveFullscreen(enter);
-  isFullscreen.value = enter;
+  isFullscreen.value = enter; // 实现
 };
 
-const toggleFullscreen = async () => {
+const toggleFullscreen = async () => { // 实现
   if (fullscreenAnimState.value) {
     return;
   }
 
-  if (!isFullscreen.value) {
-    fullscreenAnimState.value = 'entering';
+  if (!isFullscreen.value) { // 实现
+    fullscreenAnimState.value = 'entering'; // 实现
     engagePointerSentry();
     await nextTick();
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     try {
       await applyImmersive(true);
-    } catch (error) {
+    } catch (error) { // 实现
       console.error('进入全屏失败:', error);
       releasePointerSentry();
-      isFullscreen.value = false;
-      fullscreenAnimState.value = null;
+      isFullscreen.value = false; // 实现
+      fullscreenAnimState.value = null; // 实现
       return;
     }
     setTimeout(() => {
-      fullscreenAnimState.value = null;
+      fullscreenAnimState.value = null; // 实现
     }, FS_MORPH_MS);
     return;
   }
@@ -181,11 +181,11 @@ const toggleFullscreen = async () => {
   setTimeout(async () => {
     try {
       await applyImmersive(false);
-    } catch (error) {
+    } catch (error) { // 实现
       console.error('退出全屏失败:', error);
       isFullscreen.value = true;
       engagePointerSentry();
-      fullscreenAnimState.value = null;
+      fullscreenAnimState.value = null; // 实现
       return;
     }
     fullscreenAnimState.value = null;
@@ -383,7 +383,7 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <PlayerDetailContextMenu
+    <PlayerDetailContextMenu 
       v-if="trackMenuShown"
       :visible="trackMenuShown"
       :x="trackMenuX"
@@ -395,7 +395,7 @@ onBeforeUnmount(() => {
       @change-lyrics="launchLyricTool"
       @toggle-video-background="flipFilmBackground"
     />
-    <LyricsReplacementModal
+    <LyricsReplacementModal 
       v-if="lyricToolShown"
       :visible="lyricToolShown"
       :song="activeTrack"
@@ -404,7 +404,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 .detail-root {
   position: fixed;
   right: 0;

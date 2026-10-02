@@ -1,6 +1,6 @@
-@import "tailwindcss";
+@import "tailwindcss"; 
 
-@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant dark (&:where(.dark, .dark *)); 
 
 .dark {
   --color-gray-900: #262626;
@@ -16,7 +16,7 @@ input::-ms-clear {
 
 :root {
   color-scheme: light;
-  --theme-color: #EC4141;
+  --theme-color: #EC4141; 
   --favorite-color: #EC4142;
   --scrollbar-thumb-rgb: 0, 0, 0;
   --scrollbar-thumb-max-alpha: 0.38;
@@ -26,8 +26,8 @@ input::-ms-clear {
   --motion-dur-slow: 280ms;
   --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
-  font-family: "Inter", system-ui, sans-serif;
-  overflow: hidden;
+  font-family: "Inter", system-ui, sans-serif; 
+  overflow: hidden; 
 }
 
 .dark {
@@ -54,19 +54,19 @@ select option:checked {
 html,
 body {
   margin: 0;
-  width: 100%;
-  min-height: 100vh;
-  background-color: transparent;
+  width: 100%; 
+  min-height: 100vh; 
+  background-color: transparent; 
 }
 
 #app {
-  width: 100%;
-  height: 100vh;
-  background: transparent;
+  width: 100%; 
+  height: 100vh; 
+  background: transparent; 
 }
 
 .fatal-error-page {
-  height: 100vh;
+  height: 100vh; 
   display: flex;
   align-items: center;
   justify-content: center;
@@ -112,8 +112,8 @@ body {
   line-height: 1.6;
 }
 
-html *::-webkit-scrollbar,
-body::-webkit-scrollbar {
+html *::-webkit-scrollbar, 
+body::-webkit-scrollbar { 
   width: 16px !important;
   height: 16px !important;
 }
@@ -133,8 +133,8 @@ body::-webkit-scrollbar-thumb {
   background-color: rgba(var(--scrollbar-thumb-rgb), var(--scrollbar-thumb-alpha, 0)) !important;
 }
 
-button:focus {
-  outline: none !important;
+button:focus { 
+  outline: none !important; 
 }
 
 input,

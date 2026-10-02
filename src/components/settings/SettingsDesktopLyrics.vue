@@ -1,13 +1,13 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { Check, ChevronDown, Minus, Plus, RotateCcw } from 'lucide-vue-next';
 import { ref } from 'vue';
 
 import type { LyricsColorScheme } from '../../composables/lyrics';
 import {
-  LYRICS_SYNC_OFFSET_MAX_MS,
-  LYRICS_SYNC_OFFSET_MIN_MS,
-  LYRICS_SYNC_OFFSET_STEP_MS,
-} from '../../features/settings/lyricsSyncOffset';
+  LYRICS_SYNC_OFFSET_MAX_MS, // 实现
+  LYRICS_SYNC_OFFSET_MIN_MS, // 实现
+  LYRICS_SYNC_OFFSET_STEP_MS, // 实现
+} from '../../features/settings/lyricsSyncOffset'; // 实现
 import RangeSlider from '../common/RangeSlider.vue';
 import DesktopLyricsAlignmentCell from './desktopLyrics/DesktopLyricsAlignmentCell.vue';
 import DesktopLyricsColorOverlay from './desktopLyrics/DesktopLyricsColorOverlay.vue';
@@ -160,7 +160,7 @@ function onOverlayApply(target: DesktopCustomColorTarget, hex: string) {
     <DesktopLyricsColorOverlay v-model:open="colorOverlayOpen" :show-romaji="lyricsSettings.showRomaji" :show-translation="lyricsSettings.showTranslation" :played-color="draft.customPlayedColor" :unplayed-color="draft.customUnplayedColor" :romaji-played-color="draft.customRomajiPlayedColor" :romaji-unplayed-color="draft.customRomajiUnplayedColor" :translation-color="draft.customTranslationColor" @activate="markSchemeCustom" @apply="onOverlayApply" /></div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 .page-root { width: 100%; display: flex; flex-direction: column; gap: 32px; animation: page-enter 300ms ease both; }
 @keyframes page-enter {
   from { opacity: 0; transform: translateY(8px); }

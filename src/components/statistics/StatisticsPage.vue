@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 /**
  * 首页「统计」页：卡片化个人听歌数据看板。
  * 玻璃档（useGlassSwitch=true）：时间范围切换 → 概览卡 → 近 7 天趋势 → 24 小时分布 → Top 榜 → 曲库构成；
@@ -6,13 +6,13 @@
  * 经典扁平档（useGlassSwitch=false）：八项指标 + 内联排行榜，逐字还原 04cacc5c^（排行榜拆分前）的统计页。
  */
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue';
-import { storeToRefs } from 'pinia';
+import { storeToRefs } from 'pinia'; // 实现
 import { useRoute, useRouter } from 'vue-router';
 import { Calendar, Clock, Database, Disc3, Headphones, Music, Play, TrendingUp } from 'lucide-vue-next';
 
 import { useStatisticsStore, type TimeRangeType } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
-import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
+import { useLibraryBrowse } from '../../features/library/useLibraryBrowse'; // 实现
 import { useI18n, type I18nKey } from '../../features/i18n';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSettingsStore } from '../../features/settings/store';
@@ -139,23 +139,23 @@ const refreshListenDisplay = async () => {
   }
 };
 
-function formatStatisticsDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return isEnglish.value ? '0 min' : '0分钟';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (isEnglish.value) return hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
-  return hours > 0 ? `${hours}小时 ${minutes}分钟` : `${minutes}分钟`;
+function formatStatisticsDuration(seconds: number): string { // 实现
+  if (!Number.isFinite(seconds) || seconds <= 0) return isEnglish.value ? '0 min' : '0分钟'; // 实现
+  const hours = Math.floor(seconds / 3600); // 实现
+  const minutes = Math.floor((seconds % 3600) / 60); // 实现
+  if (isEnglish.value) return hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`; // 实现
+  return hours > 0 ? `${hours}小时 ${minutes}分钟` : `${minutes}分钟`; // 实现
 }
 
-const statisticsStore = useStatisticsStore();
+const statisticsStore = useStatisticsStore(); // 实现
 const {
   stats,
-  behaviorStats,
+  behaviorStats, // 实现
   loading,
   error,
-} = storeToRefs(statisticsStore);
+} = storeToRefs(statisticsStore); // 实现
 
-const { canonicalSongs } = useLibraryBrowse();
+const { canonicalSongs } = useLibraryBrowse(); // 实现
 
 // 时间范围：页面挂载时重置为「全部」，且不持久化
 const selectedRange = ref<TimeRangeType>('All');
@@ -205,8 +205,8 @@ const stopStatsTimer = () => {
     statsRefreshTimer = null;
   }
 };
-onMounted(async () => {
-  statisticsStore.cancelHeavyDataRelease();
+onMounted(async () => { // 实现
+  statisticsStore.cancelHeavyDataRelease(); // 实现
   selectedRange.value = 'All';
   await statisticsStore.refreshBehaviorOnly('All'); // 刷新行为统计
   if (!statisticsStore.stats) { // 未加载时
@@ -238,16 +238,16 @@ onDeactivated(() => {
   stopStatsTimer();
 });
 
-onUnmounted(() => {
-  statisticsStore.scheduleHeavyDataRelease();
+onUnmounted(() => { // 实现
+  statisticsStore.scheduleHeavyDataRelease(); // 实现
   stopStatsTimer();
 });
 
-async function handleRefresh() {
+async function handleRefresh() { // 实现
   try {
     await statisticsStore.refreshAll(selectedRange.value);
   } catch {
-    // Store state already carries the error.
+    // Store state already carries the error. 
   }
 }
 
@@ -920,22 +920,22 @@ watch(isGlass, (glass) => {
   </div>
 </template>
 
-<style scoped>
-.custom-scrollbar::-webkit-scrollbar {
+<style scoped> /* 样式 */
+.custom-scrollbar::-webkit-scrollbar { /* 样式 */
   width: 6px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+.custom-scrollbar::-webkit-scrollbar-track { /* 样式 */
+  background: transparent; /* 样式 */
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
+.custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
+  background: rgba(0, 0, 0, 0.1); /* 样式 */
+  border-radius: 10px; /* 样式 */
 }
 
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+.dark .custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
+  background: rgba(255, 255, 255, 0.1); /* 样式 */
 }
 
 /* ==================== 玻璃档卡片质感（glass-card 伪元素自发光层） ====================
@@ -1166,23 +1166,23 @@ watch(isGlass, (glass) => {
 </style>
 
 <style>
-@keyframes fadeInUp {
+@keyframes fadeInUp { /* 样式 */
   from {
     opacity: 0;
-    transform: translateY(20px);
-    filter: blur(4px);
+    transform: translateY(20px); /* 样式 */
+    filter: blur(4px); /* 样式 */
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+    transform: translateY(0); /* 样式 */
+    filter: blur(0); /* 样式 */
   }
 }
 
-.animate-fade-in-up {
+.animate-fade-in-up { /* 样式 */
   opacity: 0;
-  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; /* 样式 */
 }
 
 /* ==================== 内联排行榜（经典扁平档）：全局块 ====================
@@ -1201,12 +1201,12 @@ watch(isGlass, (glass) => {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-fade-in-up {
-    animation: none;
+@media (prefers-reduced-motion: reduce) { /* 样式 */
+  .animate-fade-in-up { /* 样式 */
+    animation: none; /* 样式 */
     opacity: 1;
-    transform: none;
-    filter: none;
+    transform: none; /* 样式 */
+    filter: none; /* 样式 */
   }
 
   .animate-rank-pop {

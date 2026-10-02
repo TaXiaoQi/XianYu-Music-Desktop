@@ -1,14 +1,14 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter } from 'vue-router'; // 实现
 import { Eye, EyeOff } from 'lucide-vue-next';
 
-import { useAuthStore } from '../features/auth/store';
+import { useAuthStore } from '../features/auth/store'; // 实现
 import HumanCaptchaModal from '../components/common/HumanCaptchaModal.vue';
 import { downloadApi } from '../services/tauri/downloadApi';
 import { useCollectionsStore } from '../features/collections/store';
-import { useToast } from '../composables/toast';
-import { useUiStore } from '../shared/stores/ui';
+import { useToast } from '../composables/toast'; // 实现
+import { useUiStore } from '../shared/stores/ui'; // 实现
 import { showProfileLimitDialog, type ProfileLimitDialogTarget } from '../composables/useProfileLimitDialog';
 import {
   getProfile,
@@ -17,9 +17,9 @@ import {
   logout,
   register,
   resetPassword, // 实现
-  sendEmailCode,
-  updateProfile,
-  uploadAvatar,
+  sendEmailCode, // 实现
+  updateProfile, // 实现
+  uploadAvatar, // 实现
   updateCiyuanxiId,
   bindEmail,
   createQrLoginCode,
@@ -29,21 +29,21 @@ import {
   getAvatarChangeLimitStatus,
   getNicknameChangeLimitStatus,
   getUserAgreement,
-  type AuthMode,
+  type AuthMode, // 实现
   type HumanCaptchaPayload,
-  type ProfileStats,
+  type ProfileStats, // 实现
   type QrPollResult,
   type VerifyCodeType, // 实现
-} from '../services/auth/authService';
+} from '../services/auth/authService'; // 实现
 import QRCode from 'qrcode';
 
-const router = useRouter();
-const authStore = useAuthStore();
+const router = useRouter(); // 实现
+const authStore = useAuthStore(); // 实现
 const collectionsStore = useCollectionsStore();
-const { showToast } = useToast();
-const uiStore = useUiStore();
+const { showToast } = useToast(); // 实现
+const uiStore = useUiStore(); // 实现
 
-const mode = ref<AuthMode>('login');
+const mode = ref<AuthMode>('login'); // 实现
 const form = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
 const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' }); // 实现
 const fieldErrors = ref<Record<string, string>>({});
@@ -119,10 +119,10 @@ function onPasswordInput() {
 
 watch(mode, () => { fieldErrors.value = {}; });
 
-const message = ref('');
-const messageTone = ref<'error' | 'success'>('error');
-const loading = ref(false);
-const codeLoading = ref(false);
+const message = ref(''); // 实现
+const messageTone = ref<'error' | 'success'>('error'); // 实现
+const loading = ref(false); // 实现
+const codeLoading = ref(false); // 实现
 const codeCountdown = ref(0);
 let codeCountdownTimer: ReturnType<typeof setInterval> | null = null;
 function startCodeCountdown() {
@@ -145,14 +145,14 @@ const captchaModalOpen = ref(false);
 const captchaModalTitle = ref('人机验证');
 const captchaModalDescription = ref('请先完成验证，验证通过后将继续当前操作。');
 let captchaResolver: ((payload: HumanCaptchaPayload | null) => void) | null = null;
-const stats = ref<ProfileStats | null>(null);
-const nicknameDraft = ref('');
-const avatarDraft = ref('');
-const avatarUploading = ref(false);
+const stats = ref<ProfileStats | null>(null); // 实现
+const nicknameDraft = ref(''); // 实现
+const avatarDraft = ref(''); // 实现
+const avatarUploading = ref(false); // 实现
 const avatarStatus = ref<'none' | 'pending' | 'rejected'>('none'); // 实现
 const nicknameStatus = ref<'none' | 'pending' | 'rejected'>('none'); // 实现
-const avatarMenuPos = ref<{ top: number; left: number } | null>(null);
-const avatarBtnRef = ref<HTMLElement | null>(null);
+const avatarMenuPos = ref<{ top: number; left: number } | null>(null); // 实现
+const avatarBtnRef = ref<HTMLElement | null>(null); // 实现
 
 async function confirmProfileLimit(target: ProfileLimitDialogTarget): Promise<boolean> {
   const localStatus = target === 'avatar' ? avatarStatus.value : nicknameStatus.value;
@@ -178,31 +178,31 @@ async function confirmProfileLimit(target: ProfileLimitDialogTarget): Promise<bo
   return showProfileLimitDialog(target);
 }
 
-function openAvatarMenu() {
-  const el = avatarBtnRef.value;
+function openAvatarMenu() { // 实现
+  const el = avatarBtnRef.value; // 实现
   if (!el) {
-    avatarMenuOpen.value = true;
+    avatarMenuOpen.value = true; // 实现
     return;
   }
-  const rect = el.getBoundingClientRect();
-  const cardWidth = Math.min(window.innerWidth * 0.86, 320);
-  const gap = 12;
-  let left = rect.right + gap;
-  let top = rect.top;
-  if (left + cardWidth > window.innerWidth - 8) {
-    left = rect.left - cardWidth - gap;
+  const rect = el.getBoundingClientRect(); // 实现
+  const cardWidth = Math.min(window.innerWidth * 0.86, 320); // 实现
+  const gap = 12; // 实现
+  let left = rect.right + gap; // 实现
+  let top = rect.top; // 实现
+  if (left + cardWidth > window.innerWidth - 8) { // 实现
+    left = rect.left - cardWidth - gap; // 实现
   }
-  if (left < 8) {
+  if (left < 8) { // 实现
     left = 8;
   }
-  if (top + 200 > window.innerHeight - 8) {
-    top = Math.max(8, window.innerHeight - 220);
+  if (top + 200 > window.innerHeight - 8) { // 实现
+    top = Math.max(8, window.innerHeight - 220); // 实现
   }
-  avatarMenuPos.value = { top, left };
-  avatarMenuOpen.value = true;
+  avatarMenuPos.value = { top, left }; // 实现
+  avatarMenuOpen.value = true; // 实现
 }
 const showNicknameModal = ref(false);
-const nicknameInputRef = ref<HTMLInputElement | null>(null);
+const nicknameInputRef = ref<HTMLInputElement | null>(null); // 实现
 
 async function openNicknameEditModal() {
   if (nicknameStatus.value === 'pending') { // 实现
@@ -212,17 +212,17 @@ async function openNicknameEditModal() {
     });
     return; // 实现
   } // 实现
-  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
+  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
   showNicknameModal.value = true;
-  await nextTick();
-  nicknameInputRef.value?.focus();
-  nicknameInputRef.value?.select();
+  await nextTick(); // 实现
+  nicknameInputRef.value?.focus(); // 实现
+  nicknameInputRef.value?.select(); // 实现
 }
 
 async function submitNicknameEdit() {
-  const next = nicknameDraft.value.trim();
-  const current = authStore.user?.nickname || authStore.user?.username || '';
-  if (!next || next === current) {
+  const next = nicknameDraft.value.trim(); // 实现
+  const current = authStore.user?.nickname || authStore.user?.username || ''; // 实现
+  if (!next || next === current) { // 实现
     showNicknameModal.value = false;
     return;
   }
@@ -235,14 +235,14 @@ async function submitNicknameEdit() {
     return;
   }
   if (!await confirmProfileLimit('nickname')) return;
-  await handleSaveProfile();
+  await handleSaveProfile(); // 实现
   showNicknameModal.value = false;
 }
 
-function cancelNicknameEdit() {
+function cancelNicknameEdit() { // 实现
   if (!showNicknameModal.value) return;
   showNicknameModal.value = false;
-  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
+  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
 }
 function onNicknameBlur() { // 实现
   if (!showNicknameModal.value) return;
@@ -252,30 +252,30 @@ function onNicknameBlur() { // 实现
     cancelNicknameEdit(); // 实现
   } // 实现
 } // 实现
-const profileSaving = ref(false);
+const profileSaving = ref(false); // 实现
 
-const avatarMenuOpen = ref(false);
-const avatarPreviewOpen = ref(false);
-const avatarInputRef = ref<HTMLInputElement | null>(null);
+const avatarMenuOpen = ref(false); // 实现
+const avatarPreviewOpen = ref(false); // 实现
+const avatarInputRef = ref<HTMLInputElement | null>(null); // 实现
 
-type Shortcut = {
-  label: string;
-  desc: string;
+type Shortcut = { // 实现
+  label: string; // 实现
+  desc: string; // 实现
   to: string;
-  icon: 'cog' | 'theme' | 'home' | 'folder' | 'plugin';
+  icon: 'cog' | 'theme' | 'home' | 'folder' | 'plugin'; // 实现
 };
 
-const personalShortcuts: Shortcut[] = [
+const personalShortcuts: Shortcut[] = [ // 实现
   { label: '账号设置', desc: '管理账号信息', to: '/settings?tab=account', icon: 'cog' },
-  { label: '插件管理', desc: '管理已安装插件', to: '/settings?tab=plugins', icon: 'plugin' },
-  { label: '主题外观', desc: '换肤与界面风格', to: '/settings?tab=theme', icon: 'theme' },
-  { label: '本地音乐', desc: '管理本地曲库', to: '/?view=all', icon: 'folder' },
+  { label: '插件管理', desc: '管理已安装插件', to: '/settings?tab=plugins', icon: 'plugin' }, // 实现
+  { label: '主题外观', desc: '换肤与界面风格', to: '/settings?tab=theme', icon: 'theme' }, // 实现
+  { label: '本地音乐', desc: '管理本地曲库', to: '/?view=all', icon: 'folder' }, // 实现
 ];
 
-const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [
-  { key: 'favorite_count', label: '收藏' },
-  { key: 'playlist_count', label: '歌单' },
-  { key: 'history_count', label: '历史' },
+const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [ // 实现
+  { key: 'favorite_count', label: '收藏' }, // 实现
+  { key: 'playlist_count', label: '歌单' }, // 实现
+  { key: 'history_count', label: '历史' }, // 实现
 ];
 
 const displayStats = computed((): ProfileStats => ({
@@ -291,9 +291,9 @@ const displayStats = computed((): ProfileStats => ({
 const title = computed(() => // 实现
   mode.value === 'login' ? '欢迎回来' : mode.value === 'register' ? '创建你的账号' : '找回密码', // 实现
 ); // 实现
-const subtitle = computed(() =>
-  mode.value === 'login'
-    ? '登录后可同步个人资料到云端服务器。'
+const subtitle = computed(() => // 实现
+  mode.value === 'login' // 实现
+    ? '登录后可同步个人资料到云端服务器。' // 实现
     : mode.value === 'register' // 实现
       ? '注册需要邮箱验证码，之后即可登录使用。' // 实现
       : '通过注册邮箱验证码重置你的登录密码。', // 实现
@@ -343,7 +343,7 @@ async function loadUserAgreement() {
 async function openTermsModal() {
   termsScrolledToEnd.value = false;
   termsModalOpen.value = true;
-  await nextTick();
+  await nextTick(); // 实现
   refreshTermsScrollState();
 }
 
@@ -381,9 +381,9 @@ function acceptTerms() {
   termsModalOpen.value = false;
 }
 
-function showMessage(text: string, tone: 'error' | 'success' = 'error') {
-  messageTone.value = tone;
-  message.value = text;
+function showMessage(text: string, tone: 'error' | 'success' = 'error') { // 实现
+  messageTone.value = tone; // 实现
+  message.value = text; // 实现
 }
 
 function requestHumanCaptcha(title: string, description: string): Promise<HumanCaptchaPayload | null> {
@@ -409,7 +409,7 @@ function handleCaptchaCancel() {
   resolveHumanCaptcha(null);
 }
 
-async function onSubmit() {
+async function onSubmit() { // 实现
   if (mode.value === 'forgot') { // 实现
     await handleResetPassword(); // 实现
     return; // 实现
@@ -454,50 +454,50 @@ async function onSubmit() {
       : '完成验证后将继续创建账号。',
   );
   if (!captchaPayload) return;
-  loading.value = true;
-  message.value = '';
+  loading.value = true; // 实现
+  message.value = ''; // 实现
   try {
-    const result =
-      mode.value === 'login'
+    const result = // 实现
+      mode.value === 'login' // 实现
         ? (loginMethod.value === 'email'
             ? await loginByEmail(form.value.email.trim(), form.value.code.trim(), captchaPayload)
             : await login(form.value.account, form.value.password, captchaPayload))
-        : await register(
+        : await register( // 实现
             form.value.account.trim(),
             form.value.nickname.trim(),
-            form.value.password,
-            form.value.email,
-            form.value.code,
+            form.value.password, // 实现
+            form.value.email, // 实现
+            form.value.code, // 实现
             captchaPayload,
           );
 
-    authStore.setAuth(result);
+    authStore.setAuth(result); // 实现
     form.value = { account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' };
-    nicknameDraft.value = result.user.nickname || result.user.username;
-    avatarDraft.value = result.user.avatar || '';
-    showMessage(mode.value === 'login' ? '登录成功' : '注册成功', 'success');
-    showToast(mode.value === 'login' ? '登录成功' : '注册成功', 'success');
+    nicknameDraft.value = result.user.nickname || result.user.username; // 实现
+    avatarDraft.value = result.user.avatar || ''; // 实现
+    showMessage(mode.value === 'login' ? '登录成功' : '注册成功', 'success'); // 实现
+    showToast(mode.value === 'login' ? '登录成功' : '注册成功', 'success'); // 实现
 
     try {
-      const profile = await getProfile();
-      if (profile) {
-        authStore.setAuth({ token: result.token, user: profile.user });
-        stats.value = profile.stats;
-        nicknameDraft.value = profile.user.nickname || profile.user.username;
-        avatarDraft.value = profile.user.avatar || '';
+      const profile = await getProfile(); // 实现
+      if (profile) { // 实现
+        authStore.setAuth({ token: result.token, user: profile.user }); // 实现
+        stats.value = profile.stats; // 实现
+        nicknameDraft.value = profile.user.nickname || profile.user.username; // 实现
+        avatarDraft.value = profile.user.avatar || ''; // 实现
       }
     } catch {
-      stats.value = null;
+      stats.value = null; // 实现
     }
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '登录/注册失败，请检查后端接口';
-    showMessage(tip);
-    showToast(tip, 'error');
+  } catch (error) { // 实现
+    const tip = error instanceof Error ? error.message : '登录/注册失败，请检查后端接口'; // 实现
+    showMessage(tip); // 实现
+    showToast(tip, 'error'); // 实现
     if (tip.includes('封禁') || tip.includes('禁用')) {
       window.alert(tip);
     }
   } finally {
-    loading.value = false;
+    loading.value = false; // 实现
   }
 }
 
@@ -542,12 +542,12 @@ async function handleResetPassword() { // 实现
     loading.value = false; // 实现
   } // 实现
 } // 实现
-async function handleSendCode() {
+async function handleSendCode() { // 实现
   const isForgot = mode.value === 'forgot'; // 实现
   const isEmailLogin = mode.value === 'login' && loginMethod.value === 'email';
   const email = isForgot ? forgotForm.value.email : form.value.email; // 实现
   if (!email) { // 实现
-    showMessage('请先填写邮箱');
+    showMessage('请先填写邮箱'); // 实现
     return;
   }
   if (!EMAIL_RE.test(email.trim())) {
@@ -560,36 +560,36 @@ async function handleSendCode() {
     '完成验证后将向邮箱发送验证码。',
   );
   if (!captchaPayload) return;
-  codeLoading.value = true;
-  message.value = '';
+  codeLoading.value = true; // 实现
+  message.value = ''; // 实现
   try {
     const ciyuanxiId = isForgot || isEmailLogin ? undefined : form.value.account.trim() || undefined;
     const result = await sendEmailCode(email, type, captchaPayload, ciyuanxiId);
-    showMessage(result.message || '验证码已发送到邮箱', 'success');
-    showToast(result.message || '验证码已发送到邮箱', 'success');
+    showMessage(result.message || '验证码已发送到邮箱', 'success'); // 实现
+    showToast(result.message || '验证码已发送到邮箱', 'success'); // 实现
     startCodeCountdown();
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '验证码发送失败';
-    showMessage(tip);
-    showToast(tip, 'error');
+  } catch (error) { // 实现
+    const tip = error instanceof Error ? error.message : '验证码发送失败'; // 实现
+    showMessage(tip); // 实现
+    showToast(tip, 'error'); // 实现
   } finally {
-    codeLoading.value = false;
+    codeLoading.value = false; // 实现
   }
 }
 
-async function handleSaveProfile() {
-  const nickname = nicknameDraft.value.trim();
-  if (!nickname) {
-    showMessage('昵称不能为空');
+async function handleSaveProfile() { // 实现
+  const nickname = nicknameDraft.value.trim(); // 实现
+  if (!nickname) { // 实现
+    showMessage('昵称不能为空'); // 实现
     return;
   }
-  profileSaving.value = true;
-  message.value = '';
+  profileSaving.value = true; // 实现
+  message.value = ''; // 实现
   try {
-    const result = await updateProfile(nickname);
-    if (result?.user) {
-      authStore.setUser(result.user);
-      avatarDraft.value = result.user.avatar || '';
+    const result = await updateProfile(nickname); // 实现
+    if (result?.user) { // 实现
+      authStore.setUser(result.user); // 实现
+      avatarDraft.value = result.user.avatar || ''; // 实现
     }
     if (result?.nicknamePending) { // 实现
       nicknameStatus.value = 'pending'; // 实现
@@ -598,41 +598,41 @@ async function handleSaveProfile() {
     } else { // 实现
       showToast('个人信息已保存', 'success'); // 实现
     } // 实现
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '保存失败';
-    showToast(tip, 'error');
+  } catch (error) { // 实现
+    const tip = error instanceof Error ? error.message : '保存失败'; // 实现
+    showToast(tip, 'error'); // 实现
   } finally {
-    profileSaving.value = false;
+    profileSaving.value = false; // 实现
   }
 }
 
-async function handleAvatarFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = '';
-  if (!file) return;
+async function handleAvatarFileChange(event: Event) { // 实现
+  const input = event.target as HTMLInputElement; // 实现
+  const file = input.files?.[0]; // 实现
+  input.value = ''; // 实现
+  if (!file) return; // 实现
 
-  if (!file.type.startsWith('image/')) {
-    const tip = '请选择图片文件';
-    showToast(tip, 'error');
+  if (!file.type.startsWith('image/')) { // 实现
+    const tip = '请选择图片文件'; // 实现
+    showToast(tip, 'error'); // 实现
     return;
   }
   if (file.size > 5 * 1024 * 1024) { // 实现
     const tip = '头像不能超过 5MB'; // 实现
-    showToast(tip, 'error');
+    showToast(tip, 'error'); // 实现
     return;
   }
 
-  avatarUploading.value = true;
+  avatarUploading.value = true; // 实现
   try {
     await uploadAvatar(file); // 实现
     avatarStatus.value = 'pending'; // 实现
     showToast('头像已上传，等待管理员审核', 'success'); // 实现
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '头像上传失败';
-    showToast(tip, 'error');
+  } catch (error) { // 实现
+    const tip = error instanceof Error ? error.message : '头像上传失败'; // 实现
+    showToast(tip, 'error'); // 实现
   } finally {
-    avatarUploading.value = false;
+    avatarUploading.value = false; // 实现
   }
 }
 
@@ -671,23 +671,23 @@ async function refreshAvatarStatus() { // 实现
   } // 实现
 } // 实现
 async function openAvatarPicker() {
-  avatarMenuOpen.value = false;
+  avatarMenuOpen.value = false; // 实现
   if (!await confirmProfileLimit('avatar')) {
     return;
   }
-  requestAnimationFrame(() => {
-    avatarInputRef.value?.click();
+  requestAnimationFrame(() => { // 实现
+    avatarInputRef.value?.click(); // 实现
   });
 }
 
-async function saveAvatarToLocal() {
-  const url = avatarDraft.value || authStore.user?.avatar;
+async function saveAvatarToLocal() { // 实现
+  const url = avatarDraft.value || authStore.user?.avatar; // 实现
   if (!url) {
-    showToast('暂无头像可保存', 'error');
+    showToast('暂无头像可保存', 'error'); // 实现
     return;
   }
-  avatarMenuOpen.value = false;
-  avatarUploading.value = true;
+  avatarMenuOpen.value = false; // 实现
+  avatarUploading.value = true; // 实现
   try {
     const image = await downloadApi.fetchImageBytes(url);
     const ext = image.mime.includes('png') ? 'png'
@@ -695,41 +695,41 @@ async function saveAvatarToLocal() {
       : image.mime.includes('gif') ? 'gif'
       : image.mime.includes('jpeg') || image.mime.includes('jpg') ? 'jpg'
       : 'png';
-    const defaultName = `avatar_${authStore.user?.username || 'user'}.${ext}`;
+    const defaultName = `avatar_${authStore.user?.username || 'user'}.${ext}`; // 实现
     const savedPath = await downloadApi.saveBytesViaDialog(
       defaultName,
       { name: '图片', extensions: [ext] },
       image.data,
     );
     if (savedPath === null) return;
-    showToast('头像已保存到本地', 'success');
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '保存失败';
-    showToast(tip, 'error');
+    showToast('头像已保存到本地', 'success'); // 实现
+  } catch (error) { // 实现
+    const tip = error instanceof Error ? error.message : '保存失败'; // 实现
+    showToast(tip, 'error'); // 实现
   } finally {
-    avatarUploading.value = false;
+    avatarUploading.value = false; // 实现
   }
 }
 
-const showLogoutConfirm = ref(false);
+const showLogoutConfirm = ref(false); // 实现
 
-function handleLogout() {
-  showLogoutConfirm.value = true;
+function handleLogout() { // 实现
+  showLogoutConfirm.value = true; // 实现
 }
 
-async function confirmLogout() {
-  showLogoutConfirm.value = false;
-  loading.value = true;
+async function confirmLogout() { // 实现
+  showLogoutConfirm.value = false; // 实现
+  loading.value = true; // 实现
   try {
-    await logout();
-    authStore.reset();
-    stats.value = null;
-    mode.value = 'login';
+    await logout(); // 实现
+    authStore.reset(); // 实现
+    stats.value = null; // 实现
+    mode.value = 'login'; // 实现
     loginMethod.value = 'password';
-    message.value = '';
-    showToast('已退出登录', 'info');
+    message.value = ''; // 实现
+    showToast('已退出登录', 'info'); // 实现
   } finally {
-    loading.value = false;
+    loading.value = false; // 实现
   }
 }
 
@@ -775,7 +775,7 @@ async function submitCiyuanxi() {
     if (user) {
       authStore.setUser({ ...user, ciyuanxi_id: res.ciyuanxi_id });
     }
-  } catch (error) {
+  } catch (error) { // 实现
     showToast(error instanceof Error ? error.message : '弦予号修改失败', 'error');
   } finally {
     ciyuanxiLoading.value = false;
@@ -826,9 +826,9 @@ async function sendBindCode() {
   try {
     const ciyuanxiId = authStore.user?.ciyuanxi_id || authStore.user?.username || '';
     const result = await sendEmailCode(email, 'bind', captchaPayload, ciyuanxiId || undefined);
-    showToast(result.message || '验证码已发送到邮箱', 'success');
+    showToast(result.message || '验证码已发送到邮箱', 'success'); // 实现
     startBindCodeCountdown();
-  } catch (error) {
+  } catch (error) { // 实现
     showToast(error instanceof Error ? error.message : '验证码发送失败', 'error');
   } finally {
     bindCodeLoading.value = false;
@@ -864,20 +864,20 @@ async function submitBindEmail() {
     if (user) {
       authStore.setUser({ ...user, email: res.email });
     }
-  } catch (error) {
+  } catch (error) { // 实现
     showToast(error instanceof Error ? error.message : '邮箱绑定失败', 'error');
   } finally {
     bindEmailLoading.value = false;
   }
 }
 
-function navigateShortcut(to: string) {
-  void router.push(to);
+function navigateShortcut(to: string) { // 实现
+  void router.push(to); // 实现
 }
 
-function switchMode(next: AuthMode) {
-  mode.value = next;
-  message.value = '';
+function switchMode(next: AuthMode) { // 实现
+  mode.value = next; // 实现
+  message.value = ''; // 实现
   form.value.password = '';
   form.value.confirmPassword = '';
   if (next === 'forgot') {
@@ -925,7 +925,7 @@ async function startQrLogin() {
     });
     qrStatus.value = 'pending';
     startQrPolling();
-  } catch (error) {
+  } catch (error) { // 实现
     qrStatus.value = 'error';
     qrError.value = error instanceof Error ? error.message : '二维码获取失败，请重试';
   }
@@ -976,15 +976,15 @@ async function handleQrLoggedIn(result: QrPollResult) {
   showMessage('登录成功', 'success');
   showToast('登录成功', 'success');
   try {
-    const profile = await getProfile();
-    if (profile) {
+    const profile = await getProfile(); // 实现
+    if (profile) { // 实现
       authStore.setAuth({ token, user: profile.user });
-      stats.value = profile.stats;
-      nicknameDraft.value = profile.user.nickname || profile.user.username;
-      avatarDraft.value = profile.user.avatar || '';
+      stats.value = profile.stats; // 实现
+      nicknameDraft.value = profile.user.nickname || profile.user.username; // 实现
+      avatarDraft.value = profile.user.avatar || ''; // 实现
     }
   } catch {
-    stats.value = null;
+    stats.value = null; // 实现
   }
 }
 
@@ -1004,27 +1004,27 @@ watch(mode, () => {
   }
 });
 
-onMounted(async () => {
-  uiStore.showPlayerDetail = false;
+onMounted(async () => { // 实现
+  uiStore.showPlayerDetail = false; // 实现
   void loadUserAgreement();
-  if (!authStore.initialized) {
-    await authStore.restoreSession();
+  if (!authStore.initialized) { // 实现
+    await authStore.restoreSession(); // 实现
   }
-  if (!authStore.isLoggedIn) {
+  if (!authStore.isLoggedIn) { // 实现
     return;
   }
-  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
-  avatarDraft.value = authStore.user?.avatar || '';
+  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
+  avatarDraft.value = authStore.user?.avatar || ''; // 实现
   try {
-    const profile = await getProfile();
-    if (profile) {
-      authStore.setUser(profile.user);
-      stats.value = profile.stats;
-      nicknameDraft.value = profile.user.nickname || profile.user.username;
-      avatarDraft.value = profile.user.avatar || '';
+    const profile = await getProfile(); // 实现
+    if (profile) { // 实现
+      authStore.setUser(profile.user); // 实现
+      stats.value = profile.stats; // 实现
+      nicknameDraft.value = profile.user.nickname || profile.user.username; // 实现
+      avatarDraft.value = profile.user.avatar || ''; // 实现
     }
   } catch {
-    stats.value = null;
+    stats.value = null; // 实现
   }
   avatarStatus.value = await getAvatarStatus(); // 实现
   try { // 实现
@@ -1081,26 +1081,26 @@ async function silentPoll() {
     nicknameStatus.value = nicknameSt;
 
     if (prevAvatar === 'pending' && avatarSt === 'none') {
-      const profile = await getProfile();
-      if (profile) {
+      const profile = await getProfile(); // 实现
+      if (profile) { // 实现
         authStore.setUser(profile.user);
-        avatarDraft.value = profile.user.avatar || '';
+        avatarDraft.value = profile.user.avatar || ''; // 实现
       }
       showToast('头像已更新', 'success');
     }
     if (prevNickname === 'pending' && nicknameSt === 'none') {
-      const profile = await getProfile();
-      if (profile) {
+      const profile = await getProfile(); // 实现
+      if (profile) { // 实现
         authStore.setUser(profile.user);
         nicknameDraft.value = profile.user.nickname || profile.user.username || '';
       }
       showToast('用户名已更新', 'success');
     }
     if (prevAvatar === 'pending' && prevNickname === 'pending' && avatarSt === 'none' && nicknameSt === 'none') {
-      const profile = await getProfile();
-      if (profile) {
+      const profile = await getProfile(); // 实现
+      if (profile) { // 实现
         authStore.setUser(profile.user);
-        avatarDraft.value = profile.user.avatar || '';
+        avatarDraft.value = profile.user.avatar || ''; // 实现
         nicknameDraft.value = profile.user.nickname || profile.user.username || '';
       }
       showToast('头像和用户名已更新', 'success');
@@ -1112,47 +1112,47 @@ async function silentPoll() {
 </script>
 
 <template>
-  <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200">
-    <div class="px-[clamp(1rem,1.5vw,1.75rem)] pt-[clamp(1rem,1.5vw,1.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
+  <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200"> 
+    <div class="px-[clamp(1rem,1.5vw,1.75rem)] pt-[clamp(1rem,1.5vw,1.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto"> 
 
-      <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up">
-        <header class="pb-[clamp(0.25rem,0.5vw,0.5rem)]">
+      <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up"> 
+        <header class="pb-[clamp(0.25rem,0.5vw,0.5rem)]"> 
           <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ headerLabel }}</p>
-          <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">{{ title }}</h2>
+          <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">{{ title }}</h2> 
           <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-2 max-w-xl">{{ subtitle }}</p>
         </header>
 
-        <nav class="mt-[clamp(1rem,1.5vw,1.75rem)]">
+        <nav class="mt-[clamp(1rem,1.5vw,1.75rem)]"> 
           <div 
             v-if="mode !== 'forgot'" 
             class="flex items-center gap-2 border-b border-black/10 dark:border-white/10"
           > 
             <button
-              type="button"
-              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer"
-              :class="mode === 'login'
-                ? 'text-[#EC4141]'
-                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
-              @click="switchMode('login')"
+              type="button" 
+              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer" 
+              :class="mode === 'login' 
+                ? 'text-[#EC4141]' 
+                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'" 
+              @click="switchMode('login')" 
             >
               登录
               <span
-                class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out"
-                :class="mode === 'login' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'"
+                class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out" 
+                :class="mode === 'login' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'" 
               ></span>
             </button>
             <button
-              type="button"
-              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer"
-              :class="mode === 'register'
-                ? 'text-[#EC4141]'
-                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
-              @click="switchMode('register')"
+              type="button" 
+              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer" 
+              :class="mode === 'register' 
+                ? 'text-[#EC4141]' 
+                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'" 
+              @click="switchMode('register')" 
             >
               注册
               <span
-                class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out"
-                :class="mode === 'register' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'"
+                class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out" 
+                :class="mode === 'register' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'" 
               ></span>
             </button>
           </div>
@@ -1168,34 +1168,34 @@ async function silentPoll() {
           </div> 
         </nav>
 
-        <Transition name="auth-mode" mode="out-in">
+        <Transition name="auth-mode" mode="out-in"> 
           <form 
             v-if="mode === 'forgot'" 
             key="forgot" 
-            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
+            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl" 
             @submit.prevent="onSubmit" 
           > 
             <label class="grid gap-3"> 
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">注册邮箱</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">注册邮箱</span> 
               <input 
                 v-model="forgotForm.email" 
                 type="email" 
                 placeholder="name@example.com" 
                 autocomplete="email" 
                 required 
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30" 
               /> 
             </label> 
             <div class="grid grid-cols-[1fr_auto] items-end gap-4"> 
               <label class="grid gap-3"> 
-                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span>
+                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span> 
                 <input 
                   v-model="forgotForm.code" 
                   type="text" 
                   placeholder="填写验证码" 
                   autocomplete="one-time-code" 
                   required 
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30" 
                 /> 
               </label> 
               <button 
@@ -1208,7 +1208,7 @@ async function silentPoll() {
               </button> 
             </div> 
             <label class="grid gap-3"> 
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">新密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">新密码</span> 
               <div class="relative" @focusin="pwdFocused.newPassword = true" @focusout="pwdFocused.newPassword = false; pwdVisible.newPassword = false">
                 <input
                   v-model="forgotForm.newPassword"
@@ -1219,7 +1219,7 @@ async function silentPoll() {
                   class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b border-black/15 dark:border-white/15 pl-1 pr-10 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                 />
                 <button
-                  type="button"
+                  type="button" 
                   v-show="pwdFocused.newPassword && forgotForm.newPassword.length > 0"
                   class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
                   :aria-label="pwdVisible.newPassword ? '隐藏密码' : '查看密码'"
@@ -1232,7 +1232,7 @@ async function silentPoll() {
               </div>
             </label> 
             <label class="grid gap-3"> 
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认新密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认新密码</span> 
               <div class="relative" @focusin="pwdFocused.confirmNewPassword = true" @focusout="pwdFocused.confirmNewPassword = false; pwdVisible.confirmNewPassword = false">
                 <input
                   v-model="forgotForm.confirmPassword"
@@ -1243,7 +1243,7 @@ async function silentPoll() {
                   class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b border-black/15 dark:border-white/15 pl-1 pr-10 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                 />
                 <button
-                  type="button"
+                  type="button" 
                   v-show="pwdFocused.confirmNewPassword && forgotForm.confirmPassword.length > 0"
                   class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
                   :aria-label="pwdVisible.confirmNewPassword ? '隐藏密码' : '查看密码'"
@@ -1275,12 +1275,12 @@ async function silentPoll() {
           <form 
             v-else 
             :key="mode" 
-            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
+            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl" 
             @submit.prevent="onSubmit" 
           > 
             <div v-if="mode === 'login'" class="flex w-fit gap-1 p-1 rounded-full bg-black/5 dark:bg-white/10">
               <button
-                type="button"
+                type="button" 
                 class="rounded-full px-5 py-2 text-sm font-medium transition cursor-pointer"
                 :class="loginMethod === 'password'
                   ? 'bg-[#EC4141] text-white shadow-sm'
@@ -1290,7 +1290,7 @@ async function silentPoll() {
                 账号密码登录
               </button>
               <button
-                type="button"
+                type="button" 
                 class="rounded-full px-5 py-2 text-sm font-medium transition cursor-pointer"
                 :class="loginMethod === 'email'
                   ? 'bg-[#EC4141] text-white shadow-sm'
@@ -1300,7 +1300,7 @@ async function silentPoll() {
                 邮箱验证码登录
               </button>
               <button
-                type="button"
+                type="button" 
                 class="rounded-full px-5 py-2 text-sm font-medium transition cursor-pointer"
                 :class="loginMethod === 'qr'
                   ? 'bg-[#EC4141] text-white shadow-sm'
@@ -1371,7 +1371,7 @@ async function silentPoll() {
 
               <div class="flex items-center gap-3">
                 <button
-                  type="button"
+                  type="button" 
                   class="text-black/50 dark:text-white/50 hover:text-[#EC4141] text-xs flex items-center gap-1 transition cursor-pointer"
                   @click="startQrLogin"
                 >刷新二维码</button>
@@ -1381,13 +1381,13 @@ async function silentPoll() {
 
             <template v-else>
             <template v-if="mode === 'login' && loginMethod === 'email'">
-              <label class="grid gap-3">
-                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span>
+              <label class="grid gap-3"> 
+                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span> 
                 <input
-                  v-model="form.email"
-                  type="email"
-                  placeholder="name@example.com"
-                  autocomplete="email"
+                  v-model="form.email" 
+                  type="email" 
+                  placeholder="name@example.com" 
+                  autocomplete="email" 
                   required
                   class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                   :class="fieldErrors.email ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
@@ -1397,14 +1397,14 @@ async function silentPoll() {
                 <span v-if="fieldErrors.email" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.email }}</span>
               </label>
 
-              <div class="grid grid-cols-[1fr_auto] items-end gap-4">
-                <label class="grid gap-3">
-                  <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span>
+              <div class="grid grid-cols-[1fr_auto] items-end gap-4"> 
+                <label class="grid gap-3"> 
+                  <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span> 
                   <input
-                    v-model="form.code"
+                    v-model="form.code" 
                     type="text"
-                    placeholder="填写验证码"
-                    autocomplete="one-time-code"
+                    placeholder="填写验证码" 
+                    autocomplete="one-time-code" 
                     required
                     class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                     :class="fieldErrors.code ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
@@ -1414,10 +1414,10 @@ async function silentPoll() {
                   <span v-if="fieldErrors.code" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.code }}</span>
                 </label>
                 <button
-                  type="button"
-                  class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button" 
+                  class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
                   :disabled="codeLoading || codeCountdown > 0"
-                  @click="handleSendCode"
+                  @click="handleSendCode" 
                 >
                   {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
                 </button>
@@ -1439,8 +1439,8 @@ async function silentPoll() {
               <span v-if="fieldErrors.account" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.account }}</span>
             </label>
 
-            <template v-if="mode === 'register'">
-              <label class="grid gap-3">
+            <template v-if="mode === 'register'"> 
+              <label class="grid gap-3"> 
                 <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">昵称（选填）</span>
                 <input
                   v-model="form.nickname"
@@ -1454,13 +1454,13 @@ async function silentPoll() {
                 />
                 <span v-if="fieldErrors.nickname" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.nickname }}</span>
               </label>
-              <label class="grid gap-3">
-                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span>
+              <label class="grid gap-3"> 
+                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span> 
                 <input
-                  v-model="form.email"
-                  type="email"
-                  placeholder="name@example.com"
-                  autocomplete="email"
+                  v-model="form.email" 
+                  type="email" 
+                  placeholder="name@example.com" 
+                  autocomplete="email" 
                   required
                   class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                   :class="fieldErrors.email ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
@@ -1470,14 +1470,14 @@ async function silentPoll() {
                 <span v-if="fieldErrors.email" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.email }}</span>
               </label>
 
-              <div class="grid grid-cols-[1fr_auto] items-end gap-4">
-                <label class="grid gap-3">
-                  <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span>
+              <div class="grid grid-cols-[1fr_auto] items-end gap-4"> 
+                <label class="grid gap-3"> 
+                  <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span> 
                   <input
-                    v-model="form.code"
+                    v-model="form.code" 
                     type="text"
-                    placeholder="填写验证码"
-                    autocomplete="one-time-code"
+                    placeholder="填写验证码" 
+                    autocomplete="one-time-code" 
                     required
                     class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                     :class="fieldErrors.code ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
@@ -1487,10 +1487,10 @@ async function silentPoll() {
                   <span v-if="fieldErrors.code" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.code }}</span>
                 </label>
                 <button
-                  type="button"
-                  class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button" 
+                  class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
                   :disabled="codeLoading || codeCountdown > 0"
-                  @click="handleSendCode"
+                  @click="handleSendCode" 
                 >
                   {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
                 </button>
@@ -1498,7 +1498,7 @@ async function silentPoll() {
             </template>
 
             <label v-if="loginMethod !== 'email'" class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">密码</span> 
               <div class="relative" @focusin="pwdFocused.password = true" @focusout="pwdFocused.password = false; pwdVisible.password = false">
                 <input
                   v-model="form.password"
@@ -1512,7 +1512,7 @@ async function silentPoll() {
                   @input="onPasswordInput"
                 />
                 <button
-                  type="button"
+                  type="button" 
                   v-show="pwdFocused.password && form.password.length > 0"
                   class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
                   :aria-label="pwdVisible.password ? '隐藏密码' : '查看密码'"
@@ -1541,7 +1541,7 @@ async function silentPoll() {
                   @input="clearFieldError('confirmPassword')"
                 />
                 <button
-                  type="button"
+                  type="button" 
                   v-show="pwdFocused.confirmPassword && form.confirmPassword.length > 0"
                   class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
                   :aria-label="pwdVisible.confirmPassword ? '隐藏密码' : '查看密码'"
@@ -1565,7 +1565,7 @@ async function silentPoll() {
               <span>
                 我已阅读并同意
                 <button
-                  type="button"
+                  type="button" 
                   class="text-[#EC4141] hover:text-[#d13b3b] underline underline-offset-4 cursor-pointer"
                   @click="openTermsModal"
                 >
@@ -1577,18 +1577,18 @@ async function silentPoll() {
 
             <div class="pt-4 flex items-center gap-5 flex-wrap"> 
               <button
-                type="submit"
+                type="submit" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-2 rounded-full text-sm font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                 :disabled="loading || !agreementAccepted"
               >
-                {{ loading ? '提交中…' : mode === 'login' ? '登录' : '注册' }}
+                {{ loading ? '提交中…' : mode === 'login' ? '登录' : '注册' }} 
               </button>
               <button
-                type="button"
-                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer"
-                @click="switchMode(mode === 'login' ? 'register' : 'login')"
+                type="button" 
+                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer" 
+                @click="switchMode(mode === 'login' ? 'register' : 'login')" 
               >
-                {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
+                {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }} 
               </button>
               <button 
                 v-if="mode === 'login'" 
@@ -1601,31 +1601,31 @@ async function silentPoll() {
             </div>
             </template>
           </form>
-        </Transition>
+        </Transition> 
 
         <div
-          v-if="message"
-          class="mt-4"
+          v-if="message" 
+          class="mt-4" 
         >
           <p
-            class="text-base font-medium"
-            :class="messageTone === 'error'
-              ? 'text-[#EC4141]'
-              : 'text-emerald-600 dark:text-emerald-400'"
+            class="text-base font-medium" 
+            :class="messageTone === 'error' 
+              ? 'text-[#EC4141]' 
+              : 'text-emerald-600 dark:text-emerald-400'" 
           >
-            {{ message }}
+            {{ message }} 
           </p>
         </div>
       </div>
 
-      <div v-else class="space-y-[clamp(1rem,1.8vw,1.5rem)]">
-        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(1.25rem,1.8vw,2rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
-          <div class="flex items-center gap-[clamp(0.75rem,1.2vw,1.25rem)] min-w-0">
+      <div v-else class="space-y-[clamp(1rem,1.8vw,1.5rem)]"> 
+        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(1.25rem,1.8vw,2rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up"> 
+          <div class="flex items-center gap-[clamp(0.75rem,1.2vw,1.25rem)] min-w-0"> 
             <div class="flex flex-col items-center gap-1 shrink-0">
               <div class="relative shrink-0">
                 <button
                   ref="avatarBtnRef"
-                  type="button"
+                  type="button" 
                   class="grid h-[clamp(6rem,7vw,7rem)] w-[clamp(6rem,7vw,7rem)] place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.25rem,2vw,1.75rem)] font-black ring-2 ring-transparent hover:ring-[#EC4141]/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   :disabled="avatarUploading || loading"
                   :title="avatarUploading ? '上传中…' : '点击管理头像'"
@@ -1650,7 +1650,7 @@ async function silentPoll() {
                 <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 审核中
                 <button
-                  type="button"
+                  type="button" 
                   class="ml-0.5 flex items-center gap-0.5 underline-offset-2 hover:underline cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="refreshingAvatarStatus"
                   @click="refreshAvatarStatus"
@@ -1667,14 +1667,14 @@ async function silentPoll() {
                 未通过
               </div>
             </div> 
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 min-w-0">
+            <div class="min-w-0"> 
+              <div class="flex items-center gap-2 min-w-0"> 
                 <h2
                   class="text-black dark:text-white text-[clamp(1.1rem,2.2vw,1.7rem)] font-black tracking-tight leading-none truncate cursor-pointer hover:text-[#EC4141] transition"
                   :title="authStore.user?.nickname || authStore.user?.username || '点击修改昵称'"
                   @click="openNicknameEditModal"
                 >
-                  {{ authStore.user?.nickname || authStore.user?.username }}
+                  {{ authStore.user?.nickname || authStore.user?.username }} 
                 </h2>
               </div>
               <div 
@@ -1723,7 +1723,7 @@ async function silentPoll() {
                 </p>
                 <button
                   v-if="!authStore.user?.email"
-                  type="button"
+                  type="button" 
                   class="shrink-0 text-[#EC4141] hover:text-[#d13b3b] text-[clamp(0.65rem,0.85vw,0.75rem)] font-medium transition cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10"
                   title="绑定邮箱"
                   @click="openBindEmailModal"
@@ -1731,134 +1731,134 @@ async function silentPoll() {
                   绑定邮箱
                 </button>
               </div>
-              <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap mt-3">
-                <div v-for="item in meterItems" :key="item.key" class="flex items-baseline gap-1.5">
-                  <span class="text-black dark:text-white text-[clamp(1rem,1.4vw,1.2rem)] font-bold tracking-tight leading-none">{{ displayStats[item.key] }}</span>
-                  <span class="text-black/50 dark:text-white/50 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wide">{{ item.label }}</span>
+              <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap mt-3"> 
+                <div v-for="item in meterItems" :key="item.key" class="flex items-baseline gap-1.5"> 
+                  <span class="text-black dark:text-white text-[clamp(1rem,1.4vw,1.2rem)] font-bold tracking-tight leading-none">{{ displayStats[item.key] }}</span> 
+                  <span class="text-black/50 dark:text-white/50 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wide">{{ item.label }}</span> 
                 </div>
               </div>
             </div>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="flex items-center gap-2 shrink-0"> 
             <button
-              type="button"
-              class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="loading"
-              @click="handleLogout"
+              type="button" 
+              class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
+              :disabled="loading" 
+              @click="handleLogout" 
             >
-              {{ loading ? '退出中…' : '退出登录' }}
+              {{ loading ? '退出中…' : '退出登录' }} 
             </button>
           </div>
         </header>
 
-        <Teleport to="body">
-          <Transition name="avatar-modal">
+        <Teleport to="body"> 
+          <Transition name="avatar-modal"> 
             <div
-              v-if="avatarMenuOpen"
-              class="fixed inset-0 z-[200]"
-              @click.self="avatarMenuOpen = false"
+              v-if="avatarMenuOpen" 
+              class="fixed inset-0 z-[200]" 
+              @click.self="avatarMenuOpen = false" 
             >
               <div
-                v-if="avatarMenuPos"
-                class="avatar-menu-card fixed"
-                :style="{ top: avatarMenuPos.top + 'px', left: avatarMenuPos.left + 'px' }"
+                v-if="avatarMenuPos" 
+                class="avatar-menu-card fixed" 
+                :style="{ top: avatarMenuPos.top + 'px', left: avatarMenuPos.left + 'px' }" 
               >
-                <div class="avatar-menu-body">
-                  <button type="button" class="avatar-menu-item" @click="openAvatarPicker">
-                    <span class="avatar-menu-icon">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <div class="avatar-menu-body"> 
+                  <button type="button" class="avatar-menu-item" @click="openAvatarPicker"> 
+                    <span class="avatar-menu-icon"> 
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /> 
                       </svg>
                     </span>
-                    <span class="avatar-menu-text">
-                      <strong>更换头像</strong>
-                      <small>从本地选择图片上传</small>
+                    <span class="avatar-menu-text"> 
+                      <strong>更换头像</strong> 
+                      <small>从本地选择图片上传</small> 
                     </span>
                   </button>
-                  <button type="button" class="avatar-menu-item" @click="avatarMenuOpen = false; avatarPreviewOpen = true">
-                    <span class="avatar-menu-icon">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  <button type="button" class="avatar-menu-item" @click="avatarMenuOpen = false; avatarPreviewOpen = true"> 
+                    <span class="avatar-menu-icon"> 
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /> 
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /> 
                       </svg>
                     </span>
-                    <span class="avatar-menu-text">
-                      <strong>放大查看</strong>
-                      <small>查看当前头像大图</small>
+                    <span class="avatar-menu-text"> 
+                      <strong>放大查看</strong> 
+                      <small>查看当前头像大图</small> 
                     </span>
                   </button>
-                  <button type="button" class="avatar-menu-item" @click="saveAvatarToLocal">
-                    <span class="avatar-menu-icon">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  <button type="button" class="avatar-menu-item" @click="saveAvatarToLocal"> 
+                    <span class="avatar-menu-icon"> 
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /> 
                       </svg>
                     </span>
-                    <span class="avatar-menu-text">
-                      <strong>保存到本地</strong>
-                      <small>下载当前头像到电脑</small>
+                    <span class="avatar-menu-text"> 
+                      <strong>保存到本地</strong> 
+                      <small>下载当前头像到电脑</small> 
                     </span>
                   </button>
                 </div>
               </div>
             </div>
-          </Transition>
+          </Transition> 
 
-          <Transition name="avatar-preview">
+          <Transition name="avatar-preview"> 
             <div
-              v-if="avatarPreviewOpen"
-              class="fixed inset-0 z-[201] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm"
-              @click="avatarPreviewOpen = false"
+              v-if="avatarPreviewOpen" 
+              class="fixed inset-0 z-[201] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm" 
+              @click="avatarPreviewOpen = false" 
             >
-              <div class="relative max-w-full max-h-full">
-                <div class="w-[min(80vw,70vh)] h-[min(80vw,70vh)] rounded-full overflow-hidden ring-4 ring-white/10 shadow-2xl">
+              <div class="relative max-w-full max-h-full"> 
+                <div class="w-[min(80vw,70vh)] h-[min(80vw,70vh)] rounded-full overflow-hidden ring-4 ring-white/10 shadow-2xl"> 
                   <img
-                    v-if="avatarDraft || authStore.user?.avatar"
-                    :src="avatarDraft || authStore.user?.avatar || ''"
+                    v-if="avatarDraft || authStore.user?.avatar" 
+                    :src="avatarDraft || authStore.user?.avatar || ''" 
                     alt="头像"
-                    class="h-full w-full object-cover"
+                    class="h-full w-full object-cover" 
                   />
                   <div
                     v-else
-                    class="h-full w-full grid place-items-center bg-white/10 text-white text-[20vh] font-black"
+                    class="h-full w-full grid place-items-center bg-white/10 text-white text-[20vh] font-black" 
                   >
-                    {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}
+                    {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }} 
                   </div>
                 </div>
                 <button
-                  type="button"
-                  class="absolute -top-2 -right-2 grid h-9 w-9 place-items-center rounded-full bg-white text-black hover:bg-white/90 transition shadow-lg cursor-pointer"
-                  @click="avatarPreviewOpen = false"
-                  aria-label="关闭"
+                  type="button" 
+                  class="absolute -top-2 -right-2 grid h-9 w-9 place-items-center rounded-full bg-white text-black hover:bg-white/90 transition shadow-lg cursor-pointer" 
+                  @click="avatarPreviewOpen = false" 
+                  aria-label="关闭" 
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"> 
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /> 
                   </svg>
                 </button>
               </div>
             </div>
-          </Transition>
+          </Transition> 
         </Teleport>
 
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 340ms;">
-          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 340ms;"> 
+          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p> 
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3"> 
             <button
-              v-for="item in personalShortcuts"
-              :key="item.label"
-              type="button"
-              class="grid gap-2 p-4 rounded-xl border border-black/10 dark:border-white/10 hover:border-[#EC4141]/40 hover:bg-red-50/40 dark:hover:bg-red-500/5 text-left transition-colors cursor-pointer"
-              @click="navigateShortcut(item.to)"
+              v-for="item in personalShortcuts" 
+              :key="item.label" 
+              type="button" 
+              class="grid gap-2 p-4 rounded-xl border border-black/10 dark:border-white/10 hover:border-[#EC4141]/40 hover:bg-red-50/40 dark:hover:bg-red-500/5 text-left transition-colors cursor-pointer" 
+              @click="navigateShortcut(item.to)" 
             >
-              <span class="grid h-9 w-9 place-items-center rounded-lg bg-black/5 dark:bg-white/10 text-[#EC4141]">
-                <svg v-if="item.icon === 'cog'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                <svg v-else-if="item.icon === 'theme'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
-                <svg v-else-if="item.icon === 'home'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-                <svg v-else-if="item.icon === 'plugin'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+              <span class="grid h-9 w-9 place-items-center rounded-lg bg-black/5 dark:bg-white/10 text-[#EC4141]"> 
+                <svg v-if="item.icon === 'cog'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> 
+                <svg v-else-if="item.icon === 'theme'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg> 
+                <svg v-else-if="item.icon === 'home'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg> 
+                <svg v-else-if="item.icon === 'plugin'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> 
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg> 
               </span>
-              <span class="grid gap-0.5 min-w-0">
-                <strong class="text-[clamp(0.8rem,1vw,0.9rem)] font-medium text-black dark:text-white truncate">{{ item.label }}</strong>
-                <small class="text-[clamp(0.65rem,0.8vw,0.75rem)] text-black/55 dark:text-white/55 truncate">{{ item.desc }}</small>
+              <span class="grid gap-0.5 min-w-0"> 
+                <strong class="text-[clamp(0.8rem,1vw,0.9rem)] font-medium text-black dark:text-white truncate">{{ item.label }}</strong> 
+                <small class="text-[clamp(0.65rem,0.8vw,0.75rem)] text-black/55 dark:text-white/55 truncate">{{ item.desc }}</small> 
               </span>
             </button>
           </div>
@@ -1867,50 +1867,50 @@ async function silentPoll() {
 
     </div>
 
-    <Teleport to="body">
-      <Transition name="avatar-modal">
+    <Teleport to="body"> 
+      <Transition name="avatar-modal"> 
         <div
-          v-if="showLogoutConfirm"
-          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          @click.self="showLogoutConfirm = false"
+          v-if="showLogoutConfirm" 
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
+          @click.self="showLogoutConfirm = false" 
         >
-          <div class="logout-confirm-card">
-            <div class="logout-confirm-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          <div class="logout-confirm-card"> 
+            <div class="logout-confirm-icon"> 
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /> 
               </svg>
             </div>
-            <h3 class="logout-confirm-title">退出登录</h3>
-            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p>
-            <div class="logout-confirm-actions">
+            <h3 class="logout-confirm-title">退出登录</h3> 
+            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p> 
+            <div class="logout-confirm-actions"> 
               <button
-                type="button"
-                class="logout-btn logout-btn--ghost"
-                @click="showLogoutConfirm = false"
+                type="button" 
+                class="logout-btn logout-btn--ghost" 
+                @click="showLogoutConfirm = false" 
               >
                 取消
               </button>
               <button
-                type="button"
-                class="logout-btn logout-btn--danger"
-                @click="confirmLogout"
+                type="button" 
+                class="logout-btn logout-btn--danger" 
+                @click="confirmLogout" 
               >
                 确认退出
               </button>
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="avatar-modal">
+    <Teleport to="body"> 
+      <Transition name="avatar-modal"> 
         <div
           v-if="showCiyuanxiModal"
           class="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           @click.self="showCiyuanxiModal = false"
         >
-          <div class="logout-confirm-card">
+          <div class="logout-confirm-card"> 
             <h3 class="logout-confirm-title">修改弦予号</h3>
             <p class="logout-confirm-desc">弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。</p>
             <div class="flex flex-col gap-3 mt-4">
@@ -1950,16 +1950,16 @@ async function silentPoll() {
             </div>
             <div class="logout-confirm-actions mt-5">
               <button
-                type="button"
-                class="logout-btn logout-btn--ghost"
+                type="button" 
+                class="logout-btn logout-btn--ghost" 
                 :disabled="ciyuanxiLoading"
                 @click="showCiyuanxiModal = false"
               >
                 取消
               </button>
               <button
-                type="button"
-                class="logout-btn logout-btn--danger"
+                type="button" 
+                class="logout-btn logout-btn--danger" 
                 :disabled="ciyuanxiLoading"
                 @click="submitCiyuanxi"
               >
@@ -1968,17 +1968,17 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="avatar-modal">
+    <Teleport to="body"> 
+      <Transition name="avatar-modal"> 
         <div
           v-if="showBindEmailModal"
           class="fixed inset-0 z-[211] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           @click.self="showBindEmailModal = false"
         >
-          <div class="logout-confirm-card">
+          <div class="logout-confirm-card"> 
             <h3 class="logout-confirm-title">绑定邮箱</h3>
             <p class="logout-confirm-desc">绑定邮箱后可用于登录与找回密码，请填写常用且可接收邮件的地址。</p>
             <div class="flex flex-col gap-3 mt-4">
@@ -1986,7 +1986,7 @@ async function silentPoll() {
                 <span class="text-xs text-gray-500 dark:text-white/50">邮箱</span>
                 <input
                   v-model="bindEmailForm.email"
-                  type="email"
+                  type="email" 
                   placeholder="请输入邮箱"
                   spellcheck="false"
                   class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
@@ -2015,16 +2015,16 @@ async function silentPoll() {
             </div>
             <div class="logout-confirm-actions mt-5">
               <button
-                type="button"
-                class="logout-btn logout-btn--ghost"
+                type="button" 
+                class="logout-btn logout-btn--ghost" 
                 :disabled="bindEmailLoading"
                 @click="showBindEmailModal = false"
               >
                 取消
               </button>
               <button
-                type="button"
-                class="logout-btn logout-btn--danger"
+                type="button" 
+                class="logout-btn logout-btn--danger" 
                 :disabled="bindEmailLoading"
                 @click="submitBindEmail"
               >
@@ -2033,17 +2033,17 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="avatar-modal">
+    <Teleport to="body"> 
+      <Transition name="avatar-modal"> 
         <div
           v-if="showNicknameModal"
           class="fixed inset-0 z-[212] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           @click.self="cancelNicknameEdit"
         >
-          <div class="logout-confirm-card">
+          <div class="logout-confirm-card"> 
             <h3 class="logout-confirm-title">修改昵称</h3>
             <p class="logout-confirm-desc">昵称修改后需管理员审核，审核通过后才会正式生效。</p>
             <div class="flex flex-col gap-3 mt-4">
@@ -2065,16 +2065,16 @@ async function silentPoll() {
             </div>
             <div class="logout-confirm-actions mt-5">
               <button
-                type="button"
-                class="logout-btn logout-btn--ghost"
+                type="button" 
+                class="logout-btn logout-btn--ghost" 
                 :disabled="profileSaving"
                 @click="cancelNicknameEdit"
               >
                 取消
               </button>
               <button
-                type="button"
-                class="logout-btn logout-btn--danger"
+                type="button" 
+                class="logout-btn logout-btn--danger" 
                 :disabled="profileSaving"
                 @click="submitNicknameEdit"
               >
@@ -2083,11 +2083,11 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="avatar-modal">
+    <Teleport to="body"> 
+      <Transition name="avatar-modal"> 
         <div
           v-if="termsModalOpen"
           class="fixed inset-0 z-[202] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
@@ -2112,8 +2112,8 @@ async function silentPoll() {
             <div class="terms-actions">
               <button type="button" class="logout-btn logout-btn--ghost" @click="closeTermsModal">关闭</button>
               <button
-                type="button"
-                class="logout-btn logout-btn--danger"
+                type="button" 
+                class="logout-btn logout-btn--danger" 
                 :disabled="!termsScrolledToEnd"
                 @click="acceptTerms"
               >
@@ -2122,7 +2122,7 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition>
+      </Transition> 
     </Teleport>
 
     <HumanCaptchaModal
@@ -2135,28 +2135,28 @@ async function silentPoll() {
   </div>
 </template>
 
-<style scoped>
-.logout-confirm-card {
-  width: min(86vw, 360px);
-  background: #ffffff;
-  color: #1f2937;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
-  padding: 24px 22px 20px;
-  text-align: center;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+<style scoped> /* 样式 */
+.logout-confirm-card { /* 样式 */
+  width: min(86vw, 360px); /* 样式 */
+  background: #ffffff; /* 样式 */
+  color: #1f2937; /* 样式 */
+  border-radius: 16px; /* 样式 */
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08); /* 样式 */
+  padding: 24px 22px 20px; /* 样式 */
+  text-align: center; /* 样式 */
+  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
-.logout-confirm-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  background: rgba(236, 65, 65, 0.1);
-  color: #EC4141;
-  margin: 0 auto 14px;
+.logout-confirm-icon { /* 样式 */
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
+  width: 48px; /* 样式 */
+  height: 48px; /* 样式 */
+  border-radius: 999px; /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
+  color: #EC4141; /* 样式 */
+  margin: 0 auto 14px; /* 样式 */
 }
 
 .logout-confirm-icon--success {
@@ -2164,65 +2164,65 @@ async function silentPoll() {
   color: #16a34a;
 }
 
-.logout-confirm-title {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #1f2937;
-  margin: 0 0 8px;
+.logout-confirm-title { /* 样式 */
+  font-size: 1.05rem; /* 样式 */
+  font-weight: 700; /* 样式 */
+  color: #1f2937; /* 样式 */
+  margin: 0 0 8px; /* 样式 */
 }
 
-.logout-confirm-desc {
-  font-size: 0.85rem;
-  line-height: 1.55;
-  color: rgba(75, 85, 99, 0.9);
-  margin: 0 0 20px;
+.logout-confirm-desc { /* 样式 */
+  font-size: 0.85rem; /* 样式 */
+  line-height: 1.55; /* 样式 */
+  color: rgba(75, 85, 99, 0.9); /* 样式 */
+  margin: 0 0 20px; /* 样式 */
 }
 
-.logout-confirm-actions {
-  display: flex;
+.logout-confirm-actions { /* 样式 */
+  display: flex; /* 样式 */
   gap: 10px;
-  justify-content: center;
+  justify-content: center; /* 样式 */
 }
 
 .logout-confirm-actions--single {
-  display: grid;
+  display: grid; /* 样式 */
   grid-template-columns: 1fr;
 }
 
-.logout-btn {
+.logout-btn { /* 样式 */
   flex: 1;
-  height: 38px;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
-  border: 1px solid transparent;
+  height: 38px; /* 样式 */
+  border-radius: 999px; /* 样式 */
+  font-size: 0.85rem; /* 样式 */
+  font-weight: 600; /* 样式 */
+  cursor: pointer; /* 样式 */
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease; /* 样式 */
+  border: 1px solid transparent; /* 样式 */
 }
 
-.logout-btn--ghost {
-  border-color: rgba(148, 163, 184, 0.24);
-  background: transparent;
-  color: rgba(100, 116, 139, 0.9);
+.logout-btn--ghost { /* 样式 */
+  border-color: rgba(148, 163, 184, 0.24); /* 样式 */
+  background: transparent; /* 样式 */
+  color: rgba(100, 116, 139, 0.9); /* 样式 */
 }
 
-.logout-btn--ghost:hover {
-  background: rgba(15, 23, 42, 0.04);
-  color: rgb(31 41 55);
+.logout-btn--ghost:hover { /* 样式 */
+  background: rgba(15, 23, 42, 0.04); /* 样式 */
+  color: rgb(31 41 55); /* 样式 */
 }
 
-.logout-btn--danger {
-  background: #EC4141;
-  color: #ffffff;
+.logout-btn--danger { /* 样式 */
+  background: #EC4141; /* 样式 */
+  color: #ffffff; /* 样式 */
 }
 
-.logout-btn--danger:hover {
-  background: #d13b3b;
+.logout-btn--danger:hover { /* 样式 */
+  background: #d13b3b; /* 样式 */
 }
 
 .logout-btn--success {
   background: #16a34a;
-  color: #ffffff;
+  color: #ffffff; /* 样式 */
 }
 
 .logout-btn--success:hover {
@@ -2242,23 +2242,23 @@ async function silentPoll() {
 .terms-card {
   width: min(92vw, 680px);
   max-height: min(86vh, 760px);
-  display: flex;
-  flex-direction: column;
-  background: #ffffff;
-  color: #1f2937;
+  display: flex; /* 样式 */
+  flex-direction: column; /* 样式 */
+  background: #ffffff; /* 样式 */
+  color: #1f2937; /* 样式 */
   border-radius: 18px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22), 0 6px 20px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
+  overflow: hidden; /* 样式 */
 }
 
 .terms-header {
-  display: flex;
+  display: flex; /* 样式 */
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: space-between; /* 样式 */
   gap: 16px;
   padding: 20px 22px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
 .terms-header p {
@@ -2275,20 +2275,20 @@ async function silentPoll() {
 }
 
 .terms-close {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 999px;
+  width: 32px; /* 样式 */
+  height: 32px; /* 样式 */
+  border: none; /* 样式 */
+  border-radius: 999px; /* 样式 */
   background: rgba(15, 23, 42, 0.05);
   color: rgba(31, 41, 55, 0.75);
   font-size: 1.35rem;
   line-height: 1;
-  cursor: pointer;
+  cursor: pointer; /* 样式 */
 }
 
 .terms-close:hover {
-  background: rgba(236, 65, 65, 0.1);
-  color: #EC4141;
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
+  color: #EC4141; /* 样式 */
 }
 
 .terms-body {
@@ -2301,13 +2301,13 @@ async function silentPoll() {
 .terms-content {
   white-space: pre-wrap;
   color: rgba(75, 85, 99, 0.92);
-  font-size: 0.9rem;
+  font-size: 0.9rem; /* 样式 */
   line-height: 1.8;
   padding: 14px 0 4px;
 }
 
 .terms-actions {
-  display: flex;
+  display: flex; /* 样式 */
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 22px 18px;
@@ -2316,31 +2316,31 @@ async function silentPoll() {
 
 .terms-scroll-tip {
   padding: 10px 22px 0;
-  color: #EC4141;
+  color: #EC4141; /* 样式 */
   font-size: 0.78rem;
   text-align: right;
 }
 
-.avatar-modal-enter-active .logout-confirm-card,
-.avatar-modal-leave-active .logout-confirm-card {
-  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+.avatar-modal-enter-active .logout-confirm-card, /* 样式 */
+.avatar-modal-leave-active .logout-confirm-card { /* 样式 */
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); /* 样式 */
 }
 
-.avatar-modal-enter-from .logout-confirm-card,
-.avatar-modal-leave-to .logout-confirm-card {
+.avatar-modal-enter-from .logout-confirm-card, /* 样式 */
+.avatar-modal-leave-to .logout-confirm-card { /* 样式 */
   opacity: 0;
-  transform: scale(0.92) translateY(8px);
+  transform: scale(0.92) translateY(8px); /* 样式 */
 }
 
-:global(.dark) .logout-confirm-card {
+:global(.dark) .logout-confirm-card { /* 样式 */
   background: #262626;
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92); /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
-:global(.dark) .logout-confirm-icon {
-  background: rgba(236, 65, 65, 0.18);
-  color: #ff8b8b;
+:global(.dark) .logout-confirm-icon { /* 样式 */
+  background: rgba(236, 65, 65, 0.18); /* 样式 */
+  color: #ff8b8b; /* 样式 */
 }
 
 :global(.dark) .logout-confirm-icon--success {
@@ -2348,33 +2348,33 @@ async function silentPoll() {
   color: #86efac;
 }
 
-:global(.dark) .logout-confirm-title {
-  color: rgba(255, 255, 255, 0.96);
+:global(.dark) .logout-confirm-title { /* 样式 */
+  color: rgba(255, 255, 255, 0.96); /* 样式 */
 }
 
-:global(.dark) .logout-confirm-desc {
-  color: rgba(255, 255, 255, 0.6);
+:global(.dark) .logout-confirm-desc { /* 样式 */
+  color: rgba(255, 255, 255, 0.6); /* 样式 */
 }
 
-:global(.dark) .logout-btn--ghost {
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.7);
+:global(.dark) .logout-btn--ghost { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.12); /* 样式 */
+  color: rgba(255, 255, 255, 0.7); /* 样式 */
 }
 
-:global(.dark) .logout-btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.96);
+:global(.dark) .logout-btn--ghost:hover { /* 样式 */
+  background: rgba(255, 255, 255, 0.06); /* 样式 */
+  color: rgba(255, 255, 255, 0.96); /* 样式 */
 }
 
 :global(.dark) .terms-card {
   background: #262626;
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92); /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
 :global(.dark) .terms-header,
 :global(.dark) .terms-actions {
-  border-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
 :global(.dark) .terms-close {
@@ -2386,238 +2386,238 @@ async function silentPoll() {
   color: rgba(255, 255, 255, 0.68);
 }
 
-.custom-scrollbar::-webkit-scrollbar {
+.custom-scrollbar::-webkit-scrollbar { /* 样式 */
   width: 6px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+.custom-scrollbar::-webkit-scrollbar-track { /* 样式 */
+  background: transparent; /* 样式 */
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
+.custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
+  background: rgba(0, 0, 0, 0.1); /* 样式 */
+  border-radius: 10px; /* 样式 */
 }
 
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+.dark .custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
+  background: rgba(255, 255, 255, 0.1); /* 样式 */
 }
 
-.auth-mode-enter-active,
-.auth-mode-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease, filter 0.25s ease;
+.auth-mode-enter-active, /* 样式 */
+.auth-mode-leave-active { /* 样式 */
+  transition: opacity 0.25s ease, transform 0.25s ease, filter 0.25s ease; /* 样式 */
 }
 
-.auth-mode-enter-from {
+.auth-mode-enter-from { /* 样式 */
   opacity: 0;
-  transform: translateY(8px);
-  filter: blur(4px);
+  transform: translateY(8px); /* 样式 */
+  filter: blur(4px); /* 样式 */
 }
 
-.auth-mode-leave-to {
+.auth-mode-leave-to { /* 样式 */
   opacity: 0;
-  transform: translateY(-8px);
-  filter: blur(4px);
+  transform: translateY(-8px); /* 样式 */
+  filter: blur(4px); /* 样式 */
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .auth-mode-enter-active,
-  .auth-mode-leave-active {
-    transition: opacity 0.15s ease;
+@media (prefers-reduced-motion: reduce) { /* 样式 */
+  .auth-mode-enter-active, /* 样式 */
+  .auth-mode-leave-active { /* 样式 */
+    transition: opacity 0.15s ease; /* 样式 */
   }
 
-  .auth-mode-enter-from,
-  .auth-mode-leave-to {
-    transform: none;
-    filter: none;
+  .auth-mode-enter-from, /* 样式 */
+  .auth-mode-leave-to { /* 样式 */
+    transform: none; /* 样式 */
+    filter: none; /* 样式 */
   }
 }
 
-.avatar-menu-card {
-  width: min(86vw, 320px);
-  background: #ffffff;
-  color: #1f2937;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+.avatar-menu-card { /* 样式 */
+  width: min(86vw, 320px); /* 样式 */
+  background: #ffffff; /* 样式 */
+  color: #1f2937; /* 样式 */
+  border-radius: 16px; /* 样式 */
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08); /* 样式 */
+  overflow: hidden; /* 样式 */
+  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
-:global(.dark) .avatar-menu-card {
+:global(.dark) .avatar-menu-card { /* 样式 */
   background: #262626;
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92); /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
-.avatar-menu-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+.avatar-menu-header { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: space-between; /* 样式 */
+  padding: 14px 16px; /* 样式 */
+  font-size: 0.9rem; /* 样式 */
+  font-weight: 600; /* 样式 */
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
-:global(.dark) .avatar-menu-header {
-  border-color: rgba(255, 255, 255, 0.08);
+:global(.dark) .avatar-menu-header { /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
 }
 
-.avatar-menu-close {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  opacity: 0.6;
-  cursor: pointer;
-  transition: opacity 0.2s, background 0.2s;
+.avatar-menu-close { /* 样式 */
+  display: grid; /* 样式 */
+  place-items: center; /* 样式 */
+  width: 24px; /* 样式 */
+  height: 24px; /* 样式 */
+  border-radius: 6px; /* 样式 */
+  border: none; /* 样式 */
+  background: transparent; /* 样式 */
+  color: inherit; /* 样式 */
+  opacity: 0.6; /* 样式 */
+  cursor: pointer; /* 样式 */
+  transition: opacity 0.2s, background 0.2s; /* 样式 */
 }
 
-.avatar-menu-close:hover {
+.avatar-menu-close:hover { /* 样式 */
   opacity: 1;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.06); /* 样式 */
 }
 
-:global(.dark) .avatar-menu-close:hover {
-  background: rgba(255, 255, 255, 0.1);
+:global(.dark) .avatar-menu-close:hover { /* 样式 */
+  background: rgba(255, 255, 255, 0.1); /* 样式 */
 }
 
-.avatar-menu-body {
-  padding: 6px;
-  display: grid;
+.avatar-menu-body { /* 样式 */
+  padding: 6px; /* 样式 */
+  display: grid; /* 样式 */
   gap: 2px;
 }
 
-.avatar-menu-item {
-  display: flex;
-  align-items: center;
+.avatar-menu-item { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
   gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  border-radius: 10px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.2s;
-  font: inherit;
+  width: 100%; /* 样式 */
+  padding: 10px 12px; /* 样式 */
+  border: none; /* 样式 */
+  background: transparent; /* 样式 */
+  color: inherit; /* 样式 */
+  border-radius: 10px; /* 样式 */
+  cursor: pointer; /* 样式 */
+  text-align: left; /* 样式 */
+  transition: background 0.2s; /* 样式 */
+  font: inherit; /* 样式 */
 }
 
-.avatar-menu-item:hover {
-  background: rgba(236, 65, 65, 0.08);
+.avatar-menu-item:hover { /* 样式 */
+  background: rgba(236, 65, 65, 0.08); /* 样式 */
 }
 
-.avatar-menu-item:active {
-  background: rgba(236, 65, 65, 0.14);
+.avatar-menu-item:active { /* 样式 */
+  background: rgba(236, 65, 65, 0.14); /* 样式 */
 }
 
-.avatar-menu-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: rgba(236, 65, 65, 0.1);
-  color: #EC4141;
-  flex-shrink: 0;
+.avatar-menu-icon { /* 样式 */
+  display: grid; /* 样式 */
+  place-items: center; /* 样式 */
+  width: 32px; /* 样式 */
+  height: 32px; /* 样式 */
+  border-radius: 8px; /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
+  color: #EC4141; /* 样式 */
+  flex-shrink: 0; /* 样式 */
 }
 
-.avatar-menu-text {
-  display: flex;
-  flex-direction: column;
+.avatar-menu-text { /* 样式 */
+  display: flex; /* 样式 */
+  flex-direction: column; /* 样式 */
   gap: 1px;
-  min-width: 0;
+  min-width: 0; /* 样式 */
 }
 
-.avatar-menu-text strong {
-  font-size: 0.875rem;
-  font-weight: 600;
+.avatar-menu-text strong { /* 样式 */
+  font-size: 0.875rem; /* 样式 */
+  font-weight: 600; /* 样式 */
 }
 
-.avatar-menu-text small {
-  font-size: 0.7rem;
-  opacity: 0.6;
-  line-height: 1.3;
+.avatar-menu-text small { /* 样式 */
+  font-size: 0.7rem; /* 样式 */
+  opacity: 0.6; /* 样式 */
+  line-height: 1.3; /* 样式 */
 }
 
-.avatar-modal-enter-active,
-.avatar-modal-leave-active {
-  transition: opacity 0.2s ease;
+.avatar-modal-enter-active, /* 样式 */
+.avatar-modal-leave-active { /* 样式 */
+  transition: opacity 0.2s ease; /* 样式 */
 }
 
-.avatar-menu-card {
-  transform-origin: top left;
+.avatar-menu-card { /* 样式 */
+  transform-origin: top left; /* 样式 */
 }
 
-.avatar-modal-enter-active .avatar-menu-card,
-.avatar-modal-leave-active .avatar-menu-card {
-  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+.avatar-modal-enter-active .avatar-menu-card, /* 样式 */
+.avatar-modal-leave-active .avatar-menu-card { /* 样式 */
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); /* 样式 */
 }
 
-.avatar-modal-enter-from,
-.avatar-modal-leave-to {
+.avatar-modal-enter-from, /* 样式 */
+.avatar-modal-leave-to { /* 样式 */
   opacity: 0;
 }
 
-.avatar-modal-enter-from .avatar-menu-card,
-.avatar-modal-leave-to .avatar-menu-card {
+.avatar-modal-enter-from .avatar-menu-card, /* 样式 */
+.avatar-modal-leave-to .avatar-menu-card { /* 样式 */
   opacity: 0;
-  transform: scale(0.92) translateY(8px);
+  transform: scale(0.92) translateY(8px); /* 样式 */
 }
 
-.avatar-preview-enter-active,
-.avatar-preview-leave-active {
-  transition: opacity 0.25s ease;
+.avatar-preview-enter-active, /* 样式 */
+.avatar-preview-leave-active { /* 样式 */
+  transition: opacity 0.25s ease; /* 样式 */
 }
 
-.avatar-preview-enter-active > div,
-.avatar-preview-leave-active > div {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+.avatar-preview-enter-active > div, /* 样式 */
+.avatar-preview-leave-active > div { /* 样式 */
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease; /* 样式 */
 }
 
-.avatar-preview-enter-from,
-.avatar-preview-leave-to {
+.avatar-preview-enter-from, /* 样式 */
+.avatar-preview-leave-to { /* 样式 */
   opacity: 0;
 }
 
-.avatar-preview-enter-from > div,
-.avatar-preview-leave-to > div {
+.avatar-preview-enter-from > div, /* 样式 */
+.avatar-preview-leave-to > div { /* 样式 */
   opacity: 0;
-  transform: scale(0.7);
+  transform: scale(0.7); /* 样式 */
 }
 </style>
 
 <style>
-@keyframes fadeInUp {
+@keyframes fadeInUp { /* 样式 */
   from {
     opacity: 0;
-    transform: translateY(20px);
-    filter: blur(4px);
+    transform: translateY(20px); /* 样式 */
+    filter: blur(4px); /* 样式 */
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+    transform: translateY(0); /* 样式 */
+    filter: blur(0); /* 样式 */
   }
 }
 
-.animate-fade-in-up {
+.animate-fade-in-up { /* 样式 */
   opacity: 0;
-  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; /* 样式 */
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-fade-in-up {
-    animation: none;
+@media (prefers-reduced-motion: reduce) { /* 样式 */
+  .animate-fade-in-up { /* 样式 */
+    animation: none; /* 样式 */
     opacity: 1;
-    transform: none;
-    filter: none;
+    transform: none; /* 样式 */
+    filter: none; /* 样式 */
   }
 }
 </style>

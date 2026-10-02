@@ -1,26 +1,26 @@
 <template>
-  <div class="flex flex-col h-full">
-    <div class="px-6 shrink-0 select-none">
-      <div class="flex items-center gap-1 border-b border-black/5 dark:border-white/5">
+  <div class="flex flex-col h-full"> 
+    <div class="px-6 shrink-0 select-none"> 
+      <div class="flex items-center gap-1 border-b border-black/5 dark:border-white/5"> 
         <button
-          v-for="tab in searchTabs"
-          :key="tab.type"
-          type="button"
-          class="relative px-5 py-3 text-[clamp(0.875rem,1.1vw,1rem)] font-medium tracking-wide transition-colors cursor-pointer"
-          :class="activeSearchType === tab.type
-            ? 'text-[#EC4141]'
-            : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
-          @click="handleSearchTypeChange(tab.type)"
+          v-for="tab in searchTabs" 
+          :key="tab.type" 
+          type="button" 
+          class="relative px-5 py-3 text-[clamp(0.875rem,1.1vw,1rem)] font-medium tracking-wide transition-colors cursor-pointer" 
+          :class="activeSearchType === tab.type 
+            ? 'text-[#EC4141]' 
+            : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'" 
+          @click="handleSearchTypeChange(tab.type)" 
         >
-          {{ tab.label }}
+          {{ tab.label }} 
           <span
-            class="absolute left-1/2 -translate-x-1/2 -bottom-px h-[2px] w-8 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out"
-            :class="activeSearchType === tab.type ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'"
+            class="absolute left-1/2 -translate-x-1/2 -bottom-px h-[2px] w-8 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out" 
+            :class="activeSearchType === tab.type ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'" 
           ></span>
         </button>
       </div>
 
-      <div class="flex items-center justify-between gap-4 py-3">
+      <div class="flex items-center justify-between gap-4 py-3"> 
         <div class="flex items-center min-w-0 flex-1">
           <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1 shrink-0">来源</span>
           <div
@@ -52,7 +52,7 @@
       </div>
     </div>
 
-    <div class="flex-1 flex overflow-hidden relative">
+    <div class="flex-1 flex overflow-hidden relative"> 
       <section class="flex-1 flex overflow-hidden relative">
         <transition name="page-fade">
         <div v-if="activeSearchType === 'track' && !searching && hasQuery && !hasNoResults" key="track" class="absolute inset-0 flex overflow-hidden">
@@ -68,26 +68,26 @@
         </div>
 
         <div v-else-if="searching" key="searching" class="absolute inset-0 flex items-center justify-center">
-          <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
-            <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40"> 
+            <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> 
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle> 
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> 
             </svg>
             <p class="text-sm">正在从 {{ selectedSourceName }} 搜索…</p> 
           </div>
         </div>
 
         <div v-else-if="!hasQuery" key="no-query" class="absolute inset-0 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"> 
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /> 
           </svg>
-          <p class="text-base font-medium">在上方搜索框输入关键词</p>
+          <p class="text-base font-medium">在上方搜索框输入关键词</p> 
           <p class="text-sm mt-1">结果来自 {{ selectedSourceName }}</p> 
         </div>
 
         <div v-else-if="hasNoResults" key="no-results" class="absolute inset-0 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"> 
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> 
           </svg>
           <p class="text-base font-medium">没有找到与"{{ searchQuery }}"相关的内容</p> 
           <p class="text-sm mt-1">试试更换音源或调整关键词</p> 
@@ -199,34 +199,34 @@
       </section>
     </div>
 
-    <DragGhost />
+    <DragGhost /> 
 
-    <SongContextMenu
+    <SongContextMenu 
       v-if="showContextMenu"
-      :visible="showContextMenu"
-      :x="contextMenuX"
-      :y="contextMenuY"
-      :song="contextMenuTargetSong"
-      :is-playlist-view="false"
+      :visible="showContextMenu" 
+      :x="contextMenuX" 
+      :y="contextMenuY" 
+      :song="contextMenuTargetSong" 
+      :is-playlist-view="false" 
       :is-online-search="true"
-      @close="showContextMenu = false"
-      @add-to-playlist="openAddToPlaylistSelection"
+      @close="showContextMenu = false" 
+      @add-to-playlist="openAddToPlaylistSelection" 
       @view-online-artist="handleOnlineViewArtist"
       @view-online-album="handleOnlineViewAlbum"
     />
   </div>
 </template>
 
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
-import { storeToRefs } from 'pinia';
+import { storeToRefs } from 'pinia'; // 实现
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { libraryApi } from '../services/tauri/libraryApi';
 import type { Song, ArtistCatalogItem, AlbumCatalogItem, Playlist } from '../types';
-import { usePlaybackController } from '../features/playback/usePlaybackController';
-import { useUiStore } from '../shared/stores/ui';
-import { useNavigationStore } from '../shared/stores/navigation';
+import { usePlaybackController } from '../features/playback/usePlaybackController'; // 实现
+import { useUiStore } from '../shared/stores/ui'; // 实现
+import { useNavigationStore } from '../shared/stores/navigation'; // 实现
 import { useLibraryStore } from '../features/library/store';
 import { useLibraryBrowse } from '../features/library/useLibraryBrowse';
 import { usePlaybackStore } from '../features/playback/store';
@@ -235,12 +235,12 @@ import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDia
 import { useToast } from '../composables/toast';
 import { // 实现
   lxSearch, // 实现
-  lxCatalogSearch,
+  lxCatalogSearch, // 实现
   lxGetPic, // 实现
   LX_SOURCE_NAMES,
-  type LxArtistSearchResult,
-  type LxAlbumSearchResult,
-  type LxPlaylistSearchResult,
+  type LxArtistSearchResult, // 实现
+  type LxAlbumSearchResult, // 实现
+  type LxPlaylistSearchResult, // 实现
   type LxSearchResultItem, // 实现
   type LxSourceId, // 实现
 } from '../services/domain/lxMusicSdk';
@@ -266,14 +266,14 @@ import { fetchWyTrackMetaByIds } from '../services/domain/playlistImport';
 import { qqFillSongDurations } from '../services/domain/qqHostSearchFallback';
 import { reportSearch, reportInputStats } from '../services/domain/usageStats';
 
-import DragGhost from '../components/common/DragGhost.vue';
+import DragGhost from '../components/common/DragGhost.vue'; // 实现
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
 
 const router = useRouter();
-const { playSong } = usePlaybackController();
-const uiStore = useUiStore();
-const navigationStore = useNavigationStore();
+const { playSong } = usePlaybackController(); // 实现
+const uiStore = useUiStore(); // 实现
+const navigationStore = useNavigationStore(); // 实现
 const libraryStore = useLibraryStore();
 const collectionsStore = useCollectionsStore();
 const playbackStore = usePlaybackStore();
@@ -287,10 +287,10 @@ const { playlists } = storeToRefs(collectionsStore);
 type SearchTypeKey = 'track' | 'artist' | 'album' | 'playlist'; // 实现
 const activeSearchType = ref<SearchTypeKey>('track'); // 实现
 const searchTabs: { type: SearchTypeKey; label: string }[] = [ // 实现
-  { type: 'track', label: '音乐' },
+  { type: 'track', label: '音乐' }, // 实现
   { type: 'artist', label: '歌手' },
-  { type: 'album', label: '专辑' },
-  { type: 'playlist', label: '歌单' },
+  { type: 'album', label: '专辑' }, // 实现
+  { type: 'playlist', label: '歌单' }, // 实现
 ];
 
 let restoringSession = false;
@@ -366,7 +366,7 @@ const selectedSourceName = computed(() =>
 
 const isLocalSource = computed(() => selectedSourceItem.value?.type === 'local');
 // ==================== 搜索状态 ==================== 
-const searching = ref(false);
+const searching = ref(false); // 实现
 const loadingMore = ref(false); // 实现
 const hasMore = ref(false); // 实现
 const currentPage = ref(1); // 实现
@@ -624,14 +624,14 @@ const watchCatalogCoverBackfill = <T,>(
   }, 15000);
 };
 
-const showContextMenu = ref(false);
-const contextMenuX = ref(0);
-const contextMenuY = ref(0);
-const contextMenuTargetSong = ref<Song | null>(null);
+const showContextMenu = ref(false); // 实现
+const contextMenuX = ref(0); // 实现
+const contextMenuY = ref(0); // 实现
+const contextMenuTargetSong = ref<Song | null>(null); // 实现
 
-const hasQuery = computed(() => searchQuery.value.trim().length > 0);
+const hasQuery = computed(() => searchQuery.value.trim().length > 0); // 实现
 
-const resultCount = computed(() => {
+const resultCount = computed(() => { // 实现
   if (activeSearchType.value === 'track') { // 实现
     if (isLocalSource.value) return localSearchResults.value.length;
     if (selectedSourceItem.value?.type === 'lx') return lxSearchResults.value.length;
@@ -735,14 +735,14 @@ function lxResultToSong(item: LxSearchResultItem): Song {
 
 const onlineTrackSongs = computed<Song[]>(() => {
   if (isLocalSource.value) return localSearchResults.value;
-  if (selectedSourceItem.value?.type === 'lx') {
+  if (selectedSourceItem.value?.type === 'lx') { // 实现
     return lxSearchResults.value.map((item: LxSearchResultItem) => lxResultToSong(item));
   }
   return pluginSearchResults.value.map((item: PluginSearchResult) => mfResultToSong(item));
 });
 
 // ==================== 搜索逻辑 ==================== 
-let searchAbortController: AbortController | null = null;
+let searchAbortController: AbortController | null = null; // 实现
 
 const withTimeoutFallback = async <T,>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -761,8 +761,8 @@ const withTimeoutFallback = async <T,>(promise: Promise<T>, timeoutMs: number, f
   }
 };
 
-const performSearch = async () => {
-  const query = searchQuery.value.trim();
+const performSearch = async () => { // 实现
+  const query = searchQuery.value.trim(); // 实现
   if (!query) { // 实现
     lxSearchResults.value = []; // 实现
     pluginSearchResults.value = []; // 实现
@@ -777,16 +777,16 @@ const performSearch = async () => {
     return;
   }
 
-  if (searchAbortController) {
-    searchAbortController.abort();
+  if (searchAbortController) { // 实现
+    searchAbortController.abort(); // 实现
   }
-  searchAbortController = new AbortController();
+  searchAbortController = new AbortController(); // 实现
   const activeController = searchAbortController; // 实现
   stopCatalogCoverRefresh();
 
   currentPage.value = 1; // 实现
   hasMore.value = false; // 实现
-  searching.value = true;
+  searching.value = true; // 实现
   resetCatalogGridVirtualScroll();
   try {
     const source = selectedSourceItem.value;
@@ -804,16 +804,16 @@ const performSearch = async () => {
       localPlaylistResults.value = [];
       const lowerQuery = query.toLowerCase();
 
-      if (activeSearchType.value === 'track') {
+      if (activeSearchType.value === 'track') { // 实现
         const results = await libraryApi.searchLibrarySongs(query, 200);
         if (!activeController.signal.aborted) {
           localSearchResults.value = results;
         }
-      } else if (activeSearchType.value === 'artist') {
+      } else if (activeSearchType.value === 'artist') { // 实现
         localArtistResults.value = artistList.value.filter(artist =>
           (artist.name || '').toLowerCase().includes(lowerQuery),
         ).slice(0, 200);
-      } else if (activeSearchType.value === 'album') {
+      } else if (activeSearchType.value === 'album') { // 实现
         localAlbumResults.value = albumList.value.filter(album =>
           (album.name || '').toLowerCase().includes(lowerQuery) ||
           (album.artist || '').toLowerCase().includes(lowerQuery),
@@ -830,17 +830,17 @@ const performSearch = async () => {
       pluginAlbumResults.value = [];
       pluginPlaylistResults.value = [];
       localSearchResults.value = [];
-      const pluginId = source.source?.id || source.id;
+      const pluginId = source.source?.id || source.id; // 实现
 
-      if (activeSearchType.value === 'track') {
-        const result = await lxSearch(source.lxSourceId, query, 1);
+      if (activeSearchType.value === 'track') { // 实现
+        const result = await lxSearch(source.lxSourceId, query, 1); // 实现
         if (activeController.signal.aborted) return;
-        lxSearchResults.value = result.list;
-        hasMore.value = result.list.length >= result.limit;
-        triggerCoverLoading();
-      } else if (activeSearchType.value === 'artist') {
-        lxSearchResults.value = [];
-        const results = await lxCatalogSearch(source.lxSourceId, query, 'artist', 1) as LxArtistSearchResult[];
+        lxSearchResults.value = result.list; // 实现
+        hasMore.value = result.list.length >= result.limit; // 实现
+        triggerCoverLoading(); // 实现
+      } else if (activeSearchType.value === 'artist') { // 实现
+        lxSearchResults.value = []; // 实现
+        const results = await lxCatalogSearch(source.lxSourceId, query, 'artist', 1) as LxArtistSearchResult[]; // 实现
         if (activeController.signal.aborted) return;
         for (const item of results) {
           (item as any).platform = source.lxSourceId!;
@@ -853,10 +853,10 @@ const performSearch = async () => {
           i => i.avatarUrl,
           next => { pluginArtistResults.value = next; },
         );
-        hasMore.value = false;
-      } else if (activeSearchType.value === 'album') {
-        lxSearchResults.value = [];
-        const results = await lxCatalogSearch(source.lxSourceId, query, 'album', 1) as LxAlbumSearchResult[];
+        hasMore.value = false; // 实现
+      } else if (activeSearchType.value === 'album') { // 实现
+        lxSearchResults.value = []; // 实现
+        const results = await lxCatalogSearch(source.lxSourceId, query, 'album', 1) as LxAlbumSearchResult[]; // 实现
         if (activeController.signal.aborted) return;
         for (const item of results) {
           (item as any).platform = source.lxSourceId!;
@@ -869,18 +869,18 @@ const performSearch = async () => {
           i => i.coverUrl,
           next => { pluginAlbumResults.value = next; },
         );
-        hasMore.value = false;
+        hasMore.value = false; // 实现
       } else {
-        lxSearchResults.value = [];
-        const results = await lxCatalogSearch(source.lxSourceId, query, 'playlist', 1) as LxPlaylistSearchResult[];
+        lxSearchResults.value = []; // 实现
+        const results = await lxCatalogSearch(source.lxSourceId, query, 'playlist', 1) as LxPlaylistSearchResult[]; // 实现
         if (activeController.signal.aborted) return;
-        pluginPlaylistResults.value = results.map(item => ({
+        pluginPlaylistResults.value = results.map(item => ({ // 实现
           ...item,
-          platform: source.lxSourceId!,
-          platformId: item.id,
+          platform: source.lxSourceId!, // 实现
+          platformId: item.id, // 实现
           pluginId,
         }));
-        hasMore.value = false;
+        hasMore.value = false; // 实现
       }
     } else if ((source.type === 'musicfree' || source.type === 'anime') && source.source) {
       lxSearchResults.value = []; // 实现
@@ -889,7 +889,7 @@ const performSearch = async () => {
       localAlbumResults.value = [];
       localPlaylistResults.value = [];
 
-      if (activeSearchType.value === 'track') {
+      if (activeSearchType.value === 'track') { // 实现
         pluginArtistResults.value = [];
         pluginAlbumResults.value = [];
         pluginPlaylistResults.value = [];
@@ -902,7 +902,7 @@ const performSearch = async () => {
           void backfillWyTrackMeta(source.source, results);
           void backfillQqTrackMeta(source.source, results);
         }
-      } else if (activeSearchType.value === 'artist') {
+      } else if (activeSearchType.value === 'artist') { // 实现
         pluginSearchResults.value = [];
         if (pluginSupportsSearchType(source.source, 'artist')) {
           const results = await pluginArtistSearch(source.source, query, 1);
@@ -911,8 +911,8 @@ const performSearch = async () => {
         } else {
           pluginArtistResults.value = [];
         }
-        hasMore.value = false;
-      } else if (activeSearchType.value === 'album') {
+        hasMore.value = false; // 实现
+      } else if (activeSearchType.value === 'album') { // 实现
         pluginSearchResults.value = [];
         if (pluginSupportsSearchType(source.source, 'album')) {
           const results = await pluginAlbumSearch(source.source, query, 1);
@@ -921,7 +921,7 @@ const performSearch = async () => {
         } else {
           pluginAlbumResults.value = [];
         }
-        hasMore.value = false;
+        hasMore.value = false; // 实现
       } else if (activeSearchType.value === 'playlist') {
         pluginSearchResults.value = [];
         if (pluginSupportsSearchType(source.source, 'sheet')) {
@@ -931,10 +931,10 @@ const performSearch = async () => {
         } else {
           pluginPlaylistResults.value = [];
         }
-        hasMore.value = false;
+        hasMore.value = false; // 实现
       }
     } // 实现
-  } catch (err) {
+  } catch (err) { // 实现
     if (!activeController.signal.aborted) {
       console.warn('[Search] failed:', err); // 实现
       lxSearchResults.value = []; // 实现
@@ -949,7 +949,7 @@ const performSearch = async () => {
     }
   } finally {
     if (!activeController.signal.aborted) { // 实现
-      searching.value = false;
+      searching.value = false; // 实现
       if (selectedSourceItem.value) { // 实现
         reportSearch(query, selectedSourceName.value, resultCount.value); // 实现
       } // 实现
@@ -994,7 +994,7 @@ const loadMore = async () => { // 实现
           void backfillQqTrackMeta(source.source, results);
         }
       } else {
-        hasMore.value = false;
+        hasMore.value = false; // 实现
       } // 实现
     } // 实现
   } catch (err) { // 实现
@@ -1222,11 +1222,11 @@ watch(sourceScrollRef, (el) => {
   if (el) sourceResizeObserver.observe(el);
 });
 
-onBeforeUnmount(() => {
+onBeforeUnmount(() => { // 实现
   sourceResizeObserver.disconnect();
 });
 
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null; // 实现
 let lastQueryLength = 0; // 实现
 watch(searchQuery, (newVal) => { // 实现
   const newLen = (newVal || '').length; // 实现
@@ -1234,27 +1234,27 @@ watch(searchQuery, (newVal) => { // 实现
     reportInputStats(newLen - lastQueryLength); // 实现
   } // 实现
   lastQueryLength = newLen; // 实现
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(() => {
-    performSearch();
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer); // 实现
+  searchDebounceTimer = setTimeout(() => { // 实现
+    performSearch(); // 实现
   }, 400);
 });
 
 // 显式重搜信号（如失败页同关键词回车重搜）：立即执行，无需 debounce
 watch(searchRequestId, () => {
   if (!searchQuery.value.trim()) return;
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  performSearch();
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer); // 实现
+  performSearch(); // 实现
 });
 
 watch(selectedSourceId, () => {
   if (restoringSession) return;
-  performSearch();
+  performSearch(); // 实现
 });
 
 watch(activeSearchType, () => {
   if (restoringSession) return;
-  performSearch();
+  performSearch(); // 实现
 });
 
 watch(pluginsVersion, () => {
@@ -1267,7 +1267,7 @@ watch(pluginsVersion, () => {
 });
 
 // ==================== MusicFree 插件歌曲播放 ==================== 
-const openAddToPlaylistSelection = () => {
+const openAddToPlaylistSelection = () => { // 实现
   const song = contextMenuTargetSong.value;
   if (!song) return;
 
@@ -1492,7 +1492,7 @@ function findPluginSource(pluginId: string): PluginSource | undefined {
 }
 
 const handlePluginArtistClick = (artist: PluginArtistResult) => {
-  if (selectedSourceItem.value?.type === 'lx') {
+  if (selectedSourceItem.value?.type === 'lx') { // 实现
     const lxSourceId = selectedSourceItem.value.lxSourceId!;
     pushDetail({
       type: 'artist',
@@ -1527,7 +1527,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
 };
 
 const handlePluginAlbumClick = (album: PluginAlbumResult) => {
-  if (selectedSourceItem.value?.type === 'lx') {
+  if (selectedSourceItem.value?.type === 'lx') { // 实现
     const lxSourceId = selectedSourceItem.value.lxSourceId!;
     pushDetail({
       type: 'album',
@@ -1560,7 +1560,7 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
 };
 
 const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
-  if (selectedSourceItem.value?.type === 'lx') {
+  if (selectedSourceItem.value?.type === 'lx') { // 实现
     const lxSourceId = selectedSourceItem.value.lxSourceId!;
     pushDetail({
       type: 'playlist',
@@ -1711,7 +1711,7 @@ function restoreResultsSnapshot(snapshot: SearchResultsSnapshot) {
 }
 
 onMounted(() => { // 实现
-  uiStore.showPlayerDetail = false;
+  uiStore.showPlayerDetail = false; // 实现
   window.addEventListener('resize', handleWindowResize);
   refreshPluginSourceList();
   const cache = onlineDetailStore.consumeSearchPageCache();
@@ -1734,25 +1734,25 @@ onMounted(() => { // 实现
   if (cache?.snapshot && sourceRestored) {
     restoreResultsSnapshot(cache.snapshot);
   } else {
-    performSearch();
+    performSearch(); // 实现
   }
   void nextTick(() => { restoringSession = false; });
 });
 
 watch(resultsScrollRef, () => setupScrollResizeObserver());
 
-onBeforeUnmount(() => {
+onBeforeUnmount(() => { // 实现
   window.removeEventListener('resize', handleWindowResize);
-  searchAbortController?.abort();
-  searchAbortController = null;
+  searchAbortController?.abort(); // 实现
+  searchAbortController = null; // 实现
   scrollResizeObserver?.disconnect();
   scrollResizeObserver = null;
-  coverLoadVersion += 1;
+  coverLoadVersion += 1; // 实现
   clearCoverLoadUiTimer();
   stopCatalogCoverRefresh();
-  if (searchDebounceTimer) {
-    clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = null;
+  if (searchDebounceTimer) { // 实现
+    clearTimeout(searchDebounceTimer); // 实现
+    searchDebounceTimer = null; // 实现
   }
   if (playbackStore.tempQueue.length > 0) {
     playbackStore.tempQueue = [];
@@ -1770,7 +1770,7 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style scoped>
+<style scoped> /* 样式 */
 .no-h-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -1779,19 +1779,19 @@ onBeforeUnmount(() => {
   display: none;
   height: 0;
 }
-.custom-scrollbar::-webkit-scrollbar {
+.custom-scrollbar::-webkit-scrollbar { /* 样式 */
   width: 6px;
   height: 5px;
 }
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+.custom-scrollbar::-webkit-scrollbar-track { /* 样式 */
+  background: transparent; /* 样式 */
 }
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
+.custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
+  background: rgba(0, 0, 0, 0.1); /* 样式 */
+  border-radius: 10px; /* 样式 */
 }
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+.dark .custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
+  background: rgba(255, 255, 255, 0.1); /* 样式 */
 }
 
 /* ==================== 搜索网格卡片悬停跳跃动画 ==================== */

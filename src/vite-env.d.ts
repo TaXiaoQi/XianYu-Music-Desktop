@@ -1,14 +1,14 @@
 /// <reference types="vite/client" />
 
-declare module "*.vue" {
-  import type { DefineComponent } from "vue";
-  const component: DefineComponent<{}, {}, any>;
-  export default component;
+declare module "*.vue" { // 实现
+  import type { DefineComponent } from "vue"; // 实现
+  const component: DefineComponent<{}, {}, any>; // 实现
+  export default component; // 实现
 }
 
-declare module 'blueimp-md5' {
-  const md5: (input: string) => string;
-  export default md5;
+declare module 'blueimp-md5' { // 实现
+  const md5: (input: string) => string; // 实现
+  export default md5; // 实现
 }
 
 declare module 'qs' {

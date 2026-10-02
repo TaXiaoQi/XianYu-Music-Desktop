@@ -7,7 +7,7 @@ import type {
   PluginHttpResponseContract,
 } from './contracts';
 
-// ============ API 接口 ============
+// ============ API 接口 ============ 
 
 export async function pluginHttpRequest( // 实现
   method: string, // 实现
@@ -92,20 +92,20 @@ async function pluginHttpRequestBinary(
 }
 
 async function downloadAudioToTemp(
-  url: string,
-  headers?: Record<string, string>,
-): Promise<string> {
+  url: string, // 实现
+  headers?: Record<string, string>, // 实现
+): Promise<string> { // 实现
   return tauriInvoke('download_audio_to_temp', { url, headers: headers ?? null });
 } // 实现
-async function downloadVideoToCache(
-  url: string,
-  headers?: Record<string, string>,
-): Promise<string> {
-  return tauriInvoke('download_video_to_cache', { url, headers: headers ?? null });
+async function downloadVideoToCache( // 实现
+  url: string, // 实现
+  headers?: Record<string, string>, // 实现
+): Promise<string> { // 实现
+  return tauriInvoke('download_video_to_cache', { url, headers: headers ?? null }); // 实现
 }
 
-async function removeCachedBackgroundVideo(path: string): Promise<void> {
-  return tauriInvoke('remove_cached_background_video', { path });
+async function removeCachedBackgroundVideo(path: string): Promise<void> { // 实现
+  return tauriInvoke('remove_cached_background_video', { path }); // 实现
 }
 
 // MV 流式代理 URL：数据进歌曲的在线播放流缓存池（同 LRU 上限/清理），
@@ -132,7 +132,7 @@ async function findAlternativeLxSource(
   });
 }
 
-export const pluginApi = {
+export const pluginApi = { // 实现
   pluginHttpRequest, // 实现
   pluginHttpRequestBinary, // 实现
   readPluginFile, // 实现
@@ -141,8 +141,8 @@ export const pluginApi = {
   fetchPluginUrl, // 实现
   proxyImage, // 实现
   downloadAudioToTemp,
-  downloadVideoToCache,
-  removeCachedBackgroundVideo,
+  downloadVideoToCache, // 实现
+  removeCachedBackgroundVideo, // 实现
   mvProxyUrl,
   getLxCover,
   findAlternativeLxSource,

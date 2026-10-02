@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, nextTick, watch } from 'vue';
 import { storeToRefs as toRefsOf } from 'pinia';
 
@@ -73,7 +73,7 @@ watch(currentSong, followPlaying, { immediate: true });
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 .queue-scroll::-webkit-scrollbar { width: 6px; }
 .queue-scroll::-webkit-scrollbar-track { background: transparent; }
 .queue-scroll::-webkit-scrollbar-thumb { border-radius: 3px; background-color: rgba(255, 255, 255, .1); }

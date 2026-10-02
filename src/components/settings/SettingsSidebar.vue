@@ -1,8 +1,8 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, onUnmounted, ref } from 'vue';
 import { ArrowDown, ArrowUp, GripVertical, RotateCcw } from 'lucide-vue-next';
 
-import { useSettings } from '../../features/settings/useSettings';
+import { useSettings } from '../../features/settings/useSettings'; // 实现
 import { useToast } from '../../composables/toast';
 import {
   DEFAULT_SIDEBAR_ORDER,
@@ -13,7 +13,7 @@ import type { SidebarItemKey } from '../../types';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
 import SettingHint from './SettingHint.vue';
 
-const { settings } = useSettings();
+const { settings } = useSettings(); // 实现
 const { showToast } = useToast();
 
 const orderedItems = computed(() => {
@@ -141,7 +141,7 @@ onUnmounted(stopDragging);
 
 <template>
   <div class="w-full space-y-8">
-    <section v-if="settings.sidebar" class="space-y-3">
+    <section v-if="settings.sidebar" class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
@@ -154,8 +154,8 @@ onUnmounted(stopDragging);
         <div class="p-4 flex items-center justify-between opacity-70 cursor-not-allowed">
           <div class="flex min-w-0 items-center gap-3">
             <span class="w-4 shrink-0"></span>
-            <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 shrink-0"> 
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg> 
             </div>
             <div class="min-w-0">
               <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">首页</div>

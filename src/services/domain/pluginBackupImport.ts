@@ -39,47 +39,47 @@ export type {
 } from './pluginBackupTypes';
 export { formatInterval } from './pluginBackupSong';
 
-export function preparePluginBackupImport(
-  jsonContent: string,
-  installedPlugins: PluginSource[],
-): PreparedPluginBackupImport {
-  let data: any;
+export function preparePluginBackupImport( // 实现
+  jsonContent: string, // 实现
+  installedPlugins: PluginSource[], // 实现
+): PreparedPluginBackupImport { // 实现
+  let data: any; // 实现
   try {
-    data = JSON.parse(jsonContent);
+    data = JSON.parse(jsonContent); // 实现
   } catch {
-    throw new Error('文件不是有效的 JSON 格式');
+    throw new Error('文件不是有效的 JSON 格式'); // 实现
   }
 
   const { format, sheets, version, restoreStringifiedIds } = detectBackup(data);
-  const playlists: PluginBackupPlaylist[] = [];
-  const failures: PluginBackupFailedSong[] = [];
-  const associationMap = new Map<string, PluginBackupAssociation>();
+  const playlists: PluginBackupPlaylist[] = []; // 实现
+  const failures: PluginBackupFailedSong[] = []; // 实现
+  const associationMap = new Map<string, PluginBackupAssociation>(); // 实现
   const missingPluginMap = new Map<string, { platform: string; songCount: number }>();
-  let totalSongCount = 0;
-  let importedSongCount = 0;
+  let totalSongCount = 0; // 实现
+  let importedSongCount = 0; // 实现
   let migratedTrackIdCount = 0;
 
-  for (const [sheetIndex, sheet] of sheets.entries()) {
-    const playlistName = String(sheet?.title ?? sheet?.name ?? `未命名歌单 ${sheetIndex + 1}`).trim()
-      || `未命名歌单 ${sheetIndex + 1}`;
-    const rawSongs = Array.isArray(sheet?.musicList) ? sheet.musicList : [];
-    const songs: Song[] = [];
-    totalSongCount += rawSongs.length;
+  for (const [sheetIndex, sheet] of sheets.entries()) { // 实现
+    const playlistName = String(sheet?.title ?? sheet?.name ?? `未命名歌单 ${sheetIndex + 1}`).trim() // 实现
+      || `未命名歌单 ${sheetIndex + 1}`; // 实现
+    const rawSongs = Array.isArray(sheet?.musicList) ? sheet.musicList : []; // 实现
+    const songs: Song[] = []; // 实现
+    totalSongCount += rawSongs.length; // 实现
 
-    for (const rawSong of rawSongs) {
-      const title = extractTitle(rawSong);
-      const artist = extractArtist(rawSong);
-      const id = extractSongId(rawSong);
-      const platform = describePlatform(rawSong?.platform ?? rawSong?.source);
+    for (const rawSong of rawSongs) { // 实现
+      const title = extractTitle(rawSong); // 实现
+      const artist = extractArtist(rawSong); // 实现
+      const id = extractSongId(rawSong); // 实现
+      const platform = describePlatform(rawSong?.platform ?? rawSong?.source); // 实现
 
       if (!title) {
-        failures.push({
-          playlist: playlistName,
+        failures.push({ // 实现
+          playlist: playlistName, // 实现
           title: '未命名歌曲',
           artist,
-          platform: platform.displayName,
+          platform: platform.displayName, // 实现
           reason: '歌曲缺少标题',
-          reasonCode: 'invalid-song',
+          reasonCode: 'invalid-song', // 实现
         });
         continue;
       }
@@ -105,35 +105,35 @@ export function preparePluginBackupImport(
       }
 
       if (!id || !platform.normalized) {
-        failures.push({
-          playlist: playlistName,
+        failures.push({ // 实现
+          playlist: playlistName, // 实现
           title,
           artist,
-          platform: platform.displayName,
+          platform: platform.displayName, // 实现
           reason: !platform.normalized ? '歌曲缺少来源平台' : '歌曲缺少平台歌曲 ID',
-          reasonCode: 'invalid-song',
+          reasonCode: 'invalid-song', // 实现
         });
         continue;
       }
 
       const plugin = findMatchingPlugin(platform, installedPlugins, format);
-      if (!plugin) {
-        failures.push({
-          playlist: playlistName,
+      if (!plugin) { // 实现
+        failures.push({ // 实现
+          playlist: playlistName, // 实现
           title,
           artist,
-          platform: platform.displayName,
-          reason: `缺少可处理“${platform.displayName}”的插件`,
-          reasonCode: 'missing-plugin',
+          platform: platform.displayName, // 实现
+          reason: `缺少可处理“${platform.displayName}”的插件`, // 实现
+          reasonCode: 'missing-plugin', // 实现
         });
-        const missing = missingPluginMap.get(platform.canonical);
-        if (missing) missing.songCount += 1;
-        else missingPluginMap.set(platform.canonical, { platform: platform.displayName, songCount: 1 });
+        const missing = missingPluginMap.get(platform.canonical); // 实现
+        if (missing) missing.songCount += 1; // 实现
+        else missingPluginMap.set(platform.canonical, { platform: platform.displayName, songCount: 1 }); // 实现
         continue;
       }
 
-      const song = plugin.format === 'lx' && platform.lxSource
-        ? createLxSong(rawSong, plugin, { ...platform, lxSource: platform.lxSource })
+      const song = plugin.format === 'lx' && platform.lxSource // 实现
+        ? createLxSong(rawSong, plugin, { ...platform, lxSource: platform.lxSource }) // 实现
         : createMusicFreeSong(
             rawSong,
             plugin,
@@ -141,42 +141,42 @@ export function preparePluginBackupImport(
             restoreStringifiedIds,
             () => { migratedTrackIdCount += 1; },
           );
-      songs.push(song);
-      importedSongCount += 1;
+      songs.push(song); // 实现
+      importedSongCount += 1; // 实现
 
-      const associationKey = `${plugin.id}\u0000${platform.canonical}`;
-      const association = associationMap.get(associationKey);
-      if (association) association.songCount += 1;
+      const associationKey = `${plugin.id}\u0000${platform.canonical}`; // 实现
+      const association = associationMap.get(associationKey); // 实现
+      if (association) association.songCount += 1; // 实现
       else {
-        associationMap.set(associationKey, {
-          pluginId: plugin.id,
-          pluginName: plugin.name,
-          pluginFormat: plugin.format,
-          enabled: plugin.enabled,
-          platform: platform.displayName,
-          songCount: 1,
+        associationMap.set(associationKey, { // 实现
+          pluginId: plugin.id, // 实现
+          pluginName: plugin.name, // 实现
+          pluginFormat: plugin.format, // 实现
+          enabled: plugin.enabled, // 实现
+          platform: platform.displayName, // 实现
+          songCount: 1, // 实现
         });
       }
     }
 
-    if (songs.length > 0) {
-      playlists.push({
-        name: playlistName,
+    if (songs.length > 0) { // 实现
+      playlists.push({ // 实现
+        name: playlistName, // 实现
         songs,
-        originalSongCount: rawSongs.length,
+        originalSongCount: rawSongs.length, // 实现
       });
     }
   }
 
   return {
     format,
-    sourcePlaylistCount: sheets.length,
-    totalSongCount,
-    importedSongCount,
+    sourcePlaylistCount: sheets.length, // 实现
+    totalSongCount, // 实现
+    importedSongCount, // 实现
     playlists,
     failures,
-    associations: [...associationMap.values()],
-    missingPlugins: [...missingPluginMap.values()],
+    associations: [...associationMap.values()], // 实现
+    missingPlugins: [...missingPluginMap.values()], // 实现
     backupVersion: version,
     migratedTrackIds: restoreStringifiedIds,
     migratedTrackIdCount,
@@ -203,18 +203,18 @@ export function describeBackupVersion(prepared: PreparedPluginBackupImport): str
   return label;
 }
 
-export async function preparePluginBackupFile(
-  filePath: string,
-  installedPlugins: PluginSource[],
-): Promise<PreparedPluginBackupImport> {
-  const content = await readPluginFile(filePath);
-  return preparePluginBackupImport(content, installedPlugins);
+export async function preparePluginBackupFile( // 实现
+  filePath: string, // 实现
+  installedPlugins: PluginSource[], // 实现
+): Promise<PreparedPluginBackupImport> { // 实现
+  const content = await readPluginFile(filePath); // 实现
+  return preparePluginBackupImport(content, installedPlugins); // 实现
 }
 
 export async function preparePluginBackupFileContent(
-  filePath: string,
-  installedPlugins: PluginSource[],
-): Promise<PreparedPluginBackupImport> {
+  filePath: string, // 实现
+  installedPlugins: PluginSource[], // 实现
+): Promise<PreparedPluginBackupImport> { // 实现
   const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
   let jsonContent: string;
   if (ext === 'zip') {

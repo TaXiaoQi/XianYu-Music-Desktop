@@ -192,6 +192,7 @@ fn parse_yrc_line(line: &str) -> Option<NativeLine> {
 pub(super) fn parse_yrc(src: &str) -> Vec<NativeLine> {
     let mut result: Vec<NativeLine> = src
         .lines()
+        .map(|l| l.trim_end()) // 行尾空白不敏感（与 QRC/LYS 宽松容错对齐）
         .filter_map(parse_yrc_line)
         .collect();
     process_lyrics(&mut result);

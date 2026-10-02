@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, ref } from 'vue';
 import { useToast as makeToast } from '../../composables/toast';
 import { useSettingsStore as usePrefsStore } from '../../features/settings/store';

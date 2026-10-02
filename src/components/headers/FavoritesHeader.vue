@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 收藏页头部：单曲/歌单/专辑三个页签 + 批量工具条 + 歌曲页签操作区
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
@@ -6,8 +6,8 @@ import { useSearchTitleSuffix } from '../../composables/useSearchAwareTitle';
 import SortModeButton from '../common/SortModeButton.vue';
 
 const props = defineProps<{
-  isBatchMode: boolean;
-  selectedCount?: number;
+  isBatchMode: boolean; // 实现
+  selectedCount?: number; // 实现
   totalSongCount?: number;
 }>();
 
@@ -89,8 +89,8 @@ const roundIconButtonClass =
 
 <template>
   <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
-    <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
-      <div class="flex items-center gap-3">
+    <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200"> 
+      <div class="flex items-center gap-3"> 
         <button
           v-for="action in batchActions"
           :key="action.key"
@@ -116,12 +116,12 @@ const roundIconButtonClass =
           {{ action.caption }}
         </button>
       </div>
-      <div class="flex items-center gap-4">
-        <button @click="emit('update:isBatchMode', false)" class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1 rounded transition">完成</button>
+      <div class="flex items-center gap-4"> 
+        <button @click="emit('update:isBatchMode', false)" class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-1 rounded transition">完成</button> 
       </div>
     </div>
 
-    <div v-else class="flex items-center justify-between">
+    <div v-else class="flex items-center justify-between"> 
       <div ref="tabsRow" class="relative pb-1 flex items-center gap-6">
         <button class="tab-item transition-all duration-300 ease-out active:scale-90" :class="tabToneClass('songs')" @click="favTab = 'songs'">
           {{ FAV_TABS[0].caption }}
@@ -148,23 +148,23 @@ const roundIconButtonClass =
 
       <div v-if="favTab === 'songs'" class="flex items-center gap-2">
         <button :class="roundIconButtonClass" title="播放全部" @click="emit('playAll')">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 5.5v13l10-6.5-10-6.5Z" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"> 
+            <path d="M9 5.5v13l10-6.5-10-6.5Z" /> 
           </svg>
         </button>
 
         <button :class="roundIconButtonClass" title="全部添加至播放列表" @click="emit('addAllToQueue')">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3.5 6H17" />
-            <path d="M3.5 12H14" />
-            <path d="M3.5 18H11" />
-            <path d="M18 14v6" />
-            <path d="M15 17h6" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"> 
+            <path d="M3.5 6H17" /> 
+            <path d="M3.5 12H14" /> 
+            <path d="M3.5 18H11" /> 
+            <path d="M18 14v6" /> 
+            <path d="M15 17h6" /> 
           </svg>
         </button>
 
         <button :class="roundIconButtonClass" title="批量操作" @click="emit('update:isBatchMode', true)">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg> 
         </button>
 
         <SortModeButton />

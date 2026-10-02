@@ -1,32 +1,32 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, defineAsyncComponent, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router'; // 实现
 import { storeToRefs } from 'pinia';
 
 import { useI18n } from '../../features/i18n';
-import { useCoverCache } from '../../composables/useCoverCache';
-import { useHomeNavigation } from '../../composables/useHomeNavigation';
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView';
-import { dragSession } from '../../composables/dragState';
-import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useCoverCache } from '../../composables/useCoverCache'; // 实现
+import { useHomeNavigation } from '../../composables/useHomeNavigation'; // 实现
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
+import { usePlaybackController } from '../../features/playback/usePlaybackController'; // 实现
+import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView'; // 实现
+import { dragSession } from '../../composables/dragState'; // 实现
+import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
 import { usePlaylistSync } from '../../composables/usePlaylistSync';
-import { useSettings } from '../../features/settings/useSettings';
-import { useSidebarPlaylistContextMenu } from '../../composables/useSidebarPlaylistContextMenu';
-import { useSidebarPlaylistCovers } from '../../composables/useSidebarPlaylistCovers';
+import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useSidebarPlaylistContextMenu } from '../../composables/useSidebarPlaylistContextMenu'; // 实现
+import { useSidebarPlaylistCovers } from '../../composables/useSidebarPlaylistCovers'; // 实现
 import { useSidebarImportConfirmers } from '../../composables/useSidebarImportConfirmers';
-import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop';
-import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection';
+import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop'; // 实现
+import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection'; // 实现
 import { useSidebarWidthResizer } from '../../composables/useSidebarWidthResizer';
 import { useToast } from '../../composables/toast'; // 轻提示
 import type { SidebarItemKey } from '../../types';
 import { useCollectionsStore, type FavoriteCollectionEntry } from '../../features/collections/store';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
-import SidebarBrand from './SidebarBrand.vue';
-import SidebarNavigation from './SidebarNavigation.vue';
-import SidebarPlaylists from './SidebarPlaylists.vue';
+import SidebarBrand from './SidebarBrand.vue'; // 实现
+import SidebarNavigation from './SidebarNavigation.vue'; // 实现
+import SidebarPlaylists from './SidebarPlaylists.vue'; // 实现
 
 const { sticker } = useDesktopTheme();
 
@@ -130,7 +130,7 @@ const contextMenuApi = useSidebarPlaylistContextMenu({
     playlists.value?.some?.((item) => item.id === id && item.cloudId != null),
   ),
   deleteCloudPlaylist: async (id) => deleteCloudPlaylistLocal(id),
-  clearSelection: clearPlaylistSelection,
+  clearSelection: clearPlaylistSelection, // 实现
 });
 const contextMenuShown = contextMenuApi.showContextMenu;
 const contextMenuPosX = contextMenuApi.contextMenuX;
@@ -190,18 +190,18 @@ const viewOpeners: Record<SidebarItemKey, () => void> = {
   account: () => { void openAuth(); },
 };
 
-const handleOpenHomeView = () => {
-  setSearch('');
+const handleOpenHomeView = () => { // 实现
+  setSearch(''); // 实现
   return openHomeStatistics();
 };
 
 const handleSidebarSelect = (key: SidebarItemKey) => {
-  setSearch('');
+  setSearch(''); // 实现
   viewOpeners[key]?.();
 };
 
-const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
-  setSearch('');
+const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => { // 实现
+  setSearch(''); // 实现
   onPlaylistClicked(event, id);
 };
 
@@ -224,13 +224,13 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
     <SidebarBrand/>
 
     <nav class="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4" @click="onNavBackgroundClick">
-      <SidebarNavigation
+      <SidebarNavigation 
         :sidebar="settings.sidebar" :currentViewMode="currentViewMode" :currentPath="currentRoute.path"
         :isDragActive="dragSession.active" @openHome="handleOpenHomeView" @select="handleSidebarSelect"
         @hoverArtists="handleHoverArtists" @hoverAlbums="handleHoverAlbums"
       />
 
-      <SidebarPlaylists
+      <SidebarPlaylists 
         v-model:isOpen="playlistsGroupOpen"
         :playlists="playlists" :favoriteCollections="favoriteCollections" :selectedPlaylistIds="activePlaylistSelection"
         :playlistCoverCacheVersion="coverCacheVersion" :getPlaylistCover="resolvePlaylistCover"
@@ -243,7 +243,7 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
       />
     </nav>
 
-    <PlaylistContextMenu
+    <PlaylistContextMenu 
       v-if="contextMenuShown" :visible="contextMenuShown"
       :x="contextMenuPosX" :y="contextMenuPosY"
       :playlist-name="contextMenuTarget?.name || ''" :selected-count="activePlaylistSelection.size"
@@ -251,7 +251,7 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
       @play="runMenuPlay" @add-to-queue="runMenuEnqueue" @delete="runMenuDelete"
     />
 
-    <ModernModal
+    <ModernModal 
       v-if="deleteDialogVisible" v-model:visible="deleteDialogVisible"
       title="删除播放列表" :content="deleteDialogText" type="danger" confirm-text="删除"
       @confirm="applyPlaylistDelete"
@@ -263,7 +263,7 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
       @cancel="scopeDialogVisible = false" @scope="applyDeleteScope"
     />
 
-    <PlaylistModal
+    <PlaylistModal 
       v-if="playlistDialogVisible" v-model:visible="playlistDialogVisible"
       :playlists="playlists" :mode="playlistDialogMode"
       @create="confirmCreatePlaylist" @import="confirmImportPlaylist" @import-local="confirmLocalFolderImport"
@@ -290,7 +290,7 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
   </aside>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 /* 侧栏纵向滚动条：细线 + 半透明滑块 */
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }

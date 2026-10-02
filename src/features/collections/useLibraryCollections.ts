@@ -1,20 +1,20 @@
-import { storeToRefs } from 'pinia';
-import type { Song } from '../../types';
-import { playerStorage } from '../../services/storage/playerStorage';
-import { historyApi } from '../../services/tauri/historyApi';
-import { useCollectionsStore } from './store';
+import { storeToRefs } from 'pinia'; // 实现
+import type { Song } from '../../types'; // 实现
+import { playerStorage } from '../../services/storage/playerStorage'; // 实现
+import { historyApi } from '../../services/tauri/historyApi'; // 实现
+import { useCollectionsStore } from './store'; // 实现
 import { useLibraryStore } from '../library/store';
 import { isPluginSong } from '../../utils/pluginSong';
 import { isRemoteSong } from '../../utils/remoteSong';
 import { reportDailyLikeSignals } from '../../services/domain/dailyRecommendFeedback';
-import router from '../../router';
-import { useHomeNavigation } from '../../composables/useHomeNavigation';
-import { useAddToPlaylistDialog } from './addToPlaylistDialog';
+import router from '../../router'; // 实现
+import { useHomeNavigation } from '../../composables/useHomeNavigation'; // 实现
+import { useAddToPlaylistDialog } from './addToPlaylistDialog'; // 实现
 
 // 旧版本把播放历史存放在该键下，现已迁移至后端；访问历史时顺带清理。
 const LEGACY_HISTORY_STORAGE_KEY = 'player_history';
 
-export function useLibraryCollections() {
+export function useLibraryCollections() { // 实现
   const store = useCollectionsStore();
   const homeNav = useHomeNavigation(router);
   const storeRefs = storeToRefs(store);
@@ -38,7 +38,7 @@ export function useLibraryCollections() {
   const deletePlaylist = (playlistId: string) => {
     const removed = store.deletePlaylist(playlistId);
     if (!removed) {
-      return false;
+      return false; // 实现
     }
 
     const route = router.currentRoute.value;
@@ -71,7 +71,7 @@ export function useLibraryCollections() {
   const reorderPlaylists = (fromIndex: number, toIndex: number) =>
     store.reorderPlaylists(fromIndex, toIndex);
 
-  const getSongsFromPlaylist = (playlistId: string) =>
+  const getSongsFromPlaylist = (playlistId: string) => // 实现
     store.getSongsFromPlaylist(playlistId);
 
   const viewPlaylist = (targetPlaylistId: string) => {
@@ -89,7 +89,7 @@ export function useLibraryCollections() {
   /** 入参既可以是 Song 对象也可以是裸路径，统一解析成路径。 */
   const resolveSongPath = (candidate: Song | string | null | undefined): string | null => {
     if (candidate === null || candidate === undefined) {
-      return null;
+      return null; // 实现
     }
     return typeof candidate === 'string' ? candidate : candidate.path;
   };
@@ -100,7 +100,7 @@ export function useLibraryCollections() {
   const toggleFavorite = (candidate: Song | string) => {
     const path = resolveSongPath(candidate);
     if (path === null || path === '') {
-      return false;
+      return false; // 实现
     }
 
     const nowFavorited = store.toggleFavoritePath(path);
@@ -214,25 +214,25 @@ export function useLibraryCollections() {
 
   return {
     ...storeRefs,
-    createPlaylist,
-    renamePlaylist,
-    setPlaylistCover,
-    deletePlaylist,
-    addToPlaylist,
-    removeFromPlaylist,
-    addSongsToPlaylist,
+    createPlaylist, // 实现
+    renamePlaylist, // 实现
+    setPlaylistCover, // 实现
+    deletePlaylist, // 实现
+    addToPlaylist, // 实现
+    removeFromPlaylist, // 实现
+    addSongsToPlaylist, // 实现
     setPlaylistSource,
     applySourceSync,
-    reorderPlaylists,
-    getSongsFromPlaylist,
-    viewPlaylist,
+    reorderPlaylists, // 实现
+    getSongsFromPlaylist, // 实现
+    viewPlaylist, // 实现
     isFavorite,
-    toggleFavorite,
-    removeFavoritePaths,
-    clearFavorites,
-    addToHistory,
-    removeFromHistory,
-    clearHistory,
-    openAddToPlaylistDialog,
+    toggleFavorite, // 实现
+    removeFavoritePaths, // 实现
+    clearFavorites, // 实现
+    addToHistory, // 实现
+    removeFromHistory, // 实现
+    clearHistory, // 实现
+    openAddToPlaylistDialog, // 实现
   };
 }

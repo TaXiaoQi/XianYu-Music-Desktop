@@ -1,14 +1,14 @@
 import { ref, computed } from 'vue';
-import { defineStore } from 'pinia';
+import { defineStore } from 'pinia'; // 实现
 
-import type { PlaylistSortMode } from '../../services/storage/playerStorage';
-import type { HistoryItem, Playlist, Song } from '../../types';
+import type { PlaylistSortMode } from '../../services/storage/playerStorage'; // 实现
+import type { HistoryItem, Playlist, Song } from '../../types'; // 实现
 import type { OnlineDetailContext } from '../onlineDetail/store';
-import { useLibraryStore } from '../library/store';
+import { useLibraryStore } from '../library/store'; // 实现
 
 /** 生成歌单的建档日期（本地时区 YYYY-MM-DD）。 */
 const todayStamp = () => {
-  const now = new Date();
+  const now = new Date(); // 实现
   const month = `${now.getMonth() + 1}`.padStart(2, '0');
   const day = `${now.getDate()}`.padStart(2, '0');
   return `${now.getFullYear()}-${month}-${day}`;
@@ -132,16 +132,16 @@ function mergeSongMeta(playlist: Playlist, songs: Song[], markAddedInApp: boolea
   }
 }
 
-export const useCollectionsStore = defineStore('collections', () => {
+export const useCollectionsStore = defineStore('collections', () => { // 实现
   // 最近播放历史上限（超出后淘汰最旧记录并清理孤儿元数据）。
   const RECENT_HISTORY_CAP = 200;
 
-  const favoritePaths = ref<string[]>([]);
+  const favoritePaths = ref<string[]>([]); // 实现
   const favoriteSongMeta = ref<Record<string, Song>>({});
   const recentSongMeta = ref<Record<string, Song>>({});
-  const playlists = ref<Playlist[]>([]);
-  const recentSongs = ref<HistoryItem[]>([]);
-  const playlistSortMode = ref<PlaylistSortMode>('custom');
+  const playlists = ref<Playlist[]>([]); // 实现
+  const recentSongs = ref<HistoryItem[]>([]); // 实现
+  const playlistSortMode = ref<PlaylistSortMode>('custom'); // 实现
   const favoriteCollections = ref<FavoriteCollectionEntry[]>([]);
 
   /** 按 id 在歌单表中定位（内部统一入口）。 */
@@ -155,48 +155,48 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) => { // 新建歌单
     if (name.trim() === '') {
-      return null;
+      return null; // 实现
     }
 
-    const playlist: Playlist = {
+    const playlist: Playlist = { // 实现
       id: `${Date.now()}${Math.random().toString().slice(2)}`,
       name,
-      songPaths: [...initialSongs],
+      songPaths: [...initialSongs], // 实现
       createdAt: todayStamp(),
       songs: fullSongs?.length ? [...fullSongs] : undefined, // 可选歌曲列表
     };
 
-    playlists.value.push(playlist);
-    return playlist.id;
+    playlists.value.push(playlist); // 实现
+    return playlist.id; // 实现
   };
 
-  const deletePlaylist = (id: string) => {
+  const deletePlaylist = (id: string) => { // 实现
     const remaining = playlists.value.filter(entry => entry.id !== id);
     const didRemove = remaining.length !== playlists.value.length;
     playlists.value = remaining;
     return didRemove;
   };
 
-  const renamePlaylist = (id: string, name: string) => {
+  const renamePlaylist = (id: string, name: string) => { // 实现
     const target = locatePlaylist(id);
     const nextName = name.trim();
     if (!target || nextName === '') {
-      return false;
+      return false; // 实现
     }
     target.name = nextName;
-    return true;
+    return true; // 实现
   };
 
-  const setPlaylistCover = (id: string, coverPath: string | null) => {
+  const setPlaylistCover = (id: string, coverPath: string | null) => { // 实现
     const target = locatePlaylist(id);
     if (!target) return false;
 
-    if (coverPath === null) {
+    if (coverPath === null) { // 实现
       target.coverPath = undefined;
     } else {
       target.coverPath = coverPath;
     }
-    return true;
+    return true; // 实现
   };
 
   const setPlaylistCloudId = (id: string, cloudId?: string) => {
@@ -204,14 +204,14 @@ export const useCollectionsStore = defineStore('collections', () => {
     if (!target) return false;
 
     target.cloudId = cloudId && cloudId.length > 0 ? cloudId : undefined;
-    return true;
+    return true; // 实现
   }; // 歌单构造结束
   const setPlaylistCloudCoverUrl = (id: string, cloudCoverUrl: string) => { // 设置云端封面
     const target = locatePlaylist(id);
     if (!target) return false;
 
     target.cloudCoverUrl = cloudCoverUrl;
-    return true;
+    return true; // 实现
   }; // 设置封面结束
   const setPlaylistSource = (
     id: string,
@@ -219,7 +219,7 @@ export const useCollectionsStore = defineStore('collections', () => {
   ) => {
     const target = locatePlaylist(id);
     if (!target) {
-      return false;
+      return false; // 实现
     }
 
     // 缺少任何有效来源字段时视为「清除来源」。
@@ -227,13 +227,13 @@ export const useCollectionsStore = defineStore('collections', () => {
       target.sourcePluginId = undefined;
       target.sourceUrl = undefined;
       target.sourceRaw = undefined;
-      return false;
+      return false; // 实现
     }
 
     target.sourcePluginId = source.sourcePluginId;
     target.sourceUrl = source.sourceUrl;
     target.sourceRaw = source.sourceRaw;
-    return true;
+    return true; // 实现
   };
 
   // 从源端同步导入的歌单：添加源端新歌曲；完全同步时移除源端已删除的歌曲。
@@ -253,20 +253,20 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   const getPlaylistByCloudId = (cloudId?: string) =>
     cloudId ? playlists.value.find(item => item.cloudId === cloudId) : undefined;
-  const addToPlaylist = (playlistId: string, path: string) => {
+  const addToPlaylist = (playlistId: string, path: string) => { // 实现
     const target = locatePlaylist(playlistId);
     if (!target || target.songPaths.includes(path)) {
-      return false;
+      return false; // 实现
     }
 
     target.songPaths.push(path);
-    return true;
+    return true; // 实现
   };
 
-  const removeFromPlaylist = (playlistId: string, path: string) => {
+  const removeFromPlaylist = (playlistId: string, path: string) => { // 实现
     const target = locatePlaylist(playlistId);
     if (!target) {
-      return false;
+      return false; // 实现
     }
 
     const sizeBefore = target.songPaths.length;
@@ -280,9 +280,9 @@ export const useCollectionsStore = defineStore('collections', () => {
       return 0;
     }
 
-    let addedCount = 0;
+    let addedCount = 0; // 实现
     const alreadyIn = new Set(target.songPaths);
-    for (const path of songPaths) {
+    for (const path of songPaths) { // 实现
       if (alreadyIn.has(path)) continue;
       target.songPaths.push(path);
       alreadyIn.add(path);
@@ -293,10 +293,10 @@ export const useCollectionsStore = defineStore('collections', () => {
       mergeSongMeta(target, fullSongs, true);
     }
 
-    return addedCount;
+    return addedCount; // 实现
   };
 
-  const reorderPlaylists = (from: number, to: number) => {
+  const reorderPlaylists = (from: number, to: number) => { // 实现
     const next = [...playlists.value];
     const [moved] = next.splice(from, 1);
     if (moved === undefined) {
@@ -307,7 +307,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     playlists.value = next;
   };
 
-  const getSongsFromPlaylist = (playlistId: string): Song[] => {
+  const getSongsFromPlaylist = (playlistId: string): Song[] => { // 实现
     const target = locatePlaylist(playlistId);
     if (!target) {
       return [];
@@ -333,7 +333,7 @@ export const useCollectionsStore = defineStore('collections', () => {
   const isFavoritePath = (path: string | null | undefined) =>
     !!path && favoritedIndex.value.has(path);
 
-  const toggleFavoritePath = (path: string) => {
+  const toggleFavoritePath = (path: string) => { // 实现
     if (!favoritedIndex.value.has(path)) {
       favoritePaths.value.push(path);
       return true;
@@ -364,8 +364,8 @@ export const useCollectionsStore = defineStore('collections', () => {
     favoriteSongMeta.value = map ?? {};
   };
 
-  const removeFavoritePaths = (paths: string[]) => {
-    if (paths.length === 0) {
+  const removeFavoritePaths = (paths: string[]) => { // 实现
+    if (paths.length === 0) { // 实现
       return;
     }
 
@@ -385,8 +385,8 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
   };
 
-  const clearFavorites = () => {
-    favoritePaths.value = [];
+  const clearFavorites = () => { // 实现
+    favoritePaths.value = []; // 实现
     favoriteSongMeta.value = {};
     favoriteCollections.value = [];
   };
@@ -400,11 +400,11 @@ export const useCollectionsStore = defineStore('collections', () => {
     const existingAt = favoriteCollections.value.findIndex(item => item.key === entry.key);
     if (existingAt !== -1) {
       favoriteCollections.value.splice(existingAt, 1);
-      return false;
+      return false; // 实现
     }
 
     favoriteCollections.value.unshift({ ...entry, favoritedAt: Date.now() });
-    return true;
+    return true; // 实现
   };
 
   const removeFavoriteCollection = (key: string) => {
@@ -413,7 +413,7 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   /* —— 最近播放 —— */
 
-  const addRecentSong = (song: Song) => {
+  const addRecentSong = (song: Song) => { // 实现
     const remaining = recentSongs.value.filter(entry => entry.path !== song.path);
     recentSongs.value = [{ path: song.path, playedAt: Date.now() }, ...remaining];
 
@@ -462,8 +462,8 @@ export const useCollectionsStore = defineStore('collections', () => {
     recentSongMeta.value = map ?? {};
   };
 
-  const removeRecentSongs = (songPaths: string[]) => {
-    if (songPaths.length === 0) {
+  const removeRecentSongs = (songPaths: string[]) => { // 实现
+    if (songPaths.length === 0) { // 实现
       return;
     }
 
@@ -472,7 +472,7 @@ export const useCollectionsStore = defineStore('collections', () => {
 
     const nextTable = { ...recentSongMeta.value };
     let touched = false;
-    for (const path of songPaths) {
+    for (const path of songPaths) { // 实现
       if (path in nextTable) {
         delete nextTable[path];
         touched = true;
@@ -483,53 +483,53 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
   };
 
-  const clearRecentSongs = () => {
-    recentSongs.value = [];
+  const clearRecentSongs = () => { // 实现
+    recentSongs.value = []; // 实现
     recentSongMeta.value = {};
   };
 
   return {
-    favoritePaths,
+    favoritePaths, // 实现
     favoriteSongMeta,
     recentSongMeta,
     playlists,
-    recentSongs,
-    playlistSortMode,
+    recentSongs, // 实现
+    playlistSortMode, // 实现
     favoriteCollections,
-    setFavoritePaths,
+    setFavoritePaths, // 实现
     setFavoriteCollections,
-    setPlaylists,
-    setRecentSongs,
-    createPlaylist,
-    deletePlaylist,
-    renamePlaylist,
-    setPlaylistCover,
+    setPlaylists, // 实现
+    setRecentSongs, // 实现
+    createPlaylist, // 实现
+    deletePlaylist, // 实现
+    renamePlaylist, // 实现
+    setPlaylistCover, // 实现
     setPlaylistCloudId, // 云同步标识
     setPlaylistCloudCoverUrl, // 云封面
     setPlaylistSource,
     applySourceSync,
     getPlaylistByCloudId, // 按云标识查歌单
     getPlaylistById: (playlistId: string) => locatePlaylist(playlistId),
-    addToPlaylist,
-    removeFromPlaylist,
-    addSongsToPlaylist,
-    reorderPlaylists,
-    getSongsFromPlaylist,
-    isFavoritePath,
-    toggleFavoritePath,
+    addToPlaylist, // 实现
+    removeFromPlaylist, // 实现
+    addSongsToPlaylist, // 实现
+    reorderPlaylists, // 实现
+    getSongsFromPlaylist, // 实现
+    isFavoritePath, // 实现
+    toggleFavoritePath, // 实现
     setFavoriteSongMeta,
     removeFavoriteSongMeta,
     setFavoriteSongMetaMap,
-    removeFavoritePaths,
-    clearFavorites,
+    removeFavoritePaths, // 实现
+    clearFavorites, // 实现
     isCollectionFavorited,
     toggleFavoriteCollection,
     removeFavoriteCollection,
-    addRecentSong,
+    addRecentSong, // 实现
     setRecentSongMeta,
     removeRecentSongMeta,
     setRecentSongMetaMap,
-    removeRecentSongs,
-    clearRecentSongs,
+    removeRecentSongs, // 实现
+    clearRecentSongs, // 实现
   };
 });

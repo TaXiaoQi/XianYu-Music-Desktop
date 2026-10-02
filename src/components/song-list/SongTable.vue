@@ -1,27 +1,27 @@
-<script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { storeToRefs } from 'pinia';
-import { dragSession } from '../../composables/dragState';
-import type { Song } from '../../types';
+<script setup lang="ts"> // 实现
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'; // 实现
+import { storeToRefs } from 'pinia'; // 实现
+import { dragSession } from '../../composables/dragState'; // 实现
+import type { Song } from '../../types'; // 实现
 import { listScrollCache, songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
 import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
-import { useSettings } from '../../features/settings/useSettings';
-import { useRoute, useRouter } from 'vue-router';
-import { INDEX_KEYS } from '../../utils/alphabetIndex';
-import { useCoverCache } from '../../composables/useCoverCache';
+import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useRoute, useRouter } from 'vue-router'; // 实现
+import { INDEX_KEYS } from '../../utils/alphabetIndex'; // 实现
+import { useCoverCache } from '../../composables/useCoverCache'; // 实现
 import { launchFlyingCover } from '../../composables/useFlyingCover';
-import { useHomeNavigation } from '../../composables/useHomeNavigation';
-import { useLibraryRuntimeActions } from '../../features/library/useLibraryRuntimeActions';
-import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView';
-import { usePlayerViewState } from '../../composables/usePlayerViewState';
-import { useListScrollMemory } from '../../composables/useListScrollMemory';
-import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabetIndex';
-import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState';
-import { useLibraryStore } from '../../features/library/store';
-import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity';
-import { useSongDetailCache } from '../../composables/useSongDetailCache';
+import { useHomeNavigation } from '../../composables/useHomeNavigation'; // 实现
+import { useLibraryRuntimeActions } from '../../features/library/useLibraryRuntimeActions'; // 实现
+import { usePlaybackController } from '../../features/playback/usePlaybackController'; // 实现
+import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView'; // 实现
+import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
+import { useListScrollMemory } from '../../composables/useListScrollMemory'; // 实现
+import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabetIndex'; // 实现
+import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState'; // 实现
+import { useLibraryStore } from '../../features/library/store'; // 实现
+import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity'; // 实现
+import { useSongDetailCache } from '../../composables/useSongDetailCache'; // 实现
 import { getDownloadRecord, loadDownloadHistory } from '../../services/domain/downloadHistory';
 import { CircleCheck, Download } from 'lucide-vue-next';
 import { useDownloadStore } from '../../features/download/store';
@@ -116,7 +116,7 @@ const extLabelOf = (song: Song) => {
 // ==================== 全局 store / 组合式依赖 ====================
 const { settings: appPrefs } = useSettings();
 const clickToPlayMode = computed(() => appPrefs.value.songClickAction || 'double');
-const libraryStore = useLibraryStore();
+const libraryStore = useLibraryStore(); // 实现
 const {
   libraryScanProgress: scanProgress, lastLibraryScanError: lastScanError,
 } = storeToRefs(libraryStore);
@@ -124,13 +124,13 @@ const {
   currentSong, isPlaying, formatDuration,
 } = usePlaybackController();
 
-const props = defineProps<{
+const props = defineProps<{ // 实现
   selectedPaths: Set<string>;
-  songs: Song[];
+  songs: Song[]; // 实现
   songPaths?: string[];
   resolveSongByPath?: (path: string) => Song | null;
-  isBatchMode: boolean;
-  memoryScopeKey: string;
+  isBatchMode: boolean; // 实现
+  memoryScopeKey: string; // 实现
   pageScrollMode?: boolean;
   scrollContainerRef?: HTMLElement | null;
   disableScrollMemory?: boolean;
@@ -139,29 +139,29 @@ const props = defineProps<{
   songReasons?: Map<string, string>;
 }>();
 
-const emit = defineEmits<{
-  (e: 'play', song: Song): void;
-  (e: 'contextmenu', event: MouseEvent, song: Song): void;
-  (e: 'update:selectedPaths', newSet: Set<string>): void;
-  (e: 'drag-start', payload: { event: PointerEvent; song: Song; index: number }): void;
+const emit = defineEmits<{ // 实现
+  (e: 'play', song: Song): void; // 实现
+  (e: 'contextmenu', event: MouseEvent, song: Song): void; // 实现
+  (e: 'update:selectedPaths', newSet: Set<string>): void; // 实现
+  (e: 'drag-start', payload: { event: PointerEvent; song: Song; index: number }): void; // 实现
   (e: 'load-more'): void;
 }>();
 
 const {
   currentViewMode, localSortMode, folderSortMode, activeRootPath, currentFolderFilter,
-} = usePlayerViewState();
+} = usePlayerViewState(); // 实现
 const {
   folderTree, searchQuery: libSearchText, librarySongs: libSongs,
-} = usePlayerLibraryView();
+} = usePlayerLibraryView(); // 实现
 const { addLibraryFolder, scanLibrary, refreshFolder, expandFolderPath } = useLibraryRuntimeActions();
-const { isFavorite, toggleFavorite } = useLibraryCollections();
-const router = useRouter();
-const route = useRoute();
-const { openHomeArtist } = useHomeNavigation(router);
+const { isFavorite, toggleFavorite } = useLibraryCollections(); // 实现
+const router = useRouter(); // 实现
+const route = useRoute(); // 实现
+const { openHomeArtist } = useHomeNavigation(router); // 实现
 const {
   coverCache, loadCover, touchCoverPaths, preloadPriorityCovers, primeCoverPath,
 } = useCoverCache();
-const { loadSongDetail } = useSongDetailCache();
+const { loadSongDetail } = useSongDetailCache(); // 实现
 
 const dlStore = useDownloadStore();
 const isFetchingSong = (song: Song) =>
@@ -195,18 +195,18 @@ const scrollHost = computed(() =>
 
 // 仅记忆三类路由的滚动位置
 const normalizeMemoryRoute = (path: string) =>
-  ['/', '/favorites', '/recent'].includes(path) ? path : '/';
+  ['/', '/favorites', '/recent'].includes(path) ? path : '/'; // 实现
 const memoryRoute = ref(normalizeMemoryRoute(route.path));
 
 watch(
-  () => route.path,
+  () => route.path, // 实现
   (path) => {
-    if (!['/', '/favorites', '/recent'].includes(path)) {
+    if (!['/', '/favorites', '/recent'].includes(path)) { // 实现
       return;
     }
     memoryRoute.value = path;
   },
-  { immediate: true },
+  { immediate: true }, // 实现
 );
 
 // 视口容量 → 分段批量
@@ -312,7 +312,7 @@ watch(() => props.songPaths ?? props.songs, (rows) => {
 
 // ==================== 封面 / 评论 / 推荐理由 ====================
 const coverUrlFor = (path: string | undefined) => {
-  if (!path) {
+  if (!path) { // 实现
     return '';
   }
   const raw = coverUrlMap.get(path) ?? coverCache.get(path) ?? '';
@@ -359,13 +359,13 @@ const prefetchComments = (rows: Song[]) => {
     }
     pendingCommentPaths.add(p);
     void loadSongDetail(p)
-      .then((detail) => {
+      .then((detail) => { // 实现
         commentMemo.set(p, detail?.comment?.trim() ?? '');
       })
-      .catch(() => {
+      .catch(() => { // 实现
         commentMemo.set(p, '');
       })
-      .finally(() => {
+      .finally(() => { // 实现
         pendingCommentPaths.delete(p);
       });
   });
@@ -452,13 +452,13 @@ const warmViewportCovers = () => {
 // 恢复滚动位置后重放封面与量高（含一帧后的二次校准）
 const resumeViewportState = async () => {
   await regainScrollPos();
-  await nextTick();
+  await nextTick(); // 实现
   readScrollTop();
   measureViewport();
   replayCoverSnapshot();
   warmViewportCovers();
 
-  requestAnimationFrame(() => {
+  requestAnimationFrame(() => { // 实现
     readScrollTop();
     measureViewport();
     replayCoverSnapshot();
@@ -502,7 +502,7 @@ const stashCoverSnapshot = (key = scrollMemoryKey.value) => {
     songTableViewportCoverSnapshotCache.set(key, picked);
     return;
   }
-  songTableViewportCoverSnapshotCache.delete(key);
+  songTableViewportCoverSnapshotCache.delete(key); // 实现
 };
 
 // 滚动位置记忆
@@ -609,21 +609,21 @@ const {
   showIndexBar: wakeRail,
   scrollToCurrentSong: jumpToNowPlaying,
   scrollToTop: jumpToTop,
-} = useSongTableAlphabetIndex({
+} = useSongTableAlphabetIndex({ // 实现
   songs: segSongs,
   scrollTop: scrollPos,
   containerHeight: viewportH,
   containerRef: scrollHost,
   rootRef: tableRootEl,
-  routePath: computed(() => route.path),
-  currentViewMode,
-  localSortMode,
-  folderSortMode,
-  activeRootPath,
-  currentFolderFilter,
+  routePath: computed(() => route.path), // 实现
+  currentViewMode, // 实现
+  localSortMode, // 实现
+  folderSortMode, // 实现
+  activeRootPath, // 实现
+  currentFolderFilter, // 实现
   folderTree,
-  refreshFolder,
-  expandFolderPath,
+  refreshFolder, // 实现
+  expandFolderPath, // 实现
   listOffsetTop: hostOffset,
 });
 
@@ -653,7 +653,7 @@ watch(
       trackHostOffset();
     }
   },
-  { immediate: true },
+  { immediate: true }, // 实现
 );
 
 // 视口行变化 → 同步封面 / 预取 / 预热 / 下载标记
@@ -665,7 +665,7 @@ watch(
     prefetchComments(items);
     void refreshSavedDownloads(items);
   },
-  { immediate: true },
+  { immediate: true }, // 实现
 );
 
 // 打开评论展示开关时补拉一次
@@ -681,13 +681,13 @@ watch(
 // 记忆键切换：存旧快照、取新快照
 watch(
   scrollMemoryKey,
-  (newKey, oldKey) => {
-    if (oldKey && oldKey !== newKey) {
+  (newKey, oldKey) => { // 实现
+    if (oldKey && oldKey !== newKey) { // 实现
       stashCoverSnapshot(oldKey);
     }
     replayCoverSnapshot(newKey);
   },
-  { immediate: true },
+  { immediate: true }, // 实现
 );
 
 // ==================== 行为处理 ====================
@@ -716,10 +716,10 @@ const onRowContext = (event: MouseEvent, song: Song) => {
 };
 
 const onRowPointerDown = (event: PointerEvent, song: Song, index: number) => {
-  if (event.pointerType === 'mouse' && event.button !== 0) {
+  if (event.pointerType === 'mouse' && event.button !== 0) { // 实现
     return;
   }
-  emit('drag-start', { event, song, index });
+  emit('drag-start', { event, song, index }); // 实现
 };
 
 // 仅部分视图允许拖拽排序
@@ -741,12 +741,12 @@ const {
   heroScanStatus: scanStatus,
   emptyStateMessage: emptyStateText,
   retryHeroLibraryScan: redoScan,
-} = useSongTableLibraryState({
-  currentViewMode,
+} = useSongTableLibraryState({ // 实现
+  currentViewMode, // 实现
   searchQuery: libSearchText,
   librarySongs: libSongs,
-  addLibraryFolder,
-  scanLibrary,
+  addLibraryFolder, // 实现
+  scanLibrary, // 实现
 });
 
 // 英雄卡文案与百分比
@@ -771,8 +771,8 @@ const heroPercentLabel = computed(() => `${heroPercent.value}%`);
 
 const heroNote = computed(() => {
   const progress = scanProgress.value;
-  if (progress && progress.total > 0) {
-    return `${progress.current} / ${progress.total}`;
+  if (progress && progress.total > 0) { // 实现
+    return `${progress.current} / ${progress.total}`; // 实现
   }
   if (scanStatus.value === 'success') {
     return libSongs.value.length > 0 ? `${libSongs.value.length} ${LIB_COUNT_SUFFIX}` : HERO_NOTE_NO_SONGS;
@@ -785,8 +785,8 @@ const heroNote = computed(() => {
 
 const heroDetail = computed(() => {
   const progress = scanProgress.value;
-  if (progress && progress.total > 0) {
-    const folderPath = progress.folder_path?.trim();
+  if (progress && progress.total > 0) { // 实现
+    const folderPath = progress.folder_path?.trim(); // 实现
     return folderPath || heroPhaseLabel.value;
   }
   if (scanStatus.value === 'success') {
@@ -810,10 +810,10 @@ const emptyScanDesc = computed(() =>
 
 // 歌手名集合：优先使用拆分后的多歌手字段
 const artistChips = (song: Song) =>
-  (Array.isArray(song.artist_names) && song.artist_names.length > 0 ? song.artist_names : [song.artist]).filter(Boolean);
+  (Array.isArray(song.artist_names) && song.artist_names.length > 0 ? song.artist_names : [song.artist]).filter(Boolean); // 实现
 
 const gotoArtist = (artistName: string) => {
-  void openHomeArtist(artistName);
+  void openHomeArtist(artistName); // 实现
 };
 
 // 行内格式列文案：已下载为本地时显示真实容器格式
@@ -836,24 +836,24 @@ const titleTextOf = (song: Song) => song.title || song.name.replace(/\.[^/.]+$/,
 const padRowIndex = (idx: number) => (idx + 1 < 10 ? `0${idx + 1}` : idx + 1);
 
 // ==================== 生命周期 ====================
-onMounted(() => {
+onMounted(() => { // 实现
   window.addEventListener('resize', measureViewport);
   measureViewport();
   fillSegmentFloor();
   void resumeViewportState();
 });
 
-onActivated(() => {
+onActivated(() => { // 实现
   fillSegmentFloor();
   void resumeViewportState();
 });
 
-onDeactivated(() => {
+onDeactivated(() => { // 实现
   stashScrollPos();
   stashCoverSnapshot();
 });
 
-onBeforeUnmount(() => {
+onBeforeUnmount(() => { // 实现
   const host = scrollHost.value;
   // 页面滚动模式下宿主已回到顶部时无需重复记忆
   if (!(props.pageScrollMode && host && host.scrollTop === 0)) {
@@ -867,7 +867,7 @@ onBeforeUnmount(() => {
   activeCoverPaths = new Set<string>();
 });
 
-onUnmounted(() => {
+onUnmounted(() => { // 实现
   window.removeEventListener('resize', measureViewport);
 });
 
@@ -892,7 +892,7 @@ const DRAG_EASE = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
 const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string | number> => {
   const base: Record<string, string | number> = { height: `${ROW_PX}px` };
 
-  if (!dragSession.active || dragSession.insertIndex === -1) {
+  if (!dragSession.active || dragSession.insertIndex === -1) { // 实现
     return base;
   }
 
@@ -957,20 +957,20 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 
         <div
           v-for="song in rowsForRender"
-          :key="song.path"
+          :key="song.path" 
           class="group relative flex w-full min-w-[580px] items-center gap-3 border-b border-black/5 pl-2 pr-6 [touch-action:none] select-none cursor-default hover:bg-black/5 dark:border-white/5 dark:hover:bg-white/5"
           :class="{ 'bg-red-500/10 dark:bg-red-500/20': selectedPaths.has(song.path) }"
           :style="rowShiftStyle(song.virtualIndex, song.path)"
-          :data-index="song.virtualIndex"
+          :data-index="song.virtualIndex" 
           @pointerdown="onRowPointerDown($event, song, song.virtualIndex)"
           @click="onRowClick(song)"
           @dblclick="onRowDblClick(song)"
           @contextmenu.prevent="onRowContext($event, song)"
-          @dragstart.prevent
+          @dragstart.prevent 
         >
           <!-- 序号 / 播放状态 / 批量勾选 -->
           <div class="w-10 flex shrink-0 items-center justify-center">
-            <div v-if="isBatchMode" class="flex items-center justify-center">
+            <div v-if="isBatchMode" class="flex items-center justify-center"> 
               <input
                 type="checkbox"
                 class="rounded text-[#EC4141] focus:ring-[#EC4141] pointer-events-none"
@@ -991,10 +991,10 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
               <span class="absolute inset-0 flex items-center justify-center text-xs font-mono text-gray-400 transition-opacity duration-150 group-hover:opacity-0 dark:text-white/40">
                 {{ padRowIndex(song.virtualIndex) }}
               </span>
-              <div class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              <div class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100"> 
                 <span v-if="dragChipVisible" class="text-gray-500 cursor-grab active:text-[#EC4141] dark:text-white/60">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16" /> 
                   </svg>
                 </span>
                 <span v-else class="text-gray-500 cursor-pointer hover:text-[#EC4141] dark:text-white/60" @click.stop="triggerPlay(song)" @dblclick.stop.prevent>
@@ -1031,7 +1031,7 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
               <span class="truncate min-w-0 text-[15px] text-gray-900 font-semibold dark:text-gray-100">{{ titleTextOf(song) }}</span>
               <span
                 v-if="showsComment(song)"
-                class="max-w-[42%] shrink-0 truncate text-xs font-medium text-gray-500 dark:text-white/45"
+                class="max-w-[42%] shrink-0 truncate text-xs font-medium text-gray-500 dark:text-white/45" 
                 :title="commentOf(song)"
               >（{{ commentOf(song) }}）</span>
               <span
@@ -1101,7 +1101,7 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
                 <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
               </svg>
             </button>
-            <span class="w-10 text-right">{{ formatDuration(song.duration) }}</span>
+            <span class="w-10 text-right">{{ formatDuration(song.duration) }}</span> 
           </div>
 
           <!-- 来源标签 -->
@@ -1136,8 +1136,8 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
             &#28155;&#21152;&#26412;&#22320;&#38899;&#20048;</button>
         </template>
         <template v-else-if="scanChecking">
-          <div class="flex h-14 w-14 items-center justify-center rounded-full bg-white/70 shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:bg-white/10">
-            <div class="h-6 w-6 rounded-full border-2 border-[#ec4141]/25 border-t-[#ec4141] scan-spinner"></div>
+          <div class="flex h-14 w-14 items-center justify-center rounded-full bg-white/70 shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:bg-white/10"> 
+            <div class="h-6 w-6 rounded-full border-2 border-[#ec4141]/25 border-t-[#ec4141] scan-spinner"></div> 
           </div>
           <p class="mt-5 text-[15px] font-medium text-gray-700 dark:text-white/80">{{ checkingTitle }}</p>
           <p class="mt-2 text-[13px] opacity-70">{{ checkingDesc }}</p>
@@ -1150,22 +1150,22 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
             <circle r="1.45" cx="16.2" cy="12.9" />
           </svg>
           <p class="mb-2 text-[15px]">{{ emptyScanTitle }}</p>
-          <p class="text-[13px] opacity-70">
+          <p class="text-[13px] opacity-70"> 
             {{ emptyScanDesc }}
           </p>
         </template>
-        <template v-else-if="currentViewMode === 'playlist'">
+        <template v-else-if="currentViewMode === 'playlist'"> 
           <p>{{ emptyStateText }}</p>
         </template>
-        <template v-else>
+        <template v-else> 
           <p>{{ emptyStateText }}</p>
         </template>
       </div>
     </div>
 
     <!-- 扫描英雄卡 -->
-    <Teleport to="body">
-      <transition name="library-hero">
+    <Teleport to="body"> 
+      <transition name="library-hero"> 
         <div v-if="heroCardVisible" class="library-hero-overlay">
           <div :class="'library-hero-backdrop'"></div>
 
@@ -1173,32 +1173,32 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
             <p class="library-hero-phase">{{ heroPhaseLabel }}</p>
             <h3 class="library-hero-title">{{ heroTitle }}</h3>
 
-            <div class="library-hero-progress-track">
+            <div class="library-hero-progress-track"> 
               <div
-                class="library-hero-progress-fill"
+                class="library-hero-progress-fill" 
                 :class="{ 'scan-progress-indeterminate': scanProgress && scanProgress.total <= 0 && scanStatus === 'scanning' }"
                 :style="{ width: `${heroPercent}%` }"
               ></div>
             </div>
 
-            <div class="library-hero-progress-meta">
+            <div class="library-hero-progress-meta"> 
               <span class="library-hero-progress-note" :title="heroDetail">{{ heroDetail }}</span>
               <span class="library-hero-progress-value">{{ heroNote }} &middot; {{ heroPercentLabel }}</span>
             </div>
 
             <div v-if="scanStatus === 'error'" class="library-hero-actions">
               <button type="button" class="hero-primary-btn" @click="redoScan">&#37325;&#26032;&#25195;&#25551;</button>
-              <button type="button" class="hero-secondary-btn" @click="addLibraryFolder">&#37325;&#26032;&#36873;&#25321;&#25991;&#20214;&#22841;</button>
+              <button type="button" class="hero-secondary-btn" @click="addLibraryFolder">&#37325;&#26032;&#36873;&#25321;&#25991;&#20214;&#22841;</button> 
             </div>
           </div>
         </div>
-      </transition>
+      </transition> 
     </Teleport>
 
     <!-- 字母索引导航 -->
     <div v-if="showAlphaRail" class="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-16 items-center justify-end pr-3">
       <div
-        class="flex flex-col items-center gap-2 transition-all duration-300 ease-out"
+        class="flex flex-col items-center gap-2 transition-all duration-300 ease-out" 
         :class="railFloatClass"
         @mouseenter="onRailHotspotEnter"
         @mousemove="onRailHotspotMove"
@@ -1206,13 +1206,13 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
       >
         <div
           ref="railBarRef"
-          class="flex flex-col items-center gap-[1px] rounded-full bg-white px-1 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:bg-black"
+          class="flex flex-col items-center gap-[1px] rounded-full bg-white px-1 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:bg-black" 
         >
           <button
-            v-for="key in INDEX_KEYS"
+            v-for="key in INDEX_KEYS" 
             :key="key"
-            type="button"
-            class="index-nav-item"
+            type="button" 
+            class="index-nav-item" 
             :class="{
               'index-nav-item-active': railActiveKey === key,
               'index-nav-item-hover': railHoverKey === key && railActiveKey !== key && railDragKey !== key,
@@ -1272,22 +1272,22 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
     </Teleport>
 
     <!-- 拖拽索引气泡 -->
-    <Teleport to="body">
-      <transition name="index-bubble">
+    <Teleport to="body"> 
+      <transition name="index-bubble"> 
         <div v-if="railDragging && railDragKey" class="pointer-events-none fixed inset-0 z-[9998] flex items-center justify-center">
           <div class="rounded-[28px] bg-black/72 px-7 py-5 text-5xl font-bold tracking-[0.12em] text-white shadow-2xl backdrop-blur-xl dark:bg-black/78">{{ railDragKey }}</div>
         </div>
-      </transition>
+      </transition> 
     </Teleport>
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 /* ===== 滚动容器与滚动条 ===== */
 .song-list-scroll-container { overflow-anchor: none; }
 .song-list-scroll-container::-webkit-scrollbar { width: 10px; }
 .song-list-scroll-container::-webkit-scrollbar-track { background: transparent; }
-.song-list-scroll-container::-webkit-scrollbar-thumb {
+.song-list-scroll-container::-webkit-scrollbar-thumb { /* 样式 */
   border: 3px solid transparent; background-color: rgba(0,0,0,.14); background-clip: content-box; border-radius: 9999px;
 }
 .song-list-scroll-container::-webkit-scrollbar-thumb:hover { border-width: 2px; background-color: rgba(236,65,65,.68); }
@@ -1302,12 +1302,12 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 /* ===== 扫描英雄卡 ===== */
 .library-hero-overlay { position: fixed; inset: 0; z-index: 170; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
 .library-hero-backdrop { position: absolute; inset: 0; background: rgba(244,246,250,.72); backdrop-filter: blur(4px); }
-.library-hero-card {
+.library-hero-card { /* 样式 */
   position: relative; z-index: 1; width: min(100%, 500px); overflow: hidden;
   padding: 1.55rem 1.6rem 1.2rem; border: 1px solid rgba(255,255,255,.68); border-radius: 20px;
   background: linear-gradient(180deg, rgba(255,255,255,.76), rgba(248,250,252,.8));
   box-shadow: 0 16px 40px rgba(15,23,42,.12), 0 2px 12px rgba(15,23,42,.05), inset 0 1px 0 rgba(255,255,255,.92);
-  backdrop-filter: blur(30px) saturate(1.04);
+  backdrop-filter: blur(30px) saturate(1.04); /* 样式 */
 }
 .library-hero-card-success { background: linear-gradient(180deg, rgba(247,252,249,.8), rgba(242,249,245,.82)); }
 .library-hero-card-error { background: linear-gradient(180deg, rgba(255,248,248,.82), rgba(253,243,243,.84)); }
@@ -1323,8 +1323,8 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 .library-hero-progress-note { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .library-hero-progress-value { flex-shrink: 0; color: rgba(15,23,42,.56); }
 .library-hero-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: .9rem; }
-.hero-primary-btn,
-.hero-secondary-btn {
+.hero-primary-btn, /* 样式 */
+.hero-secondary-btn { /* 样式 */
   display: inline-flex; align-items: center; justify-content: center; min-width: 132px; border-radius: 9999px;
   padding: .82rem 1.3rem; font-size: .94rem; font-weight: 700;
   transition: transform .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
@@ -1334,14 +1334,14 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 .hero-secondary-btn { border: 1px solid rgba(15,23,42,.1); background: rgba(255,255,255,.72); color: rgb(31,41,55); }
 .hero-secondary-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.94); }
 
-@media (max-width: 720px) {
+@media (max-width: 720px) { /* 样式 */
   .library-hero-overlay { padding: 1rem; }
   .library-hero-card { padding: 1.45rem 1.2rem 1.15rem; }
   .library-hero-progress-meta { flex-direction: column; align-items: flex-start; }
 }
 
 /* ===== 字母索引导航 ===== */
-.index-nav-item {
+.index-nav-item { /* 样式 */
   width: 1.05rem; height: .78rem; border-radius: 9999px; font-size: .58rem; line-height: 1;
   color: rgba(75,85,99,.85);
   transition: background-color .18s ease, color .18s ease, transform .18s ease;
@@ -1354,19 +1354,19 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 
 /* ===== 英雄卡暗色模式 ===== */
 :global(.dark) .library-hero-backdrop { background: rgba(2,6,23,.68); backdrop-filter: blur(4px); }
-:global(.dark) .library-hero-card {
+:global(.dark) .library-hero-card { /* 样式 */
   border-color: rgba(255,255,255,.08);
   background: linear-gradient(180deg, rgba(12,18,28,.8), rgba(10,16,25,.84));
   box-shadow: 0 18px 44px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
 }
 :global(.dark) .library-hero-card-success { background: linear-gradient(180deg, rgba(7,46,39,.84), rgba(8,58,47,.86)); }
 :global(.dark) .library-hero-card-error { background: linear-gradient(180deg, rgba(67,13,13,.84), rgba(82,18,18,.86)); }
-:global(.dark) .library-hero-title,
+:global(.dark) .library-hero-title, /* 样式 */
 :global(.dark) .library-hero-progress-value { color: rgba(255,255,255,.96); }
 :global(.dark) .library-hero-phase { color: rgba(191,201,216,.8); }
 :global(.dark) .library-hero-card-success .library-hero-phase { color: rgba(110,231,183,.82); }
 :global(.dark) .library-hero-card-error .library-hero-phase { color: rgba(252,165,165,.88); }
-:global(.dark) .library-hero-progress-meta,
+:global(.dark) .library-hero-progress-meta, /* 样式 */
 :global(.dark) .library-hero-progress-note { color: rgba(226,232,240,.72); }
 
 /* ===== 字母索引暗色模式 ===== */
@@ -1377,19 +1377,19 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 :global(.dark) .index-nav-item-drag { background: rgba(255,255,255,.14); color: rgba(255,255,255,.98); }
 
 /* ===== 过渡动画 ===== */
-.index-bubble-enter-active,
+.index-bubble-enter-active, /* 样式 */
 .index-bubble-leave-active { transition: opacity .18s ease, transform .18s ease; }
-.index-bubble-enter-from,
+.index-bubble-enter-from, /* 样式 */
 .index-bubble-leave-to { opacity: 0; transform: scale(.92); }
 
-.locate-fab-enter-active,
+.locate-fab-enter-active, /* 样式 */
 .locate-fab-leave-active { transition: opacity .18s ease, transform .18s ease; }
-.locate-fab-enter-from,
+.locate-fab-enter-from, /* 样式 */
 .locate-fab-leave-to { opacity: 0; transform: translateY(8px) scale(.94); }
 
-.library-hero-enter-active,
+.library-hero-enter-active, /* 样式 */
 .library-hero-leave-active { transition: opacity .22s ease, transform .22s ease; }
-.library-hero-enter-from,
+.library-hero-enter-from, /* 样式 */
 .library-hero-leave-to { opacity: 0; transform: scale(.98); }
 
 /* ===== 关键帧 ===== */
@@ -1398,10 +1398,10 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 @keyframes scan-spin { to { transform: rotate(360deg); } }
 :global(.dark) .hero-secondary-btn { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: rgba(255,255,255,.9); }
 :global(.dark) .hero-secondary-btn:hover { background: rgba(255,255,255,.12); }
-@keyframes spectrum {
+@keyframes spectrum { /* 样式 */
   0%,100% { height: 4px; }
-  25% { height: 14px; }
-  50% { height: 6px; }
-  75% { height: 12px; }
+  25% { height: 14px; } /* 样式 */
+  50% { height: 6px; } /* 样式 */
+  75% { height: 12px; } /* 样式 */
 }
 </style>

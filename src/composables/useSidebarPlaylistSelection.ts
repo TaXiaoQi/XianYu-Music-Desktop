@@ -1,12 +1,12 @@
-import { ref, type Ref } from 'vue';
+import { ref, type Ref } from 'vue'; // 实现
 
-import type { Playlist } from '../types';
+import type { Playlist } from '../types'; // 实现
 
-interface UseSidebarPlaylistSelectionOptions {
-  playlists: Ref<Playlist[]>;
-  currentViewMode: Ref<string>;
-  filterCondition: Ref<string>;
-  openHomePlaylist: (playlistId: string) => Promise<unknown> | unknown;
+interface UseSidebarPlaylistSelectionOptions { // 实现
+  playlists: Ref<Playlist[]>; // 实现
+  currentViewMode: Ref<string>; // 实现
+  filterCondition: Ref<string>; // 实现
+  openHomePlaylist: (playlistId: string) => Promise<unknown> | unknown; // 实现
 }
 
 export function useSidebarPlaylistSelection(options: UseSidebarPlaylistSelectionOptions) {
@@ -21,7 +21,7 @@ export function useSidebarPlaylistSelection(options: UseSidebarPlaylistSelection
     const selection = selectedPlaylistIds.value;
     selection.clear();
     selection.add(id);
-    lastSelectedPlaylistId.value = id;
+    lastSelectedPlaylistId.value = id; // 实现
   };
 
   const ensurePlaylistSelected = (id: string): void => {
@@ -29,7 +29,7 @@ export function useSidebarPlaylistSelection(options: UseSidebarPlaylistSelection
     if (alreadySelected) {
       return;
     }
-    selectSinglePlaylist(id);
+    selectSinglePlaylist(id); // 实现
   };
 
   /** Shift 连选：以锚点为起点把区间内的歌单全部加入选中；返回是否已按连选处理 */
@@ -63,13 +63,13 @@ export function useSidebarPlaylistSelection(options: UseSidebarPlaylistSelection
     } else {
       selection.add(id);
     }
-    lastSelectedPlaylistId.value = id;
+    lastSelectedPlaylistId.value = id; // 实现
     return true;
   };
 
   const handlePlaylistClick = (event: MouseEvent, id: string): void => {
     event?.stopPropagation();
-    void openHomePlaylist(id);
+    void openHomePlaylist(id); // 实现
 
     if (!event) {
       return;
@@ -77,7 +77,7 @@ export function useSidebarPlaylistSelection(options: UseSidebarPlaylistSelection
     if (applyRangeSelection(event, id) || applyModifierToggle(event, id)) {
       return;
     }
-    selectSinglePlaylist(id);
+    selectSinglePlaylist(id); // 实现
   };
 
   const handleBackgroundClick = (event?: MouseEvent): void => {

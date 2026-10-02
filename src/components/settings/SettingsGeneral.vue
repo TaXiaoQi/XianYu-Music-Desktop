@@ -1,35 +1,35 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useSettings } from '../../features/settings/useSettings';
-import { playerStorage } from '../../services/storage/playerStorage';
+import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { playerStorage } from '../../services/storage/playerStorage'; // 实现
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 import { usePlayer } from '../../features/playback';
-import { useToast } from '../../composables/toast';
-import { appApi } from '../../services/tauri/appApi';
-import { playbackApi } from '../../services/tauri/playbackApi';
-import ConfirmModal from '../overlays/ConfirmModal.vue';
+import { useToast } from '../../composables/toast'; // 实现
+import { appApi } from '../../services/tauri/appApi'; // 实现
+import { playbackApi } from '../../services/tauri/playbackApi'; // 实现
+import ConfirmModal from '../overlays/ConfirmModal.vue'; // 实现
 import SettingHint from './SettingHint.vue';
-import { useI18n } from '../../features/i18n';
+import { useI18n } from '../../features/i18n'; // 实现
 import { usePerformanceMode } from '../../composables/usePerformanceMode';
 import { AUDIO_FILE_ASSOCIATION_EXTENSIONS, audioFileAssociationLabel } from '../../features/settings/audioFileAssociations';
 import type { AppLanguage, PerformanceMode } from '../../types';
 
-const { settings, patchSettings } = useSettings();
+const { settings, patchSettings } = useSettings(); // 实现
 const {
   pauseSong,
-  libraryScanProgress,
-} = usePlayer();
-const { showToast } = useToast();
-const { t } = useI18n();
+  libraryScanProgress, // 实现
+} = usePlayer(); // 实现
+const { showToast } = useToast(); // 实现
+const { t } = useI18n(); // 实现
 
-const appLanguage = computed({
-  get: () => settings.value.language,
-  set: (value: AppLanguage) => {
-    if (settings.value.language === value) return;
-    patchSettings({ language: value });
-    playerStorage.writeSettings(settings.value);
+const appLanguage = computed({ // 实现
+  get: () => settings.value.language, // 实现
+  set: (value: AppLanguage) => { // 实现
+    if (settings.value.language === value) return; // 实现
+    patchSettings({ language: value }); // 实现
+    playerStorage.writeSettings(settings.value); // 实现
   },
 });
 
@@ -155,23 +155,23 @@ const syncFileAssociationsFromSystem = async () => {
   }
 };
 
-async function handleGpuAccelerationChange() {
-  const previous = settings.value.gpuAcceleration;
-  const next = !previous;
+async function handleGpuAccelerationChange() { // 实现
+  const previous = settings.value.gpuAcceleration; // 实现
+  const next = !previous; // 实现
 
-  settings.value.gpuAcceleration = next;
+  settings.value.gpuAcceleration = next; // 实现
 
   try {
     await toolboxApi.setGpuAcceleration(next);
-    showToast(t('toast.gpuUpdated'), 'success');
-  } catch (error) {
-    settings.value.gpuAcceleration = previous;
-    showToast(t('toast.gpuFailed'), 'error');
-    console.error('Failed to update GPU acceleration setting:', error);
+    showToast(t('toast.gpuUpdated'), 'success'); // 实现
+  } catch (error) { // 实现
+    settings.value.gpuAcceleration = previous; // 实现
+    showToast(t('toast.gpuFailed'), 'error'); // 实现
+    console.error('Failed to update GPU acceleration setting:', error); // 实现
   }
 }
-const showClearAllDataConfirm = ref(false);
-const isClearingAllData = ref(false);
+const showClearAllDataConfirm = ref(false); // 实现
+const isClearingAllData = ref(false); // 实现
 
 // --- 性能模式：auto 自动检测 / full 满特效 / performance 性能优先 ---
 const { effectiveMode } = usePerformanceMode();
@@ -215,8 +215,8 @@ const handlePerformanceModeDropdownOutsideClick = (event: MouseEvent) => {
   }
 };
 
-const isLibraryScanActive = computed(
-  () => !!libraryScanProgress.value && !libraryScanProgress.value.done
+const isLibraryScanActive = computed( // 实现
+  () => !!libraryScanProgress.value && !libraryScanProgress.value.done // 实现
 );
 
 // --- 在线播放流式缓存管理 ---
@@ -268,41 +268,41 @@ const handleClearStreamCache = async () => {
   try {
     await playbackApi.clearStreamCache();
     await refreshStreamCacheInfo();
-    showToast(t('toast.cacheCleared'), 'success');
-  } catch (error) {
+    showToast(t('toast.cacheCleared'), 'success'); // 实现
+  } catch (error) { // 实现
     console.error('Failed to clear stream cache:', error);
-    showToast(t('toast.cacheClearFailed'), 'error');
+    showToast(t('toast.cacheClearFailed'), 'error'); // 实现
   } finally {
     isClearingStreamCache.value = false;
   }
 };
 
-const openClearAllDataConfirm = () => {
-  if (isClearingAllData.value || isLibraryScanActive.value) {
+const openClearAllDataConfirm = () => { // 实现
+  if (isClearingAllData.value || isLibraryScanActive.value) { // 实现
     return;
   }
 
-  showClearAllDataConfirm.value = true;
+  showClearAllDataConfirm.value = true; // 实现
 };
 
-const handleClearAllData = async () => {
-  if (isClearingAllData.value) {
+const handleClearAllData = async () => { // 实现
+  if (isClearingAllData.value) { // 实现
     return;
   }
 
-  isClearingAllData.value = true;
+  isClearingAllData.value = true; // 实现
 
   try {
-    await pauseSong().catch(() => {});
-    await appApi.clearAllAppData();
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.reload();
-  } catch (error) {
-    console.error('Failed to clear all app data:', error);
-    showToast(t('toast.resetFailed'), 'error');
-    showClearAllDataConfirm.value = false;
-    isClearingAllData.value = false;
+    await pauseSong().catch(() => {}); // 实现
+    await appApi.clearAllAppData(); // 实现
+    localStorage.clear(); // 实现
+    sessionStorage.clear(); // 实现
+    window.location.reload(); // 实现
+  } catch (error) { // 实现
+    console.error('Failed to clear all app data:', error); // 实现
+    showToast(t('toast.resetFailed'), 'error'); // 实现
+    showClearAllDataConfirm.value = false; // 实现
+    isClearingAllData.value = false; // 实现
   }
 };
 
@@ -318,28 +318,28 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300"> 
 
     <section class="relative z-20 space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        {{ t('language.section') }}
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
+        {{ t('language.section') }} 
       </h2>
       <div class="rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
         <div class="flex items-center justify-between gap-5 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10 rounded-xl">
-          <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
-              {{ t('language.label') }}
+          <div class="min-w-0"> 
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200"> 
+              {{ t('language.label') }} 
             </div>
-            <div class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-              {{ t('language.description') }}
+            <div class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400"> 
+              {{ t('language.description') }} 
             </div>
           </div>
           <div ref="languageDropdownRef" class="relative w-40 shrink-0 sm:w-44">
             <button
               type="button"
               :aria-expanded="isLanguageDropdownOpen"
-              :aria-label="t('language.label')"
+              :aria-label="t('language.label')" 
               @click="isLanguageDropdownOpen = !isLanguageDropdownOpen"
               class="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             >
@@ -393,15 +393,15 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        {{ t('general.section') }}
+    <section class="space-y-3"> 
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"> 
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span> 
+        {{ t('general.section') }} 
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.launchOnStartup') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.launchOnStartup') }}</div> 
           </div>
           <button type="button" @click="launchOnStartup = !launchOnStartup" class="glass-switch" :class="{ 'is-checked': launchOnStartup }"></button>
         </div>
@@ -415,7 +415,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.checkUpdates') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.checkUpdates') }}</div> 
           </div>
           <button type="button" @click="settings.checkUpdateOnStartup = !settings.checkUpdateOnStartup" class="glass-switch" :class="{ 'is-checked': settings.checkUpdateOnStartup }"></button>
         </div>
@@ -429,7 +429,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.gpuAcceleration') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.gpuAcceleration') }}</div> 
           </div>
           <button type="button" @click="handleGpuAccelerationChange" class="glass-switch" :class="{ 'is-checked': settings.gpuAcceleration }"></button>
         </div>
@@ -483,45 +483,45 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.closeToTray') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.closeToTray') }}</div> 
           </div>
           <button type="button" @click="settings.closeToTray = !settings.closeToTray" class="glass-switch" :class="{ 'is-checked': settings.closeToTray }"></button>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.showQualityBadges') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.showQualityBadges') }}</div> 
           </div>
           <button type="button" @click="settings.showQualityBadges = !settings.showQualityBadges" class="glass-switch" :class="{ 'is-checked': settings.showQualityBadges }"></button>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.showSongComments') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.showSongComments') }}</div> 
           </div>
           <button type="button" @click="settings.showSongComments = !settings.showSongComments" class="glass-switch" :class="{ 'is-checked': settings.showSongComments }"></button>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.scrollToTop') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.scrollToTop') }}</div> 
           </div>
           <button type="button" @click="settings.enableScrollToTopButton = !settings.enableScrollToTopButton" class="glass-switch" :class="{ 'is-checked': settings.enableScrollToTopButton }"></button>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.taskbarControls') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.taskbarControls') }}</div> 
           </div>
           <button type="button" @click="settings.showTaskbarPlayer = !settings.showTaskbarPlayer" class="glass-switch" :class="{ 'is-checked': settings.showTaskbarPlayer }"></button>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.writeArtistAvatar') }}</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.writeArtistAvatar') }}</div> 
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint severity="warning" :text="t('general.writeArtistAvatarHint')" />
+            <SettingHint severity="warning" :text="t('general.writeArtistAvatarHint')" /> 
             <button type="button" @click="settings.writeArtistAvatarToTags = !settings.writeArtistAvatarToTags" class="glass-switch" :class="{ 'is-checked': settings.writeArtistAvatarToTags }"></button>
           </div>
         </div>
@@ -568,18 +568,18 @@ onMounted(() => {
       <SettingHint severity="warning" :text="t('general.fileAssocNote')" />
     </section>
 
-    <section class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        {{ t('general.storage') }}
+    <section class="space-y-3"> 
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"> 
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span> 
+        {{ t('general.storage') }} 
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.cacheLimit') }}</div>
+        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors"> 
+          <div class="min-w-0"> 
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.cacheLimit') }}</div> 
           </div>
           <div class="flex shrink-0 items-center gap-3">
-            <SettingHint :text="t('general.cacheLimitHint')" />
+            <SettingHint :text="t('general.cacheLimitHint')" /> 
             <label class="stream-cache-input-wrap">
               <input
                 :value="settings.audio.streamCacheSizeMB"
@@ -596,7 +596,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors"> 
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">缓存目录</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 truncate" :title="settings.audio.streamCacheDir || '默认目录（%APPDATA%/com.xymusic.desktop/stream_cache）'">
@@ -622,16 +622,16 @@ onMounted(() => {
         </div>
 
                 <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div class="min-w-0">
+          <div class="min-w-0"> 
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
-              {{ t('general.clearCache') }}
+              {{ t('general.clearCache') }} 
               <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                 {{ formatStreamCacheBytes(streamCacheCurrent) }} / {{ formatStreamCacheBytes(streamCacheMax) }}
               </span>
             </div>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint :text="t('general.clearCacheHint')" />
+            <SettingHint :text="t('general.clearCacheHint')" /> 
             <button
               type="button"
               :disabled="isClearingStreamCache || streamCacheCurrent === 0"
@@ -641,69 +641,69 @@ onMounted(() => {
                 ? 'settings-action-button--disabled'
                 : 'settings-action-button--solid'"
             >
-              {{ isClearingStreamCache ? t('general.clearing') : t('general.clear') }}
+              {{ isClearingStreamCache ? t('general.clearing') : t('general.clear') }} 
             </button>
           </div>
         </div>
 
-        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.resetData') }}</div>
+        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors"> 
+          <div class="min-w-0"> 
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.resetData') }}</div> 
           </div>
           <button
-            type="button"
-            :disabled="isClearingAllData || isLibraryScanActive"
-            @click="openClearAllDataConfirm"
-            class="settings-action-button shrink-0"
-            :class="isClearingAllData || isLibraryScanActive
-              ? 'settings-action-button--disabled'
+            type="button" 
+            :disabled="isClearingAllData || isLibraryScanActive" 
+            @click="openClearAllDataConfirm" 
+            class="settings-action-button shrink-0" 
+            :class="isClearingAllData || isLibraryScanActive 
+              ? 'settings-action-button--disabled' 
               : 'settings-action-button--solid'"
           >
-            {{ isClearingAllData ? t('general.resetting') : isLibraryScanActive ? t('general.scanUnavailable') : t('general.reset') }}
+            {{ isClearingAllData ? t('general.resetting') : isLibraryScanActive ? t('general.scanUnavailable') : t('general.reset') }} 
           </button>
         </div>
       </div>
     </section>
 
-    <ConfirmModal
-      :visible="showClearAllDataConfirm"
-      :title="t('general.resetData')"
-      :content="t('general.resetConfirm')"
-      @cancel="!isClearingAllData && (showClearAllDataConfirm = false)"
-      @confirm="handleClearAllData"
+    <ConfirmModal 
+      :visible="showClearAllDataConfirm" 
+      :title="t('general.resetData')" 
+      :content="t('general.resetConfirm')" 
+      @cancel="!isClearingAllData && (showClearAllDataConfirm = false)" 
+      @confirm="handleClearAllData" 
     />
   </div>
 </template>
 
-<style scoped>
-.settings-action-button {
-  min-height: 38px;
-  padding: 0 16px;
-  border: 1px solid rgba(236, 65, 65, 0.14);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
+<style scoped> /* 样式 */
+.settings-action-button { /* 样式 */
+  min-height: 38px; /* 样式 */
+  padding: 0 16px; /* 样式 */
+  border: 1px solid rgba(236, 65, 65, 0.14); /* 样式 */
+  border-radius: 999px; /* 样式 */
+  font-size: 12px; /* 样式 */
+  font-weight: 600; /* 样式 */
   transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    border-color 160ms ease, /* 样式 */
+    background-color 160ms ease, /* 样式 */
+    color 160ms ease, /* 样式 */
+    box-shadow 160ms ease, /* 样式 */
+    transform 160ms ease; /* 样式 */
 }
 
-.settings-action-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 20px rgba(236, 65, 65, 0.08);
+.settings-action-button:hover:not(:disabled) { /* 样式 */
+  transform: translateY(-1px); /* 样式 */
+  box-shadow: 0 10px 20px rgba(236, 65, 65, 0.08); /* 样式 */
 }
 
-.settings-action-button--soft {
-  background: rgba(236, 65, 65, 0.06);
-  color: #ec4141;
+.settings-action-button--soft { /* 样式 */
+  background: rgba(236, 65, 65, 0.06); /* 样式 */
+  color: #ec4141; /* 样式 */
 }
 
-.settings-action-button--soft:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.34);
-  background: rgba(236, 65, 65, 0.1);
+.settings-action-button--soft:hover:not(:disabled) { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.34); /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
 }
 
 .settings-action-button--solid {
@@ -716,12 +716,12 @@ onMounted(() => {
   background: #d13b3b;
 }
 
-.settings-action-button--disabled {
-  border-color: rgba(148, 163, 184, 0.12);
-  background: rgba(255, 255, 255, 0.36);
-  color: rgba(100, 116, 139, 0.8);
-  cursor: not-allowed;
-  box-shadow: none;
+.settings-action-button--disabled { /* 样式 */
+  border-color: rgba(148, 163, 184, 0.12); /* 样式 */
+  background: rgba(255, 255, 255, 0.36); /* 样式 */
+  color: rgba(100, 116, 139, 0.8); /* 样式 */
+  cursor: not-allowed; /* 样式 */
+  box-shadow: none; /* 样式 */
 }
 
 :global(.dark) .settings-action-button--disabled {
@@ -732,7 +732,7 @@ onMounted(() => {
 
 .stream-cache-input-wrap {
   display: inline-flex;
-  align-items: center;
+  align-items: center; /* 样式 */
   gap: 6px;
   color: rgba(55, 65, 81, 0.7);
   font-size: 0.78rem;

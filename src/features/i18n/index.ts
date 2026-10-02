@@ -1,29 +1,29 @@
-import { computed, type ComputedRef } from 'vue';
-import { storeToRefs } from 'pinia';
+import { computed, type ComputedRef } from 'vue'; // 实现
+import { storeToRefs } from 'pinia'; // 实现
 
-import type { AppLanguage } from '../../types';
-import { useSettingsStore } from '../settings/store';
+import type { AppLanguage } from '../../types'; // 实现
+import { useSettingsStore } from '../settings/store'; // 实现
 import { toTraditional } from './traditional';
 
-const zhCN = {
-  'language.section': '语言',
-  'language.label': '软件语言',
-  'language.description': '选择界面显示语言，切换后立即生效。',
+const zhCN = { // 实现
+  'language.section': '语言', // 实现
+  'language.label': '软件语言', // 实现
+  'language.description': '选择界面显示语言，切换后立即生效。', // 实现
   'language.system': '跟随系统',
-  'language.zhCN': '简体中文',
+  'language.zhCN': '简体中文', // 实现
   'language.zhTW': '繁體中文',
-  'language.enUS': 'English',
+  'language.enUS': 'English', // 实现
 
-  'settings.account': '账号',
-  'settings.general': '常规',
+  'settings.account': '账号', // 实现
+  'settings.general': '常规', // 实现
   'settings.plugins': '音源',
-  'settings.theme': '外观',
-  'settings.playback': '播放',
+  'settings.theme': '外观', // 实现
+  'settings.playback': '播放', // 实现
   'settings.pluginHost': '音频插件',
-  'settings.download': '下载',
-  'settings.library': '音乐库',
-  'settings.toolbox': '工具箱',
-  'settings.desktopLyrics': '桌面歌词',
+  'settings.download': '下载', // 实现
+  'settings.library': '音乐库', // 实现
+  'settings.toolbox': '工具箱', // 实现
+  'settings.desktopLyrics': '桌面歌词', // 实现
   'settings.sleepTimer': '睡眠定时',
 
   'sleepTimer.title': '睡眠定时',
@@ -52,38 +52,38 @@ const zhCN = {
   'sleepTimer.toastHidden': '睡眠定时已隐藏到托盘',
   'settings.shortcuts': '快捷按键',
   'settings.network': '网络',
-  'settings.advanced': '高级设置',
+  'settings.advanced': '高级设置', // 实现
   'settings.linkage': '联动',
   'settings.feedback': '问题反馈',
-  'settings.debug': '调试',
-  'settings.about': '关于',
-  'settings.search': '搜索设置',
-  'settings.clearSearch': '清除设置搜索',
-  'settings.results': '找到 {count} 项设置',
-  'settings.noResults': '没有找到相关设置',
-  'settings.searchHint': '试试搜索“音质”“歌词”或“缓存”',
-  'settings.resizeHint': '按住拖拽调整侧边栏宽度，双击恢复默认',
-  'settings.building': '施工中',
-  'settings.buildingHint': '当前设置模块正在整理中。',
+  'settings.debug': '调试', // 实现
+  'settings.about': '关于', // 实现
+  'settings.search': '搜索设置', // 实现
+  'settings.clearSearch': '清除设置搜索', // 实现
+  'settings.results': '找到 {count} 项设置', // 实现
+  'settings.noResults': '没有找到相关设置', // 实现
+  'settings.searchHint': '试试搜索“音质”“歌词”或“缓存”', // 实现
+  'settings.resizeHint': '按住拖拽调整侧边栏宽度，双击恢复默认', // 实现
+  'settings.building': '施工中', // 实现
+  'settings.buildingHint': '当前设置模块正在整理中。', // 实现
 
-  'general.section': '常规与启动',
-  'general.launchOnStartup': '开机自动运行',
+  'general.section': '常规与启动', // 实现
+  'general.launchOnStartup': '开机自动运行', // 实现
   'general.launchOnStartupMinimized': '开机启动时最小化到托盘',
-  'general.checkUpdates': '启动检测更新',
+  'general.checkUpdates': '启动检测更新', // 实现
   'general.welcomeToast': '启动时显示版本提示',
-  'general.gpuAcceleration': 'GPU 加速',
+  'general.gpuAcceleration': 'GPU 加速', // 实现
   'general.performanceMode': '性能模式',
   'general.performanceModeHint': '低性能设备自动收缩毛玻璃与动态特效，改善流畅度',
   'general.pmAuto': '自动',
   'general.pmFull': '满特效',
   'general.pmPerformance': '性能优先',
-  'general.closeToTray': '关闭时最小化至托盘',
-  'general.showQualityBadges': '显示音质标识',
-  'general.showSongComments': '显示歌曲注释',
+  'general.closeToTray': '关闭时最小化至托盘', // 实现
+  'general.showQualityBadges': '显示音质标识', // 实现
+  'general.showSongComments': '显示歌曲注释', // 实现
   'general.scrollToTop': '显示回到顶部按钮',
-  'general.taskbarControls': '启用任务栏快捷播控',
-  'general.writeArtistAvatar': '修改歌手头像时同步写回音频标签',
-  'general.writeArtistAvatarHint': '开启后，手动修改歌手头像时会同步修改本地音频文件（多歌手合作歌曲、远程歌曲、CUE 分轨和只读文件会被自动跳过）。',
+  'general.taskbarControls': '启用任务栏快捷播控', // 实现
+  'general.writeArtistAvatar': '修改歌手头像时同步写回音频标签', // 实现
+  'general.writeArtistAvatarHint': '开启后，手动修改歌手头像时会同步修改本地音频文件（多歌手合作歌曲、远程歌曲、CUE 分轨和只读文件会被自动跳过）。', // 实现
   'general.songClickAction': '双击播放歌曲',
   'general.songClickActionHint': '开启后双击播放歌曲，关闭后单击播放。',
   'general.fileAssoc': '音频文件关联',
@@ -96,64 +96,64 @@ const zhCN = {
   'theme.glassSwitchDesc': '高透光玻璃折射与动态水波流光',
   'theme.flatSwitch': '经典扁平',
   'theme.flatSwitchDesc': '简约干净无毛玻璃遮罩风格',
-  'general.storage': '存储空间',
-  'general.cacheLimit': '播放缓存上限',
-  'general.cacheLimitHint': '在线歌曲下载后会缓存到本地，再次播放无需重新下载；缓存满后自动清理最久未播放的曲目。',
-  'general.clearCache': '清理在线播放缓存',
-  'general.clearCacheHint': '清理不会影响正在播放的歌曲，其他已缓存曲目需要重新下载。',
-  'general.clearing': '清理中...',
-  'general.clear': '清理',
-  'general.resetData': '重置数据',
-  'general.resetting': '重置中...',
-  'general.scanUnavailable': '扫描中不可用',
-  'general.reset': '重置',
-  'general.resetConfirm': '此操作会清空媒体库、播放记录、收藏和设置，并恢复初始状态，但不会删除你的音乐文件。确定继续吗？',
+  'general.storage': '存储空间', // 实现
+  'general.cacheLimit': '播放缓存上限', // 实现
+  'general.cacheLimitHint': '在线歌曲下载后会缓存到本地，再次播放无需重新下载；缓存满后自动清理最久未播放的曲目。', // 实现
+  'general.clearCache': '清理在线播放缓存', // 实现
+  'general.clearCacheHint': '清理不会影响正在播放的歌曲，其他已缓存曲目需要重新下载。', // 实现
+  'general.clearing': '清理中...', // 实现
+  'general.clear': '清理', // 实现
+  'general.resetData': '重置数据', // 实现
+  'general.resetting': '重置中...', // 实现
+  'general.scanUnavailable': '扫描中不可用', // 实现
+  'general.reset': '重置', // 实现
+  'general.resetConfirm': '此操作会清空媒体库、播放记录、收藏和设置，并恢复初始状态，但不会删除你的音乐文件。确定继续吗？', // 实现
 
-  'toast.gpuUpdated': 'GPU 加速设置已更新，重启软件后生效',
-  'toast.gpuFailed': 'GPU 加速设置保存失败',
-  'toast.cacheCleared': '在线播放缓存已清理',
-  'toast.cacheClearFailed': '清理在线播放缓存失败',
-  'toast.resetFailed': '清除所有数据失败，请重试',
-  'toast.welcome': '欢迎使用弦予音乐，当前版本 v{version}',
+  'toast.gpuUpdated': 'GPU 加速设置已更新，重启软件后生效', // 实现
+  'toast.gpuFailed': 'GPU 加速设置保存失败', // 实现
+  'toast.cacheCleared': '在线播放缓存已清理', // 实现
+  'toast.cacheClearFailed': '清理在线播放缓存失败', // 实现
+  'toast.resetFailed': '清除所有数据失败，请重试', // 实现
+  'toast.welcome': '欢迎使用弦予音乐，当前版本 v{version}', // 实现
 
-  'sidebar.home': '首页',
-  'sidebar.localMusic': '本地音乐',
-  'sidebar.artists': '歌手',
-  'sidebar.albums': '专辑',
-  'sidebar.favorites': '我的收藏',
-  'sidebar.recent': '最近播放',
-  'sidebar.folders': '文件夹',
-  'sidebar.plugins': '插件管理',
+  'sidebar.home': '首页', // 实现
+  'sidebar.localMusic': '本地音乐', // 实现
+  'sidebar.artists': '歌手', // 实现
+  'sidebar.albums': '专辑', // 实现
+  'sidebar.favorites': '我的收藏', // 实现
+  'sidebar.recent': '最近播放', // 实现
+  'sidebar.folders': '文件夹', // 实现
+  'sidebar.plugins': '插件管理', // 实现
   'sidebar.account': '个人中心',
   'sidebar.topLists': '榜单',
   'sidebar.dailyRecommend': '每日推荐',
 
-  'topbar.search': '搜索音乐...',
-  'topbar.recognize': '听歌识曲',
-  'topbar.back': '后退',
-  'topbar.lightText': '切换浅色字体',
-  'topbar.darkText': '切换深色字体',
-  'topbar.lightTheme': '切换浅色',
-  'topbar.darkTheme': '切换深色',
-  'topbar.profile': '个人中心',
-  'topbar.login': '登录 / 注册',
-  'topbar.announcement': '公告',
-  'topbar.viewAnnouncement': '查看公告',
-  'topbar.settings': '设置',
-  'topbar.skin': '皮肤',
-  'topbar.searchHistory': '搜索历史',
-  'topbar.clearHistory': '清空',
+  'topbar.search': '搜索音乐...', // 实现
+  'topbar.recognize': '听歌识曲', // 实现
+  'topbar.back': '后退', // 实现
+  'topbar.lightText': '切换浅色字体', // 实现
+  'topbar.darkText': '切换深色字体', // 实现
+  'topbar.lightTheme': '切换浅色', // 实现
+  'topbar.darkTheme': '切换深色', // 实现
+  'topbar.profile': '个人中心', // 实现
+  'topbar.login': '登录 / 注册', // 实现
+  'topbar.announcement': '公告', // 实现
+  'topbar.viewAnnouncement': '查看公告', // 实现
+  'topbar.settings': '设置', // 实现
+  'topbar.skin': '皮肤', // 实现
+  'topbar.searchHistory': '搜索历史', // 实现
+  'topbar.clearHistory': '清空', // 实现
   'topbar.hotSearch': '热搜',
   'topbar.history': '记录',
   'topbar.everyoneSearching': '大家都在搜',
   'topbar.hotSearchLoading': '加载中...',
   'topbar.hotSearchEmpty': '暂无热搜数据',
   'topbar.historyEmpty': '暂无搜索记录',
-  'topbar.miniMode': 'Mini 模式',
-  'topbar.minimize': '最小化',
-  'topbar.maximize': '最大化',
-  'topbar.maximizeUnavailable': '全屏模式下不可用',
-  'topbar.close': '关闭',
+  'topbar.miniMode': 'Mini 模式', // 实现
+  'topbar.minimize': '最小化', // 实现
+  'topbar.maximize': '最大化', // 实现
+  'topbar.maximizeUnavailable': '全屏模式下不可用', // 实现
+  'topbar.close': '关闭', // 实现
 
   'pluginHost.effectsRack': '效果插件机架',
   'pluginHost.enableRack': '音效插件机架',
@@ -260,27 +260,27 @@ const zhCN = {
   'stats.retry': '重试',
 } as const;
 
-export type I18nKey = keyof typeof zhCN;
+export type I18nKey = keyof typeof zhCN; // 实现
 
-const enUS: Record<I18nKey, string> = {
-  'language.section': 'Language',
-  'language.label': 'App language',
-  'language.description': 'Choose the interface language. Changes apply immediately.',
+const enUS: Record<I18nKey, string> = { // 实现
+  'language.section': 'Language', // 实现
+  'language.label': 'App language', // 实现
+  'language.description': 'Choose the interface language. Changes apply immediately.', // 实现
   'language.system': 'Follow system',
-  'language.zhCN': '简体中文',
+  'language.zhCN': '简体中文', // 实现
   'language.zhTW': '繁體中文',
-  'language.enUS': 'English',
+  'language.enUS': 'English', // 实现
 
-  'settings.account': 'Account',
-  'settings.general': 'General',
+  'settings.account': 'Account', // 实现
+  'settings.general': 'General', // 实现
   'settings.plugins': 'Source',
-  'settings.theme': 'Appearance',
-  'settings.playback': 'Playback',
+  'settings.theme': 'Appearance', // 实现
+  'settings.playback': 'Playback', // 实现
   'settings.pluginHost': 'Audio Plugins',
-  'settings.download': 'Downloads',
-  'settings.library': 'Library',
-  'settings.toolbox': 'Toolbox',
-  'settings.desktopLyrics': 'Desktop Lyrics',
+  'settings.download': 'Downloads', // 实现
+  'settings.library': 'Library', // 实现
+  'settings.toolbox': 'Toolbox', // 实现
+  'settings.desktopLyrics': 'Desktop Lyrics', // 实现
   'settings.sleepTimer': 'Sleep timer',
 
   'sleepTimer.title': 'Sleep timer',
@@ -309,38 +309,38 @@ const enUS: Record<I18nKey, string> = {
   'sleepTimer.toastHidden': 'Sleep timer hid the window to the tray',
   'settings.shortcuts': 'Quick Keys',
   'settings.network': 'Network',
-  'settings.advanced': 'Advanced',
+  'settings.advanced': 'Advanced', // 实现
   'settings.linkage': 'Linkage',
   'settings.feedback': 'Feedback',
-  'settings.debug': 'Debug',
-  'settings.about': 'About',
-  'settings.search': 'Search settings',
-  'settings.clearSearch': 'Clear settings search',
-  'settings.results': '{count} settings found',
-  'settings.noResults': 'No matching settings',
-  'settings.searchHint': 'Try “quality”, “lyrics”, or “cache”',
-  'settings.resizeHint': 'Drag to resize the sidebar; double-click to reset',
-  'settings.building': 'Coming soon',
-  'settings.buildingHint': 'This settings section is being prepared.',
+  'settings.debug': 'Debug', // 实现
+  'settings.about': 'About', // 实现
+  'settings.search': 'Search settings', // 实现
+  'settings.clearSearch': 'Clear settings search', // 实现
+  'settings.results': '{count} settings found', // 实现
+  'settings.noResults': 'No matching settings', // 实现
+  'settings.searchHint': 'Try “quality”, “lyrics”, or “cache”', // 实现
+  'settings.resizeHint': 'Drag to resize the sidebar; double-click to reset', // 实现
+  'settings.building': 'Coming soon', // 实现
+  'settings.buildingHint': 'This settings section is being prepared.', // 实现
 
-  'general.section': 'General & Startup',
-  'general.launchOnStartup': 'Launch at startup',
+  'general.section': 'General & Startup', // 实现
+  'general.launchOnStartup': 'Launch at startup', // 实现
   'general.launchOnStartupMinimized': 'Minimize to tray when launched at startup',
-  'general.checkUpdates': 'Check for updates at startup',
+  'general.checkUpdates': 'Check for updates at startup', // 实现
   'general.welcomeToast': 'Show version toast at startup',
-  'general.gpuAcceleration': 'GPU acceleration',
+  'general.gpuAcceleration': 'GPU acceleration', // 实现
   'general.performanceMode': 'Performance mode',
   'general.performanceModeHint': 'Automatically reduce frosted glass and dynamic effects on low-end devices for smoother performance',
   'general.pmAuto': 'Auto',
   'general.pmFull': 'Full effects',
   'general.pmPerformance': 'Performance first',
-  'general.closeToTray': 'Minimize to tray when closing',
-  'general.showQualityBadges': 'Show quality badges',
-  'general.showSongComments': 'Show song comments',
-  'general.scrollToTop': 'Show scroll-to-top button',
-  'general.taskbarControls': 'Enable taskbar playback controls',
-  'general.writeArtistAvatar': 'Write artist avatar changes to audio tags',
-  'general.writeArtistAvatarHint': 'Updates local audio files when an artist avatar changes. Collaborations, remote tracks, CUE tracks, and read-only files are skipped.',
+  'general.closeToTray': 'Minimize to tray when closing', // 实现
+  'general.showQualityBadges': 'Show quality badges', // 实现
+  'general.showSongComments': 'Show song comments', // 实现
+  'general.scrollToTop': 'Show scroll-to-top button', // 实现
+  'general.taskbarControls': 'Enable taskbar playback controls', // 实现
+  'general.writeArtistAvatar': 'Write artist avatar changes to audio tags', // 实现
+  'general.writeArtistAvatarHint': 'Updates local audio files when an artist avatar changes. Collaborations, remote tracks, CUE tracks, and read-only files are skipped.', // 实现
   'general.songClickAction': 'Double-click to play',
   'general.songClickActionHint': 'When enabled, double-click plays a song; when disabled, single-click plays it.',
   'general.fileAssoc': 'Audio file associations',
@@ -353,64 +353,64 @@ const enUS: Record<I18nKey, string> = {
   'theme.glassSwitchDesc': 'High-transparency refraction and sheen sweep',
   'theme.flatSwitch': 'Classic Flat',
   'theme.flatSwitchDesc': 'Clean, flat style without glass blur',
-  'general.storage': 'Storage',
-  'general.cacheLimit': 'Playback cache limit',
-  'general.cacheLimitHint': 'Online tracks are cached locally for replay. The oldest unused tracks are removed when the cache is full.',
-  'general.clearCache': 'Clear online playback cache',
-  'general.clearCacheHint': 'The current track is not affected. Other cached tracks will need to be downloaded again.',
-  'general.clearing': 'Clearing...',
-  'general.clear': 'Clear',
-  'general.resetData': 'Reset data',
-  'general.resetting': 'Resetting...',
-  'general.scanUnavailable': 'Unavailable while scanning',
-  'general.reset': 'Reset',
-  'general.resetConfirm': 'This clears the library, playback history, favorites, and settings, but does not delete your music files. Continue?',
+  'general.storage': 'Storage', // 实现
+  'general.cacheLimit': 'Playback cache limit', // 实现
+  'general.cacheLimitHint': 'Online tracks are cached locally for replay. The oldest unused tracks are removed when the cache is full.', // 实现
+  'general.clearCache': 'Clear online playback cache', // 实现
+  'general.clearCacheHint': 'The current track is not affected. Other cached tracks will need to be downloaded again.', // 实现
+  'general.clearing': 'Clearing...', // 实现
+  'general.clear': 'Clear', // 实现
+  'general.resetData': 'Reset data', // 实现
+  'general.resetting': 'Resetting...', // 实现
+  'general.scanUnavailable': 'Unavailable while scanning', // 实现
+  'general.reset': 'Reset', // 实现
+  'general.resetConfirm': 'This clears the library, playback history, favorites, and settings, but does not delete your music files. Continue?', // 实现
 
-  'toast.gpuUpdated': 'GPU acceleration updated. Restart the app to apply it.',
-  'toast.gpuFailed': 'Could not save the GPU acceleration setting',
-  'toast.cacheCleared': 'Online playback cache cleared',
-  'toast.cacheClearFailed': 'Could not clear the online playback cache',
-  'toast.resetFailed': 'Could not clear app data. Please try again.',
-  'toast.welcome': 'Welcome to XianYu Music · v{version}',
+  'toast.gpuUpdated': 'GPU acceleration updated. Restart the app to apply it.', // 实现
+  'toast.gpuFailed': 'Could not save the GPU acceleration setting', // 实现
+  'toast.cacheCleared': 'Online playback cache cleared', // 实现
+  'toast.cacheClearFailed': 'Could not clear the online playback cache', // 实现
+  'toast.resetFailed': 'Could not clear app data. Please try again.', // 实现
+  'toast.welcome': 'Welcome to XianYu Music · v{version}', // 实现
 
-  'sidebar.home': 'Home',
-  'sidebar.localMusic': 'Local Music',
-  'sidebar.artists': 'Artists',
-  'sidebar.albums': 'Albums',
-  'sidebar.favorites': 'Favorites',
-  'sidebar.recent': 'Recently Played',
-  'sidebar.folders': 'Folders',
-  'sidebar.plugins': 'Plugin Manager',
-  'sidebar.account': 'Account',
+  'sidebar.home': 'Home', // 实现
+  'sidebar.localMusic': 'Local Music', // 实现
+  'sidebar.artists': 'Artists', // 实现
+  'sidebar.albums': 'Albums', // 实现
+  'sidebar.favorites': 'Favorites', // 实现
+  'sidebar.recent': 'Recently Played', // 实现
+  'sidebar.folders': 'Folders', // 实现
+  'sidebar.plugins': 'Plugin Manager', // 实现
+  'sidebar.account': 'Account', // 实现
   'sidebar.topLists': 'Top Lists',
   'sidebar.dailyRecommend': 'Daily Mix',
 
-  'topbar.search': 'Search music...',
-  'topbar.recognize': 'Identify Song',
-  'topbar.back': 'Back',
-  'topbar.lightText': 'Use light text',
-  'topbar.darkText': 'Use dark text',
-  'topbar.lightTheme': 'Switch to light theme',
-  'topbar.darkTheme': 'Switch to dark theme',
-  'topbar.profile': 'Profile',
-  'topbar.login': 'Sign in / Register',
-  'topbar.announcement': 'Announcements',
-  'topbar.viewAnnouncement': 'View announcements',
-  'topbar.settings': 'Settings',
-  'topbar.skin': 'Skin',
-  'topbar.searchHistory': 'Search history',
-  'topbar.clearHistory': 'Clear',
+  'topbar.search': 'Search music...', // 实现
+  'topbar.recognize': 'Identify Song', // 实现
+  'topbar.back': 'Back', // 实现
+  'topbar.lightText': 'Use light text', // 实现
+  'topbar.darkText': 'Use dark text', // 实现
+  'topbar.lightTheme': 'Switch to light theme', // 实现
+  'topbar.darkTheme': 'Switch to dark theme', // 实现
+  'topbar.profile': 'Profile', // 实现
+  'topbar.login': 'Sign in / Register', // 实现
+  'topbar.announcement': 'Announcements', // 实现
+  'topbar.viewAnnouncement': 'View announcements', // 实现
+  'topbar.settings': 'Settings', // 实现
+  'topbar.skin': 'Skin', // 实现
+  'topbar.searchHistory': 'Search history', // 实现
+  'topbar.clearHistory': 'Clear', // 实现
   'topbar.hotSearch': 'Hot',
   'topbar.history': 'History',
   'topbar.everyoneSearching': 'Everyone is searching',
   'topbar.hotSearchLoading': 'Loading...',
   'topbar.hotSearchEmpty': 'No hot searches yet',
   'topbar.historyEmpty': 'No search history',
-  'topbar.miniMode': 'Mini mode',
-  'topbar.minimize': 'Minimize',
-  'topbar.maximize': 'Maximize',
-  'topbar.maximizeUnavailable': 'Unavailable in fullscreen',
-  'topbar.close': 'Close',
+  'topbar.miniMode': 'Mini mode', // 实现
+  'topbar.minimize': 'Minimize', // 实现
+  'topbar.maximize': 'Maximize', // 实现
+  'topbar.maximizeUnavailable': 'Unavailable in fullscreen', // 实现
+  'topbar.close': 'Close', // 实现
 
   'pluginHost.effectsRack': 'Effects Plugin Rack',
   'pluginHost.enableRack': 'Audio Effect Rack',
@@ -517,14 +517,14 @@ const enUS: Record<I18nKey, string> = {
   'stats.retry': 'Retry',
 };
 
-const messages: Record<AppLanguage, Record<I18nKey, string>> = {
+const messages: Record<AppLanguage, Record<I18nKey, string>> = { // 实现
   'system': zhCN,
-  'zh-CN': zhCN,
+  'zh-CN': zhCN, // 实现
   'zh-TW': zhCN,
-  'en-US': enUS,
+  'en-US': enUS, // 实现
 };
 
-export type TranslationParams = Record<string, string | number>;
+export type TranslationParams = Record<string, string | number>; // 实现
 
 function resolveSystemLanguage(): AppLanguage {
   if (typeof navigator === 'undefined') return 'zh-CN';
@@ -540,36 +540,36 @@ export function resolveLanguage(lang: AppLanguage): AppLanguage {
   return lang === 'system' ? resolveSystemLanguage() : lang;
 }
 
-export const translate = (
-  language: AppLanguage,
-  key: I18nKey,
-  params: TranslationParams = {},
-): string => {
+export const translate = ( // 实现
+  language: AppLanguage, // 实现
+  key: I18nKey, // 实现
+  params: TranslationParams = {}, // 实现
+): string => { // 实现
   const resolved = resolveLanguage(language);
   const template = messages[resolved]?.[key] ?? zhCN[key] ?? key;
   const translated = resolved === 'zh-TW' ? toTraditional(template) : template;
   return translated.replace(/\{(\w+)\}/g, (match, name: string) => (
-    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match // 实现
   ));
 };
 
-export interface I18nContext {
-  language: ComputedRef<AppLanguage>;
-  isEnglish: ComputedRef<boolean>;
+export interface I18nContext { // 实现
+  language: ComputedRef<AppLanguage>; // 实现
+  isEnglish: ComputedRef<boolean>; // 实现
   isTraditional: ComputedRef<boolean>;
-  t: (key: I18nKey, params?: TranslationParams) => string;
+  t: (key: I18nKey, params?: TranslationParams) => string; // 实现
 }
 
-export const useI18n = (): I18nContext => {
-  const settingsStore = useSettingsStore();
-  const { settings } = storeToRefs(settingsStore);
+export const useI18n = (): I18nContext => { // 实现
+  const settingsStore = useSettingsStore(); // 实现
+  const { settings } = storeToRefs(settingsStore); // 实现
   const storedLanguage = computed(() => settings.value.language ?? 'zh-CN');
   const language = computed(() => resolveLanguage(storedLanguage.value));
 
   return {
     language,
-    isEnglish: computed(() => language.value === 'en-US'),
+    isEnglish: computed(() => language.value === 'en-US'), // 实现
     isTraditional: computed(() => language.value === 'zh-TW'),
-    t: (key, params) => translate(language.value, key, params),
+    t: (key, params) => translate(language.value, key, params), // 实现
   };
 };

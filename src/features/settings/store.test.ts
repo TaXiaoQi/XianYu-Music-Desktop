@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it } from 'vitest'; // 实现
+import { createPinia, setActivePinia } from 'pinia'; // 实现
 
-import type { EqualizerSettings } from '../../types';
+import type { EqualizerSettings } from '../../types'; // 实现
 import { mergeAppSettings, useSettingsStore } from './store';
 
 type SettingsStore = ReturnType<typeof useSettingsStore>;

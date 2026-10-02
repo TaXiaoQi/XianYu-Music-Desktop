@@ -1,45 +1,45 @@
 [package]
 name = "xianyu_music"
 version = "2.0.4"
-description = "A beautiful local music player powered by Tauri."
-authors = ["lyc"]
+description = "A beautiful local music player powered by Tauri." 
+authors = ["lyc"] 
 license = "LicenseRef-XSAL-1.0"
-edition = "2021"
+edition = "2021" 
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html 
 
 # examples/ac4_verify.rs 是 AC-4 验证存档，引用的 oxideav 依赖已移除，不参与自动编译。
 # 恢复方法：加回 oxideav-ac4/oxideav-core 依赖并将此项改回 true（或显式声明 [[example]]）。
 autoexamples = false
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+# The `_lib` suffix may seem redundant but it is necessary 
+# to make the lib name unique and wouldn't conflict with the bin name. 
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519 
 name = "xianyu_music_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["staticlib", "cdylib", "rlib"] 
 
 [[bin]]
 name = "xianyu-music-desktop"
 path = "src/main.rs"
 
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
+[build-dependencies] 
+tauri-build = { version = "2", features = [] } 
 
-[dependencies]
+[dependencies] 
 tauri = { version = "2", default-features = false, features = ["wry", "compression", "dynamic-acl", "x11", "protocol-asset", "tray-icon"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2" 
+tauri-plugin-dialog = "2" 
 tauri-plugin-http = "2" # HTTP 插件
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-walkdir = "2"
-lofty = "0.21"
-id3 = "1.14"
-encoding_rs = "0.8"
-base64 = "0.22.1"
+serde = { version = "1", features = ["derive"] } 
+serde_json = "1" 
+walkdir = "2" 
+lofty = "0.21" 
+id3 = "1.14" 
+encoding_rs = "0.8" 
+base64 = "0.22.1" 
 rodio = { version = "0.20", default-features = false, features = ["wav", "mp3", "symphonia-aac", "symphonia-aiff", "symphonia-alac", "symphonia-flac", "symphonia-isomp4", "symphonia-vorbis", "symphonia-opus", "dsd", "ape", "wv"] }
-symphonia = { version = "0.5.5", default-features = false, features = ["aac", "adpcm", "aiff", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+symphonia = { version = "0.5.5", default-features = false, features = ["aac", "adpcm", "aiff", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] } 
 # VST3/CLAP 原生插件宿主（可行性研究见 truce-rack-feasibility/，2026-08-20）。
 # vendor fork 基于 1.1.5，含两个已验证补丁：VST3 drop 字段顺序修复、CLAP 最小宿主指针修复。
 truce-rack = { path = "vendor/truce-rack/crates/truce-rack" }
@@ -47,32 +47,32 @@ truce-rack = { path = "vendor/truce-rack/crates/truce-rack" }
 # default-features 必须关掉：默认特性含 avif（ravif→rav1e AV1 编码器）、exr、tiff 等，
 # 会让 exe 白涨约 5-8MB（封面只需 jpeg/png/webp）
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
-urlencoding = "2"
-rusqlite = { version = "0.38.0", features = ["bundled"] }
+urlencoding = "2" 
+rusqlite = { version = "0.38.0", features = ["bundled"] } 
 # 本地搜索归一化：NFKC/NFKD（全角半角、变音符）+ 繁转简（对齐 BakaMusic search-matcher）
 unicode-normalization = "0.1"
 fast2s = "0.3"
-sha2 = "0.10.9"
+sha2 = "0.10.9" 
 hmac = "0.12"
-hex = "0.4.3"
-tokio = { version = "1.48.0", features = ["full"] }
+hex = "0.4.3" 
+tokio = { version = "1.48.0", features = ["full"] } 
 # 媒体控制跨平台库（Windows=SMTC / Linux=MPRIS / macOS=MPNowPlaying）。
 # 关闭 default（use_dbus 需系统 libdbus）；Linux 通过下方 target 段启用 use_zbus（纯 Rust）。
 souvlaki = { version = "0.7", default-features = false }
-raw-window-handle = "0.6"
+raw-window-handle = "0.6" 
 regex = "1"
-thiserror = "2"
-cpal = "0.15"
-tauri-plugin-single-instance = "2"
-rayon = "1.10"
-time = { version = "0.3", features = ["formatting", "parsing"] }
-tauri-plugin-global-shortcut = "2.3.1"
-tauri-plugin-window-state = "2"
-rustfft = "6.4.1"
-quick-xml = "0.39.2"
-uuid = { version = "1.19.0", features = ["v4"] }
+thiserror = "2" 
+cpal = "0.15" 
+tauri-plugin-single-instance = "2" 
+rayon = "1.10" 
+time = { version = "0.3", features = ["formatting", "parsing"] } 
+tauri-plugin-global-shortcut = "2.3.1" 
+tauri-plugin-window-state = "2" 
+rustfft = "6.4.1" 
+quick-xml = "0.39.2" 
+uuid = { version = "1.19.0", features = ["v4"] } 
 reqwest = { version = "0.12.26", default-features = false, features = ["native-tls", "blocking", "gzip", "brotli", "deflate", "hickory-dns", "stream"] }
-keyring = { version = "3", features = ["windows-native"] }
+keyring = { version = "3", features = ["windows-native"] } 
 md5 = "0.7"
 sha1 = "0.10"
 aes = "0.8"
@@ -88,12 +88,12 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 tokio-util = { version = "0.7", default-features = false, features = ["io"] }
 socket2 = "0.6"
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(windows)'.dependencies] 
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading"] }
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_Com"] }
 windows-core = "0.61"
 webview2-com = "0.38"
-wasapi = "0.23"
+wasapi = "0.23" 
 
 # Linux 桌面端依赖（构建前置：libwebkit2gtk-4.1-dev / libssl-dev / libasound2-dev 等，
 # 见 README「Linux 构建」）。MPRIS 走 souvlaki use_zbus（纯 Rust D-Bus，免 libdbus）；
@@ -110,8 +110,8 @@ keyring = { version = "3", features = ["async-secret-service", "crypto-rust"] }
 keyring = { version = "3", features = ["apple-native"] }
 core-text = "20"
 
-[patch.crates-io]
-rodio = { path = "vendor/rodio-0.20.1" }
+[patch.crates-io] 
+rodio = { path = "vendor/rodio-0.20.1" } 
 
 [dev-dependencies]
 wavicle = { version = "0.1", default-features = false, features = ["decode", "encode"] }
@@ -129,8 +129,8 @@ store-build = []
 # DSP 热路径（biquad/comb/allpass/OLA）在 opt-level=0 下会音频线程 underrun 卡顿，
 # opt-level=1 提供稳定性能，编译速度影响小。
 opt-level = 1 # 轻度优化热路径
-[profile.dev.package."*"]
-opt-level = 3
+[profile.dev.package."*"] 
+opt-level = 3 
 
 [profile.release]
 # 去掉 release exe 中的符号表，减小体积（不影响运行时功能，仅 release 崩溃回溯无符号名）

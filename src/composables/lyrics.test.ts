@@ -192,9 +192,9 @@ describe('增强型 LRC 行解析', () => {
   it('标准增强 LRC 行拆出逐词时间轴', () => {
     const parsed = lyrics.parseEnhancedLrcLine(ENHANCED_STANDARD);
 
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startTime).toBe(36111);
-    expect(parsed?.endTime).toBe(37421);
+    expect(parsed).not.toBeNull(); // 实现
+    expect(parsed?.startTime).toBe(36111); // 实现
+    expect(parsed?.endTime).toBe(37421); // 实现
     expect(parsed?.words.map((word) => ({ start: word.startTime, end: word.endTime, text: word.word }))).toEqual([
       { start: 36111, end: 36551, text: 'A' },
       { start: 36551, end: 36991, text: 'B' },
@@ -205,17 +205,17 @@ describe('增强型 LRC 行解析', () => {
   it('行起点与首词时间允许不一致', () => {
     const parsed = lyrics.parseEnhancedLrcLine(ENHANCED_LEAD_OFFSET);
 
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startTime).toBe(36000);
-    expect(parsed?.words[0].startTime).toBe(36111);
-    expect(parsed?.endTime).toBe(36991);
+    expect(parsed).not.toBeNull(); // 实现
+    expect(parsed?.startTime).toBe(36000); // 实现
+    expect(parsed?.words[0].startTime).toBe(36111); // 实现
+    expect(parsed?.endTime).toBe(36991); // 实现
   });
 
   it('lrc-a2 的相对逐字时间会加回行起点', () => {
     // 词时间写作行首偏移量，直接使用会导致整行塌缩到 0。
     const parsed = lyrics.parseEnhancedLrcLine(ENHANCED_RELATIVE_WORDS);
 
-    expect(parsed).not.toBeNull();
+    expect(parsed).not.toBeNull(); // 实现
     expect(parsed?.startTime).toBe(23590);
     expect(parsed?.words.map((word) => ({ start: word.startTime, text: word.word }))).toEqual([
       { start: 23590 + 160, text: '塞' },
@@ -228,7 +228,7 @@ describe('增强型 LRC 行解析', () => {
     // 末 marker 之后还有文本时必须收进最后一个词。
     const parsed = lyrics.parseEnhancedLrcLine(ENHANCED_NO_TRAILING_END);
 
-    expect(parsed).not.toBeNull();
+    expect(parsed).not.toBeNull(); // 实现
     const words = parsed?.words ?? [];
     expect(words[words.length - 1]).toMatchObject({ word: '啡', startTime: 24610 });
   });
@@ -236,9 +236,9 @@ describe('增强型 LRC 行解析', () => {
   it('词文本内部允许空格与标点', () => {
     const parsed = lyrics.parseEnhancedLrcLine(ENHANCED_PUNCTUATED);
 
-    expect(parsed).not.toBeNull();
-    expect(parsed?.words.map((word) => word.word)).toEqual([
-      'Composer:',
+    expect(parsed).not.toBeNull(); // 实现
+    expect(parsed?.words.map((word) => word.word)).toEqual([ // 实现
+      'Composer:', // 实现
       ' Yang',
       '\uFF1A',
       ' OK',
@@ -249,7 +249,7 @@ describe('增强型 LRC 行解析', () => {
   it('连续词级时间戳产生的零长度片段会被跳过', () => {
     const parsed = lyrics.parseEnhancedLrcLine(ENHANCED_ZERO_LENGTH);
 
-    expect(parsed).not.toBeNull();
+    expect(parsed).not.toBeNull(); // 实现
     expect(parsed?.words.map((word) => ({ end: word.endTime, start: word.startTime, text: word.word }))).toEqual([
       { end: 100, start: 0, text: 'ma' },
       { end: 200, start: 101, text: 'ga' },
@@ -260,8 +260,8 @@ describe('增强型 LRC 行解析', () => {
   it('跳过的空片段允许出现几毫秒的回退时间戳', () => {
     const parsed = lyrics.parseEnhancedLrcLine(ENHANCED_BACKWARD_TS);
 
-    expect(parsed).not.toBeNull();
-    expect(parsed?.words.map((word) => word.word)).toEqual([
+    expect(parsed).not.toBeNull(); // 实现
+    expect(parsed?.words.map((word) => word.word)).toEqual([ // 实现
       '「',
       'sha shi ',
       'n ',
@@ -279,14 +279,14 @@ describe('增强型 LRC 行解析', () => {
     const parsed = lyrics.parseEnhancedLrc(ENHANCED_DOC);
 
     expect(parsed).toHaveLength(2);
-    expect(parsed[0].startTime).toBe(36111);
+    expect(parsed[0].startTime).toBe(36111); // 实现
     expect(parsed[1].startTime).toBe(40000);
     expect(parsed[1].words.map((word) => word.word)).toEqual(['Broken', 'Line']);
   });
 
   it('增强行按起始时间并入基础行，未解析的占位基础行被替换', () => {
     const enhancedLines = lyrics.parseEnhancedLrc(ENHANCED_MERGE_SOURCE);
-    const baseLines = [
+    const baseLines = [ // 实现
       {
         words: [{ word: '<00:10.000>A<00:10.500>B<00:11.000>', romanWord: '', startTime: 10000, endTime: 11000 }],
         translatedLyric: '', romanLyric: '', isBG: false, isDuet: false, startTime: 10000, endTime: 11000,
@@ -299,9 +299,9 @@ describe('增强型 LRC 行解析', () => {
 
     const merged = lyrics.mergeEnhancedLinesIntoBaseLines(enhancedLines, baseLines);
 
-    expect(merged).toHaveLength(2);
-    expect(merged[0].words.map((word) => word.word)).toEqual(['A', 'B']);
-    expect(merged[1].words[0]?.word).toBe('Plain line');
+    expect(merged).toHaveLength(2); // 实现
+    expect(merged[0].words.map((word) => word.word)).toEqual(['A', 'B']); // 实现
+    expect(merged[1].words[0]?.word).toBe('Plain line'); // 实现
   });
 });
 
@@ -312,8 +312,8 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 35308, endMs: 45390, text: '我独自坐着 向皎洁的月亮倾诉心声', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0].text).toBe('I sit by myself talking to the moon');
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0].text).toBe('I sit by myself talking to the moon'); // 实现
     expect(merged[0].translation).toBe('我独自坐着 向皎洁的月亮倾诉心声');
   });
 
@@ -323,8 +323,8 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 1000, endMs: 2990, text: 'Alt', sourceIndex: 0 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0].text).toBe('Main');
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0].text).toBe('Main'); // 实现
     expect(merged[0].translation).toBe('副行');
   });
 
@@ -335,7 +335,7 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
 
     const lines = await lyrics.prepareParsedLyrics(SLASH_NOISY_SOURCE);
 
-    expect(lines.map((line) => line.text)).toEqual([
+    expect(lines.map((line) => line.text)).toEqual([ // 实现
       '独坐在茫茫人海中',
       '听着耳边的风吹过',
       '悄悄地下起了小雨',
@@ -349,11 +349,11 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 43802, endMs: 46844, text: '从那天开始似乎', sourceIndex: 2 }),
     ]);
 
-    expect(merged).toHaveLength(1);
+    expect(merged).toHaveLength(1); // 实现
     expect(merged[0].text).toBe('その日から何もかも');
     expect(merged[0].translation).toBe('从那天开始似乎');
-    expect(merged[0].romaji).toBe('so no hi ka ra na ni mo ka mo');
-    expect(merged[0].words?.[0]?.romaji).toBe('so no hi ka ra na ni mo ka mo');
+    expect(merged[0].romaji).toBe('so no hi ka ra na ni mo ka mo'); // 实现
+    expect(merged[0].words?.[0]?.romaji).toBe('so no hi ka ra na ni mo ka mo'); // 实现
   });
 
   it('英中双语行组保持英文为主行，不误判成罗马音', () => {
@@ -362,10 +362,10 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 24139, endMs: 28900, text: '你是我拥有的一切', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0].text).toBe('You are all I had');
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0].text).toBe('You are all I had'); // 实现
     expect(merged[0].translation).toBe('你是我拥有的一切');
-    expect(merged[0].romaji).toBe('');
+    expect(merged[0].romaji).toBe(''); // 实现
   });
 
   it('粤拼音译行让位于中文主行，音译降为罗马音子行', () => {
@@ -419,13 +419,13 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 74530, endMs: 78000, text: 'A-Z 失败者-疾病-是什么？', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0]).toMatchObject({
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0]).toMatchObject({ // 实现
       romaji: '',
       text: 'A-Z Looser-KrankheitWas IS das?',
       translation: 'A-Z 失败者-疾病-是什么？',
     });
-    expect(merged[0]?.secondary).toBeUndefined();
+    expect(merged[0]?.secondary).toBeUndefined(); // 实现
   });
 
   it('韩文行组判作主行加中文翻译', () => {
@@ -434,10 +434,10 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 12000, endMs: 15000, text: '那样的日子曾经存在', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
+    expect(merged).toHaveLength(1); // 实现
     expect(merged[0].text).toBe('그런 날이 있었지');
     expect(merged[0].translation).toBe('那样的日子曾经存在');
-    expect(merged[0].romaji).toBe('');
+    expect(merged[0].romaji).toBe(''); // 实现
   });
 
   it('中文行配拉丁行时拉丁当主行、中文当翻译', () => {
@@ -446,10 +446,10 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 5000, endMs: 8000, text: 'xin li you yi ge meng', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0].text).toBe('xin li you yi ge meng');
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0].text).toBe('xin li you yi ge meng'); // 实现
     expect(merged[0].translation).toBe('心里有一个梦');
-    expect(merged[0].romaji).toBe('');
+    expect(merged[0].romaji).toBe(''); // 实现
   });
 
   it('中文行配非拉丁外语行时外语当主行、中文当翻译', () => {
@@ -458,10 +458,10 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 9000, endMs: 12000, text: 'Я люблю тебя', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
+    expect(merged).toHaveLength(1); // 实现
     expect(merged[0].text).toBe('Я люблю тебя');
     expect(merged[0].translation).toBe('你是我的爱');
-    expect(merged[0].romaji).toBe('');
+    expect(merged[0].romaji).toBe(''); // 实现
   });
 
   it('非拉丁外语行先出现时仍保持其主行地位', () => {
@@ -470,29 +470,29 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 13000, endMs: 16000, text: '你是我的爱', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
+    expect(merged).toHaveLength(1); // 实现
     expect(merged[0].text).toBe('Я люблю тебя');
     expect(merged[0].translation).toBe('你是我的爱');
-    expect(merged[0].romaji).toBe('');
+    expect(merged[0].romaji).toBe(''); // 实现
   });
 
   it('挂上翻译行的同时保留增强主词时间轴', () => {
     const merged = lyrics.mergePreparedLines([
       {
-        startMs: 1000,
-        endMs: 2400,
-        text: 'Hello',
-        translation: '',
+        startMs: 1000, // 实现
+        endMs: 2400, // 实现
+        text: 'Hello', // 实现
+        translation: '', // 实现
         romaji: '',
         words: [wordAt('Hel', 1, 1.7), wordAt('lo', 1.7, 2.4)],
-        sourceIndex: 0,
+        sourceIndex: 0, // 实现
       },
       mergeRow({ startMs: 1000, endMs: 2400, text: '你好', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
+    expect(merged).toHaveLength(1); // 实现
     expect(merged[0].translation).toBe('你好');
-    expect(merged[0].words).toEqual([
+    expect(merged[0].words).toEqual([ // 实现
       { start: 1, end: 1.7, text: 'Hel', romaji: '' },
       { start: 1.7, end: 2.4, text: 'lo', romaji: '' },
     ]);
@@ -509,12 +509,12 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
     ]);
 
     expect(merged[0].translation).toBe('副行');
-    expect(merged.map((line) => line.text)).toEqual([
-      'Main line',
-      'Next sentence',
-      'Standalone',
+    expect(merged.map((line) => line.text)).toEqual([ // 实现
+      'Main line', // 实现
+      'Next sentence', // 实现
+      'Standalone', // 实现
       '不应该合并',
-      'Afterward',
+      'Afterward', // 实现
     ]);
   });
 
@@ -525,9 +525,9 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 85, endMs: 260, text: 'three', sourceIndex: 2 }),
     ]);
 
-    expect(merged.map((line) => line.text)).toEqual(['one', 'two']);
-    expect(merged[0]?.secondary).toBeUndefined();
-    expect(merged[1]?.secondary).toEqual(['three']);
+    expect(merged.map((line) => line.text)).toEqual(['one', 'two']); // 实现
+    expect(merged[0]?.secondary).toBeUndefined(); // 实现
+    expect(merged[1]?.secondary).toEqual(['three']); // 实现
   });
 
   it('同文字行组歧义时整体退回备用行展示', () => {
@@ -536,9 +536,9 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 2000, endMs: 4000, text: '同步的另一行', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0].translation).toBe('');
-    expect(merged[0].romaji).toBe('');
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0].translation).toBe(''); // 实现
+    expect(merged[0].romaji).toBe(''); // 实现
     expect(merged[0].secondary).toEqual(['同步的另一行']);
   });
 
@@ -550,11 +550,11 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 10050, endMs: 13000, text: '同步备用行', sourceIndex: 3 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0]).toMatchObject({
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0]).toMatchObject({ // 实现
       text: '君の名は',
       translation: '你的名字',
-      romaji: 'kimi no na wa',
+      romaji: 'kimi no na wa', // 实现
       secondary: ['同步备用行'],
     });
   });
@@ -564,10 +564,10 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 10000, endMs: 13000, text: '我曾经跨过山和大海', sourceIndex: 0 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0]).toMatchObject({
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0]).toMatchObject({ // 实现
       text: '我曾经跨过山和大海',
-      translation: '',
+      translation: '', // 实现
       romaji: '',
     });
   });
@@ -578,41 +578,41 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
       mergeRow({ startMs: 10000, endMs: 13000, text: 'boku wa mada', sourceIndex: 1 }),
     ]);
 
-    expect(merged).toHaveLength(1);
-    expect(merged[0]).toMatchObject({
-      text: 'kimi no na wa',
-      translation: '',
+    expect(merged).toHaveLength(1); // 实现
+    expect(merged[0]).toMatchObject({ // 实现
+      text: 'kimi no na wa', // 实现
+      translation: '', // 实现
       romaji: '',
-      secondary: ['boku wa mada'],
+      secondary: ['boku wa mada'], // 实现
     });
   });
 
   it('文字类型统计能识别谚文字符', () => {
     const profile = lyrics.getLineScriptProfile('그런 날이 있었지');
 
-    expect(profile.hangulCount).toBeGreaterThan(0);
-    expect(profile.dominantScript).toBe('hangul');
+    expect(profile.hangulCount).toBeGreaterThan(0); // 实现
+    expect(profile.dominantScript).toBe('hangul'); // 实现
   });
 
   it('副行展示顺序：罗马音在上、翻译在下', () => {
     const subtitles = lyrics.getDisplaySubtitles({
       translation: '从那天开始似乎',
-      romaji: 'so no hi ka ra na ni mo ka mo',
-    }, true, true);
+      romaji: 'so no hi ka ra na ni mo ka mo', // 实现
+    }, true, true); // 实现
 
-    expect(subtitles).toEqual({
+    expect(subtitles).toEqual({ // 实现
       lower: '从那天开始似乎',
-      upper: 'so no hi ka ra na ni mo ka mo',
+      upper: 'so no hi ka ra na ni mo ka mo', // 实现
     });
   });
 
   it('默认关闭罗马音时只显示翻译', () => {
     const subtitles = lyrics.getDisplaySubtitles({
       translation: '从那天开始似乎',
-      romaji: 'so no hi ka ra na ni mo ka mo',
-    }, true, false);
+      romaji: 'so no hi ka ra na ni mo ka mo', // 实现
+    }, true, false); // 实现
 
-    expect(subtitles).toEqual({
+    expect(subtitles).toEqual({ // 实现
       lower: '',
       upper: '从那天开始似乎',
     });
@@ -620,17 +620,17 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
 
   it('副行展示时罗马音行携带逐词时间轴', () => {
     const shown = lyrics.getCurrentLyricDisplayLines({
-      time: 43.802,
-      endTime: 46.596,
+      time: 43.802, // 实现
+      endTime: 46.596, // 实现
       text: 'その日から何もかも',
       translation: '从那天开始似乎',
-      romaji: 'so no hi ka ra na ni mo ka mo',
+      romaji: 'so no hi ka ra na ni mo ka mo', // 实现
       words: [
         wordAt('その', 43.802, 44.2, 'so no '),
         wordAt('日から', 44.2, 45, 'hi ka ra '),
         wordAt('何もかも', 45, 46.596, 'na ni mo ka mo'),
       ],
-    }, true, true);
+    }, true, true); // 实现
 
     expect(shown.map((line) => line.kind)).toEqual(['main', 'romaji', 'translation']);
     expect(shown[1]?.words).toEqual([
@@ -644,8 +644,8 @@ describe('备用行的合并与角色判定（mergePreparedLines）', () => {
 describe('歌词设置归一化', () => {
   it('迁移来的播放器偏移量会被钳制到区间内', () => {
     const normalized = lyrics.normalizeLyricsSettingsPatch({
-      playerOffsetX: 999,
-      playerOffsetY: -999,
+      playerOffsetX: 999, // 实现
+      playerOffsetY: -999, // 实现
     });
 
     expect(normalized.playerOffsetX).toBe(lyrics.MAX_PLAYER_OFFSET_X);
@@ -655,81 +655,81 @@ describe('歌词设置归一化', () => {
   it('桌面全屏自动隐藏默认关闭', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({});
 
-    expect(normalized.autoHideWhenFullscreen).toBe(false);
+    expect(normalized.autoHideWhenFullscreen).toBe(false); // 实现
   });
 
   it('桌面暂停自动隐藏默认关闭', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({});
 
-    expect(normalized.autoHideWhenPaused).toBe(false);
+    expect(normalized.autoHideWhenPaused).toBe(false); // 实现
   });
 
   it('桌面双行显示默认开启', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({});
 
-    expect(normalized.showDoubleLine).toBe(true);
+    expect(normalized.showDoubleLine).toBe(true); // 实现
   });
 
   it('桌面逐字特效默认开启', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({});
 
-    expect(normalized.enableWordEffect).toBe(true);
+    expect(normalized.enableWordEffect).toBe(true); // 实现
   });
 
   it('从迁移值恢复桌面对角布局', () => {
     expect(lyrics.normalizeDesktopLyricsSettingsPatch({
-      playerAlignment: 'split-corners',
-    }).playerAlignment).toBe('split-corners');
+      playerAlignment: 'split-corners', // 实现
+    }).playerAlignment).toBe('split-corners'); // 实现
   });
 
   it('非桌面歌词的对齐只接受水平取值', () => {
     const normalized = lyrics.normalizeLyricsSettingsPatch({
-      playerAlignment: 'split-corners' as any,
+      playerAlignment: 'split-corners' as any, // 实现
     });
 
-    expect(normalized.playerAlignment).toBe('left');
+    expect(normalized.playerAlignment).toBe('left'); // 实现
   });
 
   it('从迁移值恢复桌面全屏自动隐藏', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({
-      autoHideWhenFullscreen: false,
+      autoHideWhenFullscreen: false, // 实现
     });
 
-    expect(normalized.autoHideWhenFullscreen).toBe(false);
+    expect(normalized.autoHideWhenFullscreen).toBe(false); // 实现
   });
 
   it('从持久化值恢复桌面暂停自动隐藏', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({
-      autoHideWhenPaused: true,
+      autoHideWhenPaused: true, // 实现
     });
 
-    expect(normalized.autoHideWhenPaused).toBe(true);
+    expect(normalized.autoHideWhenPaused).toBe(true); // 实现
   });
 
   it('从迁移值恢复桌面双行显示', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({
-      showDoubleLine: true,
+      showDoubleLine: true, // 实现
     });
 
-    expect(normalized.showDoubleLine).toBe(true);
+    expect(normalized.showDoubleLine).toBe(true); // 实现
   });
 
   it('从迁移值恢复桌面逐字特效', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({
-      enableWordEffect: false,
+      enableWordEffect: false, // 实现
     });
 
-    expect(normalized.enableWordEffect).toBe(false);
+    expect(normalized.enableWordEffect).toBe(false); // 实现
   });
 
   it('桌面可读性默认：描边开启、两行阴影彼此独立且为 0', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({});
 
     expect(normalized.enableTextOutline).toBe(true);
-    expect(normalized.textOpacity).toBe(1);
-    expect(normalized.textShadowColor).toBe('#000000');
-    expect(normalized.firstLineTextShadowStrength).toBe(0);
-    expect(normalized.secondLineTextShadowStrength).toBe(0);
+    expect(normalized.textOpacity).toBe(1); // 实现
+    expect(normalized.textShadowColor).toBe('#000000'); // 实现
+    expect(normalized.firstLineTextShadowStrength).toBe(0); // 实现
+    expect(normalized.secondLineTextShadowStrength).toBe(0); // 实现
   });
 
   it('从持久化值恢复桌面描边开关', () => {
@@ -742,25 +742,25 @@ describe('歌词设置归一化', () => {
 
   it('桌面可读性异常值会被清洗（透明度/颜色/阴影强度）', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({
-      textOpacity: 2,
-      textShadowColor: 'not-a-color',
-      firstLineTextShadowStrength: 180,
-      secondLineTextShadowStrength: -20,
+      textOpacity: 2, // 实现
+      textShadowColor: 'not-a-color', // 实现
+      firstLineTextShadowStrength: 180, // 实现
+      secondLineTextShadowStrength: -20, // 实现
     } as any);
 
-    expect(normalized.textOpacity).toBe(1);
-    expect(normalized.textShadowColor).toBe('#000000');
-    expect(normalized.firstLineTextShadowStrength).toBe(100);
-    expect(normalized.secondLineTextShadowStrength).toBe(0);
+    expect(normalized.textOpacity).toBe(1); // 实现
+    expect(normalized.textShadowColor).toBe('#000000'); // 实现
+    expect(normalized.firstLineTextShadowStrength).toBe(100); // 实现
+    expect(normalized.secondLineTextShadowStrength).toBe(0); // 实现
   });
 
   it('旧版单一阴影强度字段映射到两行歌词', () => {
     const normalized = lyrics.normalizeDesktopLyricsSettingsPatch({
-      textShadowStrength: 45,
+      textShadowStrength: 45, // 实现
     } as any);
 
-    expect(normalized.firstLineTextShadowStrength).toBe(45);
-    expect(normalized.secondLineTextShadowStrength).toBe(45);
+    expect(normalized.firstLineTextShadowStrength).toBe(45); // 实现
+    expect(normalized.secondLineTextShadowStrength).toBe(45); // 实现
   });
 });
 
@@ -768,20 +768,20 @@ describe('常见格式原始歌词样例', () => {
   it('行内时间戳的中文 LRC 拆出逐词时间轴', async () => {
     const lines = await rawToShownLines(XUSONG_INLINE_TS);
 
-    expect(lines).toHaveLength(2);
-    expect(lines[0]?.text).toBe('如果当时 - 许嵩');
-    expect(lines[0]?.words?.map((word) => word.text)).toEqual([
+    expect(lines).toHaveLength(2); // 实现
+    expect(lines[0]?.text).toBe('如果当时 - 许嵩'); // 实现
+    expect(lines[0]?.words?.map((word) => word.text)).toEqual([ // 实现
       '如', '果', '当', '时', ' ', '-', ' ', '许', '嵩',
     ]);
-    expect(lines[0]?.translation).toBe('');
-    expect(lines[0]?.romaji).toBe('');
+    expect(lines[0]?.translation).toBe(''); // 实现
+    expect(lines[0]?.romaji).toBe(''); // 实现
   });
 
   it('逐行时间戳的普通 LRC 保持原有行序', async () => {
     const lines = await rawToShownLines(XUSONG_PLAIN);
 
-    expect(lines.map((line) => line.text)).toEqual([
-      '如果当时 - 许嵩',
+    expect(lines.map((line) => line.text)).toEqual([ // 实现
+      '如果当时 - 许嵩', // 实现
       '词：许嵩',
       '曲：许嵩',
       '编曲：许嵩',
@@ -791,8 +791,8 @@ describe('常见格式原始歌词样例', () => {
   it('增强 LRC 保留逐词时间', async () => {
     const lines = await rawToShownLines(XUSONG_ENHANCED);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.text).toBe('如果当时 - 许嵩');
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]?.text).toBe('如果当时 - 许嵩'); // 实现
     expect(lines[0]?.words?.map((word) => ({ end: word.end, start: word.start, text: word.text }))).toEqual([
       { end: 0.375, start: 0, text: '如' },
       { end: 0.75, start: 0.375, text: '果' },
@@ -809,15 +809,15 @@ describe('常见格式原始歌词样例', () => {
   it('英中双语的原始 LRC 归成主行加翻译', async () => {
     const lines = await rawToShownLines(BILINGUAL_EN_FIRST);
 
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatchObject({
-      text: 'You know you love me I know you care',
-      translation: '你知道你爱我 我知道你在意',
+    expect(lines).toHaveLength(2); // 实现
+    expect(lines[0]).toMatchObject({ // 实现
+      text: 'You know you love me I know you care', // 实现
+      translation: '你知道你爱我 我知道你在意', // 实现
       romaji: '',
     });
-    expect(lines[1]).toMatchObject({
+    expect(lines[1]).toMatchObject({ // 实现
       text: "Just shout whenever and I'll be there",
-      translation: '你只要呼唤我 我就会马上出现',
+      translation: '你只要呼唤我 我就会马上出现', // 实现
       romaji: '',
     });
   });
@@ -825,10 +825,10 @@ describe('常见格式原始歌词样例', () => {
   it('中英双语的原始 LRC 归成拉丁主行加中文翻译', async () => {
     const lines = await rawToShownLines(BILINGUAL_CN_FIRST);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({
-      text: 'You are my love',
-      translation: '你是我的爱',
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]).toMatchObject({ // 实现
+      text: 'You are my love', // 实现
+      translation: '你是我的爱', // 实现
       romaji: '',
     });
   });
@@ -861,36 +861,36 @@ describe('常见格式原始歌词样例', () => {
   it('英文增强行挂上同刻时间组的中文翻译', async () => {
     const lines = await rawToShownLines(ENHANCED_WITH_CN_TRANSLATION);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.text).toBe('You know you love me I know you care');
-    expect(lines[0]?.translation).toBe('你知道你爱我 我知道你在意');
-    expect(lines[0]?.words?.length).toBeGreaterThan(3);
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]?.text).toBe('You know you love me I know you care'); // 实现
+    expect(lines[0]?.translation).toBe('你知道你爱我 我知道你在意'); // 实现
+    expect(lines[0]?.words?.length).toBeGreaterThan(3); // 实现
   });
 
   it('日文原始 LRC 行组归出主行、罗马音与翻译', async () => {
     const lines = await rawToShownLines(JAPANESE_RAW_GROUP);
 
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatchObject({
-      text: 'もう一つ増やしましょう',
-      romaji: 'mo u hi to tsu fu ya shi ma sho u',
-      translation: '但让我们再多加一个吧',
+    expect(lines).toHaveLength(2); // 实现
+    expect(lines[0]).toMatchObject({ // 实现
+      text: 'もう一つ増やしましょう', // 实现
+      romaji: 'mo u hi to tsu fu ya shi ma sho u', // 实现
+      translation: '但让我们再多加一个吧', // 实现
     });
-    expect(lines[1]).toMatchObject({
-      text: '忘れたくないこと',
-      romaji: 'wa su re ta ku na i ko to',
-      translation: '我不愿遗忘',
+    expect(lines[1]).toMatchObject({ // 实现
+      text: '忘れたくないこと', // 实现
+      romaji: 'wa su re ta ku na i ko to', // 实现
+      translation: '我不愿遗忘', // 实现
     });
   });
 
   it('日文增强行保留词级时间且展示顺序为罗马音再翻译', async () => {
     const lines = await rawToShownLines(JAPANESE_ENHANCED_GROUP);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.text).toBe('忘れたくないこと');
-    expect(lines[0]?.romaji).toBe('wa su re ta ku na i ko to');
-    expect(lines[0]?.translation).toBe('我不愿遗忘');
-    expect(lines[0]?.words?.map((word) => word.text)).toEqual([
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]?.text).toBe('忘れたくないこと'); // 实现
+    expect(lines[0]?.romaji).toBe('wa su re ta ku na i ko to'); // 实现
+    expect(lines[0]?.translation).toBe('我不愿遗忘'); // 实现
+    expect(lines[0]?.words?.map((word) => word.text)).toEqual([ // 实现
       '忘', 'れ', 'た', 'く', 'な', 'い', 'こ', 'と',
     ]);
 
@@ -901,18 +901,18 @@ describe('常见格式原始歌词样例', () => {
   it('假名汉字混排的日文增强行优先当主行，罗马音在前也不抢位', async () => {
     const lines = await rawToShownLines(KANA_KANJI_GROUP);
 
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatchObject({
-      text: '君が僕に見せてくれた',
-      translation: '是你让我看到了',
+    expect(lines).toHaveLength(2); // 实现
+    expect(lines[0]).toMatchObject({ // 实现
+      text: '君が僕に見せてくれた', // 实现
+      translation: '是你让我看到了', // 实现
     });
     expect(flattenBlanks(lines[0]?.romaji || '')).toBe('ki mi ga bo ku ni mi se te ku re ta');
-    expect(lines[1]).toMatchObject({
-      text: '世界はとても綺麗だったな',
-      translation: '世界有多么美丽',
+    expect(lines[1]).toMatchObject({ // 实现
+      text: '世界はとても綺麗だったな', // 实现
+      translation: '世界有多么美丽', // 实现
     });
     expect(flattenBlanks(lines[1]?.romaji || '')).toBe('se ka i wa to te mo ki re i da tsu ta na');
-    expect(lines[1]?.words?.map((word) => word.text)).toEqual([
+    expect(lines[1]?.words?.map((word) => word.text)).toEqual([ // 实现
       '世', '界', 'は', 'と', 'て', 'も', '綺', '麗', 'だ', 'っ', 'た', 'な',
     ]);
   });
@@ -920,13 +920,13 @@ describe('常见格式原始歌词样例', () => {
   it('英文开头的日文增强行保持主行地位，不把英文段当罗马音', async () => {
     const lines = await rawToShownLines(ENGLISH_PREFIXED_JP);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({
-      text: 'Silent haze 霞みがちに捉える影',
-      translation: '静谧薄雾中捕捉到那朦胧的身影',
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]).toMatchObject({ // 实现
+      text: 'Silent haze 霞みがちに捉える影', // 实现
+      translation: '静谧薄雾中捕捉到那朦胧的身影', // 实现
     });
     expect(flattenBlanks(lines[0]?.romaji || '')).toBe('Silent haze ka su mi ga chi ni to ra e ru ka ge');
-    expect(lines[0]?.words?.map((word) => word.text)).toEqual([
+    expect(lines[0]?.words?.map((word) => word.text)).toEqual([ // 实现
       'Silent ', 'haze ', '霞', 'み', 'が', 'ち', 'に', '捉', 'え', 'る', '影',
     ]);
   });
@@ -934,17 +934,17 @@ describe('常见格式原始歌词样例', () => {
   it('数字开头的日文增强行当主行且不重复渲染罗马音', async () => {
     const lines = await rawToShownLines(NUMERIC_PREFIXED_JP);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.text).toBe('6/8のリズム 掻き乱される');
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]?.text).toBe('6/8のリズム 掻き乱される'); // 实现
     expect(flattenBlanks(lines[0]?.romaji || '')).toBe('ha chi ro ku no ri zu mu ka ki mi da sa re ru');
-    expect(lines[0]?.translation).toBe('八六原本平和的旋律开始被打乱');
+    expect(lines[0]?.translation).toBe('八六原本平和的旋律开始被打乱'); // 实现
 
     const amlLines = lyrics.convertLyricsToAmlLines(lines, true, true);
-    expect(amlLines[0]?.romanLyric).toBe('ha chi ro ku no ri zu mu ka ki mi da sa re ru');
-    expect(amlLines[0]?.words.map((word) => word.word)).toEqual([
+    expect(amlLines[0]?.romanLyric).toBe('ha chi ro ku no ri zu mu ka ki mi da sa re ru'); // 实现
+    expect(amlLines[0]?.words.map((word) => word.word)).toEqual([ // 实现
       '6', '/', '8', 'の', 'リ', 'ズ', 'ム', ' ', '掻', 'き', '乱', 'さ', 'れ', 'る',
     ]);
-    expect(amlLines[0]?.words.map((word) => word.romanWord || '')).toEqual([
+    expect(amlLines[0]?.words.map((word) => word.romanWord || '')).toEqual([ // 实现
       '', '', '', '', '', '', '', '', '', '', '', '', '', '',
     ]);
   });
@@ -952,14 +952,14 @@ describe('常见格式原始歌词样例', () => {
   it('多个音节的罗马音碎片聚合成逐词卡拉OK时间轴', async () => {
     const lines = await rawToShownLines(MULTI_SYLLABLE_ROMAJI);
 
-    expect(lines).toHaveLength(1);
+    expect(lines).toHaveLength(1); // 实现
     expect(lines[0]?.words?.map((word) => flattenBlanks(word.romaji || ''))).toEqual([
       'a o', 'i', 'da', 'so ra', 'ga', 'i ro', 'wo', 'ka', 'e', 'ru', 'ka', 'ra',
     ]);
 
     const amlLines = lyrics.convertLyricsToAmlLines(lines, true, true);
-    expect(amlLines).toHaveLength(1);
-    expect(amlLines[0]?.romanLyric).toBe('');
+    expect(amlLines).toHaveLength(1); // 实现
+    expect(amlLines[0]?.romanLyric).toBe(''); // 实现
     expect(amlLines[0]?.words.map((word) => flattenBlanks(word.romanWord || ''))).toEqual([
       'a o', 'i', 'da', 'so ra', 'ga', 'i ro', 'wo', 'ka', 'e', 'ru', 'ka', 'ra',
     ]);
@@ -968,15 +968,15 @@ describe('常见格式原始歌词样例', () => {
   it('逐词罗马音盖不满所有日文词时退回整行罗马音', async () => {
     const lines = await rawToShownLines(PARTIAL_ROMAJI_JP);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.romaji).toBe('ka yo wa i hi ka ri');
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]?.romaji).toBe('ka yo wa i hi ka ri'); // 实现
     expect(lines[0]?.words?.map((word) => flattenBlanks(word.romaji || ''))).toEqual([
       '', '', '', '', '', '', '', '', '',
     ]);
 
     const amlLines = lyrics.convertLyricsToAmlLines(lines, true, true);
-    expect(amlLines[0]?.romanLyric).toBe('ka yo wa i hi ka ri');
-    expect(amlLines[0]?.words.map((word) => word.romanWord || '')).toEqual([
+    expect(amlLines[0]?.romanLyric).toBe('ka yo wa i hi ka ri'); // 实现
+    expect(amlLines[0]?.words.map((word) => word.romanWord || '')).toEqual([ // 实现
       '', '', '', '', '', '', '', '', '',
     ]);
   });
@@ -984,10 +984,10 @@ describe('常见格式原始歌词样例', () => {
   it('带重音符号的拉丁文当主行、中文当翻译', async () => {
     const lines = await rawToShownLines(ACCENTED_LATIN);
 
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({
-      text: 'On ira à la foire',
-      translation: '我们将一起前往那欢乐的圣地',
+    expect(lines).toHaveLength(1); // 实现
+    expect(lines[0]).toMatchObject({ // 实现
+      text: 'On ira à la foire', // 实现
+      translation: '我们将一起前往那欢乐的圣地', // 实现
       romaji: '',
     });
   });

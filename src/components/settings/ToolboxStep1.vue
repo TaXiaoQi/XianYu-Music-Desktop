@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { watch, ref, computed } from 'vue';
 import { useToast as makeToast } from '../../composables/toast';
 import WizardFooter from './toolbox/WizardFooter.vue';

@@ -4,34 +4,34 @@
 // - 远端缓存的过半预热与曲库回填。
 // 错误文案、事件名与 payload 字段逐字保留。
 
-use crate::database::DbState;
-use crate::music::scanner::apply_scan_changes;
-use crate::music::types::Song;
-use crate::player::equalizer::EqualizerSettings;
+use crate::database::{DbState};
+use crate::music::scanner::{apply_scan_changes};
+use crate::music::types::{Song};
+use crate::player::equalizer::{EqualizerSettings};
 use crate::player::loudness::{LoudnessRecord, calculate_playback_gain, get_song_loudness_record, process_song_on_play};
 use crate::player::sound_effect::SoundEffectSettings;
-use crate::player::spectrum::build_frequency_bands;
+use crate::player::spectrum::{build_frequency_bands};
 use crate::player::types::{AudioCommand, AudioOutputMode, AudioSource, PlayerState, VISUALIZER_BAND_COUNT};
 use crate::remote::cache::{RemotePlaybackSource, ensure_cached_path, is_remote_uri, remote_playback_source};
-use crate::remote::repository::get_source_for_remote_uri;
-use crate::remote::scanner::song_from_cached_remote_file;
-use crate::remote::types::RemoteFileEntry;
+use crate::remote::repository::{get_source_for_remote_uri};
+use crate::remote::scanner::{song_from_cached_remote_file};
+use crate::remote::types::{RemoteFileEntry};
 use souvlaki::{MediaPlayback, MediaPosition, MediaMetadata};
-use std::path::Path;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
-use tauri::Emitter;
+use std::path::{Path};
+use std::sync::atomic::{Ordering};
+use core::time::Duration;
+use tauri::{Emitter};
 
 /// 远端歌词缓存就绪事件名（前端契约冻结）。
-const REMOTE_LYRICS_CACHE_READY_EVENT: &str = "remote-lyrics-cache-ready";
+const REMOTE_LYRICS_CACHE_READY_EVENT: &str = "remote-lyrics-cache-ready"; // 实现
 
 /// 在线音频请求使用的浏览器 UA 标识（对远端服务行为保持不变）。
 pub(crate) const DEFAULT_STREAM_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /// 远端歌词缓存就绪事件负载（字段名冻结）。
 #[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteLyricsCacheReadyPayload {
+#[serde(rename_all = "camelCase")] // 实现
+struct RemoteLyricsCacheReadyPayload { // RemoteLyricsCacheReadyPayload
     uri: String,        // 远端资源标识
     song: Option<Song>, // 回填后的曲库条目
 }
@@ -48,7 +48,7 @@ fn dispatch(state: &tauri::State<PlayerState>, command: AudioCommand) -> Result<
 
 /// 覆写 SMTC 播放态（控制器缺失时静默忽略）。
 fn set_smtc_playback(state: &tauri::State<PlayerState>, playback: MediaPlayback) {
-    if let Ok(mut controls) = state.controls.lock() {
+    if let Ok(mut controls) = state.controls.lock() { // 实现
         if let Some(media) = controls.as_mut() {
             let _ = media.set_playback(playback);
         }
@@ -93,7 +93,7 @@ fn monitor_midway_stream_failure(
 fn smtc_cover_uri(cover: &str) -> Option<String> {
     let text = cover.trim();
     if text.is_empty() {
-        return None;
+        return None; // 实现
     }
 
     const KNOWN_SCHEMES: [&str; 4] = ["file://", "http://", "https://", "data:"];
@@ -224,11 +224,11 @@ async fn settle_remote_source(
     path: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     requested_mode: AudioOutputMode,
-    db_state: &DbState,
+    db_state: &DbState, // 实现
     app: &tauri::AppHandle,
     state: &tauri::State<'_, PlayerState>,
     playback_id: u64,
-    duration: u32,
+    duration: u32, // 实现
 ) -> Result<(AudioSource, AudioOutputMode), String> {
     match remote_playback_source(db_state, path) {
         Ok(RemotePlaybackSource::Cached { path }) => {
@@ -269,11 +269,11 @@ async fn settle_playback_source(
     headers: Option<&std::collections::HashMap<String, String>>,
     ekey: Option<&str>,
     cek: Option<&str>,
-    db_state: &DbState,
+    db_state: &DbState, // 实现
     app: &tauri::AppHandle,
     state: &tauri::State<'_, PlayerState>,
     playback_id: u64,
-    duration: u32,
+    duration: u32, // 实现
     requested_mode: AudioOutputMode,
 ) -> Result<(AudioSource, AudioOutputMode), String> {
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
@@ -299,7 +299,7 @@ async fn settle_playback_source(
 // 播放控制命令
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub async fn play_audio(
     path: String, title: String,
     artist: String, album: String, cover: String,
@@ -310,7 +310,7 @@ pub async fn play_audio(
     ekey: Option<String>, cek: Option<String>,
     dsd_native_passthrough: Option<bool>, output_bit_perfect: Option<bool>,
     app: tauri::AppHandle, db_state: tauri::State<'_, DbState>, state: tauri::State<'_, PlayerState>,
-) -> Result<(), String> {
+) -> Result<(), String> { // 实现
     let session_seq = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
 
     let playable_path = tidy_playback_path(&path);
@@ -358,7 +358,7 @@ pub async fn play_audio(
         },
     )?;
 
-    if let Ok(mut controls) = state.controls.lock() {
+    if let Ok(mut controls) = state.controls.lock() { // 实现
         apply_smtc_snapshot(
             &mut controls,
             &title,
@@ -373,7 +373,7 @@ pub async fn play_audio(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn set_stream_cache_max_size(bytes: u64) {
     crate::player::stream_cache::set_max_cache_size(bytes);
 }
@@ -388,7 +388,7 @@ pub fn get_stream_cache_dir() -> String {
     crate::player::stream_cache::get_cache_dir_str()
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn get_stream_cache_info() -> std::collections::HashMap<&'static str, u64> {
     std::collections::HashMap::from([
         ("current", crate::player::stream_cache::current_cache_size()),
@@ -396,18 +396,18 @@ pub fn get_stream_cache_info() -> std::collections::HashMap<&'static str, u64> {
     ])
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn clear_stream_cache() {
     crate::player::stream_cache::clear_all();
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn is_stream_cached(url: String) -> bool {
     let hit = crate::player::stream_cache::is_url_cached(&url);
     hit
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn copy_stream_cache(
     app_handle: tauri::AppHandle,
     url: String,
@@ -422,7 +422,7 @@ pub fn copy_stream_cache(
     crate::player::stream_cache::copy_cache_to(&url, &destination.to_string_lossy())
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn prefetch_audio_head(
     url: String,
     headers: Option<std::collections::HashMap<String, String>>,
@@ -443,9 +443,9 @@ pub fn prefetch_audio_head(
 
 /// 过半后真正触发缓存，并广播歌词缓存就绪事件。
 async fn finish_remote_cache(
-    app: tauri::AppHandle,
-    conn: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
-    remote_uri: String,
+    app: tauri::AppHandle, // 实现
+    conn: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>, // 实现
+    remote_uri: String, // 实现
 ) {
     let db_state = DbState { conn };
     if let Ok(cache_path) = ensure_cached_path(&app, &db_state, &remote_uri).await {
@@ -462,13 +462,13 @@ async fn finish_remote_cache(
 
 /// 远端流播放过半后触发后台缓存；换曲则放弃本轮预热。
 fn schedule_midway_remote_cache(
-    app: tauri::AppHandle,
-    conn: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
-    progress: std::sync::Arc<crate::player::types::SharedProgress>,
-    playback_id: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    expected_playback_id: u64,
-    remote_uri: String,
-    duration: u32,
+    app: tauri::AppHandle, // 实现
+    conn: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>, // 实现
+    progress: std::sync::Arc<crate::player::types::SharedProgress>, // 实现
+    playback_id: std::sync::Arc<std::sync::atomic::AtomicU64>, // 实现
+    expected_playback_id: u64, // 实现
+    remote_uri: String, // 实现
+    duration: u32, // 实现
 ) {
     let gate_seconds = if duration > 0 {
         f64::from(duration) * 0.5
@@ -476,14 +476,14 @@ fn schedule_midway_remote_cache(
         30.0
     };
 
-    tauri::async_runtime::spawn(async move {
+    tauri::async_runtime::spawn(async move { // 实现
         loop {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            if playback_id.load(Ordering::Relaxed) != expected_playback_id {
+            tokio::time::sleep(Duration::from_secs(2)).await; // 实现
+            if playback_id.load(Ordering::Relaxed) != expected_playback_id { // 实现
                 return; // 已切歌，本轮预热作废
             }
 
-            let rate = progress.sample_rate.load(Ordering::Relaxed);
+            let rate = progress.sample_rate.load(Ordering::Relaxed); // 实现
             let lanes = progress.channels.load(Ordering::Relaxed);
             if rate == 0 || lanes == 0 {
                 continue;
@@ -503,38 +503,38 @@ fn schedule_midway_remote_cache(
 
 /// 把已缓存的远端音频回填进曲库；路径不一致时返回 None。
 fn rebuild_cached_remote_song(
-    db_state: &DbState,
-    remote_uri: &str,
-    cache_path: &str,
-) -> Option<Song> {
+    db_state: &DbState, // 实现
+    remote_uri: &str, // 实现
+    cache_path: &str, // 实现
+) -> Option<Song> { // 实现
     let (source, remote_path, etag, stored_uri) = {
-        let conn = db_state.conn.lock().ok()?;
-        get_source_for_remote_uri(&conn, remote_uri).ok()?
+        let conn = db_state.conn.lock().ok()?; // 实现
+        get_source_for_remote_uri(&conn, remote_uri).ok()? // 实现
     };
     let canonical_uri = stored_uri.unwrap_or_else(|| remote_uri.to_string());
     let byte_count = std::fs::metadata(cache_path)
         .map(|meta| meta.len())
-        .unwrap_or(0);
+        .unwrap_or(0); // 实现
     let leaf_name = remote_path
-        .trim_end_matches('/')
-        .rsplit('/')
+        .trim_end_matches('/') // 实现
+        .rsplit('/') // 实现
         .next()
         .filter(|name| !name.is_empty())
-        .unwrap_or(&remote_path)
-        .to_string();
+        .unwrap_or(&remote_path) // 实现
+        .to_string(); // 实现
     let entry = RemoteFileEntry {
         name: leaf_name,
-        remote_path,
+        remote_path, // 实现
         size: byte_count,
         etag,
-        modified_at: None,
-        is_dir: false,
+        modified_at: None, // 实现
+        is_dir: false, // 实现
     };
     let song = song_from_cached_remote_file(&source, &entry, Path::new(cache_path))?;
     if song.path != canonical_uri {
-        return None;
+        return None; // 实现
     }
-    if let Ok(mut conn) = db_state.conn.lock() {
+    if let Ok(mut conn) = db_state.conn.lock() { // 实现
         let updated = std::slice::from_ref(&song);
         let _ = apply_scan_changes(&mut conn, &[], updated, &[], None);
     }
@@ -545,19 +545,19 @@ fn rebuild_cached_remote_song(
 // SMTC 与查询命令
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
-pub fn update_playback_metadata(
+#[tauri::command] // 实现
+pub fn update_playback_metadata( // update_playback_metadata
     title: String, artist: String, album: String, cover: String,
     duration: u32, is_playing: bool,
-    state: tauri::State<PlayerState>,
-) -> Result<(), String> {
+    state: tauri::State<PlayerState>, // 实现
+) -> Result<(), String> { // 实现
     let cover_uri = smtc_cover_uri(&cover);
     let playback = if is_playing {
         MediaPlayback::Playing { progress: Some(MediaPosition(Duration::from_secs(0))) }
     } else {
         MediaPlayback::Paused { progress: None }
     };
-    if let Ok(mut controls) = state.controls.lock() {
+    if let Ok(mut controls) = state.controls.lock() { // 实现
         apply_smtc_snapshot(
             &mut controls,
             &title,
@@ -572,35 +572,35 @@ pub fn update_playback_metadata(
     Ok(())
 }
 
-#[tauri::command]
-pub fn pause_audio(state: tauri::State<PlayerState>) -> Result<(), String> {
+#[tauri::command] // 实现
+pub fn pause_audio(state: tauri::State<PlayerState>) -> Result<(), String> { // pause_audio
     dispatch(&state, AudioCommand::Pause)?;
     set_smtc_playback(&state, MediaPlayback::Paused { progress: None });
     Ok(())
 }
 
-#[tauri::command]
-pub fn stop_audio(state: tauri::State<PlayerState>) -> Result<(), String> {
+#[tauri::command] // 实现
+pub fn stop_audio(state: tauri::State<PlayerState>) -> Result<(), String> { // stop_audio
     dispatch(&state, AudioCommand::Stop)?;
     set_smtc_playback(&state, MediaPlayback::Stopped);
     Ok(())
 }
 
-#[tauri::command]
-pub fn resume_audio(state: tauri::State<PlayerState>) -> Result<(), String> {
+#[tauri::command] // 实现
+pub fn resume_audio(state: tauri::State<PlayerState>) -> Result<(), String> { // resume_audio
     dispatch(&state, AudioCommand::Resume)?;
     set_smtc_playback(&state, MediaPlayback::Playing { progress: None });
     Ok(())
 }
 
-#[tauri::command]
-pub fn seek_audio(
+#[tauri::command] // 实现
+pub fn seek_audio( // seek_audio
     time: f64, is_playing: bool, request_id: u64,
-    state: tauri::State<PlayerState>,
-) -> Result<(), String> {
+    state: tauri::State<PlayerState>, // 实现
+) -> Result<(), String> { // 实现
     dispatch(&state, AudioCommand::Seek { time, is_playing, request_id })?;
 
-    if let Ok(mut controls) = state.controls.lock() {
+    if let Ok(mut controls) = state.controls.lock() { // 实现
         if let Some(media) = controls.as_mut() {
             let position = MediaPosition(Duration::from_secs_f64(time.max(0.0)));
             let playback = if is_playing {
@@ -615,17 +615,17 @@ pub fn seek_audio(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn set_volume(
     volume: f32,
-    state: tauri::State<PlayerState>,
-) -> Result<(), String> {
+    state: tauri::State<PlayerState>, // 实现
+) -> Result<(), String> { // 实现
     dispatch(&state, AudioCommand::SetVolume(volume))
 }
 
-#[tauri::command]
-pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
-    let rate = state.progress.sample_rate.load(Ordering::Relaxed);
+#[tauri::command] // 实现
+pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 { // get_playback_progress
+    let rate = state.progress.sample_rate.load(Ordering::Relaxed); // 实现
     let lanes = state.progress.channels.load(Ordering::Relaxed);
     if rate == 0 || lanes == 0 {
         return 0.0;
@@ -635,14 +635,14 @@ pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
     played as f64 / per_second as f64
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn get_playback_duration(state: tauri::State<PlayerState>) -> f64 {
     f64::from_bits(state.progress.total_duration_secs.load(Ordering::Relaxed))
 }
 
 #[tauri::command]
 pub fn get_playback_ready(state: tauri::State<PlayerState>) -> bool {
-    let rate = state.progress.sample_rate.load(Ordering::Relaxed);
+    let rate = state.progress.sample_rate.load(Ordering::Relaxed); // 实现
     rate != 0
 }
 
@@ -652,7 +652,7 @@ pub fn get_playback_start_failed(state: tauri::State<PlayerState>) -> bool {
     failed
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn get_playback_start_failed_reason(state: tauri::State<PlayerState>) -> Option<String> {
     let slot = state.progress.start_failed_reason.lock().ok()?;
     slot.clone()
@@ -665,7 +665,7 @@ pub struct PlaybackStartFailedInfo {
     pub reason: Option<String>, // 失败原因
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn get_playback_start_failed_info(state: tauri::State<PlayerState>) -> PlaybackStartFailedInfo {
     let failed = state.progress.start_failed.load(Ordering::Relaxed);
     let reason = state
@@ -677,10 +677,10 @@ pub fn get_playback_start_failed_info(state: tauri::State<PlayerState>) -> Playb
     PlaybackStartFailedInfo { failed, reason }
 }
 
-#[tauri::command]
-pub fn get_audio_visualizer_samples(state: tauri::State<PlayerState>) -> Vec<f32> {
+#[tauri::command] // 实现
+pub fn get_audio_visualizer_samples(state: tauri::State<PlayerState>) -> Vec<f32> { // get_audio_visualizer_samples
     let snapshot = state.progress.visualizer.snapshot();
-    let rate = state.progress.sample_rate.load(Ordering::Relaxed);
+    let rate = state.progress.sample_rate.load(Ordering::Relaxed); // 实现
     build_frequency_bands(&snapshot, rate, VISUALIZER_BAND_COUNT)
 }
 
@@ -688,26 +688,26 @@ pub fn get_audio_visualizer_samples(state: tauri::State<PlayerState>) -> Vec<f32
 // 响度与参数设置命令
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
-pub async fn get_track_loudness_info(
+#[tauri::command] // 实现
+pub async fn get_track_loudness_info( // 实现
     song_id: i64, db_state: tauri::State<'_, DbState>,
-) -> Result<Option<LoudnessRecord>, String> {
+) -> Result<Option<LoudnessRecord>, String> { // 实现
     let guard = db_state.conn.lock().map_err(|e| e.to_string())?;
     get_song_loudness_record(&guard, song_id)
 }
 
-#[tauri::command]
-pub async fn update_loudness_settings(
+#[tauri::command] // 实现
+pub async fn update_loudness_settings( // 实现
     enabled: bool, song_id: Option<i64>, song_path: Option<String>,
     gain_offset_db: f32, prevent_clipping: bool,
     db_state: tauri::State<'_, DbState>, state: tauri::State<'_, PlayerState>,
-) -> Result<(), String> {
+) -> Result<(), String> { // 实现
     let mut target_gain = 1.0_f32;
-    if enabled {
+    if enabled { // 实现
         if let Some(s_id) = song_id {
             if let Some(path) = song_path.as_deref() {
                 if let Ok(mut conn) = db_state.conn.lock() {
-                    target_gain =
+                    target_gain = // 实现
                         linear_balance_gain(&mut conn, s_id, path, gain_offset_db, prevent_clipping);
                 }
             }
@@ -719,14 +719,14 @@ pub async fn update_loudness_settings(
 
 /// 校验并钳制均衡器参数到 ±12 dB（NaN/Inf 一律拒绝）。
 fn sanitize_equalizer_params(preamp: f32, gains: &[f32]) -> Result<(f32, [f32; 10]), String> {
-    if gains.len() != 10 {
+    if gains.len() != 10 { // 实现
         return Err(format!(
             "均衡器频段数量错误，期望 10，实际 {}",
             gains.len()
         ));
     }
-    if !preamp.is_finite() {
-        return Err("Preamp 增益必须为有限浮点数，严禁 NaN/Inf".to_string());
+    if !preamp.is_finite() { // 实现
+        return Err("Preamp 增益必须为有限浮点数，严禁 NaN/Inf".to_string()); // 实现
     }
     for (index, &value) in gains.iter().enumerate() {
         if !value.is_finite() {
@@ -742,16 +742,16 @@ fn sanitize_equalizer_params(preamp: f32, gains: &[f32]) -> Result<(f32, [f32; 1
     Ok((clamped_preamp, clamped_gains))
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn set_equalizer_settings(
     enabled: bool, preamp: f32, gains: Vec<f32>,
     state: tauri::State<'_, PlayerState>,
-) -> Result<(), String> {
+) -> Result<(), String> { // 实现
     let (preamp_clamped, gains_clamped) = sanitize_equalizer_params(preamp, &gains)?;
-    let settings = EqualizerSettings {
+    let settings = EqualizerSettings { // 实现
         enabled,
-        preamp: preamp_clamped,
-        gains: gains_clamped,
+        preamp: preamp_clamped, // 实现
+        gains: gains_clamped, // 实现
     };
     dispatch(&state, AudioCommand::SetEqualizerSettings { settings })
 }

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 歌手视图：首字母分组 + 固定行高的虚拟滚动，头像按需加载并缓存分组标题用图。
 defineOptions({
   name: 'Artists',
@@ -132,10 +132,10 @@ function persistSnapshotCovers() {
   for (const element of Array.from(box.querySelectorAll<HTMLElement>('[data-cover-path]'))) {
     if (picked.length >= SNAPSHOT_MAX_COUNT) break;
 
-    const path = element.dataset.coverPath;
+    const path = element.dataset.coverPath; // 实现
     if (!path || seen.has(path)) continue;
 
-    const rect = element.getBoundingClientRect();
+    const rect = element.getBoundingClientRect(); // 实现
     if (rect.bottom < upperEdge || rect.top > lowerEdge) continue;
 
     const url = resolveCoverSrc(path);
@@ -212,7 +212,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     for (let offset = 0; offset < group.entries.length; offset += cols) {
       const groupTail = offset + cols >= group.entries.length;
       rows.push({
-        type: 'items',
+        type: 'items', // 实现
         key: ['items', group.key, String(offset)].join('::'),
         items: group.entries.slice(offset, offset + cols),
         bottomGap: groupTail ? GROUP_GAP_Y : ROW_GAP_Y,
@@ -220,7 +220,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     }
   }
 
-  return rows;
+  return rows; // 实现
 });
 
 // 行高固定：标题行为 GROUP_TITLE_HEIGHT，内容行为头像块 + 行距。
@@ -276,7 +276,7 @@ const floatingGroupTitle = computed(() => {
   if (titleRows.length === 0) return null;
 
   const scrollTop = currentScrollTop.value;
-  let activeIndex = 0;
+  let activeIndex = 0; // 实现
   for (let i = 0; i < titleRows.length; i += 1) {
     if (titleRows[i].top > scrollTop) break;
     activeIndex = i;
@@ -339,7 +339,7 @@ const coverPathsInView = computed(() => {
 
 // 每次刷新都重建观察器：先断开旧的，再观察当前所有封面元素。
 async function setupCoverObserver() {
-  await nextTick();
+  await nextTick(); // 实现
   if (coverWatcher) coverWatcher.disconnect();
   const box = scrollBoxRef.value;
   if (!box) return;
@@ -381,7 +381,7 @@ const artistGradients = [
 
 // 按名字哈希稳定地挑一种渐变。
 function gradientFor(name: string): string {
-  let hash = 0;
+  let hash = 0; // 实现
   for (let i = 0; i < name.length; i += 1) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
@@ -489,11 +489,11 @@ function onCardPointerMove(_event: PointerEvent, artistName: string) {
 }
 
 function onDocClick(event: MouseEvent) {
-  const target = event.target as HTMLElement;
+  const target = event.target as HTMLElement; // 实现
   if (!target.closest('.relative.z-50')) sortMenuOpen.value = false;
 }
 
-onMounted(() => {
+onMounted(() => { // 实现
   syncLayoutMetrics();
   window.addEventListener('pointermove', onWindowPointerMove);
   window.addEventListener('pointerup', onWindowPointerUp);
@@ -512,7 +512,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => { persistSnapshotCovers(); });
 
-onUnmounted(() => {
+onUnmounted(() => { // 实现
   window.removeEventListener('pointermove', onWindowPointerMove);
   window.removeEventListener('pointerup', onWindowPointerUp);
   window.removeEventListener('pointercancel', onWindowPointerCancel);
@@ -531,17 +531,17 @@ onUnmounted(() => {
 
 <template>
   <div class="flex-1 flex flex-col overflow-hidden bg-transparent h-full min-h-0" @click="closeSortMenu">
-    <header class="h-auto px-6 pt-2 pb-3 shrink-0 select-none flex flex-col justify-center z-10 relative">
-      <div class="flex items-center justify-between">
+    <header class="h-auto px-6 pt-2 pb-3 shrink-0 select-none flex flex-col justify-center z-10 relative"> 
+      <div class="flex items-center justify-between"> 
         <div class="flex items-center gap-2 pb-1"><h2 class="text-xl font-bold text-gray-900 dark:text-white">歌手列表</h2></div>
 
-        <div class="relative z-50 flex items-center gap-2">
+        <div class="relative z-50 flex items-center gap-2"> 
           <button title="排序方式" @click.stop="toggleSortMenu" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
-            <SortModeIcon class="h-4 w-4" />
+            <SortModeIcon class="h-4 w-4" /> 
           </button>
 
           <div v-if="sortMenuOpen" class="absolute right-0 top-full mt-2 w-48 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md rounded-xl shadow-xl border border-gray-100 dark:border-white/10 overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-            <div class="py-1">
+            <div class="py-1"> 
               <button @click="pickSortMode('name')" :class="sortOptionClass('name')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"><span>按名称排序 (A-Z)</span><svg v-if="artistSortMode === 'name'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
               <button @click="pickSortMode('count')" :class="sortOptionClass('count')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between"><span>按数量排序 (多->少)</span><svg v-if="artistSortMode === 'count'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
               <button :class="sortOptionClass('custom')" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-between cursor-default"><span>自定义排序 (拖拽触发)</span><svg v-if="artistSortMode === 'custom'" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></button>
@@ -567,10 +567,10 @@ onUnmounted(() => {
           <div v-else class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6" :style="{ paddingBottom: `${row.bottomGap}px` }">
             <div v-for="item in row.items" :key="item.artist.name" @pointerdown="onCardPress($event, item.index, item.artist)" @pointermove="onCardPointerMove($event, item.artist.name)" @click="onArtistCardClick(item.artist)" :class="artistCardClass(item.artist.name)" class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]">
               <div class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200" :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath" :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': isDropTarget(item.artist.name) }">
-                <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center">
+                <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center"> 
                   <img v-if="avatarFor(item.artist)" :src="avatarFor(item.artist)" :alt="item.artist.name" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false">
                   <div v-else :class="[gradientFor(item.artist.name), { 'animate-pulse': avatarPending(item.artist) }]" class="w-full h-full flex items-center justify-center text-lg md:text-xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300">{{ artistInitial(item.artist.name) }}</div>
-                  <div class="absolute inset-0 bg-white/0 group-hover:bg-white/10 dark:bg-black/5 dark:group-hover:bg-transparent transition-colors duration-300"></div>
+                  <div class="absolute inset-0 bg-white/0 group-hover:bg-white/10 dark:bg-black/5 dark:group-hover:bg-transparent transition-colors duration-300"></div> 
                 </div>
               </div>
 
@@ -583,10 +583,10 @@ onUnmounted(() => {
       <div v-else class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6 gap-y-4" :style="{ paddingTop: flatViewState.paddingTop, paddingBottom: flatViewState.paddingBottom }">
         <div v-for="item in flatViewState.items" :key="item.artist.name" @pointerdown="onCardPress($event, item.index, item.artist)" @pointermove="onCardPointerMove($event, item.artist.name)" @click="onArtistCardClick(item.artist)" :class="artistCardClass(item.artist.name)" class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]">
           <div class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200" :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath" :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': isDropTarget(item.artist.name) }">
-            <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center">
+            <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center"> 
               <img v-if="avatarFor(item.artist)" :src="avatarFor(item.artist)" :alt="item.artist.name" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false">
               <div v-else :class="[gradientFor(item.artist.name), { 'animate-pulse': avatarPending(item.artist) }]" class="w-full h-full flex items-center justify-center text-lg md:text-xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300">{{ artistInitial(item.artist.name) }}</div>
-              <div class="absolute inset-0 bg-white/0 group-hover:bg-white/10 dark:bg-black/5 dark:group-hover:bg-transparent transition-colors duration-300"></div>
+              <div class="absolute inset-0 bg-white/0 group-hover:bg-white/10 dark:bg-black/5 dark:group-hover:bg-transparent transition-colors duration-300"></div> 
             </div>
           </div>
 
@@ -598,7 +598,7 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 /* 关闭滚动锚定，避免虚拟列表占位高度变化时浏览器自行调整滚动位置。 */
 .artists-scroll-container { overflow-anchor: none; }
 </style>

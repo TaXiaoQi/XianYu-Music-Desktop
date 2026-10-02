@@ -8,7 +8,7 @@ mod recognize; mod remote; mod security; mod skin_image;
 mod sleep_timer; mod statistics; mod system_audio; mod system_fonts;
 mod system_info; mod taskbar; mod toolbox; mod tray_capture; mod webview_settings;
 mod window_boundary; mod window_foreground; mod window_fullscreen; mod window_material; mod window_theme;
-mod window_z_order;
+mod window_z_order; // 实现
 
 // ---- 命令导入：运行时与应用生命周期 ----
 use app_runtime::{
@@ -107,7 +107,7 @@ use host_crypto::{
 };
 
 // ---- 命令导入：音乐库与歌曲元数据 ----
-use music::{
+use music::{ // 实现
     add_library_folder,
     authed_request,
     batch_move_music_files,
@@ -165,7 +165,7 @@ use music::{
 };
 
 // ---- 命令导入：播放引擎与流缓存 ----
-use player::{
+use player::{ // 实现
     clear_stream_cache,
     copy_stream_cache,
     flush_playback_session,
@@ -240,7 +240,7 @@ use plugins::{
 };
 
 // ---- 命令导入：远程音源 ----
-use remote::{
+use remote::{ // 实现
     add_remote_source,
     clear_remote_cache,
     get_remote_cache_usage,
@@ -255,7 +255,7 @@ use remote::{
 
 // ---- 命令导入：皮肤 / 统计 / 系统信息 ----
 use skin_image::import_skin_image;
-use statistics::{
+use statistics::{ // 实现
     add_to_history,
     clear_listen_stats,
     clear_recent_history,
@@ -290,7 +290,7 @@ use system_info::{
 };
 
 // ---- 命令导入：任务栏窗口 ----
-use taskbar::{
+use taskbar::{ // 实现
     get_taskbar_tray_geometry,
     install_taskbar_zorder_guard,
     refresh_taskbar_window_topmost,
@@ -299,7 +299,7 @@ use taskbar::{
 };
 
 // ---- 命令导入：工具箱（下载 / 更新 / 外部程序 / 对话框存取） ----
-use toolbox::{
+use toolbox::{ // 实现
     apply_rename,
     build_download_basename,
     check_update_by_rust,
@@ -331,11 +331,11 @@ use toolbox::{
     write_state_json,
 };
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 use toolbox::append_webview2_browser_arg;
 
 // ---- 命令导入：窗口体系（边界 / 全屏 / 材质 / 主题 / 置顶） ----
-use window_boundary::set_mini_boundary_enabled;
+use window_boundary::{set_mini_boundary_enabled};
 use window_fullscreen::{
     refresh_immersive_fullscreen,
     set_immersive_fullscreen,
@@ -366,7 +366,7 @@ pub fn graceful_shutdown(app: &tauri::AppHandle) {
 }
 
 /// 在 Windows 上登记进程级 AppUserModelID，任务栏分组等 shell 集成依赖它。
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 fn claim_windows_app_model_id() {
     use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 
@@ -400,9 +400,9 @@ fn dispatch_run_event(app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
     let _ = (app_handle, event);
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg_attr(mobile, tauri::mobile_entry_point)] // 实现
 #[allow(dependency_on_unit_never_type_fallback)]
-pub fn run() {
+pub fn run() { // run
     claim_windows_app_model_id();
     maybe_disable_gpu_for_startup();
 
@@ -420,7 +420,7 @@ pub fn run() {
 
     let desktop = tauri::Builder::default()
         .plugin(single_instance_plugin)
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| { // 实现
             let main_window_gone = window.label() == "main";
             if main_window_gone && matches!(event, tauri::WindowEvent::Destroyed) {
                 graceful_shutdown(window.app_handle());
@@ -432,17 +432,17 @@ pub fn run() {
         .plugin(opener_plugin)
         .plugin(http_plugin)
         .setup(|ctx| setup_app(ctx))
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(tauri::generate_handler![ // 实现
             convert_audio,
             detect_ffmpeg,
             probe_audio_duration,
             trim_audio,
-            scan_music_folder,
-            parse_audio_files,
-            parse_music_folder,
-            scan_folder_as_playlists,
-            get_song_cover_thumbnail,
-            get_song_cover,
+            scan_music_folder, // 实现
+            parse_audio_files, // 实现
+            parse_music_folder, // 实现
+            scan_folder_as_playlists, // 实现
+            get_song_cover_thumbnail, // 实现
+            get_song_cover, // 实现
             extract_palette,
             authed_request,
             save_auth_credentials,
@@ -452,23 +452,23 @@ pub fn run() {
             get_auth_base_url,
             set_auth_api_secret,
             get_auth_api_secret,
-            clear_cover_cache,
-            read_lyrics_file,
+            clear_cover_cache, // 实现
+            read_lyrics_file, // 实现
             parse_lyrics_text, // 歌词解析命令
-            get_song_lyrics_payload,
-            get_song_lyrics_for_edit,
-            save_song_lyrics,
-            save_song_info,
+            get_song_lyrics_payload, // 实现
+            get_song_lyrics_for_edit, // 实现
+            save_song_lyrics, // 实现
+            save_song_info, // 实现
             save_song_background,
             get_song_background,
             clear_song_background,
-            get_song_detail,
-            batch_move_music_files,
-            move_music_file,
-            show_in_folder,
-            delete_music_file,
+            get_song_detail, // 实现
+            batch_move_music_files, // 实现
+            move_music_file, // 实现
+            show_in_folder, // 实现
+            delete_music_file, // 实现
             play_audio,
-            update_playback_metadata,
+            update_playback_metadata, // 实现
             dlna_search_devices,
             dlna_cast_set_uri,
             dlna_cast_play,
@@ -488,21 +488,21 @@ pub fn run() {
             control_channel_push_state,
             control_channel_push_now_playing,
             control_channel_push_position,
-            pause_audio,
+            pause_audio, // 实现
             stop_audio,
-            resume_audio,
+            resume_audio, // 实现
             seek_audio,
             set_volume,
-            get_playback_progress,
+            get_playback_progress, // 实现
             get_playback_duration,
             get_playback_ready,
             get_playback_start_failed,
             get_playback_start_failed_reason,
             get_playback_start_failed_info,
-            get_audio_visualizer_samples,
-            get_track_loudness_info,
-            update_loudness_settings,
-            set_equalizer_settings,
+            get_audio_visualizer_samples, // 实现
+            get_track_loudness_info, // 实现
+            update_loudness_settings, // 实现
+            set_equalizer_settings, // 实现
             set_sound_effect_settings, // 音效参数命令
             plugin_host_scan_plugins,
             plugin_host_get_rack,
@@ -516,14 +516,14 @@ pub fn run() {
             plugin_host_close_editor,
             plugin_host_editor_states,
             plugin_host_take_process_error,
-            preview_rename,
-            apply_rename,
-            get_output_devices,
-            get_current_output_device,
+            preview_rename, // 实现
+            apply_rename, // 实现
+            get_output_devices, // 实现
+            get_current_output_device, // 实现
             get_audio_device_formats,
-            set_output_device,
-            set_audio_output_mode,
-            set_prevent_sleep,
+            set_output_device, // 实现
+            set_audio_output_mode, // 实现
+            set_prevent_sleep, // 实现
             set_stream_cache_max_size,
             set_stream_cache_dir,
             get_stream_cache_dir,
@@ -532,83 +532,83 @@ pub fn run() {
             is_stream_cached,
             copy_stream_cache,
             prefetch_audio_head,
-            get_library_folders,
-            is_directory,
-            save_artist_avatar,
-            add_library_folder,
-            remove_library_folder,
-            get_library_songs_cached,
+            get_library_folders, // 实现
+            is_directory, // 实现
+            save_artist_avatar, // 实现
+            add_library_folder, // 实现
+            remove_library_folder, // 实现
+            get_library_songs_cached, // 实现
             search_library_songs,
-            get_library_artist_catalog,
-            get_library_album_catalog,
-            get_library_song_paths_by_artist,
-            get_library_song_paths_by_album,
-            get_library_song_paths_for_all_view,
-            get_library_song_paths_for_folder_view,
-            get_remote_sources,
-            test_remote_source,
-            add_remote_source,
-            update_remote_source,
-            remove_remote_source,
-            sync_remote_source,
-            precache_remote_song,
-            get_remote_cache_usage,
-            clear_remote_cache,
-            list_remote_directory,
-            scan_library,
-            get_library_hierarchy,
-            get_folder_children,
-            create_folder,
-            delete_folder,
-            move_file_to_folder,
-            get_folder_first_song,
-            get_library_stats,
-            add_to_history,
-            record_play,
-            get_recent_history,
-            get_favorite_artist_catalog,
-            get_favorite_album_catalog,
-            get_favorite_song_paths_view,
-            get_recent_album_catalog,
-            get_recent_song_paths_view,
-            get_recent_playlist_catalog,
-            import_recent_history,
-            export_statistics_file,
-            preview_statistics_import,
-            import_statistics_file,
-            remove_from_recent_history,
-            remove_songs_from_history_and_statistics,
-            clear_recent_history,
+            get_library_artist_catalog, // 实现
+            get_library_album_catalog, // 实现
+            get_library_song_paths_by_artist, // 实现
+            get_library_song_paths_by_album, // 实现
+            get_library_song_paths_for_all_view, // 实现
+            get_library_song_paths_for_folder_view, // 实现
+            get_remote_sources, // 实现
+            test_remote_source, // 实现
+            add_remote_source, // 实现
+            update_remote_source, // 实现
+            remove_remote_source, // 实现
+            sync_remote_source, // 实现
+            precache_remote_song, // 实现
+            get_remote_cache_usage, // 实现
+            clear_remote_cache, // 实现
+            list_remote_directory, // 实现
+            scan_library, // 实现
+            get_library_hierarchy, // 实现
+            get_folder_children, // 实现
+            create_folder, // 实现
+            delete_folder, // 实现
+            move_file_to_folder, // 实现
+            get_folder_first_song, // 实现
+            get_library_stats, // 实现
+            add_to_history, // 实现
+            record_play, // 实现
+            get_recent_history, // 实现
+            get_favorite_artist_catalog, // 实现
+            get_favorite_album_catalog, // 实现
+            get_favorite_song_paths_view, // 实现
+            get_recent_album_catalog, // 实现
+            get_recent_song_paths_view, // 实现
+            get_recent_playlist_catalog, // 实现
+            import_recent_history, // 实现
+            export_statistics_file, // 实现
+            preview_statistics_import, // 实现
+            import_statistics_file, // 实现
+            remove_from_recent_history, // 实现
+            remove_songs_from_history_and_statistics, // 实现
+            clear_recent_history, // 实现
             reset_local_statistics,
-            get_behavior_stats,
+            get_behavior_stats, // 实现
             get_listen_durations,
             merge_cloud_listen_duration,
             export_listen_snapshot,
             merge_listen_snapshot,
             clear_listen_stats,
-            get_quality_distribution,
-            get_format_distribution,
-            clear_all_app_data,
-            open_external_program,
+            get_quality_distribution, // 实现
+            get_format_distribution, // 实现
+            clear_all_app_data, // 实现
+            open_external_program, // 实现
             register_external_program,
             register_download_directory,
-            file_exists,
-            refresh_folder_songs,
-            set_mini_boundary_enabled,
+            file_exists, // 实现
+            refresh_folder_songs, // 实现
+            set_mini_boundary_enabled, // 实现
             set_immersive_fullscreen,
             refresh_immersive_fullscreen,
             smart_toggle_maximize,
-            get_window_material_capabilities,
+            get_window_material_capabilities, // 实现
             refresh_window_material_active_state, // 窗口材质刷新命令
-            get_foreground_fullscreen_state,
-            set_dark_mode_for_window,
+            get_foreground_fullscreen_state, // 实现
+            set_dark_mode_for_window, // 实现
             force_window_foreground,
             describe_foreground_window,
             start_tray_mouse_capture,
             stop_tray_mouse_capture,
-            refresh_current_window_topmost,
-            start_topmost_guard,
-            stop_topmost_guard,
+            refresh_current_window_topmost, // 实现
+            start_topmost_guard, // 实现
+            stop_topmost_guard, // 实现
             plugin_http_request,
             plugin_http_request_binary,
             plugin_engine_load_musicfree,
@@ -632,32 +632,32 @@ pub fn run() {
             import_skin_image,
             proxy_image,
             download_audio_to_temp,
-            download_video_to_cache,
-            remove_cached_background_video,
+            download_video_to_cache, // 实现
+            remove_cached_background_video, // 实现
             mv_proxy_url,
             recognize_system_audio,
             cancel_recognize_system_audio,
-            consume_pending_open_paths,
+            consume_pending_open_paths, // 实现
             consume_pending_deep_links,
-            get_system_fonts,
+            get_system_fonts, // 实现
             get_system_info,
             get_machine_id,
-            import_lyrics_font,
-            read_lyrics_font_data_url,
-            setup_taskbar_window,
-            get_taskbar_tray_geometry,
-            install_taskbar_zorder_guard,
-            refresh_taskbar_window_topmost,
-            uninstall_taskbar_zorder_guard,
+            import_lyrics_font, // 实现
+            read_lyrics_font_data_url, // 实现
+            setup_taskbar_window, // 实现
+            get_taskbar_tray_geometry, // 实现
+            install_taskbar_zorder_guard, // 实现
+            refresh_taskbar_window_topmost, // 实现
+            uninstall_taskbar_zorder_guard, // 实现
             exit_app,
             restart_app,
             get_network_proxy,
             set_network_proxy,
             test_network_proxy,
             update_native_tray_menu,
-            set_gpu_acceleration,
-            check_update_by_rust,
-            download_update_file,
+            set_gpu_acceleration, // 实现
+            check_update_by_rust, // 实现
+            download_update_file, // 实现
             download_online_song,
             decrypt_qmc_file,
             download_wallpaper, // 壁纸下载命令

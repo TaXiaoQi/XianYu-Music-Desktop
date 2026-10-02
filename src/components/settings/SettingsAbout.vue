@@ -1,12 +1,12 @@
-<script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+<script setup lang="ts"> // 实现
+import { computed, onMounted, onUnmounted, ref } from 'vue'; // 实现
 import { ArrowUpRight, BookOpen, CheckCircle2, Code2, ExternalLink, Github, Globe2, Heart, RefreshCw, ShieldCheck, Sparkles, UsersRound } from 'lucide-vue-next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_VERSION } from '../../../version';
 import { useUpdateCheck } from '../../composables/useUpdateCheck'; // 更新检查
-import { useToast } from '../../composables/toast';
-import { useDeveloperMode } from '../../features/settings/developerMode';
-import { useI18n } from '../../features/i18n';
+import { useToast } from '../../composables/toast'; // 实现
+import { useDeveloperMode } from '../../features/settings/developerMode'; // 实现
+import { useI18n } from '../../features/i18n'; // 实现
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { aboutConfig, startAboutConfigPolling, stopAboutConfigPolling } from '../../utils/aboutConfig';
 import AcknowledgementsModal from '../common/AcknowledgementsModal.vue';
@@ -22,29 +22,29 @@ function openReferenceProjects() {
 }
 const DEVELOPER_MODE_CLICK_COUNT = 5;
 const DEVELOPER_MODE_CLICK_HINT_START = 3;
-const DEVELOPER_MODE_CLICK_INTERVAL = 1500;
-const developerModeClickCount = ref(0);
-let lastDeveloperModeClickAt = 0;
+const DEVELOPER_MODE_CLICK_INTERVAL = 1500; // 实现
+const developerModeClickCount = ref(0); // 实现
+let lastDeveloperModeClickAt = 0; // 实现
 
-const { isDeveloperMode, enableDeveloperMode } = useDeveloperMode();
-const { showToast } = useToast();
-const { isEnglish } = useI18n();
+const { isDeveloperMode, enableDeveloperMode } = useDeveloperMode(); // 实现
+const { showToast } = useToast(); // 实现
+const { isEnglish } = useI18n(); // 实现
 const { theme } = useThemeSettings();
 const isGlassAbout = computed(() => theme.value.useGlassSwitch);
-const buttonText = computed(() => isEnglish.value ? {
-  update: 'Check for Updates',
-  checking: 'Checking...',
-  officialSite: 'Official Website',
-  joinGroup: 'Join Community',
-  project: 'Source Code',
-  referenceProject: 'Reference Project',
+const buttonText = computed(() => isEnglish.value ? { // 实现
+  update: 'Check for Updates', // 实现
+  checking: 'Checking...', // 实现
+  officialSite: 'Official Website', // 实现
+  joinGroup: 'Join Community', // 实现
+  project: 'Source Code', // 实现
+  referenceProject: 'Reference Project', // 实现
   acknowledgements: 'Acknowledgements',
   version: 'Version',
   license: 'License',
   tech: 'Tech Stack',
 } : {
   update: '检查更新',
-  checking: '检查中...',
+  checking: '检查中...', // 实现
   officialSite: '前往官网',
   joinGroup: '加入群组',
   project: '开源地址',
@@ -73,20 +73,20 @@ async function openExternal(url: string) {
   }
 }
 
-function handleDeveloperModeClick() {
-  if (isDeveloperMode.value) return;
+function handleDeveloperModeClick() { // 实现
+  if (isDeveloperMode.value) return; // 实现
 
-  const now = Date.now();
-  if (now - lastDeveloperModeClickAt > DEVELOPER_MODE_CLICK_INTERVAL) {
-    developerModeClickCount.value = 0;
+  const now = Date.now(); // 实现
+  if (now - lastDeveloperModeClickAt > DEVELOPER_MODE_CLICK_INTERVAL) { // 实现
+    developerModeClickCount.value = 0; // 实现
   }
-  lastDeveloperModeClickAt = now;
-  developerModeClickCount.value += 1;
+  lastDeveloperModeClickAt = now; // 实现
+  developerModeClickCount.value += 1; // 实现
 
-  if (developerModeClickCount.value >= DEVELOPER_MODE_CLICK_COUNT) {
-    developerModeClickCount.value = 0;
-    enableDeveloperMode();
-    showToast(isEnglish.value ? 'Developer mode enabled' : '已进入开发者模式', 'success');
+  if (developerModeClickCount.value >= DEVELOPER_MODE_CLICK_COUNT) { // 实现
+    developerModeClickCount.value = 0; // 实现
+    enableDeveloperMode(); // 实现
+    showToast(isEnglish.value ? 'Developer mode enabled' : '已进入开发者模式', 'success'); // 实现
     return;
   }
   if (developerModeClickCount.value >= DEVELOPER_MODE_CLICK_HINT_START) {

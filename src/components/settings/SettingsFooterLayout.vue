@@ -5,24 +5,24 @@ import {
   Play,
   RotateCcw,
   SkipBack,
-  SkipForward,
+  SkipForward, // 实现
 } from 'lucide-vue-next';
 
 import { useToast } from '../../composables/toast';
-import { useSettings } from '../../features/settings/useSettings';
+import { useSettings } from '../../features/settings/useSettings'; // 实现
 import {
   DEFAULT_FOOTER_LAYOUT,
   computeCollapsedItems,
   dropFooterItemToPalette,
   dropFooterItemToSlot,
-  getFooterItemMeta,
-  getFooterPreviewSlotItems,
-  moveFooterItemToPreviewSlot,
+  getFooterItemMeta, // 实现
+  getFooterPreviewSlotItems, // 实现
+  moveFooterItemToPreviewSlot, // 实现
   normalizeFooterLayout,
-  type FooterPreviewSlot,
+  type FooterPreviewSlot, // 实现
 } from '../../features/settings/footerItems';
 import type { DownloadQuality, FooterItemKey, FooterLayoutSettings, QualityKey } from '../../types';
-import FooterControlIcon from '../layout/FooterControlIcon.vue';
+import FooterControlIcon from '../layout/FooterControlIcon.vue'; // 实现
 import FooterControlItem from '../layout/FooterControlItem.vue';
 import SettingHint from './SettingHint.vue';
 
@@ -30,15 +30,15 @@ const { footerLayout, patchFooterLayout } = useSettings();
 const { showToast } = useToast();
 
 const layout = computed(() => normalizeFooterLayout(footerLayout.value));
-const previewSlots = computed(() => getFooterPreviewSlotItems(layout.value));
+const previewSlots = computed(() => getFooterPreviewSlotItems(layout.value)); // 实现
 const collapsedPreviewItems = computed(() => computeCollapsedItems(layout.value));
 
-const LEFT_SLOTS: FooterPreviewSlot[] = ['left-0', 'left-1'];
-const MIDDLE_LEFT_SLOTS: FooterPreviewSlot[] = ['middle-left'];
-const MIDDLE_RIGHT_SLOTS: FooterPreviewSlot[] = ['middle-right'];
-const RIGHT_SLOTS: FooterPreviewSlot[] = ['right-0', 'right-1', 'right-2', 'right-3', 'right-4'];
+const LEFT_SLOTS: FooterPreviewSlot[] = ['left-0', 'left-1']; // 实现
+const MIDDLE_LEFT_SLOTS: FooterPreviewSlot[] = ['middle-left']; // 实现
+const MIDDLE_RIGHT_SLOTS: FooterPreviewSlot[] = ['middle-right']; // 实现
+const RIGHT_SLOTS: FooterPreviewSlot[] = ['right-0', 'right-1', 'right-2', 'right-3', 'right-4']; // 实现
 
-const getItemLabel = (key: FooterItemKey | null) => key ? getFooterItemMeta(key)?.label ?? key : '';
+const getItemLabel = (key: FooterItemKey | null) => key ? getFooterItemMeta(key)?.label ?? key : ''; // 实现
 
 const previewCurrentSong = ref<any>({
   title: 'I\'m leaving home',
@@ -137,12 +137,12 @@ type PreviewDragSource =
 
 interface PreviewDragState {
   source: PreviewDragSource;
-  startX: number;
-  startY: number;
+  startX: number; // 实现
+  startY: number; // 实现
   x: number;
   y: number;
-  moved: boolean;
-  targetSlot: FooterPreviewSlot | null;
+  moved: boolean; // 实现
+  targetSlot: FooterPreviewSlot | null; // 实现
   paletteIndex: number | null;
   collapse: boolean;
 }
@@ -189,12 +189,12 @@ const startItemDrag = (event: PointerEvent, source: PreviewDragSource) => {
 };
 
 const handleItemDragMove = (event: PointerEvent) => {
-  const state = dragState.value;
-  if (!state) return;
-  state.x = event.clientX;
-  state.y = event.clientY;
-  if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) >= 4) {
-    state.moved = true;
+  const state = dragState.value; // 实现
+  if (!state) return; // 实现
+  state.x = event.clientX; // 实现
+  state.y = event.clientY; // 实现
+  if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) >= 4) { // 实现
+    state.moved = true; // 实现
   }
   if (state.moved) {
     const drop = resolveDropTarget(event.clientX, event.clientY);
@@ -212,7 +212,7 @@ const cleanupItemDrag = () => {
   window.removeEventListener('pointermove', handleItemDragMove);
   window.removeEventListener('pointerup', finishItemDrag);
   window.removeEventListener('pointercancel', cancelItemDrag);
-  document.body.style.userSelect = '';
+  document.body.style.userSelect = ''; // 实现
   isDragActive.value = false;
 };
 
@@ -244,7 +244,7 @@ const applyItemDrop = (state: PreviewDragState) => {
 };
 
 const finishItemDrag = () => {
-  const state = dragState.value;
+  const state = dragState.value; // 实现
   if (state?.moved) applyItemDrop(state);
   dragState.value = null;
   cleanupItemDrag();
@@ -308,56 +308,56 @@ onUnmounted(() => {
 
 <template>
   <section class="space-y-3">
-    <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-      <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+    <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
+      <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
       底部栏布局与预览
     </h2>
 
     <div class="footer-layout-preview-container select-none overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-      <div class="footer-layout-preview-header">
+      <div class="footer-layout-preview-header"> 
         <div class="min-w-0 flex-1">
           <div class="truncate text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
           <div class="mt-0.5 truncate text-[11px] text-gray-400 dark:text-white/40">直接拖拽即可布局：底部栏控件可拖到其他槽位交换、拖到「更多」收纳；收纳里的控件可拖回底部栏或拖拽排序</div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2"> 
           <SettingHint text="封面、歌曲信息和上一首/播放/下一首为固定区域；其余按钮可在底部栏与「更多」收纳之间互相拖拽布局。" />
           <button
             type="button"
             class="footer-preview-reset border border-gray-200/40 bg-white/20 text-gray-600 hover:border-[#EC4141]/35 hover:bg-white/30 hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-white/70 dark:hover:bg-white/10"
             @click="restoreDefault"
           >
-            <RotateCcw class="h-3.5 w-3.5" />
+            <RotateCcw class="h-3.5 w-3.5" /> 
             恢复默认
           </button>
         </div>
       </div>
 
       <div class="footer-player-preview">
-        <div class="footer-preview-left">
+        <div class="footer-preview-left"> 
           <div class="footer-preview-cover shrink-0">
-            <div class="h-full w-full bg-gradient-to-br from-[#EC4141] via-rose-400 to-orange-300"></div>
+            <div class="h-full w-full bg-gradient-to-br from-[#EC4141] via-rose-400 to-orange-300"></div> 
           </div>
           <div class="footer-preview-track-info min-w-0 max-w-[112px] flex-1">
-            <div class="truncate text-xs font-bold text-gray-800 dark:text-white">I'm leaving home</div>
-            <div class="mt-0.5 truncate text-[10px] text-gray-500 dark:text-white/45">Coastline</div>
+            <div class="truncate text-xs font-bold text-gray-800 dark:text-white">I'm leaving home</div> 
+            <div class="mt-0.5 truncate text-[10px] text-gray-500 dark:text-white/45">Coastline</div> 
           </div>
           <div class="footer-preview-zone shrink-0">
             <div
-              v-for="slot in LEFT_SLOTS"
+              v-for="slot in LEFT_SLOTS" 
               :key="slot"
-              class="footer-preview-slot"
+              class="footer-preview-slot" 
               :class="{
                 'footer-preview-slot--empty': !previewSlots[slot],
                 'footer-preview-slot--drag-active': !!dragState,
                 'footer-preview-slot--target': dragState?.targetSlot === slot,
               }"
-              :data-footer-preview-slot="slot"
+              :data-footer-preview-slot="slot" 
             >
               <div
-                v-if="previewSlots[slot]"
+                v-if="previewSlots[slot]" 
                 class="footer-preview-control-shell"
                 :class="{ 'footer-preview-control-shell--dragging': dragState?.source.type === 'bar' && dragState.source.key === previewSlots[slot] }"
-                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
+                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`" 
                 @pointerdown="startItemDrag($event, { type: 'bar', key: previewSlots[slot]!, slot })"
               >
                 <FooterControlItem :item-key="previewSlots[slot]!" />
@@ -366,24 +366,24 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="footer-preview-center">
-          <div class="footer-preview-zone">
+        <div class="footer-preview-center"> 
+          <div class="footer-preview-zone"> 
             <div
-              v-for="slot in MIDDLE_LEFT_SLOTS"
+              v-for="slot in MIDDLE_LEFT_SLOTS" 
               :key="slot"
-              class="footer-preview-slot"
+              class="footer-preview-slot" 
               :class="{
                 'footer-preview-slot--empty': !previewSlots[slot],
                 'footer-preview-slot--drag-active': !!dragState,
                 'footer-preview-slot--target': dragState?.targetSlot === slot,
               }"
-              :data-footer-preview-slot="slot"
+              :data-footer-preview-slot="slot" 
             >
               <div
-                v-if="previewSlots[slot]"
+                v-if="previewSlots[slot]" 
                 class="footer-preview-control-shell"
                 :class="{ 'footer-preview-control-shell--dragging': dragState?.source.type === 'bar' && dragState.source.key === previewSlots[slot] }"
-                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
+                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`" 
                 @pointerdown="startItemDrag($event, { type: 'bar', key: previewSlots[slot]!, slot })"
               >
                 <FooterControlItem :item-key="previewSlots[slot]!" />
@@ -413,23 +413,23 @@ onUnmounted(() => {
             <SkipForward class="h-7 w-7 fill-current" />
           </button>
 
-          <div class="footer-preview-zone">
+          <div class="footer-preview-zone"> 
             <div
-              v-for="slot in MIDDLE_RIGHT_SLOTS"
+              v-for="slot in MIDDLE_RIGHT_SLOTS" 
               :key="slot"
-              class="footer-preview-slot"
+              class="footer-preview-slot" 
               :class="{
                 'footer-preview-slot--empty': !previewSlots[slot],
                 'footer-preview-slot--drag-active': !!dragState,
                 'footer-preview-slot--target': dragState?.targetSlot === slot,
               }"
-              :data-footer-preview-slot="slot"
+              :data-footer-preview-slot="slot" 
             >
               <div
-                v-if="previewSlots[slot]"
+                v-if="previewSlots[slot]" 
                 class="footer-preview-control-shell"
                 :class="{ 'footer-preview-control-shell--dragging': dragState?.source.type === 'bar' && dragState.source.key === previewSlots[slot] }"
-                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
+                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`" 
                 @pointerdown="startItemDrag($event, { type: 'bar', key: previewSlots[slot]!, slot })"
               >
                 <FooterControlItem :item-key="previewSlots[slot]!" />
@@ -438,24 +438,24 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="footer-preview-right">
-          <div class="footer-preview-zone">
+        <div class="footer-preview-right"> 
+          <div class="footer-preview-zone"> 
             <div
-              v-for="slot in RIGHT_SLOTS"
+              v-for="slot in RIGHT_SLOTS" 
               :key="slot"
-              class="footer-preview-slot"
+              class="footer-preview-slot" 
               :class="{
                 'footer-preview-slot--empty': !previewSlots[slot],
                 'footer-preview-slot--drag-active': !!dragState,
                 'footer-preview-slot--target': dragState?.targetSlot === slot,
               }"
-              :data-footer-preview-slot="slot"
+              :data-footer-preview-slot="slot" 
             >
               <div
-                v-if="previewSlots[slot]"
+                v-if="previewSlots[slot]" 
                 class="footer-preview-control-shell"
                 :class="{ 'footer-preview-control-shell--dragging': dragState?.source.type === 'bar' && dragState.source.key === previewSlots[slot] }"
-                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
+                :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`" 
                 @pointerdown="startItemDrag($event, { type: 'bar', key: previewSlots[slot]!, slot })"
               >
                 <FooterControlItem :item-key="previewSlots[slot]!" />
@@ -498,7 +498,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <Teleport to="body">
+    <Teleport to="body"> 
       <transition name="more-tools">
         <div
           v-if="showMoreTools"
@@ -527,11 +527,11 @@ onUnmounted(() => {
       </transition>
     </Teleport>
 
-    <Teleport to="body">
+    <Teleport to="body"> 
       <div
-        v-if="dragState?.moved"
+        v-if="dragState?.moved" 
         class="pointer-events-none fixed z-[10020] flex items-center gap-2 rounded-full border border-[#EC4141]/25 bg-white/20 px-3 py-2 text-[#EC4141] shadow-2xl backdrop-blur-xl dark:border-gray-800/40 dark:bg-black/10"
-        :style="{ left: `${dragState.x + 14}px`, top: `${dragState.y + 14}px` }"
+        :style="{ left: `${dragState.x + 14}px`, top: `${dragState.y + 14}px` }" 
       >
         <FooterControlIcon :item-key="dragState.source.key" class="h-4 w-4" />
         <span class="text-xs font-semibold">{{ getItemLabel(dragState.source.key) }}</span>
@@ -541,47 +541,47 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.footer-layout-preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.footer-layout-preview-header { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: space-between; /* 样式 */
   gap: 16px;
-  padding: 12px 16px;
+  padding: 12px 16px; /* 样式 */
   border-bottom: 1px solid rgba(255, 255, 255, 0.28);
 }
 
-.footer-preview-reset {
-  display: inline-flex;
-  align-items: center;
+.footer-preview-reset { /* 样式 */
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
   gap: 6px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
+  padding: 7px 12px; /* 样式 */
+  border-radius: 999px; /* 样式 */
+  font-size: 12px; /* 样式 */
+  font-weight: 600; /* 样式 */
   white-space: nowrap;
   flex-shrink: 0;
-  transition: 160ms ease;
+  transition: 160ms ease; /* 样式 */
 }
 
-.footer-preview-reset:hover {
-  color: #ec4141;
+.footer-preview-reset:hover { /* 样式 */
+  color: #ec4141; /* 样式 */
 }
 
-.footer-player-preview {
-  display: flex;
-  align-items: center;
+.footer-player-preview { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
   gap: 8px;
   padding: 10px 12px;
   min-height: 80px;
-  overflow: hidden;
+  overflow: hidden; /* 样式 */
 }
 
-.footer-preview-left,
-.footer-preview-center,
-.footer-preview-right,
-.footer-preview-zone {
-  display: flex;
-  align-items: center;
+.footer-preview-left, /* 样式 */
+.footer-preview-center, /* 样式 */
+.footer-preview-right, /* 样式 */
+.footer-preview-zone { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
 }
 
 .footer-preview-left { flex: 0 1 auto; min-width: 0; gap: 6px; }
@@ -589,23 +589,23 @@ onUnmounted(() => {
 .footer-preview-right { flex: 0 0 auto; justify-content: flex-end; gap: 2px; }
 .footer-preview-zone { gap: 1px; }
 
-.footer-preview-cover {
+.footer-preview-cover { /* 样式 */
   width: 44px;
   height: 44px;
-  overflow: hidden;
-  flex: 0 0 auto;
-  border-radius: 9px;
-  box-shadow: 0 5px 16px rgba(236, 65, 65, 0.2);
+  overflow: hidden; /* 样式 */
+  flex: 0 0 auto; /* 样式 */
+  border-radius: 9px; /* 样式 */
+  box-shadow: 0 5px 16px rgba(236, 65, 65, 0.2); /* 样式 */
 }
 
-.footer-preview-slot {
-  display: grid;
-  width: 32px;
-  height: 36px;
-  place-items: center;
-  border: 1px dashed transparent;
-  border-radius: 10px;
-  transition: 150ms ease;
+.footer-preview-slot { /* 样式 */
+  display: grid; /* 样式 */
+  width: 32px; /* 样式 */
+  height: 36px; /* 样式 */
+  place-items: center; /* 样式 */
+  border: 1px dashed transparent; /* 样式 */
+  border-radius: 10px; /* 样式 */
+  transition: 150ms ease; /* 样式 */
 }
 
 .footer-preview-slot--empty {
@@ -615,26 +615,26 @@ onUnmounted(() => {
 }
 
 .footer-preview-slot--empty.footer-preview-slot--drag-active {
-  width: 32px;
+  width: 32px; /* 样式 */
   opacity: 1;
   pointer-events: auto;
   border-color: rgba(148, 163, 184, 0.34);
 }
 
-.footer-preview-slot--target {
-  border-color: rgba(236, 65, 65, 0.7);
-  background: rgba(236, 65, 65, 0.1);
-  transform: scale(1.08);
+.footer-preview-slot--target { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.7); /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
+  transform: scale(1.08); /* 样式 */
 }
 
 .footer-preview-control-shell {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  cursor: grab;
-  touch-action: none;
-  overflow: hidden;
+  display: grid; /* 样式 */
+  width: 32px; /* 样式 */
+  height: 32px; /* 样式 */
+  place-items: center; /* 样式 */
+  cursor: grab; /* 样式 */
+  touch-action: none; /* 样式 */
+  overflow: hidden; /* 样式 */
 }
 
 .footer-preview-control-shell:active {
@@ -651,12 +651,12 @@ onUnmounted(() => {
 }
 
 .footer-preview-more--active {
-  color: #ec4141;
-  background: rgba(236, 65, 65, 0.1);
+  color: #ec4141; /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
 }
 
 .footer-preview-more--collapse-target {
-  color: #ec4141;
+  color: #ec4141; /* 样式 */
   background: rgba(236, 65, 65, 0.18);
   box-shadow: 0 0 0 2px rgba(236, 65, 65, 0.25);
   transform: scale(1.12);
@@ -666,9 +666,9 @@ onUnmounted(() => {
 }
 
 .footer-more-item {
-  position: relative;
-  cursor: grab;
-  touch-action: none;
+  position: relative; /* 样式 */
+  cursor: grab; /* 样式 */
+  touch-action: none; /* 样式 */
   user-select: none;
 }
 
@@ -690,8 +690,8 @@ onUnmounted(() => {
 .footer-more-item--drop {
   border: 1px dashed rgba(236, 65, 65, 0.7);
   outline: 1px dashed rgba(236, 65, 65, 0.6);
-  border-radius: 999px;
-  background: rgba(236, 65, 65, 0.1);
+  border-radius: 999px; /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
 }
 
 .more-tools-enter-active,
@@ -713,14 +713,14 @@ onUnmounted(() => {
 }
 
 .footer-preview-more-badge {
-  position: absolute;
+  position: absolute; /* 样式 */
   top: -4px;
   right: -3px;
   min-width: 15px;
   height: 15px;
   padding: 0 4px;
-  border-radius: 999px;
-  background: #ec4141;
+  border-radius: 999px; /* 样式 */
+  background: #ec4141; /* 样式 */
   color: white;
   font-size: 9px;
   font-weight: 700;
@@ -728,65 +728,65 @@ onUnmounted(() => {
   box-shadow: 0 3px 8px rgba(236, 65, 65, 0.25);
 }
 
-.footer-visibility-row {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  justify-content: space-between;
+.footer-visibility-row { /* 样式 */
+  display: flex; /* 样式 */
+  min-height: 48px; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: space-between; /* 样式 */
   gap: 12px;
-  padding: 7px 10px;
-  transition: 150ms ease;
+  padding: 7px 10px; /* 样式 */
+  transition: 150ms ease; /* 样式 */
 }
 
 .footer-visibility-row:hover {
-  color: #ec4141;
+  color: #ec4141; /* 样式 */
 }
 
-.footer-visibility-icon {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border-radius: 9px;
-  background: rgba(15, 23, 42, 0.035);
+.footer-visibility-icon { /* 样式 */
+  display: grid; /* 样式 */
+  width: 30px; /* 样式 */
+  height: 30px; /* 样式 */
+  place-items: center; /* 样式 */
+  border-radius: 9px; /* 样式 */
+  background: rgba(15, 23, 42, 0.035); /* 样式 */
 }
 
-:global(.dark) .footer-visibility-icon { background: rgba(255, 255, 255, 0.045); }
+:global(.dark) .footer-visibility-icon { background: rgba(255, 255, 255, 0.045); } /* 样式 */
 
-.footer-visibility-switch {
-  position: relative;
-  width: 38px;
-  height: 22px;
-  flex: 0 0 auto;
-  border-radius: 999px;
+.footer-visibility-switch { /* 样式 */
+  position: relative; /* 样式 */
+  width: 38px; /* 样式 */
+  height: 22px; /* 样式 */
+  flex: 0 0 auto; /* 样式 */
+  border-radius: 999px; /* 样式 */
   border: 1px solid rgba(229, 231, 235, 0.4);
   background: rgba(0, 0, 0, 0.08);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-  transition: 180ms ease;
+  transition: 180ms ease; /* 样式 */
 }
 
 :global(.dark) .footer-visibility-switch {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.08);
 }
-.footer-visibility-switch--on { background: #ec4141 !important; }
+.footer-visibility-switch--on { background: #ec4141 !important; } /* 样式 */
 
-.footer-visibility-switch-thumb {
-  position: absolute;
+.footer-visibility-switch-thumb { /* 样式 */
+  position: absolute; /* 样式 */
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: white;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  transition: transform 180ms ease;
+  width: 16px; /* 样式 */
+  height: 16px; /* 样式 */
+  border-radius: 999px; /* 样式 */
+  background: white; /* 样式 */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); /* 样式 */
+  transition: transform 180ms ease; /* 样式 */
 }
 
 .footer-visibility-switch--on .footer-visibility-switch-thumb { transform: translateX(17px); }
 
 @media (min-width: 1200px) {
-  .footer-player-preview {
+  .footer-player-preview { /* 样式 */
     gap: 12px;
     padding: 12px 14px;
   }

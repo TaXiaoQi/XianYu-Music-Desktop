@@ -17,8 +17,8 @@ import {
   type WindowMaterialCapabilities,
 } from './windowMaterialPalette';
 
-export type WindowMaterialMode = 'none' | 'mica' | 'acrylic' | 'blur';
-export type ResolvedWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur';
+export type WindowMaterialMode = 'none' | 'mica' | 'acrylic' | 'blur'; // 实现
+export type ResolvedWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur'; // 实现
 
 export type { WindowMaterialCapabilities } from './windowMaterialPalette';
 
@@ -72,7 +72,7 @@ export function resolveWindowMaterial(mode: WindowMaterialMode, value: WindowMat
 async function paintWindowBackgroundSafely(color: Color): Promise<void> {
   try {
     await getCurrentWindow().setBackgroundColor(color);
-  } catch (error) {
+  } catch (error) { // 实现
     console.warn('Failed to set window background color:', error);
   }
 }
@@ -83,7 +83,7 @@ async function toggleWindowShadowSafely(enabled: boolean): Promise<void> {
     if (hostWindow.setShadow) {
       await hostWindow.setShadow(enabled);
     }
-  } catch (error) {
+  } catch (error) { // 实现
     console.warn('Failed to set window shadow:', error);
   }
 }
@@ -139,7 +139,7 @@ async function fetchAndStoreCapabilities(): Promise<WindowMaterialCapabilities> 
     capabilitySnapshot.value = adopted;
     capabilityQuerySettled.value = true;
     return adopted;
-  } catch (error) {
+  } catch (error) { // 实现
     console.error('Failed to query window material capabilities:', error);
     const fallback = blankCapabilitySnapshot();
     capabilitySnapshot.value = fallback;
@@ -154,7 +154,7 @@ async function fetchAndStoreCapabilities(): Promise<WindowMaterialCapabilities> 
  * 拉取并缓存材质能力：成功/失败都视为「已探测」，后续调用直接命中
  * 缓存；并发调用共享同一次在途查询，force 时强制重探。
  */
-export async function loadWindowMaterialCapabilities(force = false): Promise<WindowMaterialCapabilities> {
+export async function loadWindowMaterialCapabilities(force = false): Promise<WindowMaterialCapabilities> { // 实现
   if (capabilityQuerySettled.value && !force) {
     return capabilitySnapshot.value;
   }
@@ -174,18 +174,18 @@ export async function applyWindowMaterial(mode: WindowMaterialMode, isDark: bool
   const hostWindow = getCurrentWindow();
 
   try {
-    if (resolved === 'mica') {
+    if (resolved === 'mica') { // 实现
       await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
       await hostWindow.setEffects({ effects: [isDark ? NATIVE_MICA_EFFECT_BY_DARKNESS.dark : NATIVE_MICA_EFFECT_BY_DARKNESS.light] });
       await toggleWindowShadowSafely(true);
-    } else if (resolved === 'acrylic') {
+    } else if (resolved === 'acrylic') { // 实现
       await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
-      await windowApi.setDarkModeForWindow(isDark);
+      await windowApi.setDarkModeForWindow(isDark); // 实现
       await hostWindow.setEffects({ effects: [Effect.Acrylic], color: buildAcrylicTint(isDark) });
       await toggleWindowShadowSafely(true);
-    } else if (resolved === 'blur') {
+    } else if (resolved === 'blur') { // 实现
       await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
-      await windowApi.setDarkModeForWindow(isDark);
+      await windowApi.setDarkModeForWindow(isDark); // 实现
       await hostWindow.setEffects({ effects: [Effect.Blur], color: buildBlurTint(isDark, blurTint) });
       await toggleWindowShadowSafely(false);
     } else {
@@ -231,8 +231,8 @@ export async function applyWindowMaterial(mode: WindowMaterialMode, isDark: bool
     }
 
     activeMaterialState.value = resolved;
-  } catch (error) {
-    console.error('Failed to apply window material:', error);
+  } catch (error) { // 实现
+    console.error('Failed to apply window material:', error); // 实现
     activeMaterialState.value = INERT_MATERIAL;
   }
 
@@ -246,7 +246,7 @@ type RepaintWaiter = () => Promise<unknown>;
 type MaterialApplier = (mode: WindowMaterialMode, isDark: boolean, blurTint: number) => Promise<ResolvedWindowMaterial>;
 
 /** 重建流程的可注入依赖（测试与特殊窗口可替换默认实现） */
-interface RebuildWindowMaterialDeps {
+interface RebuildWindowMaterialDeps { // 实现
   clearEffects?: EffectDisposer;
   waitForRepaint?: RepaintWaiter;
   applyMaterial?: MaterialApplier;
@@ -272,8 +272,8 @@ export async function rebuildWindowMaterialForCompositor(mode: WindowMaterialMod
     await disposeNativeEffects();
     activeMaterialState.value = INERT_MATERIAL;
     await awaitReportedRepaint();
-  } catch (error) {
-    console.warn('Failed to rebuild window material compositor:', error);
+  } catch (error) { // 实现
+    console.warn('Failed to rebuild window material compositor:', error); // 实现
   }
 
   try {
@@ -287,7 +287,7 @@ export async function rebuildWindowMaterialForCompositor(mode: WindowMaterialMod
 }
 
 /** 供各窗口组件读取材质状态 / 复用编排逻辑的组合入口 */
-export function useWindowMaterial() {
+export function useWindowMaterial() { // 实现
   const queryCapabilities = loadWindowMaterialCapabilities;
   const pushMaterial = applyWindowMaterial;
   const rebuildMaterial = rebuildWindowMaterialForCompositor;

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 // 文件夹视图顶栏：浏览/管理模式切换、批量操作入口、排序菜单（按触发按钮位置在视口内定位）。
 import { computed, onMounted, onUnmounted, ref, type Component } from 'vue';
 import { ListChecks, RefreshCw } from 'lucide-vue-next';

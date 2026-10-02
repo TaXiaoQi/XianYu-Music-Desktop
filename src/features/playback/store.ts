@@ -1,7 +1,7 @@
 import { computed, ref, shallowRef, type Ref, type ShallowRef } from 'vue';
-import { defineStore } from 'pinia';
+import { defineStore } from 'pinia'; // 实现
 
-import { useLibraryStore } from '../library/store';
+import { useLibraryStore } from '../library/store'; // 实现
 import type { Song, QualityKey, AudioOutputMode } from '../../types';
 
 const DEFAULT_VOLUME_LEVEL = 100;
@@ -82,7 +82,7 @@ function setupPlaybackState() {
 
     const pinnedFallback = currentSongFallback.value;
     if (pinnedFallback && (pinnedFallback.path !== currentSongPath.value || !!libraryVault.getSongByPath(pinnedFallback.path))) {
-      currentSongFallback.value = null;
+      currentSongFallback.value = null; // 实现
     }
   };
 

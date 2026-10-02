@@ -1,6 +1,6 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { computed, defineAsyncComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'; // 实现
-import { storeToRefs } from 'pinia';
+import { storeToRefs } from 'pinia'; // 实现
 import {
   convertLyricsToAmlLines, getLyricsFontFamily, loadSystemLyricsFonts, normalizeLyricsFontPreset, systemLyricsFontOptions,
   LYRICS_FONT_OPTIONS, DEFAULT_PLAYER_ALIGNMENT, DEFAULT_PLAYER_FONT_PRESET, DEFAULT_PLAYER_FONT_SCALE,
@@ -9,9 +9,9 @@ import {
   MAX_PLAYER_FONT_SCALE, MIN_PLAYER_LINE_GAP, MAX_PLAYER_LINE_GAP, MIN_PLAYER_OFFSET_X, MAX_PLAYER_OFFSET_X,
   MIN_PLAYER_OFFSET_Y, MAX_PLAYER_OFFSET_Y,
   type AmlPlayerLine, type LyricsFontPreset, type LyricsPlayerAlignment, useLyrics,
-} from '../../composables/lyrics';
+} from '../../composables/lyrics'; // 实现
 import { usePlayer } from '../../features/playback';
-import { useSettingsStore } from '../../features/settings/store';
+import { useSettingsStore } from '../../features/settings/store'; // 实现
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 const WordLyricPlayer = defineAsyncComponent({
@@ -26,10 +26,10 @@ import { getPlaybackSeekSecondsForLyricLine } from './seekLayout';
 import type { WordLyricLineClickEvent } from './WordLyricPlayer';
 import RangeSlider from '../common/RangeSlider.vue';
 import { useThemeSettings } from '../../composables/useThemeSettings';
-import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
+import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition'; // 实现
 
-const props = defineProps<{
-  coverHidden?: boolean;
+const props = defineProps<{ // 实现
+  coverHidden?: boolean; // 实现
   disabled?: boolean;
   /** 电影模式（背景视频接管外观）：由 PlayerDetail 透传，避免子组件重复计算同一份状态 */
   movieMode?: boolean;
@@ -42,7 +42,7 @@ const {
   lyricsStatus: loadState,
   showLyricsPlayerSettingsPanel: stylePanelOpen,
   rawLyrics: sourceText,
-} = useLyrics();
+} = useLyrics(); // 实现
 const { seekTo: performSeek, currentTime: clockSeconds, isPlaying: nowPlaying, currentSongPath: activeSongPath, togglePlay: flipPlayState } = usePlayer();
 const { audioDelay: latency } = storeToRefs(useSettingsStore());
 const { showToast: notify } = useToast();
@@ -51,9 +51,9 @@ const FONT_SIZE_STEP = 0.05;
 const ROW_GAP_STEP = 0.05;
 const SHIFT_STEP = 1;
 const ALIGNMENT_CHOICES: Array<{ value: LyricsPlayerAlignment; label: string }> = [
-  { value: 'left', label: '靠左' },
-  { value: 'center', label: '居中' },
-  { value: 'right', label: '靠右' },
+  { value: 'left', label: '靠左' }, // 实现
+  { value: 'center', label: '居中' }, // 实现
+  { value: 'right', label: '靠右' }, // 实现
 ];
 
 // 面板与字体菜单的锚点/容器引用
@@ -105,7 +105,7 @@ const mountWordPlayer = computed(() => amlLines.value.length > 0 && !props.disab
 const idleStateText = computed(() => {
   if (loadState.value === 'loading') return 'Loading lyrics...';
   if (loadState.value === 'error') return 'Lyrics unavailable';
-  return 'No synchronized lyrics';
+  return 'No synchronized lyrics'; // 实现
 });
 
 // 无时间轴的纯文本歌词：逐行 trim 后丢弃空行
@@ -127,8 +127,8 @@ const rowGapPercent = computed(() => `${Math.round(stylePrefs.playerLineGap * 10
 const shiftXPercent = computed(() => describeSignedPercent(stylePrefs.playerOffsetX));
 const shiftYPercent = computed(() => describeSignedPercent(stylePrefs.playerOffsetY));
 const fontOptions = computed(() => [
-  ...LYRICS_FONT_OPTIONS,
-  ...systemLyricsFontOptions.value,
+  ...LYRICS_FONT_OPTIONS, // 实现
+  ...systemLyricsFontOptions.value, // 实现
 ]);
 const activeFontLabel = computed(() => (
   fontOptions.value.find((option) => option.value === stylePrefs.playerFontPreset)?.label
@@ -305,11 +305,11 @@ const blurDisabledHint = computed(() => (
 ));
 
 const pickBackgroundImage = async () => {
-  const { open } = await import('@tauri-apps/plugin-dialog');
+  const { open } = await import('@tauri-apps/plugin-dialog'); // 实现
   const picked = await open({
-    multiple: false,
-    title: '选择背景图片',
-    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }],
+    multiple: false, // 实现
+    title: '选择背景图片', // 实现
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }], // 实现
   });
   if (picked && typeof picked === 'string') {
     stylePrefs.customBackgroundImage = picked;
@@ -416,7 +416,7 @@ function placeFontMenu() {
   if (!hostPanel) return;
 
   const hostRect = hostPanel.getBoundingClientRect();
-  const menuWidth = 280;
+  const menuWidth = 280; // 实现
   const spacing = 0;
 
   let left = hostRect.right + spacing;
@@ -425,17 +425,17 @@ function placeFontMenu() {
   }
 
   fontMenuPositionStyle.value = {
-    position: 'fixed',
-    left: `${Math.round(left)}px`,
+    position: 'fixed', // 实现
+    left: `${Math.round(left)}px`, // 实现
     bottom: `${Math.round(window.innerHeight - hostRect.bottom)}px`,
-    width: `${menuWidth}px`,
+    width: `${menuWidth}px`, // 实现
     maxHeight: `${Math.round(Math.min(420, hostRect.bottom - 16))}px`,
   };
 }
 
 function onGlobalPointerDown(event: MouseEvent) {
-  const target = event.target as Node | null;
-  if (!target) return;
+  const target = event.target as Node | null; // 实现
+  if (!target) return; // 实现
   if (panelAnchorRef.value?.contains(target)) return;
   if (menuPanelRef.value?.contains(target)) return;
   isFontMenuVisible.value = false;
@@ -481,14 +481,14 @@ async function onLyricLineClick(event: WordLyricLineClickEvent) {
   }
 }
 
-onMounted(() => {
+onMounted(() => { // 实现
   if (!props.disabled) {
     bindGlobalListeners();
   }
-  void loadSystemLyricsFonts();
+  void loadSystemLyricsFonts(); // 实现
 });
 
-onUnmounted(() => {
+onUnmounted(() => { // 实现
   unbindGlobalListeners();
   resetTransientUi();
 });
@@ -511,32 +511,32 @@ watch(stylePanelOpen, async (visible) => {
   }
 });
 
-watch(() => props.coverHidden, async () => {
+watch(() => props.coverHidden, async () => { // 实现
   if (!stylePanelOpen.value) return;
-  await nextTick();
+  await nextTick(); // 实现
   syncPanelPosition();
 });
 </script>
 
 <template>
-  <div class="group/lyrics-view relative h-full min-h-0 w-full min-w-0">
+  <div class="group/lyrics-view relative h-full min-h-0 w-full min-w-0"> 
     <div
       v-show="stylePanelOpen || amlLines.length > 0"
       ref="panelAnchorRef"
       class="pointer-events-none absolute top-2 bottom-12 right-[100%] z-[85] flex min-h-0 min-w-[260px] max-w-[320px] flex-col justify-center"
       :style="panelStyle"
     >
-      <transition name="font-panel">
+      <transition name="font-panel"> 
         <div
           v-if="stylePanelOpen"
-          class="lyrics-settings-glass pointer-events-auto flex h-[640px] max-h-[100%] w-full flex-col rounded-3xl border border-white/15 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
+          class="lyrics-settings-glass pointer-events-auto flex h-[640px] max-h-[100%] w-full flex-col rounded-3xl border border-white/15 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]" 
           @click.stop
-          @mousedown.stop
+          @mousedown.stop 
         >
-          <div class="relative flex shrink-0 border-b border-white/10 px-2 pt-2">
+          <div class="relative flex shrink-0 border-b border-white/10 px-2 pt-2"> 
             <button
-              type="button"
-              class="relative px-3 py-2 text-[12px] font-medium transition-colors"
+              type="button" 
+              class="relative px-3 py-2 text-[12px] font-medium transition-colors" 
               :class="activeStyleTab !== 'lyrics' ? 'text-white' : 'text-white/40 hover:text-white/70'"
               @click="activeStyleTab = 'background'"
             >
@@ -547,8 +547,8 @@ watch(() => props.coverHidden, async () => {
               ></span>
             </button>
             <button
-              type="button"
-              class="relative px-3 py-2 text-[12px] font-medium transition-colors"
+              type="button" 
+              class="relative px-3 py-2 text-[12px] font-medium transition-colors" 
               :class="activeStyleTab === 'lyrics' ? 'text-white' : 'text-white/40 hover:text-white/70'"
               @click="activeStyleTab = 'lyrics'"
             >
@@ -560,7 +560,7 @@ watch(() => props.coverHidden, async () => {
             </button>
           </div>
 
-          <div class="relative min-h-0 flex-1">
+          <div class="relative min-h-0 flex-1"> 
             <transition mode="out-in" name="tab-switch">
           <div v-if="activeStyleTab === 'background'" key="background" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar">
             <div class="mb-6">
@@ -678,46 +678,46 @@ watch(() => props.coverHidden, async () => {
             </div>
             <div v-if="blurSettingOff" class="mt-1.5 text-[10px] text-[#EC4141]/85">{{ blurDisabledHint }}</div>
 
-            <div class="mt-6 mb-3">
+            <div class="mt-6 mb-3"> 
               <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Custom</div>
-              <div class="mt-1.5">
+              <div class="mt-1.5"> 
                 <span class="text-[13px] text-white/85 font-medium">自定义背景</span>
               </div>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2"> 
               <button
-                type="button"
-                class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/10 text-white/85 hover:bg-white/20 transition-colors"
+                type="button" 
+                class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/10 text-white/85 hover:bg-white/20 transition-colors" 
                 @click="pickBackgroundImage"
-              >选择图片</button>
+              >选择图片</button> 
               <button
                 v-if="stylePrefs.customBackgroundImage"
-                type="button"
-                class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/5 text-white/50 hover:bg-white/10 transition-colors"
+                type="button" 
+                class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/5 text-white/50 hover:bg-white/10 transition-colors" 
                 @click="clearCustomBackgroundImage"
-              >清除</button>
+              >清除</button> 
             </div>
             <div v-if="stylePrefs.customBackgroundImage" class="mt-2 text-[10px] text-white/30 truncate" :title="stylePrefs.customBackgroundImage">
               {{ stylePrefs.customBackgroundImage }}
             </div>
-            <div v-else class="mt-2 text-[10px] text-white/30">未设置自定义背景，使用歌曲封面作为背景</div>
+            <div v-else class="mt-2 text-[10px] text-white/30">未设置自定义背景，使用歌曲封面作为背景</div> 
 
             <div class="mt-4 pt-4 border-t border-white/8">
               <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Per-Song</div>
-              <div class="mt-1.5">
+              <div class="mt-1.5"> 
                 <span class="text-[13px] text-white/85 font-medium">单曲背景</span>
                 <span class="ml-1.5 text-[10px] text-white/30">为当前歌曲单独保存背景图</span>
               </div>
               <div class="mt-2 flex items-center gap-2">
                 <button
-                  type="button"
+                  type="button" 
                   :disabled="writingSongBackground || !stylePrefs.customBackgroundImage"
                   class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-[#EC4141]/80 text-white hover:bg-[#EC4141] disabled:cursor-not-allowed disabled:opacity-30 transition-colors"
                   @click="persistSongBackground"
                 >写入歌曲</button>
                 <button
-                  type="button"
+                  type="button" 
                   class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/5 text-white/50 hover:bg-white/10 transition-colors"
                   @click="clearSongBackground"
                 >清除歌曲背景</button>
@@ -726,15 +726,15 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <div v-else key="lyrics" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar">
-          <div class="mb-3">
+          <div v-else key="lyrics" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar"> 
+          <div class="mb-3"> 
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Lyrics</div>
-            <div class="mt-1.5 flex items-center justify-between">
-              <div class="flex items-center gap-2">
+            <div class="mt-1.5 flex items-center justify-between"> 
+              <div class="flex items-center gap-2"> 
                 <span class="text-[13px] text-white/85 font-medium">字体大小</span>
                 <button
                   v-if="stylePrefs.playerFontScale !== DEFAULT_PLAYER_FONT_SCALE"
-                  type="button"
+                  type="button" 
                   class="flex h-5 w-5 items-center rounded-full justify-center text-white/40 transition hover:bg-white/10 hover:text-white"
                   @click="restoreFontSize"
                   title="重置"
@@ -749,9 +749,9 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3"> 
             <button
-              type="button"
+              type="button" 
               class="flex h-8 w-8 items-center rounded-full justify-center text-xs font-light text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
               :disabled="stylePrefs.playerFontScale <= MIN_PLAYER_FONT_SCALE"
               @click="stepFontSize(-FONT_SIZE_STEP)"
@@ -763,15 +763,15 @@ watch(() => props.coverHidden, async () => {
               variant="compact-sm"
               class="h-1 flex-1"
               :style="trackGradient(fontSizeProgress)"
-              :min="MIN_PLAYER_FONT_SCALE"
-              :max="MAX_PLAYER_FONT_SCALE"
+              :min="MIN_PLAYER_FONT_SCALE" 
+              :max="MAX_PLAYER_FONT_SCALE" 
               :step="FONT_SIZE_STEP"
               :model-value="stylePrefs.playerFontScale"
               @update:model-value="assignFontSize"
             />
 
             <button
-              type="button"
+              type="button" 
               class="flex h-8 w-8 items-center rounded-full justify-center text-xs font-light text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
               :disabled="stylePrefs.playerFontScale >= MAX_PLAYER_FONT_SCALE"
               @click="stepFontSize(FONT_SIZE_STEP)"
@@ -780,14 +780,14 @@ watch(() => props.coverHidden, async () => {
             </button>
           </div>
 
-          <div class="mt-6 mb-3">
+          <div class="mt-6 mb-3"> 
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Spacing</div>
-            <div class="mt-1.5 flex items-center justify-between">
-              <div class="flex items-center gap-2">
+            <div class="mt-1.5 flex items-center justify-between"> 
+              <div class="flex items-center gap-2"> 
                 <span class="text-[13px] text-white/85 font-medium">歌词间距</span>
                 <button
                   v-if="stylePrefs.playerLineGap !== DEFAULT_PLAYER_LINE_GAP"
-                  type="button"
+                  type="button" 
                   class="flex h-5 w-5 items-center rounded-full justify-center text-white/40 transition hover:bg-white/10 hover:text-white"
                   @click="restoreRowGap"
                   title="重置"
@@ -802,9 +802,9 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3"> 
             <button
-              type="button"
+              type="button" 
               class="flex h-8 w-8 items-center rounded-full justify-center text-base font-light text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
               :disabled="stylePrefs.playerLineGap <= MIN_PLAYER_LINE_GAP"
               @click="assignRowGap(stylePrefs.playerLineGap - ROW_GAP_STEP)"
@@ -816,15 +816,15 @@ watch(() => props.coverHidden, async () => {
               variant="compact-sm"
               class="h-1 flex-1"
               :style="trackGradient(rowGapProgress)"
-              :min="MIN_PLAYER_LINE_GAP"
-              :max="MAX_PLAYER_LINE_GAP"
+              :min="MIN_PLAYER_LINE_GAP" 
+              :max="MAX_PLAYER_LINE_GAP" 
               :step="ROW_GAP_STEP"
               :model-value="stylePrefs.playerLineGap"
               @update:model-value="assignRowGap"
             />
 
             <button
-              type="button"
+              type="button" 
               class="flex h-8 w-8 items-center rounded-full justify-center text-base font-light text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
               :disabled="stylePrefs.playerLineGap >= MAX_PLAYER_LINE_GAP"
               @click="assignRowGap(stylePrefs.playerLineGap + ROW_GAP_STEP)"
@@ -833,20 +833,20 @@ watch(() => props.coverHidden, async () => {
             </button>
           </div>
 
-          <div class="mt-6 mb-3">
+          <div class="mt-6 mb-3"> 
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Subtitles</div>
-            <div class="mt-1.5 flex items-center justify-between gap-3">
+            <div class="mt-1.5 flex items-center justify-between gap-3"> 
               <span class="text-[13px] text-white/85 font-medium">副行显示</span>
-              <span class="text-[11px] font-medium text-white/42">
+              <span class="text-[11px] font-medium text-white/42"> 
                 {{ activeSubtitleCount }}/2
               </span>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-2 gap-2"> 
             <button
-              type="button"
-              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition"
+              type="button" 
+              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition" 
               :class="!stylePrefs.showTranslation
                 ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
@@ -856,8 +856,8 @@ watch(() => props.coverHidden, async () => {
             </button>
 
             <button
-              type="button"
-              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition"
+              type="button" 
+              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition" 
               :class="!stylePrefs.showRomaji
                 ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
@@ -879,16 +879,16 @@ watch(() => props.coverHidden, async () => {
               逐字歌词效果 
             </button> 
           </div> 
-          <div class="mt-6 mb-3">
+          <div class="mt-6 mb-3"> 
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Alignment</div>
-            <div class="mt-1.5 flex items-center justify-between gap-3">
+            <div class="mt-1.5 flex items-center justify-between gap-3"> 
               <span class="text-[13px] text-white/85 font-medium">歌词位置</span>
               <button
                 v-if="stylePrefs.playerAlignment !== DEFAULT_PLAYER_ALIGNMENT"
-                type="button"
+                type="button" 
                 class="flex h-5 w-5 items-center rounded-full justify-center text-white/40 transition hover:bg-white/10 hover:text-white"
                 @click="restoreAlignment"
-                title="Reset"
+                title="Reset" 
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -898,12 +898,12 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-3 gap-2"> 
             <button
               v-for="choice in ALIGNMENT_CHOICES"
               :key="choice.value"
-              type="button"
-              class="flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-medium transition"
+              type="button" 
+              class="flex h-9 items-center justify-center rounded-2xl border px-3 text-xs font-medium transition" 
               :class="stylePrefs.playerAlignment !== choice.value
                 ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
@@ -913,17 +913,17 @@ watch(() => props.coverHidden, async () => {
             </button>
           </div>
 
-          <div class="mt-6 mb-3">
+          <div class="mt-6 mb-3"> 
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Offset</div>
-            <div class="mt-1.5 flex items-center justify-between gap-3">
+            <div class="mt-1.5 flex items-center justify-between gap-3"> 
               <span class="text-[13px] text-white/85 font-medium">歌词偏移</span>
-              <div class="flex items-center gap-1">
+              <div class="flex items-center gap-1"> 
                 <button
                   v-if="stylePrefs.playerOffsetX !== DEFAULT_PLAYER_OFFSET_X"
-                  type="button"
+                  type="button" 
                   class="flex h-5 w-5 items-center rounded-full justify-center text-white/40 transition hover:bg-white/10 hover:text-white"
                   @click="restoreShiftX"
-                  title="Reset horizontal offset"
+                  title="Reset horizontal offset" 
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -932,10 +932,10 @@ watch(() => props.coverHidden, async () => {
                 </button>
                 <button
                   v-if="stylePrefs.playerOffsetY !== DEFAULT_PLAYER_OFFSET_Y"
-                  type="button"
+                  type="button" 
                   class="flex h-5 w-5 items-center rounded-full justify-center text-white/40 transition hover:bg-white/10 hover:text-white"
                   @click="restoreShiftY"
-                  title="Reset vertical offset"
+                  title="Reset vertical offset" 
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -946,18 +946,18 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <div class="space-y-4">
+          <div class="space-y-4"> 
             <div>
-              <div class="mb-2 flex items-center justify-between gap-3">
-                <span class="text-[12px] font-medium text-white/70">水平</span>
+              <div class="mb-2 flex items-center justify-between gap-3"> 
+                <span class="text-[12px] font-medium text-white/70">水平</span> 
                 <span class="text-[11px] font-medium tabular-nums text-white/48">{{ shiftXPercent }}</span>
               </div>
               <RangeSlider
                 variant="compact-sm"
                 class="h-1 w-full"
                 :style="trackGradient(shiftXProgress)"
-                :min="MIN_PLAYER_OFFSET_X"
-                :max="MAX_PLAYER_OFFSET_X"
+                :min="MIN_PLAYER_OFFSET_X" 
+                :max="MAX_PLAYER_OFFSET_X" 
                 :step="SHIFT_STEP"
                 :model-value="stylePrefs.playerOffsetX"
                 @update:model-value="assignShiftX"
@@ -965,16 +965,16 @@ watch(() => props.coverHidden, async () => {
             </div>
 
             <div>
-              <div class="mb-2 flex items-center justify-between gap-3">
-                <span class="text-[12px] font-medium text-white/70">垂直</span>
+              <div class="mb-2 flex items-center justify-between gap-3"> 
+                <span class="text-[12px] font-medium text-white/70">垂直</span> 
                 <span class="text-[11px] font-medium tabular-nums text-white/48">{{ shiftYPercent }}</span>
               </div>
               <RangeSlider
                 variant="compact-sm"
                 class="h-1 w-full"
                 :style="trackGradient(shiftYProgress)"
-                :min="MIN_PLAYER_OFFSET_Y"
-                :max="MAX_PLAYER_OFFSET_Y"
+                :min="MIN_PLAYER_OFFSET_Y" 
+                :max="MAX_PLAYER_OFFSET_Y" 
                 :step="SHIFT_STEP"
                 :model-value="stylePrefs.playerOffsetY"
                 @update:model-value="assignShiftY"
@@ -982,7 +982,7 @@ watch(() => props.coverHidden, async () => {
             </div>
           </div>
 
-          <div class="mt-6 mb-3">
+          <div class="mt-6 mb-3"> 
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Font</div>
             <div class="mt-2 flex items-center justify-between gap-3">
               <span class="text-[12px] text-white/55">分别设置中/外文字体</span>
@@ -1005,10 +1005,10 @@ watch(() => props.coverHidden, async () => {
               <span class="text-[13px] text-white/85 font-medium">歌词字体</span>
               <button
                 v-if="stylePrefs.playerFontPreset !== DEFAULT_PLAYER_FONT_PRESET"
-                type="button"
+                type="button" 
                 class="flex h-5 w-5 items-center rounded-full justify-center text-white/40 transition hover:bg-white/10 hover:text-white"
                 @click="restoreFontPreset"
-                title="Reset"
+                title="Reset" 
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -1093,11 +1093,11 @@ watch(() => props.coverHidden, async () => {
 
     <div
       v-if="amlLines.length > 0"
-      class="lyrics-mask-shell h-full min-h-0 w-full min-w-0"
+      class="lyrics-mask-shell h-full min-h-0 w-full min-w-0" 
       :class="alignClass"
       :style="playerVars"
     >
-      <div class="lyrics-position-frame h-full min-h-0 w-full min-w-0">
+      <div class="lyrics-position-frame h-full min-h-0 w-full min-w-0"> 
         <WordLyricPlayer
           v-if="mountWordPlayer"
           ref="wordPlayerRef"
@@ -1107,12 +1107,12 @@ watch(() => props.coverHidden, async () => {
           :playing="nowPlaying"
           :disabled="props.disabled"
           :layout-version="stylePrefs.playerFontPreset"
-          align-anchor="center"
-          :align-position="0.42"
-          :enable-spring="true"
-          :enable-blur="true"
-          :enable-scale="true"
-          :hide-passed-lines="false"
+          align-anchor="center" 
+          :align-position="0.42" 
+          :enable-spring="true" 
+          :enable-blur="true" 
+          :enable-scale="true" 
+          :hide-passed-lines="false" 
           :word-fade-width="fadeWidth"
           :line-gap="stylePrefs.playerLineGap"
           @line-click="onLyricLineClick"
@@ -1135,15 +1135,15 @@ watch(() => props.coverHidden, async () => {
       <template v-else>{{ idleStateText }}</template>
     </div>
 
-    <Teleport to="body">
-      <transition name="font-preset-menu">
+    <Teleport to="body"> 
+      <transition name="font-preset-menu"> 
         <div
           v-if="isFontMenuVisible"
           ref="menuPanelRef"
-          class="lyrics-settings-glass z-[120] flex flex-col overflow-hidden rounded-3xl border border-white/15 p-2 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
+          class="lyrics-settings-glass z-[120] flex flex-col overflow-hidden rounded-3xl border border-white/15 p-2 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]" 
           :style="fontMenuPositionStyle"
           @click.stop
-          @mousedown.stop
+          @mousedown.stop 
         >
           <div class="min-h-0 space-y-1 overflow-y-auto pr-1 custom-scrollbar"> 
             <button 
@@ -1166,23 +1166,23 @@ watch(() => props.coverHidden, async () => {
             </button> 
           </div>
         </div>
-      </transition>
+      </transition> 
     </Teleport>
   </div>
 </template>
 
-<style scoped>
-.lyrics-settings-glass {
-  backdrop-filter: blur(32px) saturate(135%);
+<style scoped> /* 样式 */
+.lyrics-settings-glass { /* 样式 */
+  backdrop-filter: blur(32px) saturate(135%); /* 样式 */
   -webkit-backdrop-filter: blur(32px) saturate(135%);
   background: rgba(8, 8, 12, 0.74);
 }
 
 /* 歌词区域的上下羽化遮罩 */
-.lyrics-mask-shell {
-  position: relative;
+.lyrics-mask-shell { /* 样式 */
+  position: relative; /* 样式 */
   overflow: visible;
-  isolation: isolate;
+  isolation: isolate; /* 样式 */
   box-sizing: border-box;
   --lyrics-mask-bleed: 1.5em;
   --lyrics-edge-fade: 12%;
@@ -1192,19 +1192,19 @@ watch(() => props.coverHidden, async () => {
   padding-inline: var(--lyrics-mask-bleed);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.24) var(--lyrics-edge-softness), black var(--lyrics-edge-fade), black calc(100% - var(--lyrics-edge-fade)), rgba(0, 0, 0, 0.24) calc(100% - var(--lyrics-edge-softness)), transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.24) var(--lyrics-edge-softness), black var(--lyrics-edge-fade), black calc(100% - var(--lyrics-edge-fade)), rgba(0, 0, 0, 0.24) calc(100% - var(--lyrics-edge-softness)), transparent 100%);
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat; /* 样式 */
+  mask-repeat: no-repeat; /* 样式 */
+  -webkit-mask-size: 100% 100%; /* 样式 */
+  mask-size: 100% 100%; /* 样式 */
 }
 
 .word-lyric-host { min-width: 0; min-height: 0; }
 
 /* 位移层：偏移设置通过 CSS 变量生效 */
-.lyrics-position-frame {
-  transform: translate3d(var(--lyrics-offset-x, 0%), var(--lyrics-offset-y, 0%), 0);
-  transition: transform 180ms ease;
-  will-change: transform;
+.lyrics-position-frame { /* 样式 */
+  transform: translate3d(var(--lyrics-offset-x, 0%), var(--lyrics-offset-y, 0%), 0); /* 样式 */
+  transition: transform 180ms ease; /* 样式 */
+  will-change: transform; /* 样式 */
 }
 
 .lyrics-align-left { --lyrics-text-align: left; --lyrics-line-transform-origin: 0%; }

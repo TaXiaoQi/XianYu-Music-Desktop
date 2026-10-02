@@ -1,18 +1,18 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { X, Clock, Trash2, Flame } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router'; // 实现
 import { storeToRefs } from 'pinia';
-import { usePlayerViewState } from '../../composables/usePlayerViewState';
-import { useThemeSettings } from '../../composables/useThemeSettings';
+import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
+import { useThemeSettings } from '../../composables/useThemeSettings'; // 实现
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import { useAnnouncement } from '../../composables/useAnnouncement';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
 import { windowApi } from '../../services/tauri/windowApi';
-import { useAuthStore } from '../../features/auth/store';
+import { useAuthStore } from '../../features/auth/store'; // 实现
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { useSettings } from '../../features/settings/useSettings';
-import { useI18n } from '../../features/i18n';
+import { useI18n } from '../../features/i18n'; // 实现
 import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
@@ -21,36 +21,36 @@ import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue'; // 识�
 import TopBarControlItem from './TopBarControlItem.vue';
 import TopBarControlIcon from './TopBarControlIcon.vue';
 
-const router = useRouter();
-const route = useRoute();
+const router = useRouter(); // 实现
+const route = useRoute(); // 实现
 const showRecognition = ref(false); // 面板显隐
 const toggleRecognition = () => { // 切换显隐
   showRecognition.value = !showRecognition.value; // 取反状态
 }; // 切换结束
-const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
-const appWindow = getCurrentWindow();
+const { searchQuery, setSearch, isMiniMode } = usePlayerViewState(); // 实现
+const appWindow = getCurrentWindow(); // 实现
 const { settings, topBarLayout } = useSettings();
-const { t } = useI18n();
+const { t } = useI18n(); // 实现
 const { theme, isDarkTheme, toggleThemeMode, setThemeMode } = useThemeSettings();
 const { surfaceStyle } = useDesktopTheme();
 const uiStore = useUiStore();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
-const authStore = useAuthStore();
+const authStore = useAuthStore(); // 实现
 const navigationStore = useNavigationStore();
 const rotation = ref(0);
-const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath);
+const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath); // 实现
 const lastNonAuthRoute = ref(route.path === '/auth' ? '/' : route.fullPath);
-const isSettingsRoute = computed(() => route.path === '/settings');
-const isAuthRoute = computed(() => route.path === '/auth');
-const hasCustomBackground = computed(() => (
-  theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath)
+const isSettingsRoute = computed(() => route.path === '/settings'); // 实现
+const isAuthRoute = computed(() => route.path === '/auth'); // 实现
+const hasCustomBackground = computed(() => ( // 实现
+  theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath) // 实现
 ));
-const themeToggleTitle = computed(() => {
-  if (hasCustomBackground.value) {
-    return isDarkTheme.value ? t('topbar.darkText') : t('topbar.lightText');
+const themeToggleTitle = computed(() => { // 实现
+  if (hasCustomBackground.value) { // 实现
+    return isDarkTheme.value ? t('topbar.darkText') : t('topbar.lightText'); // 实现
   }
 
-  return isDarkTheme.value ? t('topbar.lightTheme') : t('topbar.darkTheme');
+  return isDarkTheme.value ? t('topbar.lightTheme') : t('topbar.darkTheme'); // 实现
 });
 
 // --- 顶部栏容器化布局 ---
@@ -60,8 +60,8 @@ const rightControls = computed(() => layout.value.right);
 
 const accountTitle = computed(() =>
   authStore.isLoggedIn
-    ? (authStore.user?.nickname || authStore.user?.username || t('topbar.profile'))
-    : t('topbar.login'),
+    ? (authStore.user?.nickname || authStore.user?.username || t('topbar.profile')) // 实现
+    : t('topbar.login'), // 实现
 );
 const accountAvatar = computed(() => (authStore.isLoggedIn ? authStore.user?.avatar ?? null : null));
 const accountInitial = computed(() =>
@@ -247,9 +247,9 @@ const closeWindow = async () => {
   }
 };
 
-onMounted(() => {
-  if (!authStore.initialized) {
-    void authStore.restoreSession();
+onMounted(() => { // 实现
+  if (!authStore.initialized) { // 实现
+    void authStore.restoreSession(); // 实现
   }
 });
 
@@ -263,7 +263,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    data-tauri-drag-region
+    data-tauri-drag-region 
     class="h-16 flex items-center gap-3 px-6 select-none shrink-0 relative z-[60]"
   >
     <div class="flex items-center gap-4 relative z-10 shrink-0">
@@ -275,17 +275,17 @@ onUnmounted(() => {
       <input
         ref="searchInputRef"
         type="text"
-        :placeholder="t('topbar.search')"
+        :placeholder="t('topbar.search')" 
         class="bg-transparent outline-none min-w-0 w-full placeholder-gray-700 dark:placeholder-gray-300 text-gray-800 dark:text-gray-100 text-sm font-medium"
-        :value="searchQuery"
-        @input="handleInput"
-        @keydown.enter="handleSearchEnter"
+        :value="searchQuery" 
+        @input="handleInput" 
+        @keydown.enter="handleSearchEnter" 
         @focus="handleSearchFocus"
         @blur="handleSearchBlur"
       />
       <button v-if="searchQuery" @click="setSearch('')" class="text-gray-500 dark:text-gray-400 hover:text-[#EC4141] ml-2 shrink-0 cursor-pointer">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"> 
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /> 
         </svg>
       </button>
 
@@ -294,8 +294,8 @@ onUnmounted(() => {
       <button
         @click.stop="toggleRecognition"
         class="text-gray-500 dark:text-gray-400 hover:text-[#EC4141] ml-1 shrink-0 cursor-pointer transition-colors"
-        :title="t('topbar.recognize')"
-        :aria-label="t('topbar.recognize')"
+        :title="t('topbar.recognize')" 
+        :aria-label="t('topbar.recognize')" 
       >
         <TopBarControlIcon item-key="recognize" class="h-5 w-5" />
       </button>
@@ -383,16 +383,16 @@ onUnmounted(() => {
 
     <div class="flex items-center gap-2 relative z-10 shrink-0">
       <TopBarControlItem v-for="key in rightControls" :key="key" :item-key="key" />
-      <div class="h-4 w-px bg-gray-400/30 mx-2"></div>
-      <div class="flex items-center gap-1">
-        <button @click.stop="isMiniMode = true" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.miniMode')">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /><rect x="12" y="12" width="6" height="4" rx="1" stroke-width="2" /></svg>
+      <div class="h-4 w-px bg-gray-400/30 mx-2"></div> 
+      <div class="flex items-center gap-1"> 
+        <button @click.stop="isMiniMode = true" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.miniMode')"> 
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /><rect x="12" y="12" width="6" height="4" rx="1" stroke-width="2" /></svg> 
         </button>
-        <button @click.stop="minimize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.minimize')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" /></svg></button>
+        <button @click.stop="minimize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.minimize')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" /></svg></button> 
         <button
           @click.stop="toggleMaximize"
           :disabled="isMaximizeDisabled"
-          :title="isMaximizeDisabled ? t('topbar.maximizeUnavailable') : t('topbar.maximize')"
+          :title="isMaximizeDisabled ? t('topbar.maximizeUnavailable') : t('topbar.maximize')" 
           :class="[
             'p-2 rounded-md transition-colors',
             isMaximizeDisabled
@@ -400,7 +400,7 @@ onUnmounted(() => {
               : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer',
           ]"
         ><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /></svg></button>
-        <button @click.stop="closeWindow" class="p-2 text-gray-900 dark:text-gray-100 hover:text-white hover:bg-[#EC4141] rounded-md transition-colors cursor-pointer" :title="t('topbar.close')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+        <button @click.stop="closeWindow" class="p-2 text-gray-900 dark:text-gray-100 hover:text-white hover:bg-[#EC4141] rounded-md transition-colors cursor-pointer" :title="t('topbar.close')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button> 
       </div>
     </div>
   </div>

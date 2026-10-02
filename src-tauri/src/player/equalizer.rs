@@ -6,7 +6,7 @@
 
 use rodio::{source::SeekError, Source};
 use std::sync::{atomic::{AtomicBool, AtomicU32, Ordering}, Arc, Mutex};
-use std::time::Duration;
+use core::time::Duration;
 
 /// 十段中心频率（Hz）。
 pub const BANDS: [f32; 10] = [31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
@@ -16,30 +16,30 @@ pub const BANDS: [f32; 10] = [31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 
 // ---------------------------------------------------------------------------
 
 /// 前后端共享的均衡器参数快照。
-#[derive(Clone, Debug, PartialEq)]
-pub struct EqualizerSettings {
+#[derive(PartialEq, Debug, Clone)]
+pub struct EqualizerSettings { // EqualizerSettings
     pub enabled: bool,    // 总开关
     pub preamp: f32,      // 前置增益（dB）
     pub gains: [f32; 10], // 各频段增益（dB）
 }
 
-impl Default for EqualizerSettings {
-    fn default() -> Self {
+impl Default for EqualizerSettings { // Default
+    fn default() -> Self { // default
         Self { enabled: false, preamp: 0.0, gains: [0.0; 10] }
     }
 }
 
 /// 线程侧控制句柄：参数存于互斥量，dirty 标志供需要时轮询。
-pub struct EqualizerHandle {
+pub struct EqualizerHandle { // EqualizerHandle
     pub settings: Arc<Mutex<EqualizerSettings>>, // 共享参数槽
     pub dirty: Arc<AtomicBool>,                  // 参数已更新标记
 }
 
-impl EqualizerHandle {
-    pub fn new(settings: EqualizerSettings) -> Self {
+impl EqualizerHandle { // EqualizerHandle
+    pub fn new(settings: EqualizerSettings) -> Self { // new
         Self {
-            settings: Arc::new(Mutex::new(settings)),
-            dirty: Arc::new(AtomicBool::new(false)),
+            settings: Arc::new(Mutex::new(settings)), // 实现
+            dirty: Arc::new(AtomicBool::new(false)), // 实现
         }
     }
 
@@ -48,7 +48,7 @@ impl EqualizerHandle {
         if let Ok(mut slot) = self.settings.lock() {
             *slot = next;
         }
-        self.dirty.store(true, Ordering::Relaxed);
+        self.dirty.store(true, Ordering::Relaxed); // 实现
     }
 }
 
@@ -169,7 +169,7 @@ fn ramp_frames(sample_rate: u32) -> usize {
 }
 
 /// 十段均衡器源。参数变化经平滑过渡，全零参数时自动硬旁路。
-pub struct Equalizer<I> {
+pub struct Equalizer<I> { // Equalizer
     upstream: I,
     live_config: Arc<Mutex<EqualizerSettings>>,
 
@@ -208,14 +208,14 @@ impl<I> Equalizer<I> where I: Source<Item = f32> {
         let hz = upstream.sample_rate();
         let lane_total = upstream.channels();
 
-        let mut eq = Self {
+        let mut eq = Self { // 实现
             upstream,
             live_config: handle.settings.clone(),
             active_config: boot.clone(),
-            current_preamp: 1.0,
-            target_preamp: 1.0,
-            current_gains: [0.0; 10],
-            target_gains: [0.0; 10],
+            current_preamp: 1.0, // 实现
+            target_preamp: 1.0, // 实现
+            current_gains: [0.0; 10], // 实现
+            target_gains: [0.0; 10], // 实现
             ramp_len: ramp_frames(hz),
             ramp_pos: 0,
             ramping: false,
@@ -251,14 +251,14 @@ impl<I> Equalizer<I> where I: Source<Item = f32> {
 
     /// 运行期吸收新参数：只挪目标并进入平滑；关闭时先淡出再旁路。
     fn absorb_update(&mut self, settings: &EqualizerSettings) {
-        if settings.enabled {
+        if settings.enabled { // 实现
             self.target_preamp = preamp_gain(settings.preamp);
-            self.target_gains = settings.gains;
+            self.target_gains = settings.gains; // 实现
             self.muted = false;
             self.winding_down = false;
         } else {
-            self.target_preamp = 1.0;
-            self.target_gains = [0.0; 10];
+            self.target_preamp = 1.0; // 实现
+            self.target_gains = [0.0; 10]; // 实现
             self.winding_down = true;
         }
     }
@@ -325,8 +325,8 @@ impl<I> Equalizer<I> where I: Source<Item = f32> {
         let ratio = self.ramp_pos as f32 / self.ramp_len as f32;
 
         if ratio >= 1.0 {
-            self.current_preamp = self.target_preamp;
-            self.current_gains = self.target_gains;
+            self.current_preamp = self.target_preamp; // 实现
+            self.current_gains = self.target_gains; // 实现
             self.ramping = false;
 
             if self.winding_down {
@@ -365,7 +365,7 @@ impl<I> Equalizer<I> where I: Source<Item = f32> {
 }
 
 impl<I> Iterator for Equalizer<I> where I: Source<Item = f32> {
-    type Item = f32;
+    type Item = f32; // 实现
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
@@ -418,7 +418,7 @@ impl<I> Source for Equalizer<I> where I: Source<Item = f32> {
 
     /// seek 后回帧首并清状态记忆，避免旧数据串音。
     #[inline]
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> { // try_seek
         self.lane_pos = 0;
         self.flush_all_stages();
         self.upstream.try_seek(pos)
@@ -430,7 +430,7 @@ impl<I> Source for Equalizer<I> where I: Source<Item = f32> {
 // ---------------------------------------------------------------------------
 
 /// 用户音量平滑源：目标音量以 f32 位模式经原子量传递。
-pub struct UserVolumeSource<I> {
+pub struct UserVolumeSource<I> { // UserVolumeSource
     upstream: I,
     volume_state: Arc<AtomicU32>,
     applied: f32,
@@ -465,7 +465,7 @@ impl<I> UserVolumeSource<I> where I: Source<Item = f32> {
 }
 
 impl<I> Iterator for UserVolumeSource<I> where I: Source<Item = f32> {
-    type Item = f32;
+    type Item = f32; // 实现
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
@@ -508,7 +508,7 @@ impl<I> Source for UserVolumeSource<I> where I: Source<Item = f32> {
     #[inline] fn total_duration(&self) -> Option<Duration> { self.upstream.total_duration() }
     /// seek 后回到帧首。
     #[inline]
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> { // try_seek
         self.lane_pos = 0;
         self.upstream.try_seek(pos)
     }
@@ -519,21 +519,21 @@ impl<I> Source for UserVolumeSource<I> where I: Source<Item = f32> {
 // ---------------------------------------------------------------------------
 
 /// 限幅末端：统计越界样本与峰值，并把输出压回 [-1, 1]。
-pub struct ClipGuardSource<I> {
+pub struct ClipGuardSource<I> { // ClipGuardSource
     upstream: I,
     overflow: u64,
     total: u64,
     peak: f32,
 }
 
-impl<I> ClipGuardSource<I> {
+impl<I> ClipGuardSource<I> { // ClipGuardSource
     pub fn new(upstream: I) -> Self {
         Self { upstream, overflow: 0, total: 0, peak: 0.0 }
     }
 }
 
 impl<I> Iterator for ClipGuardSource<I> where I: Source<Item = f32> {
-    type Item = f32;
+    type Item = f32; // 实现
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
@@ -561,14 +561,14 @@ impl<I> Source for ClipGuardSource<I> where I: Source<Item = f32> {
     fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> { self.upstream.try_seek(pos) }
 }
 
-#[cfg(test)]
+#[cfg(test)] // 实现
 mod equalizer_tests {
-    use super::*;
+    use super::*; // 实现
 
     /// 测试专用：按顺序吐出固定采样的源。
     struct FixedFeed {
-        samples: Vec<f32>,
-        cursor: usize,
+        samples: Vec<f32>, // 实现
+        cursor: usize, // 实现
         lanes: u16,
         hz: u32,
     }
@@ -580,7 +580,7 @@ mod equalizer_tests {
     }
 
     impl Iterator for FixedFeed {
-        type Item = f32;
+        type Item = f32; // 实现
         fn next(&mut self) -> Option<f32> {
             let value = self.samples.get(self.cursor).copied()?;
             self.cursor += 1;
@@ -593,8 +593,8 @@ mod equalizer_tests {
         fn sample_rate(&self) -> u32 { self.hz }
         fn current_frame_len(&self) -> Option<usize> { Some(self.samples.len() - self.cursor) }
         fn total_duration(&self) -> Option<Duration> { None }
-        fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> {
-            self.cursor = 0;
+        fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> { // try_seek
+            self.cursor = 0; // 实现
             Ok(())
         }
     }
@@ -634,7 +634,7 @@ mod equalizer_tests {
     #[test]
     fn stereo_lanes_process_independently() {
         let mut feed_data = Vec::new();
-        for _ in 0..100 {
+        for _ in 0..100 { // 实现
             feed_data.push(0.5);
             feed_data.push(-0.5);
         }
@@ -644,12 +644,12 @@ mod equalizer_tests {
             Arc::new(EqualizerHandle::new(settings)),
         );
 
-        let mut left_out = Vec::new();
-        let mut right_out = Vec::new();
-        while let Some(l) = eq.next() {
-            left_out.push(l);
-            if let Some(r) = eq.next() {
-                right_out.push(r);
+        let mut left_out = Vec::new(); // 实现
+        let mut right_out = Vec::new(); // 实现
+        while let Some(l) = eq.next() { // 实现
+            left_out.push(l); // 实现
+            if let Some(r) = eq.next() { // 实现
+                right_out.push(r); // 实现
             }
         }
 
@@ -670,30 +670,30 @@ mod equalizer_tests {
 
     #[test]
     fn enabling_equalizer_after_bypass_raises_output() {
-        let handle = Arc::new(EqualizerHandle::new(EqualizerSettings::default()));
+        let handle = Arc::new(EqualizerHandle::new(EqualizerSettings::default())); // 实现
         let mut eq = Equalizer::new(
             FixedFeed::new(vec![0.25; 8_000], 1, 44100),
             handle.clone(),
         );
 
-        for _ in 0..300 {
-            assert_eq!(eq.next().unwrap(), 0.25);
+        for _ in 0..300 { // 实现
+            assert_eq!(eq.next().unwrap(), 0.25); // 实现
         }
 
-        handle.set_settings(EqualizerSettings {
-            enabled: true,
-            preamp: 6.0,
-            gains: [0.0; 10],
+        handle.set_settings(EqualizerSettings { // 实现
+            enabled: true, // 实现
+            preamp: 6.0, // 实现
+            gains: [0.0; 10], // 实现
         });
 
-        let mut last = 0.25;
-        for _ in 0..4_000 {
-            last = eq.next().unwrap();
+        let mut last = 0.25; // 实现
+        for _ in 0..4_000 { // 实现
+            last = eq.next().unwrap(); // 实现
         }
 
         assert!(
-            last > 0.35,
-            "expected enabled preamp to raise output, got {last}"
+            last > 0.35, // 实现
+            "expected enabled preamp to raise output, got {last}" // 实现
         );
     }
 }

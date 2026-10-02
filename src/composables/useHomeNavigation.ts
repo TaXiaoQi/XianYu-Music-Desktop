@@ -4,10 +4,10 @@ import type { LocationQueryRaw, RouteLocationRaw, Router } from 'vue-router';
 type FilteredHomeView = 'artist' | 'album' | 'playlist';
 
 type HomeViewTarget =
-  | { view: 'all' }
+  | { view: 'all' } // 实现
   | { view: FilteredHomeView; filter: string }
-  | { view: 'folder'; folder?: string }
-  | { view: 'statistics' };
+  | { view: 'folder'; folder?: string } // 实现
+  | { view: 'statistics' }; // 实现
 
 type ShellSection =
   | 'home'
@@ -109,18 +109,18 @@ export function useHomeNavigation(router: Router) {
   return {
     openApp,
     openHome,
-    openHomeAll,
-    openHomeArtist,
-    openHomeAlbum,
-    openHomePlaylist,
-    openHomeFolder,
-    openHomeStatistics,
-    openArtists,
+    openHomeAll, // 实现
+    openHomeArtist, // 实现
+    openHomeAlbum, // 实现
+    openHomePlaylist, // 实现
+    openHomeFolder, // 实现
+    openHomeStatistics, // 实现
+    openArtists, // 实现
     openAlbums,
-    openFavorites,
+    openFavorites, // 实现
     openRecent,
     openPlugins,
-    openSettings,
+    openSettings, // 实现
     openAuth,
   };
 }

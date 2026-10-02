@@ -1,25 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest'; // 实现
 
 import source from './windowMaterial.ts?raw';
 
 import {
-  rebuildWindowMaterialForCompositor,
-  resolveWindowMaterial,
+  rebuildWindowMaterialForCompositor, // 实现
+  resolveWindowMaterial, // 实现
   useWindowMaterial,
-  type WindowMaterialCapabilities,
-} from './windowMaterial';
+  type WindowMaterialCapabilities, // 实现
+} from './windowMaterial'; // 实现
 
 // ---------------------------------------------------------------------------
 // 能力快照构造
 // ---------------------------------------------------------------------------
 
 const baseCapabilities: WindowMaterialCapabilities = {
-  isWindows: true,
-  supportsAcrylic: true,
-  supportsMica: true,
-  supportsBlur: true,
-  systemTransparencyEnabled: true,
-  windowsBuildNumber: 19045,
+  isWindows: true, // 实现
+  supportsAcrylic: true, // 实现
+  supportsMica: true, // 实现
+  supportsBlur: true, // 实现
+  systemTransparencyEnabled: true, // 实现
+  windowsBuildNumber: 19045, // 实现
 };
 
 const withCapabilities = (overrides: Partial<WindowMaterialCapabilities>): WindowMaterialCapabilities => ({
@@ -48,29 +48,29 @@ const buildRebuildDeps = (log: string[], appliedMaterial: 'acrylic' | 'none') =>
 describe('resolveWindowMaterial 材质降级解析', () => {
   it('Win10 仅放行 blur，mica 与 acrylic 需要 Win11', () => {
     const win10 = withCapabilities({
-      supportsMica: false,
-      windowsBuildNumber: 19045,
+      supportsMica: false, // 实现
+      windowsBuildNumber: 19045, // 实现
     });
 
-    expect(resolveWindowMaterial('blur', win10)).toBe('blur');
-    expect(resolveWindowMaterial('acrylic', win10)).toBe('none');
-    expect(resolveWindowMaterial('mica', win10)).toBe('none');
+    expect(resolveWindowMaterial('blur', win10)).toBe('blur'); // 实现
+    expect(resolveWindowMaterial('acrylic', win10)).toBe('none'); // 实现
+    expect(resolveWindowMaterial('mica', win10)).toBe('none'); // 实现
   });
 
   it('Win11 上 acrylic 与 mica 均可用', () => {
     const win11 = withCapabilities({
-      supportsBlur: false,
-      windowsBuildNumber: 22631,
+      supportsBlur: false, // 实现
+      windowsBuildNumber: 22631, // 实现
     });
 
-    expect(resolveWindowMaterial('acrylic', win11)).toBe('acrylic');
-    expect(resolveWindowMaterial('mica', win11)).toBe('mica');
+    expect(resolveWindowMaterial('acrylic', win11)).toBe('acrylic'); // 实现
+    expect(resolveWindowMaterial('mica', win11)).toBe('mica'); // 实现
   });
 
   it('系统透明度被关闭时，所有材质全部回退 none', () => {
     const transparencyOff = withCapabilities({
-      systemTransparencyEnabled: false,
-      windowsBuildNumber: 19045,
+      systemTransparencyEnabled: false, // 实现
+      windowsBuildNumber: 19045, // 实现
     });
 
     expect(resolveWindowMaterial('blur', transparencyOff)).toBe('none');

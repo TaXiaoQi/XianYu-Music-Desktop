@@ -1,9 +1,9 @@
-<script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
-import { open } from '@tauri-apps/plugin-dialog';
+<script setup lang="ts"> // 实现
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'; // 实现
+import { open } from '@tauri-apps/plugin-dialog'; // 实现
 import { listen } from '@tauri-apps/api/event';
 import { Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
-import type { Playlist, Song } from '../../types';
+import type { Playlist, Song } from '../../types'; // 实现
 import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin, importPlaylistFromFavorites } from '../../services/domain/playlistImport';
 import type { PlaylistImportResult, PlaylistSource } from '../../services/domain/playlistImport';
 import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/domain/backupImport';
@@ -13,27 +13,27 @@ import {
   preparePluginBackupFileContent,
   type PreparedPluginBackupImport,
 } from '../../services/domain/pluginBackupImport';
-import { fileApi } from '../../services/tauri/fileApi';
+import { fileApi } from '../../services/tauri/fileApi'; // 实现
 import { useToast } from '../../composables/toast'; // 实现
 import { modalDragInterceptActive } from '../../composables/dragState';
 import { pluginsVersion, getStoredPlugins } from '../../services/domain/pluginEngine';
 
 type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 
-const props = defineProps<{
-  visible: boolean;
-  playlists: Playlist[];
+const props = defineProps<{ // 实现
+  visible: boolean; // 实现
+  playlists: Playlist[]; // 实现
   mode?: 'create' | 'import' | 'all';
 }>();
 
-const emit = defineEmits<{
-  (event: 'update:visible', value: boolean): void;
-  (event: 'create', name: string): void;
+const emit = defineEmits<{ // 实现
+  (event: 'update:visible', value: boolean): void; // 实现
+  (event: 'create', name: string): void; // 实现
   ( // 实现
     event: 'import', // 实现
     payload: { result: PlaylistImportResult; rename?: string }, // 实现
   ): void; // 实现
-  (event: 'import-local', payload: { name: string; songs: Song[] }): void;
+  (event: 'import-local', payload: { name: string; songs: Song[] }): void; // 实现
   (event: 'import-backup', payload: ImportedPlaylist[]): void;
   (event: 'import-backup-online', payload: PreparedPluginBackupImport): void;
 }>();
@@ -46,28 +46,28 @@ const getDefaultTab = (): TabType => {
 };
 
 const activeTab = ref<TabType>(getDefaultTab());
-const isClosing = ref(false);
+const isClosing = ref(false); // 实现
 const isOpening = ref(true);
 
-const createName = ref('');
-const createInputRef = ref<HTMLInputElement | null>(null);
+const createName = ref(''); // 实现
+const createInputRef = ref<HTMLInputElement | null>(null); // 实现
 
-const importInput = ref('');
-const importInputRef = ref<HTMLInputElement | null>(null);
+const importInput = ref(''); // 实现
+const importInputRef = ref<HTMLInputElement | null>(null); // 实现
 const importSources = ref<PlaylistSource[]>(getImportSourcesFromPlugins());
 const selectedSource = ref<string>('auto'); // 实现
 const sourceDropdownOpen = ref(false); // 实现
-const importRename = ref('');
-const importRenameRef = ref<HTMLInputElement | null>(null);
+const importRename = ref(''); // 实现
+const importRenameRef = ref<HTMLInputElement | null>(null); // 实现
 const importing = ref(false); // 实现
 const importError = ref(''); // 实现
 // 云端导入两步式：先搜索解析出预览（不落库），用户确认后才真正导入
 const importPreview = ref<PlaylistImportResult | null>(null);
 
-const localPlaylistName = ref('');
-const localPlaylistNameRef = ref<HTMLInputElement | null>(null);
-const localFolderPath = ref('');
-const localImportError = ref('');
+const localPlaylistName = ref(''); // 实现
+const localPlaylistNameRef = ref<HTMLInputElement | null>(null); // 实现
+const localFolderPath = ref(''); // 实现
+const localImportError = ref(''); // 实现
 
 const backupFilePath = ref('');
 const backupFileName = ref('');
@@ -88,7 +88,7 @@ let unlistenDragOver: (() => void) | null = null;
 let unlistenDragLeave: (() => void) | null = null;
 
 const allTabs: { type: TabType; label: string }[] = [
-  { type: 'create', label: '新建歌单' },
+  { type: 'create', label: '新建歌单' }, // 实现
   { type: 'backupImport', label: '备份导入' },
   { type: 'localFolderImport', label: '本地导入' },
   { type: 'networkImport', label: '云端导入' },
@@ -148,7 +148,7 @@ async function handleDropPaths(paths: string[]) {
     } else {
       backupImportError.value = `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
     }
-  } else if (activeTab.value === 'localFolderImport') {
+  } else if (activeTab.value === 'localFolderImport') { // 实现
     for (const p of paths) {
       try {
         const isDir = await fileApi.isDirectory(p);
@@ -180,9 +180,9 @@ watch( // 实现
       importRename.value = ''; // 实现
       importError.value = ''; // 实现
       importPreview.value = null;
-      localPlaylistName.value = '';
-      localFolderPath.value = '';
-      localImportError.value = '';
+      localPlaylistName.value = ''; // 实现
+      localFolderPath.value = ''; // 实现
+      localImportError.value = ''; // 实现
       backupFilePath.value = '';
       backupFileName.value = '';
       backupDetectedFormat.value = '';
@@ -216,18 +216,18 @@ watch(pluginsVersion, () => {
   }
 });
 
-watch(activeTab, async () => {
-  await nextTick();
-  focusCurrentTab();
+watch(activeTab, async () => { // 实现
+  await nextTick(); // 实现
+  focusCurrentTab(); // 实现
 });
 
-const focusCurrentTab = () => {
-  if (activeTab.value === 'create' && createInputRef.value) {
-    createInputRef.value.focus();
-  } else if (activeTab.value === 'networkImport' && importInputRef.value) {
-    importInputRef.value.focus();
-  } else if (activeTab.value === 'localFolderImport' && localPlaylistNameRef.value) {
-    localPlaylistNameRef.value.focus();
+const focusCurrentTab = () => { // 实现
+  if (activeTab.value === 'create' && createInputRef.value) { // 实现
+    createInputRef.value.focus(); // 实现
+  } else if (activeTab.value === 'networkImport' && importInputRef.value) { // 实现
+    importInputRef.value.focus(); // 实现
+  } else if (activeTab.value === 'localFolderImport' && localPlaylistNameRef.value) { // 实现
+    localPlaylistNameRef.value.focus(); // 实现
   }
 };
 
@@ -256,41 +256,41 @@ const closeSourceDropdown = () => {
   sourceDropdownOpen.value = false;
 };
 
-const handleClose = () => {
-  if (importing.value) return;
-  isClosing.value = true;
-  setTimeout(() => {
-    emit('update:visible', false);
-    isClosing.value = false;
+const handleClose = () => { // 实现
+  if (importing.value) return; // 实现
+  isClosing.value = true; // 实现
+  setTimeout(() => { // 实现
+    emit('update:visible', false); // 实现
+    isClosing.value = false; // 实现
   }, 200);
 };
 
 // ==================== 文件/文件夹选择 ====================
 
-const handleChooseLocalFolder = async () => {
-  if (importing.value) return;
+const handleChooseLocalFolder = async () => { // 实现
+  if (importing.value) return; // 实现
 
   try {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: '选择包含音乐的文件夹',
+    const selected = await open({ // 实现
+      directory: true, // 实现
+      multiple: false, // 实现
+      title: '选择包含音乐的文件夹', // 实现
     });
-    if (typeof selected === 'string') {
-      localFolderPath.value = selected;
-      localImportError.value = '';
+    if (typeof selected === 'string') { // 实现
+      localFolderPath.value = selected; // 实现
+      localImportError.value = ''; // 实现
     }
-  } catch (e: any) {
-    localImportError.value = `选择文件夹失败: ${e?.message || e}`;
+  } catch (e: any) { // 实现
+    localImportError.value = `选择文件夹失败: ${e?.message || e}`; // 实现
   }
 };
 
 const handleChooseBackupFile = async () => {
-  if (importing.value) return;
+  if (importing.value) return; // 实现
 
   try {
-    const selected = await open({
-      multiple: false,
+    const selected = await open({ // 实现
+      multiple: false, // 实现
       title: '选择备份/播放列表文件',
       filters: [
         { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
@@ -300,10 +300,10 @@ const handleChooseBackupFile = async () => {
         { name: '椒盐音乐导出', extensions: ['txt'] },
       ],
     });
-    if (typeof selected === 'string') {
+    if (typeof selected === 'string') { // 实现
       await loadBackupFile(selected);
     }
-  } catch (e: any) {
+  } catch (e: any) { // 实现
     backupImportError.value = `选择文件失败: ${e?.message || e}`;
   }
 };
@@ -334,7 +334,7 @@ async function loadBackupFile(filePath: string) {
       const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
       backupDetectedFormat.value = `${playlists.length} 个歌单 · ${totalSongs} 首歌曲`;
     }
-  } catch (e: any) {
+  } catch (e: any) { // 实现
     backupImportError.value = `解析失败: ${e?.message || e}`;
     backupFilePath.value = '';
     backupFileName.value = '';
@@ -347,15 +347,15 @@ async function loadBackupFile(filePath: string) {
 // ==================== 确认操作 ====================
 
 const handleConfirm = async () => { // 实现
-  if (activeTab.value === 'create') {
-    if (!createName.value.trim()) return;
-    isClosing.value = true;
-    setTimeout(() => {
-      emit('create', createName.value.trim());
-      emit('update:visible', false);
-      isClosing.value = false;
+  if (activeTab.value === 'create') { // 实现
+    if (!createName.value.trim()) return; // 实现
+    isClosing.value = true; // 实现
+    setTimeout(() => { // 实现
+      emit('create', createName.value.trim()); // 实现
+      emit('update:visible', false); // 实现
+      isClosing.value = false; // 实现
     }, 200);
-  } else if (activeTab.value === 'networkImport') {
+  } else if (activeTab.value === 'networkImport') { // 实现
     if (importing.value) return;
     importError.value = ''; // 实现
     // 第一步：搜索解析 → 预览（不落库，等用户确认）
@@ -396,41 +396,41 @@ const handleConfirm = async () => { // 实现
 
     // 第二步：确认导入
     const rename = importRename.value.trim();
-    isClosing.value = true;
-    setTimeout(() => {
+    isClosing.value = true; // 实现
+    setTimeout(() => { // 实现
       emit('import', {
         result: importPreview.value!,
         rename: rename.length > 0 ? rename : undefined,
       });
-      emit('update:visible', false);
-      isClosing.value = false;
+      emit('update:visible', false); // 实现
+      isClosing.value = false; // 实现
     }, 200);
-  } else if (activeTab.value === 'localFolderImport') {
-    const name = localPlaylistName.value.trim();
-    if (!name || !localFolderPath.value || importing.value) return;
+  } else if (activeTab.value === 'localFolderImport') { // 实现
+    const name = localPlaylistName.value.trim(); // 实现
+    if (!name || !localFolderPath.value || importing.value) return; // 实现
 
-    localImportError.value = '';
-    importing.value = true;
+    localImportError.value = ''; // 实现
+    importing.value = true; // 实现
     try {
-      const songs = await fileApi.parseMusicFolder(localFolderPath.value);
-      if (songs.length === 0) {
-        localImportError.value = '所选文件夹中未读取到支持的音乐文件';
-        showToast('所选文件夹中未读取到支持的音乐文件', 'error');
+      const songs = await fileApi.parseMusicFolder(localFolderPath.value); // 实现
+      if (songs.length === 0) { // 实现
+        localImportError.value = '所选文件夹中未读取到支持的音乐文件'; // 实现
+        showToast('所选文件夹中未读取到支持的音乐文件', 'error'); // 实现
         return;
       }
 
-      showToast(`成功读取 ${songs.length} 首歌曲`, 'success');
-      isClosing.value = true;
-      setTimeout(() => {
-        emit('import-local', { name, songs });
-        emit('update:visible', false);
-        isClosing.value = false;
+      showToast(`成功读取 ${songs.length} 首歌曲`, 'success'); // 实现
+      isClosing.value = true; // 实现
+      setTimeout(() => { // 实现
+        emit('import-local', { name, songs }); // 实现
+        emit('update:visible', false); // 实现
+        isClosing.value = false; // 实现
       }, 200);
-    } catch (e: any) {
-      localImportError.value = `读取文件夹失败: ${e?.message || e}`;
-      showToast(`读取文件夹失败: ${e?.message || e}`, 'error');
+    } catch (e: any) { // 实现
+      localImportError.value = `读取文件夹失败: ${e?.message || e}`; // 实现
+      showToast(`读取文件夹失败: ${e?.message || e}`, 'error'); // 实现
     } finally {
-      importing.value = false;
+      importing.value = false; // 实现
     }
   } else if (activeTab.value === 'backupImport') {
     if (importing.value) return;
@@ -442,11 +442,11 @@ const handleConfirm = async () => { // 实现
       }
       const result = backupPluginResult.value;
       showToast(`已导入 ${result.importedSongCount} 首歌曲，${result.failures.length} 首未导入`, 'success');
-      isClosing.value = true;
-      setTimeout(() => {
+      isClosing.value = true; // 实现
+      setTimeout(() => { // 实现
         emit('import-backup-online', result);
-        emit('update:visible', false);
-        isClosing.value = false;
+        emit('update:visible', false); // 实现
+        isClosing.value = false; // 实现
       }, 200);
     } else {
       if (backupPreviewPlaylists.value.length === 0) return;
@@ -457,26 +457,26 @@ const handleConfirm = async () => { // 实现
         `成功导入 ${backupPreviewPlaylists.value.length} 个歌单，共 ${totalSongs} 首歌曲`,
         'success',
       );
-      isClosing.value = true;
-      setTimeout(() => {
+      isClosing.value = true; // 实现
+      setTimeout(() => { // 实现
         emit('import-backup', backupPreviewPlaylists.value);
-        emit('update:visible', false);
-        isClosing.value = false;
+        emit('update:visible', false); // 实现
+        isClosing.value = false; // 实现
       }, 200);
     }
   }
 };
 
-const canConfirm = computed(() => {
-  if (activeTab.value === 'create') return createName.value.trim().length > 0;
-  if (activeTab.value === 'networkImport') {
+const canConfirm = computed(() => { // 实现
+  if (activeTab.value === 'create') return createName.value.trim().length > 0; // 实现
+  if (activeTab.value === 'networkImport') { // 实现
     if (importing.value) return false;
     return importPreview.value ? true : importInput.value.trim().length > 0;
   }
-  if (activeTab.value === 'localFolderImport') {
-    return localPlaylistName.value.trim().length > 0
-      && localFolderPath.value.length > 0
-      && !importing.value;
+  if (activeTab.value === 'localFolderImport') { // 实现
+    return localPlaylistName.value.trim().length > 0 // 实现
+      && localFolderPath.value.length > 0 // 实现
+      && !importing.value; // 实现
   }
   if (activeTab.value === 'backupImport') {
     if (importing.value) return false;
@@ -485,31 +485,31 @@ const canConfirm = computed(() => {
     }
     return backupPreviewPlaylists.value.length > 0;
   }
-  return false;
+  return false; // 实现
 });
 
-const confirmText = computed(() => {
-  if (activeTab.value === 'create') return '创建';
-  if (activeTab.value === 'networkImport') {
+const confirmText = computed(() => { // 实现
+  if (activeTab.value === 'create') return '创建'; // 实现
+  if (activeTab.value === 'networkImport') { // 实现
     if (importing.value) return '搜索中…';
     return importPreview.value ? '确认导入' : '搜索';
   }
-  if (activeTab.value === 'localFolderImport') {
-    return importing.value ? '读取中…' : '读取并创建';
+  if (activeTab.value === 'localFolderImport') { // 实现
+    return importing.value ? '读取中…' : '读取并创建'; // 实现
   }
   if (activeTab.value === 'backupImport') {
     return importing.value ? '解析中…' : '导入歌单';
   }
   if (importing.value) return '导入中…'; // 实现
-  return '导入';
+  return '导入'; // 实现
 });
 
-const handleKeydown = (e: KeyboardEvent) => {
-  if (!props.visible) return;
+const handleKeydown = (e: KeyboardEvent) => { // 实现
+  if (!props.visible) return; // 实现
   if (e.key === 'Escape' && !importing.value) { // 实现
-    handleClose();
+    handleClose(); // 实现
   } else if (e.key === 'Enter' && !sourceDropdownOpen.value && !importing.value) { // 实现
-    handleConfirm();
+    handleConfirm(); // 实现
   }
 };
 
@@ -521,20 +521,20 @@ onMounted(() => {
     });
   });
 });
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => window.removeEventListener('keydown', handleKeydown)); // 实现
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body"> 
     <div
-      v-if="visible"
-      class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
-      :class="{ 'pointer-events-none': isClosing }"
+      v-if="visible" 
+      class="fixed inset-0 z-[10000] flex items-center justify-center p-4" 
+      :class="{ 'pointer-events-none': isClosing }" 
     >
       <div
-        class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
+        class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out" 
         :class="isClosing ? 'opacity-0' : (isOpening ? 'opacity-0' : 'opacity-100')"
-        @click="handleClose"
+        @click="handleClose" 
       ></div>
 
       <div
@@ -542,25 +542,25 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
         style="transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1)" 
         :class="[
           isClosing ? 'scale-95 opacity-0 translate-y-4' : (isOpening ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 translate-y-0'),
-          'border border-white/20 ring-1 ring-black/5'
+          'border border-white/20 ring-1 ring-black/5' 
         ]"
       >
         <div v-if="tabs.length > 1" class="relative px-6 pt-5 pb-0 border-b border-gray-200 dark:border-gray-700">
-          <div class="flex items-center gap-4">
+          <div class="flex items-center gap-4"> 
             <button
-              v-for="tab in tabs"
-              :key="tab.type"
-              type="button"
-              class="relative whitespace-nowrap pb-3 text-sm font-medium transition-colors"
-              :class="activeTab === tab.type
-                ? 'text-[#EC4141]'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-              @click="activeTab = tab.type"
+              v-for="tab in tabs" 
+              :key="tab.type" 
+              type="button" 
+              class="relative whitespace-nowrap pb-3 text-sm font-medium transition-colors" 
+              :class="activeTab === tab.type 
+                ? 'text-[#EC4141]' 
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'" 
+              @click="activeTab = tab.type" 
             >
-              {{ tab.label }}
+              {{ tab.label }} 
               <span
-                class="absolute left-0 right-0 -bottom-px h-[2px] bg-[#EC4141] rounded-full transition-all duration-300 ease-out"
-                :class="activeTab === tab.type ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'"
+                class="absolute left-0 right-0 -bottom-px h-[2px] bg-[#EC4141] rounded-full transition-all duration-300 ease-out" 
+                :class="activeTab === tab.type ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'" 
               ></span>
             </button>
           </div>
@@ -571,27 +571,27 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           :class="activeTab === 'create' ? 'h-auto' : 'h-[340px]'"
         >
           <div class="flex-1 flex flex-col overflow-y-auto px-1 -mx-1">
-          <Transition name="tab-fade" mode="out-in">
+          <Transition name="tab-fade" mode="out-in"> 
             <div v-if="activeTab === 'create'" key="create" class="flex-1 flex flex-col justify-center space-y-2">
-              <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单名称</label>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单名称</label> 
               <input
-                ref="createInputRef"
-                v-model="createName"
+                ref="createInputRef" 
+                v-model="createName" 
                 type="text"
-                placeholder="请输入歌单名称"
-                class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm"
+                placeholder="请输入歌单名称" 
+                class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm" 
               />
-              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
+              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40"> 
                 创建一个空白歌单，之后可以手动添加歌曲或从其他来源导入。
               </p>
             </div>
 
             <div v-else-if="activeTab === 'networkImport'" key="network-import" class="flex-1 flex flex-col space-y-3">
-              <div class="space-y-1.5">
+              <div class="space-y-1.5"> 
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">选择音源</label> 
                 <div class="relative">
                   <button
-                    type="button"
+                    type="button" 
                     :disabled="importing"
                     class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-sm transition-all hover:border-gray-300 dark:hover:border-gray-600 disabled:opacity-50"
                     @click="toggleSourceDropdown"
@@ -640,8 +640,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                   ></div>
                 </div>
               </div>
-              <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+              <div class="space-y-1.5"> 
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300"> 
                   {{ currentSourceType === 'musicfree'
                     ? '歌单名称或关键词'
                     : currentSourceType === 'favorites'
@@ -649,8 +649,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                       : '歌单链接或 ID' }}
                 </label>
                 <input
-                  ref="importInputRef"
-                  v-model="importInput"
+                  ref="importInputRef" 
+                  v-model="importInput" 
                   type="text"
                   :disabled="importing" 
                   :placeholder="currentSourceType === 'musicfree'
@@ -662,16 +662,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                   @input="importPreview = null"
                 />
               </div>
-              <div class="space-y-1.5">
+              <div class="space-y-1.5"> 
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300"> 
                   歌单重命名 <span class="text-gray-400 dark:text-gray-500 font-normal">（可选）</span> 
                 </label> 
                 <input
-                  ref="importRenameRef"
-                  v-model="importRename"
+                  ref="importRenameRef" 
+                  v-model="importRename" 
                   type="text"
                   :disabled="importing" 
-                  placeholder="导入后给歌单起个新名字"
+                  placeholder="导入后给歌单起个新名字" 
                   class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50" 
                 />
               </div>
@@ -703,7 +703,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </div>
                 <button
                   type="button"
-                  :disabled="importing"
+                  :disabled="importing" 
                   class="shrink-0 px-3 py-1.5 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-200/60 dark:hover:bg-white/10 transition-colors disabled:opacity-50"
                   @click="importPreview = null"
                 >
@@ -725,31 +725,31 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
             </div>
 
             <div
-              v-else-if="activeTab === 'localFolderImport'"
-              key="local-folder-import"
+              v-else-if="activeTab === 'localFolderImport'" 
+              key="local-folder-import" 
               class="flex-1 flex flex-col space-y-4"
             >
-              <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
-                  歌单名称 <span class="text-[#EC4141]">*</span>
+              <div class="space-y-1.5"> 
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300"> 
+                  歌单名称 <span class="text-[#EC4141]">*</span> 
                 </label>
                 <input
-                  ref="localPlaylistNameRef"
-                  v-model="localPlaylistName"
+                  ref="localPlaylistNameRef" 
+                  v-model="localPlaylistName" 
                   type="text"
-                  :disabled="importing"
-                  placeholder="请输入新歌单名称"
-                  class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50"
+                  :disabled="importing" 
+                  placeholder="请输入新歌单名称" 
+                  class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50" 
                 />
               </div>
 
               <div class="space-y-1.5 flex-1 flex flex-col">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
-                  音乐文件夹 <span class="text-[#EC4141]">*</span>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300"> 
+                  音乐文件夹 <span class="text-[#EC4141]">*</span> 
                 </label>
                 <button
                   type="button"
-                  :disabled="importing"
+                  :disabled="importing" 
                   class="drop-zone flex-1"
                   :class="{
                     'drop-zone--active': isDragOver,
@@ -770,15 +770,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </button>
               </div>
 
-              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
-                将递归读取所选文件夹及其子文件夹中的音乐文件，并创建为一个独立歌单。
+              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40"> 
+                将递归读取所选文件夹及其子文件夹中的音乐文件，并创建为一个独立歌单。 
               </p>
 
               <div
-                v-if="localImportError"
-                class="flex items-start gap-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400"
+                v-if="localImportError" 
+                class="flex items-start gap-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400" 
               >
-                <span>{{ localImportError }}</span>
+                <span>{{ localImportError }}</span> 
               </div>
             </div>
 
@@ -788,12 +788,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               class="flex-1 flex flex-col space-y-4"
             >
               <div class="space-y-1.5 flex-1 flex flex-col">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300"> 
                   备份/播放列表文件 <span class="text-[#EC4141]">*</span>
                 </label>
                 <button
                   type="button"
-                  :disabled="importing"
+                  :disabled="importing" 
                   class="drop-zone flex-1"
                   :class="{
                     'drop-zone--active': isDragOver,
@@ -870,32 +870,32 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </div>
               </div>
 
-              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
+              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40"> 
                 支持 BakaMusic / MusicFree / 洛雪音乐 JSON 备份（自动识别本地文件和在线插件）、ZIP 压缩包、M3U / M3U8 播放列表、椒盐音乐导出格式。JSON 备份会自动匹配已安装的在线音源插件，有本地文件路径的歌曲直接作为本地歌曲导入。
               </p>
 
               <div
                 v-if="backupImportError"
-                class="flex items-start gap-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400"
+                class="flex items-start gap-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400" 
               >
                 <span>{{ backupImportError }}</span>
               </div>
             </div>
-          </Transition>
+          </Transition> 
           </div>
         </div>
 
-        <div class="px-4 py-3 bg-gray-50/50 dark:bg-white/5 flex gap-3 flex-col sm:flex-row-reverse">
+        <div class="px-4 py-3 bg-gray-50/50 dark:bg-white/5 flex gap-3 flex-col sm:flex-row-reverse"> 
           <button
-            @click="handleConfirm"
-            :disabled="!canConfirm"
+            @click="handleConfirm" 
+            :disabled="!canConfirm" 
             class="w-full inline-flex justify-center items-center gap-2 rounded-xl border border-transparent shadow-sm px-4 py-2 text-base font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#EC4141] sm:text-sm transition-all duration-200 bg-[#EC4141] hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed" 
           >
             <Loader2 v-if="importing" class="h-4 w-4 animate-spin" /> 
-            {{ confirmText }}
+            {{ confirmText }} 
           </button>
           <button
-            @click="handleClose"
+            @click="handleClose" 
             :disabled="importing" 
             class="w-full inline-flex justify-center rounded-xl border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm transition-all duration-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed" 
           >
@@ -907,18 +907,18 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
   </Teleport>
 </template>
 
-<style scoped>
-.tab-fade-enter-active,
-.tab-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+<style scoped> /* 样式 */
+.tab-fade-enter-active, /* 样式 */
+.tab-fade-leave-active { /* 样式 */
+  transition: opacity 0.2s ease, transform 0.2s ease; /* 样式 */
 }
-.tab-fade-enter-from {
+.tab-fade-enter-from { /* 样式 */
   opacity: 0;
-  transform: translateX(8px);
+  transform: translateX(8px); /* 样式 */
 }
-.tab-fade-leave-to {
+.tab-fade-leave-to { /* 样式 */
   opacity: 0;
-  transform: translateX(-8px);
+  transform: translateX(-8px); /* 样式 */
 }
 
 .dropdown-fade-enter-active,

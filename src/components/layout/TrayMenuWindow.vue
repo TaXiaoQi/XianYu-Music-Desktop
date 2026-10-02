@@ -1,6 +1,6 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { emitTo, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
 import { onMounted, onUnmounted, reactive, watch } from 'vue';
 
 import { applyDarkClassWithTransition } from '../../composables/themeTransition';
@@ -8,8 +8,8 @@ import { windowApi } from '../../services/tauri/windowApi';
 import {
   type TrayMenuAction, type TrayMenuStatePayload,
   APP_TRAY_MENU_EVENT, TRAY_MENU_READY_EVENT, TRAY_MENU_STATE_EVENT,
-} from '../../features/tray/actions';
-import type { Song } from '../../types';
+} from '../../features/tray/actions'; // 实现
+import type { Song } from '../../types'; // 实现
 
 import TrayCommandList from './tray/TrayCommandList.vue';
 import TrayTrackHeader from './tray/TrayTrackHeader.vue';
@@ -57,7 +57,7 @@ const pollForegroundGuard = async () => {
       return;
     }
     if (info.hwnd === foregroundBaseline) return;
-    hideWindow();
+    hideWindow(); // 实现
   } catch {
     // 窗口销毁等瞬态错误忽略
   }
@@ -70,7 +70,7 @@ const dispatch = async (action: TrayMenuAction, opts: { keepOpen?: boolean } = {
     action,
   );
   if (opts.keepOpen !== true) {
-    hideWindow();
+    hideWindow(); // 实现
   }
 };
 
@@ -88,11 +88,11 @@ watch(() => panel.darkChrome, () => {
   applyDarkClassWithTransition(panel.darkChrome);
 });
 
-onMounted(async () => {
+onMounted(async () => { // 实现
   try {
     await hostWindow
       .setBackgroundColor([0, 0, 0, 0]);
-  } catch (error) {
+  } catch (error) { // 实现
     console.warn(
       'Failed to force transparent background for tray menu window:',
       error,
@@ -113,17 +113,17 @@ onMounted(async () => {
 
   releaseHooks.push(await hostWindow.onCloseRequested((request) => {
     request.preventDefault();
-    hideWindow();
+    hideWindow(); // 实现
   }));
 
   // 关外守卫轮询：窗口隐藏时仅做 isVisible 短路，开销可忽略
   const guardTimer = window.setInterval(() => { void pollForegroundGuard(); }, 150);
   releaseHooks.push(() => window.clearInterval(guardTimer));
 
-  await emitTo('main', TRAY_MENU_READY_EVENT);
+  await emitTo('main', TRAY_MENU_READY_EVENT); // 实现
 });
 
-onUnmounted(() => {
+onUnmounted(() => { // 实现
   window.removeEventListener('keydown', onKeydown);
   releaseHooks.splice(0).forEach((off) => off());
 });
@@ -133,7 +133,7 @@ onUnmounted(() => {
   <div
     class="trayStage"
     :class="{ 'trayStage--daylight': !panel.darkChrome }"
-    @pointerdown.self="hideWindow"
+    @pointerdown.self="hideWindow" 
   >
     <div class="trayCard" @pointerdown.self="hideWindow">
       <TrayTrackHeader :track="panel.track" @pointerdown="hideWindow" />
@@ -162,7 +162,7 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 .trayStage {
   --trayPanelBg: rgba(39, 40, 52, 0.98); --trayEdge: rgba(255, 255, 255, 0.12);
   --trayInk: rgba(245, 247, 252, 0.98); --trayInkSoft: rgba(230, 233, 242, 0.85);

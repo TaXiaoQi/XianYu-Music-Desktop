@@ -77,23 +77,23 @@ fn collect_family_names(raw: &str, sink: &mut BTreeSet<String>) {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 mod imp {
     use super::collect_family_names;
-    use std::collections::BTreeSet;
-    use std::ptr::null_mut;
-    use windows_sys::Win32::Foundation::{
-        ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS,
+    use std::collections::{BTreeSet};
+    use std::ptr::{null_mut};
+    use windows_sys::Win32::Foundation::{ // 实现
+        ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, // 实现
     };
-    use windows_sys::Win32::System::Registry::{
-        RegCloseKey, RegEnumValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE,
+    use windows_sys::Win32::System::Registry::{ // 实现
+        RegCloseKey, RegEnumValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, // 实现
         KEY_READ,
     };
 
     /// Windows 存放字体注册项的两个位置：NT 内核路径与旧版兼容路径。
     const REGISTRY_FONT_KEYS: [&str; 2] = [
-        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts",
-        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Fonts",
+        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts", // 实现
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Fonts", // 实现
     ];
 
     /// 转 UTF-16 并补上终止符。
@@ -105,11 +105,11 @@ mod imp {
     /// 键不存在视为空结果，不报错。
     fn scan_registry_key(root: HKEY, path: &str, sink: &mut BTreeSet<String>) -> Result<(), String> {
         let wide_path = utf16z(path);
-        let mut key: HKEY = null_mut();
+        let mut key: HKEY = null_mut(); // 实现
 
         let opened = unsafe { RegOpenKeyExW(root, wide_path.as_ptr(), 0, KEY_READ, &mut key) };
         if opened == ERROR_FILE_NOT_FOUND {
-            return Ok(());
+            return Ok(()); // 实现
         }
         if opened != ERROR_SUCCESS {
             return Err(format!("RegOpenKeyExW failed for {path}: {opened}"));
@@ -131,8 +131,8 @@ mod imp {
             let mut buffer = vec![0u16; 256usize];
             let name = loop {
                 let mut written: u32 = buffer.len() as u32;
-                let status = unsafe {
-                    RegEnumValueW(
+                let status = unsafe { // 实现
+                    RegEnumValueW( // 实现
                         key,
                         index,
                         buffer.as_mut_ptr(),
@@ -162,7 +162,7 @@ mod imp {
         }
     }
 
-    pub fn get_system_fonts() -> Result<Vec<String>, String> {
+    pub fn get_system_fonts() -> Result<Vec<String>, String> { // get_system_fonts
         let mut sink = BTreeSet::new();
 
         for path in REGISTRY_FONT_KEYS {
@@ -177,10 +177,10 @@ mod imp {
 #[cfg(target_os = "linux")]
 mod imp {
     use super::collect_family_names;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeSet};
     use std::process::Command;
 
-    pub fn get_system_fonts() -> Result<Vec<String>, String> {
+    pub fn get_system_fonts() -> Result<Vec<String>, String> { // get_system_fonts
         // fc-list 不可用或失败时按“无字体”处理，不阻断前端
         let Ok(output) = Command::new("fc-list")
             .arg("--format")
@@ -208,9 +208,9 @@ mod imp {
 #[cfg(target_os = "macos")]
 mod imp {
     use super::collect_family_names;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeSet};
 
-    pub fn get_system_fonts() -> Result<Vec<String>, String> {
+    pub fn get_system_fonts() -> Result<Vec<String>, String> { // get_system_fonts
         let collection = core_text::font_collection::create_for_all_families();
         let mut sink = BTreeSet::new();
         for descriptor in collection.font_descriptors() {
@@ -221,9 +221,9 @@ mod imp {
 }
 
 /// 枚举系统全部字体家族名（去重并按字典序排序）。
-#[tauri::command]
-pub fn get_system_fonts() -> Result<Vec<String>, String> {
-    imp::get_system_fonts()
+#[tauri::command] // 实现
+pub fn get_system_fonts() -> Result<Vec<String>, String> { // get_system_fonts
+    imp::get_system_fonts() // 实现
 }
 
 #[cfg(test)]

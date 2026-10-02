@@ -1,211 +1,211 @@
 use crate::music::tags::{
     extract_text_metadata, read_tagged_file_from_path, write_metadata_to_file, EmbedMetadataRequest,
 };
-use crate::music::utils::is_supported_library_extension;
+use crate::music::utils::{is_supported_library_extension};
 use crate::security::{path_validator, ssrf};
-use lofty::prelude::*;
-use regex::Regex;
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
+use lofty::prelude::*; // 实现
+use regex::{Regex};
+use serde::{Serialize, Deserialize};
+use std::{fs};
+use std::path::{PathBuf, Path};
 use std::sync::OnceLock;
 use tauri::{Manager};
-use walkdir::WalkDir;
+use walkdir::{WalkDir};
 
 static TRACK_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
 static SOURCE_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RenameConfig {
+#[derive(Deserialize, Serialize, Debug)]
+pub struct RenameConfig { // RenameConfig
     pub mode: String,
     pub template: String,
-    pub remove_track_prefix: bool,
-    pub remove_source_prefix: bool,
+    pub remove_track_prefix: bool, // 实现
+    pub remove_source_prefix: bool, // 实现
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RenamePreview {
-    pub original_path: String,
-    pub original_name: String,
-    pub new_name: String,
+#[derive(Deserialize, Serialize, Debug)]
+pub struct RenamePreview { // RenamePreview
+    pub original_path: String, // 实现
+    pub original_name: String, // 实现
+    pub new_name: String, // 实现
     pub status: String,
-    pub error: Option<String>,
+    pub error: Option<String>, // 实现
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RenameOperation {
-    pub original_path: String,
-    pub new_name: String,
+#[derive(Deserialize, Serialize, Debug)]
+pub struct RenameOperation { // RenameOperation
+    pub original_path: String, // 实现
+    pub new_name: String, // 实现
 }
 
-fn sanitize_filename(name: &str) -> String {
-    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
-    let mut sanitized = String::new();
-    for c in name.chars() {
-        if invalid_chars.contains(&c) {
-            sanitized.push('_');
+fn sanitize_filename(name: &str) -> String { // sanitize_filename
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']; 
+    let mut sanitized = String::new(); 
+    for c in name.chars() { 
+        if invalid_chars.contains(&c) { 
+            sanitized.push('_'); 
         } else {
-            sanitized.push(c);
+            sanitized.push(c); 
         }
     }
-    sanitized.trim().to_string()
+    sanitized.trim().to_string() 
 }
 
-fn process_file(path: &Path, config: &RenameConfig) -> RenamePreview {
-    let original_name = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    let original_path_str = path.to_string_lossy().to_string();
-    let ext = path
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+fn process_file(path: &Path, config: &RenameConfig) -> RenamePreview { // process_file
+    let original_name = path 
+        .file_name() 
+        .unwrap_or_default() 
+        .to_string_lossy() 
+        .to_string(); 
+    let original_path_str = path.to_string_lossy().to_string(); 
+    let ext = path 
+        .extension() 
+        .unwrap_or_default() 
+        .to_string_lossy() 
+        .to_string(); 
 
-    if config.mode == "tags" || config.mode == "auto" {
-        if let Ok(tagged_file) = read_tagged_file_from_path(path) {
-            let metadata = extract_text_metadata(&tagged_file);
-            let title = metadata.title.unwrap_or_default();
-            let artist = metadata.artist.unwrap_or_default();
-            let album = metadata.album.unwrap_or_default();
+    if config.mode == "tags" || config.mode == "auto" { 
+        if let Ok(tagged_file) = read_tagged_file_from_path(path) { 
+            let metadata = extract_text_metadata(&tagged_file); 
+            let title = metadata.title.unwrap_or_default(); 
+            let artist = metadata.artist.unwrap_or_default(); 
+            let album = metadata.album.unwrap_or_default(); 
 
-            let year = tagged_file
-                .primary_tag()
-                .and_then(|tag| tag.year())
-                .map(|y| y.to_string())
-                .unwrap_or_default();
-            let track = tagged_file
-                .primary_tag()
-                .and_then(|tag| tag.track())
-                .map(|t| format!("{:02}", t))
-                .unwrap_or_default();
+            let year = tagged_file 
+                .primary_tag() 
+                .and_then(|tag| tag.year()) 
+                .map(|y| y.to_string()) 
+                .unwrap_or_default(); 
+            let track = tagged_file 
+                .primary_tag() 
+                .and_then(|tag| tag.track()) 
+                .map(|t| format!("{:02}", t)) 
+                .unwrap_or_default(); 
 
-            if !title.is_empty() {
-                let mut new_name_base = config.template.clone();
-                new_name_base = new_name_base.replace("{title}", &title);
-                new_name_base = new_name_base.replace("{artist}", &artist);
-                new_name_base = new_name_base.replace("{album}", &album);
-                new_name_base = new_name_base.replace("{year}", &year);
-                new_name_base = new_name_base.replace("{track}", &track);
+            if !title.is_empty() { 
+                let mut new_name_base = config.template.clone(); 
+                new_name_base = new_name_base.replace("{title}", &title); 
+                new_name_base = new_name_base.replace("{artist}", &artist); 
+                new_name_base = new_name_base.replace("{album}", &album); 
+                new_name_base = new_name_base.replace("{year}", &year); 
+                new_name_base = new_name_base.replace("{track}", &track); 
 
-                let new_name = format!("{}.{}", sanitize_filename(&new_name_base), ext);
+                let new_name = format!("{}.{}", sanitize_filename(&new_name_base), ext); 
 
-                if new_name != original_name {
-                    return RenamePreview {
-                        original_path: original_path_str,
-                        original_name,
+                if new_name != original_name { 
+                    return RenamePreview { 
+                        original_path: original_path_str, 
+                        original_name, 
                         new_name,
-                        status: "tags".to_string(),
-                        error: None,
+                        status: "tags".to_string(), 
+                        error: None, 
                     };
-                } else if config.mode == "tags" {
-                    return RenamePreview {
-                        original_path: original_path_str,
-                        original_name: original_name.clone(),
-                        new_name: original_name,
-                        status: "skipped".to_string(),
-                        error: Some("Already named correctly".to_string()),
+                } else if config.mode == "tags" { 
+                    return RenamePreview { 
+                        original_path: original_path_str, 
+                        original_name: original_name.clone(), 
+                        new_name: original_name, 
+                        status: "skipped".to_string(), 
+                        error: Some("Already named correctly".to_string()), 
                     };
                 }
             }
         }
 
-        if config.mode == "tags" {
-            return RenamePreview {
-                original_path: original_path_str,
-                original_name: original_name.clone(),
-                new_name: original_name,
-                status: "skipped".to_string(),
-                error: Some("Missing tags".to_string()),
+        if config.mode == "tags" { 
+            return RenamePreview { 
+                original_path: original_path_str, 
+                original_name: original_name.clone(), 
+                new_name: original_name, 
+                status: "skipped".to_string(), 
+                error: Some("Missing tags".to_string()), 
             };
         }
     }
 
-    if config.mode == "rules" || config.mode == "auto" {
-        let mut cleaned_name = original_name.clone();
+    if config.mode == "rules" || config.mode == "auto" { 
+        let mut cleaned_name = original_name.clone(); 
 
-        if let Some(stem) = path.file_stem() {
-            let mut stem_str = stem.to_string_lossy().to_string();
+        if let Some(stem) = path.file_stem() { 
+            let mut stem_str = stem.to_string_lossy().to_string(); 
 
-            if config.remove_track_prefix {
+            if config.remove_track_prefix { 
                 let re = TRACK_PREFIX_RE.get_or_init(|| Regex::new(r"^\d+[\.\-\s]+").unwrap());
-                stem_str = re.replace(&stem_str, "").to_string();
+                stem_str = re.replace(&stem_str, "").to_string(); 
             }
 
-            if config.remove_source_prefix {
+            if config.remove_source_prefix { 
                 let re = SOURCE_PREFIX_RE.get_or_init(|| Regex::new(r"^\s*\[.*?\]\s*").unwrap());
-                stem_str = re.replace(&stem_str, "").to_string();
+                stem_str = re.replace(&stem_str, "").to_string(); 
             }
 
-            cleaned_name = format!("{}.{}", stem_str.trim(), ext);
+            cleaned_name = format!("{}.{}", stem_str.trim(), ext); 
         }
 
-        if cleaned_name != original_name {
-            return RenamePreview {
-                original_path: original_path_str,
-                original_name,
-                new_name: cleaned_name,
-                status: "rules".to_string(),
-                error: None,
+        if cleaned_name != original_name { 
+            return RenamePreview { 
+                original_path: original_path_str, 
+                original_name, 
+                new_name: cleaned_name, 
+                status: "rules".to_string(), 
+                error: None, 
             };
         }
     }
 
-    RenamePreview {
-        original_path: original_path_str,
-        original_name: original_name.clone(),
-        new_name: original_name,
-        status: "skipped".to_string(),
-        error: Some("No rules matched or missing tags".to_string()),
+    RenamePreview { 
+        original_path: original_path_str, 
+        original_name: original_name.clone(), 
+        new_name: original_name, 
+        status: "skipped".to_string(), 
+        error: Some("No rules matched or missing tags".to_string()), 
     }
 }
 
-#[tauri::command]
-pub fn preview_rename(
-    root_path: String,
-    config: RenameConfig,
-) -> Result<Vec<RenamePreview>, String> {
+#[tauri::command] 
+pub fn preview_rename( // preview_rename
+    root_path: String, 
+    config: RenameConfig, 
+) -> Result<Vec<RenamePreview>, String> { 
     let _validated_root = path_validator::validate_path(&root_path, None)?;
     let root_path = _validated_root.to_string_lossy().to_string();
-    let mut results = Vec::new();
+    let mut results = Vec::new(); 
 
-    for entry in WalkDir::new(root_path)
-        .max_depth(1)
-        .into_iter()
-        .filter_map(|e| e.ok())
+    for entry in WalkDir::new(root_path) 
+        .max_depth(1) 
+        .into_iter() 
+        .filter_map(|e| e.ok()) 
     {
-        let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension() {
-                let ext = ext.to_string_lossy().to_lowercase();
-                if is_supported_library_extension(&ext) {
-                    results.push(process_file(path, &config));
+        let path = entry.path(); 
+        if path.is_file() { 
+            if let Some(ext) = path.extension() { 
+                let ext = ext.to_string_lossy().to_lowercase(); 
+                if is_supported_library_extension(&ext) { 
+                    results.push(process_file(path, &config)); 
                 }
             }
         }
     }
 
-    results.sort_by(|a, b| {
-        let a_changed = a.status != "skipped";
-        let b_changed = b.status != "skipped";
-        if a_changed && !b_changed {
-            std::cmp::Ordering::Less
-        } else if !a_changed && b_changed {
-            std::cmp::Ordering::Greater
+    results.sort_by(|a, b| { 
+        let a_changed = a.status != "skipped"; 
+        let b_changed = b.status != "skipped"; 
+        if a_changed && !b_changed { 
+            std::cmp::Ordering::Less 
+        } else if !a_changed && b_changed { 
+            std::cmp::Ordering::Greater 
         } else {
-            a.original_name.cmp(&b.original_name)
+            a.original_name.cmp(&b.original_name) 
         }
     });
 
     Ok(results)
 }
 
-#[tauri::command]
+#[tauri::command] 
 pub fn apply_rename(
     operations: Vec<RenameOperation>,
-    db_state: tauri::State<'_, crate::database::DbState>,
+    db_state: tauri::State<'_, crate::database::DbState>, 
 ) -> Result<u32, String> {
     let roots: Vec<PathBuf> = {
         let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
@@ -224,28 +224,28 @@ pub fn apply_rename(
         return Err("音乐库为空，请先在音乐库中添加文件夹".to_string());
     }
 
-    let mut success_count = 0;
+    let mut success_count = 0; 
 
     for mut op in operations {
         let validated_path = path_validator::validate_path(&op.original_path, Some(&roots))?;
         op.original_path = validated_path.to_string_lossy().to_string();
         op.new_name = path_validator::sanitize_filename_component(&op.new_name)?;
-        let src = PathBuf::from(&op.original_path);
-        if let Some(parent) = src.parent() {
-            let dest = parent.join(&op.new_name);
-            if fs::rename(&src, &dest).is_ok() {
-                success_count += 1;
+        let src = PathBuf::from(&op.original_path); 
+        if let Some(parent) = src.parent() { 
+            let dest = parent.join(&op.new_name); 
+            if fs::rename(&src, &dest).is_ok() { 
+                success_count += 1; 
             }
         }
     }
 
-    Ok(success_count)
+    Ok(success_count) 
 }
 
 fn authorized_programs_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     app_handle
         .path()
-        .app_data_dir()
+        .app_data_dir() 
         .map_err(|e| format!("获取应用数据目录失败: {e}"))
         .map(|dir| dir.join("authorized_programs.json"))
 }
@@ -258,9 +258,9 @@ fn read_authorized_programs(app_handle: &tauri::AppHandle) -> Vec<PathBuf> {
         return Vec::new();
     };
     serde_json::from_str::<Vec<String>>(&content)
-        .unwrap_or_default()
-        .into_iter()
-        .map(PathBuf::from)
+        .unwrap_or_default() 
+        .into_iter() 
+        .map(PathBuf::from) 
         .collect()
 }
 
@@ -269,7 +269,7 @@ fn save_authorized_programs(
     programs: &[PathBuf],
 ) -> Result<(), String> {
     let path = authorized_programs_path(app_handle)?;
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path.parent() { 
         fs::create_dir_all(parent).map_err(|e| format!("创建应用数据目录失败: {e}"))?;
     }
     let entries: Vec<String> = programs
@@ -280,12 +280,12 @@ fn save_authorized_programs(
     fs::write(&path, content).map_err(|e| format!("写入授权程序列表失败: {e}"))
 }
 
-#[tauri::command]
+#[tauri::command] 
 pub fn register_external_program(app_handle: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let mut dialog = app_handle.dialog().file();
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     {
         dialog = dialog.add_filter("可执行文件", &["exe"]);
     }
@@ -300,7 +300,7 @@ pub fn register_external_program(app_handle: tauri::AppHandle) -> Result<String,
         return Err(format!("目标程序文件不存在: {}", program_path.display()));
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     {
         let ext = program_path
             .extension()
@@ -325,13 +325,13 @@ pub fn register_external_program(app_handle: tauri::AppHandle) -> Result<String,
     Ok(canonical.to_string_lossy().to_string())
 }
 
-#[tauri::command]
+#[tauri::command] 
 pub fn open_external_program(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, 
     path: String,
     args: Vec<String>,
 ) -> Result<(), String> {
-    use std::process::Command;
+    use std::process::{Command};
 
     let validated = path_validator::validate_path(&path, None)?;
 
@@ -343,7 +343,7 @@ pub fn open_external_program(
         return Err("该程序未获授权，请先在工具箱中重新选择".to_string());
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     {
         let ext = validated
             .extension()
@@ -360,7 +360,7 @@ pub fn open_external_program(
     }
 
     let safe_args: Vec<String> = args
-        .into_iter()
+        .into_iter() 
         .map(|arg| {
             if arg.contains('\0') {
                 return Err("参数包含非法空字节".to_string());
@@ -371,39 +371,39 @@ pub fn open_external_program(
 
     let mut cmd = Command::new(&validated);
     for arg in safe_args {
-        cmd.arg(arg);
+        cmd.arg(arg); 
     }
 
     cmd.spawn()
-        .map_err(|e| format!("Failed to launch program: {}", e))?;
+        .map_err(|e| format!("Failed to launch program: {}", e))?; 
 
     Ok(())
 }
 
-#[tauri::command]
-pub fn refresh_folder_songs(
-    folder_path: String,
-    minimum_duration_seconds: Option<u32>,
-    db_state: tauri::State<'_, crate::database::DbState>,
-) -> Result<Vec<crate::music::types::Song>, String> {
+#[tauri::command] 
+pub fn refresh_folder_songs( // refresh_folder_songs
+    folder_path: String, 
+    minimum_duration_seconds: Option<u32>, 
+    db_state: tauri::State<'_, crate::database::DbState>, 
+) -> Result<Vec<crate::music::types::Song>, String> { 
     let validated = path_validator::validate_path(&folder_path, None)?;
     let folder_path = validated.to_string_lossy().to_string();
-    crate::music::scanner::scan_single_directory_internal(
-        folder_path,
-        db_state.conn.clone(),
+    crate::music::scanner::scan_single_directory_internal( 
+        folder_path, 
+        db_state.conn.clone(), 
         None,
         1,
         1,
-        crate::music::scanner::ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds),
+        crate::music::scanner::ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds), 
     )
 }
 
-#[tauri::command]
-pub fn file_exists(path: String) -> bool {
+#[tauri::command] 
+pub fn file_exists(path: String) -> bool { // file_exists
     if path_validator::validate_path(&path, None).is_err() {
-        return false;
+        return false; 
     }
-    std::path::Path::new(&path).is_file()
+    std::path::Path::new(&path).is_file() 
 }
 
 const DOWNLOAD_DIR_FILE: &str = "download_dir.json";
@@ -411,7 +411,7 @@ const DOWNLOAD_DIR_FILE: &str = "download_dir.json";
 fn download_dir_config_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     app_handle
         .path()
-        .app_data_dir()
+        .app_data_dir() 
         .map_err(|e| format!("获取应用数据目录失败: {e}"))
         .map(|dir| dir.join(DOWNLOAD_DIR_FILE))
 }
@@ -429,7 +429,7 @@ pub fn read_authorized_download_dir(app_handle: &tauri::AppHandle) -> Result<Pat
     Ok(dir)
 }
 
-#[tauri::command]
+#[tauri::command] 
 pub fn register_download_directory(app_handle: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
 
@@ -453,12 +453,12 @@ pub fn register_download_directory(app_handle: tauri::AppHandle) -> Result<Strin
     Ok(dir.to_string_lossy().to_string())
 }
 
-#[tauri::command]
+#[tauri::command] 
 pub fn resolve_download_path(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, 
     file_name: String,
     overwrite_existing: bool,
-) -> Result<String, String> {
+) -> Result<String, String> { 
     let dir = read_authorized_download_dir(&app_handle)?;
     let file_name = path_validator::sanitize_filename_component(&file_name)?;
     let direct = dir.join(&file_name);
@@ -597,18 +597,18 @@ fn build_download_filename(
     format!("{}{}", sanitize_download_filename(&base), ext)
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn resolve_download_full_path(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, // 实现
     title: String,
     artist: String,
     album: String,
-    url: String,
+    url: String, // 实现
     quality: String,
     keep_source_filename: bool,
     file_name_style: String,
     overwrite_existing: bool,
-) -> Result<String, String> {
+) -> Result<String, String> { // 实现
     let file_name = build_download_filename(
         &title,
         &artist,
@@ -622,7 +622,7 @@ pub fn resolve_download_full_path(
     resolve_download_path(app_handle, file_name, overwrite_existing)
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn build_download_basename(
     title: String,
     artist: String,
@@ -635,26 +635,26 @@ pub fn build_download_basename(
 }
 
 const APP_IDENTIFIER: &str = "com.xymusic.desktop";
-const GPU_CONFIG_FILE: &str = "gpu_config.json";
+const GPU_CONFIG_FILE: &str = "gpu_config.json"; // 实现
 const DOWNLOAD_HISTORY_FILE: &str = "download_history.json";
 
-#[derive(Debug, Serialize, Deserialize)]
-struct GpuConfig {
-    gpu_acceleration: bool,
+#[derive(Deserialize, Serialize, Debug)]
+struct GpuConfig { // GpuConfig
+    gpu_acceleration: bool, // 实现
 }
 
-#[cfg(target_os = "windows")]
-pub fn gpu_config_path() -> Result<PathBuf, String> {
-    std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .map(|dir| dir.join(APP_IDENTIFIER).join(GPU_CONFIG_FILE))
-        .ok_or_else(|| "APPDATA environment variable not found".to_string())
+#[cfg(windows)]
+pub fn gpu_config_path() -> Result<PathBuf, String> { // gpu_config_path
+    std::env::var_os("APPDATA") // 实现
+        .map(PathBuf::from) // 实现
+        .map(|dir| dir.join(APP_IDENTIFIER).join(GPU_CONFIG_FILE)) // 实现
+        .ok_or_else(|| "APPDATA environment variable not found".to_string()) // 实现
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn gpu_config_path() -> Result<PathBuf, String> {
+pub fn gpu_config_path() -> Result<PathBuf, String> { // gpu_config_path
     let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
+        .map(PathBuf::from) // 实现
         .filter(|dir| dir.is_absolute())
         .or_else(|| {
             std::env::var_os("HOME")
@@ -665,132 +665,132 @@ pub fn gpu_config_path() -> Result<PathBuf, String> {
     Ok(base.join(APP_IDENTIFIER).join(GPU_CONFIG_FILE))
 }
 
-pub fn should_disable_gpu_for_startup() -> bool {
-    let Ok(path) = gpu_config_path() else {
-        return false;
+pub fn should_disable_gpu_for_startup() -> bool { // should_disable_gpu_for_startup
+    let Ok(path) = gpu_config_path() else { // 实现
+        return false; // 实现
     };
 
-    if !path.exists() {
-        return false;
+    if !path.exists() { // 实现
+        return false; // 实现
     }
 
-    let Ok(content) = fs::read_to_string(path) else {
-        return false;
+    let Ok(content) = fs::read_to_string(path) else { // 实现
+        return false; // 实现
     };
 
-    match serde_json::from_str::<GpuConfig>(&content) {
-        Ok(config) => !config.gpu_acceleration,
-        Err(_) => false,
+    match serde_json::from_str::<GpuConfig>(&content) { // 实现
+        Ok(config) => !config.gpu_acceleration, // 实现
+        Err(_) => false, // 实现
     }
 }
 
-#[cfg(target_os = "windows")]
-pub fn append_webview2_browser_arg(arg: &str) {
-    const KEY: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+#[cfg(windows)]
+pub fn append_webview2_browser_arg(arg: &str) { // append_webview2_browser_arg
+    const KEY: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"; // 实现
 
-    let current = std::env::var(KEY).unwrap_or_default();
+    let current = std::env::var(KEY).unwrap_or_default(); // 实现
 
-    if current.split_whitespace().any(|item| item == arg) {
+    if current.split_whitespace().any(|item| item == arg) { // 实现
         return;
     }
 
-    let next = if current.trim().is_empty() {
-        arg.to_string()
+    let next = if current.trim().is_empty() { // 实现
+        arg.to_string() // 实现
     } else {
-        format!("{} {}", current.trim(), arg)
+        format!("{} {}", current.trim(), arg) // 实现
     };
 
-    std::env::set_var(KEY, next);
+    std::env::set_var(KEY, next); // 实现
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn set_gpu_acceleration(app_handle: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    #[cfg(not(target_os = "windows"))]
-    use tauri::Manager;
+    #[cfg(not(windows))]
+    use tauri::{Manager};
 
-    #[cfg(target_os = "windows")]
-    let path = {
-        let _ = app_handle;
-        gpu_config_path()?
+    #[cfg(windows)]
+    let path = { // 实现
+        let _ = app_handle; // 实现
+        gpu_config_path()? // 实现
     };
 
-    #[cfg(not(target_os = "windows"))]
-    let path = app_handle
+    #[cfg(not(windows))]
+    let path = app_handle // 实现
         .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join(GPU_CONFIG_FILE);
+        .app_data_dir() // 实现
+        .map_err(|e| e.to_string())? // 实现
+        .join(GPU_CONFIG_FILE); // 实现
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() { // 实现
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; // 实现
     }
 
-    let config = GpuConfig {
-        gpu_acceleration: enabled,
+    let config = GpuConfig { // 实现
+        gpu_acceleration: enabled, // 实现
     };
 
-    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?; // 实现
 
-    std::fs::write(path, content).map_err(|e| e.to_string())?;
+    std::fs::write(path, content).map_err(|e| e.to_string())?; // 实现
 
     Ok(())
 }
 
 use std::time::{Duration, SystemTime};
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String, String> {
     let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest"); // 最新版本地址
 
     let client = crate::netproxy::client_builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(10)) // 实现
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XianYuMusic-Updater")
         .build()
-        .map_err(|e| format!("创建更新请求失败: {e}"))?;
+        .map_err(|e| format!("创建更新请求失败: {e}"))?; // 实现
 
     client
         .get(&url) // GET 请求
         .header("Accept", "application/vnd.github+json") // GitHub API 格式
         .send()
         .await
-        .map_err(|e| format!("请求更新接口失败: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("更新接口返回错误状态: {e}"))?
+        .map_err(|e| format!("请求更新接口失败: {e}"))? // 实现
+        .error_for_status() // 实现
+        .map_err(|e| format!("更新接口返回错误状态: {e}"))? // 实现
         .text()
         .await
-        .map_err(|e| format!("读取更新数据失败: {e}"))
+        .map_err(|e| format!("读取更新数据失败: {e}")) // 实现
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct DownloadProgress {
-    pub progress: f64,
-    pub downloaded: u64,
-    pub total: u64,
-    pub speed: f64,
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct DownloadProgress { // DownloadProgress
+    pub progress: f64, // 实现
+    pub downloaded: u64, // 实现
+    pub total: u64, // 实现
+    pub speed: f64, // 实现
 }
 
-#[tauri::command]
-pub async fn download_update_file(
-    app_handle: tauri::AppHandle,
-    url: String,
-) -> Result<String, String> {
+#[tauri::command] // 实现
+pub async fn download_update_file( // 实现
+    app_handle: tauri::AppHandle, // 实现
+    url: String, // 实现
+) -> Result<String, String> { // 实现
     use std::time::Instant;
-    use tauri::{Emitter, Manager};
-    use tokio::fs::File;
-    use tokio::io::AsyncWriteExt;
+    use tauri::{Manager, Emitter};
+    use tokio::fs::{File};
+    use tokio::io::{AsyncWriteExt};
 
     let client = crate::netproxy::client_builder()
-        .timeout(Duration::from_secs(300))
+        .timeout(Duration::from_secs(300)) // 实现
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XianYuMusic-Updater")
         .build()
-        .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
+        .map_err(|e| format!("创建下载请求客户端失败: {e}"))?; // 实现
 
-    let mut download_url = url.clone();
-    if download_url.contains("github.com") {
-        download_url = format!("https://gh-proxy.com/{}", download_url);
+    let mut download_url = url.clone(); // 实现
+    if download_url.contains("github.com") { // 实现
+        download_url = format!("https://gh-proxy.com/{}", download_url); // 实现
     }
 
     ssrf::validate_outbound_url(&download_url)
@@ -802,11 +802,11 @@ pub async fn download_update_file(
         .send()
         .await
         .map_err(|e| format!("发送下载请求失败: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!("下载服务器返回错误状态: {}", response.status()));
+    if !response.status().is_success() { // 实现
+        return Err(format!("下载服务器返回错误状态: {}", response.status())); // 实现
     }
 
-    let total_size = response.content_length().unwrap_or(0);
+    let total_size = response.content_length().unwrap_or(0); // 实现
     let download_dir = app_handle
         .path()
         .download_dir()
@@ -836,16 +836,16 @@ pub async fn download_update_file(
     } else {
         "XianYu.Player_Setup.msi"
     };
-    let dest_path = download_dir.join(filename);
+    let dest_path = download_dir.join(filename); // 实现
 
     let mut file = File::create(&dest_path)
         .await
         .map_err(|e| format!("创建目标文件失败: {e}"))?;
-    let mut downloaded: u64 = 0;
-    let start_time = Instant::now();
-    let mut last_emit = Instant::now();
+    let mut downloaded: u64 = 0; // 实现
+    let start_time = Instant::now(); // 实现
+    let mut last_emit = Instant::now(); // 实现
 
-    let mut response = response;
+    let mut response = response; // 实现
     while let Some(chunk) = response
         .chunk()
         .await
@@ -854,11 +854,11 @@ pub async fn download_update_file(
         file.write_all(&chunk)
             .await
             .map_err(|e| format!("写入文件失败: {e}"))?;
-        downloaded += chunk.len() as u64;
+        downloaded += chunk.len() as u64; // 实现
 
-        let now = Instant::now();
-        if now.duration_since(last_emit).as_millis() >= 100 || downloaded == total_size {
-            let elapsed = start_time.elapsed().as_secs_f64();
+        let now = Instant::now(); // 实现
+        if now.duration_since(last_emit).as_millis() >= 100 || downloaded == total_size { // 实现
+            let elapsed = start_time.elapsed().as_secs_f64(); // 实现
             let speed = if elapsed > 0.0 {
                 downloaded as f64 / elapsed
             } else {
@@ -870,14 +870,14 @@ pub async fn download_update_file(
                 0.0
             };
 
-            let payload = DownloadProgress {
+            let payload = DownloadProgress { // 实现
                 progress,
                 downloaded,
-                total: total_size,
+                total: total_size, // 实现
                 speed,
             };
-            let _ = app_handle.emit("update-download-progress", payload);
-            last_emit = now;
+            let _ = app_handle.emit("update-download-progress", payload); // 实现
+            last_emit = now; // 实现
         }
     }
 
@@ -885,7 +885,7 @@ pub async fn download_update_file(
         .await
         .map_err(|e| format!("刷新文件缓存失败: {e}"))?;
 
-    Ok(dest_path.to_string_lossy().to_string())
+    Ok(dest_path.to_string_lossy().to_string()) // 实现
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1175,7 +1175,7 @@ fn decrypt_qmc_file_inplace(path: &Path, ekey: &str) -> Result<u64, String> {
     Ok(file_size)
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn decrypt_qmc_file(file_path: String, ekey: Option<String>) -> Result<bool, String> {
     let validated = path_validator::validate_path(&file_path, None)?;
     let path = validated;
@@ -1210,7 +1210,7 @@ pub struct FetchedImage {
     pub mime: String,
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
     use std::time::Duration;
 
@@ -1236,7 +1236,7 @@ pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
         .await
         .map_err(|e| format!("请求图片失败: {e}"))?;
 
-    if !response.status().is_success() {
+    if !response.status().is_success() { // 实现
         return Err(format!("图片服务器返回错误状态: {}", response.status()));
     }
 
@@ -1245,7 +1245,7 @@ pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("image/jpeg")
-        .to_string();
+        .to_string(); // 实现
 
     let data = response
         .bytes()
@@ -1299,9 +1299,9 @@ fn write_file_bytes(dest: &Path, data: &[u8]) -> Result<(), String> {
     fs::write(dest, data).map_err(|e| format!("写入文件失败: {e}"))
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn save_text_via_dialog(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, // 实现
     default_file_name: String,
     filter: Option<SaveDialogFilter>,
     content: String,
@@ -1313,9 +1313,9 @@ pub fn save_text_via_dialog(
     Ok(Some(dest.to_string_lossy().to_string()))
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn save_bytes_via_dialog(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, // 实现
     default_file_name: String,
     filter: Option<SaveDialogFilter>,
     data: Vec<u8>,
@@ -1351,9 +1351,9 @@ pub struct FinalizeDownloadExtrasResult {
     pub cover_mime: String,
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub async fn finalize_download_extras(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, // 实现
     request: FinalizeDownloadExtrasRequest,
 ) -> Result<FinalizeDownloadExtrasResult, String> {
     let mut result = FinalizeDownloadExtrasResult::default();
@@ -1591,7 +1591,7 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn is_store_build() -> bool {
     #[cfg(feature = "store-build")]
     let store = true;
@@ -1617,9 +1617,9 @@ pub fn is_store_build() -> bool {
     store
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
-    use std::process::Command;
+    use std::process::{Command};
 
     let download_dir = app_handle
         .path()
@@ -1629,12 +1629,12 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
     let validated = path_validator::validate_path_in_dir(&path, &download_dir)?;
 
     let ext = validated
-        .extension()
+        .extension() // 实现
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
 
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     let ext_allowed = ext == "msi" || ext == "exe";
     #[cfg(target_os = "linux")]
     let ext_allowed = ext == "deb" || ext == "rpm" || ext == "appimage";
@@ -1655,7 +1655,7 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
 
     let path_str = validated.to_string_lossy().to_string();
 
-    #[cfg(target_os = "windows")]
+    #[cfg(windows)]
     {
         if ext == "msi" {
             Command::new("msiexec")
@@ -1739,7 +1739,7 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
 
 #[tauri::command] // 状态写入命令
 pub async fn write_state_json(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, // 实现
     key: String,
     value: String,
 ) -> Result<(), String> {
@@ -1762,7 +1762,7 @@ pub async fn write_state_json(
 
 #[tauri::command] // 状态读取命令
 pub async fn read_state_json(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, // 实现
     key: String,
 ) -> Result<Option<String>, String> {
     let sanitized_key = path_validator::sanitize_filename_component(&key)
@@ -1889,14 +1889,14 @@ async fn evict_wallpaper_cache(
     }
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub async fn delete_wallpaper_file(
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle, // 实现
     local_path: String,
 ) -> Result<(), String> {
     let app_dir = app_handle
         .path()
-        .app_data_dir()
+        .app_data_dir() // 实现
         .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
     let wallpaper_dir = app_dir.join("wallpapers");
     let target = PathBuf::from(&local_path);

@@ -2,12 +2,12 @@
 import { inject, type Ref } from 'vue';
 import TopBarControlIcon from './TopBarControlIcon.vue';
 import type { TopBarItemKey } from '../../types';
-import { useI18n } from '../../features/i18n';
+import { useI18n } from '../../features/i18n'; // 实现
 
 defineProps<{
   itemKey: TopBarItemKey;
 }>();
-const { t } = useI18n();
+const { t } = useI18n(); // 实现
 
 const ctx = inject<{
   isDarkTheme: Ref<boolean>;
@@ -35,7 +35,7 @@ const ctx = inject<{
     v-if="itemKey === 'back'"
     @click.stop="ctx.goBack"
     class="w-8 h-8 rounded-full bg-white/5 dark:bg-white/5 hover:bg-white/20 dark:hover:bg-white/20 flex items-center justify-center text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white transition-colors focus:outline-none cursor-pointer border border-black/10 dark:border-white/10"
-    :title="t('topbar.back')"
+    :title="t('topbar.back')" 
   >
     <TopBarControlIcon item-key="back" class="h-5 w-5 -ml-0.5" />
   </button>
@@ -44,8 +44,8 @@ const ctx = inject<{
     v-else-if="itemKey === 'recognize'"
     type="button"
     class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
-    :title="t('topbar.recognize')"
-    :aria-label="t('topbar.recognize')"
+    :title="t('topbar.recognize')" 
+    :aria-label="t('topbar.recognize')" 
     @click.stop="ctx.toggleRecognition"
   >
     <TopBarControlIcon item-key="recognize" class="h-5 w-5" />
@@ -67,8 +67,8 @@ const ctx = inject<{
     type="button"
     class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
     :class="{ 'opacity-50': ctx.isFetchingAnnouncement.value }"
-    :title="t('topbar.announcement')"
-    :aria-label="t('topbar.viewAnnouncement')"
+    :title="t('topbar.announcement')" 
+    :aria-label="t('topbar.viewAnnouncement')" 
     @click.stop="ctx.manualCheckAnnouncement"
   >
     <TopBarControlIcon item-key="announcement" class="h-5 w-5" />
@@ -83,7 +83,7 @@ const ctx = inject<{
       : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'"
     :aria-pressed="ctx.isSettingsRoute.value"
     @click.stop="ctx.toggleSettingsPage"
-    :title="t('topbar.settings')"
+    :title="t('topbar.settings')" 
   >
     <TopBarControlIcon
       item-key="settings"
@@ -100,7 +100,7 @@ const ctx = inject<{
       ? 'text-[#EC4141] dark:text-[#ff8b8b]'
       : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'"
     :title="ctx.accountTitle.value"
-    :aria-label="ctx.isLoggedIn.value ? t('topbar.profile') : t('topbar.login')"
+    :aria-label="ctx.isLoggedIn.value ? t('topbar.profile') : t('topbar.login')" 
     @click.stop="ctx.openAccountPage"
   >
     <img
@@ -122,8 +122,8 @@ const ctx = inject<{
     v-else-if="itemKey === 'colorScheme'"
     type="button"
     class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
-    :title="t('topbar.skin')"
-    :aria-label="t('topbar.skin')"
+    :title="t('topbar.skin')" 
+    :aria-label="t('topbar.skin')" 
     @click.stop="ctx.openColorScheme"
   >
     <TopBarControlIcon item-key="colorScheme" class="h-5 w-5" />

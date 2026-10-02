@@ -6,10 +6,10 @@
  * 三类函数，旧版本字段才能被安全地映射到当前数据模型。
  */
 
-import type {
+import type { // 实现
   DesktopLyricsSettings, DesktopLyricsPlayerAlignment, ImportedLyricsFont, LyricsColorScheme,
   LyricsFontPreset, LyricsPlayerAlignment, LyricsPlayerRenderMode, LyricsSettings,
-} from '../../types';
+} from '../../types'; // 实现
 
 /* ==================== 旧版落盘键（迁移后即弃用） ==================== */
 
@@ -72,7 +72,7 @@ export const DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR: string = '#000000';
 
 /* ==================== 预设字体表 ==================== */
 
-export interface LyricsFontOption {
+export interface LyricsFontOption { // 实现
   value: LyricsFontPreset; // 下拉项取值：内置预设名或字体族名
   label: string; // 界面展示名
   fontFamily: string; // 写入 CSS 的 font-family 串
@@ -132,7 +132,7 @@ const MAIN_OFFSET_GROUP = { playerOffsetX: DEFAULT_PLAYER_OFFSET_X, playerOffset
 /** 主窗口背景的出厂值。 */
 const MAIN_BACKGROUND_GROUP = { backgroundBlur: DEFAULT_BACKGROUND_BLUR, customBackgroundImage: DEFAULT_CUSTOM_BACKGROUND_IMAGE } as const;
 
-export const defaultLyricsSettings: LyricsSettings = {
+export const defaultLyricsSettings: LyricsSettings = { // 实现
   ...MAIN_SWITCH_GROUP,
   ...MAIN_FONT_SPLIT_GROUP,
   ...MAIN_RENDER_GROUP,
@@ -174,14 +174,14 @@ const DESKTOP_TEXT_METRIC_GROUP = {
   playerLineGap: DEFAULT_PLAYER_LINE_GAP, playerOffsetX: DEFAULT_PLAYER_OFFSET_X, playerOffsetY: DEFAULT_PLAYER_OFFSET_Y,
 } as const;
 
-export const defaultDesktopLyricsSettings: DesktopLyricsSettings = {
+export const defaultDesktopLyricsSettings: DesktopLyricsSettings = { // 实现
   ...DESKTOP_WINDOW_GROUP,
   ...DESKTOP_LOCK_GROUP,
   ...DESKTOP_COLOR_GROUP,
   ...DESKTOP_READABILITY_GROUP,
   ...DESKTOP_TEXT_METRIC_GROUP,
   playerAlignment: DEFAULT_DESKTOP_PLAYER_ALIGNMENT, // 桌面默认对角布局
-  playerFontPreset: DEFAULT_PLAYER_FONT_PRESET,
+  playerFontPreset: DEFAULT_PLAYER_FONT_PRESET, // 实现
 };
 
 /** 每次调用都返回一份全新快照，避免调用方互相污染。 */
@@ -273,13 +273,13 @@ export function normalizeDesktopPlayerAlignment(value: unknown, fallback: Deskto
   }
   // 回退值若是对角布局，先压回居中，再走水平对齐判定。
   const horizontalFallback = (fallback === DEFAULT_DESKTOP_PLAYER_ALIGNMENT ? 'center' : fallback) as LyricsPlayerAlignment;
-  return normalizePlayerAlignment(value, horizontalFallback);
+  return normalizePlayerAlignment(value, horizontalFallback); // 实现
 }
 
 /** 桌面配色方案的全部合法取值。 */
 const COLOR_SCHEME_SET: ReadonlySet<string> = new Set<LyricsColorScheme>(['default', 'pink', 'blue', 'green', 'white', 'custom']);
 
-export function normalizeLyricsColorScheme(value: unknown): LyricsColorScheme {
+export function normalizeLyricsColorScheme(value: unknown): LyricsColorScheme { // 实现
   if (typeof value !== 'string' || !COLOR_SCHEME_SET.has(value)) {
     return 'auto';
   }
@@ -303,7 +303,7 @@ export function normalizeHexColor(value: unknown, fallback: string): string {
 /** 字体名/标识统一清洗：去首尾空白、折叠连续空白、限长。 */
 const FONT_TEXT_MAX_LENGTH = 160;
 
-export function normalizeCustomFontName(value: string): string {
+export function normalizeCustomFontName(value: string): string { // 实现
   const flattened = value.trim().replace(/\s+/g, ' ');
   return flattened.length > FONT_TEXT_MAX_LENGTH ? flattened.slice(0, FONT_TEXT_MAX_LENGTH) : flattened;
 }
@@ -333,7 +333,7 @@ export function normalizeImportedLyricsFonts(value: unknown): ImportedLyricsFont
   }
   const claimedFamilies = new Set<string>();
   const cleanedList: ImportedLyricsFont[] = [];
-  for (const item of value) {
+  for (const item of value) { // 实现
     const record = asImportedFontRecord(item);
     if (record === null) {
       continue;
@@ -349,13 +349,13 @@ export function normalizeImportedLyricsFonts(value: unknown): ImportedLyricsFont
 }
 
 /** 给字体名包上双引号并转义内部反斜杠与引号，用于拼进 font-family。 */
-export function escapeFontFamilyName(value: string): string {
+export function escapeFontFamilyName(value: string): string { // 实现
   const withEscapedBackslashes = value.replace(/\\/g, '\\\\');
   const withEscapedQuotes = withEscapedBackslashes.replace(/"/g, '\\"');
   return `"${withEscapedQuotes}"`;
 }
 
-export function normalizeLyricsFontPreset(value: unknown): LyricsFontPreset {
+export function normalizeLyricsFontPreset(value: unknown): LyricsFontPreset { // 实现
   const tidied = typeof value === 'string' ? normalizeCustomFontName(value) : '';
   return tidied === '' ? DEFAULT_PLAYER_FONT_PRESET : tidied;
 }
@@ -363,7 +363,7 @@ export function normalizeLyricsFontPreset(value: unknown): LyricsFontPreset {
 /** 播放器渲染内核仅支持 amll 与 light 两种。 */
 const RENDER_MODE_SET: ReadonlySet<string> = new Set<LyricsPlayerRenderMode>(['amll', 'light']);
 
-export function normalizeLyricsPlayerRenderMode(value: unknown): LyricsPlayerRenderMode {
+export function normalizeLyricsPlayerRenderMode(value: unknown): LyricsPlayerRenderMode { // 实现
   if (typeof value === 'string' && RENDER_MODE_SET.has(value)) {
     return value as LyricsPlayerRenderMode;
   }
@@ -371,7 +371,7 @@ export function normalizeLyricsPlayerRenderMode(value: unknown): LyricsPlayerRen
 }
 
 /** 取 font-family 列表的第一个族名，并剥掉包裹的引号。 */
-export function extractPrimaryFontFamily(fontFamily: string): string {
+export function extractPrimaryFontFamily(fontFamily: string): string { // 实现
   const [firstCandidate = ''] = fontFamily.split(',');
   return firstCandidate.trim().replace(/^["']|["']$/g, '');
 }
@@ -388,7 +388,7 @@ function keepString(raw: unknown, fallback: string): string {
   return typeof raw === 'string' ? raw : fallback;
 }
 
-export function normalizeLyricsSettingsPatch(patch: Partial<LyricsSettings>): LyricsSettings {
+export function normalizeLyricsSettingsPatch(patch: Partial<LyricsSettings>): LyricsSettings { // 实现
   const merged = Object.assign({}, defaultLyricsSettings, patch) as LyricsSettings;
   // 逐字段重写为合法值：布尔严格判定、数值区间钳制、枚举白名单过滤。
   merged.showTranslation = keepBoolean(merged.showTranslation, defaultLyricsSettings.showTranslation);
@@ -415,9 +415,9 @@ interface LegacyDesktopExtras {
   customRomajiColor?: string;
 }
 
-export function normalizeDesktopLyricsSettingsPatch(
-  patch: Partial<DesktopLyricsSettings>,
-): DesktopLyricsSettings {
+export function normalizeDesktopLyricsSettingsPatch( // 实现
+  patch: Partial<DesktopLyricsSettings>, // 实现
+): DesktopLyricsSettings { // 实现
   const merged = Object.assign({}, defaultDesktopLyricsSettings, patch) as DesktopLyricsSettings;
   const legacy = patch as Partial<DesktopLyricsSettings> & LegacyDesktopExtras;
   // 更早版本只有单一阴影强度与单一罗马音颜色：新字段缺省时向下兼容。

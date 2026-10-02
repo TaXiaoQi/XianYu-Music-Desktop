@@ -1,4 +1,4 @@
-import type { AppSettings } from '../../types';
+import type { AppSettings } from '../../types'; // 实现
 import { playerStorage } from '../../services/storage/playerStorage';
 import { LEGACY_LYRICS_SETTINGS_KEY, LEGACY_DESKTOP_LYRICS_SETTINGS_KEY } from '../../composables/lyrics/constants';
 import { normalizeLyricsSettingsPatch, normalizeDesktopLyricsSettingsPatch } from '../../composables/lyrics/constants';
@@ -9,7 +9,7 @@ import {
   VINYL_MATERIAL_LIGHT_MIGRATION_ID,
   type MigrationStorage,
 } from './migrations';
-import { mergeAppSettings } from './store';
+import { mergeAppSettings } from './store'; // 实现
 
 /** 宽松的对象判定：非 null/undefined 的 object 即成立（数组是否放行由调用方决定） */
 const isObjectLike = (value: unknown): boolean => !!value && typeof value === 'object';
@@ -36,7 +36,7 @@ function readLegacyJsonEntry<T extends object>(storageKey: string): Partial<T> |
 }
 
 function collectLegacyLyricsPatch(
-  saved: Partial<AppSettings>,
+  saved: Partial<AppSettings>, // 实现
 ): Partial<Pick<AppSettings, 'lyrics' | 'desktopLyrics'>> {
   const legacyPatch: Partial<Pick<AppSettings, 'lyrics' | 'desktopLyrics'>> = {};
 
@@ -70,8 +70,8 @@ const readPersistedPlayerSettings = (): AppSettings | null => playerStorage.read
 
 /** 把存量快照并入当前默认值后整体替换 store 设置；解析或合并抛错由调用方兜底 */
 function applyPersistedSnapshot(
-  currentSettings: AppSettings,
-  replaceSettings: (settings: AppSettings) => void,
+  currentSettings: AppSettings, // 实现
+  replaceSettings: (settings: AppSettings) => void, // 实现
   persistedSnapshot: AppSettings,
   appliedMigrationIds: readonly string[],
 ) {

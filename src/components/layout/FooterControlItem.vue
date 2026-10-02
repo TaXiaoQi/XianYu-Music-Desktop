@@ -4,7 +4,7 @@ import { usePlaybackController } from '../../features/playback';
 import { useToast } from '../../composables/toast';
 import { reportDailyDislikeSignal } from '../../services/domain/dailyRecommendFeedback';
 import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue'; // 实现
-import FooterControlIcon from './FooterControlIcon.vue';
+import FooterControlIcon from './FooterControlIcon.vue'; // 实现
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
 import type { DownloadRecord } from '../../services/domain/downloadHistory';
 
@@ -275,7 +275,7 @@ watch(
       : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
     :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
   >
-    <FooterControlIcon item-key="favorite" :active="isFavorite(currentSong)" class="h-5 w-5" />
+    <FooterControlIcon item-key="favorite" :active="isFavorite(currentSong)" class="h-5 w-5" /> 
   </button>
 
   <div v-else-if="itemKey === 'download'" class="relative flex items-center justify-center h-full z-[70] shrink-0">
@@ -301,8 +301,8 @@ watch(
               : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
       :title="downloadButtonTitle"
     >
-      <FooterControlIcon
-        item-key="download"
+      <FooterControlIcon 
+        item-key="download" 
         :loading="mvActive
           ? isMvVideoDownloading
           : (isOnlineSong && isDownloading)"
@@ -382,7 +382,7 @@ watch(
     :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
     :title="['列表循环', '单曲循环', '随机播放'][playMode]"
   >
-    <FooterControlIcon item-key="playMode" :play-mode="playMode" class="h-5 w-5" />
+    <FooterControlIcon item-key="playMode" :play-mode="playMode" class="h-5 w-5" /> 
   </button>
 
   <button
@@ -392,7 +392,7 @@ watch(
     :class="showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
     title="桌面歌词"
   >
-    <FooterControlIcon item-key="desktopLyrics" />
+    <FooterControlIcon item-key="desktopLyrics" /> 
   </button>
 
   <div v-else-if="itemKey === 'quality'" class="relative flex items-center justify-center h-full z-[70]">
@@ -421,7 +421,7 @@ watch(
       ]"
       :title="isAudioControlLocked ? audioLockTooltip : (mvActive ? 'MV 画质选择' : (isQualitySelectableSong ? '音质选择' : '本地音质'))"
     >
-      <FooterControlIcon item-key="quality" :quality-label="qualityButtonLabel" />
+      <FooterControlIcon item-key="quality" :quality-label="qualityButtonLabel" /> 
     </button>
 
     <transition name="fade-scale">
@@ -523,7 +523,7 @@ watch(
       ]"
       :title="isAudioControlLocked ? audioLockTooltip : '音量'"
     >
-      <FooterControlIcon item-key="volume" :volume="volume" class="h-5 w-5" />
+      <FooterControlIcon item-key="volume" :volume="volume" class="h-5 w-5" /> 
     </button>
   </div>
 
@@ -543,7 +543,7 @@ watch(
       ]"
       :title="isEffectLocked ? (effectLockTooltip || audioLockTooltip) : '均衡器 (EQ)'"
     >
-      <FooterControlIcon item-key="equalizer" class="h-4 w-4" />
+      <FooterControlIcon item-key="equalizer" class="h-4 w-4" /> 
     </button>
 
     <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" /> 
@@ -555,7 +555,7 @@ watch(
       :class="showPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
       title="播放队列"
     >
-      <FooterControlIcon item-key="playlist" class="h-[22px] w-[22px]" />
+      <FooterControlIcon item-key="playlist" class="h-[22px] w-[22px]" /> 
     </button>
   </div>
 

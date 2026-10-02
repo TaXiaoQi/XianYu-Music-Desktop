@@ -1,27 +1,27 @@
-use crate::database::DbState;
-use crate::music::{
-    run_cache_cleanup, FullCoverImageConcurrencyLimit, ThumbnailImageConcurrencyLimit,
-    FULL_COVER_IMAGE_CONCURRENCY_LIMIT, THUMBNAIL_IMAGE_CONCURRENCY_LIMIT,
+use crate::database::{DbState};
+use crate::music::{ // 实现
+    run_cache_cleanup, FullCoverImageConcurrencyLimit, ThumbnailImageConcurrencyLimit, // 实现
+    FULL_COVER_IMAGE_CONCURRENCY_LIMIT, THUMBNAIL_IMAGE_CONCURRENCY_LIMIT, // 实现
 };
-use crate::player::init_player;
+use crate::player::{init_player};
 use crate::player::PlaybackSessionState;
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use tauri::{
+use std::collections::{HashSet};
+use std::path::{PathBuf, Path};
+use std::sync::{Mutex};
+use tauri::{ // 实现
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}, // 实现
     Emitter, Manager,
 };
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore};
 
-const APP_SHOW_MAIN_EVENT: &str = "app:show-main";
+const APP_SHOW_MAIN_EVENT: &str = "app:show-main"; // 实现
 const APP_DEEP_LINK_EVENT: &str = "app:deep-link";
 const APP_TRAY_MENU_EVENT: &str = "app:tray-menu";
-const APP_TRAY_MENU_OPEN_EVENT: &str = "app:tray-menu-open";
+const APP_TRAY_MENU_OPEN_EVENT: &str = "app:tray-menu-open"; // 实现
 const DEEP_LINK_SCHEME: &str = "xianyu://";
-const MAIN_WINDOW_LABEL: &str = "main";
-const MINI_PLAYER_WINDOW_LABEL: &str = "mini-player";
+const MAIN_WINDOW_LABEL: &str = "main"; // 实现
+const MINI_PLAYER_WINDOW_LABEL: &str = "mini-player"; // 实现
 const TRAY_ID: &str = "tray";
 const TRAY_MENU_TRACK_TITLE_ID: &str = "track-title";
 const TRAY_MENU_TRACK_ARTIST_ID: &str = "track-artist";
@@ -36,7 +36,7 @@ const TRAY_MENU_SETTINGS_ID: &str = "open-settings";
 const TRAY_MENU_QUIT_ID: &str = "quit";
 
 #[derive(serde::Deserialize, Clone, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")] // 实现
 pub(crate) struct NativeTrayMenuSong {
     title: Option<String>,
     name: Option<String>,
@@ -44,7 +44,7 @@ pub(crate) struct NativeTrayMenuSong {
 }
 
 #[derive(serde::Deserialize, Clone, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")] // 实现
 pub(crate) struct NativeTrayMenuState {
     current_song: Option<NativeTrayMenuSong>,
     is_playing: bool,
@@ -71,19 +71,19 @@ pub(crate) struct TrayMenuRuntimeState {
     native_menu_state: Mutex<NativeTrayMenuState>,
 }
 
-#[derive(serde::Serialize, Clone, Copy)]
-#[serde(rename_all = "camelCase")]
-struct TrayMenuOpenPayload {
+#[derive(Copy, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")] // 实现
+struct TrayMenuOpenPayload { // TrayMenuOpenPayload
     x: f64,
     y: f64,
 }
 
-fn append_unique_paths(target: &mut Vec<String>, incoming: impl IntoIterator<Item = String>) {
-    let mut seen = target.iter().cloned().collect::<HashSet<_>>();
+fn append_unique_paths(target: &mut Vec<String>, incoming: impl IntoIterator<Item = String>) { // append_unique_paths
+    let mut seen = target.iter().cloned().collect::<HashSet<_>>(); // 实现
 
-    for path in incoming {
-        if seen.insert(path.clone()) {
-            target.push(path);
+    for path in incoming { // 实现
+        if seen.insert(path.clone()) { // 实现
+            target.push(path); // 实现
         }
     }
 }
@@ -95,16 +95,16 @@ fn has_autostart_flag(args: impl IntoIterator<Item = String>) -> bool {
         .any(|arg| arg.trim() == crate::autostart::AUTOSTART_ARG)
 }
 
-fn collect_existing_open_paths(
-    args: impl IntoIterator<Item = String>,
-    current_exe: Option<&Path>,
-) -> Vec<String> {
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
+fn collect_existing_open_paths( // collect_existing_open_paths
+    args: impl IntoIterator<Item = String>, // 实现
+    current_exe: Option<&Path>, // 实现
+) -> Vec<String> { // 实现
+    let mut paths = Vec::new(); // 实现
+    let mut seen = HashSet::new(); // 实现
 
-    for arg in args {
-        let trimmed = arg.trim();
-        if trimmed.is_empty() {
+    for arg in args { // 实现
+        let trimmed = arg.trim(); // 实现
+        if trimmed.is_empty() { // 实现
             continue;
         }
 
@@ -117,44 +117,44 @@ fn collect_existing_open_paths(
             continue;
         }
 
-        let normalized = crate::music::utils::normalize_path(trimmed);
-        if normalized.is_empty() {
+        let normalized = crate::music::utils::normalize_path(trimmed); // 实现
+        if normalized.is_empty() { // 实现
             continue;
         }
 
-        let candidate = PathBuf::from(&normalized);
-        if !candidate.exists() {
+        let candidate = PathBuf::from(&normalized); // 实现
+        if !candidate.exists() { // 实现
             continue;
         }
 
-        if current_exe.is_some_and(|exe| exe == candidate.as_path()) {
+        if current_exe.is_some_and(|exe| exe == candidate.as_path()) { // 实现
             continue;
         }
 
-        if seen.insert(normalized.clone()) {
-            paths.push(normalized);
+        if seen.insert(normalized.clone()) { // 实现
+            paths.push(normalized); // 实现
         }
     }
 
     paths
 }
 
-fn queue_open_paths<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<String>) {
-    if paths.is_empty() {
+fn queue_open_paths<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<String>) { // 实现
+    if paths.is_empty() { // 实现
         return;
     }
 
-    if let Some(state) = app.try_state::<PendingOpenPaths>() {
-        if let Ok(mut pending_paths) = state.0.lock() {
-            append_unique_paths(&mut pending_paths, paths);
+    if let Some(state) = app.try_state::<PendingOpenPaths>() { // 实现
+        if let Ok(mut pending_paths) = state.0.lock() { // 实现
+            append_unique_paths(&mut pending_paths, paths); // 实现
         }
     }
 }
 
 fn collect_deep_links(args: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut links = Vec::new();
-    let mut seen = HashSet::new();
-    for arg in args {
+    let mut seen = HashSet::new(); // 实现
+    for arg in args { // 实现
         let trimmed = arg.trim().to_string();
         if trimmed.starts_with(DEEP_LINK_SCHEME) && seen.insert(trimmed.clone()) {
             links.push(trimmed);
@@ -183,21 +183,21 @@ fn queue_deep_links<R: tauri::Runtime>(app: &tauri::AppHandle<R>, links: Vec<Str
     }
 }
 
-fn reveal_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    let mini_player_visible = app
-        .get_webview_window(MINI_PLAYER_WINDOW_LABEL)
-        .and_then(|window| window.is_visible().ok())
-        .unwrap_or(false);
+fn reveal_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) { // 实现
+    let mini_player_visible = app // 实现
+        .get_webview_window(MINI_PLAYER_WINDOW_LABEL) // 实现
+        .and_then(|window| window.is_visible().ok()) // 实现
+        .unwrap_or(false); // 实现
 
-    if mini_player_visible {
-        let _ = app.emit(APP_SHOW_MAIN_EVENT, ());
+    if mini_player_visible { // 实现
+        let _ = app.emit(APP_SHOW_MAIN_EVENT, ()); // 实现
         return;
     }
 
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) { // 实现
+        let _ = window.unminimize(); // 实现
+        let _ = window.show(); // 实现
+        let _ = window.set_focus(); // 实现
     }
 }
 
@@ -205,8 +205,8 @@ fn emit_tray_action<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: &str) 
     let _ = app.emit(APP_TRAY_MENU_EVENT, action);
 }
 
-fn emit_tray_menu_open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, x: f64, y: f64) {
-    let _ = app.emit(APP_TRAY_MENU_OPEN_EVENT, TrayMenuOpenPayload { x, y });
+fn emit_tray_menu_open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, x: f64, y: f64) { // 实现
+    let _ = app.emit(APP_TRAY_MENU_OPEN_EVENT, TrayMenuOpenPayload { x, y }); // 实现
 }
 
 fn is_native_tray_menu_enabled<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
@@ -216,7 +216,7 @@ fn is_native_tray_menu_enabled<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> 
 }
 
 fn set_native_tray_menu_enabled<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
+    app: &tauri::AppHandle<R>, // 实现
     enabled: bool,
 ) -> Result<(), String> {
     if let Some(state) = app.try_state::<TrayMenuRuntimeState>() {
@@ -238,7 +238,7 @@ fn set_native_tray_menu_enabled<R: tauri::Runtime>(
 }
 
 fn set_native_tray_menu_state<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
+    app: &tauri::AppHandle<R>, // 实现
     state: NativeTrayMenuState,
 ) -> Result<(), String> {
     if let Some(runtime_state) = app.try_state::<TrayMenuRuntimeState>() {
@@ -405,22 +405,22 @@ fn apply_tray_menu<R: tauri::Runtime>(
     Ok(())
 }
 
-fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) {
-    #[cfg(target_os = "windows")]
+fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) { // 实现
+    #[cfg(windows)]
     {
-        if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-            use raw_window_handle::HasWindowHandle;
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) { // 实现
+            use raw_window_handle::{HasWindowHandle};
 
-            if let Ok(handle) = window.as_ref().window().window_handle() {
-                if let raw_window_handle::RawWindowHandle::Win32(win32) = handle.as_raw() {
-                    crate::window_boundary::install_boundary_subclass(win32.hwnd.get() as isize);
+            if let Ok(handle) = window.as_ref().window().window_handle() { // 实现
+                if let raw_window_handle::RawWindowHandle::Win32(win32) = handle.as_raw() { // 实现
+                    crate::window_boundary::install_boundary_subclass(win32.hwnd.get() as isize); // 实现
                 }
             }
         }
     }
 }
 
-fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
+fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 实现
     let _tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(
             app.default_window_icon()
@@ -428,7 +428,7 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
                 .clone(),
         )
         .tooltip("弦予音乐")
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false) // 实现
         .on_menu_event(|app, event| {
             let action = event.id().as_ref();
             match action {
@@ -444,20 +444,20 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
                 _ => {}
             }
         })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
+        .on_tray_icon_event(|tray, event| { // 实现
+            if let TrayIconEvent::Click { // 实现
+                button: MouseButton::Left, // 实现
+                button_state: MouseButtonState::Up, // 实现
                 ..
             } = event
             {
-                reveal_main_window(&tray.app_handle());
+                reveal_main_window(&tray.app_handle()); // 实现
                 return;
             }
 
-            if let TrayIconEvent::Click {
-                button: MouseButton::Right,
-                button_state: MouseButtonState::Up,
+            if let TrayIconEvent::Click { // 实现
+                button: MouseButton::Right, // 实现
+                button_state: MouseButtonState::Up, // 实现
                 position,
                 ..
             } = event
@@ -468,22 +468,22 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
                 }
             }
         })
-        .build(app.handle())?;
+        .build(app.handle())?; // 实现
 
     Ok(())
 }
 
-pub(crate) fn handle_single_instance<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    argv: Vec<String>,
+pub(crate) fn handle_single_instance<R: tauri::Runtime>( // 实现
+    app: &tauri::AppHandle<R>, // 实现
+    argv: Vec<String>, // 实现
 ) {
-    let current_exe = std::env::current_exe().ok();
+    let current_exe = std::env::current_exe().ok(); // 实现
     let deep_links = collect_deep_links(argv.iter().cloned());
-    let open_paths = collect_existing_open_paths(argv, current_exe.as_deref());
+    let open_paths = collect_existing_open_paths(argv, current_exe.as_deref()); // 实现
     queue_deep_links(app, deep_links);
-    queue_open_paths(app, open_paths);
-    let _ = app.emit("app:open-paths", ());
-    reveal_main_window(app);
+    queue_open_paths(app, open_paths); // 实现
+    let _ = app.emit("app:open-paths", ()); // 实现
+    reveal_main_window(app); // 实现
 }
 
 #[cfg_attr(
@@ -491,7 +491,7 @@ pub(crate) fn handle_single_instance<R: tauri::Runtime>(
     allow(dead_code)
 )]
 pub(crate) fn handle_opened_urls<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
+    app: &tauri::AppHandle<R>, // 实现
     urls: Vec<tauri::Url>,
 ) {
     let paths: Vec<String> = urls
@@ -501,21 +501,21 @@ pub(crate) fn handle_opened_urls<R: tauri::Runtime>(
         .map(|path| crate::music::utils::normalize_path(path.to_string_lossy().as_ref()))
         .filter(|normalized| !normalized.is_empty())
         .collect();
-    if paths.is_empty() {
+    if paths.is_empty() { // 实现
         return;
     }
     queue_open_paths(app, paths);
-    let _ = app.emit("app:open-paths", ());
-    reveal_main_window(app);
+    let _ = app.emit("app:open-paths", ()); // 实现
+    reveal_main_window(app); // 实现
 }
 
-pub(crate) fn setup_app(
-    app: &mut tauri::App<tauri::Wry>,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn setup_app( // setup_app
+    app: &mut tauri::App<tauri::Wry>, // 实现
+) -> Result<(), Box<dyn std::error::Error>> { // 实现
     // 网络代理必须在构造任何 HTTP client 之前确定，故放在 setup 的第一步。
     crate::netproxy::load(app.handle());
 
-    app.manage(PendingOpenPaths::default());
+    app.manage(PendingOpenPaths::default()); // 实现
     app.manage(PendingDeepLinks::default());
     app.manage(TrayMenuRuntimeState::default());
     app.manage(crate::sleep_timer::SleepTimerState::default());
@@ -546,7 +546,7 @@ pub(crate) fn setup_app(
         }
     }
 
-    let db_state = DbState::new(app.handle())?;
+    let db_state = DbState::new(app.handle())?; // 实现
 
     let playback_session = PlaybackSessionState::new();
     if let Err(e) = playback_session.load_from_db(&db_state) {
@@ -554,36 +554,36 @@ pub(crate) fn setup_app(
     }
     app.manage(playback_session);
 
-    app.manage(db_state);
+    app.manage(db_state); // 实现
 
-    let player_state = init_player(app.handle());
-    app.manage(player_state);
+    let player_state = init_player(app.handle()); // 实现
+    app.manage(player_state); // 实现
 
-    app.manage(ThumbnailImageConcurrencyLimit(Semaphore::new(
-        THUMBNAIL_IMAGE_CONCURRENCY_LIMIT,
+    app.manage(ThumbnailImageConcurrencyLimit(Semaphore::new( // 实现
+        THUMBNAIL_IMAGE_CONCURRENCY_LIMIT, // 实现
     )));
-    app.manage(FullCoverImageConcurrencyLimit(Semaphore::new(
-        FULL_COVER_IMAGE_CONCURRENCY_LIMIT,
+    app.manage(FullCoverImageConcurrencyLimit(Semaphore::new( // 实现
+        FULL_COVER_IMAGE_CONCURRENCY_LIMIT, // 实现
     )));
 
     app.manage(crate::plugin_host::commands::init_engine_state(
         app.handle(),
     ));
 
-    run_cache_cleanup(app.handle());
+    run_cache_cleanup(app.handle()); // 实现
 
-    let current_exe = std::env::current_exe().ok();
+    let current_exe = std::env::current_exe().ok(); // 实现
     let startup_args: Vec<String> = std::env::args().skip(1).collect();
-    let initial_open_paths =
+    let initial_open_paths = // 实现
         collect_existing_open_paths(startup_args.iter().cloned(), current_exe.as_deref());
-    queue_open_paths(app.handle(), initial_open_paths);
+    queue_open_paths(app.handle(), initial_open_paths); // 实现
     let initial_deep_links = collect_deep_links(startup_args);
     queue_deep_links(app.handle(), initial_deep_links);
 
-    install_window_boundary(app);
-    build_tray(app)?;
+    install_window_boundary(app); // 实现
+    build_tray(app)?; // 实现
 
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) { // 实现
         crate::webview_settings::disable_browser_accelerator_keys(&window);
     }
 
@@ -633,18 +633,18 @@ fn start_control_channel(handle: tauri::AppHandle) {
     });
 }
 
-#[tauri::command]
-pub(crate) fn consume_pending_open_paths(
-    state: tauri::State<PendingOpenPaths>,
-) -> Result<Vec<String>, String> {
-    let mut pending_paths = state.0.lock().map_err(|error| error.to_string())?;
-    Ok(std::mem::take(&mut *pending_paths))
+#[tauri::command] // 实现
+pub(crate) fn consume_pending_open_paths( // consume_pending_open_paths
+    state: tauri::State<PendingOpenPaths>, // 实现
+) -> Result<Vec<String>, String> { // 实现
+    let mut pending_paths = state.0.lock().map_err(|error| error.to_string())?; // 实现
+    Ok(std::mem::take(&mut *pending_paths)) // 实现
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub(crate) fn consume_pending_deep_links(
     state: tauri::State<PendingDeepLinks>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, String> { // 实现
     let mut pending = state.0.lock().map_err(|error| error.to_string())?;
     Ok(std::mem::take(&mut *pending))
 }
@@ -655,7 +655,7 @@ pub(crate) fn was_launched_at_startup(state: tauri::State<LaunchedAtStartupState
     state.0
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub(crate) fn exit_app(app: tauri::AppHandle) {
     crate::graceful_shutdown(&app);
 }
@@ -670,7 +670,7 @@ pub(crate) fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
     app.restart()
 }
 
-#[tauri::command]
+#[tauri::command] // 实现
 pub(crate) fn update_native_tray_menu(
     app: tauri::AppHandle,
     state: NativeTrayMenuState,
@@ -681,7 +681,7 @@ pub(crate) fn update_native_tray_menu(
 }
 
 #[cfg(any(feature = "devtools", debug_assertions))]
-#[tauri::command]
+#[tauri::command] // 实现
 pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(MAIN_WINDOW_LABEL)
@@ -691,7 +691,7 @@ pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[cfg(not(any(feature = "devtools", debug_assertions)))]
-#[tauri::command]
+#[tauri::command] // 实现
 pub(crate) fn open_devtools(_app: tauri::AppHandle) -> Result<(), String> {
     Err("DevTools 在生产构建中不可用".to_string())
 }
