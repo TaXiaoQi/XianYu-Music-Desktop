@@ -1,6 +1,9 @@
 //! SoundEffectSettings 序列化与回退路径测试。
 
 use super::*;
+use rodio::source::SeekError;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 
 #[test]

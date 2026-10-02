@@ -601,13 +601,13 @@ fn preset_params(preset: &str) -> (f32, f32, f32, f32, f32) {
     s.reverb_preset = String::new();
     s.reverb_dry = 0.8;
     s.reverb_wet = 0.5;
-    rack.update_params(&st);
+    rack.update_params(&s);
     for _ in 0..20000 {
       let mut frame = [0.5_f32, 0.5];
-      rack.process(&mut frame, 2, &st);
+      rack.process(&mut frame, 2, &s);
     }
     let mut frame = [0.42_f32, -0.17];
-    rack.process(&mut frame, 2, &st);
+    rack.process(&mut frame, 2, &s);
     assert!(
       (frame[0] - 0.42).abs() < 1e-6,
       "bypass 后 L 不等于输入: {}",
@@ -664,12 +664,12 @@ fn preset_params(preset: &str) -> (f32, f32, f32, f32, f32) {
     s.reverb_preset = "hall".to_string();
     s.reverb_dry = 0.8;
     s.reverb_wet = 2.4;
-    rack.update_params(&st);
+    rack.update_params(&s);
     let mut sum_sq = 0.0_f32;
     let n = 44100_usize;
     for _ in 0..n {
       let mut frame = [0.5_f32, 0.4];
-      rack.process(&mut frame, 2, &st);
+      rack.process(&mut frame, 2, &s);
       sum_sq += frame[0] * frame[0] + frame[1] * frame[1];
     }
     let rms = (sum_sq / (2.0 * n as f32)).sqrt();
@@ -848,12 +848,12 @@ fn preset_params(preset: &str) -> (f32, f32, f32, f32, f32) {
     s.reverb_preset = "hall".to_string();
     s.reverb_dry = 0.8;
     s.reverb_wet = 0.5;
-    rack.update_params(&st);
+    rack.update_params(&s);
 
     let mut nonzero = false;
     for _ in 0..44100 * 2 {
       let mut frame = [0.5_f32, 0.4];
-      rack.process(&mut frame, 2, &st);
+      rack.process(&mut frame, 2, &s);
       assert!(frame[0].is_finite(), "Convolution L NaN/Inf");
       assert!(frame[1].is_finite(), "Convolution R NaN/Inf");
       if frame[0].abs() > 1e-6 || frame[1].abs() > 1e-6 {

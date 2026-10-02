@@ -435,6 +435,7 @@ pub struct UserVolumeSource<I> { // UserVolumeSource
     volume_state: Arc<AtomicU32>,
     applied: f32,
     wanted: f32,
+    ramp_from: f32,
     ramp_len: usize,
     ramp_pos: usize,
     ramping: bool,
@@ -455,6 +456,7 @@ impl<I> UserVolumeSource<I> where I: Source<Item = f32> {
             volume_state: volume,
             applied: boot,
             wanted: boot,
+            ramp_from: boot,
             ramp_len: ramp_frames(hz),
             ramp_pos: 0,
             ramping: false,
@@ -475,6 +477,7 @@ impl<I> Iterator for UserVolumeSource<I> where I: Source<Item = f32> {
             let polled = f32::from_bits(self.volume_state.load(Ordering::Relaxed)).clamp(0.0, 1.0);
             if (polled - self.wanted).abs() > 0.00001 {
                 self.wanted = polled;
+                self.ramp_from = self.applied;
                 self.ramp_len = ramp_frames(self.upstream.sample_rate());
                 self.ramp_pos = 0;
                 self.ramping = true;
@@ -487,7 +490,8 @@ impl<I> Iterator for UserVolumeSource<I> where I: Source<Item = f32> {
                     self.applied = self.wanted;
                     self.ramping = false;
                 } else {
-                    self.applied += (self.wanted - self.applied) * ratio;
+                    // 线性渐变：以渐变起点为基准按进度插值（增量插值会指数收敛，等效瞬间跳变）
+                    self.applied = self.ramp_from + (self.wanted - self.ramp_from) * ratio;
                 }
             }
         }

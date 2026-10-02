@@ -273,6 +273,7 @@ impl Biquad {
 } // impl Biquad
 #[cfg(test)] mod tests {
   use super::*;
+  use super::super::filters::DcBlocker;
 
   #[test]
   fn test_biquad_passthrough() {
