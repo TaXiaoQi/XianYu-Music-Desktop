@@ -151,7 +151,7 @@ const submitUserFeedback = async () => {
       feedbackType: feedbackType.value,
       errorLogs: errorLogsText,
       allLogs: allLogsText,
-      images: feedbackType.value === 'suggestion' ? [...feedbackImages.value] : undefined,
+      images: feedbackImages.value.length > 0 ? [...feedbackImages.value] : undefined,
     });
     openDoneDialog(feedbackType.value === 'beta' ? '申请已提交，请留意审核结果' : '反馈已提交，感谢您的支持');
     feedbackContent.value = '';
@@ -326,7 +326,7 @@ const myFeedbackTypeLabel = (type: string): string => {
           </label>
         </div>
 
-        <div v-if="feedbackType === 'suggestion'" class="feedback-images">
+        <div class="feedback-images">
           <div class="fb-img-head">
             <span class="text-xs text-gray-500 dark:text-white/45">
               上传图片（可选，最多 {{ maxFeedbackImages }} 张）

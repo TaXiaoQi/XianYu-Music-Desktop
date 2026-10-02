@@ -8,6 +8,17 @@ pub(crate) fn fallback_module_message(module_key: &str, version: i64, code: &str
     format!("xianyu-fallback-v1\x00{module_key}\x00{version}\x00{code}").into_bytes()
 }
 
+/// 内测资格响应签名消息（与服务端 check_beta_access 逐字一致）：
+/// `xianyu-beta-access-v1\x00{device_id}\x00{allowed01}\x00{pending01}\x00{exp}`
+pub(crate) fn beta_access_message(device_id: &str, allowed: bool, pending: bool, exp: i64) -> Vec<u8> {
+    format!(
+        "xianyu-beta-access-v1\x00{device_id}\x00{}\x00{}\x00{exp}",
+        i32::from(allowed),
+        i32::from(pending),
+    )
+    .into_bytes()
+}
+
 fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
     if !hex.len().is_multiple_of(2) {
         return Err("签名不是合法 hex".to_string());
@@ -18,13 +29,7 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-#[command]
-pub fn verify_fallback_module_signature(
-    module_key: String,
-    version: i64,
-    code: String,
-    signature: String,
-) -> Result<bool, String> {
+fn verify_with_public_key(msg: &[u8], signature: &str) -> Result<bool, String> {
     let pub_bytes = hex_to_bytes(FALLBACK_VERIFY_PUBLIC_KEY_HEX)?;
     let pub_key = VerifyingKey::from_bytes(
         pub_bytes
@@ -34,14 +39,42 @@ pub fn verify_fallback_module_signature(
     )
     .map_err(|e| format!("公钥解析失败: {e}"))?;
 
-    let sig_bytes = hex_to_bytes(&signature)?;
+    let sig_bytes = hex_to_bytes(signature)?;
     if sig_bytes.len() != 64 {
         return Ok(false);
     }
     let sig = Signature::from_bytes(sig_bytes.as_slice().try_into().unwrap());
 
-    let msg = fallback_module_message(&module_key, version, &code);
-    Ok(pub_key.verify(&msg, &sig).is_ok())
+    Ok(pub_key.verify(msg, &sig).is_ok())
+}
+
+/// 校验服务端 check_beta_access 响应签名（ed25519，绑定 device_id + 过期时间）。
+/// 返回 true 表示响应可信。
+#[command]
+pub fn verify_beta_access_signature(
+    device_id: String,
+    allowed: bool,
+    pending: bool,
+    exp: i64,
+    signature: String,
+) -> Result<bool, String> {
+    verify_with_public_key(
+        &beta_access_message(&device_id, allowed, pending, exp),
+        &signature,
+    )
+}
+
+#[command]
+pub fn verify_fallback_module_signature(
+    module_key: String,
+    version: i64,
+    code: String,
+    signature: String,
+) -> Result<bool, String> {
+    verify_with_public_key(
+        &fallback_module_message(&module_key, version, &code),
+        &signature,
+    )
 }
 
 #[cfg(test)]

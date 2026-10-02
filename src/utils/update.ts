@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { updateApi } from "../services/tauri/updateApi";
+import { tauriInvoke } from "../services/tauri/invoke";
 import { getAuthBaseUrl, signedRequest } from "../services/auth/authService";
 import { getDeviceId } from "../services/domain/usageStats";
 import { assertSafeOutboundUrl } from "./urlGuard";
@@ -145,20 +146,89 @@ export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
         return null;
     } // 实现
 } // 实现
-export async function fetchBetaAccess(): Promise<{
+
+/** 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。 */
+const BETA_ACCESS_CACHE_KEY = "xy.beta_access_signed_payload_v1";
+
+async function readCachedBetaAccess(
+    deviceId: string,
+): Promise<{ allowed: boolean; pending: boolean } | null> {
+    try {
+        const raw = localStorage.getItem(BETA_ACCESS_CACHE_KEY);
+        if (!raw) return null;
+        const decoded = JSON.parse(raw);
+        if (!decoded || typeof decoded !== "object") return null;
+        return await parseSignedBetaAccess(decoded, deviceId);
+    } catch {
+        return null;
+    }
+}
+
+/** 解析并验签一份 check_beta_access 响应。不可信返回 null。 */
+async function parseSignedBetaAccess(
+    payload: Record<string, unknown>,
+    deviceId: string,
+): Promise<{ allowed: boolean; pending: boolean } | null> {
+    const payloadDevice = String(payload.device_id ?? "").trim();
+    if (!payloadDevice || payloadDevice !== deviceId) return null;
+    const exp = Number(payload.exp ?? 0);
+    if (!Number.isFinite(exp) || Math.floor(exp) <= Date.now() / 1000) return null;
+    const signature = String(payload.sig ?? "");
+    if (!signature) return null;
+    const allowed = payload.allowed === true;
+    const pending = payload.pending === true;
+    try {
+        const ok = await tauriInvoke("verify_beta_access_signature", {
+            deviceId,
+            allowed,
+            pending,
+            exp: Math.floor(exp),
+            signature,
+        });
+        if (ok) return { allowed, pending };
+    } catch {
+        // 落到下方 null
+    }
+    return null;
+}
+
+/**
+ * 内测资格验证（fail-closed，供启动锁使用）：
+ * 1) 联网请求 check_beta_access 并验签（ed25519，绑定 device_id + 过期时间），
+ *    验签通过则更新本地缓存；
+ * 2) 网络失败或响应不可信（无签名/验签失败/设备不匹配/已过期）时回退本地缓存，
+ *    缓存同样经完整验签；
+ * 3) 两者皆不可用返回 null，调用方应锁定（无法验证 ≠ 放行）。
+ */
+export async function verifyBetaAccess(): Promise<{
     allowed: boolean;
     pending: boolean;
-}> {
-    const data = await signedRequest<{ allowed?: boolean; pending?: boolean }>(
-        "check_beta_access",
-        { platform: "desktop", device_id: getDeviceId() },
-        { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
-    );
-    return {
-        // 实现
-        allowed: data?.allowed === true,
-        pending: data?.pending === true,
-    }; // 实现
+} | null> {
+    const deviceId = getDeviceId().trim();
+    try {
+        const data = await signedRequest<Record<string, unknown>>(
+            "check_beta_access",
+            { device_id: deviceId },
+            { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
+        );
+        if (data && typeof data === "object") {
+            const parsed = await parseSignedBetaAccess(data, deviceId);
+            if (parsed) {
+                try {
+                    localStorage.setItem(
+                        BETA_ACCESS_CACHE_KEY,
+                        JSON.stringify(data),
+                    );
+                } catch {
+                    // 缓存写入失败不影响放行
+                }
+                return parsed;
+            }
+        }
+    } catch {
+        // 网络失败走缓存回退
+    }
+    return readCachedBetaAccess(deviceId);
 }
 
 function absoluteDownloadUrl(url: string): string {

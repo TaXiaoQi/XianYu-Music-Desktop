@@ -248,6 +248,10 @@ export interface TauriCommandMap {
     payload: { moduleKey: string; version: number; code: string; signature: string };
     response: boolean;
   };
+  verify_beta_access_signature: {
+    payload: { deviceId: string; allowed: boolean; pending: boolean; exp: number; signature: string };
+    response: boolean;
+  };
   clear_cover_cache: { payload: undefined; response: void };
   read_lyrics_file: { payload: { path: string }; response: string };
   get_song_lyrics_for_edit: { payload: { path: string }; response: SongLyricsForEdit };

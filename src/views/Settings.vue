@@ -336,12 +336,12 @@ const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => 
   { id: 'audioOutput', name: t('settings.playback') }, // 实现
   { id: 'download', name: t('settings.download') }, // 实现
   { id: 'linkage', name: t('settings.linkage') },
+  { id: 'network', name: t('settings.network') },
   { id: 'library', name: t('settings.library') }, // 实现
   { id: 'toolbox', name: t('settings.toolbox') }, // 实现
   { id: 'desktopLyrics', name: t('settings.desktopLyrics') }, // 实现
   { id: 'sleepTimer', name: t('settings.sleepTimer') },
   { id: 'shortcuts', name: t('settings.shortcuts') }, // 实现
-  { id: 'network', name: t('settings.network') },
   { id: 'advanced', name: t('settings.advanced') }, // 实现
   { id: 'feedback', name: t('settings.feedback') },
   { id: 'about', name: t('settings.about') }, // 实现

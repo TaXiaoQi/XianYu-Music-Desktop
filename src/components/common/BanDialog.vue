@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { Loader2, Plus, X } from 'lucide-vue-next';
 import { useBanDialog } from '../../composables/useBanDialog';
 import { submitAppeal } from '../../services/domain/usageStats';
 import { submitFeedback } from '../../services/domain/usageStatsReport';
@@ -11,13 +12,19 @@ const { banDialogState, resolveBanDialog } = useBanDialog();
 
 const mode = computed(() => banDialogState.value.mode);
 
-const isBetaMode = computed(() => mode.value === 'beta' || mode.value === 'betaPending');
+const isBetaMode = computed(
+  () => mode.value === 'beta' || mode.value === 'betaPending' || mode.value === 'betaUnverified',
+);
 
 const APPEAL_MAX = 1000;
 const appealing = ref(false);
 const appealText = ref('');
 const submitting = ref(false);
 const betaSubmitted = ref(false);
+const BETA_MAX_IMAGES = 6;
+const betaImages = ref<string[]>([]);
+const betaImageInput = ref<HTMLInputElement | null>(null);
+const compressingImage = ref(false);
 
 watch(
   () => banDialogState.value.visible,
@@ -27,6 +34,8 @@ watch(
       appealText.value = '';
       submitting.value = false;
       betaSubmitted.value = false;
+      betaImages.value = [];
+      compressingImage.value = false;
     }
   },
 );
@@ -36,6 +45,7 @@ const title = computed(() => {
   if (banDialogState.value.mode === 'login') return '请先登录';
   if (banDialogState.value.mode === 'beta') return '未获得内测资格';
   if (banDialogState.value.mode === 'betaPending') return '内测申请审核中';
+  if (banDialogState.value.mode === 'betaUnverified') return '无法验证内测资格';
   return banDialogState.value.banType === 'device' ? '设备已被封禁' : '账号已被封禁';
 });
 
@@ -51,6 +61,9 @@ const reasonText = computed(() => {
   }
   if (banDialogState.value.mode === 'betaPending') {
     return '该设备的内测申请正在审核中，请耐心等待管理员审核，审核结果将以反馈回复通知。';
+  }
+  if (banDialogState.value.mode === 'betaUnverified') {
+    return '请连接网络后重试。若持续失败，请联系管理员。';
   }
   return banDialogState.value.reason || '你的账号已被管理员封禁，如有疑问请联系管理员。';
 });
@@ -115,10 +128,88 @@ function exitApp() {
   resolveBanDialog(true);
 }
 
+function retryVerify() {
+  resolveBanDialog(true);
+}
+
+function exitUnverified() {
+  resolveBanDialog(false);
+}
+
 function startBetaApply() {
   appealText.value = '';
   appealing.value = true;
 }
+
+const compressImageToDataUrl = (file: File, maxWidth = 1600, quality = 0.82): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round(height * (maxWidth / width));
+          width = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas 上下文不可用'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        canvas.width = 0;
+        canvas.height = 0;
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('图片加载失败'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+};
+
+const triggerBetaImageSelect = () => {
+  betaImageInput.value?.click();
+};
+
+const onBetaImageChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = '';
+  if (files.length === 0) return;
+  if (betaImages.value.length + files.length > BETA_MAX_IMAGES) {
+    showToast(`最多上传 ${BETA_MAX_IMAGES} 张图片`, 'error');
+    return;
+  }
+  compressingImage.value = true;
+  try {
+    for (const file of files) {
+      if (file.size > 8 * 1024 * 1024) {
+        showToast(`图片 ${file.name} 超过 8MB，已跳过`, 'error');
+        continue;
+      }
+      betaImages.value.push(await compressImageToDataUrl(file));
+    }
+  } catch (error: any) {
+    showToast(`图片处理失败：${error?.message || error}`, 'error');
+  } finally {
+    compressingImage.value = false;
+  }
+};
+
+const removeBetaImage = (index: number) => {
+  betaImages.value.splice(index, 1);
+};
 
 async function submitBetaApply() {
   const content = appealText.value.trim();
@@ -130,12 +221,17 @@ async function submitBetaApply() {
     showToast(`申请理由不能超过 ${APPEAL_MAX} 字`, 'error');
     return;
   }
+  if (compressingImage.value) return;
   submitting.value = true;
   try {
-    await submitFeedback('内测申请', content, { feedbackType: 'beta' });
+    await submitFeedback('内测申请', content, {
+      feedbackType: 'beta',
+      images: betaImages.value.length > 0 ? [...betaImages.value] : undefined,
+    });
     showToast('申请已提交，请耐心等待审核', 'success');
     betaSubmitted.value = true;
     appealing.value = false;
+    betaImages.value = [];
   } catch (error) {
     showToast(error instanceof Error ? error.message : '申请提交失败', 'error');
   } finally {
@@ -167,6 +263,7 @@ async function submitBetaApply() {
           <p v-else-if="mode === 'login'" class="ban-version">登录后即可查看该用户的收藏与歌单</p>
           <p v-else-if="mode === 'beta'" class="ban-version">当前设备未申请内测资格</p>
           <p v-else-if="mode === 'betaPending'" class="ban-version">内测申请正在审核中</p>
+          <p v-else-if="mode === 'betaUnverified'" class="ban-version">请检查网络连接</p>
           <p v-else-if="banDialogState.ciyuanxiId" class="ban-version">弦予号 {{ banDialogState.ciyuanxiId }}</p>
           <p v-else class="ban-version">当前设备已受限</p>
 
@@ -183,6 +280,34 @@ async function submitBetaApply() {
               :placeholder="mode === 'beta' ? '请填写内测申请理由，我们会尽快审核处理…' : '请填写申诉理由，我们会尽快审核处理…'"
             ></textarea>
             <div class="ban-counter">{{ appealText.length }} / {{ APPEAL_MAX }}</div>
+            <template v-if="mode === 'beta'">
+              <div class="ban-img-row">
+                <div v-for="(img, idx) in betaImages" :key="idx" class="ban-img-item">
+                  <img :src="img" alt="申请附图" class="ban-img-preview" />
+                  <button type="button" class="ban-img-remove" @click="removeBetaImage(idx)">
+                    <X class="h-3 w-3" />
+                  </button>
+                </div>
+                <button
+                  v-if="betaImages.length < BETA_MAX_IMAGES"
+                  type="button"
+                  class="ban-img-add"
+                  :disabled="compressingImage"
+                  @click="triggerBetaImageSelect"
+                >
+                  <Plus v-if="!compressingImage" class="h-4 w-4" />
+                  <Loader2 v-else class="h-4 w-4 animate-spin" />
+                </button>
+              </div>
+              <input
+                ref="betaImageInput"
+                type="file"
+                accept="image/*"
+                multiple
+                class="hidden"
+                @change="onBetaImageChange"
+              />
+            </template>
           </div>
 
           <div v-if="!appealing" class="ban-actions">
@@ -220,6 +345,14 @@ async function submitBetaApply() {
                 退出软件
               </button>
             </template>
+            <template v-else-if="mode === 'betaUnverified'">
+              <button type="button" class="ban-btn ban-btn--ghost" @click="exitUnverified">
+                退出软件
+              </button>
+              <button type="button" class="ban-btn ban-btn--primary" @click="retryVerify">
+                重试
+              </button>
+            </template>
             <template v-else>
               <button type="button" class="ban-btn ban-btn--ghost" @click="startAppeal">
                 申诉
@@ -237,7 +370,7 @@ async function submitBetaApply() {
             <button
               type="button"
               class="ban-btn ban-btn--primary"
-              :disabled="submitting"
+              :disabled="submitting || compressingImage"
               @click="mode === 'beta' ? submitBetaApply() : submitAppealHandler()"
             >
               {{ submitting ? '提交中…' : (mode === 'beta' ? '提交申请' : '提交申诉') }}
@@ -379,6 +512,72 @@ async function submitBetaApply() {
   color: rgba(107, 114, 128, 0.85);
 }
 
+.ban-img-row {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ban-img-item {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.ban-img-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ban-img-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.ban-img-remove:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.ban-img-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: 1px dashed rgba(236, 65, 65, 0.45);
+  border-radius: 8px;
+  background: rgba(236, 65, 65, 0.05);
+  color: #ec4141;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ban-img-add:hover:enabled {
+  background: rgba(236, 65, 65, 0.12);
+}
+
+.ban-img-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .ban-actions {
   display: flex;
   gap: 10px;
@@ -464,6 +663,15 @@ html.dark .ban-textarea {
 
 html.dark .ban-counter {
   color: rgba(255, 255, 255, 0.45);
+}
+
+html.dark .ban-img-item {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .ban-img-add {
+  color: #ff6b6b;
+  background: rgba(236, 65, 65, 0.1);
 }
 
 html.dark .ban-actions {

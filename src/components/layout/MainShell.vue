@@ -16,8 +16,8 @@ import { useOnboarding } from '../../composables/useOnboarding'; // 实现
 import { useSettingsStore } from '../../features/settings/store';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
-import { showBetaGateDialog } from '../../composables/useBanDialog';
-import { fetchBetaAccess } from '../../utils/update';
+import { showBetaGateDialog, showBetaUnverifiedDialog } from '../../composables/useBanDialog';
+import { verifyBetaAccess } from '../../utils/update';
 import { appApi } from '../../services/tauri/appApi';
 import { APP_VERSION } from '../../../version';
 
@@ -145,24 +145,29 @@ const preferenceHub = useSettingsStore();
 const mainSurfaceStyle = computed(() => ({ backdropFilter: mainBlurStyle.value }));
 const footerSurfaceStyle = computed(() => ({ backdropFilter: footerBlurStyle.value }));
 
-/* --- 内测资格门槛（最高优先级，开屏即检查）--- */
+/* --- 内测资格门槛（最高优先级，开屏即检查；fail-closed：无法验证也锁定）--- */
 let betaGateSettled = false;
 
 const runBetaAccessGate = async () => {
   if (import.meta.env.DEV || betaGateSettled) return;
   if (!/-beta/i.test(APP_VERSION)) return;
 
-  let verdict: { allowed: boolean; pending: boolean } = { allowed: true, pending: false };
-  try {
-    verdict = await fetchBetaAccess();
-  } catch {
-    return;
+  while (true) {
+    const verdict = await verifyBetaAccess();
+    if (verdict) {
+      if (verdict.allowed) return;
+      betaGateSettled = true;
+      const exitConfirmed = await showBetaGateDialog(verdict.pending);
+      if (exitConfirmed) await appApi.exitApp();
+      return;
+    }
+    const retry = await showBetaUnverifiedDialog();
+    if (!retry) {
+      betaGateSettled = true;
+      await appApi.exitApp();
+      return;
+    }
   }
-  if (verdict.allowed) return;
-
-  betaGateSettled = true;
-  const exitConfirmed = await showBetaGateDialog(verdict.pending);
-  if (exitConfirmed) await appApi.exitApp();
 };
 
 const runStartupChecks = () => {

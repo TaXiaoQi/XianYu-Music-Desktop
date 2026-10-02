@@ -2,7 +2,7 @@ import { ref } from 'vue';
 
 export type BanType = 'account' | 'device';
 
-export type BanDialogMode = 'ban' | 'session' | 'login' | 'beta' | 'betaPending';
+export type BanDialogMode = 'ban' | 'session' | 'login' | 'beta' | 'betaPending' | 'betaUnverified';
 
 export interface BanDialogMeta {
   ciyuanxiId: string;
@@ -90,6 +90,22 @@ export function showBetaGateDialog(pending = false): Promise<boolean> {
     banDialogState.value = {
       visible: true,
       mode: pending ? 'betaPending' : 'beta',
+      banType: 'account',
+      reason: '',
+      ciyuanxiId: '',
+      nickname: '',
+      debug: false,
+      resolver: resolve,
+    };
+  });
+}
+
+// 无法验证内测资格。resolve(true) 表示重试，resolve(false) 表示退出软件。
+export function showBetaUnverifiedDialog(): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    banDialogState.value = {
+      visible: true,
+      mode: 'betaUnverified',
       banType: 'account',
       reason: '',
       ciyuanxiId: '',

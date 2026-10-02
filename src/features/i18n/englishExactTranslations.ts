@@ -616,6 +616,10 @@ export const exactEnglishTranslations: Record<string, string> = {
       'This device has not been granted beta access and cannot use the beta build.\nClick "Apply for access" to submit your reason. Once approved by an admin, you can continue using the app.',
   '退出软件': 'Exit app',
   '申请资格': 'Apply for access',
+  '无法验证内测资格': 'Cannot verify beta access',
+  '请检查网络连接': 'Check your network connection',
+  '请连接网络后重试。若持续失败，请联系管理员。':
+      'Please connect to the network and try again. If it keeps failing, contact the administrator.',
   '已申请': 'Applied',
   '请填写内测申请理由，我们会尽快审核处理…': 'Describe your beta application. We will review it as soon as possible…',
   '请填写内测申请理由': 'Enter your beta application reason',

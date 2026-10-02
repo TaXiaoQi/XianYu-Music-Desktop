@@ -95,6 +95,7 @@ use custom_fonts::{
 };
 use database::{clear_all_app_data};
 use fallback_verify::verify_fallback_module_signature;
+use fallback_verify::verify_beta_access_signature;
 use foreground_window::{get_foreground_fullscreen_state};
 use host_crypto::{
     host_kugou_request_key,
@@ -625,6 +626,7 @@ pub fn run() { // run
             host_weapi_encrypt,
             host_sha256_hex,
             verify_fallback_module_signature,
+            verify_beta_access_signature,
             read_plugin_file,
             save_plugin_script,
             read_file_bytes,
