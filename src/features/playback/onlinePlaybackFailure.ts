@@ -1,8 +1,13 @@
-import type {Song} from '../../types';
+import type {PluginSearchResult, PluginSource, Song} from '../../types';
+import {canPlayMusic, getStoredPlugins, pluginSearch} from '../../services/domain/pluginEngine';
+import {extractDurationMs} from '../../services/domain/pluginResultMappers';
 import {getFailedOnlineSource, findAlternativeOnlineSource, findSiblingPluginCandidate} from './onlineFailoverFacade';
 import type {PlaySong, PlaySongOptions} from './playerPlaybackTypes';
 
 const ONLINE_FAILURE_LOOP_GUARD_MS = 30_000;
+const DAILY_RESEARCH_TIMEOUT_MS = 8_000;
+const DAILY_RESEARCH_LIMIT = 10;
+const DAILY_RESEARCH_MAX_CANDIDATES = 4;
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export interface OnlinePlaybackFailureDeps {
@@ -39,6 +44,7 @@ export function createOnlinePlaybackFailureController(
   let lastHandledFailure: {path: string; requestId: number; handledAt: number} | null = null;
   const recentFailurePaths = new Map<string, number>();
   const knownFailedPluginPrefixes = new Set<string>();
+  const recentReSearch = new Map<string, number>();
 
   const pruneRecentFailurePaths = (now = Date.now()) => {
     for (const [path, failedAt] of recentFailurePaths) {
@@ -107,6 +113,128 @@ export function createOnlinePlaybackFailureController(
     }
   };
 
+  // ==================== 实时重搜换源 ====================
+  // 日推/歌单导入/收藏等插件快照类歌曲，绑定的是入库那一刻的插件快照，
+  // 快照失效后无法播放；这里用「歌名+歌手」实时重搜当前可用插件，
+  // 命中后直接重播同一首歌。
+
+  const normalizeSongText = (input: string) => (input || '')
+    .toLowerCase()
+    .replace(/[（(【[][^）)】\]]*[）)】\]]/g, '')
+    .replace(/[\s'’`·・~～!！?？.。,，、]/g, '')
+    .trim();
+
+  const firstArtistName = (artist: string) => (artist || '').split(/[/、,&]/)[0]?.trim() || '';
+
+  const mfSearchHitToSong = (item: PluginSearchResult): Song => {
+    const artistNames = item.artist
+      ? item.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim())
+      : ['未知歌手'];
+    let album = item.album || '';
+    if (!album && item.rawData) {
+      const raw = item.rawData;
+      album = raw.al?.name || raw.album?.name || raw.albumName || '';
+    }
+    album = album || '未知专辑';
+    let durationMs = item.duration || 0;
+    if ((!durationMs || durationMs <= 0) && item.rawData) {
+      durationMs = extractDurationMs(item.rawData);
+    }
+    return {
+      name: item.title,
+      title: item.title,
+      path: `plugin://${item.platform}/${item.id}`,
+      artist: item.artist || '未知歌手',
+      artist_names: artistNames,
+      effective_artist_names: artistNames,
+      album,
+      album_artist: item.artist || '未知歌手',
+      album_key: `${album}-${item.artist || '未知歌手'}`,
+      is_various_artists_album: false,
+      collapse_artist_credits: false,
+      duration: Math.floor((durationMs || 0) / 1000),
+      cover_thumb_path: item.coverUrl || '',
+      source_type: 'plugin',
+      remote_source_id: `plugin://${item.platform}/${item.id}`,
+      rawData: item,
+    } as unknown as Song;
+  };
+
+  const searchOnePlugin = async (plugin: PluginSource, keyword: string): Promise<PluginSearchResult[]> => {
+    try {
+      const timer = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('search timeout')), DAILY_RESEARCH_TIMEOUT_MS));
+      return await Promise.race([pluginSearch(plugin, keyword, 1, DAILY_RESEARCH_LIMIT), timer]);
+    } catch {
+      return [];
+    }
+  };
+
+  const tryReSearchPlayback = async (song: Song, options: PlaySongOptions, requestId: number): Promise<boolean> => {
+    const songKey = `${song.name}|${song.artist}`;
+    const lastTry = recentReSearch.get(songKey);
+    if (lastTry && Date.now() - lastTry < ONLINE_FAILURE_LOOP_GUARD_MS) return false;
+    recentReSearch.set(songKey, Date.now());
+    if (requestId !== deps.getPlayRequestId() || deps.getCurrentSong()?.path !== song.path) return false;
+
+    const failedSearchResult = song.rawData as {pluginId?: string} | undefined;
+    const failedPluginId = failedSearchResult?.pluginId || '';
+    const keyword = `${song.name} ${song.artist}`.trim();
+    if (!keyword) return false;
+
+    console.info(`[Audio] 重搜换源: ${song.name}`);
+    try {
+      const plugins = getStoredPlugins()
+        .filter(p => p.enabled && p.format === 'musicfree' && p.id !== failedPluginId);
+      const playable: PluginSource[] = [];
+      for (const p of plugins) {
+        try {
+          if (await canPlayMusic(p)) playable.push(p);
+        } catch { /* 单个插件探测失败不影响整体 */ }
+      }
+      if (playable.length === 0) return false;
+
+      const searchResults = await Promise.all(playable.map(p => searchOnePlugin(p, keyword)));
+      const normTitle = normalizeSongText(song.name);
+      const normArtist = normalizeSongText(firstArtistName(song.artist));
+      if (!normTitle) return false;
+
+      const candidates: PluginSearchResult[] = [];
+      for (const hits of searchResults) {
+        for (const hit of hits) {
+          if (normalizeSongText(hit.title) !== normTitle) continue;
+          const hitArtist = normalizeSongText(firstArtistName(hit.artist));
+          if (!hitArtist || !normArtist
+            || !(hitArtist.includes(normArtist) || normArtist.includes(hitArtist))) {
+            continue;
+          }
+          candidates.push(hit);
+          break;
+        }
+        if (candidates.length >= DAILY_RESEARCH_MAX_CANDIDATES) break;
+      }
+
+      for (const hit of candidates) {
+        if (requestId !== deps.getPlayRequestId() || deps.getCurrentSong()?.path !== song.path) return false;
+        if (recentFailurePaths.has(`plugin://${hit.platform}/${hit.id}`)) continue;
+        const newSong = mfSearchHitToSong(hit);
+        try {
+          await deps.playSong(newSong, {
+            preserveQueue: true,
+            _sourceSwitchCtx: options._sourceSwitchCtx,
+          });
+          const pluginName = getStoredPlugins().find(p => p.id === hit.pluginId)?.name || hit.pluginId;
+          console.info(`[Audio] 重搜换源命中: ${pluginName}`);
+          deps.showToast(`已切换到 ${pluginName} 音源`, 'info');
+          return true;
+        } catch (error) {
+          console.warn(`[Audio] 重搜候选播放失败: ${getErrorMessage(error)}`);
+        }
+      }
+    } catch { /* 兜底失败走原有处理 */ }
+    return false;
+  };
+
   const handleFailure = async (
     song: Song,
     options: PlaySongOptions,
@@ -142,6 +270,15 @@ export function createOnlinePlaybackFailureController(
     if (isSharePlayback && song.path.startsWith('lx://') && shareFailureBehavior === 'pause') {
       deps.showToast('分享歌曲播放失败，已暂停', 'error');
       return;
+    }
+
+    if (
+      !isSharePlayback
+      && song.path.startsWith('plugin://')
+    ) {
+      const recovered = await tryReSearchPlayback(song, options, requestId);
+      if (recovered) return;
+      if (requestId !== deps.getPlayRequestId() || deps.getCurrentSong()?.path !== song.path) return;
     }
 
     const failureBehavior = deps.settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
@@ -224,6 +361,7 @@ export function createOnlinePlaybackFailureController(
     lastHandledFailure = null;
     recentFailurePaths.clear();
     knownFailedPluginPrefixes.clear();
+    recentReSearch.clear();
   };
 
   return {preflightKnownFailedPlugin, handleFailure, reset};

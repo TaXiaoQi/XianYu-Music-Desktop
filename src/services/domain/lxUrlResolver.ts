@@ -34,11 +34,18 @@ export function isLxPath(path: string): boolean {
 
 // ==================== 插件定位 ====================
 
-export function findLxPluginForSource(lxSource: string): PluginSource | null {
+// 声明支持该音源的插件优先，逐个尝试直到命中，
+// 避免单个插件的第三方接口故障导致整体解析失败
+export function listLxPluginsForSource(lxSource: string): PluginSource[] {
   const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
-  if (lxPlugins.length === 0) return null;
-  const matched = lxPlugins.find(p => p.sources.includes(lxSource));
-  return matched ?? lxPlugins[0];
+  if (lxPlugins.length === 0) return [];
+  const matched = lxPlugins.filter(p => p.sources.includes(lxSource));
+  if (matched.length === 0) return lxPlugins;
+  return matched;
+}
+
+export function findLxPluginForSource(lxSource: string): PluginSource | null {
+  return listLxPluginsForSource(lxSource)[0] ?? null;
 }
 
 // ==================== songInfo 构造 ====================
@@ -310,9 +317,12 @@ export async function resolveLxUrl(
   if (tryQualities.length === 0) return null;
 
   const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
-  const matchedPlugin = findLxPluginForSource(lxSource);
-  if (!matchedPlugin || !cachedInfo) return null;
+  if (!cachedInfo) return null;
 
   const songInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
-  return resolveLxUrlViaPlugin(matchedPlugin, lxSource, songInfo, tryQualities);
+  for (const plugin of listLxPluginsForSource(lxSource)) {
+    const result = await resolveLxUrlViaPlugin(plugin, lxSource, songInfo, tryQualities);
+    if (result) return result;
+  }
+  return null;
 }
