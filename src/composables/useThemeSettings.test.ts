@@ -1,52 +1,54 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
 
-import { useSettingsStore } from '../features/settings/store';
-import { useThemeSettings } from './useThemeSettings';
+import { useSettingsStore } from "../features/settings/store";
+import { useThemeSettings } from "./useThemeSettings";
 
 const bootThemeBed = () => setActivePinia(createPinia());
 
-describe('useThemeSettings', () => {
-  beforeEach(bootThemeBed);
+describe("useThemeSettings", () => {
+    beforeEach(bootThemeBed);
 
-  it('cycles between light and dark app theme modes on toggle', () => {
-    const themeApi = useThemeSettings();
+    it("cycles between light and dark app theme modes on toggle", () => {
+        const themeApi = useThemeSettings();
 
-    expect(themeApi.theme.value.mode).toBe('system');
+        expect(themeApi.theme.value.mode).toBe("system");
 
-    themeApi.toggleThemeMode();
-    expect(themeApi.theme.value.mode).toBe('dark');
+        themeApi.toggleThemeMode();
+        expect(themeApi.theme.value.mode).toBe("dark");
 
-    themeApi.toggleThemeMode();
-    expect(themeApi.theme.value.mode).toBe('light');
-  });
-
-  it('flips the custom wallpaper foreground style without leaving custom mode', () => {
-    const settingsStore = useSettingsStore();
-    const themeApi = useThemeSettings();
-
-    settingsStore.patchTheme({
-      mode: 'custom',
-      customBackground: {
-        imagePath: '/covers/demo.jpg',
-        foregroundStyle: 'light',
-      },
+        themeApi.toggleThemeMode();
+        expect(themeApi.theme.value.mode).toBe("light");
     });
 
-    themeApi.toggleThemeMode();
+    it("flips the custom wallpaper foreground style without leaving custom mode", () => {
+        const settingsStore = useSettingsStore();
+        const themeApi = useThemeSettings();
 
-    expect(themeApi.theme.value.mode).toBe('custom');
-    expect(themeApi.theme.value.customBackground.foregroundStyle).toBe('dark');
-  });
+        settingsStore.patchTheme({
+            mode: "custom",
+            customBackground: {
+                imagePath: "/covers/demo.jpg",
+                foregroundStyle: "light",
+            },
+        });
 
-  it('falls back to switching app theme modes when custom mode has no wallpaper', () => {
-    const settingsStore = useSettingsStore();
-    const themeApi = useThemeSettings();
+        themeApi.toggleThemeMode();
 
-    settingsStore.patchTheme({ mode: 'custom' });
+        expect(themeApi.theme.value.mode).toBe("custom");
+        expect(themeApi.theme.value.customBackground.foregroundStyle).toBe(
+            "dark",
+        );
+    });
 
-    themeApi.toggleThemeMode();
+    it("falls back to switching app theme modes when custom mode has no wallpaper", () => {
+        const settingsStore = useSettingsStore();
+        const themeApi = useThemeSettings();
 
-    expect(themeApi.theme.value.mode).toBe('light');
-  });
+        settingsStore.patchTheme({ mode: "custom" });
+
+        themeApi.toggleThemeMode();
+
+        expect(themeApi.theme.value.mode).toBe("light");
+    });
 });

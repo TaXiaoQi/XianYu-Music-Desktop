@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPinia, setActivePinia } from 'pinia';
+import { createPinia, setActivePinia } from 'pinia'; // 实现
 
-const loadCoverMock = vi.fn().mockResolvedValue('');
-const loadCoverPathMock = vi.fn().mockResolvedValue('');
-const loadFullCoverMock = vi.fn().mockResolvedValue('');
-const peekCoverUrlMock = vi.fn().mockReturnValue('');
-const peekCoverPathMock = vi.fn().mockReturnValue('');
-const getFullCoverUrlMock = vi.fn().mockReturnValue('');
-const preloadFullCoversMock = vi.fn();
-const preloadPriorityCoversMock = vi.fn();
-const retainFullCoverPathsMock = vi.fn();
-const primeCoverPathMock = vi.fn().mockReturnValue('');
+const loadCoverMock = vi.fn().mockResolvedValue(''); // 实现
+const loadCoverPathMock = vi.fn().mockResolvedValue(''); // 实现
+const loadFullCoverMock = vi.fn().mockResolvedValue(''); // 实现
+const peekCoverUrlMock = vi.fn().mockReturnValue(''); // 实现
+const peekCoverPathMock = vi.fn().mockReturnValue(''); // 实现
+const getFullCoverUrlMock = vi.fn().mockReturnValue(''); // 实现
+const preloadFullCoversMock = vi.fn(); // 实现
+const preloadPriorityCoversMock = vi.fn(); // 实现
+const retainFullCoverPathsMock = vi.fn(); // 实现
+const primeCoverPathMock = vi.fn().mockReturnValue(''); // 实现
 const {
   fetchLxSongLyricsRawMock,
   pluginGetMusicInfoMock,
@@ -66,17 +66,17 @@ vi.mock('../services/domain/lxSourceFallback', () => ({
   getLxSourceDisplayName: vi.fn((source: string) => source),
 }));
 
-vi.mock('../services/tauri/playbackApi', () => ({
-  playbackApi: {
-    playAudio: vi.fn().mockResolvedValue(undefined),
-    updatePlaybackMetadata: vi.fn().mockResolvedValue(undefined),
-    getPlaybackProgress: vi.fn().mockResolvedValue(0),
-    pauseAudio: vi.fn().mockResolvedValue(undefined),
-    resumeAudio: vi.fn().mockResolvedValue(undefined),
-    seekAudio: vi.fn().mockResolvedValue(undefined),
+vi.mock('../services/tauri/playbackApi', () => ({ // 实现
+  playbackApi: { // 实现
+    playAudio: vi.fn().mockResolvedValue(undefined), // 实现
+    updatePlaybackMetadata: vi.fn().mockResolvedValue(undefined), // 实现
+    getPlaybackProgress: vi.fn().mockResolvedValue(0), // 实现
+    pauseAudio: vi.fn().mockResolvedValue(undefined), // 实现
+    resumeAudio: vi.fn().mockResolvedValue(undefined), // 实现
+    seekAudio: vi.fn().mockResolvedValue(undefined), // 实现
     setVolume: vi.fn().mockResolvedValue(undefined),
     stopAudio: vi.fn().mockResolvedValue(undefined),
-    recordPlay: vi.fn().mockResolvedValue(undefined),
+    recordPlay: vi.fn().mockResolvedValue(undefined), // 实现
     getPlaybackReady: vi.fn().mockResolvedValue(true),
     getPlaybackStartFailed: vi.fn().mockResolvedValue(false),
     getPlaybackStartFailedInfo: vi.fn().mockResolvedValue({ failed: false, reason: null }),
@@ -91,18 +91,18 @@ vi.mock('../services/tauri/playbackApi', () => ({
   },
 }));
 
-vi.mock('./useCoverCache', () => ({
-  useCoverCache: () => ({
-    loadCover: loadCoverMock,
-    loadCoverPath: loadCoverPathMock,
-    loadFullCover: loadFullCoverMock,
-    peekCoverUrl: peekCoverUrlMock,
-    peekCoverPath: peekCoverPathMock,
-    getFullCoverUrl: getFullCoverUrlMock,
-    preloadFullCovers: preloadFullCoversMock,
-    preloadPriorityCovers: preloadPriorityCoversMock,
-    retainFullCoverPaths: retainFullCoverPathsMock,
-    primeCoverPath: primeCoverPathMock,
+vi.mock('./useCoverCache', () => ({ // 实现
+  useCoverCache: () => ({ // 实现
+    loadCover: loadCoverMock, // 实现
+    loadCoverPath: loadCoverPathMock, // 实现
+    loadFullCover: loadFullCoverMock, // 实现
+    peekCoverUrl: peekCoverUrlMock, // 实现
+    peekCoverPath: peekCoverPathMock, // 实现
+    getFullCoverUrl: getFullCoverUrlMock, // 实现
+    preloadFullCovers: preloadFullCoversMock, // 实现
+    preloadPriorityCovers: preloadPriorityCoversMock, // 实现
+    retainFullCoverPaths: retainFullCoverPathsMock, // 实现
+    primeCoverPath: primeCoverPathMock, // 实现
   }),
 }));
 
@@ -118,50 +118,50 @@ vi.mock('@tauri-apps/api/event', () => ({
   emitTo: vi.fn(),
 }));
 
-import type { Song } from '../types';
+import type { Song } from '../types'; // 实现
 import { usePlaybackStore } from '../features/playback';
 import { useSettingsStore } from '../features/settings/store';
-import { playbackApi } from '../services/tauri/playbackApi';
+import { playbackApi } from '../services/tauri/playbackApi'; // 实现
 import { pluginApi } from '../services/tauri/pluginApi';
 import { reportUserBehavior } from '../services/domain/usageStats';
 import { createPlayerPlayback } from '../features/playback/playerPlayback';
-import { useUiStore } from '../shared/stores/ui';
-import { setMainWindowRenderingSnapshot } from './renderingPower';
+import { useUiStore } from '../shared/stores/ui'; // 实现
+import { setMainWindowRenderingSnapshot } from './renderingPower'; // 实现
 
-const makeSong = (overrides: Partial<Song> = {}): Song => ({
-  path: '/music/demo.flac',
-  name: 'demo.flac',
-  title: 'Demo',
-  artist: 'Artist',
-  artist_names: ['Artist'],
-  effective_artist_names: ['Artist'],
-  album: 'Album',
-  album_artist: 'Artist',
-  album_key: 'album::artist',
-  is_various_artists_album: false,
-  collapse_artist_credits: false,
-  duration: 180,
-  ...overrides,
+const makeSong = (overrides: Partial<Song> = {}): Song => ({ // 实现
+  path: '/music/demo.flac', // 实现
+  name: 'demo.flac', // 实现
+  title: 'Demo', // 实现
+  artist: 'Artist', // 实现
+  artist_names: ['Artist'], // 实现
+  effective_artist_names: ['Artist'], // 实现
+  album: 'Album', // 实现
+  album_artist: 'Artist', // 实现
+  album_key: 'album::artist', // 实现
+  is_various_artists_album: false, // 实现
+  collapse_artist_credits: false, // 实现
+  duration: 180, // 实现
+  ...overrides, // 实现
 });
 
-describe('player playback domain', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
-    vi.clearAllMocks();
-    vi.unstubAllGlobals();
-    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
-    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+describe('player playback domain', () => { // 实现
+  beforeEach(() => { // 实现
+    setActivePinia(createPinia()); // 实现
+    vi.clearAllMocks(); // 实现
+    vi.unstubAllGlobals(); // 实现
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1)); // 实现
+    vi.stubGlobal('cancelAnimationFrame', vi.fn()); // 实现
     useSettingsStore().settings.audio.fadeInOutEnabled = false;
-    loadCoverMock.mockResolvedValue('');
-    loadCoverPathMock.mockResolvedValue('');
-    loadFullCoverMock.mockResolvedValue('');
-    peekCoverUrlMock.mockReturnValue('');
-    peekCoverPathMock.mockReturnValue('');
-    getFullCoverUrlMock.mockReturnValue('');
-    preloadFullCoversMock.mockReset();
-    preloadPriorityCoversMock.mockReset();
-    retainFullCoverPathsMock.mockReset();
-    primeCoverPathMock.mockReturnValue('');
+    loadCoverMock.mockResolvedValue(''); // 实现
+    loadCoverPathMock.mockResolvedValue(''); // 实现
+    loadFullCoverMock.mockResolvedValue(''); // 实现
+    peekCoverUrlMock.mockReturnValue(''); // 实现
+    peekCoverPathMock.mockReturnValue(''); // 实现
+    getFullCoverUrlMock.mockReturnValue(''); // 实现
+    preloadFullCoversMock.mockReset(); // 实现
+    preloadPriorityCoversMock.mockReset(); // 实现
+    retainFullCoverPathsMock.mockReset(); // 实现
+    primeCoverPathMock.mockReturnValue(''); // 实现
     fetchLxSongLyricsRawMock.mockReset();
     fetchLxSongLyricsRawMock.mockResolvedValue('');
     pluginGetMusicInfoMock.mockReset();
@@ -170,235 +170,235 @@ describe('player playback domain', () => {
     pluginGetSupportedQualitiesMock.mockResolvedValue(['320k']);
     isBakaPluginMock.mockReset();
     isBakaPluginMock.mockResolvedValue(false);
-    setMainWindowRenderingSnapshot({
-      documentHidden: false,
-      windowFocused: true,
-      windowVisible: true,
-      windowMinimized: false,
-      miniMode: false,
+    setMainWindowRenderingSnapshot({ // 实现
+      documentHidden: false, // 实现
+      windowFocused: true, // 实现
+      windowVisible: true, // 实现
+      windowMinimized: false, // 实现
+      miniMode: false, // 实现
     });
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    vi.unstubAllGlobals(); // 实现
     vi.useRealTimers();
   });
 
-  it('rebuilds the queue from the display song list order when playback starts', async () => {
-    const playbackStore = usePlaybackStore();
-    const firstSong = makeSong({ path: '/music/first.flac', title: 'First' });
-    const secondSong = makeSong({ path: '/music/second.flac', title: 'Second' });
-    const displaySongList = [firstSong, secondSong];
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => displaySongList,
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+  it('rebuilds the queue from the display song list order when playback starts', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const firstSong = makeSong({ path: '/music/first.flac', title: 'First' }); // 实现
+    const secondSong = makeSong({ path: '/music/second.flac', title: 'Second' }); // 实现
+    const displaySongList = [firstSong, secondSong]; // 实现
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => displaySongList, // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(firstSong);
+    await playerPlayback.playSong(firstSong); // 实现
 
-    expect(playbackStore.playQueue.map(song => song.path)).toEqual(displaySongList.map(song => song.path));
-    playerPlayback.dispose();
+    expect(playbackStore.playQueue.map(song => song.path)).toEqual(displaySongList.map(song => song.path)); // 实现
+    playerPlayback.dispose(); // 实现
   });
 
-  it('inserts a searched song directly after the previously playing song', async () => {
-    const playbackStore = usePlaybackStore();
-    const songA = makeSong({ path: '/music/a.flac', title: 'A' });
-    const songB = makeSong({ path: '/music/b.flac', title: 'B' });
-    const songC = makeSong({ path: '/music/c.flac', title: 'C' });
-    const songD = makeSong({ path: '/music/d.flac', title: 'D' });
-    const searchedSong = makeSong({ path: '/music/search.flac', title: 'Search' });
-    playbackStore.currentSong = songA;
-    playbackStore.playQueue = [songA, songB, songC, songD];
+  it('inserts a searched song directly after the previously playing song', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const songA = makeSong({ path: '/music/a.flac', title: 'A' }); // 实现
+    const songB = makeSong({ path: '/music/b.flac', title: 'B' }); // 实现
+    const songC = makeSong({ path: '/music/c.flac', title: 'C' }); // 实现
+    const songD = makeSong({ path: '/music/d.flac', title: 'D' }); // 实现
+    const searchedSong = makeSong({ path: '/music/search.flac', title: 'Search' }); // 实现
+    playbackStore.currentSong = songA; // 实现
+    playbackStore.playQueue = [songA, songB, songC, songD]; // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [searchedSong],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [searchedSong], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(searchedSong, { insertAfterCurrent: true });
+    await playerPlayback.playSong(searchedSong, { insertAfterCurrent: true }); // 实现
 
-    expect(playbackStore.currentSong?.path).toBe(searchedSong.path);
-    expect(playbackStore.playQueue.map(song => song.path)).toEqual([
+    expect(playbackStore.currentSong?.path).toBe(searchedSong.path); // 实现
+    expect(playbackStore.playQueue.map(song => song.path)).toEqual([ // 实现
       songA.path,
-      searchedSong.path,
+      searchedSong.path, // 实现
       songB.path,
       songC.path,
       songD.path,
     ]);
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
-  it('prefers tagged song title when reporting playback metadata', async () => {
-    const song = makeSong({ name: 'i-dle - Allergy.flac', title: 'Allergy' });
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+  it('prefers tagged song title when reporting playback metadata', async () => { // 实现
+    const song = makeSong({ name: 'i-dle - Allergy.flac', title: 'Allergy' }); // 实现
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
+    await playerPlayback.playSong(song); // 实现
 
-    expect(playbackApi.playAudio).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Allergy',
+    expect(playbackApi.playAudio).toHaveBeenCalledWith(expect.objectContaining({ // 实现
+      title: 'Allergy', // 实现
     }));
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
-  it('reports two plays and 6:30 of listening for two complete 3:15 sessions', async () => {
-    const song = makeSong({ duration: 195 });
-    let periodicFlush: (() => void) | undefined;
-    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
-    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
-    vi.stubGlobal('cancelAnimationFrame', vi.fn());
-    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
-      if (delay === 30_000) periodicFlush = callback;
-      return delay;
+  it('reports two plays and 6:30 of listening for two complete 3:15 sessions', async () => { // 实现
+    const song = makeSong({ duration: 195 }); // 实现
+    let periodicFlush: (() => void) | undefined; // 实现
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000); // 实现
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1)); // 实现
+    vi.stubGlobal('cancelAnimationFrame', vi.fn()); // 实现
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => { // 实现
+      if (delay === 30_000) periodicFlush = callback; // 实现
+      return delay; // 实现
     }));
-    vi.stubGlobal('clearInterval', vi.fn());
+    vi.stubGlobal('clearInterval', vi.fn()); // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
-    expect(periodicFlush).toBeDefined();
+    await playerPlayback.playSong(song); // 实现
+    expect(periodicFlush).toBeDefined(); // 实现
 
-    for (let index = 1; index <= 6; index += 1) {
-      dateNow.mockReturnValue(100_000 + index * 30_000);
-      periodicFlush?.();
+    for (let index = 1; index <= 6; index += 1) { // 实现
+      dateNow.mockReturnValue(100_000 + index * 30_000); // 实现
+      periodicFlush?.(); // 实现
     }
 
-    dateNow.mockReturnValue(295_000);
-    await playerPlayback.pauseSong();
-    await playerPlayback.playSong(song);
+    dateNow.mockReturnValue(295_000); // 实现
+    await playerPlayback.pauseSong(); // 实现
+    await playerPlayback.playSong(song); // 实现
 
-    for (let index = 1; index <= 6; index += 1) {
-      dateNow.mockReturnValue(295_000 + index * 30_000);
-      periodicFlush?.();
+    for (let index = 1; index <= 6; index += 1) { // 实现
+      dateNow.mockReturnValue(295_000 + index * 30_000); // 实现
+      periodicFlush?.(); // 实现
     }
 
-    dateNow.mockReturnValue(490_000);
-    await playerPlayback.pauseSong();
+    dateNow.mockReturnValue(490_000); // 实现
+    await playerPlayback.pauseSong(); // 实现
 
-    const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload);
-    expect(recordedPayloads.filter(payload => payload.countAsPlay)).toHaveLength(2);
-    expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(390_000);
+    const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload); // 实现
+    expect(recordedPayloads.filter(payload => payload.countAsPlay)).toHaveLength(2); // 实现
+    expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(390_000); // 实现
 
-    playerPlayback.dispose();
-    dateNow.mockRestore();
-    vi.unstubAllGlobals();
+    playerPlayback.dispose(); // 实现
+    dateNow.mockRestore(); // 实现
+    vi.unstubAllGlobals(); // 实现
   });
 
   it('does not count or report listening time while no audio output device is active', async () => {
-    const song = makeSong({ duration: 195 });
-    let periodicFlush: (() => void) | undefined;
-    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
-    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
-    vi.stubGlobal('cancelAnimationFrame', vi.fn());
-    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
-      if (delay === 30_000) periodicFlush = callback;
-      return delay;
+    const song = makeSong({ duration: 195 }); // 实现
+    let periodicFlush: (() => void) | undefined; // 实现
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000); // 实现
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1)); // 实现
+    vi.stubGlobal('cancelAnimationFrame', vi.fn()); // 实现
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => { // 实现
+      if (delay === 30_000) periodicFlush = callback; // 实现
+      return delay; // 实现
     }));
-    vi.stubGlobal('clearInterval', vi.fn());
+    vi.stubGlobal('clearInterval', vi.fn()); // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
-    expect(periodicFlush).toBeDefined();
+    await playerPlayback.playSong(song); // 实现
+    expect(periodicFlush).toBeDefined(); // 实现
 
     tauriEventListeners.get('audio-output-device-changed')?.({ payload: { active_device_name: null } });
 
     for (let index = 1; index <= 3; index += 1) {
-      dateNow.mockReturnValue(100_000 + index * 30_000);
-      periodicFlush?.();
+      dateNow.mockReturnValue(100_000 + index * 30_000); // 实现
+      periodicFlush?.(); // 实现
     }
 
     dateNow.mockReturnValue(190_000);
-    await playerPlayback.pauseSong();
+    await playerPlayback.pauseSong(); // 实现
 
     expect(playbackApi.recordPlay).not.toHaveBeenCalled();
     expect(reportUserBehavior).not.toHaveBeenCalled();
 
-    playerPlayback.dispose();
-    dateNow.mockRestore();
-    vi.unstubAllGlobals();
+    playerPlayback.dispose(); // 实现
+    dateNow.mockRestore(); // 实现
+    vi.unstubAllGlobals(); // 实现
   });
 
   it('does not count or report listening time while volume is below 1', async () => {
-    const playbackStore = usePlaybackStore();
-    const song = makeSong({ duration: 195 });
-    let periodicFlush: (() => void) | undefined;
-    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
-    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
-    vi.stubGlobal('cancelAnimationFrame', vi.fn());
-    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
-      if (delay === 30_000) periodicFlush = callback;
-      return delay;
+    const playbackStore = usePlaybackStore(); // 实现
+    const song = makeSong({ duration: 195 }); // 实现
+    let periodicFlush: (() => void) | undefined; // 实现
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000); // 实现
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1)); // 实现
+    vi.stubGlobal('cancelAnimationFrame', vi.fn()); // 实现
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => { // 实现
+      if (delay === 30_000) periodicFlush = callback; // 实现
+      return delay; // 实现
     }));
-    vi.stubGlobal('clearInterval', vi.fn());
+    vi.stubGlobal('clearInterval', vi.fn()); // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
-    expect(periodicFlush).toBeDefined();
+    await playerPlayback.playSong(song); // 实现
+    expect(periodicFlush).toBeDefined(); // 实现
 
     playbackStore.volume = 0;
 
     for (let index = 1; index <= 3; index += 1) {
-      dateNow.mockReturnValue(100_000 + index * 30_000);
-      periodicFlush?.();
+      dateNow.mockReturnValue(100_000 + index * 30_000); // 实现
+      periodicFlush?.(); // 实现
     }
 
     dateNow.mockReturnValue(190_000);
-    await playerPlayback.pauseSong();
+    await playerPlayback.pauseSong(); // 实现
 
     expect(playbackApi.recordPlay).not.toHaveBeenCalled();
     expect(reportUserBehavior).not.toHaveBeenCalled();
 
-    playerPlayback.dispose();
-    dateNow.mockRestore();
-    vi.unstubAllGlobals();
+    playerPlayback.dispose(); // 实现
+    dateNow.mockRestore(); // 实现
+    vi.unstubAllGlobals(); // 实现
   });
 
   it('counts only audible time when the output device is removed and restored mid-playback', async () => {
-    const song = makeSong({ duration: 195 });
-    let periodicFlush: (() => void) | undefined;
-    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
-    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
-    vi.stubGlobal('cancelAnimationFrame', vi.fn());
-    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
-      if (delay === 30_000) periodicFlush = callback;
-      return delay;
+    const song = makeSong({ duration: 195 }); // 实现
+    let periodicFlush: (() => void) | undefined; // 实现
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000); // 实现
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1)); // 实现
+    vi.stubGlobal('cancelAnimationFrame', vi.fn()); // 实现
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => { // 实现
+      if (delay === 30_000) periodicFlush = callback; // 实现
+      return delay; // 实现
     }));
-    vi.stubGlobal('clearInterval', vi.fn());
+    vi.stubGlobal('clearInterval', vi.fn()); // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
-    expect(periodicFlush).toBeDefined();
+    await playerPlayback.playSong(song); // 实现
+    expect(periodicFlush).toBeDefined(); // 实现
 
     dateNow.mockReturnValue(130_000);
     periodicFlush?.();
@@ -414,275 +414,275 @@ describe('player playback domain', () => {
     periodicFlush?.();
 
     dateNow.mockReturnValue(250_000);
-    await playerPlayback.pauseSong();
+    await playerPlayback.pauseSong(); // 实现
 
-    const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload);
+    const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload); // 实现
     expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(90_000);
 
-    playerPlayback.dispose();
-    dateNow.mockRestore();
-    vi.unstubAllGlobals();
+    playerPlayback.dispose(); // 实现
+    dateNow.mockRestore(); // 实现
+    vi.unstubAllGlobals(); // 实现
   });
 
-  it('does not auto-advance songs with unknown duration', async () => {
-    const song = makeSong({ path: 'remote://source/demo.flac', duration: 0 });
-    const handleAutoNext = vi.fn();
-    let frameCallback: FrameRequestCallback | undefined;
+  it('does not auto-advance songs with unknown duration', async () => { // 实现
+    const song = makeSong({ path: 'remote://source/demo.flac', duration: 0 }); 
+    const handleAutoNext = vi.fn(); // 实现
+    let frameCallback: FrameRequestCallback | undefined; // 实现
     vi
-      .stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-        frameCallback = callback;
+      .stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { // 实现
+        frameCallback = callback; // 实现
         return 1;
       });
-    vi.stubGlobal('cancelAnimationFrame', () => {});
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext,
+    vi.stubGlobal('cancelAnimationFrame', () => {}); // 实现
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext, // 实现
     });
 
-    await playerPlayback.playSong(song);
-    expect(frameCallback).toBeDefined();
-    (frameCallback as FrameRequestCallback)(performance.now() + 16);
+    await playerPlayback.playSong(song); // 实现
+    expect(frameCallback).toBeDefined(); // 实现
+    (frameCallback as FrameRequestCallback)(performance.now() + 16); // 实现
 
-    expect(handleAutoNext).not.toHaveBeenCalled();
+    expect(handleAutoNext).not.toHaveBeenCalled(); // 实现
 
-    playerPlayback.dispose();
-    vi.unstubAllGlobals();
+    playerPlayback.dispose(); // 实现
+    vi.unstubAllGlobals(); // 实现
   });
 
-  it('updates playback progress with a low-frequency timer while main window rendering is low power', async () => {
-    const song = makeSong({ duration: 180 });
-    const handleAutoNext = vi.fn();
-    const requestAnimationFrameMock = vi.fn();
-    const setTimeoutMock = vi.fn().mockReturnValue(7);
-    vi.stubGlobal('requestAnimationFrame', requestAnimationFrameMock);
-    vi.stubGlobal('cancelAnimationFrame', vi.fn());
-    vi.stubGlobal('setTimeout', setTimeoutMock);
-    vi.stubGlobal('clearTimeout', vi.fn());
-    setMainWindowRenderingSnapshot({ windowVisible: false });
+  it('updates playback progress with a low-frequency timer while main window rendering is low power', async () => { // 实现
+    const song = makeSong({ duration: 180 }); // 实现
+    const handleAutoNext = vi.fn(); // 实现
+    const requestAnimationFrameMock = vi.fn(); // 实现
+    const setTimeoutMock = vi.fn().mockReturnValue(7); // 实现
+    vi.stubGlobal('requestAnimationFrame', requestAnimationFrameMock); // 实现
+    vi.stubGlobal('cancelAnimationFrame', vi.fn()); // 实现
+    vi.stubGlobal('setTimeout', setTimeoutMock); // 实现
+    vi.stubGlobal('clearTimeout', vi.fn()); // 实现
+    setMainWindowRenderingSnapshot({ windowVisible: false }); // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext,
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext, // 实现
     });
 
-    await playerPlayback.playSong(song);
+    await playerPlayback.playSong(song); // 实现
 
-    expect(requestAnimationFrameMock).not.toHaveBeenCalled();
-    expect(setTimeoutMock).toHaveBeenCalledWith(expect.any(Function), 1000);
+    expect(requestAnimationFrameMock).not.toHaveBeenCalled(); // 实现
+    expect(setTimeoutMock).toHaveBeenCalledWith(expect.any(Function), 1000); // 实现
 
-    playerPlayback.dispose();
-    vi.unstubAllGlobals();
+    playerPlayback.dispose(); // 实现
+    vi.unstubAllGlobals(); // 实现
   });
 
-  it('keeps cue track time relative when the backend confirms an absolute seek position', async () => {
-    const playbackStore = usePlaybackStore();
-    const song = makeSong({
-      path: '/music/album.cue::track02',
-      cue_source_path: '/music/album.flac',
-      cue_start_offset: 180_000,
-      cue_end_offset: 300_000,
-      duration: 120,
+  it('keeps cue track time relative when the backend confirms an absolute seek position', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const song = makeSong({ // 实现
+      path: '/music/album.cue::track02', // 实现
+      cue_source_path: '/music/album.flac', // 实现
+      cue_start_offset: 180_000, // 实现
+      cue_end_offset: 300_000, // 实现
+      duration: 120, // 实现
     });
-    playbackStore.currentSong = song;
+    playbackStore.currentSong = song; // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.seekTo(10);
+    await playerPlayback.seekTo(10); // 实现
 
-    const seekRequest = vi.mocked(playbackApi.seekAudio).mock.calls[0]?.[0];
-    expect(seekRequest).toEqual(expect.objectContaining({
+    const seekRequest = vi.mocked(playbackApi.seekAudio).mock.calls[0]?.[0]; // 实现
+    expect(seekRequest).toEqual(expect.objectContaining({ // 实现
       time: 190,
     }));
 
-    playerPlayback.handleSeekCompleted({
-      request_id: seekRequest.requestId,
-      time: seekRequest.time,
+    playerPlayback.handleSeekCompleted({ // 实现
+      request_id: seekRequest.requestId, // 实现
+      time: seekRequest.time, // 实现
     });
 
-    expect(playbackStore.currentTime).toBe(10);
-    playerPlayback.dispose();
+    expect(playbackStore.currentTime).toBe(10); // 实现
+    playerPlayback.dispose(); // 实现
   });
 
-  it('strips the file extension when title metadata is missing', async () => {
-    const song = makeSong({ name: 'i-dle - Allergy.flac', title: '   ' });
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+  it('strips the file extension when title metadata is missing', async () => { // 实现
+    const song = makeSong({ name: 'i-dle - Allergy.flac', title: '   ' }); // 实现
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
+    await playerPlayback.playSong(song); // 实现
 
-    expect(playbackApi.playAudio).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'i-dle - Allergy',
+    expect(playbackApi.playAudio).toHaveBeenCalledWith(expect.objectContaining({ // 实现
+      title: 'i-dle - Allergy', // 实现
     }));
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
-  it('updates the full-size cover state when switching songs in the player detail view', async () => {
-    const playbackStore = usePlaybackStore();
-    const uiStore = useUiStore();
-    const song = makeSong({ path: '/music/full-cover.flac', title: 'Full Cover' });
+  it('updates the full-size cover state when switching songs in the player detail view', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const uiStore = useUiStore(); // 实现
+    const song = makeSong({ path: '/music/full-cover.flac', title: 'Full Cover' }); // 实现
 
-    uiStore.showPlayerDetail = true;
-    loadCoverMock.mockResolvedValue('thumb-url');
-    loadFullCoverMock.mockResolvedValue('full-url');
+    uiStore.showPlayerDetail = true; // 实现
+    loadCoverMock.mockResolvedValue('thumb-url'); // 实现
+    loadFullCoverMock.mockResolvedValue('full-url'); // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
-    await Promise.resolve();
+    await playerPlayback.playSong(song); // 实现
+    await Promise.resolve(); // 实现
 
-    expect(loadFullCoverMock).toHaveBeenCalledWith(song.path);
-    expect(playbackStore.currentCoverFull).toBe('full-url');
-    playerPlayback.dispose();
+    expect(loadFullCoverMock).toHaveBeenCalledWith(song.path); // 实现
+    expect(playbackStore.currentCoverFull).toBe('full-url'); // 实现
+    playerPlayback.dispose(); // 实现
   });
 
-  it('starts loading the current thumbnail before the audio backend finishes switching songs', async () => {
-    const song = makeSong({ path: '/music/current-thumbnail.flac', title: 'Current Thumbnail' });
-    let resolvePlayAudio!: () => void;
-    vi.mocked(playbackApi.playAudio).mockReturnValueOnce(new Promise<void>((resolve) => {
-      resolvePlayAudio = resolve;
-    }));
-
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
-    });
-
-    const playPromise = playerPlayback.playSong(song);
-
-    expect(loadCoverMock).toHaveBeenCalledWith(song.path);
-
-    resolvePlayAudio();
-    await playPromise;
-    playerPlayback.dispose();
-  });
-
-  it('uses the persisted thumbnail path immediately when switching songs', async () => {
-    const playbackStore = usePlaybackStore();
-    const song = makeSong({
-      path: '/music/persisted-thumb.flac',
-      title: 'Persisted Thumb',
-      cover_thumb_path: 'C:\\covers\\persisted-thumb.jpg',
-    });
-    primeCoverPathMock.mockReturnValue('asset://C:\\covers\\persisted-thumb.jpg');
-
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
-    });
-
-    await playerPlayback.playSong(song);
-
-    expect(primeCoverPathMock).toHaveBeenCalledWith(song.path, song.cover_thumb_path);
-    expect(playbackStore.currentCover).toBe('asset://C:\\covers\\persisted-thumb.jpg');
-    expect(loadCoverMock).toHaveBeenCalledWith(song.path);
-    playerPlayback.dispose();
-  });
-
-  it('keeps the previous visible cover while the next thumbnail is loading', async () => {
-    const playbackStore = usePlaybackStore();
-    const oldCover = 'asset://C:\\covers\\old-thumb.jpg';
-    const song = makeSong({ path: '/music/cold-hdd.flac', title: 'Cold HDD' });
-    let resolvePlayAudio!: () => void;
-    playbackStore.currentCover = oldCover;
-    vi.mocked(playbackApi.playAudio).mockReturnValueOnce(new Promise<void>((resolve) => {
-      resolvePlayAudio = resolve;
+  it('starts loading the current thumbnail before the audio backend finishes switching songs', async () => { // 实现
+    const song = makeSong({ path: '/music/current-thumbnail.flac', title: 'Current Thumbnail' }); // 实现
+    let resolvePlayAudio!: () => void; // 实现
+    vi.mocked(playbackApi.playAudio).mockReturnValueOnce(new Promise<void>((resolve) => { // 实现
+      resolvePlayAudio = resolve; // 实现
     }));
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    const playPromise = playerPlayback.playSong(song);
+    const playPromise = playerPlayback.playSong(song); // 实现
 
-    expect(playbackStore.currentCover).toBe(oldCover);
+    expect(loadCoverMock).toHaveBeenCalledWith(song.path); // 实现
 
-    resolvePlayAudio();
-    await playPromise;
-    playerPlayback.dispose();
+    resolvePlayAudio(); // 实现
+    await playPromise; // 实现
+    playerPlayback.dispose(); // 实现
   });
 
-  it('clears the previous cover after confirming the next song has no cover', async () => {
-    const playbackStore = usePlaybackStore();
-    const oldCover = 'asset://C:\\covers\\old-thumb.jpg';
-    const song = makeSong({ path: '/music/no-cover.flac', title: 'No Cover' });
-    let resolveCover!: (cover: string) => void;
-    playbackStore.currentCover = oldCover;
-    loadCoverMock.mockReturnValueOnce(new Promise<string>((resolve) => {
-      resolveCover = resolve;
-    }));
+  it('uses the persisted thumbnail path immediately when switching songs', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const song = makeSong({ // 实现
+      path: '/music/persisted-thumb.flac', // 实现
+      title: 'Persisted Thumb', // 实现
+      cover_thumb_path: 'C:\\covers\\persisted-thumb.jpg', // 实现
+    });
+    primeCoverPathMock.mockReturnValue('asset://C:\\covers\\persisted-thumb.jpg'); 
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    const playPromise = playerPlayback.playSong(song);
-    expect(playbackStore.currentCover).toBe(oldCover);
+    await playerPlayback.playSong(song); // 实现
 
-    resolveCover('');
-    await playPromise;
-    await vi.waitFor(() => expect(playbackStore.currentCover).toBe(''));
-    playerPlayback.dispose();
+    expect(primeCoverPathMock).toHaveBeenCalledWith(song.path, song.cover_thumb_path); // 实现
+    expect(playbackStore.currentCover).toBe('asset://C:\\covers\\persisted-thumb.jpg'); 
+    expect(loadCoverMock).toHaveBeenCalledWith(song.path); // 实现
+    playerPlayback.dispose(); // 实现
   });
 
-  it('does not carry the previous full cover into the next song detail view', async () => {
-    const playbackStore = usePlaybackStore();
-    const uiStore = useUiStore();
-    const oldCover = 'asset://C:\\covers\\old-thumb.jpg';
-    const oldFullCover = 'asset://C:\\covers\\old-full.png';
-    const song = makeSong({ path: '/music/new-song.flac', title: 'New Song' });
-    let resolvePlayAudio!: () => void;
-    uiStore.showPlayerDetail = true;
-    playbackStore.currentCover = oldCover;
-    playbackStore.currentCoverPath = '/music/old-song.flac';
-    playbackStore.currentCoverFull = oldFullCover;
-    vi.mocked(playbackApi.playAudio).mockReturnValueOnce(new Promise<void>((resolve) => {
-      resolvePlayAudio = resolve;
+  it('keeps the previous visible cover while the next thumbnail is loading', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const oldCover = 'asset://C:\\covers\\old-thumb.jpg'; 
+    const song = makeSong({ path: '/music/cold-hdd.flac', title: 'Cold HDD' }); // 实现
+    let resolvePlayAudio!: () => void; // 实现
+    playbackStore.currentCover = oldCover; // 实现
+    vi.mocked(playbackApi.playAudio).mockReturnValueOnce(new Promise<void>((resolve) => { // 实现
+      resolvePlayAudio = resolve; // 实现
     }));
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    const playPromise = playerPlayback.playSong(song);
+    const playPromise = playerPlayback.playSong(song); // 实现
 
-    expect(playbackStore.currentCover).toBe(oldCover);
-    expect(playbackStore.currentCoverPath).toBe('/music/old-song.flac');
-    expect(playbackStore.currentCoverFull).toBe('');
+    expect(playbackStore.currentCover).toBe(oldCover); // 实现
 
-    resolvePlayAudio();
-    await playPromise;
-    playerPlayback.dispose();
+    resolvePlayAudio(); // 实现
+    await playPromise; // 实现
+    playerPlayback.dispose(); // 实现
+  });
+
+  it('clears the previous cover after confirming the next song has no cover', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const oldCover = 'asset://C:\\covers\\old-thumb.jpg'; 
+    const song = makeSong({ path: '/music/no-cover.flac', title: 'No Cover' }); // 实现
+    let resolveCover!: (cover: string) => void; // 实现
+    playbackStore.currentCover = oldCover; // 实现
+    loadCoverMock.mockReturnValueOnce(new Promise<string>((resolve) => { // 实现
+      resolveCover = resolve; // 实现
+    }));
+
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
+    });
+
+    const playPromise = playerPlayback.playSong(song); // 实现
+    expect(playbackStore.currentCover).toBe(oldCover); // 实现
+
+    resolveCover(''); // 实现
+    await playPromise; // 实现
+    await vi.waitFor(() => expect(playbackStore.currentCover).toBe('')); // 实现
+    playerPlayback.dispose(); // 实现
+  });
+
+  it('does not carry the previous full cover into the next song detail view', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const uiStore = useUiStore(); // 实现
+    const oldCover = 'asset://C:\\covers\\old-thumb.jpg'; 
+    const oldFullCover = 'asset://C:\\covers\\old-full.png'; 
+    const song = makeSong({ path: '/music/new-song.flac', title: 'New Song' }); // 实现
+    let resolvePlayAudio!: () => void; // 实现
+    uiStore.showPlayerDetail = true; // 实现
+    playbackStore.currentCover = oldCover; // 实现
+    playbackStore.currentCoverPath = '/music/old-song.flac'; // 实现
+    playbackStore.currentCoverFull = oldFullCover; // 实现
+    vi.mocked(playbackApi.playAudio).mockReturnValueOnce(new Promise<void>((resolve) => { // 实现
+      resolvePlayAudio = resolve; // 实现
+    }));
+
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
+    });
+
+    const playPromise = playerPlayback.playSong(song); // 实现
+
+    expect(playbackStore.currentCover).toBe(oldCover); // 实现
+    expect(playbackStore.currentCoverPath).toBe('/music/old-song.flac'); // 实现
+    expect(playbackStore.currentCoverFull).toBe(''); // 实现
+
+    resolvePlayAudio(); // 实现
+    await playPromise; // 实现
+    playerPlayback.dispose(); // 实现
   });
 
   it('loads LX lyrics asynchronously and refreshes the current song', async () => {
@@ -755,14 +755,14 @@ describe('player playback domain', () => {
   it('does not repeatedly auto-advance after the same online song fails quickly', async () => {
     vi.useFakeTimers();
     const failingSong = makeSong({ path: 'plugin://qishui/failed', title: 'Failed' });
-    const nextSong = makeSong({ path: '/music/next.flac', title: 'Next' });
+    const nextSong = makeSong({ path: '/music/next.flac', title: 'Next' }); // 实现
     useSettingsStore().settings.audio.onlineFailureBehavior = 'skip';
-    const handleAutoNext = vi.fn();
-    const playerPlayback = createPlayerPlayback({
+    const handleAutoNext = vi.fn(); // 实现
+    const playerPlayback = createPlayerPlayback({ // 实现
       getDisplaySongList: () => [failingSong, nextSong],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext,
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext, // 实现
     });
 
     await playerPlayback.playSong(failingSong);
@@ -771,31 +771,31 @@ describe('player playback domain', () => {
     await vi.runOnlyPendingTimersAsync();
 
     expect(handleAutoNext).toHaveBeenCalledTimes(1);
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
   it('stops instead of skipping to itself when an online song has no alternative queue item', async () => {
     vi.useFakeTimers();
     const failingSong = makeSong({ path: 'plugin://qishui/only', title: 'Only Failed' });
-    const handleAutoNext = vi.fn();
-    const playerPlayback = createPlayerPlayback({
+    const handleAutoNext = vi.fn(); // 实现
+    const playerPlayback = createPlayerPlayback({ // 实现
       getDisplaySongList: () => [failingSong],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext,
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext, // 实现
     });
 
     await playerPlayback.playSong(failingSong);
     await vi.runOnlyPendingTimersAsync();
 
-    expect(handleAutoNext).not.toHaveBeenCalled();
+    expect(handleAutoNext).not.toHaveBeenCalled(); // 实现
     expect(playbackApi.stopAudio).toHaveBeenCalled();
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
   it('stops the previous audio immediately while resolving a new online song url', async () => {
-    const playbackStore = usePlaybackStore();
-    const previousSong = makeSong({ path: '/music/previous.flac', title: 'Previous' });
+    const playbackStore = usePlaybackStore(); // 实现
+    const previousSong = makeSong({ path: '/music/previous.flac', title: 'Previous' }); // 实现
     const onlineSong = makeSong({
       path: 'plugin://lx-test-plugin/online-song',
       title: 'Online Song',
@@ -811,15 +811,15 @@ describe('player playback domain', () => {
     });
     pluginGetMusicInfoMock.mockReturnValueOnce(pendingMusicInfo);
 
-    playbackStore.currentSong = previousSong;
+    playbackStore.currentSong = previousSong; // 实现
     playbackStore.isPlaying = true;
     playbackStore.isSongLoaded = true;
 
-    const playerPlayback = createPlayerPlayback({
+    const playerPlayback = createPlayerPlayback({ // 实现
       getDisplaySongList: () => [previousSong, onlineSong],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
     const playPromise = playerPlayback.playSong(onlineSong, { preserveQueue: true });
@@ -828,10 +828,10 @@ describe('player playback domain', () => {
     expect(playbackApi.playAudio).not.toHaveBeenCalled();
 
     resolveMusicInfo({ url: 'https://example.test/online-song.mp3' });
-    await playPromise;
+    await playPromise; // 实现
 
     expect(playbackApi.playAudio).toHaveBeenCalled();
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
   it('does not advance the progress clock while an online song is still loading', async () => {
@@ -898,8 +898,8 @@ describe('player playback domain', () => {
   });
 
   it('maps a qishui vip preview clip back to the full song timeline', async () => {
-    const playbackStore = usePlaybackStore();
-    const song = makeSong({
+    const playbackStore = usePlaybackStore(); // 实现
+    const song = makeSong({ // 实现
       path: 'plugin://汽水音乐/6778775241108752385',
       title: '初学者',
       duration: 261,
@@ -917,14 +917,14 @@ describe('player playback domain', () => {
       },
     });
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
+    await playerPlayback.playSong(song); // 实现
     expect(pluginHttpRequestSpy).toHaveBeenCalled();
 
     emitPlaybackProgress(10, 52);
@@ -941,12 +941,12 @@ describe('player playback domain', () => {
     const seekRequest = vi.mocked(playbackApi.seekAudio).mock.calls.at(-1)?.[0];
     expect(seekRequest?.time).toBeCloseTo(11.1, 1);
 
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
   it('clears the stale preview mapping when the same song returns a full stream', async () => {
-    const playbackStore = usePlaybackStore();
-    const song = makeSong({
+    const playbackStore = usePlaybackStore(); // 实现
+    const song = makeSong({ // 实现
       path: 'plugin://汽水音乐/1111111111111111111',
       title: 'Full Stream Now',
       duration: 261,
@@ -964,14 +964,14 @@ describe('player playback domain', () => {
       },
     });
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
+    await playerPlayback.playSong(song); // 实现
     emitPlaybackProgress(10, 52);
     await vi.waitFor(() => {
       expect(playbackStore.currentTime).toBeGreaterThan(200);
@@ -980,12 +980,12 @@ describe('player playback domain', () => {
     emitPlaybackProgress(20, 261);
     expect(playbackStore.currentTime).toBeCloseTo(20, 1);
 
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
   it('falls back to clip-relative timing for non-qishui preview streams', async () => {
-    const playbackStore = usePlaybackStore();
-    const song = makeSong({
+    const playbackStore = usePlaybackStore(); // 实现
+    const song = makeSong({ // 实现
       path: 'plugin://kw/preview-only',
       title: 'Preview Only',
       duration: 240,
@@ -993,14 +993,14 @@ describe('player playback domain', () => {
     } as Partial<Song>);
     const pluginHttpRequestSpy = vi.spyOn(pluginApi, 'pluginHttpRequest');
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [song],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [song], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song);
+    await playerPlayback.playSong(song); // 实现
     emitPlaybackProgress(5, 60);
     await vi.waitFor(() => {
       expect(playbackStore.currentSong?.duration).toBe(60);
@@ -1010,42 +1010,42 @@ describe('player playback domain', () => {
     expect(playbackStore.currentTime).toBeCloseTo(5, 1);
     expect(pluginHttpRequestSpy).not.toHaveBeenCalled();
 
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 
-  it('prepares likely full-size covers before switching songs in the player detail view', async () => {
-    const playbackStore = usePlaybackStore();
-    const uiStore = useUiStore();
-    const previousSong = makeSong({ path: '/music/previous.flac', title: 'Previous' });
-    const song = makeSong({ path: '/music/current.flac', title: 'Current' });
-    const nextSong = makeSong({ path: '/music/next.flac', title: 'Next' });
-    const tempSong = makeSong({ path: '/music/temp.flac', title: 'Temp' });
+  it('prepares likely full-size covers before switching songs in the player detail view', async () => { // 实现
+    const playbackStore = usePlaybackStore(); // 实现
+    const uiStore = useUiStore(); // 实现
+    const previousSong = makeSong({ path: '/music/previous.flac', title: 'Previous' }); // 实现
+    const song = makeSong({ path: '/music/current.flac', title: 'Current' }); // 实现
+    const nextSong = makeSong({ path: '/music/next.flac', title: 'Next' }); // 实现
+    const tempSong = makeSong({ path: '/music/temp.flac', title: 'Temp' }); // 实现
 
-    uiStore.showPlayerDetail = true;
-    playbackStore.currentSong = previousSong;
-    playbackStore.playQueue = [previousSong, song, nextSong];
-    playbackStore.tempQueue = [tempSong];
+    uiStore.showPlayerDetail = true; // 实现
+    playbackStore.currentSong = previousSong; // 实现
+    playbackStore.playQueue = [previousSong, song, nextSong]; // 实现
+    playbackStore.tempQueue = [tempSong]; // 实现
 
-    const playerPlayback = createPlayerPlayback({
-      getDisplaySongList: () => [previousSong, song, nextSong],
-      addToHistory: vi.fn(),
-      loadLyrics: vi.fn(),
-      handleAutoNext: vi.fn(),
+    const playerPlayback = createPlayerPlayback({ // 实现
+      getDisplaySongList: () => [previousSong, song, nextSong], // 实现
+      addToHistory: vi.fn(), // 实现
+      loadLyrics: vi.fn(), // 实现
+      handleAutoNext: vi.fn(), // 实现
     });
 
-    await playerPlayback.playSong(song, { preserveQueue: true });
+    await playerPlayback.playSong(song, { preserveQueue: true }); // 实现
 
-    expect(retainFullCoverPathsMock).toHaveBeenCalledWith([
+    expect(retainFullCoverPathsMock).toHaveBeenCalledWith([ // 实现
       song.path,
-      tempSong.path,
-      previousSong.path,
-      nextSong.path,
+      tempSong.path, // 实现
+      previousSong.path, // 实现
+      nextSong.path, // 实现
     ]);
-    expect(preloadFullCoversMock).toHaveBeenCalledWith([
-      tempSong.path,
-      previousSong.path,
-      nextSong.path,
+    expect(preloadFullCoversMock).toHaveBeenCalledWith([ // 实现
+      tempSong.path, // 实现
+      previousSong.path, // 实现
+      nextSong.path, // 实现
     ]);
-    playerPlayback.dispose();
+    playerPlayback.dispose(); // 实现
   });
 });

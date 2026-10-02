@@ -1,9 +1,9 @@
-import { computed, ref, type CSSProperties } from 'vue';
+import { computed, ref, type CSSProperties } from "vue";
 
 // 底栏封面 ↔ 详情页封面之间的共享位移动画（FLIP 方案）。
 // 模块级单例：同一时刻只允许一条封面位移在跑，新的转场会让旧转场的回调失效。
 
-type MorphPhase = 'idle' | 'entering' | 'leaving';
+type MorphPhase = "idle" | "entering" | "leaving";
 
 // 视口坐标系里的矩形（left/top 与 DOMRect 字段对齐，便于直接换算位移）
 interface Box {
@@ -14,15 +14,15 @@ interface Box {
 }
 
 const MORPH_MS = 500;
-const MORPH_EASING = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
-const NEUTRAL_SHIFT = 'translate(0, 0) scale(1, 1)';
-const DOCK_CORNER = '8px'; // 底栏封面的圆角
-const STAGE_CORNER = '16px'; // 详情页封面的圆角
+const MORPH_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)";
+const NEUTRAL_SHIFT = "translate(0, 0) scale(1, 1)";
+const DOCK_CORNER = "8px"; // 底栏封面的圆角
+const STAGE_CORNER = "16px"; // 详情页封面的圆角
 // 配角元素交错入场的进度点（占整段位移时长的比例）
 const REVEAL_FRACTIONS = [0.45, 0.6, 0.8] as const;
 
 // ---- 模块级状态 ----
-const morphPhase = ref<MorphPhase>('idle');
+const morphPhase = ref<MorphPhase>("idle");
 const morphBusy = ref(false);
 // 转场期间隐藏底栏封面，避免与详情页封面重影
 const dockCoverShown = ref(true);
@@ -34,9 +34,9 @@ const revealStage = ref(0);
 const dockBox = ref<Box | null>(null);
 
 // 封面位移进行中的样式分量
-const shiftExpr = ref('');
-const cornerExpr = ref('');
-const tweenExpr = ref('');
+const shiftExpr = ref("");
+const cornerExpr = ref("");
+const tweenExpr = ref("");
 
 // 自增代号：每次新转场都会让旧转场的回调失效
 let ticket = 0;
@@ -50,13 +50,19 @@ const flushRevealTimers = () => {
     revealTimers = [];
 };
 
-const waitForPaint = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
+const waitForPaint = () =>
+    new Promise<void>((done) => requestAnimationFrame(() => done()));
 
 const dwell = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 const readBox = (el: HTMLElement): Box => {
     const rect = el.getBoundingClientRect();
-    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    return {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+    };
 };
 
 /** 计算"从 dock 反推回 stage"的 FLIP 反向位移串 */
@@ -74,10 +80,10 @@ const morphTween = () =>
 /** 收尾：可选地清空封面样式分量，然后复位为静止状态 */
 const restMorph = (clearCoverStyles: boolean) => {
     if (clearCoverStyles) {
-        tweenExpr.value = '';
-        shiftExpr.value = '';
+        tweenExpr.value = "";
+        shiftExpr.value = "";
     }
-    morphPhase.value = 'idle';
+    morphPhase.value = "idle";
     morphBusy.value = false;
     dockCoverShown.value = true;
 };
@@ -109,7 +115,7 @@ interface MorphPlan {
 
 const runMorphPlan = async (plan: MorphPlan) => {
     // "Invert"：先无过渡地摆到起点位置
-    tweenExpr.value = 'none';
+    tweenExpr.value = "none";
     shiftExpr.value = plan.startShift;
     cornerExpr.value = plan.startCorner;
     backdropAlpha.value = plan.backdrop;
@@ -139,7 +145,7 @@ const markDockAnchor = (el: HTMLElement) => {
 async function expandInto(stageCover: HTMLElement): Promise<void> {
     const id = ++ticket;
     flushRevealTimers();
-    morphPhase.value = 'entering';
+    morphPhase.value = "entering";
     morphBusy.value = true;
     dockCoverShown.value = false;
     backdropAlpha.value = 0;
@@ -174,7 +180,7 @@ async function expandInto(stageCover: HTMLElement): Promise<void> {
 async function collapseBack(stageCover: HTMLElement): Promise<void> {
     const id = ++ticket;
     flushRevealTimers();
-    morphPhase.value = 'leaving';
+    morphPhase.value = "leaving";
     morphBusy.value = true;
     // 配角元素立刻整体淡出
     revealStage.value = 0;
@@ -189,7 +195,9 @@ async function collapseBack(stageCover: HTMLElement): Promise<void> {
     }
 
     // 重新测量底栏封面位置（窗口尺寸可能已经变化）
-    const dockEl = document.querySelector('[data-footer-cover]') as HTMLElement | null;
+    const dockEl = document.querySelector(
+        "[data-footer-cover]",
+    ) as HTMLElement | null;
     if (dockEl) {
         dock = readBox(dockEl);
         dockBox.value = dock;
@@ -209,12 +217,12 @@ async function collapseBack(stageCover: HTMLElement): Promise<void> {
 const abortMorph = () => {
     ticket += 1;
     flushRevealTimers();
-    tweenExpr.value = '';
-    shiftExpr.value = '';
-    cornerExpr.value = '';
+    tweenExpr.value = "";
+    shiftExpr.value = "";
+    cornerExpr.value = "";
     backdropAlpha.value = 0;
     revealStage.value = 0;
-    morphPhase.value = 'idle';
+    morphPhase.value = "idle";
     morphBusy.value = false;
     dockCoverShown.value = true;
 };
@@ -224,20 +232,20 @@ const coverAppearance = computed<CSSProperties>(() => {
     const appearance: CSSProperties = {};
     if (shiftExpr.value) {
         appearance.transform = shiftExpr.value;
-        appearance.transformOrigin = 'top left';
+        appearance.transformOrigin = "top left";
     }
     if (cornerExpr.value) {
         appearance.borderRadius = cornerExpr.value;
     }
-    if (tweenExpr.value === 'none') {
-        appearance.transition = 'none';
+    if (tweenExpr.value === "none") {
+        appearance.transition = "none";
     } else if (tweenExpr.value) {
         appearance.transition = tweenExpr.value;
     }
     return appearance;
 });
 
-export function useSharedTransition() {
+export function useSharedTransition() { // 实现
     return {
         animationPhase: morphPhase,
         isAnimating: morphBusy,

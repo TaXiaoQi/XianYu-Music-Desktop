@@ -1,137 +1,163 @@
-import { useCollectionsStore } from '../collections/store';
-import { useLibraryStore } from './store';
-import { usePlaybackStore } from '../playback/store';
-import type { Song } from '../../types';
+import { useCollectionsStore } from "../collections/store";
+import { useLibraryStore } from "./store";
+import { usePlaybackStore } from "../playback/store";
+import type { Song } from "../../types";
 
-interface CleanupRemovedLibrarySongPathsOptions {
-  removedPaths: string[];
-  removedFolderPath?: string;
-  stopPlayback?: () => Promise<void> | void;
-  removeFromHistory?: (songPaths: string[]) => Promise<void> | void;
-  removeSongStatistics?: (songPaths: string[]) => Promise<void> | void;
-  clearCaches?: (songPaths: string[]) => Promise<void> | void;
+interface CleanupRemovedLibrarySongPathsOptions { // 实现
+    removedPaths: string[];
+    removedFolderPath?: string;
+    stopPlayback?: () => Promise<void> | void;
+    removeFromHistory?: (songPaths: string[]) => Promise<void> | void;
+    removeSongStatistics?: (songPaths: string[]) => Promise<void> | void;
+    clearCaches?: (songPaths: string[]) => Promise<void> | void;
 }
 
-export const normalizePathForScope = (path: string | null | undefined) =>
-  (path ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+export const normalizePathForScope = (path: string | null | undefined) => // 实现
+    (path ?? "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
-export const isPathInFolderScope = (folderPath: string, path: string) => {
-  const normalizedFolder = normalizePathForScope(folderPath);
-  const normalizedPath = normalizePathForScope(path);
+export const isPathInFolderScope = (folderPath: string, path: string) => { // 实现
+    const normalizedFolder = normalizePathForScope(folderPath);
+    const normalizedPath = normalizePathForScope(path); // 实现
 
-  return !!normalizedFolder
-    && !!normalizedPath
-    && (
-      normalizedPath === normalizedFolder ||
-      normalizedPath.startsWith(`${normalizedFolder}/`)
+    return (
+        !!normalizedFolder &&
+        !!normalizedPath &&
+        (normalizedPath === normalizedFolder ||
+            normalizedPath.startsWith(`${normalizedFolder}/`))
     );
 };
 
-export const collectSongPathsInFolderScope = (songs: Song[], folderPath: string) => {
-  const seen = new Set<string>();
-  const paths: string[] = [];
+export const collectSongPathsInFolderScope = (
+    songs: Song[],
+    folderPath: string,
+) => {
+    const seen = new Set<string>();
+    const paths: string[] = [];
 
-  songs.forEach((song) => {
-    if (!song?.path || !isPathInFolderScope(folderPath, song.path)) {
-      return;
-    }
+    songs.forEach((song) => {
+        if (!song?.path || !isPathInFolderScope(folderPath, song.path)) {
+            return;
+        }
 
-    const normalizedPath = normalizePathForScope(song.path);
-    if (seen.has(normalizedPath)) {
-      return;
-    }
+        const normalizedPath = normalizePathForScope(song.path);
+        if (seen.has(normalizedPath)) {
+            return;
+        }
 
-    seen.add(normalizedPath);
-    paths.push(song.path);
-  });
+        seen.add(normalizedPath);
+        paths.push(song.path);
+    });
 
-  return paths;
+    return paths;
 };
 
-const dedupePaths = (paths: string[]) => {
-  const seen = new Set<string>();
-  const deduped: string[] = [];
+const dedupePaths = (paths: string[]) => { // 实现
+    const seen = new Set<string>();
+    const deduped: string[] = [];
 
-  paths.forEach((path) => {
-    const normalizedPath = normalizePathForScope(path);
-    if (!normalizedPath || seen.has(normalizedPath)) {
-      return;
-    }
+    paths.forEach((path) => {
+        const normalizedPath = normalizePathForScope(path);
+        if (!normalizedPath || seen.has(normalizedPath)) {
+            return;
+        }
 
-    seen.add(normalizedPath);
-    deduped.push(path);
-  });
+        seen.add(normalizedPath);
+        deduped.push(path);
+    });
 
-  return deduped;
+    return deduped;
 };
 
 export const syncRemovedLibrarySongPreferences = (removedPaths: string[]) => {
-  const uniqueRemovedPaths = dedupePaths(removedPaths);
-  if (uniqueRemovedPaths.length === 0) {
-    return;
-  }
+    const uniqueRemovedPaths = dedupePaths(removedPaths);
+    if (uniqueRemovedPaths.length === 0) {
+        return;
+    }
 
-  const libraryStore = useLibraryStore();
-  const collectionsStore = useCollectionsStore();
-  const removedPathSet = new Set(uniqueRemovedPaths.map(normalizePathForScope));
-  const isRemovedPath = (path: string | null | undefined) =>
-    !!path && removedPathSet.has(normalizePathForScope(path));
+    const libraryStore = useLibraryStore();
+    const collectionsStore = useCollectionsStore();
+    const removedPathSet = new Set(
+        uniqueRemovedPaths.map(normalizePathForScope),
+    );
+    const isRemovedPath = (path: string | null | undefined) =>
+        !!path && removedPathSet.has(normalizePathForScope(path));
 
-  collectionsStore.favoritePaths = collectionsStore.favoritePaths.filter(path => !isRemovedPath(path));
-  collectionsStore.playlists.forEach((playlist) => {
-    playlist.songPaths = playlist.songPaths.filter(path => !isRemovedPath(path));
-  });
+    collectionsStore.favoritePaths = collectionsStore.favoritePaths.filter(
+        (path) => !isRemovedPath(path),
+    );
+    collectionsStore.playlists.forEach((playlist) => {
+        playlist.songPaths = playlist.songPaths.filter(
+            (path) => !isRemovedPath(path),
+        );
+    });
 
-  libraryStore.localCustomOrder = libraryStore.localCustomOrder.filter(path => !isRemovedPath(path));
-  libraryStore.folderCustomOrder = Object.fromEntries(
-    Object.entries(libraryStore.folderCustomOrder).map(([folderPath, paths]) => [
-      folderPath,
-      paths.filter(path => !isRemovedPath(path)),
-    ]),
-  );
+    libraryStore.localCustomOrder = libraryStore.localCustomOrder.filter(
+        (path) => !isRemovedPath(path),
+    );
+    libraryStore.folderCustomOrder = Object.fromEntries(
+        Object.entries(libraryStore.folderCustomOrder).map(
+            ([folderPath, paths]) => [
+                folderPath,
+                paths.filter((path) => !isRemovedPath(path)),
+            ],
+        ),
+    );
 };
 
-export const cleanupRemovedLibrarySongPaths = async ({
-  removedPaths,
-  removedFolderPath = '',
-  stopPlayback,
-  removeFromHistory,
-  removeSongStatistics,
-  clearCaches,
-}: CleanupRemovedLibrarySongPathsOptions) => {
-  const uniqueRemovedPaths = dedupePaths(removedPaths);
-  if (uniqueRemovedPaths.length === 0) {
-    return;
-  }
+export const cleanupRemovedLibrarySongPaths = async ({ // 实现
+    removedPaths,
+    removedFolderPath = "",
+    stopPlayback,
+    removeFromHistory,
+    removeSongStatistics,
+    clearCaches,
+}: CleanupRemovedLibrarySongPathsOptions) => { // 实现
+    const uniqueRemovedPaths = dedupePaths(removedPaths);
+    if (uniqueRemovedPaths.length === 0) {
+        return;
+    }
 
-  const playbackStore = usePlaybackStore();
-  const removedPathSet = new Set(uniqueRemovedPaths.map(normalizePathForScope));
-  const isRemovedPath = (path: string | null | undefined) =>
-    !!path && removedPathSet.has(normalizePathForScope(path));
-  const isRemovedFolderPath = (path: string | null | undefined) =>
-    !!path && !!removedFolderPath && isPathInFolderScope(removedFolderPath, path);
+    const playbackStore = usePlaybackStore();
+    const removedPathSet = new Set(
+        uniqueRemovedPaths.map(normalizePathForScope),
+    );
+    const isRemovedPath = (path: string | null | undefined) =>
+        !!path && removedPathSet.has(normalizePathForScope(path));
+    const isRemovedFolderPath = (path: string | null | undefined) =>
+        !!path &&
+        !!removedFolderPath &&
+        isPathInFolderScope(removedFolderPath, path);
 
-  playbackStore.playQueue = playbackStore.playQueue.filter(song => !isRemovedPath(song.path));
-  playbackStore.tempQueue = playbackStore.tempQueue.filter(song => !isRemovedPath(song.path));
+    playbackStore.playQueue = playbackStore.playQueue.filter(
+        (song) => !isRemovedPath(song.path),
+    );
+    playbackStore.tempQueue = playbackStore.tempQueue.filter(
+        (song) => !isRemovedPath(song.path),
+    );
 
-  const activeSongPath = playbackStore.currentSongPath ?? playbackStore.currentSong?.path ?? null;
-  if (isRemovedPath(activeSongPath) || isRemovedFolderPath(activeSongPath)) {
-    await stopPlayback?.();
-    playbackStore.isPlaying = false;
-    playbackStore.isSongLoaded = false;
-    playbackStore.currentTime = 0;
-    playbackStore.currentSong = null;
-    playbackStore.currentCover = '';
-    playbackStore.currentCoverPath = '';
-    playbackStore.currentCoverFull = '';
-  }
+    const activeSongPath =
+        playbackStore.currentSongPath ??
+        playbackStore.currentSong?.path ??
+        null;
+    if (isRemovedPath(activeSongPath) || isRemovedFolderPath(activeSongPath)) {
+        await stopPlayback?.();
+        playbackStore.isPlaying = false;
+        playbackStore.isSongLoaded = false;
+        playbackStore.currentTime = 0;
+        playbackStore.currentSong = null;
+        playbackStore.currentCover = "";
+        playbackStore.currentCoverPath = "";
+        playbackStore.currentCoverFull = "";
+    }
 
-  syncRemovedLibrarySongPreferences(uniqueRemovedPaths);
+    syncRemovedLibrarySongPreferences(uniqueRemovedPaths);
 
-  const collectionsStore = useCollectionsStore();
-  collectionsStore.recentSongs = collectionsStore.recentSongs.filter(item => !isRemovedPath(item.path));
+    const collectionsStore = useCollectionsStore();
+    collectionsStore.recentSongs = collectionsStore.recentSongs.filter(
+        (item) => !isRemovedPath(item.path),
+    );
 
-  await removeFromHistory?.(uniqueRemovedPaths);
-  await removeSongStatistics?.(uniqueRemovedPaths);
-  await clearCaches?.(uniqueRemovedPaths);
+    await removeFromHistory?.(uniqueRemovedPaths);
+    await removeSongStatistics?.(uniqueRemovedPaths);
+    await clearCaches?.(uniqueRemovedPaths);
 };

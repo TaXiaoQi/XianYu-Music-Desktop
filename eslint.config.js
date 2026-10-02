@@ -1,9 +1,9 @@
-import js from "@eslint/js";
-import vue from "eslint-plugin-vue";
-import globals from "globals";
-import tseslint from "typescript-eslint";
+import js from "@eslint/js"; // 实现
+import vue from "eslint-plugin-vue"; // 实现
+import globals from "globals"; // 实现
+import tseslint from "typescript-eslint"; // 实现
 
-export default tseslint.config(
+export default tseslint.config( // 实现
     {
         ignores: [
             "dist/**",

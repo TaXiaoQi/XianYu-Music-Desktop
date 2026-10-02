@@ -1,43 +1,48 @@
-export interface LyricsStylePanelContainerRect {
-  left: number;
-  right: number;
-  width: number;
+export interface LyricsStylePanelContainerRect { // 实现
+    left: number;
+    right: number;
+    width: number;
 }
 
-export function getLyricsStylePanelPosition(
-  containerRect: LyricsStylePanelContainerRect,
-  viewportWidth: number,
-): Record<string, string> {
-  const safeMargin = 16;
-  const naturalWidth = Math.min(320, viewportWidth * 0.34 - 24);
-  const panelWidth = Math.max(260, naturalWidth);
-  const defaultMarginRight = viewportWidth >= 1536 ? viewportWidth * 0.22 : viewportWidth * 0.14;
-  const renderedPanelWidth = Math.min(
-    panelWidth,
-    Math.max(1, containerRect.width),
-    Math.max(1, viewportWidth - safeMargin * 2),
-  );
+export function getLyricsStylePanelPosition( // 实现
+    containerRect: LyricsStylePanelContainerRect,
+    viewportWidth: number,
+): Record<string, string> { // 实现
+    const safeMargin = 16;
+    const naturalWidth = Math.min(320, viewportWidth * 0.34 - 24);
+    const panelWidth = Math.max(260, naturalWidth);
+    const defaultMarginRight =
+        viewportWidth >= 1536 ? viewportWidth * 0.22 : viewportWidth * 0.14;
+    const renderedPanelWidth = Math.min(
+        panelWidth,
+        Math.max(1, containerRect.width),
+        Math.max(1, viewportWidth - safeMargin * 2),
+    );
 
-  const coverColumnWidth = Math.max(300, viewportWidth * 0.4);
-  const coverModeLyricsLeft = 32 + coverColumnWidth + 8;
-  const preferredViewportLeft = coverModeLyricsLeft - defaultMarginRight - renderedPanelWidth;
-  const maximumViewportLeft = Math.max(safeMargin, viewportWidth - safeMargin - renderedPanelWidth);
-  const viewportLeft = Math.min(
-    maximumViewportLeft,
-    Math.max(safeMargin, preferredViewportLeft),
-  );
+    const coverColumnWidth = Math.max(300, viewportWidth * 0.4);
+    const coverModeLyricsLeft = 32 + coverColumnWidth + 8;
+    const preferredViewportLeft =
+        coverModeLyricsLeft - defaultMarginRight - renderedPanelWidth;
+    const maximumViewportLeft = Math.max(
+        safeMargin,
+        viewportWidth - safeMargin - renderedPanelWidth,
+    );
+    const viewportLeft = Math.min(
+        maximumViewportLeft,
+        Math.max(safeMargin, preferredViewportLeft),
+    );
 
-  const position: Record<string, string> = {
-    right: 'auto',
-    left: `${Math.round(viewportLeft - containerRect.left)}px`,
-    marginLeft: '0',
-    marginRight: '0',
-  };
+    const position: Record<string, string> = {
+        right: "auto",
+        left: `${Math.round(viewportLeft - containerRect.left)}px`,
+        marginLeft: "0",
+        marginRight: "0",
+    };
 
-  if (renderedPanelWidth < panelWidth) {
-    position.width = `${Math.round(renderedPanelWidth)}px`;
-    position.minWidth = `${Math.round(Math.min(260, renderedPanelWidth))}px`;
-  }
+    if (renderedPanelWidth < panelWidth) {
+        position.width = `${Math.round(renderedPanelWidth)}px`;
+        position.minWidth = `${Math.round(Math.min(260, renderedPanelWidth))}px`;
+    }
 
-  return position;
+    return position;
 }

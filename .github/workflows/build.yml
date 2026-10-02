@@ -14,7 +14,7 @@ on:
     tags:
       - "v*"
   pull_request:
-  workflow_dispatch:
+  workflow_dispatch: 
 
 jobs:
   build-windows:
@@ -24,14 +24,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: false 
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ env.NODE_VERSION }} 
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: package-lock.json 
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -56,7 +56,7 @@ jobs:
       - name: Stage bundle artifacts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force release-assets | Out-Null
+          New-Item -ItemType Directory -Force release-assets | Out-Null 
           Get-ChildItem -Path "src-tauri\target\release\bundle", "releases\windows" -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -in ".exe", ".msi", ".zip" } |
             Copy-Item -Destination release-assets -Force
@@ -74,7 +74,7 @@ jobs:
         with:
           name: xianyu-music-windows
           path: release-assets/*
-          if-no-files-found: error
+          if-no-files-found: error 
 
   build-macos:
     name: Tauri macOS build (${{ matrix.target }})
@@ -89,14 +89,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: false 
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ env.NODE_VERSION }} 
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: package-lock.json 
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -145,7 +145,7 @@ jobs:
         with:
           name: xianyu-music-macos-${{ matrix.target }}
           path: release-assets/*
-          if-no-files-found: error
+          if-no-files-found: error 
 
   build-linux:
     name: Tauri Linux build
@@ -154,14 +154,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: false 
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ env.NODE_VERSION }} 
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: package-lock.json 
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -208,4 +208,4 @@ jobs:
         with:
           name: xianyu-music-linux
           path: release-assets/*
-          if-no-files-found: error
+          if-no-files-found: error 

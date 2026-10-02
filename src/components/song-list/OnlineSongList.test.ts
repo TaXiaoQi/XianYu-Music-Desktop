@@ -1,20 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import onlineSongListSource from './OnlineSongList.vue?raw';
-import searchSource from '../../views/Search.vue?raw';
+import onlineSongListSource from "./OnlineSongList.vue?raw";
+import searchSource from "../../views/Search.vue?raw";
 
-describe('online song list header', () => {
-  it('keeps song numbering but removes the heading row from online detail lists', () => {
-    expect(onlineSongListSource).toContain('{{ index + 1 }}');
-    expect(onlineSongListSource).not.toContain('<thead');
-  });
+describe("online song list header", () => {
+    it("keeps song numbering but removes the heading row from online detail lists", () => {
+        expect(onlineSongListSource).toContain("{{ index + 1 }}");
+        expect(onlineSongListSource).not.toContain("<thead");
+    });
 
-  it('uses SongTable as the container for the online track search list', () => {
-    expect(searchSource).toContain('<SongTable');
-    expect(searchSource).toContain('onlineTrackSongs');
-    expect(searchSource).not.toContain('myPlaylistsSongs');
-    expect(searchSource).not.toContain('<thead');
-    expect(searchSource).not.toContain('<th v-if="isLocalSource"');
-    expect(searchSource).not.toContain('<td v-if="isLocalSource"');
-  });
+    it("uses SongTable as the container for the online track search list", () => {
+        expect(searchSource).toContain("<SongTable");
+        expect(searchSource).toContain("onlineTrackSongs");
+        expect(searchSource).not.toContain("myPlaylistsSongs");
+        expect(searchSource).not.toContain("<thead");
+        expect(searchSource).not.toContain('<th v-if="isLocalSource"');
+        expect(searchSource).not.toContain('<td v-if="isLocalSource"');
+    });
 });

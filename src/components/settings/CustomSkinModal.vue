@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts"> // 实现
 import { onUnmounted, ref } from "vue";
 
 import { useCustomThemeModal } from "../../composables/useCustomThemeModal";
@@ -263,7 +263,7 @@ const ICON_PATHS = {
     </Teleport>
 </template>
 
-<style scoped>
+<style scoped> /* 样式 */
 /* ==================== 弹窗进出场动画 ==================== */
 .skin-overlay {
     animation: skin-overlay-in 0.2s ease;

@@ -2,34 +2,34 @@
 
 use crate::database::migrations::apply_all_migrations;
 use crate::database::schema::{ensure_base_schema, tune_connection};
-use rusqlite::Connection;
-use std::fs;
-use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager};
+use rusqlite::{Connection};
+use std::{fs};
+use std::sync::{Mutex, Arc};
+use tauri::{Manager, AppHandle};
 
 /// 全局共享的数据库句柄；`conn` 供各命令加锁后串行访问。
-pub struct DbState {
-    pub conn: Arc<Mutex<Connection>>,
+pub struct DbState { // DbState
+  pub conn: Arc<Mutex<Connection>>,
 }
 
-impl DbState {
-    /// 打开（或创建）应用数据目录下的 library.db 并完成全部初始化步骤。
-    pub fn new(app_handle: &AppHandle) -> Result<Self, String> {
-        let data_dir = app_handle
-            .path()
-            .app_data_dir()
-            .map_err(|err| err.to_string())?;
-        fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
+impl DbState { // DbState
+  /// 打开（或创建）应用数据目录下的 library.db 并完成全部初始化步骤。
+  pub fn new(app_handle: &AppHandle) -> Result<Self, String> {
+    let data_dir = app_handle
+      .path()
+      .app_data_dir()
+      .map_err(|err| err.to_string())?;
+    fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
 
-        let db_file = data_dir.join("library.db");
-        let conn = Connection::open(db_file).map_err(|err| err.to_string())?;
+    let db_file = data_dir.join("library.db");
+    let conn = Connection::open(db_file).map_err(|err| err.to_string())?;
 
-        tune_connection(&conn)?;
-        ensure_base_schema(&conn)?;
-        apply_all_migrations(&conn)?;
+    tune_connection(&conn)?;
+    ensure_base_schema(&conn)?;
+    apply_all_migrations(&conn)?;
 
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
-    }
+    Ok(Self {
+      conn: Arc::new(Mutex::new(conn)),
+    })
+  }
 }

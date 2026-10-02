@@ -1,44 +1,46 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { signedRequestMock, getCiyuanxiIdMock } = vi.hoisted(() => ({
-  signedRequestMock: vi.fn(),
-  getCiyuanxiIdMock: vi.fn(),
+const { signedRequestMock, getCiyuanxiIdMock } = vi.hoisted(() => ({ // 实现
+    signedRequestMock: vi.fn(),
+    getCiyuanxiIdMock: vi.fn(),
 }));
 
-vi.mock('../auth/authService', () => ({ signedRequest: signedRequestMock }));
-vi.mock('./playlistSync', () => ({ getCiyuanxiId: getCiyuanxiIdMock }));
+vi.mock("../auth/authService", () => ({ signedRequest: signedRequestMock }));
+vi.mock("./playlistSync", () => ({ getCiyuanxiId: getCiyuanxiIdMock }));
 
-import { fetchLeaderboard } from './leaderboardService';
+import { fetchLeaderboard } from "./leaderboardService";
 
-describe('fetchLeaderboard', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    signedRequestMock.mockResolvedValue({
-      leaderboard: [{
-        rank: 1,
-        username: 'listener',
-        nickname: 'Listener',
-        avatar: '',
-        duration: 3600,
-        is_me: false,
-      }],
-      me: null,
-      total_users: 1,
+describe("fetchLeaderboard", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        signedRequestMock.mockResolvedValue({
+            leaderboard: [
+                {
+                    rank: 1,
+                    username: "listener",
+                    nickname: "Listener",
+                    avatar: "",
+                    duration: 3600,
+                    is_me: false,
+                },
+            ],
+            me: null,
+            total_users: 1,
+        });
     });
-  });
 
-  it('loads the public ranking without a logged-in user', async () => {
-    getCiyuanxiIdMock.mockReturnValue(null);
+    it("loads the public ranking without a logged-in user", async () => {
+        getCiyuanxiIdMock.mockReturnValue(null);
 
-    const result = await fetchLeaderboard(50);
+        const result = await fetchLeaderboard(50);
 
-    expect(signedRequestMock).toHaveBeenCalledTimes(1);
-    expect(signedRequestMock).toHaveBeenCalledWith(
-      'get_leaderboard',
-      { limit: 50, period: 'total' },
-      expect.any(Object),
-    );
-    expect(result.leaderboard).toHaveLength(1);
-    expect(result.me).toBeNull();
-  });
+        expect(signedRequestMock).toHaveBeenCalledTimes(1);
+        expect(signedRequestMock).toHaveBeenCalledWith(
+            "get_leaderboard",
+            { limit: 50, period: "total" },
+            expect.any(Object),
+        );
+        expect(result.leaderboard).toHaveLength(1);
+        expect(result.me).toBeNull();
+    });
 });

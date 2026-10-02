@@ -1,5 +1,5 @@
 import { tauriInvoke } from "./invoke";
-import type {
+import type { // 实现
     AudioDevice,
     AudioDeviceFormats,
     AudioOutputStatus,
@@ -27,9 +27,9 @@ export function createEqualizerSignature(
 const EQ_THROTTLE_INTERVAL_MS = 50;
 
 // 串行闸门：保证底层同一时刻只处理一个均衡器写入。
-const eqScheduler = useConcurrentScheduler();
+const eqScheduler = useConcurrentScheduler(); // 实现
 // 最近一次成功同步给底层的签名，供上层做「是否已生效」判断。
-let lastSyncedParams: string | null = null;
+let lastSyncedParams: string | null = null; // 实现
 
 // 拖拽节流：待发送的参数与定时器句柄。
 let queuedEqualizerArgs: {
@@ -62,7 +62,7 @@ function dispatchQueuedEqualizer(): void {
     );
 }
 
-export const playbackApi = {
+export const playbackApi = { // 实现
     // —— 音量与进度查询 ——
     setVolume(volume: number): Promise<void> {
         return tauriInvoke("set_volume", { volume });

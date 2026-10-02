@@ -1,30 +1,42 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import mainShellSource from '../components/layout/MainShell.vue?raw';
-import sidebarSource from '../components/layout/Sidebar.vue?raw';
-import routerSource from '../router/index.ts?raw';
-import searchSource from './Search.vue?raw';
+import mainShellSource from "../components/layout/MainShell.vue?raw";
+import sidebarSource from "../components/layout/Sidebar.vue?raw";
+import routerSource from "../router/index.ts?raw";
+import searchSource from "./Search.vue?raw";
 
-describe('Search page lifecycle', () => {
-  it('destroys routed main pages after navigation instead of keeping them alive', () => {
-    expect(mainShellSource).not.toContain('<KeepAlive');
-    expect(routerSource).toContain("{ path: '/', name: 'Home', component: Home }");
-    expect(routerSource).toContain("{ path: '/search', name: 'Search', component: Search }");
-  });
+describe("Search page lifecycle", () => {
+    it("destroys routed main pages after navigation instead of keeping them alive", () => {
+        expect(mainShellSource).not.toContain("<KeepAlive");
+        expect(routerSource).toContain(
+            "{ path: '/', name: 'Home', component: Home }",
+        );
+        expect(routerSource).toContain(
+            "{ path: '/search', name: 'Search', component: Search }",
+        );
+    });
 
-  it('cleans up pending search work when the page is destroyed', () => {
-    expect(searchSource).toContain('onBeforeUnmount(() => {');
-    expect(searchSource).toContain('searchAbortController?.abort();');
-    expect(searchSource).toContain('clearTimeout(searchDebounceTimer);');
-    expect(searchSource).toContain('playbackStore.tempQueue = [];');
-    expect(searchSource).not.toContain('onDeactivated(() => {');
-  });
+    it("cleans up pending search work when the page is destroyed", () => {
+        expect(searchSource).toContain("onBeforeUnmount(() => {");
+        expect(searchSource).toContain("searchAbortController?.abort();");
+        expect(searchSource).toContain("clearTimeout(searchDebounceTimer);");
+        expect(searchSource).toContain("playbackStore.tempQueue = [];");
+        expect(searchSource).not.toContain("onDeactivated(() => {");
+    });
 
-  it('clears the shared main search query when navigating from the sidebar', () => {
-    expect(sidebarSource).toContain('const handleOpenHomeView = () => {');
-    expect(sidebarSource).toContain('const handleSidebarSelect = (key: SidebarItemKey) => {');
-    expect(sidebarSource).toContain('const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {');
-    expect(sidebarSource.match(/setSearch\(''\);/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(sidebarSource).toContain('@playlistClick="handleSidebarPlaylistClick"');
-  });
+    it("clears the shared main search query when navigating from the sidebar", () => {
+        expect(sidebarSource).toContain("const handleOpenHomeView = () => {");
+        expect(sidebarSource).toContain(
+            "const handleSidebarSelect = (key: SidebarItemKey) => {",
+        );
+        expect(sidebarSource).toContain(
+            "const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {",
+        );
+        expect(
+            sidebarSource.match(/setSearch\(''\);/g)?.length,
+        ).toBeGreaterThanOrEqual(3);
+        expect(sidebarSource).toContain(
+            '@playlistClick="handleSidebarPlaylistClick"',
+        );
+    });
 });

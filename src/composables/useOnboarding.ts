@@ -1,32 +1,33 @@
-import { ref } from 'vue';
+import { ref } from "vue";
 import {
-  LEGACY_ONBOARDING_STORAGE_KEY,
-  ONBOARDING_STORAGE_KEY,
-  resolveInitialOnboardingVisibility,
-} from './onboardingState';
+    LEGACY_ONBOARDING_STORAGE_KEY,
+    ONBOARDING_STORAGE_KEY,
+    resolveInitialOnboardingVisibility,
+} from "./onboardingState";
 
-const getStorage = () => (typeof localStorage === 'undefined' ? null : localStorage);
+const getStorage = () =>
+    typeof localStorage === "undefined" ? null : localStorage;
 
-const showOnboarding = ref(resolveInitialOnboardingVisibility(getStorage()));
+const showOnboarding = ref(resolveInitialOnboardingVisibility(getStorage())); // 实现
 
-export function useOnboarding() {
-  const triggerOnboarding = () => {
-    const storage = getStorage();
-    storage?.removeItem(ONBOARDING_STORAGE_KEY);
-    storage?.removeItem(LEGACY_ONBOARDING_STORAGE_KEY);
-    showOnboarding.value = true;
-  };
+export function useOnboarding() { // 实现
+    const triggerOnboarding = () => {
+        const storage = getStorage();
+        storage?.removeItem(ONBOARDING_STORAGE_KEY);
+        storage?.removeItem(LEGACY_ONBOARDING_STORAGE_KEY);
+        showOnboarding.value = true;
+    };
 
-  const completeOnboarding = () => {
-    const storage = getStorage();
-    storage?.setItem(ONBOARDING_STORAGE_KEY, 'true');
-    storage?.removeItem(LEGACY_ONBOARDING_STORAGE_KEY);
-    showOnboarding.value = false;
-  };
+    const completeOnboarding = () => {
+        const storage = getStorage();
+        storage?.setItem(ONBOARDING_STORAGE_KEY, "true");
+        storage?.removeItem(LEGACY_ONBOARDING_STORAGE_KEY);
+        showOnboarding.value = false;
+    };
 
-  return {
-    showOnboarding,
-    triggerOnboarding,
-    completeOnboarding,
-  };
+    return {
+        showOnboarding,
+        triggerOnboarding,
+        completeOnboarding,
+    };
 }

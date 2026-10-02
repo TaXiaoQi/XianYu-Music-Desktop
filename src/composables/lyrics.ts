@@ -5,4 +5,4 @@
  * 分类器、转换器、兼容层与响应式状态，
  * 供组件与各业务模块按需引入。
  */
-export * from './lyrics/index';
+export * from "./lyrics/index";

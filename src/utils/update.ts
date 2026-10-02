@@ -4,9 +4,9 @@ import { getAuthBaseUrl, signedRequest } from "../services/auth/authService";
 import { getDeviceId } from "../services/domain/usageStats";
 import { assertSafeOutboundUrl } from "./urlGuard";
 
-const VERSION_PATTERN = /\d+(?:\.\d+)+/;
+const VERSION_PATTERN = /\d+(?:\.\d+)+/; // 实现
 
-export interface ReleaseInfo {
+export interface ReleaseInfo { // 实现
     version: string;
     url: string;
     downloadUrl?: string;
@@ -16,7 +16,7 @@ export interface ReleaseInfo {
     source?: "github";
 }
 
-export function extractVersion(value: string): string {
+export function extractVersion(value: string): string { // 实现
     const trimmed = value.trim();
     const match = trimmed.match(VERSION_PATTERN);
     return match ? match[0] : trimmed.replace(/^[vV]/, "");
@@ -36,7 +36,7 @@ function parseVersion(value: string): ParsedVersion {
     return { fields, pre };
 }
 
-export function compareVersions(left: string, right: string): number {
+export function compareVersions(left: string, right: string): number { // 实现
     const a = parseVersion(left);
     const b = parseVersion(right);
     const length = Math.max(a.fields.length, b.fields.length);
@@ -95,7 +95,8 @@ export async function fetchLatestRelease(
     if (!version) {
         throw new Error("Latest release version is missing");
     }
-    return { // 实现
+    return {
+        // 实现
         version,
         url:
             typeof payload.html_url === "string"
@@ -109,13 +110,15 @@ export async function fetchLatestRelease(
         source: "github",
     }; // 实现
 } // 实现
-export interface ServerUpdateInfo { // 实现
+export interface ServerUpdateInfo {
+    // 实现
     version: string;
     downloadUrl: string;
     updateContent: string;
     updatedAt?: string;
 } // 实现
-export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> { // 实现
+export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
+    // 实现
     try {
         const data = await signedRequest<Record<string, unknown>>(
             "get_latest_version",
@@ -137,7 +140,7 @@ export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> { //
             updatedAt:
                 typeof data.updatedAt === "string" ? data.updatedAt : undefined,
         };
-    } catch (error) {
+    } catch (error) { // 实现
         console.error("[Update] 获取版本信息失败:", error);
         return null;
     } // 实现
@@ -151,7 +154,8 @@ export async function fetchBetaAccess(): Promise<{
         { platform: "desktop", device_id: getDeviceId() },
         { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
     );
-    return { // 实现
+    return {
+        // 实现
         allowed: data?.allowed === true,
         pending: data?.pending === true,
     }; // 实现
