@@ -7,6 +7,7 @@ import {
     ref,
     watch,
 } from "vue";
+import { useRoute } from "vue-router";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { storeToRefs } from "pinia";
 
@@ -44,6 +45,7 @@ const { isMainWindowLowPower } = useRenderingPower(); // 实现
 const { isLowPerformance } = usePerformanceMode();
 const playbackStore = usePlaybackStore(); // 实现
 const { currentSongPath } = storeToRefs(playbackStore); // 实现
+const route = useRoute(); // 主题包每页壁纸按当前路由解析 pageId
 
 const materialActive = computed(() => activeWindowMaterial.value !== "none");
 const micaActive = computed(() => activeWindowMaterial.value === "mica");
@@ -106,11 +108,47 @@ interface BackdropPlan {
     translateX?: number;
     translateY?: number;
     animated: boolean;
+    /** 主题包每页壁纸（0-1 制，图元恒为静态图） */
+    perPage?: boolean;
 }
+
+/** 当前路由 → 主题包 pageId（对齐服务端编辑器 SLOTS_JSON pages；播放详情页自带背景，不参与） */
+const currentPageId = computed<string | null>(() => {
+    if (route.name === "Home") {
+        const view = String(route.query.view ?? "");
+        if (view === "all") return "local";
+        if (view === "playlist") return "playlist";
+        return "main";
+    }
+    if (route.name === "Favorites") return "fav";
+    if (route.name === "Settings") return "settings";
+    return null;
+});
 
 const backdropPlan = computed<BackdropPlan | null>(() => {
     const current = theme.value;
     if (!current) return null;
+
+    // 主题包每页壁纸优先（激活即生效；未覆盖页面回落全局方案）
+    const pageBg = currentPageId.value
+        ? current.perPageBackgrounds?.[currentPageId.value]
+        : null;
+    if (pageBg?.imagePath) {
+        return {
+            variant: "custom",
+            source: pageBg.imagePath,
+            mediaType: "image",
+            blur: pageBg.blur,
+            opacity: pageBg.opacity,
+            maskColor: pageBg.maskColor,
+            maskAlpha: pageBg.maskAlpha,
+            scale: pageBg.scale,
+            translateX: pageBg.translateX,
+            translateY: pageBg.translateY,
+            animated: false,
+            perPage: true,
+        };
+    }
 
     const customPath =
         current.mode === "custom" ? current.customBackground.imagePath : "";
@@ -184,6 +222,8 @@ const imageFrame = ref<FrameSize>({
     height: theme.value.customBackground?.imageHeight || 0,
 });
 const videoFrame = ref<FrameSize>({ width: 0, height: 0 });
+// 每页壁纸的图元尺寸：仅内存探测，不写入设置（页面切换即随源重探）
+const pageImageFrame = ref<FrameSize>({ width: 0, height: 0 });
 
 const probeImageFrame = (src: string) =>
     new Promise<FrameSize>((resolve, reject) => {
@@ -259,6 +299,34 @@ watch(
     () => {
         videoFrame.value = { width: 0, height: 0 };
     },
+);
+
+// 每页壁纸图元尺寸探测：源变化即重探，不持久化
+watch(
+    () =>
+        backdropPlan.value?.perPage && backdropPlan.value.mediaType === "image"
+            ? backdropPlan.value.source
+            : "",
+    async (source, _prev, onCleanup) => {
+        let stale = false;
+        onCleanup(() => {
+            stale = true;
+        });
+        if (!source) {
+            pageImageFrame.value = { width: 0, height: 0 };
+            return;
+        }
+        try {
+            const frame = await probeImageFrame(
+                isRemoteLike(source) ? source : convertFileSrc(source),
+            );
+            if (stale) return;
+            pageImageFrame.value = frame;
+        } catch {
+            if (!stale) pageImageFrame.value = { width: 0, height: 0 };
+        }
+    },
+    { immediate: true },
 );
 
 const absorbVideoFrame = (frame: FrameSize) => {
@@ -426,7 +494,9 @@ const coverGeometry = computed(() => {
     const [nativeW, nativeH] =
         plan.mediaType === "video"
             ? [videoFrame.value.width, videoFrame.value.height]
-            : [imageFrame.value.width, imageFrame.value.height];
+            : plan.perPage
+                ? [pageImageFrame.value.width, pageImageFrame.value.height]
+                : [imageFrame.value.width, imageFrame.value.height];
     return calculateCoverGeometry(
         viewport.value.width,
         viewport.value.height,
@@ -451,7 +521,8 @@ const coverTransform = computed(() => {
 /* ------------------------------------------------------------------ */
 
 const rootTone = computed(() => {
-    if (theme.value?.mode === "custom") return "bg-black";
+    if (theme.value?.mode === "custom" || customMediaVisible.value)
+        return "bg-black";
     return materialActive.value
         ? "bg-transparent"
         : "bg-[#fafafa] dark:bg-[#262626]";

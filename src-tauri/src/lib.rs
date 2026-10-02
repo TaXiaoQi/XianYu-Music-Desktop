@@ -306,9 +306,11 @@ use toolbox::{ // 实现
     check_update_by_rust,
     decrypt_qmc_file,
     delete_wallpaper_file,
+    delete_theme_wallpaper,
     download_online_song,
     download_update_file,
     download_wallpaper,
+    save_theme_wallpaper,
     fetch_image_bytes,
     file_exists,
     finalize_download_extras,
@@ -664,6 +666,8 @@ pub fn run() { // run
             decrypt_qmc_file,
             download_wallpaper, // 壁纸下载命令
             delete_wallpaper_file,
+            save_theme_wallpaper, // 主题包壁纸资产落盘命令
+            delete_theme_wallpaper,
             probe_url_size,
             read_download_history, // 读取下载历史
             write_download_history, // 写入下载历史

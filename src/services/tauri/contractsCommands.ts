@@ -820,6 +820,8 @@ export interface TauriCommandMap {
   // ============ 壁纸下载 ============
   download_wallpaper: { payload: { url: string; filename: string; protectedPath?: string }; response: string };
   delete_wallpaper_file: { payload: { localPath: string }; response: void };
+  save_theme_wallpaper: { payload: { dataUrl: string; filename: string }; response: string };
+  delete_theme_wallpaper: { payload: { localPath: string }; response: void };
   // ============ 背景视频缓存 ============
   download_video_to_cache: {
     payload: { url: string; headers?: Record<string, string> | null };

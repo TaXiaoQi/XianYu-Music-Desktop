@@ -4,6 +4,9 @@ import { useDownloadStore } from '../features/download/store';
 import { downloadSong, downloadSongExtras, isDownloadableOnlineSong } from '../services/domain/downloadService';
 import { recordDownload, fileNameFromPath } from '../services/domain/downloadHistory';
 import { useLibraryRuntimeActions } from '../features/library/useLibraryRuntimeActions';
+import { usePlaybackStore } from '../features/playback/store';
+import { usePlayerCore } from '../features/playback/playerCore';
+import { isOnlineStreamPath } from '../features/playback/onlineFailover';
 import { QUALITY_META } from '../types';
 import type { Song, QualityKey, DownloadQuality, DownloadFileNameStyle } from '../types';
 
@@ -84,6 +87,7 @@ export async function downloadToLocal(
         downloadedAt: Date.now(), // 实现
         title: song.title || song.name, // 实现
         artist: song.artist, // 实现
+        durationMs: Math.round((song.duration || 0) * 1000),
       });
 
       const hitMeta = QUALITY_META[result.hitQuality as QualityKey]; // 实现
@@ -99,6 +103,30 @@ export async function downloadToLocal(
         ? `（实际下载音质：${hitMeta?.label ?? result.hitQuality}）` // 实现
         : '';
       showToast(`下载完成${note}${extraNote}`, degraded ? 'info' : 'success'); // 实现
+
+      // 下载完成联运（对齐移动端 _switchCurrentToLocalAfterDownload）：
+      // 刚下载的正是正在播放的在线歌 → 保进度无缝切本地源；暂停态切换后维持暂停。
+      try {
+        const playbackStore = usePlaybackStore();
+        const current = playbackStore.currentSong;
+        const currentKey = current ? (current.cue_source_path || current.path) : '';
+        if (current && currentKey === songPath && isOnlineStreamPath(currentKey)) {
+          const wasPlaying = playbackStore.isPlaying;
+          console.info(`[Download] 当前播放歌曲已下载，切换本地源: ${result.filePath} @${playbackStore.currentTime.toFixed(1)}s`);
+          const { playSong, pauseSong } = usePlayerCore().playbackDomain;
+          await playSong(current, {
+            startTime: playbackStore.currentTime,
+            continueStatisticsSession: true,
+            forceReplay: true,
+            preserveQueue: true,
+          });
+          if (!wasPlaying && playbackStore.isPlaying) {
+            await pauseSong();
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Download] 下载完成后切换本地播放源失败:', e?.message);
+      }
     } else {
       const result = await downloadSongExtras(song, { // 实现
         downloadDir, // 实现

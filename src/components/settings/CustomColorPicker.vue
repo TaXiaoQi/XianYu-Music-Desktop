@@ -7,6 +7,8 @@ const props = defineProps<{
   modelValue: string;
   isOpen: boolean;
   triggerRef?: HTMLElement | null;
+  /** 面板层级，宿主遮罩更高时需要抬高（默认 130） */
+  zIndex?: number;
 }>();
 
 const emit = defineEmits<{
@@ -246,8 +248,8 @@ onUnmounted(() => {
       <div
         v-if="isOpen"
         ref="panelRef"
-        class="picker-pop-panel select-none backdrop-blur-2xl shadow-2xl rounded-2xl border p-3 z-[130] overflow-hidden"
-        :style="panelStyle"
+        class="picker-pop-panel select-none backdrop-blur-2xl shadow-2xl rounded-2xl border p-3 overflow-hidden"
+        :style="[{ ...(panelStyle as Record<string, string>) }, { zIndex: zIndex ?? 130 }]"
         @click.stop
         @mousedown.stop
       >

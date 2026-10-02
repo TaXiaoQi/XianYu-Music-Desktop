@@ -18,6 +18,18 @@ import type { SyncDeleteScope } from '../overlays/SyncDeleteScopeModal.vue';
 
 const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
 
+/** 用户取消在线导入（面板取消按钮/关闭面板）：在请求间隙抛出，静默终止安装流程；
+ *  安装面板已随取消收起，调用方不再弹失败提示（对齐移动端 PluginInstallCancelled）。 */
+class PluginInstallCancelled extends Error {
+  constructor() {
+    super('PluginInstallCancelled');
+    this.name = 'PluginInstallCancelled';
+  }
+}
+
+/** WebView fetch 的 body 下载超时：对齐移动端 bodyTimeout（60s） */
+const BODY_DOWNLOAD_TIMEOUT_MS = 60_000;
+
 /**
  * 取远程脚本文本。
  *
@@ -26,19 +38,34 @@ const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/Sync
  * 站点按 UA 拦截（移动端同类问题即由「改用带头的原生请求」解决）。启用网络代理时也只有
  * Rust 的网络栈走代理，浏览器 fetch 不受代理覆盖。
  * WebView fetch 仅作兜底，留给个别依赖浏览器会话/证书的场景。
+ *
+ * cancelled 为在线链接安装的取消探针：在请求发起前与失败回退的间隙响应取消，
+ * 避免取消后仍继续空转后续请求（对齐移动端 fetchPluginScriptWithRetry 语义）。
  */
-async function fetchRemoteScript(url: string): Promise<string> {
+async function fetchRemoteScript(url: string, cancelled?: () => boolean): Promise<string> {
+  if (cancelled?.()) throw new PluginInstallCancelled();
   try {
     return await pluginApi.fetchPluginUrl(url);
   } catch (e: any) {
+    if (cancelled?.()) throw new PluginInstallCancelled();
     log(`[fetchRemoteScript] 原生请求失败，回退 WebView fetch: ${e?.message || e}`);
   }
 
+  if (cancelled?.()) throw new PluginInstallCancelled();
   try {
-    const resp = await fetch(url, { method: 'GET', headers: { 'Accept': '*/*' } });
-    if (resp.ok) return await resp.text();
-    log(`[fetchRemoteScript] WebView fetch 返回 HTTP ${resp.status}`);
+    // body 下载超时兜底：connection/响应头超时只覆盖到收到响应头，body 中途断流时
+    // text() 会永久挂起（导入进度条卡死的根因，对齐移动端 bodyTimeout 修复）
+    const ctrl = new AbortController();
+    const bodyTimer = setTimeout(() => ctrl.abort(), BODY_DOWNLOAD_TIMEOUT_MS);
+    try {
+      const resp = await fetch(url, { method: 'GET', headers: { 'Accept': '*/*' }, signal: ctrl.signal });
+      if (resp.ok) return await resp.text();
+      log(`[fetchRemoteScript] WebView fetch 返回 HTTP ${resp.status}`);
+    } finally {
+      clearTimeout(bodyTimer);
+    }
   } catch (e: any) {
+    if (cancelled?.()) throw new PluginInstallCancelled();
     log(`[fetchRemoteScript] WebView fetch 失败（跨域被拦时即为此项）: ${e?.message || e}`);
   }
 
@@ -95,6 +122,27 @@ const showInstallFromUrlDialog = ref(false);
 const showInstallFromFilePanel = ref(false);
 const isDragOverDropZone = ref(false);
 const installUrl = ref('');
+
+// 在线链接安装的取消状态与进度条句柄（面板取消按钮/关闭面板触发终止）
+const urlInstallCancelled = ref(false);
+let urlInstallProgress: ReturnType<typeof showProgressToast> | null = null;
+
+function cancelUrlInstall() {
+  urlInstallCancelled.value = true;
+  // 立即收起进度条：取消后台安装的收尾由 cancelled 检查点兜底
+  urlInstallProgress?.close();
+  urlInstallProgress = null;
+}
+
+// 安装面板经任何途径被关闭（取消按钮/切换其他面板/再次点击安装按钮）时：
+// 若在线导入仍在进行，视为用户取消导入（对齐移动端「返回=取消导入」语义），
+// 避免出现「面板已关、导入仍在跑、进度条永不消失且无法取消」的死状态。
+// urlInstallProgress 仅在 URL 安装期间非 null，其他 busy 操作不会误触发。
+watch(showInstallFromUrlDialog, (now, was) => {
+  if (!now && was && isPluginBusy.value && urlInstallProgress) {
+    cancelUrlInstall();
+  }
+});
 
 let unlistenDragDrop: UnlistenFn | null = null;
 let unlistenDragOver: UnlistenFn | null = null;
@@ -465,8 +513,11 @@ async function handleInstallFromUrl() {
   }
 
   isPluginBusy.value = true;
+  urlInstallCancelled.value = false;
+  const progress = showProgressToast('正在导入插件...');
+  urlInstallProgress = progress;
   try {
-    const content = await fetchRemoteScript(url);
+    const content = await fetchRemoteScript(url, () => urlInstallCancelled.value);
     if (!content || !content.trim()) { // 实现
       showToast('获取链接内容失败，请检查 URL 是否正确', 'error'); // 实现
       return; // 实现
@@ -477,39 +528,58 @@ async function handleInstallFromUrl() {
         const json = JSON.parse(trimmed); // 实现
         const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null); // 实现
         if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) { // 实现
-          await importMultiplePlugins(pluginList); // 实现
+          // 批量导入复用同一条进度条，逐项响应取消
+          await importMultiplePlugins(pluginList, () => urlInstallCancelled.value, progress); // 实现
           installUrl.value = ''; // 实现
           showInstallFromUrlDialog.value = false; // 实现
           return; // 实现
         } // 实现
-      } catch { /* 不是有效 JSON，当作普通脚本处理 */ } // 实现
-    } // 实现
+      } catch (e) {
+        if (e instanceof PluginInstallCancelled) throw e;
+        /* 不是有效 JSON，当作普通脚本处理 */
+      } // 实现
+    }
     await installPluginFromScript(content, url); // 实现
     installUrl.value = ''; // 实现
     showInstallFromUrlDialog.value = false; // 实现
-  } catch (e: any) { // 实现
-    showToast(`安装失败: ${e?.message || e}`, 'error'); // 实现
+  } catch (e: any) {
+    if (e instanceof PluginInstallCancelled) {
+      // 用户已取消：面板与进度条均已收起，静默终止，不再弹失败提示
+      return;
+    }
+    progress.fail(`安装失败: ${e?.message || e}`);
   } finally {
     isPluginBusy.value = false;
+    // 软失败路径（获取失败/插件加载失败）只弹 toast 不抛异常，进度条在此统一收尾；
+    // 对已完成/已取消的进度条 close 是 no-op
+    progress.close();
+    if (urlInstallProgress === progress) { urlInstallProgress = null; }
   }
 }
 
-async function importMultiplePlugins(pluginList: Array<{ name?: string; url: string; version?: string }>) { // 实现
+async function importMultiplePlugins(
+  pluginList: Array<{ name?: string; url: string; version?: string }>,
+  cancelled?: () => boolean,
+  externalProgress?: ReturnType<typeof showProgressToast>,
+) { // 实现
   const items = pluginList.filter(p => p?.url);
   if (items.length === 0) return;
 
   let successCount = 0; // 实现
   let failCount = 0; // 实现
   const names: string[] = []; // 实现
-  const progress = showProgressToast(`正在导入插件 (0/${items.length})`);
+  const progress = externalProgress ?? showProgressToast(`正在导入插件 (0/${items.length})`);
   for (let i = 0; i < items.length; i++) {
+    // 批量导入逐项响应取消（PluginInstallCancelled 向上穿透，由调用方静默处理）
+    if (cancelled?.()) throw new PluginInstallCancelled();
     const item = items[i];
     progress.update(
       `正在导入 ${item.name || '未命名插件'} (${i + 1}/${items.length})`,
       ((i + 1) / items.length) * 100,
     );
     try { // 实现
-      const script = await fetchRemoteScript(item.url);
+      const script = await fetchRemoteScript(item.url, cancelled);
+      if (cancelled?.()) throw new PluginInstallCancelled();
       if (!script || !script.trim()) { // 实现
         failCount++; // 实现
         continue; // 实现
@@ -524,7 +594,9 @@ async function importMultiplePlugins(pluginList: Array<{ name?: string; url: str
       } else { // 实现
         failCount++; // 实现
       } // 实现
-    } catch { // 实现
+    } catch (e) {
+      // 取消不能被吞成单项失败：向上穿透交给调用方静默处理
+      if (e instanceof PluginInstallCancelled) throw e;
       failCount++; // 实现
     } // 实现
   } // 实现

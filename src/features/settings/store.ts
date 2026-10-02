@@ -6,6 +6,7 @@ import type { // 实现
   AudioSettings, LyricsSettings, DesktopLyricsSettings,
   DownloadSettings, UploadSettings, PluginSettings, AutoSyncConfig, LogSettings,
   ImportedLyricsFont, EqualizerPreset, MvQualityKey, AppSettings, DesktopThemeSurface, DesktopThemeVisuals,
+  PerPageBackground,
 } from '../../types'; // 实现
 import { MV_QUALITY_KEYS, ALL_QUALITY_KEYS } from '../../types';
 import { AUDIO_FILE_ASSOCIATION_EXTENSIONS } from './audioFileAssociations';
@@ -85,9 +86,11 @@ export type DesktopThemeVisualsPatch = Partial<Pick<DesktopThemeVisuals, 'quickE
   surfaces?: Record<string, Partial<DesktopThemeSurface>>;
 };
 
-export type ThemeSettingsPatch = OptionalFields<Omit<ThemeSettings, 'customBackground' | 'desktopTheme'>> & {
+export type ThemeSettingsPatch = OptionalFields<Omit<ThemeSettings, 'customBackground' | 'desktopTheme' | 'perPageBackgrounds'>> & {
   customBackground?: OptionalFields<ThemeSettings['customBackground']>;
   desktopTheme?: DesktopThemeVisualsPatch;
+  /** 主题包每页壁纸：整体替换语义（应用/换包时随包写入，重置时清空），不走逐字段合并 */
+  perPageBackgrounds?: Record<string, PerPageBackground>;
 };
 
 export type SidebarSettingsPatch = OptionalFields<SidebarSettings>;
@@ -173,6 +176,7 @@ export const defaultThemeSettings: ThemeSettings = { // 实现
     maskColor: '#000000', maskAlpha: 0.4, scale: 1, foregroundStyle: 'light',
     translateX: 0, translateY: 0,
   },
+  perPageBackgrounds: {},
 };
 
 export const defaultSidebarSettings: SidebarSettings = { // 实现
@@ -267,6 +271,7 @@ export const defaultAppSettings: AppSettings = { // 实现
 export function createDefaultThemeSettings(): ThemeSettings {
   const snapshot = { ...defaultThemeSettings };
   snapshot.customBackground = { ...snapshot.customBackground };
+  snapshot.perPageBackgrounds = {};
   snapshot.desktopTheme = {
     ...defaultDesktopTheme,
     icons: { ...defaultDesktopTheme.icons },
@@ -434,6 +439,43 @@ const isThemeAssetReference = (value: unknown): value is string => (
   && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('data:image/'))
 );
 
+/** 每页壁纸 pageId 形态：字母开头，允许数字/下划线/中划线（对齐主题包契约） */
+const PER_PAGE_BG_KEY_RE = /^[a-z][a-z0-9_-]{0,30}$/i;
+
+const clampRatio = (candidate: unknown, fallback: number): number => {
+  const num = Number(candidate);
+  return Number.isFinite(num) ? Math.max(0, Math.min(1, num)) : fallback;
+};
+
+/** 每页壁纸归一化：入口为包解析与持久化回读，非法页/非法值直接丢弃或回落默认 */
+export const normalizePerPageBackgrounds = (
+  candidate: Record<string, PerPageBackground> | undefined,
+): Record<string, PerPageBackground> => {
+  const output: Record<string, PerPageBackground> = {};
+  if (!candidate) return output;
+  for (const [key, value] of Object.entries(candidate)) {
+    if (!PER_PAGE_BG_KEY_RE.test(key) || !value || typeof value !== 'object') continue;
+    const imagePath = typeof value.imagePath === 'string' ? value.imagePath : '';
+    if (!imagePath || imagePath.length > 1024) continue;
+    const blur = Number(value.blur);
+    const scale = Number(value.scale);
+    const translateX = Number(value.translateX);
+    const translateY = Number(value.translateY);
+    output[key] = {
+      imagePath,
+      blur: Number.isFinite(blur) ? Math.max(0, Math.min(100, Math.round(blur))) : 20,
+      opacity: clampRatio(value.opacity, 1),
+      maskColor: /^#[0-9a-f]{6}$/i.test(String(value.maskColor ?? '')) ? String(value.maskColor).toUpperCase() : '#000000',
+      maskAlpha: clampRatio(value.maskAlpha, 0.4),
+      scale: Number.isFinite(scale) && scale > 0 ? Math.max(0.8, Math.min(2.4, scale)) : 1,
+      translateX: Number.isFinite(translateX) ? Math.max(-1, Math.min(1, translateX)) : 0,
+      translateY: Number.isFinite(translateY) ? Math.max(-1, Math.min(1, translateY)) : 0,
+      foregroundStyle: value.foregroundStyle === 'dark' ? 'dark' : 'light',
+    };
+  }
+  return output;
+};
+
 const mergeDesktopTheme = (
   base: DesktopThemeVisuals,
   patch: ThemeSettingsPatch['desktopTheme'] | undefined,
@@ -485,6 +527,9 @@ export const mergeThemeSettings = (base: ThemeSettings, patch: ThemeSettingsPatc
     playerDetailVinylMaterial: pickOption(patch.playerDetailVinylMaterial, base.playerDetailVinylMaterial, VINYL_MATERIAL_OPTIONS),
     playerDetailVinylPlatterStyle: pickOption(patch.playerDetailVinylPlatterStyle, base.playerDetailVinylPlatterStyle, VINYL_PLATTER_STYLE_OPTIONS),
     lastPlayerDetailCoverVisible: chooseBoolean(patch.lastPlayerDetailCoverVisible, base.lastPlayerDetailCoverVisible),
+    perPageBackgrounds: patch.perPageBackgrounds !== undefined
+      ? normalizePerPageBackgrounds(patch.perPageBackgrounds)
+      : base.perPageBackgrounds,
     customBackground: { // 实现
       ...mergedBackground,
       foregroundStyle: normalizeForegroundStyle(mergedBackground.foregroundStyle),

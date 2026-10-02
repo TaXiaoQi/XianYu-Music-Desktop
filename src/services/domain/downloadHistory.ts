@@ -8,6 +8,8 @@ export interface DownloadRecord {
   downloadedAt: number;
   title?: string;
   artist?: string;
+  /** 歌曲时长（毫秒），用于跨源模糊匹配时做时长校验 */
+  durationMs?: number;
 }
 
 type HistoryMap = Record<string, DownloadRecord>;
@@ -42,6 +44,7 @@ function sanitizeHistory(raw: unknown): HistoryMap {
       downloadedAt: typeof value.downloadedAt === 'number' ? value.downloadedAt : 0,
       title: typeof value.title === 'string' ? value.title : undefined,
       artist: typeof value.artist === 'string' ? value.artist : undefined,
+      durationMs: typeof value.durationMs === 'number' && value.durationMs > 0 ? value.durationMs : undefined,
     };
   }
   return result;
@@ -117,6 +120,52 @@ export async function checkDownloadExists(songPath: string): Promise<DownloadRec
     return null;
   }
   return record;
+}
+
+export interface FuzzyDownloadLookup {
+  title: string;
+  artist?: string;
+  /** 当前歌曲时长（毫秒），0 或缺省时跳过时长校验 */
+  durationMs?: number;
+  excludeSongPath?: string;
+}
+
+/** 匹配归一化：小写 + 去所有空白。刻意不去括号内容——"歌名 (DJ版)"
+ *  与"歌名"是不同录音，模糊匹配不能跨版本错配。 */
+const normForMatch = (s: string): string => (s || '').toLowerCase().replace(/\s+/g, '');
+
+/**
+ * 跨源模糊匹配兜底：精确播链键未命中时，按"标题全等 + 歌手互含 + 时长±3s"
+ * 在下载记录里找同一首歌其他源的本地文件（对齐移动端 localFileFuzzyFor 语义）。
+ */
+export async function findDownloadedFileFuzzy(lookup: FuzzyDownloadLookup): Promise<string | null> {
+  const normTitle = normForMatch(lookup.title);
+  if (!normTitle) return null;
+  const normArtist = normForMatch(lookup.artist || '');
+  const history = await loadDownloadHistory();
+
+  const candidates = Object.values(history)
+    .filter((r) => r.filePath
+      && r.songPath !== lookup.excludeSongPath
+      && normForMatch(r.title || r.fileName) === normTitle)
+    .sort((a, b) => b.downloadedAt - a.downloadedAt);
+
+  for (const r of candidates) {
+    const rArtist = normForMatch(r.artist || '');
+    const artistOk = !normArtist || !rArtist
+      || rArtist === normArtist
+      || rArtist.includes(normArtist)
+      || normArtist.includes(rArtist);
+    if (!artistOk) continue;
+    if (r.durationMs && r.durationMs > 0 && lookup.durationMs && lookup.durationMs > 0
+      && Math.abs(r.durationMs - lookup.durationMs) > 3000) {
+      continue;
+    }
+    try {
+      if (await downloadApi.fileExists(r.filePath)) return r.filePath;
+    } catch { /* 单个候选存在性探测失败不阻断后续候选 */ }
+  }
+  return null;
 }
 
 export function __resetDownloadHistoryCacheForTest(): void {

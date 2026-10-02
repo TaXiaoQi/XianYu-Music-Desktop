@@ -104,7 +104,9 @@ export function createPlaybackStatistics(deps: PlaybackStatisticsDeps): Playback
       song_hash: song.path,
       source,
       action: totalDuration >= 10 ? (currentPlayCountRecorded ? 'switch' : 'play') : 'switch',
-      listen_duration: Math.floor(totalDuration),
+      // 时长只在持久化（≥10 秒或已计入播放次数）时上报：短于阈值的片段
+      // 会被保留进 accumulatedTime 与下次合并，提前上报会造成重复计时
+      listen_duration: shouldPersist ? Math.floor(totalDuration) : 0,
       play_count: totalDuration >= 10 && !currentPlayCountRecorded ? 1 : 0,
       ciyuanxi_id: user?.ciyuanxi_id,
       user_id: user?.id ? Number(user.id) : undefined,

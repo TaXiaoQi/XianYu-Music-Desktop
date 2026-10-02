@@ -9,6 +9,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import {
   parseDesktopThemeJson,
+  materializeDesktopThemeWallpapers,
   type DesktopThemeImportResult,
 } from '../../features/settings/desktopThemePackage';
 import { addLibraryTheme, libraryPreview } from '../../features/settings/themeLibrary';
@@ -281,10 +282,11 @@ const commitAccentColor = (event: Event) => { // 实现
 const isImportingTheme = ref(false);
 
 /** 导入与广场应用共用的落盘链路：整体替换主题设置，保留与主题无关的个人开关。 */
-const applyThemeResult = (result: DesktopThemeImportResult) => {
+const applyThemeResult = async (result: DesktopThemeImportResult) => {
   const current = theme.value;
+  const settings = await materializeDesktopThemeWallpapers(result.settings, current);
   replaceTheme({
-    ...result.settings,
+    ...settings,
     useCustomTrayMenu: current.useCustomTrayMenu,
     showLeaderboard: current.showLeaderboard,
     playerDetailCoverBehavior: current.playerDetailCoverBehavior,
@@ -308,7 +310,7 @@ const importDesktopTheme = async () => {
     const bytes = await readFileBytes(path);
     const text = new TextDecoder().decode(bytes);
     const result = parseDesktopThemeJson(text);
-    applyThemeResult(result);
+    await applyThemeResult(result);
     // 落入本地主题库（与主题中心弹窗「本地」Tab 共用），支持二次应用。
     addLibraryTheme({
       source: 'file',

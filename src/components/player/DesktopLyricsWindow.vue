@@ -495,6 +495,12 @@ const subKey = (
     color: var(--desktop-text-primary);
     overflow-wrap: anywhere;
     word-break: break-word;
+    /* 逐字扫色每帧重写 background-clip:text 的渐变，整行随之逐帧重绘：
+       不锁层时重绘发生在窗口位图上，非整数物理像素下的光栅相位逐帧漂移，
+       视觉上就是整行轻微上下抖。translateZ(0) 把每帧重绘固定进位置不变的
+       合成层，层内重绘不再影响元素外框坐标。 */
+    transform: translateZ(0);
+    will-change: transform, filter;
     filter: drop-shadow(
             0 1px 2px
                 rgb(
@@ -712,6 +718,8 @@ const subKey = (
     letter-spacing: 0.03em;
     overflow-wrap: anywhere;
     word-break: break-word;
+    /* 罗马音副行逐帧扫色，与主行同理锁层稳定光栅相位 */
+    will-change: transform, filter;
     transition:
         color 460ms ease,
         opacity 460ms ease,

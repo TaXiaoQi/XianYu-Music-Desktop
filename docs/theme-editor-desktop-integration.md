@@ -2,6 +2,8 @@
 
 > 面向 `XianYu-Music-Desktop` 的主题编辑器 / 主题中心实现交接。
 > 基线：`dc291bc6`（`main`，2026-09-30）。本文所有 Desktop 现状均从该基线代码核实。
+> **2026-10 更新**：主题包 v3（每页独立壁纸）已三端落地，新增契约见 §11；
+> §3.1「禁止内嵌媒体」、§4.1 版本锁定、§7 壁纸联动的限制自 v3 起部分废止，以 §11 为准。
 >
 > 已确定的边界：服务端现有 `list_themes` / `my_themes` / `upload_theme` 三个 action；
 > Desktop **不新增渲染通道**，主题应用必须写入既有 `ThemeSettings`。
@@ -14,7 +16,7 @@
 Desktop 已经有完整的外观设置和全局生效链路，主题编辑器应当只是：
 
 1. 从当前 `ThemeSettings` 取**允许分享的外观字段**生成草稿；
-2. 预览、编辑、保存为 v2 `platform: "desktop"` 的主题包；
+2. 预览、编辑、保存为 v2/v3 `platform: "desktop"` 的主题包；
 3. 应用时把包的 payload 转回 `ThemeSettingsPatch`，经 `replaceTheme` / `patchTheme` 写回；
 4. 主题广场通过 `signedRequest` 读写服务端，响应 `data` **直接是数组**。
 
@@ -103,7 +105,7 @@ interface RemoteTheme {
 }
 ```
 
-远端字段 `theme` 是完整主题包，而非仅 `payload`。应用前应做平台、版本和字段白名单校验（见 §4）。
+远端字段 `theme` 是完整主题包，而非仅 `payload`。应用前应做平台、版本（v2|v3，见 §11）和字段白名单校验（见 §4）。
 
 ---
 
@@ -147,7 +149,8 @@ type DesktopThemePayloadV2 = Pick<ThemeSettings,
 | `useCustomTrayMenu` / `showLeaderboard` | 产品 / 行为偏好，不应因应用外观包被改变 |
 | `playerDetailCoverBehavior` / `lastPlayerDetailCoverVisible` | 用户的播放详情交互偏好，不是共享外观 |
 
-> 若产品坚持主题可带壁纸，只能携带 `wallpaperRef: { id }`，绝不能上传本地路径或把媒体文件内嵌进主题包。具体接法见 §7。
+> v2 时代若产品坚持主题可带壁纸，只能携带 `wallpaperRef: { id }`。**v3 起该限制废止**：
+> `payload.wallpapers` 允许内嵌 data URL 或远程 URL 壁纸，见 §11。
 
 ### 3.2 第一版建议禁用的组合
 
@@ -322,7 +325,10 @@ const applyRemoteTheme = (item: RemoteTheme) => {
 
 ---
 
-## 7. 推荐壁纸联动（第二阶段，别和第一版绑死）
+## 7. 推荐壁纸联动（v2 方案，已被 §11 的 v3 每页壁纸取代）
+
+> **v3 起本节整体冻结**：主题包通过 `payload.wallpapers` 直接携带每页壁纸（含参数），
+> 激活即生效，不再走「wallpaperRef + 壁纸中心下载」联动。以下内容仅作历史参考。
 
 主题包只能携带：
 
@@ -391,7 +397,7 @@ npm run build
 - [ ] `list_themes` / `my_themes` 的 `data` 数组可正确渲染；
 - [ ] `my_themes` 中的 `pending` / `rejected` 可被识别，不误当作已上架；
 - [ ] 发布主题后服务端返回 `pending` 时 UI 不宣称“已上架”；
-- [ ] 非 Desktop / 非 v2 / 非法 payload 主题不会应用；
+- [ ] 非 Desktop / 非 v2/v3 / 非法 payload 主题不会应用；
 - [ ] `npm run typecheck`、`npm test`、`npm run build` 通过。
 
 ---
@@ -404,3 +410,78 @@ npm run build
 - 不在第一版实现远端主题一键下载壁纸；
 - 不让 Desktop 与 Mobile 共用同一份 platform-specific payload；
 - 不为了主题编辑器修改 [useAppThemeSync](../src/composables/useAppThemeSync.ts#L1-L16) 的全局同步逻辑。
+
+---
+
+## 11. v3 增量：每页独立壁纸（2026-10 已实施）
+
+主题包 v3 在 v2 基础上新增 `payload.wallpapers`（每页独立壁纸 + 调整参数），随包分发、激活即生效；
+未覆盖的页面回落用户全局壁纸方案，重置/换包即恢复。三端（服务端 / 移动端 / 桌面端）契约一致。
+
+### 11.1 包格式
+
+```json
+{
+  "version": 3,
+  "platform": "desktop",
+  "payload": {
+    "accentColor": "#123456",
+    "themeMode": "dark",
+    "quickEntryShape": "circle",
+    "icons": {}, "stickers": {}, "surfaces": {},
+    "wallpapers": {
+      "main": {
+        "ref": "https://…/main.jpg | data:image/png;base64,…",
+        "blur": 20, "opacity": 100, "maskAlpha": 40,
+        "scale": 100, "translateX": 0, "translateY": 0
+      }
+    }
+  }
+}
+```
+
+- 页面清单（`DESKTOP_THEME_PAGE_IDS`，与服务端编辑器 SLOTS_JSON pages 对齐）：
+  `main`（首页）/ `playlist`（歌单页）/ `player`（播放页）/ `local`（本地音乐）/ `fav`（我的收藏）/ `settings`（设置页）。
+  未知 pageId 直接丢弃。
+- **数值为 0-100 整数**（编辑器同款）：blur 0-100 直通；opacity/maskAlpha 解析时 /100；
+  scale 80-240 解析时 /100（1.0 = 原大 = cover 铺满，0.8 允许缩小露边——范围对齐客户端
+  「壁纸中心」缩放滑杆 80-240）；translateX/Y -100..100 解析时 /100（视口比例）。
+  缺省值对齐编辑器 `wpDefault`：scale=100、maskAlpha=40、blur=20、opacity=100、位移=0。
+- `landscapeScale / landscapeTranslateX / landscapeTranslateY` 仅移动端使用，桌面端忽略。
+- `ref` 校验（`isSafeWallpaperRef`）：远程 http(s) URL（≤512 字符）或 `data:image/` 内嵌（≤16MB）；
+  含反斜杠的路径一律拒绝。
+- 移动端 v3 包（`platform: "mobile"`）仍被拒绝，两端 payload 不通用。
+
+### 11.2 落盘与设置写入
+
+- [types/index.ts](../src/types/index.ts) 新增 `PerPageBackground`（桌面端 0-1 制）与
+  `ThemeSettings.perPageBackgrounds: Record<string, PerPageBackground>`。
+- [store.ts](../src/features/settings/store.ts) `normalizePerPageBackgrounds`：非法页/非法值丢弃，
+  数值钳制；`mergeThemeSettings` 中 **整体替换语义**（patch 带 `perPageBackgrounds` 即整体写入，
+  不带则保留基础值；重置即清空）。
+- **data URL 物化**：[desktopThemePackage.ts](../src/features/settings/desktopThemePackage.ts)
+  `materializeDesktopThemeWallpapers(next, previous)` 在应用前把 data URL 解码落盘到
+  `appData/theme_assets/`（新增 Tauri 命令 `save_theme_wallpaper` / `delete_theme_wallpaper`，
+  独立于 `wallpapers/` 缓存目录，不参与 300MB 逐出），换包时清理不再引用的旧资产；
+  落盘失败的页面丢弃该页壁纸（回落全局），不阻断整体应用；远程 URL 直接保留。
+  应用链路两处接入：[SettingsTheme.vue](../src/components/settings/SettingsTheme.vue) 文件导入、
+  [ThemeGallery.vue](../src/components/settings/ThemeGallery.vue) 广场/本地库。
+  物化的目的：避免数 MB 级 base64 巨串进入 pinia persist。
+
+### 11.3 渲染接线
+
+- [GlobalBackground.vue](../src/components/layout/GlobalBackground.vue) `backdropPlan` 增加每页优先级：
+  当前路由 → pageId（`Home` 无 view 参数/统计 → `main`；`view=all` → `local`；`view=playlist` → `playlist`；
+  `Favorites` → `fav`；`Settings` → `settings`；其余路由无每页壁纸）→ 命中 `perPageBackgrounds` 即合成
+  `variant: "custom"` 的每页 plan（mediaType 恒 image），否则回落全局方案。
+- 播放详情页拥有独立不透明背景（经典/黑胶），不参与 GlobalBackground 每页壁纸；
+  编辑器中 `player` 页配置对桌面端仅保留契约位。
+- 每页图元尺寸做内存探测（不写入设置持久化），几何计算与全局自定义皮肤共用
+  `calculateCoverGeometry` / `coverTransform`（blurAllowance 同款）。
+- 存在每页壁纸时根节点垫黑底（与 `mode: 'custom'` 同语义），保证半透明壁纸混合正确。
+
+### 11.4 测试
+
+[desktopThemePackage.test.ts](../src/features/settings/desktopThemePackage.test.ts) 覆盖：
+v3 解析与 0-1 换算、缺省值、横屏字段忽略、未知页/非法 ref 丢弃、v2 包空 map 兼容、
+version 4 拒绝、merge 整体替换与钳制、data URL 落盘物化（mock toolboxApi）、落盘失败降级、旧资产清理。

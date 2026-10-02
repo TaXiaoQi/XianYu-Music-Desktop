@@ -1920,6 +1920,81 @@ pub async fn delete_wallpaper_file(
     Ok(())
 }
 
+const THEME_WALLPAPER_DATA_URL_MAX_LEN: usize = 16 * 1024 * 1024; // base64 上限（对应主题包单包解码后 12MB 壁纸预算）
+
+#[tauri::command]
+pub async fn save_theme_wallpaper( // 主题包壁纸资产落盘：data URL 解码写入 appData/theme_assets（独立目录，不参与壁纸缓存逐出）
+    app_handle: tauri::AppHandle, // 应用句柄
+    data_url: String, // 内嵌 data URL（data:image/<mime>;base64,…）
+    filename: String, // 目标文件名（不含扩展名，由调用方生成）
+) -> Result<String, String> { // 返回保存路径
+    let (mime, encoded) = data_url // 解析 data URL 头
+        .strip_prefix("data:image/")
+        .and_then(|rest| rest.split_once(','))
+        .ok_or_else(|| "无效的主题壁纸内嵌数据".to_string())?;
+    let ext = match mime.to_ascii_lowercase().as_str() { // mime 白名单
+        "png" => "png",
+        "jpeg" | "jpg" => "jpg",
+        "webp" => "webp",
+        "gif" => "gif",
+        _ => return Err("不支持的主题壁纸格式".to_string()),
+    };
+    if data_url.len() > THEME_WALLPAPER_DATA_URL_MAX_LEN { // 内嵌体量限制
+        return Err("主题壁纸内嵌数据过大".to_string());
+    }
+    use base64::{engine::general_purpose, Engine as _};
+    let bytes = general_purpose::STANDARD // 解码 base64
+        .decode(encoded)
+        .map_err(|e| format!("主题壁纸数据解码失败: {e}"))?;
+    if bytes.is_empty() {
+        return Err("主题壁纸内嵌数据为空".to_string());
+    }
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
+    let asset_dir = app_dir.join("theme_assets"); // 主题资产专用目录
+    tokio::fs::create_dir_all(&asset_dir)
+        .await
+        .map_err(|e| format!("创建主题资产目录失败: {e}"))?;
+    let safe_stem = path_validator::sanitize_filename_component(&filename)?; // 文件名消毒
+    let dest_path = asset_dir.join(format!("{safe_stem}.{ext}"));
+    tokio::fs::write(&dest_path, &bytes)
+        .await
+        .map_err(|e| format!("写入主题壁纸失败: {e}"))?;
+    Ok(dest_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn delete_theme_wallpaper( // 删除主题资产目录中的壁纸文件（换包/取消主题时清理）
+    app_handle: tauri::AppHandle, // 应用句柄
+    local_path: String,
+) -> Result<(), String> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
+    let asset_dir = app_dir.join("theme_assets");
+    let target = PathBuf::from(&local_path);
+    if !target.exists() {
+        return Ok(());
+    }
+    if !target.is_file() {
+        return Err("目标不是可删除的主题壁纸文件".to_string());
+    }
+    let canonical_dir =
+        std::fs::canonicalize(&asset_dir).map_err(|e| format!("读取主题资产目录失败: {e}"))?;
+    let canonical_target =
+        std::fs::canonicalize(&target).map_err(|e| format!("读取主题壁纸文件失败: {e}"))?;
+    if !canonical_target.starts_with(&canonical_dir) {
+        return Err("只能删除应用主题资产目录中的文件".to_string());
+    }
+    tokio::fs::remove_file(&target)
+        .await
+        .map_err(|e| format!("删除主题壁纸文件失败: {e}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::FinalizeDownloadExtrasRequest;

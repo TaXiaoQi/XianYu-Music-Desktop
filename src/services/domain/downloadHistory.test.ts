@@ -9,6 +9,7 @@ import {
   __resetDownloadHistoryCacheForTest,
   checkDownloadExists,
   fileNameFromPath,
+  findDownloadedFileFuzzy,
   getDownloadRecord,
   loadDownloadHistory,
   recordDownload,
@@ -149,5 +150,137 @@ describe('removeDownloadRecord', () => {
     await removeDownloadRecord('lx://kg/song123');
     expect(getDownloadRecord('lx://kg/song123')).toBeNull();
     expect(JSON.parse(diskContent)).toEqual({});
+  });
+});
+
+describe('findDownloadedFileFuzzy', () => {
+  const seed = (fileExists = true) => {
+    diskContent = JSON.stringify({
+      'plugin://src-a/1': makeRecord({
+        songPath: 'plugin://src-a/1',
+        filePath: 'D:\\Music\\a.flac',
+        fileName: 'a.flac',
+        title: '测试歌曲',
+        artist: '测试歌手',
+        downloadedAt: 1700000000000,
+        durationMs: 200000,
+      }),
+      'plugin://src-b/2': makeRecord({
+        songPath: 'plugin://src-b/2',
+        filePath: 'D:\\Music\\b.flac',
+        fileName: 'b.flac',
+        title: '测试歌曲',
+        artist: '测试歌手、另一位歌手',
+        downloadedAt: 1700000001000,
+        durationMs: 201000,
+      }),
+      'plugin://src-c/3': makeRecord({
+        songPath: 'plugin://src-c/3',
+        filePath: 'D:\\Music\\c.flac',
+        fileName: 'c.flac',
+        title: '别的歌',
+        artist: '测试歌手',
+        downloadedAt: 1700000002000,
+      }),
+    });
+    stubInvoke(fileExists);
+  };
+
+  it('matches the same song from another source (normalized title + artist containment + duration)', async () => {
+    seed();
+    const found = await findDownloadedFileFuzzy({
+      title: '测试 歌曲 ',
+      artist: '歌手',
+      durationMs: 200500,
+      excludeSongPath: 'lx://wy/999',
+    });
+    expect(found).toBe('D:\\Music\\b.flac');
+  });
+
+  it('prefers the most recently downloaded candidate', async () => {
+    seed();
+    const found = await findDownloadedFileFuzzy({
+      title: '测试歌曲',
+      artist: '测试歌手',
+      durationMs: 200000,
+      excludeSongPath: 'lx://wy/999',
+    });
+    expect(found).toBe('D:\\Music\\b.flac');
+  });
+
+  it('rejects candidates with duration drift beyond 3 seconds', async () => {
+    seed();
+    const found = await findDownloadedFileFuzzy({
+      title: '测试歌曲',
+      artist: '测试歌手',
+      durationMs: 210000,
+      excludeSongPath: 'lx://wy/999',
+    });
+    expect(found).toBeNull();
+  });
+
+  it('rejects candidates with a different title even when the artist matches', async () => {
+    seed();
+    const found = await findDownloadedFileFuzzy({
+      title: '测试歌曲',
+      artist: '测试歌手',
+      durationMs: 0,
+      excludeSongPath: 'lx://wy/999',
+    });
+    expect(found).toBe('D:\\Music\\b.flac');
+    const miss = await findDownloadedFileFuzzy({
+      title: '完全不同的歌',
+      artist: '测试歌手',
+      excludeSongPath: 'lx://wy/999',
+    });
+    expect(miss).toBeNull();
+  });
+
+  it('excludes the record whose songPath equals the current play path', async () => {
+    seed();
+    const found = await findDownloadedFileFuzzy({
+      title: '测试歌曲',
+      artist: '测试歌手',
+      durationMs: 200000,
+      excludeSongPath: 'plugin://src-b/2',
+    });
+    expect(found).toBe('D:\\Music\\a.flac');
+  });
+
+  it('skips candidates whose file is gone and keeps looking', async () => {
+    seed();
+    (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
+      if (cmd === 'read_download_history') return diskContent;
+      if (cmd === 'file_exists') return args.path === 'D:\\Music\\a.flac';
+      return null;
+    });
+    const found = await findDownloadedFileFuzzy({
+      title: '测试歌曲',
+      artist: '测试歌手',
+      excludeSongPath: 'lx://wy/999',
+    });
+    expect(found).toBe('D:\\Music\\a.flac');
+  });
+
+  it('falls back to the record fileName when title is missing', async () => {
+    diskContent = JSON.stringify({
+      'plugin://src-d/4': makeRecord({
+        songPath: 'plugin://src-d/4',
+        filePath: 'D:\\Music\\Demo Song.mp3',
+        fileName: 'Demo Song.mp3',
+        title: undefined,
+      }),
+    });
+    stubInvoke(true);
+    const found = await findDownloadedFileFuzzy({
+      title: 'Demo Song .mp3',
+      excludeSongPath: 'lx://wy/999',
+    });
+    expect(found).toBe('D:\\Music\\Demo Song.mp3');
+  });
+
+  it('returns null for an empty title', async () => {
+    seed();
+    expect(await findDownloadedFileFuzzy({ title: '' })).toBeNull();
   });
 });

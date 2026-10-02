@@ -10,7 +10,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import { getStoredAuth, signedRequest } from '../../services/auth/authService';
-import { applyDesktopThemePackage } from '../../features/settings/desktopThemePackage';
+import { applyDesktopThemePackage, materializeDesktopThemeWallpapers } from '../../features/settings/desktopThemePackage';
 import {
   listThemeSquare,
   squareItemPackage,
@@ -76,8 +76,9 @@ const applyRawTheme = async (busyId: string, raw: unknown, name: string): Promis
     const result = applyDesktopThemePackage(raw);
     // 整体替换主题设置，保留与主题视觉无关的个人开关。
     const current = theme.value;
+    const settings = await materializeDesktopThemeWallpapers(result.settings, current);
     replaceTheme({
-      ...result.settings,
+      ...settings,
       useCustomTrayMenu: current.useCustomTrayMenu,
       showLeaderboard: current.showLeaderboard,
       playerDetailCoverBehavior: current.playerDetailCoverBehavior,

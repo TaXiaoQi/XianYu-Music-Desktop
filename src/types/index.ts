@@ -265,6 +265,19 @@ export interface DesktopThemeVisuals {
   surfaces: Record<string, DesktopThemeSurface>;
 }
 
+/** 主题包 v3 每页独立壁纸（桌面端 0-1 制：opacity/maskAlpha 为比例，scale=1 原大，translate 为视口比例） */
+export interface PerPageBackground {
+  imagePath: string;
+  blur: number;
+  opacity: number;
+  maskColor: string;
+  maskAlpha: number;
+  scale: number;
+  translateX: number;
+  translateY: number;
+  foregroundStyle: 'light' | 'dark';
+}
+
 export interface ThemeSettings { // 实现
   mode: 'light' | 'dark' | 'custom' | 'system';
   accentColor: string; // 实现
@@ -310,7 +323,9 @@ export interface ThemeSettings { // 实现
     translateY?: number; // 实现
     imageWidth?: number; // 实现
     imageHeight?: number; // 实现
-  }
+  };
+  /** 每页独立壁纸（主题包 v3 随包分发；pageId: main/playlist/player/local/fav/settings） */
+  perPageBackgrounds: Record<string, PerPageBackground>;
 }
 
 export type SidebarItemKey =

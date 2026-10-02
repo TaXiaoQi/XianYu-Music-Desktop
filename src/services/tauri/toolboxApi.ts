@@ -12,4 +12,8 @@ export const toolboxApi = {
     tauriInvoke('download_wallpaper', { url, filename, protectedPath }),
   deleteWallpaperFile: (localPath: string) =>
     tauriInvoke('delete_wallpaper_file', { localPath }),
+  saveThemeWallpaper: (dataUrl: string, filename: string) =>
+    tauriInvoke('save_theme_wallpaper', { dataUrl, filename }),
+  deleteThemeWallpaper: (localPath: string) =>
+    tauriInvoke('delete_theme_wallpaper', { localPath }),
 };

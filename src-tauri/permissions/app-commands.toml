@@ -192,9 +192,11 @@ commands.allow = [
   "read_download_history",
   "write_download_history",
   "fetch_image_bytes",
-  "run_installer", 
+  "run_installer",
   "decrypt_qmc_file",
   "delete_wallpaper_file",
+  "save_theme_wallpaper", # 主题包壁纸资产落盘
+  "delete_theme_wallpaper",
   "get_install_language",
   "set_install_language",
   "get_launch_on_startup",

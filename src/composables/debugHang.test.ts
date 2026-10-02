@@ -50,6 +50,7 @@ vi.mock('../services/domain/pluginEngine', () => ({
 
 vi.mock('../services/domain/downloadHistory', () => ({
   checkDownloadExists: vi.fn().mockResolvedValue(null),
+  findDownloadedFileFuzzy: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../services/domain/lxPluginEngine', () => ({
