@@ -16,7 +16,7 @@ import {
   loginByEmail,
   logout,
   register,
-  resetPassword,
+  resetPassword, // 实现
   sendEmailCode,
   updateProfile,
   uploadAvatar,
@@ -24,8 +24,8 @@ import {
   bindEmail,
   createQrLoginCode,
   pollQrLoginStatus,
-  getAvatarStatus,
-  getNicknameStatus,
+  getAvatarStatus, // 实现
+  getNicknameStatus, // 实现
   getAvatarChangeLimitStatus,
   getNicknameChangeLimitStatus,
   getUserAgreement,
@@ -33,7 +33,7 @@ import {
   type HumanCaptchaPayload,
   type ProfileStats,
   type QrPollResult,
-  type VerifyCodeType,
+  type VerifyCodeType, // 实现
 } from '../services/auth/authService';
 import QRCode from 'qrcode';
 
@@ -45,7 +45,7 @@ const uiStore = useUiStore();
 
 const mode = ref<AuthMode>('login');
 const form = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
-const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' });
+const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' }); // 实现
 const fieldErrors = ref<Record<string, string>>({});
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -149,8 +149,8 @@ const stats = ref<ProfileStats | null>(null);
 const nicknameDraft = ref('');
 const avatarDraft = ref('');
 const avatarUploading = ref(false);
-const avatarStatus = ref<'none' | 'pending' | 'rejected'>('none');
-const nicknameStatus = ref<'none' | 'pending' | 'rejected'>('none');
+const avatarStatus = ref<'none' | 'pending' | 'rejected'>('none'); // 实现
+const nicknameStatus = ref<'none' | 'pending' | 'rejected'>('none'); // 实现
 const avatarMenuPos = ref<{ top: number; left: number } | null>(null);
 const avatarBtnRef = ref<HTMLElement | null>(null);
 
@@ -205,13 +205,13 @@ const showNicknameModal = ref(false);
 const nicknameInputRef = ref<HTMLInputElement | null>(null);
 
 async function openNicknameEditModal() {
-  if (nicknameStatus.value === 'pending') {
+  if (nicknameStatus.value === 'pending') { // 实现
     await showProfileLimitDialog('nickname', {
       blocked: true,
       message: '昵称正在审核中哦',
     });
-    return;
-  }
+    return; // 实现
+  } // 实现
   nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
   showNicknameModal.value = true;
   await nextTick();
@@ -244,15 +244,14 @@ function cancelNicknameEdit() {
   showNicknameModal.value = false;
   nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
 }
-
-function onNicknameBlur() {
+function onNicknameBlur() { // 实现
   if (!showNicknameModal.value) return;
-  const next = nicknameDraft.value.trim();
-  const current = authStore.user?.nickname || authStore.user?.username || '';
-  if (!next || next === current) {
-    cancelNicknameEdit();
-  }
-}
+  const next = nicknameDraft.value.trim(); // 实现
+  const current = authStore.user?.nickname || authStore.user?.username || ''; // 实现
+  if (!next || next === current) { // 实现
+    cancelNicknameEdit(); // 实现
+  } // 实现
+} // 实现
 const profileSaving = ref(false);
 
 const avatarMenuOpen = ref(false);
@@ -289,18 +288,18 @@ const displayStats = computed((): ProfileStats => ({
   updated_at: stats.value?.updated_at ?? null,
 }));
 
-const title = computed(() =>
-  mode.value === 'login' ? '欢迎回来' : mode.value === 'register' ? '创建你的账号' : '找回密码',
-);
+const title = computed(() => // 实现
+  mode.value === 'login' ? '欢迎回来' : mode.value === 'register' ? '创建你的账号' : '找回密码', // 实现
+); // 实现
 const subtitle = computed(() =>
   mode.value === 'login'
     ? '登录后可同步个人资料到云端服务器。'
-    : mode.value === 'register'
-      ? '注册需要邮箱验证码，之后即可登录使用。'
-      : '通过注册邮箱验证码重置你的登录密码。',
-);
-const headerLabel = computed(() =>
-  mode.value === 'login' ? '登录账号' : mode.value === 'register' ? '注册账号' : '找回密码',
+    : mode.value === 'register' // 实现
+      ? '注册需要邮箱验证码，之后即可登录使用。' // 实现
+      : '通过注册邮箱验证码重置你的登录密码。', // 实现
+); // 实现
+const headerLabel = computed(() => // 实现
+  mode.value === 'login' ? '登录账号' : mode.value === 'register' ? '注册账号' : '找回密码', // 实现
 );
 
 const defaultAgreementContent = `一、协议范围
@@ -411,10 +410,10 @@ function handleCaptchaCancel() {
 }
 
 async function onSubmit() {
-  if (mode.value === 'forgot') {
-    await handleResetPassword();
-    return;
-  }
+  if (mode.value === 'forgot') { // 实现
+    await handleResetPassword(); // 实现
+    return; // 实现
+  } // 实现
   if (!agreementAccepted.value) {
     showMessage('请先勾选同意用户协议');
     showToast('请先勾选同意用户协议', 'error');
@@ -502,53 +501,52 @@ async function onSubmit() {
   }
 }
 
-async function handleResetPassword() {
-  const { email, code, newPassword, confirmPassword } = forgotForm.value;
-  if (!email) {
-    showMessage('请先填写注册邮箱');
-    return;
-  }
-  if (!code) {
-    showMessage('请输入邮箱验证码');
-    return;
-  }
-  if (!newPassword || newPassword.length < 6) {
-    showMessage('新密码至少 6 位');
-    return;
-  }
-  if (newPassword !== confirmPassword) {
-    showMessage('两次输入的新密码不一致');
-    return;
-  }
+async function handleResetPassword() { // 实现
+  const { email, code, newPassword, confirmPassword } = forgotForm.value; // 实现
+  if (!email) { // 实现
+    showMessage('请先填写注册邮箱'); // 实现
+    return; // 实现
+  } // 实现
+  if (!code) { // 实现
+    showMessage('请输入邮箱验证码'); // 实现
+    return; // 实现
+  } // 实现
+  if (!newPassword || newPassword.length < 6) { // 实现
+    showMessage('新密码至少 6 位'); // 实现
+    return; // 实现
+  } // 实现
+  if (newPassword !== confirmPassword) { // 实现
+    showMessage('两次输入的新密码不一致'); // 实现
+    return; // 实现
+  } // 实现
   const captchaPayload = await requestHumanCaptcha(
     '重置密码前验证',
     '完成验证后将继续提交密码重置请求。',
   );
   if (!captchaPayload) return;
-  loading.value = true;
-  message.value = '';
-  try {
+  loading.value = true; // 实现
+  message.value = ''; // 实现
+  try { // 实现
     const result = await resetPassword(email, code, newPassword, captchaPayload);
-    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' };
-    showMessage(result.message || '密码修改成功', 'success');
-    showToast(result.message || '密码修改成功，请使用新密码登录', 'success');
-    mode.value = 'login';
+    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' }; // 实现
+    showMessage(result.message || '密码修改成功', 'success'); // 实现
+    showToast(result.message || '密码修改成功，请使用新密码登录', 'success'); // 实现
+    mode.value = 'login'; // 实现
     form.value.account = '';
-    form.value.password = '';
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '重置密码失败';
-    showMessage(tip);
-    showToast(tip, 'error');
-  } finally {
-    loading.value = false;
-  }
-}
-
+    form.value.password = ''; // 实现
+  } catch (error) { // 实现
+    const tip = error instanceof Error ? error.message : '重置密码失败'; // 实现
+    showMessage(tip); // 实现
+    showToast(tip, 'error'); // 实现
+  } finally { // 实现
+    loading.value = false; // 实现
+  } // 实现
+} // 实现
 async function handleSendCode() {
-  const isForgot = mode.value === 'forgot';
+  const isForgot = mode.value === 'forgot'; // 实现
   const isEmailLogin = mode.value === 'login' && loginMethod.value === 'email';
-  const email = isForgot ? forgotForm.value.email : form.value.email;
-  if (!email) {
+  const email = isForgot ? forgotForm.value.email : form.value.email; // 实现
+  if (!email) { // 实现
     showMessage('请先填写邮箱');
     return;
   }
@@ -593,13 +591,13 @@ async function handleSaveProfile() {
       authStore.setUser(result.user);
       avatarDraft.value = result.user.avatar || '';
     }
-    if (result?.nicknamePending) {
-      nicknameStatus.value = 'pending';
-      nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
-      showToast('改名申请已提交，等待管理员审核', 'success');
-    } else {
-      showToast('个人信息已保存', 'success');
-    }
+    if (result?.nicknamePending) { // 实现
+      nicknameStatus.value = 'pending'; // 实现
+      nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
+      showToast('改名申请已提交，等待管理员审核', 'success'); // 实现
+    } else { // 实现
+      showToast('个人信息已保存', 'success'); // 实现
+    } // 实现
   } catch (error) {
     const tip = error instanceof Error ? error.message : '保存失败';
     showToast(tip, 'error');
@@ -619,17 +617,17 @@ async function handleAvatarFileChange(event: Event) {
     showToast(tip, 'error');
     return;
   }
-  if (file.size > 5 * 1024 * 1024) {
-    const tip = '头像不能超过 5MB';
+  if (file.size > 5 * 1024 * 1024) { // 实现
+    const tip = '头像不能超过 5MB'; // 实现
     showToast(tip, 'error');
     return;
   }
 
   avatarUploading.value = true;
   try {
-    await uploadAvatar(file);
-    avatarStatus.value = 'pending';
-    showToast('头像已上传，等待管理员审核', 'success');
+    await uploadAvatar(file); // 实现
+    avatarStatus.value = 'pending'; // 实现
+    showToast('头像已上传，等待管理员审核', 'success'); // 实现
   } catch (error) {
     const tip = error instanceof Error ? error.message : '头像上传失败';
     showToast(tip, 'error');
@@ -638,42 +636,40 @@ async function handleAvatarFileChange(event: Event) {
   }
 }
 
-const refreshingAvatarStatus = ref(false);
-async function refreshAvatarStatus() {
-  if (refreshingAvatarStatus.value) return;
-  refreshingAvatarStatus.value = true;
-  try {
-    const [avatarSt, nicknameSt] = await Promise.all([getAvatarStatus(), getNicknameStatus().catch(() => 'none' as const)]);
-    avatarStatus.value = avatarSt;
-    nicknameStatus.value = nicknameSt;
-
-    if (avatarSt === 'none' || nicknameSt === 'none') {
-      const profile = await getProfile();
-      if (profile) {
-        authStore.setUser(profile.user);
-        avatarDraft.value = profile.user.avatar || '';
-        nicknameDraft.value = profile.user.nickname || profile.user.username || '';
-      }
-      if (avatarSt === 'none' && avatarStatus.value !== 'none') {
-        showToast('头像已更新', 'success');
-      }
-      if (nicknameSt === 'none' && nicknameStatus.value !== 'none') {
-        showToast('用户名已更新', 'success');
-      }
-    } else if (avatarSt === 'pending' && nicknameSt === 'pending') {
-      showToast('头像和改名均在审核中', 'info');
-    } else if (avatarSt === 'pending') {
-      showToast('头像仍在审核中', 'info');
-    } else if (nicknameSt === 'pending') {
-      showToast('改名仍在审核中', 'info');
-    }
-  } catch {
-    showToast('查询审核状态失败', 'error');
-  } finally {
-    refreshingAvatarStatus.value = false;
-  }
-}
-
+const refreshingAvatarStatus = ref(false); // 实现
+async function refreshAvatarStatus() { // 实现
+  if (refreshingAvatarStatus.value) return; // 实现
+  refreshingAvatarStatus.value = true; // 实现
+  try { // 实现
+    const [avatarSt, nicknameSt] = await Promise.all([getAvatarStatus(), getNicknameStatus().catch(() => 'none' as const)]); // 实现
+    avatarStatus.value = avatarSt; // 实现
+    nicknameStatus.value = nicknameSt; // 实现
+    if (avatarSt === 'none' || nicknameSt === 'none') { // 实现
+      const profile = await getProfile(); // 实现
+      if (profile) { // 实现
+        authStore.setUser(profile.user); // 实现
+        avatarDraft.value = profile.user.avatar || ''; // 实现
+        nicknameDraft.value = profile.user.nickname || profile.user.username || ''; // 实现
+      } // 实现
+      if (avatarSt === 'none' && avatarStatus.value !== 'none') { // 实现
+        showToast('头像已更新', 'success'); // 实现
+      } // 实现
+      if (nicknameSt === 'none' && nicknameStatus.value !== 'none') { // 实现
+        showToast('用户名已更新', 'success'); // 实现
+      } // 实现
+    } else if (avatarSt === 'pending' && nicknameSt === 'pending') { // 实现
+      showToast('头像和改名均在审核中', 'info'); // 实现
+    } else if (avatarSt === 'pending') { // 实现
+      showToast('头像仍在审核中', 'info'); // 实现
+    } else if (nicknameSt === 'pending') { // 实现
+      showToast('改名仍在审核中', 'info'); // 实现
+    } // 实现
+  } catch { // 实现
+    showToast('查询审核状态失败', 'error'); // 实现
+  } finally { // 实现
+    refreshingAvatarStatus.value = false; // 实现
+  } // 实现
+} // 实现
 async function openAvatarPicker() {
   avatarMenuOpen.value = false;
   if (!await confirmProfileLimit('avatar')) {
@@ -887,13 +883,12 @@ function switchMode(next: AuthMode) {
   if (next === 'forgot') {
     agreementAccepted.value = false;
   }
-  if (next !== 'forgot') {
-    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' };
-  }
-}
-
-function enterForgot() {
-  switchMode('forgot');
+  if (next !== 'forgot') { // 实现
+    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' }; // 实现
+  } // 实现
+} // 实现
+function enterForgot() { // 实现
+  switchMode('forgot'); // 实现
 }
 
 // ------- 扫码登录（桌面端二维码 / 手机 App 扫码确认） -------
@@ -1031,12 +1026,12 @@ onMounted(async () => {
   } catch {
     stats.value = null;
   }
-  avatarStatus.value = await getAvatarStatus();
-  try {
-    nicknameStatus.value = await getNicknameStatus();
-  } catch {
-    nicknameStatus.value = 'none';
-  }
+  avatarStatus.value = await getAvatarStatus(); // 实现
+  try { // 实现
+    nicknameStatus.value = await getNicknameStatus(); // 实现
+  } catch { // 实现
+    nicknameStatus.value = 'none'; // 实现
+  } // 实现
   startPolling();
 });
 
@@ -1128,10 +1123,10 @@ async function silentPoll() {
         </header>
 
         <nav class="mt-[clamp(1rem,1.5vw,1.75rem)]">
-          <div
-            v-if="mode !== 'forgot'"
+          <div 
+            v-if="mode !== 'forgot'" 
             class="flex items-center gap-2 border-b border-black/10 dark:border-white/10"
-          >
+          > 
             <button
               type="button"
               class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer"
@@ -1161,60 +1156,58 @@ async function silentPoll() {
               ></span>
             </button>
           </div>
-          <div v-else class="flex items-center mb-4">
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer"
-              @click="switchMode('login')"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
-              返回登录
-            </button>
-          </div>
+          <div v-else class="flex items-center mb-4"> 
+            <button 
+              type="button" 
+              class="inline-flex items-center gap-1 text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer" 
+              @click="switchMode('login')" 
+            > 
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg> 
+              返回登录 
+            </button> 
+          </div> 
         </nav>
 
         <Transition name="auth-mode" mode="out-in">
-          <form
-            v-if="mode === 'forgot'"
-            key="forgot"
+          <form 
+            v-if="mode === 'forgot'" 
+            key="forgot" 
             class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
-            @submit.prevent="onSubmit"
-          >
-            <label class="grid gap-3">
+            @submit.prevent="onSubmit" 
+          > 
+            <label class="grid gap-3"> 
               <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">注册邮箱</span>
-              <input
-                v-model="forgotForm.email"
-                type="email"
-                placeholder="name@example.com"
-                autocomplete="email"
-                required
+              <input 
+                v-model="forgotForm.email" 
+                type="email" 
+                placeholder="name@example.com" 
+                autocomplete="email" 
+                required 
                 class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-              />
-            </label>
-
-            <div class="grid grid-cols-[1fr_auto] items-end gap-4">
-              <label class="grid gap-3">
+              /> 
+            </label> 
+            <div class="grid grid-cols-[1fr_auto] items-end gap-4"> 
+              <label class="grid gap-3"> 
                 <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span>
-                <input
-                  v-model="forgotForm.code"
-                  type="text"
-                  placeholder="填写验证码"
-                  autocomplete="one-time-code"
-                  required
+                <input 
+                  v-model="forgotForm.code" 
+                  type="text" 
+                  placeholder="填写验证码" 
+                  autocomplete="one-time-code" 
+                  required 
                   class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                />
-              </label>
-              <button
-                type="button"
-                class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                /> 
+              </label> 
+              <button 
+                type="button" 
+                class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
                 :disabled="codeLoading || codeCountdown > 0"
-                @click="handleSendCode"
-              >
+                @click="handleSendCode" 
+              > 
                 {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
-              </button>
-            </div>
-
-            <label class="grid gap-3">
+              </button> 
+            </div> 
+            <label class="grid gap-3"> 
               <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">新密码</span>
               <div class="relative" @focusin="pwdFocused.newPassword = true" @focusout="pwdFocused.newPassword = false; pwdVisible.newPassword = false">
                 <input
@@ -1237,9 +1230,8 @@ async function silentPoll() {
                   <Eye v-else class="h-5 w-5" />
                 </button>
               </div>
-            </label>
-
-            <label class="grid gap-3">
+            </label> 
+            <label class="grid gap-3"> 
               <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认新密码</span>
               <div class="relative" @focusin="pwdFocused.confirmNewPassword = true" @focusout="pwdFocused.confirmNewPassword = false; pwdVisible.confirmNewPassword = false">
                 <input
@@ -1262,32 +1254,30 @@ async function silentPoll() {
                   <Eye v-else class="h-5 w-5" />
                 </button>
               </div>
-            </label>
-
-            <div class="pt-4 flex items-center gap-5 flex-wrap">
-              <button
-                type="submit"
+            </label> 
+            <div class="pt-4 flex items-center gap-5 flex-wrap"> 
+              <button 
+                type="submit" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-2 rounded-full text-sm font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                :disabled="loading"
-              >
-                {{ loading ? '提交中…' : '重置密码' }}
-              </button>
-              <button
-                type="button"
-                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer"
-                @click="switchMode('login')"
-              >
-                返回登录
-              </button>
-            </div>
-          </form>
-
-          <form
-            v-else
-            :key="mode"
+                :disabled="loading" 
+              > 
+                {{ loading ? '提交中…' : '重置密码' }} 
+              </button> 
+              <button 
+                type="button" 
+                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer" 
+                @click="switchMode('login')" 
+              > 
+                返回登录 
+              </button> 
+            </div> 
+          </form> 
+          <form 
+            v-else 
+            :key="mode" 
             class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
-            @submit.prevent="onSubmit"
-          >
+            @submit.prevent="onSubmit" 
+          > 
             <div v-if="mode === 'login'" class="flex w-fit gap-1 p-1 rounded-full bg-black/5 dark:bg-white/10">
               <button
                 type="button"
@@ -1585,7 +1575,7 @@ async function silentPoll() {
               </span>
             </div>
 
-            <div class="pt-4 flex items-center gap-5 flex-wrap">
+            <div class="pt-4 flex items-center gap-5 flex-wrap"> 
               <button
                 type="submit"
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-2 rounded-full text-sm font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
@@ -1600,14 +1590,14 @@ async function silentPoll() {
               >
                 {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
               </button>
-              <button
-                v-if="mode === 'login'"
-                type="button"
-                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer ml-auto"
-                @click="enterForgot"
-              >
-                忘记密码？
-              </button>
+              <button 
+                v-if="mode === 'login'" 
+                type="button" 
+                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer ml-auto" 
+                @click="enterForgot" 
+              > 
+                忘记密码？ 
+              </button> 
             </div>
             </template>
           </form>
@@ -1672,11 +1662,11 @@ async function silentPoll() {
               <div
                 v-else-if="avatarStatus === 'rejected'"
                 class="flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-600 dark:text-rose-300 w-fit"
-              >
+              > 
                 <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 未通过
               </div>
-            </div>
+            </div> 
             <div class="min-w-0">
               <div class="flex items-center gap-2 min-w-0">
                 <h2
@@ -1687,29 +1677,29 @@ async function silentPoll() {
                   {{ authStore.user?.nickname || authStore.user?.username }}
                 </h2>
               </div>
-              <div
-                v-if="nicknameStatus === 'pending'"
+              <div 
+                v-if="nicknameStatus === 'pending'" 
                 class="mt-1.5 flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300 w-fit"
-              >
-                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                改名审核中
-                <button
-                  type="button"
+              > 
+                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> 
+                改名审核中 
+                <button 
+                  type="button" 
                   class="ml-0.5 flex items-center gap-0.5 underline-offset-2 hover:underline cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="refreshingAvatarStatus"
-                  @click="refreshAvatarStatus"
-                >
+                  :disabled="refreshingAvatarStatus" 
+                  @click="refreshAvatarStatus" 
+                > 
                   <svg v-if="refreshingAvatarStatus" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  刷新
-                </button>
-              </div>
-              <div
-                v-else-if="nicknameStatus === 'rejected'"
+                  刷新 
+                </button> 
+              </div> 
+              <div 
+                v-else-if="nicknameStatus === 'rejected'" 
                 class="mt-1.5 flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-600 dark:text-rose-300 w-fit"
-              >
-                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                改名审核未通过
-              </div>
+              > 
+                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> 
+                改名审核未通过 
+              </div> 
               <div class="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
                 <p
                   v-if="authStore.user?.ciyuanxi_id"

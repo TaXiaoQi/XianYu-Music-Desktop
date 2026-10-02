@@ -17,17 +17,16 @@ import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
 import { fetchHotSearch, type HotSearchItem } from '../../services/domain/usageStats';
-import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
+import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue'; // 识别面板
 import TopBarControlItem from './TopBarControlItem.vue';
 import TopBarControlIcon from './TopBarControlIcon.vue';
 
 const router = useRouter();
 const route = useRoute();
-
-const showRecognition = ref(false);
-const toggleRecognition = () => {
-  showRecognition.value = !showRecognition.value;
-};
+const showRecognition = ref(false); // 面板显隐
+const toggleRecognition = () => { // 切换显隐
+  showRecognition.value = !showRecognition.value; // 取反状态
+}; // 切换结束
 const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
 const appWindow = getCurrentWindow();
 const { settings, topBarLayout } = useSettings();

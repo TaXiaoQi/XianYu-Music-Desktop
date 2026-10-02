@@ -755,15 +755,14 @@ pub fn set_equalizer_settings(
     };
     dispatch(&state, AudioCommand::SetEqualizerSettings { settings })
 }
-
-#[tauri::command]
-pub fn set_sound_effect_settings(
-    settings: SoundEffectSettings,
-    state: tauri::State<'_, PlayerState>,
-) -> Result<(), String> {
+#[tauri::command] // 音效参数命令
+pub fn set_sound_effect_settings( // set_sound_effect_settings
+    settings: SoundEffectSettings, // 音效参数
+    state: tauri::State<'_, PlayerState>, // 播放器状态
+) -> Result<(), String> { // 返回结果类型
     let both_finite = settings.pitch_shift.is_finite() && settings.playback_rate.is_finite();
     if !both_finite {
-        return Err("音效参数 pitchShift/playbackRate 必须为有限浮点数".to_string());
-    }
+        return Err("音效参数 pitchShift/playbackRate 必须为有限浮点数".to_string()); // 非有限数拒绝
+    } // set_equalizer_settings
     dispatch(&state, AudioCommand::SetSoundEffectSettings { settings })
-}
+} // set_equalizer_settings

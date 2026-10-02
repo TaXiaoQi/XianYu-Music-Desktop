@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, provide, reactive, ref, watch, onMounted, onUnmounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound, Eye, EyeOff } from 'lucide-vue-next';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { open as openDialog } from '@tauri-apps/plugin-dialog'; // 实现
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
-import type { PluginSource, PluginSubscription } from '../../types';
+import type { PluginSource, PluginSubscription } from '../../types'; // 实现
 import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, getLastPluginLoadError, log, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
@@ -70,9 +70,9 @@ function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVers
   });
 }
 
-onMounted(async () => {
+onMounted(async () => { // 实现
   await loadPlugins(pluginSettings.value.lazyLoad);
-  plugins.value = getStoredPlugins();
+  plugins.value = getStoredPlugins(); // 实现
   void refreshUserVarBadges();
   void refreshBakaBadges();
   setupDragDropListeners();
@@ -88,8 +88,7 @@ onUnmounted(() => {
   unlistenDragOver?.();
   unlistenDragLeave?.();
   stopDragging();
-});
-
+}); // 实现
 const searchQuery = ref('');
 const showSubscriptionPanel = ref(false);
 const showInstallFromUrlDialog = ref(false);
@@ -101,30 +100,29 @@ let unlistenDragDrop: UnlistenFn | null = null;
 let unlistenDragOver: UnlistenFn | null = null;
 let unlistenDragLeave: UnlistenFn | null = null;
 
-const plugins = ref<PluginSource[]>(getStoredPlugins());
-const subscriptions = ref<PluginSubscription[]>(getSubscriptions());
+const plugins = ref<PluginSource[]>(getStoredPlugins()); // 实现
+const subscriptions = ref<PluginSubscription[]>(getSubscriptions()); // 实现
 const showAddSubscriptionInput = ref(false);
 const newSubscriptionUrl = ref('');
 
 const isPluginBusy = ref(false);
 
-function sortPlugins(list: PluginSource[]): PluginSource[] {
-  return [...list].sort((a, b) => {
+function sortPlugins(list: PluginSource[]): PluginSource[] { // 实现
+  return [...list].sort((a, b) => { // 实现
     const sa = a.sortOrder ?? 0;
     const sb = b.sortOrder ?? 0;
     if (sa !== sb) return sa - sb;
     return list.indexOf(a) - list.indexOf(b);
-  });
-}
-
+  }); // 实现
+} // 实现
 const filteredPlugins = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
-  const sorted = sortPlugins(plugins.value);
-  if (!keyword) return sorted;
-  return sorted.filter((p) =>
-    p.name.toLowerCase().includes(keyword) ||
-    p.sources.join(',').toLowerCase().includes(keyword) ||
-    (p.author?.toLowerCase().includes(keyword) ?? false)
+  const sorted = sortPlugins(plugins.value); // 实现
+  if (!keyword) return sorted; // 实现
+  return sorted.filter((p) => // 实现
+    p.name.toLowerCase().includes(keyword) || // 实现
+    p.sources.join(',').toLowerCase().includes(keyword) || // 实现
+    (p.author?.toLowerCase().includes(keyword) ?? false) // 实现
   );
 });
 
@@ -196,7 +194,6 @@ const movePluginItem = (from: number, to: number) => {
     if (plugin) plugin.sortOrder = i;
   });
 };
-
 const updateDraggedItemPosition = (clientY: number) => {
   const currentIndex = draggingIndex.value;
   if (currentIndex === null) return;
@@ -216,9 +213,7 @@ const runAutoScroll = () => {
   if (!container) return;
 
   const speed = getEdgeAutoScrollSpeed(container, latestPointerY);
-
   if (speed === 0) return;
-
   const previousScrollTop = container.scrollTop;
   container.scrollTop += speed;
   if (container.scrollTop !== previousScrollTop) {
@@ -226,7 +221,6 @@ const runAutoScroll = () => {
     autoScrollFrame = requestAnimationFrame(runAutoScroll);
   }
 };
-
 const scheduleAutoScroll = () => {
   if (autoScrollFrame === null) {
     autoScrollFrame = requestAnimationFrame(runAutoScroll);
@@ -271,7 +265,6 @@ const startDragging = (index: number, event: PointerEvent) => {
   window.addEventListener('pointerup', stopDragging);
   window.addEventListener('pointercancel', stopDragging);
 };
-
 const pluginStatsLabel = computed(() => {
   const total = plugins.value.length;
   const enabled = plugins.value.filter((p) => p.enabled).length;
@@ -306,15 +299,15 @@ async function handleToggleAllPlugins() {
 }
 
 function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
-  if (format === 'lx') {
-    return {
-      iconBg: 'bg-gradient-to-br from-green-500/12 to-emerald-400/12',
-      iconText: 'text-green-600 dark:text-green-400',
-      toggle: 'bg-green-500',
+  if (format === 'lx') { // 实现
+    return { // 实现
+      iconBg: 'bg-gradient-to-br from-green-500/12 to-emerald-400/12', // 实现
+      iconText: 'text-green-600 dark:text-green-400', // 实现
+      toggle: 'bg-green-500', // 实现
       tagClass: 'settings-plugin-tag--lx',
-      label: '落雪',
-    };
-  }
+      label: '落雪', // 实现
+    }; // 实现
+  } // 实现
   if (format === 'anime') {
     return {
       iconBg: 'bg-gradient-to-br from-purple-500/12 to-fuchsia-400/12',
@@ -324,7 +317,7 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
       label: 'anime',
     };
   }
-  if (format === 'musicfree') {
+  if (format === 'musicfree') { // 实现
     if (isBaka) {
       return {
         iconBg: 'bg-gradient-to-br from-blue-500/12 to-indigo-400/12',
@@ -334,28 +327,26 @@ function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
         label: 'BakaMusic',
       };
     }
-    return {
-      iconBg: 'bg-gradient-to-br from-orange-500/12 to-amber-400/12',
-      iconText: 'text-orange-600 dark:text-orange-400',
-      toggle: 'bg-orange-500',
+    return { // 实现
+      iconBg: 'bg-gradient-to-br from-orange-500/12 to-amber-400/12', // 实现
+      iconText: 'text-orange-600 dark:text-orange-400', // 实现
+      toggle: 'bg-orange-500', // 实现
       tagClass: 'settings-plugin-tag--musicfree',
-      label: 'MusicFree',
-    };
-  }
-  return {
-    iconBg: 'bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12',
-    iconText: 'text-[#EC4141]',
-    toggle: 'bg-[#EC4141]',
+      label: 'MusicFree', // 实现
+    }; // 实现
+  } // 实现
+  return { // 实现
+    iconBg: 'bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12', // 实现
+    iconText: 'text-[#EC4141]', // 实现
+    toggle: 'bg-[#EC4141]', // 实现
     tagClass: '',
-    label: '未知',
-  };
-}
-
-function refreshPluginList() {
-  plugins.value = getStoredPlugins();
-}
-
-// ==================== 从本地文件安装 ====================
+    label: '未知', // 实现
+  }; // 实现
+} // 实现
+function refreshPluginList() { // 实现
+  plugins.value = getStoredPlugins(); // 实现
+} // 实现
+// ==================== 从本地文件安装 ==================== 
 
 async function setupDragDropListeners() {
   unlistenDragOver = await listen('tauri://drag-over', () => {
@@ -376,10 +367,8 @@ async function setupDragDropListeners() {
     const pluginFiles = paths.filter((p) => {
       const lower = p.toLowerCase();
       return lower.endsWith('.js') || lower.endsWith('.json');
-    });
-
+    }); // 实现
     if (pluginFiles.length === 0) return;
-
     if (pluginFiles.length === 1) {
       await installFromFilePath(pluginFiles[0]);
       return;
@@ -402,16 +391,16 @@ async function installFromFilePath(filePath: string) {
   try {
     isPluginBusy.value = true;
     const script = await pluginApi.readPluginFile(filePath);
-    if (!script || script.trim().length === 0) {
-      showToast('插件文件为空', 'error');
-      return;
-    }
-    await installPluginFromScript(script, filePath);
-  } catch (e: any) {
-    showToast(`安装失败: ${e?.message || e}`, 'error');
-  } finally {
-    isPluginBusy.value = false;
-  }
+    if (!script || script.trim().length === 0) { // 实现
+      showToast('插件文件为空', 'error'); // 实现
+      return; // 实现
+    } // 实现
+    await installPluginFromScript(script, filePath); // 实现
+  } catch (e: any) { // 实现
+    showToast(`安装失败: ${e?.message || e}`, 'error'); // 实现
+  } finally { // 实现
+    isPluginBusy.value = false; // 实现
+  } // 实现
 }
 
 async function handleInstallFromFile() {
@@ -434,8 +423,7 @@ async function handleInstallFromFile() {
   }
 }
 
-// ==================== 从网络 URL 安装 ====================
-
+// ==================== 从网络 URL 安装 ==================== 
 function validatePluginUrl(urlStr: string): boolean {
   try {
     const parsed = new URL(urlStr);
@@ -479,87 +467,78 @@ async function handleInstallFromUrl() {
   isPluginBusy.value = true;
   try {
     const content = await fetchRemoteScript(url);
-
-    if (!content || !content.trim()) {
-      showToast('获取链接内容失败，请检查 URL 是否正确', 'error');
-      return;
-    }
-
-    const trimmed = content.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        const json = JSON.parse(trimmed);
-        const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null);
-        if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) {
-          await importMultiplePlugins(pluginList);
-          installUrl.value = '';
-          showInstallFromUrlDialog.value = false;
-          return;
-        }
-      } catch { /* 不是有效 JSON，当作普通脚本处理 */ }
-    }
-
-    await installPluginFromScript(content, url);
-    installUrl.value = '';
-    showInstallFromUrlDialog.value = false;
-  } catch (e: any) {
-    showToast(`安装失败: ${e?.message || e}`, 'error');
+    if (!content || !content.trim()) { // 实现
+      showToast('获取链接内容失败，请检查 URL 是否正确', 'error'); // 实现
+      return; // 实现
+    } // 实现
+    const trimmed = content.trim(); // 实现
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) { // 实现
+      try { // 实现
+        const json = JSON.parse(trimmed); // 实现
+        const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null); // 实现
+        if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) { // 实现
+          await importMultiplePlugins(pluginList); // 实现
+          installUrl.value = ''; // 实现
+          showInstallFromUrlDialog.value = false; // 实现
+          return; // 实现
+        } // 实现
+      } catch { /* 不是有效 JSON，当作普通脚本处理 */ } // 实现
+    } // 实现
+    await installPluginFromScript(content, url); // 实现
+    installUrl.value = ''; // 实现
+    showInstallFromUrlDialog.value = false; // 实现
+  } catch (e: any) { // 实现
+    showToast(`安装失败: ${e?.message || e}`, 'error'); // 实现
   } finally {
     isPluginBusy.value = false;
   }
 }
 
-async function importMultiplePlugins(pluginList: Array<{ name?: string; url: string; version?: string }>) {
+async function importMultiplePlugins(pluginList: Array<{ name?: string; url: string; version?: string }>) { // 实现
   const items = pluginList.filter(p => p?.url);
   if (items.length === 0) return;
 
-  let successCount = 0;
-  let failCount = 0;
-  const names: string[] = [];
+  let successCount = 0; // 实现
+  let failCount = 0; // 实现
+  const names: string[] = []; // 实现
   const progress = showProgressToast(`正在导入插件 (0/${items.length})`);
-
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     progress.update(
       `正在导入 ${item.name || '未命名插件'} (${i + 1}/${items.length})`,
       ((i + 1) / items.length) * 100,
     );
-    try {
+    try { // 实现
       const script = await fetchRemoteScript(item.url);
-
-      if (!script || !script.trim()) {
-        failCount++;
-        continue;
-      }
-
-      const source = await loadPluginFromScript(script, item.url);
-      if (source) {
-        if (item.name) source.name = item.name;
-        if (item.version) source.version = item.version;
-        addPluginSource(source);
-        names.push(source.name);
-        successCount++;
-      } else {
-        failCount++;
-      }
-    } catch {
-      failCount++;
-    }
-  }
-
-  refreshPluginList();
-  if (successCount > 0) {
+      if (!script || !script.trim()) { // 实现
+        failCount++; // 实现
+        continue; // 实现
+      } // 实现
+      const source = await loadPluginFromScript(script, item.url); // 实现
+      if (source) { // 实现
+        if (item.name) source.name = item.name; // 实现
+        if (item.version) source.version = item.version; // 实现
+        addPluginSource(source); // 实现
+        names.push(source.name); // 实现
+        successCount++; // 实现
+      } else { // 实现
+        failCount++; // 实现
+      } // 实现
+    } catch { // 实现
+      failCount++; // 实现
+    } // 实现
+  } // 实现
+  refreshPluginList(); // 实现
+  if (successCount > 0) { // 实现
     progress.complete(
       `成功导入 ${successCount} 个插件: ${names.join(', ')}${failCount > 0 ? `，${failCount} 个失败` : ''}`,
       'success',
     );
-  } else {
+  } else { // 实现
     progress.fail(`所有插件导入失败 (${failCount} 个)`);
-  }
-}
-
-// ==================== 核心安装逻辑 ====================
-
+  } // 实现
+} // 实现
+// ==================== 核心安装逻辑 ==================== 
 function compareVer(a: string, b: string): number {
   const pa = (a || '0').split(/[.-]/).filter(Boolean);
   const pb = (b || '0').split(/[.-]/).filter(Boolean);
@@ -572,13 +551,13 @@ function compareVer(a: string, b: string): number {
   return 0;
 }
 
-async function installPluginFromScript(script: string, filePath: string) {
-  const source = await loadPluginFromScript(script, filePath);
-  if (!source) {
+async function installPluginFromScript(script: string, filePath: string) { // 实现
+  const source = await loadPluginFromScript(script, filePath); // 实现
+  if (!source) { // 实现
     const reason = getLastPluginLoadError();
     showToast(reason ? `插件加载失败: ${reason}` : '插件加载失败', 'error');
-    return;
-  }
+    return; // 实现
+  } // 实现
 
   const savedPath = await persistPluginScriptToDataDir(source, script);
   if (savedPath) {
@@ -596,8 +575,8 @@ async function installPluginFromScript(script: string, filePath: string) {
     }
   }
 
-  addPluginSource(source);
-  refreshPluginList();
+  addPluginSource(source); // 实现
+  refreshPluginList(); // 实现
   let isBaka = false;
   if (source.format === 'musicfree') {
     try {
@@ -609,10 +588,8 @@ async function installPluginFromScript(script: string, filePath: string) {
   }
   const formatLabel = pluginColorClasses(source.format, isBaka).label;
   showToast(`成功安装插件: ${source.name} (${formatLabel})`, 'success');
-}
-
-// ==================== 插件管理 ====================
-
+} // 实现
+// ==================== 插件管理 ==================== 
 const showUninstallAllConfirm = ref(false);
 
 const showPluginDeleteScope = ref(false);
@@ -622,7 +599,7 @@ const pluginScopeCanDeleteCloud = computed(() =>
 );
 
 function handleUninstallAll() {
-  if (plugins.value.length === 0) return;
+  if (plugins.value.length === 0) return; // 实现
   if (getCiyuanxiId() && plugins.value.some(p => isPluginSynced(p.id))) {
     pluginDeleteScopeIds.value = plugins.value.map(p => p.id);
     showPluginDeleteScope.value = true;
@@ -632,12 +609,12 @@ function handleUninstallAll() {
 }
 
 function confirmUninstallAll() {
-  for (const p of [...plugins.value]) {
-    removePluginSource(p.id);
-  }
-  refreshPluginList();
+  for (const p of [...plugins.value]) { // 实现
+    removePluginSource(p.id); // 实现
+  } // 实现
+  refreshPluginList(); // 实现
   showUninstallAllConfirm.value = false;
-  showToast('已卸载全部插件', 'success');
+  showToast('已卸载全部插件', 'success'); // 实现
 }
 
 const showUninstallPluginConfirm = ref(false);
@@ -704,21 +681,21 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
   showToast(`已从本机删除 ${ids.length} 个插件（云端保留）`, 'success');
 }
 
-async function handleTogglePlugin(plugin: PluginSource) {
-  const result = await togglePlugin(plugin.id);
-  if (result.success) {
-    refreshPluginList();
-    showToast(`${result.enabled ? '已启用' : '已禁用'} ${plugin.name}`, 'success');
-  } else {
-    showToast(result.message || '操作失败', 'error');
-  }
+async function handleTogglePlugin(plugin: PluginSource) { // 实现
+  const result = await togglePlugin(plugin.id); // 实现
+  if (result.success) { // 实现
+    refreshPluginList(); // 实现
+    showToast(`${result.enabled ? '已启用' : '已禁用'} ${plugin.name}`, 'success'); // 实现
+  } else { // 实现
+    showToast(result.message || '操作失败', 'error'); // 实现
+  } // 实现
 }
 
 const updateCheckResults = ref<Map<string, PluginUpdateCheckResult>>(new Map());
 const checkingUpdates = ref(false);
 const updatingPluginId = ref<string | null>(null);
 
-async function handleUpdatePlugin(plugin: PluginSource) {
+async function handleUpdatePlugin(plugin: PluginSource) { // 实现
   const cached = updateCheckResults.value.get(plugin.id);
   if (cached?.hasUpdate && cached.newScript) {
     updatingPluginId.value = plugin.id;
@@ -825,24 +802,24 @@ function confirmAddSubscription() {
     return;
   }
 
-  const sub = addSubscription({ name: '', url });
-  if (!sub) {
-    showToast('该订阅已存在或 URL 无效', 'error');
+  const sub = addSubscription({ name: '', url }); // 实现
+  if (!sub) { // 实现
+    showToast('该订阅已存在或 URL 无效', 'error'); // 实现
     return;
   }
-  subscriptions.value = getSubscriptions();
-  newSubscriptionUrl.value = '';
-  showAddSubscriptionInput.value = false;
-  showToast(`已添加订阅: ${sub.name}`, 'success');
-}
+  subscriptions.value = getSubscriptions(); // 实现
+  newSubscriptionUrl.value = ''; // 实现
+  showAddSubscriptionInput.value = false; // 实现
+  showToast(`已添加订阅: ${sub.name}`, 'success'); // 实现
+} // 实现
 
-async function handleInstallFromSubscription(sub: PluginSubscription) {
-  if (isPluginBusy.value) return;
-  isPluginBusy.value = true;
+async function handleInstallFromSubscription(sub: PluginSubscription) { // 实现
+  if (isPluginBusy.value) return; // 实现
+  isPluginBusy.value = true; // 实现
   const progress = showProgressToast(`正在同步订阅 ${sub.name}...`);
   try {
-    const result = await installFromSubscriptionUrl(sub.url, {
-      skipVersionCheck: pluginSettings.value.skipVersionCheck,
+    const result = await installFromSubscriptionUrl(sub.url, { // 实现
+      skipVersionCheck: pluginSettings.value.skipVersionCheck, // 实现
       onPluginProgress: (done, total, name) => {
         const current = Math.min(done + 1, total);
         progress.update(
@@ -850,98 +827,94 @@ async function handleInstallFromSubscription(sub: PluginSubscription) {
           total > 0 ? (current / total) * 100 : 100,
         );
       },
-    });
-    updateSubscription(sub.id, {
-      lastSyncAt: Date.now(),
-      lastSyncStatus: result.failCount === 0 ? 'success' : (result.successCount > 0 ? 'partial' : 'failed'),
-      lastSyncMessage: result.errors[0] || `成功安装 ${result.successCount} 个插件`,
-      lastSyncCount: result.successCount,
-    });
-    subscriptions.value = getSubscriptions();
-    refreshPluginList();
-    if (result.successCount > 0) {
+    }); // 实现
+    updateSubscription(sub.id, { // 实现
+      lastSyncAt: Date.now(), // 实现
+      lastSyncStatus: result.failCount === 0 ? 'success' : (result.successCount > 0 ? 'partial' : 'failed'), // 实现
+      lastSyncMessage: result.errors[0] || `成功安装 ${result.successCount} 个插件`, // 实现
+      lastSyncCount: result.successCount, // 实现
+    }); // 实现
+    subscriptions.value = getSubscriptions(); // 实现
+    refreshPluginList(); // 实现
+    if (result.successCount > 0) { // 实现
       progress.complete(
-        `从 ${sub.name} 安装 ${result.successCount} 个插件${result.failCount ? `，${result.failCount} 个失败` : ''}`,
-        'success',
-      );
-    } else {
+        `从 ${sub.name} 安装 ${result.successCount} 个插件${result.failCount ? `，${result.failCount} 个失败` : ''}`, // 实现
+        'success', // 实现
+      ); // 实现
+    } else { // 实现
       progress.fail(`从 ${sub.name} 安装失败: ${result.errors[0] || '无可安装插件'}`);
-    }
-  } catch (e: any) {
+    } // 实现
+  } catch (e: any) { // 实现
     progress.fail(`同步失败: ${e?.message || e}`);
-  } finally {
-    isPluginBusy.value = false;
+  } finally { // 实现
+    isPluginBusy.value = false; // 实现
     progress.close();
-  }
-}
+  } // 实现
+} // 实现
 
-const syncingAll = ref(false);
-async function handleSyncAllSubscriptions() {
-  if (syncingAll.value || isPluginBusy.value) return;
-  if (subscriptions.value.length === 0) {
-    showToast('暂无订阅源', 'info');
-    return;
-  }
-  syncingAll.value = true;
+const syncingAll = ref(false); // 实现
+async function handleSyncAllSubscriptions() { // 实现
+  if (syncingAll.value || isPluginBusy.value) return; // 实现
+  if (subscriptions.value.length === 0) { // 实现
+    showToast('暂无订阅源', 'info'); // 实现
+    return; // 实现
+  } // 实现
+  syncingAll.value = true; // 实现
   const progress = showProgressToast(`正在同步订阅 (0/${subscriptions.value.length})`);
-  try {
+  try { // 实现
     const res = await installAllSubscriptions((index, total, sub) => {
       progress.update(
         `正在同步 ${sub.name || '订阅'} (${index + 1}/${total})`,
         ((index + 1) / total) * 100,
       );
     });
-    subscriptions.value = getSubscriptions();
-    refreshPluginList();
+    subscriptions.value = getSubscriptions(); // 实现
+    refreshPluginList(); // 实现
     progress.complete(
-      `同步完成: 共安装 ${res.totalInstalled} 个插件${res.failedSubs ? `，${res.failedSubs} 个订阅失败` : ''}`,
-      res.failedSubs ? 'info' : 'success',
-    );
-  } catch (e: any) {
+      `同步完成: 共安装 ${res.totalInstalled} 个插件${res.failedSubs ? `，${res.failedSubs} 个订阅失败` : ''}`, // 实现
+      res.failedSubs ? 'info' : 'success', // 实现
+    ); // 实现
+  } catch (e: any) { // 实现
     progress.fail(`同步失败: ${e?.message || e}`);
-  } finally {
-    syncingAll.value = false;
+  } finally { // 实现
+    syncingAll.value = false; // 实现
     progress.close();
-  }
+  } // 实现
+} // 实现
+// ==================== 订阅名称编辑 ==================== 
+const editingSubId = ref<string | null>(null); // 实现
+const editingSubName = ref(''); // 实现
+function startEditSubName(sub: PluginSubscription) { // 实现
+  editingSubId.value = sub.id; // 实现
+  editingSubName.value = sub.name; // 实现
+} // 实现
+function saveSubName(sub: PluginSubscription) { // 实现
+  if (editingSubId.value !== sub.id) return; // 实现
+  const name = editingSubName.value.trim(); // 实现
+  if (name && name !== sub.name) { // 实现
+    updateSubscription(sub.id, { name }); // 实现
+    subscriptions.value = getSubscriptions(); // 实现
+  } // 实现
+  editingSubId.value = null; // 实现
+} // 实现
+function cancelEditSubName() { // 实现
+  editingSubId.value = null; // 实现
 }
 
-// ==================== 订阅名称编辑 ====================
-const editingSubId = ref<string | null>(null);
-const editingSubName = ref('');
-
-function startEditSubName(sub: PluginSubscription) {
-  editingSubId.value = sub.id;
-  editingSubName.value = sub.name;
-}
-
-function saveSubName(sub: PluginSubscription) {
-  if (editingSubId.value !== sub.id) return;
-  const name = editingSubName.value.trim();
-  if (name && name !== sub.name) {
-    updateSubscription(sub.id, { name });
-    subscriptions.value = getSubscriptions();
-  }
-  editingSubId.value = null;
-}
-
-function cancelEditSubName() {
-  editingSubId.value = null;
-}
-
-function formatRelativeTime(ts: number | undefined): string {
-  if (!ts) return '';
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  const d = new Date(ts);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+function formatRelativeTime(ts: number | undefined): string { // 实现
+  if (!ts) return ''; // 实现
+  const diff = Date.now() - ts; // 实现
+  if (diff < 60_000) return '刚刚'; // 实现
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`; // 实现
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`; // 实现
+  const d = new Date(ts); // 实现
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; // 实现
 }
 
 const showRemoveSubscriptionConfirm = ref(false);
-const pendingRemoveSubscription = ref<PluginSubscription | null>(null);
+const pendingRemoveSubscription = ref<PluginSubscription | null>(null); // 实现
 
-function handleRemoveSubscription(sub: PluginSubscription) {
+function handleRemoveSubscription(sub: PluginSubscription) { // 实现
   pendingRemoveSubscription.value = sub;
   showRemoveSubscriptionConfirm.value = true;
 }
@@ -949,8 +922,8 @@ function handleRemoveSubscription(sub: PluginSubscription) {
 function confirmRemoveSubscription() {
   const sub = pendingRemoveSubscription.value;
   if (!sub) return;
-  removeSubscription(sub.id);
-  subscriptions.value = getSubscriptions();
+  removeSubscription(sub.id); // 实现
+  subscriptions.value = getSubscriptions(); // 实现
   showRemoveSubscriptionConfirm.value = false;
   pendingRemoveSubscription.value = null;
   showToast(`已移除订阅 ${sub.name}`, 'success');
@@ -1178,29 +1151,29 @@ async function saveUserVariables() {
         <transition name="settings-pop-panel">
           <div v-if="showSubscriptionPanel" class="px-4 pb-4">
             <div class="settings-plugin-inline-panel">
-              <div class="flex items-center justify-between mb-3 gap-2">
+              <div class="flex items-center justify-between mb-3 gap-2"> 
                 <div class="text-sm font-medium text-gray-800 dark:text-gray-200">订阅管理</div>
                 <div class="flex shrink-0 items-center gap-3">
                   <SettingHint severity="warning" text="订阅可自动同步远端插件列表，方便一次性安装多个来源" />
-                  <button
-                    type="button"
-                    class="settings-plugin-button settings-plugin-button--sm settings-plugin-button--secondary"
-                    :disabled="syncingAll || subscriptions.length === 0"
-                    :class="{ 'settings-plugin-button--disabled': syncingAll || subscriptions.length === 0 }"
-                    :title="subscriptions.length === 0 ? '暂无订阅' : '拉取所有订阅并安装插件'"
-                    @click="handleSyncAllSubscriptions"
-                  >
-                    <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': syncingAll }" />
-                    {{ syncingAll ? '同步中...' : '更新全部' }}
-                  </button>
-                  <button
-                    type="button"
-                    class="settings-plugin-button settings-plugin-button--sm"
-                    @click="handleAddSubscription"
-                  >
-                    {{ showAddSubscriptionInput ? '取消' : '添加订阅' }}
-                  </button>
-                </div>
+                  <button 
+                    type="button" 
+                    class="settings-plugin-button settings-plugin-button--sm settings-plugin-button--secondary" 
+                    :disabled="syncingAll || subscriptions.length === 0" 
+                    :class="{ 'settings-plugin-button--disabled': syncingAll || subscriptions.length === 0 }" 
+                    :title="subscriptions.length === 0 ? '暂无订阅' : '拉取所有订阅并安装插件'" 
+                    @click="handleSyncAllSubscriptions" 
+                  > 
+                    <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': syncingAll }" /> 
+                    {{ syncingAll ? '同步中...' : '更新全部' }} 
+                  </button> 
+                  <button 
+                    type="button" 
+                    class="settings-plugin-button settings-plugin-button--sm" 
+                    @click="handleAddSubscription" 
+                  > 
+                    {{ showAddSubscriptionInput ? '取消' : '添加订阅' }} 
+                  </button> 
+                </div> 
               </div>
 
               <transition name="settings-pop-panel">
@@ -1235,46 +1208,46 @@ async function saveUserVariables() {
                   class="flex items-center gap-3 p-2.5 rounded-lg bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
                 >
                   <div class="min-w-0 flex-1">
-                    <input
-                      v-if="editingSubId === sub.id"
-                      v-model="editingSubName"
-                      type="text"
+                    <input 
+                      v-if="editingSubId === sub.id" 
+                      v-model="editingSubName" 
+                      type="text" 
                       class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                      @keydown.enter="saveSubName(sub)"
-                      @keydown.esc="cancelEditSubName"
-                      @blur="saveSubName(sub)"
-                    />
-                    <div
-                      v-else
-                      class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate cursor-text hover:text-[#EC4141] transition-colors"
-                      :title="`点击编辑「${sub.name}」名称`"
-                      @click="startEditSubName(sub)"
-                    >
-                      {{ sub.name || sub.url }}
-                    </div>
+                      @keydown.enter="saveSubName(sub)" 
+                      @keydown.esc="cancelEditSubName" 
+                      @blur="saveSubName(sub)" 
+                    /> 
+                    <div 
+                      v-else 
+                      class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate cursor-text hover:text-[#EC4141] transition-colors" 
+                      :title="`点击编辑「${sub.name}」名称`" 
+                      @click="startEditSubName(sub)" 
+                    > 
+                      {{ sub.name || sub.url }} 
+                    </div> 
                     <div class="text-xs text-gray-500 dark:text-white/50 truncate">{{ sub.url }}</div>
-                    <div
-                      v-if="sub.lastSyncAt"
-                      class="flex items-center gap-1.5 mt-0.5 text-[11px] truncate"
-                      :class="sub.lastSyncStatus === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-white/40'"
-                      :title="sub.lastSyncMessage"
-                    >
-                      <span
-                        class="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-                        :class="{
-                          'bg-green-500': sub.lastSyncStatus === 'success',
-                          'bg-amber-500': sub.lastSyncStatus === 'partial',
-                          'bg-red-500': sub.lastSyncStatus === 'failed',
-                        }"
-                      ></span>
-                      <span class="truncate">上次同步: {{ formatRelativeTime(sub.lastSyncAt) }} · {{ sub.lastSyncCount ?? 0 }} 个</span>
-                    </div>
+                    <div 
+                      v-if="sub.lastSyncAt" 
+                      class="flex items-center gap-1.5 mt-0.5 text-[11px] truncate" 
+                      :class="sub.lastSyncStatus === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-white/40'" 
+                      :title="sub.lastSyncMessage" 
+                    > 
+                      <span 
+                        class="inline-block w-1.5 h-1.5 rounded-full shrink-0" 
+                        :class="{ 
+                          'bg-green-500': sub.lastSyncStatus === 'success', 
+                          'bg-amber-500': sub.lastSyncStatus === 'partial', 
+                          'bg-red-500': sub.lastSyncStatus === 'failed', 
+                        }" 
+                      ></span> 
+                      <span class="truncate">上次同步: {{ formatRelativeTime(sub.lastSyncAt) }} · {{ sub.lastSyncCount ?? 0 }} 个</span> 
+                    </div> 
                   </div>
                   <button
                     type="button"
                     class="settings-plugin-icon-button"
-                    :disabled="isPluginBusy"
-                    :class="{ 'settings-plugin-icon-button--updating': isPluginBusy }"
+                    :disabled="isPluginBusy" 
+                    :class="{ 'settings-plugin-icon-button--updating': isPluginBusy }" 
                     title="从订阅安装"
                     @click="handleInstallFromSubscription(sub)"
                   >
@@ -1423,11 +1396,11 @@ async function saveUserVariables() {
           :key="plugin.id"
           data-plugin-row
           class="settings-plugin-card"
-          :class="{
+          :class="{ 
             'settings-plugin-card--dragging': draggingIndex === index,
-          }"
+          }" 
         >
-          <div
+          <div 
             class="plugin-drag-handle touch-none select-none"
             :class="{
               'plugin-drag-handle--disabled': !!searchQuery.trim(),
@@ -1435,15 +1408,14 @@ async function saveUserVariables() {
               'cursor-grab': draggingIndex !== index,
             }"
             @pointerdown="startDragging(index, $event)"
-          >
-            <GripVertical class="h-5 w-5" />
-          </div>
-
+          > 
+            <GripVertical class="h-5 w-5" /> 
+          </div> 
           <div class="flex items-center gap-3 min-w-0 flex-1">
-            <div
-              class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            <div 
+              class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" 
               :class="[pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).iconBg, pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).iconText]"
-            >
+            > 
               <Puzzle class="h-5 w-5" />
             </div>
             <div class="min-w-0 flex-1">
@@ -1451,12 +1423,12 @@ async function saveUserVariables() {
                 <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate min-w-0">
                   {{ plugin.name }}
                 </div>
-                <span
+                <span 
                   class="settings-plugin-tag shrink-0 whitespace-nowrap"
                   :class="pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).tagClass"
-                >
+                > 
                   {{ pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).label }}
-                </span>
+                </span> 
                 <span
                   v-if="subBrandLabelById.get(plugin.id)"
                   class="settings-plugin-tag settings-plugin-tag--brand shrink-0 whitespace-nowrap"
@@ -1480,7 +1452,7 @@ async function saveUserVariables() {
                 </span>
               </div>
               <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5 truncate">
-                v{{ plugin.version }}
+                v{{ plugin.version }} 
                 <span v-if="plugin.author"> · {{ plugin.author }}</span>
                 <span v-if="plugin.description"> · {{ plugin.description }}</span>
               </div>
@@ -1861,7 +1833,6 @@ async function saveUserVariables() {
       </Transition>
     </Teleport>
   </div>
-
 </template>
 
 <style scoped>
@@ -2027,14 +1998,13 @@ async function saveUserVariables() {
   box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.08);
 }
 
-.settings-plugin-input--inline {
-  width: 100%;
-  min-height: 28px;
-  padding: 2px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-
+.settings-plugin-input--inline { /* 样式 */
+  width: 100%; /* 样式 */
+  min-height: 28px; /* 样式 */
+  padding: 2px 10px; /* 样式 */
+  border-radius: 8px; /* 样式 */
+  font-size: 13px; /* 样式 */
+} /* 样式 */
 .settings-plugin-inline-panel {
   border-top: 1px solid rgba(255, 255, 255, 0.3);
   padding-top: 14px;
@@ -2127,48 +2097,42 @@ async function saveUserVariables() {
   background: rgba(255, 255, 255, 0.4);
 }
 
-.plugin-drag-handle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  color: rgba(148, 163, 184, 0.6);
-  cursor: grab;
-  flex-shrink: 0;
-  transition: color 160ms ease, background-color 160ms ease;
-}
-
-.plugin-drag-handle:hover {
-  color: rgba(100, 116, 139, 0.9);
-  background: rgba(148, 163, 184, 0.1);
-}
-
-.plugin-drag-handle:active {
-  cursor: grabbing;
-}
-
-.plugin-drag-handle--disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.settings-plugin-card--dragging {
+.plugin-drag-handle { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
+  width: 24px; /* 样式 */
+  height: 24px; /* 样式 */
+  border-radius: 6px; /* 样式 */
+  color: rgba(148, 163, 184, 0.6); /* 样式 */
+  cursor: grab; /* 样式 */
+  flex-shrink: 0; /* 样式 */
+  transition: color 160ms ease, background-color 160ms ease; /* 样式 */
+} /* 样式 */
+.plugin-drag-handle:hover { /* 样式 */
+  color: rgba(100, 116, 139, 0.9); /* 样式 */
+  background: rgba(148, 163, 184, 0.1); /* 样式 */
+} /* 样式 */
+.plugin-drag-handle:active { /* 样式 */
+  cursor: grabbing; /* 样式 */
+} /* 样式 */
+.plugin-drag-handle--disabled { /* 样式 */
+  opacity: 0.3; /* 样式 */
+  cursor: not-allowed; /* 样式 */
+} /* 样式 */
+.settings-plugin-card--dragging { /* 样式 */
   background: rgba(236, 65, 65, 0.06);
 }
 
 .plugin-sort-move {
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
-}
-
+} /* 样式 */
 @media (prefers-reduced-motion: reduce) {
   .plugin-sort-move {
     transition: none;
   }
-}
-
+} /* 样式 */
 .settings-plugin-tag {
   display: inline-flex;
   align-items: center;
@@ -2251,42 +2215,39 @@ async function saveUserVariables() {
   max-height: 400px;
 }
 
-.settings-plugin-import-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid rgba(249, 115, 22, 0.24);
-  border-radius: 999px;
-  background: rgba(249, 115, 22, 0.06);
-  color: rgb(249, 115, 22);
-  font-size: 11px;
-  font-weight: 600;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.settings-plugin-import-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(249, 115, 22, 0.4);
-  background: rgba(249, 115, 22, 0.12);
-}
-
-@media (max-width: 640px) {
-  .settings-plugin-import-btn__text {
-    display: none;
-  }
-  .settings-plugin-import-btn {
-    padding: 0 8px;
-  }
-}
-
+.settings-plugin-import-btn { /* 样式 */
+  display: inline-flex; /* 样式 */
+  align-items: center; /* 样式 */
+  gap: 4px; /* 样式 */
+  height: 30px; /* 样式 */
+  padding: 0 12px; /* 样式 */
+  border: 1px solid rgba(249, 115, 22, 0.24); /* 样式 */
+  border-radius: 999px; /* 样式 */
+  background: rgba(249, 115, 22, 0.06); /* 样式 */
+  color: rgb(249, 115, 22); /* 样式 */
+  font-size: 11px; /* 样式 */
+  font-weight: 600; /* 样式 */
+  transition: /* 样式 */
+    border-color 160ms ease, /* 样式 */
+    background-color 160ms ease, /* 样式 */
+    color 160ms ease, /* 样式 */
+    transform 160ms ease; /* 样式 */
+  cursor: pointer; /* 样式 */
+  white-space: nowrap; /* 样式 */
+} /* 样式 */
+.settings-plugin-import-btn:hover { /* 样式 */
+  transform: translateY(-1px); /* 样式 */
+  border-color: rgba(249, 115, 22, 0.4); /* 样式 */
+  background: rgba(249, 115, 22, 0.12); /* 样式 */
+} /* 样式 */
+@media (max-width: 640px) { /* 样式 */
+  .settings-plugin-import-btn__text { /* 样式 */
+    display: none; /* 样式 */
+  } /* 样式 */
+  .settings-plugin-import-btn { /* 样式 */
+    padding: 0 8px; /* 样式 */
+  } /* 样式 */
+} /* 样式 */
 .plugin-detail-card {
   width: min(92vw, 460px);
   background: #ffffff;

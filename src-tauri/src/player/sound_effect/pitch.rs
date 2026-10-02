@@ -1,8 +1,7 @@
 use super::phase_vocoder::PhaseVocoder;
 use super::SoundEffectSettings;
-use rodio::Source;
-use std::collections::VecDeque;
-
+use rodio::{Source};
+use std::collections::{VecDeque};
 #[derive(Clone)]
 struct AaBiquad {
     b0: f32,
@@ -76,67 +75,61 @@ impl AaBiquad {
     }
 }
 
-pub struct PitchRateProcessor {
-    channels: usize,
-    sample_rate: f32,
-
+pub struct PitchRateProcessor { // PitchRateProcessor
+    channels: usize, // 声道数
+    sample_rate: f32, // 采样率
     // ---- 重采样（变调） ----
-    ratio: f64,
-    read_pos: f64,
-    input_buf: VecDeque<f32>,
-    active: bool,
+    ratio: f64, // 重采样比率
+    read_pos: f64, // 读取位置
+    input_buf: VecDeque<f32>, // 输入缓冲
+    active: bool, // 激活状态
     aa_filter: AaBiquad,
 
     // ---- 纯黑胶变速（sample_rate 调整，样本直通） ----
-    sample_rate_mode: bool,
-    rate_multiplier: f32,
-
+    sample_rate_mode: bool, // 变速模式
+    rate_multiplier: f32, // 速率倍率
     // ---- 相位声码器（变速保持音钳 / 变调速度补偿） ----
     stretcher: PhaseVocoder,
 
-    eof: bool,
-}
-
-impl PitchRateProcessor {
-    pub fn new(channels: u16, sample_rate: u32) -> Self {
-        let ch = channels as usize;
+    eof: bool, // 结束标记
+} // PitchRateProcessor
+impl PitchRateProcessor { // PitchRateProcessor
+    pub fn new(channels: u16, sample_rate: u32) -> Self { // new
+        let ch = channels as usize; // 声道数换算
         let sr = sample_rate as f32;
         let mut stretcher = PhaseVocoder::new();
         stretcher.prepare(sr, ch);
-        Self {
-            channels: ch.max(1),
+        Self { // 初始化
+            channels: ch.max(1), // 至少单声道
             sample_rate: sr,
-            ratio: 1.0,
-            read_pos: 0.0,
-            input_buf: VecDeque::with_capacity(8192),
-            active: false,
+            ratio: 1.0, // 直通比率
+            read_pos: 0.0, // 起始位置
+            input_buf: VecDeque::with_capacity(8192), // 预分配输入缓冲
+            active: false, // 默认旁路
             aa_filter: AaBiquad::disabled(ch.max(1)),
-            sample_rate_mode: false,
-            rate_multiplier: 1.0,
+            sample_rate_mode: false, // 默认关闭
+            rate_multiplier: 1.0, // 一倍速
             stretcher,
-            eof: false,
-        }
-    }
-
-    pub fn prepare(&mut self, sample_rate: f32, channels: usize) {
-        self.sample_rate = sample_rate;
-        self.channels = channels.max(1);
-        self.input_buf.clear();
-        self.read_pos = 0.0;
-        self.eof = false;
+            eof: false, // 未结束
+        } // new
+    } // new
+    pub fn prepare(&mut self, sample_rate: f32, channels: usize) { // prepare
+        self.sample_rate = sample_rate; // 更新采样率
+        self.channels = channels.max(1); // 更新声道数
+        self.input_buf.clear(); // 清空缓冲
+        self.read_pos = 0.0; // 重置读取位
+        self.eof = false; // 清除结束标记
         self.aa_filter = AaBiquad::disabled(self.channels);
         self.stretcher.prepare(sample_rate, self.channels);
-    }
-
-    pub fn reset(&mut self) {
-        self.input_buf.clear();
-        self.read_pos = 0.0;
-        self.eof = false;
+    } // prepare
+    pub fn reset(&mut self) { // reset
+        self.input_buf.clear(); // 清空缓冲
+        self.read_pos = 0.0; // 重置读取位
+        self.eof = false; // 清除结束标记
         self.aa_filter.reset_state();
         self.stretcher.reset();
-    }
-
-    pub fn update_params(&mut self, s: &SoundEffectSettings) {
+    } // reset
+    pub fn update_params(&mut self, s: &SoundEffectSettings) { // update_params
         let raw_rate = if !s.playback_rate.is_finite() || s.playback_rate <= 0.0 {
             100.0
         } else {
@@ -152,14 +145,11 @@ impl PitchRateProcessor {
         let pitch_changed = (p - 1.0).abs() >= 0.001;
         let rate_changed = (t - 1.0).abs() >= 0.001;
         let preserves = s.preserves_pitch;
-
-        // ================================================================
-        // ================================================================
         if !pitch_changed && !rate_changed {
-            self.active = false;
-            self.sample_rate_mode = false;
-            self.rate_multiplier = 1.0;
-            self.ratio = 1.0;
+            self.active = false; // 退出激活
+            self.sample_rate_mode = false; // 关闭变速模式
+            self.rate_multiplier = 1.0; // 恢复一倍速
+            self.ratio = 1.0; // 恢复直通
             if self.aa_filter.enabled {
                 self.aa_filter.enabled = false;
                 self.aa_filter.cutoff = 0.0;
@@ -168,7 +158,7 @@ impl PitchRateProcessor {
             self.stretcher.set_stretch(1.0);
             self.stretcher.reset();
             return;
-        }
+        } // update_params
 
         if !preserves && !pitch_changed {
             self.active = false;
@@ -207,21 +197,18 @@ impl PitchRateProcessor {
         self.sample_rate_mode = false;
         self.rate_multiplier = 1.0;
         self.stretcher.set_stretch(stretch_factor);
-    }
-
-    pub fn effective_sample_rate(&self, inner_rate: u32) -> u32 {
+    } // update_params
+    pub fn effective_sample_rate(&self, inner_rate: u32) -> u32 { // effective_sample_rate
         if self.sample_rate_mode {
             ((inner_rate as f32) * self.rate_multiplier)
                 .round()
                 .max(1.0) as u32
-        } else {
-            inner_rate
-        }
-    }
-
+        } else { // 反之
+            inner_rate // 原样返回
+        } // effective_sample_rate
+    } // effective_sample_rate
     fn fill_resampled<I: Source<Item = f32>>(&mut self, inner: &mut I, out: &mut [f32]) -> bool {
-        let ch = self.channels;
-
+        let ch = self.channels; // 取声道数
         if !self.active {
             for c in 0..ch.min(out.len()) {
                 match inner.next() {
@@ -230,42 +217,40 @@ impl PitchRateProcessor {
                         self.eof = true;
                         return false;
                     }
-                }
-            }
-            return true;
-        }
-
-        if !self.eof {
-            self.ensure_input(inner);
-        }
+                } // fill_resampled
+            } // fill_resampled
+            return true; // 继续供给
+        } // fill_resampled
+        if !self.eof { // 未到流末尾
+            self.ensure_input(inner); // 补充输入
+        } // fill_resampled
         let need_frames = (self.read_pos as usize) + 4;
-        if self.input_buf.len() < need_frames * ch {
-            if self.eof {
-                let idx = self.read_pos as usize;
-                if idx * ch < self.input_buf.len() {
-                    for c in 0..ch.min(out.len()) {
-                        out[c] = self.input_buf.get(idx * ch + c).copied().unwrap_or(0.0);
-                    }
+        if self.input_buf.len() < need_frames * ch { // 缓冲不足
+            if self.eof { // 已到末尾
+                let idx = self.read_pos as usize; // 帧下标
+                if idx * ch < self.input_buf.len() { // 仍有余量
+                    for c in 0..ch.min(out.len()) { // 逐声道复制
+                        out[c] = self.input_buf.get(idx * ch + c).copied().unwrap_or(0.0); // 尾部样本直出
+                    } // fill_resampled
                     return true;
                 }
                 for c in 0..ch.min(out.len()) {
                     out[c] = 0.0;
-                }
-                return false;
-            }
+                } // fill_resampled
+                return false; // 供给完毕
+            } // fill_resampled
             for c in 0..ch.min(out.len()) {
                 out[c] = 0.0;
-            }
-            return true;
-        }
-
-        let idx = self.read_pos.floor() as usize;
+            } // fill_resampled
+            return true; // 填零继续
+        } // fill_resampled
+        let idx = self.read_pos.floor() as usize; // 插值基准帧
         let t = (self.read_pos - idx as f64) as f32;
         let t2 = t * t;
         let t3 = t2 * t;
-        for c in 0..ch.min(out.len()) {
-            let s0 = self.input_buf[idx * ch + c];
-            let s1 = self.input_buf[(idx + 1) * ch + c];
+        for c in 0..ch.min(out.len()) { // 逐声道插值
+            let s0 = self.input_buf[idx * ch + c]; // 前帧样本
+            let s1 = self.input_buf[(idx + 1) * ch + c]; // 当前帧样本
             let s2 = self.input_buf[(idx + 2) * ch + c];
             let s3 = self.input_buf[(idx + 3) * ch + c];
             out[c] = 0.5
@@ -273,53 +258,50 @@ impl PitchRateProcessor {
                     + (-s0 + s2) * t
                     + (2.0 * s0 - 5.0 * s1 + 4.0 * s2 - s3) * t2
                     + (-s0 + 3.0 * s1 - 3.0 * s2 + s3) * t3);
-        }
-        self.read_pos += self.ratio;
-
-        let consumed = self.read_pos.floor() as usize;
-        if consumed > 0 {
-            let to_remove = (consumed * ch).min(self.input_buf.len());
-            for _ in 0..to_remove {
-                self.input_buf.pop_front();
-            }
-            self.read_pos -= consumed as f64;
-        }
-        true
-    }
-
-    fn ensure_input<I: Source<Item = f32>>(&mut self, inner: &mut I) {
-        if self.eof {
-            return;
-        }
-        let consumption = self.ratio.max(1.0);
-        let max_per_call = (consumption.ceil() as usize).max(1).min(32);
+        } // fill_resampled
+        self.read_pos += self.ratio; // 推进读取位
+        let consumed = self.read_pos.floor() as usize; // 已消费帧数
+        if consumed > 0 { // 有消费才清理
+            let to_remove = (consumed * ch).min(self.input_buf.len()); // 待丢弃样本
+            for _ in 0..to_remove { // 弹出旧样本
+                self.input_buf.pop_front(); // 移除队首
+            } // fill_resampled
+            self.read_pos -= consumed as f64; // 回退余量
+        } // fill_resampled
+        true // 成功
+    } // fill_resampled
+    fn ensure_input<I: Source<Item = f32>>(&mut self, inner: &mut I) { // 按需补充输入
+        if self.eof { // 已结束
+            return; // 直接返回
+        } // ensure_input
+        let consumption = self.ratio.max(1.0); // 每帧消费量
+        let max_per_call = (consumption.ceil() as usize).max(1).min(32); // 单次上限
         let target = (self.read_pos as usize) + 4;
         let ch = self.channels;
-
-        for _ in 0..max_per_call {
+        for _ in 0..max_per_call { // 分批补充
             let need_more = self.input_buf.len() < target * ch;
-            if !need_more {
-                break;
-            }
-            let mut frame_eof = false;
+            if !need_more { // 已够用
+                break; // 停止补充
+            } // ensure_input
+            let mut frame_eof = false; // 帧末标记
             for c in 0..ch {
-                match inner.next() {
+                match inner.next() { // 读取下一样本
                     Some(s) => self.input_buf.push_back(self.aa_filter.tick(c, s)),
-                    None => {
-                        frame_eof = true;
-                        self.input_buf.push_back(0.0);
-                    }
-                }
-            }
-            if frame_eof {
-                self.eof = true;
+                    None => { // 源枯竭
+                        frame_eof = true; // 标记帧末
+                        self.input_buf.push_back(0.0); // 补静音
+                    } // ensure_input
+                } // ensure_input
+            } // ensure_input
+            if frame_eof { // 帧末处理
+                self.eof = true; // 标记结束
                 for _ in 0..ch * 4 {
-                    self.input_buf.push_back(0.0);
-                }
-                break;
-            }
-        }
-    }
+                    self.input_buf.push_back(0.0); // 填充静音
+                } // ensure_input
+                break; // 结束补充
+            } // ensure_input
+        } // ensure_input
+    } // ensure_input
 
     pub fn fill<I: Source<Item = f32>>(&mut self, inner: &mut I, out: &mut [f32]) -> bool {
         let ch = self.channels.min(out.len());
@@ -366,8 +348,7 @@ impl PitchRateProcessor {
             return false;
         }
     }
-}
-
+} // effective_sample_rate
 #[cfg(test)]
 mod tests {
     use super::*;

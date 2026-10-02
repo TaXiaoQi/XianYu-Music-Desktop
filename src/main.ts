@@ -153,11 +153,11 @@ app.config.errorHandler = (error, _instance, info) => {
   if (chain && error instanceof Error) {
     error = Object.assign(new Error(`${error.message}${chain}`), { name: error.name })
   }
-  if (error instanceof Error) {
-    reportError(error.name || 'VueError', error.message, error.stack, info)
-  } else {
-    reportError('VueError', String(error), '', info)
-  }
+  if (error instanceof Error) { // 实现
+    reportError(error.name || 'VueError', error.message, error.stack, info) // 实现
+  } else { // 实现
+    reportError('VueError', String(error), '', info) // 实现
+  } // 实现
   if (recoverDynamicImportError(error)) return
 
   if (isBenignTauriChannelError(error)) {
@@ -195,11 +195,11 @@ window.addEventListener('error', (event) => {
     event.preventDefault()
     return
   }
-  if (error instanceof Error) {
-    reportError(error.name || 'Error', error.message, error.stack, `${event.filename}:${event.lineno}:${event.colno}`)
-  } else if (typeof error === 'string') {
-    reportError('WindowError', error, '', `${event.filename}:${event.lineno}:${event.colno}`)
-  }
+  if (error instanceof Error) { // 实现
+    reportError(error.name || 'Error', error.message, error.stack, `${event.filename}:${event.lineno}:${event.colno}`) // 实现
+  } else if (typeof error === 'string') { // 实现
+    reportError('WindowError', error, '', `${event.filename}:${event.lineno}:${event.colno}`) // 实现
+  } // 实现
   if (recoverDynamicImportError(error)) {
     event.preventDefault()
     return
@@ -208,12 +208,12 @@ window.addEventListener('error', (event) => {
 })
 
 window.addEventListener('unhandledrejection', (event) => {
-  const reason = event.reason
-  if (reason instanceof Error) {
-    reportError('unhandledrejection', reason.message, reason.stack)
-  } else {
-    reportError('unhandledrejection', String(reason))
-  }
+  const reason = event.reason // 实现
+  if (reason instanceof Error) { // 实现
+    reportError('unhandledrejection', reason.message, reason.stack) // 实现
+  } else { // 实现
+    reportError('unhandledrejection', String(reason)) // 实现
+  } // 实现
   if (recoverDynamicImportError(event.reason) || isBenignTauriChannelError(reason)) {
     event.preventDefault()
     return

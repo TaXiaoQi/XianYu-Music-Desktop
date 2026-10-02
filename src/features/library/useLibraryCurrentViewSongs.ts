@@ -445,11 +445,10 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
       return [];
     }
 
-    if (playlist.songs && playlist.songs.length > 0) {
+    if (playlist.songs && playlist.songs.length > 0) { // 含歌曲时
       const declaredPaths = new Set(playlist.songs.map(s => s.path).filter(Boolean));
       return playlist.songPaths.filter(path => songsById.value.has(path) || declaredPaths.has(path));
-    }
-
+    } // 判断结束
     return playlist.songPaths.filter(path => songsById.value.has(path));
   });
 
@@ -614,26 +613,23 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
 
   const currentViewSongs = computed(() => {
     canonicalSeq.value;
-
-    const paths = currentViewSongPaths.value;
+    const paths = currentViewSongPaths.value; // 取当前视图路径
     const resolved = paths
       .map(path => songsById.value.get(path))
       .filter((song): song is Song => !!song);
-
     // 播放集里可能存在尚未进入曲目索引的条目，从播放集自带数据补齐。
     if (viewMode.value === 'playlist' && resolved.length < paths.length) {
       const playlist = playlistSource.value.find(item => item.id === detailFilter.value);
-      if (playlist?.songs && playlist.songs.length > 0) {
+      if (playlist?.songs && playlist.songs.length > 0) { // 歌单有歌时
         const resolvedPaths = new Set(resolved.map(s => s.path));
         const songsByPath = new Map(playlist.songs.map(s => [s.path, s] as const));
         const leftovers = paths
           .filter(path => !resolvedPaths.has(path))
           .map(path => songsByPath.get(path))
-          .filter((song): song is Song => !!song);
+          .filter((song): song is Song => !!song); // 过滤无效项
         return [...resolved, ...leftovers];
-      }
-    }
-
+      } // 过滤结束
+    } // 条件结束
     return resolved;
   });
 

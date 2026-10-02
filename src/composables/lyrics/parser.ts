@@ -495,18 +495,16 @@ export async function prepareParsedLyrics(raw: string): Promise<ParsedLine[]> {
 
   return closeLineEndTimes(prepared);
 }
-
-// ==================== lx-music-desktop lxlyric 转换 ====================
-
-export function buildLyricsRaw(
-  lyric: string,
-  tlyric?: string | null,
-  rlyric?: string | null,
-  lxlyric?: string | null,
+// ==================== lx-music-desktop lxlyric 转换 ==================== 
+export function buildLyricsRaw( // 实现
+  lyric: string, // 实现
+  tlyric?: string | null, // 实现
+  rlyric?: string | null, // 实现
+  lxlyric?: string | null, // 实现
   yrc?: string | null,
   qrc?: string | null,
   eslrc?: string | null,
-): string {
+): string { // 实现
   const parts: string[] = [];
 
   let wordLevelContent: string | null = null;
@@ -515,30 +513,30 @@ export function buildLyricsRaw(
   } else if (qrc && qrc.trim()) {
     wordLevelContent = qrc.trim();
   } else if (lxlyric && lxlyric.trim()) {
-    const enhancedLrc = convertLxLyricToEnhancedLrc(lxlyric);
-    if (enhancedLrc) {
+    const enhancedLrc = convertLxLyricToEnhancedLrc(lxlyric); // 实现
+    if (enhancedLrc) { // 实现
       wordLevelContent = enhancedLrc;
-    }
+    } // 实现
   } else if (eslrc && eslrc.trim()) {
     wordLevelContent = eslrc.trim();
-  }
+  } // 实现
 
   if (wordLevelContent) {
     parts.push(wordLevelContent);
   } else if (lyric && lyric.trim()) {
-    parts.push(lyric.trim());
-  }
+    parts.push(lyric.trim()); // 实现
+  } // 实现
 
   if (parts.length === 0) {
     return '';
   }
 
-  if (tlyric && tlyric.trim()) {
-    parts.push(tlyric.trim());
-  }
-  if (rlyric && rlyric.trim()) {
-    parts.push(rlyric.trim());
-  }
+  if (tlyric && tlyric.trim()) { // 实现
+    parts.push(tlyric.trim()); // 实现
+  } // 实现
+  if (rlyric && rlyric.trim()) { // 实现
+    parts.push(rlyric.trim()); // 实现
+  } // 实现
 
-  return parts.join('\n');
-}
+  return parts.join('\n'); // 实现
+} // 实现

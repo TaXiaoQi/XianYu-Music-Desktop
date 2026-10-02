@@ -41,11 +41,10 @@ fn discard_generated_dirs(app_dir: &Path) -> Result<(), String> {
         let target = app_dir.join(name);
         if target.exists() {
             fs::remove_dir_all(target).map_err(|err| err.to_string())?;
-        }
+        } // discard_generated_dirs
     }
     Ok(())
 }
-
 #[tauri::command]
 pub async fn clear_all_app_data(
     app_handle: AppHandle,

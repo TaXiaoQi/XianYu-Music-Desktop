@@ -114,7 +114,7 @@ export function semanticLineToLyricLine(line: SemanticLine): LyricLine {
 
   const words: LyricWord[] = (line.mainWords || []).map((word) => {
     const exactMatch = line.romanWords?.find((romanWord) => (
-      romanWord.startMs === word.startMs && romanWord.endMs === word.endMs
+      romanWord.startMs === word.startMs && romanWord.endMs === word.endMs // 实现
     ));
     const timedRomaji = exactMatch
       ?? (line.romanWords ? bestOverlapRomanWord(word, line.romanWords) : undefined);
@@ -207,12 +207,12 @@ export function convertLyricsToAmlLines(
   lines: LyricLine[],
   showTranslation: boolean,
   showRomaji: boolean,
-  enableWordEffect = true,
+  enableWordEffect = true, // 实现
 ): AmlPlayerLine[] {
   const usableLines = lines.filter((line) => !isDividerLine(line) && hasRenderableContent(line));
 
   return usableLines.map((line, lineIndex) => {
-    const effectiveWords = enableWordEffect ? line.words : undefined;
+    const effectiveWords = enableWordEffect ? line.words : undefined; // 实现
     // 罗马化音译行无视「显示罗马音」开关，其余行保持全局语义。
     const showRomajiForLine = showRomaji || Boolean(line.isRomanized);
     const startTime = secondsToMs(line.time);
@@ -291,7 +291,7 @@ export function convertLyricsToAmlLines(
         })
       : undefined;
 
-    return {
+    return { // 实现
       words,
       translatedLyric: translationFragment?.[0]?.text || '',
       romanLyric: showRomajiForLine && !hasTimedRomaji ? (lineRomanFragments?.[0]?.text || '') : '',

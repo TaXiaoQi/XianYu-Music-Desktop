@@ -90,12 +90,12 @@ pub async fn get_audio_device_formats() -> Result<Vec<AudioDeviceFormats>, Strin
 }
 
 #[tauri::command]
-pub async fn get_output_devices() -> Result<Vec<AudioDevice>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let host = cpal::default_host();
+pub async fn get_output_devices() -> Result<Vec<AudioDevice>, String> { // 输出设备列表
+    tauri::async_runtime::spawn_blocking(|| { // 阻塞线程枚举
+        let host = cpal::default_host(); // 默认音频宿主
         gather_device_names(&host)
-    })
-    .await
+    }) // 枚举完成
+    .await // 等待结果
     .map_err(|why| why.to_string())?
 }
 

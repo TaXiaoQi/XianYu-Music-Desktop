@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use tauri::Manager;
+use tauri::{Manager};
 use walkdir::WalkDir;
 
 static TRACK_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
@@ -740,7 +740,7 @@ use std::time::{Duration, SystemTime};
 
 #[tauri::command]
 pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String, String> {
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest"); // 最新版本地址
 
     let client = crate::netproxy::client_builder()
         .timeout(Duration::from_secs(10))
@@ -750,8 +750,8 @@ pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String,
         .map_err(|e| format!("创建更新请求失败: {e}"))?;
 
     client
-        .get(&url)
-        .header("Accept", "application/vnd.github+json")
+        .get(&url) // GET 请求
+        .header("Accept", "application/vnd.github+json") // GitHub API 格式
         .send()
         .await
         .map_err(|e| format!("请求更新接口失败: {e}"))?
@@ -1737,7 +1737,7 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command] // 状态写入命令
 pub async fn write_state_json(
     app_handle: tauri::AppHandle,
     key: String,
@@ -1745,117 +1745,109 @@ pub async fn write_state_json(
 ) -> Result<(), String> {
     let sanitized_key = path_validator::sanitize_filename_component(&key)
         .map_err(|e| format!("无效的 key: {}", e))?;
-    let app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?;
-    let state_dir = app_dir.join("state");
-    tokio::fs::create_dir_all(&state_dir)
-        .await
-        .map_err(|e| format!("创建 state 目录失败: {e}"))?;
+    let app_dir = app_handle // 应用数据目录
+        .path() // 路径服务
+        .app_data_dir() // 数据目录
+        .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?; // 目录获取失败
+    let state_dir = app_dir.join("state"); // state 子目录
+    tokio::fs::create_dir_all(&state_dir) // 创建目录
+        .await // 异步等待
+        .map_err(|e| format!("创建 state 目录失败: {e}"))?; // 创建失败
     let file_path = state_dir.join(format!("{sanitized_key}.json"));
-    tokio::fs::write(&file_path, &value)
-        .await
-        .map_err(|e| format!("写入 state 文件失败: {e}"))?;
-    Ok(())
-}
+    tokio::fs::write(&file_path, &value) // 写入状态文件
+        .await // 异步等待
+        .map_err(|e| format!("写入 state 文件失败: {e}"))?; // 写入失败
+    Ok(()) // 成功返回
+} // save_bytes_via_dialog
 
-#[tauri::command]
+#[tauri::command] // 状态读取命令
 pub async fn read_state_json(
     app_handle: tauri::AppHandle,
     key: String,
 ) -> Result<Option<String>, String> {
     let sanitized_key = path_validator::sanitize_filename_component(&key)
         .map_err(|e| format!("无效的 key: {}", e))?;
-    let app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?;
+    let app_dir = app_handle // 应用数据目录
+        .path() // 路径服务
+        .app_data_dir() // 数据目录
+        .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?; // 目录获取失败
     let file_path = app_dir.join("state").join(format!("{sanitized_key}.json"));
-    if !file_path.exists() {
-        return Ok(None);
-    }
-    let content = tokio::fs::read_to_string(&file_path)
-        .await
-        .map_err(|e| format!("读取 state 文件失败: {e}"))?;
-    Ok(Some(content))
-}
-
-#[tauri::command]
-pub async fn download_wallpaper(
-    app_handle: tauri::AppHandle,
-    url: String,
-    filename: String,
+    if !file_path.exists() { // 存在性检查
+        return Ok(None); // 缺失返回空
+    } // save_bytes_via_dialog
+    let content = tokio::fs::read_to_string(&file_path) // 读取文件内容
+        .await // 异步等待
+        .map_err(|e| format!("读取 state 文件失败: {e}"))?; // 读取失败
+    Ok(Some(content)) // 返回内容
+} // save_bytes_via_dialog
+#[tauri::command] // 壁纸下载命令
+pub async fn download_wallpaper( // 下载入口
+    app_handle: tauri::AppHandle, // 应用句柄
+    url: String, // 下载地址
+    filename: String, // 文件名
     protected_path: Option<String>,
-) -> Result<String, String> {
-    use tokio::fs::File;
-    use tokio::io::AsyncWriteExt;
-
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err("无效的壁纸下载链接".to_string());
-    }
-
+) -> Result<String, String> { // 返回保存路径
+    use tokio::fs::{File};
+    use tokio::io::{AsyncWriteExt};
+    if !(url.starts_with("http://") || url.starts_with("https://")) { // 协议校验
+        return Err("无效的壁纸下载链接".to_string()); // 无效链接报错
+    } // save_bytes_via_dialog
     ssrf::validate_outbound_url(&url)
         .await
         .map_err(|e| format!("壁纸链接校验失败: {e}"))?;
 
-    let safe_name = std::path::Path::new(&filename)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("wallpaper.jpg")
-        .to_string();
+    let safe_name = std::path::Path::new(&filename) // 提取文件名
+        .file_name() // 文件名部分
+        .and_then(|n| n.to_str()) // 转字符串
+        .unwrap_or("wallpaper.jpg") // 默认名兜底
+        .to_string(); // 转为 String
     let safe_name = if std::path::Path::new(&safe_name).extension().is_none() {
-        format!("{safe_name}.jpg")
-    } else {
-        safe_name
-    };
+        format!("{safe_name}.jpg") // 强制 jpg 后缀
+    } else { // 反之
+        safe_name // 原样使用
+    }; // 文件名完成
     let safe_name = crate::security::path_validator::sanitize_filename_component(&safe_name)?;
-
-    let app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
-    let wallpaper_dir = app_dir.join("wallpapers");
-    tokio::fs::create_dir_all(&wallpaper_dir)
-        .await
-        .map_err(|e| format!("创建壁纸目录失败: {e}"))?;
-    let dest_path = wallpaper_dir.join(&safe_name);
-
+    let app_dir = app_handle // 应用数据目录
+        .path() // 路径服务
+        .app_data_dir() // 数据目录
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))?; // 目录获取失败
+    let wallpaper_dir = app_dir.join("wallpapers"); // 壁纸子目录
+    tokio::fs::create_dir_all(&wallpaper_dir) // 创建目录
+        .await // 异步等待
+        .map_err(|e| format!("创建壁纸目录失败: {e}"))?; // 创建失败
+    let dest_path = wallpaper_dir.join(&safe_name); // 目标路径
     let client = crate::netproxy::client_builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(60)) // 六十秒超时
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XianYuMusic-WallpaperDownloader")
-        .build()
-        .map_err(|e| format!("创建HTTP客户端失败: {e}"))?;
-
-    let mut response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("下载壁纸失败: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!("下载服务器返回错误状态: {}", response.status()));
-    }
-
-    let mut file = File::create(&dest_path)
-        .await
-        .map_err(|e| format!("创建文件失败: {e}"))?;
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| format!("读取响应数据失败: {e}"))?
-    {
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("写入文件失败: {e}"))?;
-    }
+        .build() // 构建客户端
+        .map_err(|e| format!("创建HTTP客户端失败: {e}"))?; // 构建失败
+    let mut response = client // 发起下载
+        .get(&url) // GET 请求
+        .send() // 发送
+        .await // 异步等待
+        .map_err(|e| format!("下载壁纸失败: {e}"))?; // 下载失败
+    if !response.status().is_success() { // 状态码检查
+        return Err(format!("下载服务器返回错误状态: {}", response.status())); // 服务器错误报错
+    } // save_bytes_via_dialog
+    let mut file = File::create(&dest_path) // 创建文件
+        .await // 异步等待
+        .map_err(|e| format!("创建文件失败: {e}"))?; // 创建失败
+    while let Some(chunk) = response // 循环读取分块
+        .chunk() // 数据分块
+        .await // 异步等待
+        .map_err(|e| format!("读取响应数据失败: {e}"))? // 读取失败
+    { // 实现体
+        file.write_all(&chunk) // 写入磁盘
+            .await // 异步等待
+            .map_err(|e| format!("写入文件失败: {e}"))?; // 写入失败
+    } // save_bytes_via_dialog
     drop(file);
 
     evict_wallpaper_cache(&wallpaper_dir, &dest_path, protected_path.as_deref()).await;
-
-    Ok(dest_path.to_string_lossy().to_string())
-}
+    Ok(dest_path.to_string_lossy().to_string()) // 返回保存路径
+} // save_bytes_via_dialog
 
 const WALLPAPER_CACHE_LIMIT: u64 = 300 * 1024 * 1024;
 

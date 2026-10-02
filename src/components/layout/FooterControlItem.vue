@@ -3,7 +3,7 @@ import { computed, inject, nextTick, ref, watch, type Ref } from 'vue';
 import { usePlaybackController } from '../../features/playback';
 import { useToast } from '../../composables/toast';
 import { reportDailyDislikeSignal } from '../../services/domain/dailyRecommendFeedback';
-import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
+import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue'; // 实现
 import FooterControlIcon from './FooterControlIcon.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
 import type { DownloadRecord } from '../../services/domain/downloadHistory';
@@ -546,7 +546,7 @@ watch(
       <FooterControlIcon item-key="equalizer" class="h-4 w-4" />
     </button>
 
-    <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" />
+    <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" /> 
   </div>
 
   <div v-else-if="itemKey === 'playlist'" class="relative flex items-center justify-center h-full z-[70]">

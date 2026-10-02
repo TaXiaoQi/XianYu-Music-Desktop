@@ -1,5 +1,4 @@
 use std::error::Error;
-
 #[path = "plugin_commands/downloads.rs"]
 mod downloads;
 #[path = "plugin_commands/files.rs"]

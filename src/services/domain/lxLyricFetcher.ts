@@ -1,40 +1,34 @@
-
 import type { Song } from '../../types';
 import { getStoredPlugins } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric } from './lxPluginEngine';
 import { lyricsApi } from '../tauri/lyricsApi';
 import { buildLxLyricsRaw } from './lxLyricsBuilder';
 import { dispatchFallbackModule } from '../fallbackModules/registry';
-
-// ==================== Types ====================
-
-export interface LxLyricResult {
-  lyric: string;
-  tlyric: string;
-  rlyric: string;
-  lxlyric: string;
-}
-
-export interface LxSongInfo {
+// ==================== Types ==================== 
+export interface LxLyricResult { // 实现
+  lyric: string; // 实现
+  tlyric: string; // 实现
+  rlyric: string; // 实现
+  lxlyric: string; // 实现
+} // 实现
+export interface LxSongInfo { // 实现
   songmid: string | number;
-  hash?: string;
-  name: string;
-  singer: string;
-  albumName?: string;
-  interval?: string;
-  _interval?: number;
-  songId?: string | number;
-  strMediaMid?: string;
-  albumMid?: string;
-  albumId?: string | number;
-  copyrightId?: string;
-  source?: string;
-}
-
-// ==================== Song Info Cache ====================
-const songInfoCache = new Map<string, LxSongInfo>();
-const MAX_CACHE_SIZE = 200;
-
+  hash?: string; // 实现
+  name: string; // 实现
+  singer: string; // 实现
+  albumName?: string; // 实现
+  interval?: string; // 实现
+  _interval?: number; // 实现
+  songId?: string | number; // 实现
+  strMediaMid?: string; // 实现
+  albumMid?: string; // 实现
+  albumId?: string | number; // 实现
+  copyrightId?: string; // 实现
+  source?: string; // 实现
+} // 实现
+// ==================== Song Info Cache ==================== 
+const songInfoCache = new Map<string, LxSongInfo>(); // 实现
+const MAX_CACHE_SIZE = 200; // 实现
 function normalizeOptionalString(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
   const text = String(value);
@@ -60,22 +54,19 @@ function normalizeLxSongInfo(songInfo: LxSongInfo): LxSongInfo & { songmid: stri
 export function cacheLxSongInfo(source: string, songmid: string | number, info: LxSongInfo): void {
   const normalizedInfo = normalizeLxSongInfo(info);
   const key = `${source}/${String(songmid)}`;
-  if (songInfoCache.size >= MAX_CACHE_SIZE) {
-    const firstKey = songInfoCache.keys().next().value;
-    if (firstKey) songInfoCache.delete(firstKey);
-  }
+  if (songInfoCache.size >= MAX_CACHE_SIZE) { // 实现
+    const firstKey = songInfoCache.keys().next().value; // 实现
+    if (firstKey) songInfoCache.delete(firstKey); // 实现
+  } // 实现
   songInfoCache.set(key, normalizedInfo);
-}
-
+} // 实现
 export function getCachedLxSongInfo(source: string, songmid: string | number): LxSongInfo | null {
   return songInfoCache.get(`${source}/${String(songmid)}`) ?? null;
-}
-
-// ==================== Unified Entry Point ====================
-
-export async function fetchLxLyric(
+} // 实现
+// ==================== Unified Entry Point ==================== 
+export async function fetchLxLyric( // 实现
   source: LxDirectSource,
-  songInfo: LxSongInfo,
+  songInfo: LxSongInfo, // 实现
 ): Promise<LxLyricResult | null> {
   return dispatchFallbackModule('lx_lyric', 'fetchLyric', { source, songInfo },
     () => fetchLxLyricBuiltin(source, songInfo));
@@ -84,16 +75,16 @@ export async function fetchLxLyric(
 async function fetchLxLyricBuiltin(
   source: LxDirectSource,
   songInfo: LxSongInfo,
-): Promise<LxLyricResult | null> {
-  try {
+): Promise<LxLyricResult | null> { // 实现
+  try { // 实现
     const normalizedSongInfo = normalizeLxSongInfo(songInfo);
     const result = await lyricsApi.fetchLyricFromSource(source, normalizedSongInfo);
-    return result;
+    return result; // 实现
   } catch (e: any) {
     console.warn(`[lxLyricFetcher] 获取 ${source} 歌词失败:`, e?.message || e);
-    return null;
-  }
-}
+    return null; // 实现
+  } // 实现
+} // 实现
 
 const LX_SOURCES = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
 

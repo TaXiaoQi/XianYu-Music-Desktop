@@ -12,7 +12,7 @@ export interface Announcement {
   actionUrl?: string;
   actionText?: string;
   images?: string[];
-  updatedAt?: string;
+  updatedAt?: string; // 更新时间
 }
 
 export async function fetchAnnouncement(): Promise<Announcement | null> {
@@ -56,21 +56,20 @@ export async function confirmAnnouncement(ann: Announcement): Promise<void> {
   );
 }
 
-function announcementFingerprint(ann: Announcement): string {
-  return `${ann.id}_${ann.updatedAt ?? ''}`;
-}
-
-export function isAnnouncementDismissed(ann: Announcement): boolean {
+function announcementFingerprint(ann: Announcement): string { // 公告指纹
+  return `${ann.id}_${ann.updatedAt ?? ''}`; // 标识加时间
+} // 指纹结束
+export function isAnnouncementDismissed(ann: Announcement): boolean { // 是否已读
   try {
-    return localStorage.getItem(DISMISSED_KEY) === announcementFingerprint(ann);
+    return localStorage.getItem(DISMISSED_KEY) === announcementFingerprint(ann); // 比对指纹
   } catch {
     return false;
   }
 }
 
-export function dismissAnnouncement(ann: Announcement): void {
+export function dismissAnnouncement(ann: Announcement): void { // 标记已读
   try {
-    localStorage.setItem(DISMISSED_KEY, announcementFingerprint(ann));
+    localStorage.setItem(DISMISSED_KEY, announcementFingerprint(ann)); // 写入指纹
   } catch {
     // ignore storage errors
   }

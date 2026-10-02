@@ -6,7 +6,7 @@
  * 在线歌曲走重试轮询，失败与无词场景给出占位文案。
  */
 
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue'; // 响应式基础
 
 import { usePlaybackStore } from '../../features/playback/store';
 import { useLibraryStore } from '../../features/library/store';
@@ -16,7 +16,7 @@ import { useSettingsStore } from '../../features/settings/store';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
 import { toTraditional } from '../../features/i18n/traditional';
 import { lyricsApi } from '../../services/tauri/lyricsApi';
-import { getCurrentLyricDisplayLines } from './converters';
+import { getCurrentLyricDisplayLines } from './converters'; // 歌词行计算
 import type {
   CurrentLyricDisplayState,
   DesktopLyricsSettings,
@@ -211,7 +211,7 @@ function scheduleOnlineRetry(songPath: string, requestId: number) {
 }
 
 export async function loadLyrics(overrideLyricsRaw?: string) {
-  ensureSongPathWatcher();
+  ensureSongPathWatcher(); // 启动路径监听
   const requestId = ++loadRequestId;
   const playbackStore = usePlaybackStore();
   const song = playbackStore.currentSong;
@@ -233,14 +233,12 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
 
     if (lyricsRaw) {
       const payload = await lyricsApi.parseLyricsText(lyricsRaw);
-      if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
-
+      if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return; // 过期请求丢弃
       adoptPayload(payload, lyricsRaw, playbackStore.currentSong?.duration ?? 0);
       onlineLyricsRetryCount = 0;
       unavailableOnlineLyricsPaths.delete(song.path);
-      return;
-    }
-
+      return; // 提前返回
+    } // 校验结束
     const lyricsPath = song.cue_source_path || song.path;
     const isOnlineSong = lyricsPath.startsWith('lx://') || lyricsPath.startsWith('plugin://');
 
@@ -303,7 +301,6 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
 }
 
 /* ==================== 派生状态 ==================== */
-
 /** 二分查找：最后一个 time <= targetTime 的行下标。 */
 function findLineIndexAt(lines: LyricLine[], targetTime: number): number {
   let low = 0;
@@ -327,7 +324,7 @@ export const currentLyricIndex = computed(() => {
   if (parsedLyrics.value.length === 0) return -1;
 
   const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay;
-  if (targetTime < 0) return -1;
+  if (targetTime < 0) return -1; // 负时间无歌词
 
   return findLineIndexAt(parsedLyrics.value, targetTime);
 });
@@ -364,9 +361,8 @@ export const currentLyricLine = computed<CurrentLyricDisplayState>(() => {
     };
   }
 
-  const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay;
+  const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay; // 补偿音频延迟
   if (targetTime < 0 || parsedLyrics.value.length === 0) return placeholderState('···');
-
   const first = parsedLyrics.value[0];
   return {
     text: first.text,

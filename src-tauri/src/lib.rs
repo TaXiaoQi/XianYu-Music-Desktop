@@ -454,7 +454,7 @@ pub fn run() {
             get_auth_api_secret,
             clear_cover_cache,
             read_lyrics_file,
-            parse_lyrics_text,
+            parse_lyrics_text, // 歌词解析命令
             get_song_lyrics_payload,
             get_song_lyrics_for_edit,
             save_song_lyrics,
@@ -503,7 +503,7 @@ pub fn run() {
             get_track_loudness_info,
             update_loudness_settings,
             set_equalizer_settings,
-            set_sound_effect_settings,
+            set_sound_effect_settings, // 音效参数命令
             plugin_host_scan_plugins,
             plugin_host_get_rack,
             plugin_host_set_rack,
@@ -599,7 +599,7 @@ pub fn run() {
             refresh_immersive_fullscreen,
             smart_toggle_maximize,
             get_window_material_capabilities,
-            refresh_window_material_active_state,
+            refresh_window_material_active_state, // 窗口材质刷新命令
             get_foreground_fullscreen_state,
             set_dark_mode_for_window,
             force_window_foreground,
@@ -660,11 +660,11 @@ pub fn run() {
             download_update_file,
             download_online_song,
             decrypt_qmc_file,
-            download_wallpaper,
+            download_wallpaper, // 壁纸下载命令
             delete_wallpaper_file,
             probe_url_size,
-            read_download_history,
-            write_download_history,
+            read_download_history, // 读取下载历史
+            write_download_history, // 写入下载历史
             save_text_via_dialog,
             save_bytes_via_dialog,
             fetch_image_bytes,
@@ -674,8 +674,8 @@ pub fn run() {
             finalize_download_extras,
             run_installer,
             is_store_build,
-            write_state_json,
-            read_state_json,
+            write_state_json, // 写状态文件
+            read_state_json, // 读状态文件
             open_devtools,
             fetch_lyric_from_source,
             decrypt_plugin_lyric,

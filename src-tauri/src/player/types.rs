@@ -6,7 +6,7 @@
 // - PlayerState 与对外序列化结构。
 
 use crate::player::equalizer::EqualizerSettings;
-use crate::player::sound_effect::SoundEffectSettings;
+use crate::player::sound_effect::{SoundEffectSettings};
 use rodio::{source::SeekError, Source};
 use serde::{Serialize, Deserialize};
 use souvlaki::MediaControls;

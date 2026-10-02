@@ -5,7 +5,7 @@ import { Eye, EyeOff } from 'lucide-vue-next';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettingsStore } from '../../features/settings/store';
 import { useToast } from '../../composables/toast';
-import { usePlaylistSync } from '../../composables/usePlaylistSync';
+import { usePlaylistSync } from '../../composables/usePlaylistSync'; // 实现
 import { showChangePasswordDialog } from '../../composables/useChangePasswordDialog';
 import { showDeleteAccountDialog } from '../../composables/useDeleteAccountDialog';
 import { logout } from '../../services/auth/authService';
@@ -21,7 +21,7 @@ import SettingHint from './SettingHint.vue';
 const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
 const { showToast } = useToast();
-const playlistSync = usePlaylistSync();
+const playlistSync = usePlaylistSync(); // 实现
 
 const pad = (n: number) => n.toString().padStart(2, '0');
 
@@ -49,19 +49,17 @@ watch(
   },
 );
 
-onMounted(() => {
-  playlistSync.initAutoSync();
-});
-
-watch(
-  () => authStore.isLoggedIn,
-  (loggedIn) => {
-    if (loggedIn) {
-      playlistSync.checkAutoSync();
-    }
-  },
-);
-
+onMounted(() => { // 实现
+  playlistSync.initAutoSync(); // 实现
+}); // 实现
+watch( // 实现
+  () => authStore.isLoggedIn, // 实现
+  (loggedIn) => { // 实现
+    if (loggedIn) { // 实现
+      playlistSync.checkAutoSync(); // 实现
+    } // 实现
+  }, // 实现
+); // 实现
 async function handleSaveBaseUrl() {
   const next = draftBaseUrl.value.trim();
   const nextSecret = draftApiSecret.value.trim();
@@ -115,7 +113,7 @@ const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; labe
   { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' },
   { key: 'favorites', label: '收藏', desc: '同步我的收藏歌曲' },
   { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' },
-  { key: 'settings', label: '本地设置', desc: '同步播放设置、歌词设置、快捷键等偏好配置' },
+  { key: 'settings', label: '本地设置', desc: '同步播放设置、歌词设置、快捷键等偏好配置' }, // 实现
 ];
 
 function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
@@ -126,75 +124,65 @@ function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
     },
   });
 }
-
-const formattedLastSync = computed(() => {
-  if (!playlistSync.lastSyncTime.value) return null;
-  const date = new Date(playlistSync.lastSyncTime.value);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-});
-
-const syncSummary = computed(() => {
-  const r = playlistSync.lastSyncResult.value;
-  if (!r) return null;
-  const parts: string[] = [];
-  if (r.uploadedPlaylists > 0) parts.push(`上传 ${r.uploadedPlaylists} 个歌单`);
-  if (r.downloadedPlaylists > 0) parts.push(`下载 ${r.downloadedPlaylists} 个歌单`);
-  if (r.uploadedSongs > 0) parts.push(`${r.uploadedSongs} 首歌曲`);
-  if (r.downloadedSongs > 0) parts.push(`${r.downloadedSongs} 首歌曲`);
-  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
-  return parts.length > 0 ? parts.join('，') : '无变更';
-});
-
-const syncErrors = computed(() => {
-  const r = playlistSync.lastSyncResult.value;
-  if (!r || r.errors.length === 0) return [];
-  return r.errors;
-});
-
-const formattedLastPluginSync = computed(() => {
-  if (!playlistSync.lastPluginSyncTime.value) return null;
-  const date = new Date(playlistSync.lastPluginSyncTime.value);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-});
-
-const pluginSyncSummary = computed(() => {
-  const r = playlistSync.lastPluginSyncResult.value;
-  if (!r) return null;
-  const parts: string[] = [];
-  if (r.uploadedPlugins > 0) parts.push(`上传 ${r.uploadedPlugins} 个插件`);
-  if (r.downloadedPlugins > 0) parts.push(`恢复 ${r.downloadedPlugins} 个插件`);
-  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
-  return parts.length > 0 ? parts.join('，') : '无变更';
-});
-
-const pluginSyncErrors = computed(() => {
-  const r = playlistSync.lastPluginSyncResult.value;
-  if (!r || r.errors.length === 0) return [];
-  return r.errors;
-});
-
-const formattedLastSettingsSync = computed(() => {
-  if (!playlistSync.lastSettingsSyncTime.value) return null;
-  const date = new Date(playlistSync.lastSettingsSyncTime.value);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-});
-
-const settingsSyncSummary = computed(() => {
-  const r = playlistSync.lastSettingsSyncResult.value;
-  if (!r) return null;
-  const parts: string[] = [];
-  if (r.uploaded) parts.push('已上传');
-  if (r.downloaded) parts.push('已下载');
-  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
-  return parts.length > 0 ? parts.join('，') : '无变更';
-});
-
-const settingsSyncErrors = computed(() => {
-  const r = playlistSync.lastSettingsSyncResult.value;
-  if (!r || r.errors.length === 0) return [];
-  return r.errors;
-});
-
+const formattedLastSync = computed(() => { // 实现
+  if (!playlistSync.lastSyncTime.value) return null; // 实现
+  const date = new Date(playlistSync.lastSyncTime.value); // 实现
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; // 实现
+}); // 实现
+const syncSummary = computed(() => { // 实现
+  const r = playlistSync.lastSyncResult.value; // 实现
+  if (!r) return null; // 实现
+  const parts: string[] = []; // 实现
+  if (r.uploadedPlaylists > 0) parts.push(`上传 ${r.uploadedPlaylists} 个歌单`); // 实现
+  if (r.downloadedPlaylists > 0) parts.push(`下载 ${r.downloadedPlaylists} 个歌单`); // 实现
+  if (r.uploadedSongs > 0) parts.push(`${r.uploadedSongs} 首歌曲`); // 实现
+  if (r.downloadedSongs > 0) parts.push(`${r.downloadedSongs} 首歌曲`); // 实现
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`); // 实现
+  return parts.length > 0 ? parts.join('，') : '无变更'; // 实现
+}); // 实现
+const syncErrors = computed(() => { // 实现
+  const r = playlistSync.lastSyncResult.value; // 实现
+  if (!r || r.errors.length === 0) return []; // 实现
+  return r.errors; // 实现
+}); // 实现
+const formattedLastPluginSync = computed(() => { // 实现
+  if (!playlistSync.lastPluginSyncTime.value) return null; // 实现
+  const date = new Date(playlistSync.lastPluginSyncTime.value); // 实现
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; // 实现
+}); // 实现
+const pluginSyncSummary = computed(() => { // 实现
+  const r = playlistSync.lastPluginSyncResult.value; // 实现
+  if (!r) return null; // 实现
+  const parts: string[] = []; // 实现
+  if (r.uploadedPlugins > 0) parts.push(`上传 ${r.uploadedPlugins} 个插件`); // 实现
+  if (r.downloadedPlugins > 0) parts.push(`恢复 ${r.downloadedPlugins} 个插件`); // 实现
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`); // 实现
+  return parts.length > 0 ? parts.join('，') : '无变更'; // 实现
+}); // 实现
+const pluginSyncErrors = computed(() => { // 实现
+  const r = playlistSync.lastPluginSyncResult.value; // 实现
+  if (!r || r.errors.length === 0) return []; // 实现
+  return r.errors; // 实现
+}); // 实现
+const formattedLastSettingsSync = computed(() => { // 实现
+  if (!playlistSync.lastSettingsSyncTime.value) return null; // 实现
+  const date = new Date(playlistSync.lastSettingsSyncTime.value); // 实现
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; // 实现
+}); // 实现
+const settingsSyncSummary = computed(() => { // 实现
+  const r = playlistSync.lastSettingsSyncResult.value; // 实现
+  if (!r) return null; // 实现
+  const parts: string[] = []; // 实现
+  if (r.uploaded) parts.push('已上传'); // 实现
+  if (r.downloaded) parts.push('已下载'); // 实现
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`); // 实现
+  return parts.length > 0 ? parts.join('，') : '无变更'; // 实现
+}); // 实现
+const settingsSyncErrors = computed(() => { // 实现
+  const r = playlistSync.lastSettingsSyncResult.value; // 实现
+  if (!r || r.errors.length === 0) return []; // 实现
+  return r.errors; // 实现
+}); // 实现
 const formattedLastFavoritesSync = computed(() => {
   if (!playlistSync.lastFavoritesSyncTime.value) return null;
   const date = new Date(playlistSync.lastFavoritesSyncTime.value);
@@ -217,24 +205,22 @@ const favoritesSyncErrors = computed(() => {
   return r.errors;
 });
 
-const nextSyncTimeDisplay = computed(() => {
-  const nextSyncAt = settingsStore.settings.autoSync.nextSyncAt;
-  if (!nextSyncAt || nextSyncAt <= 0) return null;
-  const date = new Date(nextSyncAt);
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-});
-
-function toggleAutoSync() {
-  const enabled = !settingsStore.settings.autoSync.enabled;
-  playlistSync.patchAutoSyncConfig({ enabled });
-  if (enabled) {
-    showToast('自动同步已开启', 'success');
-  } else {
-    showToast('自动同步已关闭', 'info');
-  }
-}
-
-function updateAutoSyncIntervalSeconds(event: Event) {
+const nextSyncTimeDisplay = computed(() => { // 实现
+  const nextSyncAt = settingsStore.settings.autoSync.nextSyncAt; // 实现
+  if (!nextSyncAt || nextSyncAt <= 0) return null; // 实现
+  const date = new Date(nextSyncAt); // 实现
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`; // 实现
+}); // 实现
+function toggleAutoSync() { // 实现
+  const enabled = !settingsStore.settings.autoSync.enabled; // 实现
+  playlistSync.patchAutoSyncConfig({ enabled }); // 实现
+  if (enabled) { // 实现
+    showToast('自动同步已开启', 'success'); // 实现
+  } else { // 实现
+    showToast('自动同步已关闭', 'info'); // 实现
+  } // 实现
+} // 实现
+function updateAutoSyncIntervalSeconds(event: Event) { // 实现
   const target = event.target as HTMLInputElement;
   const hours = Math.max(0, Math.min(168, Math.round(parseFloat(target.value) || 0)));
   if (hours === 0) {
@@ -242,17 +228,16 @@ function updateAutoSyncIntervalSeconds(event: Event) {
     playlistSync.patchAutoSyncConfig({ syncIntervalSeconds: 3600 });
     target.value = '1';
     return;
-  }
+  } // 实现
   target.value = String(hours);
   playlistSync.patchAutoSyncConfig({ syncIntervalSeconds: hours * 3600 });
-}
-
-function updateAutoSyncMaxDelay(event: Event) {
+} // 实现
+function updateAutoSyncMaxDelay(event: Event) { // 实现
   const target = event.target as HTMLInputElement;
   const value = Math.max(1, Math.min(720, Math.round(parseFloat(target.value) || 1)));
   target.value = String(value);
   playlistSync.patchAutoSyncConfig({ maxDelayMinutes: value });
-}
+} // 实现
 </script>
 
 <template>
@@ -425,15 +410,14 @@ function updateAutoSyncMaxDelay(event: Event) {
       </div>
     </section>
 
-    <section v-if="authStore.isLoggedIn" class="space-y-3">
+    <section v-if="authStore.isLoggedIn" class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           手动同步
         </span>
         <SettingHint text="手动将本地歌单、收藏、插件、设置同步到云端，或从云端拉取到本地。支持多设备间数据共享。" />
-      </h2>
-
+      </h2> 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="manual-sync-head">
@@ -474,10 +458,9 @@ function updateAutoSyncMaxDelay(event: Event) {
                 </svg>
                 更新至本地
               </button>
-            </div>
-          </div>
-        </div>
-
+            </div> 
+          </div> 
+        </div> 
         <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="manual-sync-head">
             <div class="upload-copy min-w-0">
@@ -517,10 +500,9 @@ function updateAutoSyncMaxDelay(event: Event) {
                 </svg>
                 更新至本地
               </button>
-            </div>
-          </div>
-        </div>
-
+            </div> 
+          </div> 
+        </div> 
         <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="manual-sync-head">
             <div class="upload-copy min-w-0">
@@ -561,8 +543,8 @@ function updateAutoSyncMaxDelay(event: Event) {
                 更新至本地
               </button>
             </div>
-          </div>
-        </div>
+          </div> 
+        </div> 
 
         <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="manual-sync-head">
@@ -606,21 +588,19 @@ function updateAutoSyncMaxDelay(event: Event) {
             </div>
           </div>
         </div>
-      </div>
-    </section>
-
-    <section v-if="authStore.isLoggedIn" class="space-y-3">
+      </div> 
+    </section> 
+    <section v-if="authStore.isLoggedIn" class="space-y-3"> 
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           自动同步
         </span>
         <SettingHint text="按设定的时间自动同步数据到云端。当服务器繁忙时会自动延后并提示，避免带宽拥塞。" />
-      </h2>
-
+      </h2> 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
-          <div class="upload-label text-gray-900 dark:text-white/90">启用自动同步</div>
+          <div class="upload-label text-gray-900 dark:text-white/90">启用自动同步</div> 
           <div class="flex items-center gap-3">
             <SettingHint text="开启后在指定时间自动执行同步" />
             <button
@@ -630,8 +610,7 @@ function updateAutoSyncMaxDelay(event: Event) {
               @click="toggleAutoSync()"
             ></button>
           </div>
-        </div>
-
+        </div> 
         <template v-if="settingsStore.settings.autoSync.enabled">
           <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
             <div class="text-sm font-medium text-gray-900 dark:text-white/90">同步间隔</div>
@@ -649,7 +628,6 @@ function updateAutoSyncMaxDelay(event: Event) {
               <span>小时</span>
             </div>
           </div>
-
           <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
             <div class="text-sm font-medium text-gray-900 dark:text-white/90">最大延迟</div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
@@ -666,14 +644,12 @@ function updateAutoSyncMaxDelay(event: Event) {
               <span>分钟</span>
             </div>
           </div>
-
           <div class="sync-notice p-4">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>自动同步将按上方「上传」设置中开启的项目执行（歌单、插件、本地设置）。</span>
           </div>
-
           <div v-if="playlistSync.autoSyncStatus.value" class="sync-status p-4" :class="{ 'sync-status--active': playlistSync.autoSyncStatus.value.includes('正在'), 'sync-status--error': playlistSync.autoSyncDelayed.value }">
             <div v-if="playlistSync.autoSyncStatus.value.includes('正在')" class="sync-spinner"></div>
             <svg v-else-if="playlistSync.autoSyncDelayed.value" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -681,14 +657,12 @@ function updateAutoSyncMaxDelay(event: Event) {
             </svg>
             <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.autoSyncStatus.value }}</span>
           </div>
-
           <div v-if="nextSyncTimeDisplay" class="p-4 text-xs text-gray-500 dark:text-white/50">
             下次同步：{{ nextSyncTimeDisplay }}
           </div>
         </template>
-      </div>
-    </section>
-
+      </div> 
+    </section> 
     <Teleport to="body">
       <Transition name="logout-modal">
         <div
@@ -801,65 +775,55 @@ function updateAutoSyncMaxDelay(event: Event) {
   transform: translateX(24px);
 }
 
-.sync-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sync-status--active {
-}
-
-.sync-status-text {
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-.sync-status-time {
-  font-size: 0.68rem;
-  margin-top: 2px;
-}
-
-.sync-status--error {
-}
-
-.sync-error-list {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.sync-error-item {
-  font-size: 0.68rem;
-  color: #dc2626;
-  line-height: 1.4;
-  word-break: break-all;
-}
-
-.sync-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(236, 65, 65, 0.2);
-  border-top-color: #EC4141;
-  border-radius: 50%;
-  animation: sync-spin 0.6s linear infinite;
-  flex-shrink: 0;
-}
-
-@keyframes sync-spin {
-  to { transform: rotate(360deg); }
-}
-
-.sync-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  color: #92400e;
-  font-size: 0.72rem;
-  line-height: 1.5;
-}
-
+.sync-status { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  gap: 8px; /* 样式 */
+} /* 样式 */
+.sync-status--active { /* 样式 */
+} /* 样式 */
+.sync-status-text { /* 样式 */
+  font-size: 0.78rem; /* 样式 */
+  line-height: 1.4; /* 样式 */
+} /* 样式 */
+.sync-status-time { /* 样式 */
+  font-size: 0.68rem; /* 样式 */
+  margin-top: 2px; /* 样式 */
+} /* 样式 */
+.sync-status--error { /* 样式 */
+} /* 样式 */
+.sync-error-list { /* 样式 */
+  margin-top: 6px; /* 样式 */
+  display: flex; /* 样式 */
+  flex-direction: column; /* 样式 */
+  gap: 3px; /* 样式 */
+} /* 样式 */
+.sync-error-item { /* 样式 */
+  font-size: 0.68rem; /* 样式 */
+  color: #dc2626; /* 样式 */
+  line-height: 1.4; /* 样式 */
+  word-break: break-all; /* 样式 */
+} /* 样式 */
+.sync-spinner { /* 样式 */
+  width: 14px; /* 样式 */
+  height: 14px; /* 样式 */
+  border: 2px solid rgba(236, 65, 65, 0.2); /* 样式 */
+  border-top-color: #EC4141; /* 样式 */
+  border-radius: 50%; /* 样式 */
+  animation: sync-spin 0.6s linear infinite; /* 样式 */
+  flex-shrink: 0; /* 样式 */
+} /* 样式 */
+@keyframes sync-spin { /* 样式 */
+  to { transform: rotate(360deg); } /* 样式 */
+} /* 样式 */
+.sync-notice { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: flex-start; /* 样式 */
+  gap: 8px; /* 样式 */
+  color: #92400e; /* 样式 */
+  font-size: 0.72rem; /* 样式 */
+  line-height: 1.5; /* 样式 */
+} /* 样式 */
 .logout-confirm-card {
   width: min(86vw, 360px);
   background: rgba(255, 255, 255, 0.8);

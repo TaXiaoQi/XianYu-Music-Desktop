@@ -163,7 +163,7 @@ const batchActions = computed(() => {
 const headerCover = ref('');
 const displayedHeaderCover = ref('');
 let coverRequestId = 0;
-const { loadCover, loadFullCover, primeCoverPath } = useCoverCache();
+const { loadCover, loadFullCover, primeCoverPath } = useCoverCache(); // 封面缓存
 
 watch(
   headerCover,
@@ -220,7 +220,6 @@ const unpackLocalCover = async (trackPath: string): Promise<string | null> => {
 const resolvePlaylistCover = async (): Promise<string> => {
   const playlist = activePlaylist.value;
   if (!playlist) return '';
-
   if (playlist.coverPath) return resolveCoverPath(playlist.coverPath);
   if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) return playlist.cloudCoverUrl;
   if (playlist.songPaths.length === 0) return '';

@@ -167,8 +167,7 @@ if (currentWindowLabel === 'main') {
   });
 
   onMounted(async () => {
-    reportAppOpen();
-
+    reportAppOpen(); // 上报启动
     if (currentWindowLabel === 'main') {
       void useDlnaCastStore().init();
       void useDesktopLinkStore().init();

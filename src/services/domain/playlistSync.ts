@@ -1,25 +1,24 @@
-
 export type {
-  PlaylistType,
-  SyncSongType,
-  SyncSongPayload,
-  SyncResult,
-  FileSyncPlaylistData,
-  FileSyncDownloadData,
-} from './playlistSyncTypes';
+    PlaylistType,
+    SyncSongType,
+    SyncSongPayload,
+    SyncResult,
+    FileSyncPlaylistData,
+    FileSyncDownloadData,
+} from "./playlistSyncTypes";
 
 export {
-  getCiyuanxiId,
-  isOnlineSong,
-  classifySyncSong,
-  classifySyncPlaylist,
-  songToSyncPayload,
-  syncPayloadToSong,
-  firstRemoteSongCover,
-} from './playlistSyncSong';
+    getCiyuanxiId,
+    isOnlineSong,
+    classifySyncSong,
+    classifySyncPlaylist,
+    songToSyncPayload,
+    syncPayloadToSong,
+    firstRemoteSongCover,
+} from "./playlistSyncSong";
 
 export {
-  deleteCloudPlaylist,
-  fileSyncUpload,
-  fileSyncDownload,
-} from './playlistSyncApi';
+    deleteCloudPlaylist,
+    fileSyncUpload,
+    fileSyncDownload,
+} from "./playlistSyncApi";

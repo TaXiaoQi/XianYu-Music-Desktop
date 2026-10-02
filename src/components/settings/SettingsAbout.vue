@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ArrowUpRight, BookOpen, CheckCircle2, Code2, ExternalLink, Github, Globe2, Heart, RefreshCw, ShieldCheck, Sparkles, UsersRound } from 'lucide-vue-next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_VERSION } from '../../../version';
-import { useUpdateCheck } from '../../composables/useUpdateCheck';
+import { useUpdateCheck } from '../../composables/useUpdateCheck'; // 更新检查
 import { useToast } from '../../composables/toast';
 import { useDeveloperMode } from '../../features/settings/developerMode';
 import { useI18n } from '../../features/i18n';
@@ -11,7 +11,7 @@ import { useThemeSettings } from '../../composables/useThemeSettings';
 import { aboutConfig, startAboutConfigPolling, stopAboutConfigPolling } from '../../utils/aboutConfig';
 import AcknowledgementsModal from '../common/AcknowledgementsModal.vue';
 
-const appVersion = APP_VERSION;
+const appVersion = APP_VERSION; // 应用版本号
 const ackModalOpen = ref(false);
 function openAcknowledgements() {
   ackModalOpen.value = true;
@@ -95,7 +95,7 @@ function handleDeveloperModeClick() {
   }
 }
 
-const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
+const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck(); // 手动检查更新
 
 onMounted(() => {
   startAboutConfigPolling();

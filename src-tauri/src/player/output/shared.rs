@@ -8,7 +8,7 @@
 use crate::player::equalizer::EqualizerHandle;
 use crate::player::loudness::{VolumeNormalizer, VolumeNormalizerHandle};
 use crate::player::output::{OutputBackend, OutputError};
-use crate::player::sound_effect::{SoundEffectHandle, SoundEffectSource};
+use crate::player::sound_effect::{SoundEffectSource, SoundEffectHandle};
 use crate::player::types::{SharedProgress, TimedSource};
 use crate::remote::cache::RemoteStreamSource;
 use cpal::traits::{DeviceTrait, HostTrait};
@@ -20,26 +20,23 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(target_os = "windows")]
-#[link(name = "winmm")]
-extern "system" {
-    fn timeBeginPeriod(u_period: u32) -> u32;
-}
-
+#[cfg(windows)]
+#[link(name = "winmm")] // 链接系统库
+extern "system" { // 外部函数
+    fn timeBeginPeriod(u_period: u32) -> u32; // 毫秒级定时精度
+} // winmm 外部函数
 /// 请求高精度系统计时器（进程内一次性），非 Windows 平台为空操作。
-#[cfg(target_os = "windows")]
-fn init_high_resolution_timer() {
-    use std::sync::OnceLock;
+#[cfg(windows)]
+fn init_high_resolution_timer() { // init_high_resolution_timer
+    use std::sync::{OnceLock};
     static REQUESTED: OnceLock<()> = OnceLock::new();
     REQUESTED.get_or_init(|| unsafe {
         let _ = timeBeginPeriod(1);
-    });
-}
-
-#[cfg(not(target_os = "windows"))]
-#[inline]
-fn init_high_resolution_timer() {}
-
+    }); // 单次初始化
+} // init_high_resolution_timer
+#[cfg(not(windows))]
+#[inline(always)]
+fn init_high_resolution_timer() { /* 平台占位 */ }
 /// 可Seek可读的解码输入约束。
 pub(crate) trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
@@ -81,7 +78,7 @@ impl SharedOutputBackend {
     }
 
     fn from_device(device: &cpal::Device, active_device_name: String) -> Result<Self, OutputError> {
-        init_high_resolution_timer();
+        init_high_resolution_timer(); // 启用高精度定时
         let (stream, handle) = OutputStream::try_from_device(device)
             .map_err(|error| OutputError::Stream(error.to_string()))?;
 
@@ -161,7 +158,7 @@ pub(crate) fn restore_current_playback(
     is_playing_flag: bool,
     progress: &Arc<SharedProgress>,
     equalizer_handle: Arc<EqualizerHandle>,
-    sound_effect_handle: Arc<SoundEffectHandle>,
+    sound_effect_handle: Arc<SoundEffectHandle>, // 音效句柄
     user_volume: Arc<AtomicU32>,
     volume_balance_gain: f32,
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,

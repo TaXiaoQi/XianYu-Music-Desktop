@@ -31,9 +31,7 @@ export { fetchWyTrackMetaByIds } from './playlistImportWy';
 export { fetchQqTrackMetaByIds } from './playlistImportTx';
 export { fetchKwTrackMetaByIds } from './playlistImportKw';
 export { fetchKgTrackMetaByIds } from './playlistImportKg';
-
-// ==================== 音源定义 ====================
-
+// ==================== 音源定义 ==================== 
 const SUPPORTED_IMPORT_SOURCES: ReadonlySet<string> = new Set(['wy', 'tx', 'kw', 'kg']);
 
 const SOURCE_PLATFORM_NAMES: Record<string, string> = {
@@ -121,7 +119,6 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
 
   return sources;
 }
-
 // ==================== MusicFree 插件歌单导入 ====================
 
 export async function importPlaylistFromMusicFreePlugin(
@@ -232,8 +229,7 @@ export async function importPlaylistFromFavorites(
   };
 }
 
-// ==================== 主入口 ====================
-
+// ==================== 主入口 ==================== 
 /// LX 生态识别不了的链接（汽水/酷狗短链等）与纯数字歌单 ID：
 /// 遍历已启用 musicfree/am 插件精确导入（插件 importPlaylist/
 /// importMusicSheet + 五平台宿主兜底链，见 pluginPlaylistSearch），
@@ -267,36 +263,33 @@ async function importPlaylistExactFromPlugins(
   throw new Error('无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接');
 }
 
-export async function importPlaylist(
-  source: string,
-  idOrUrl: string,
-): Promise<PlaylistImportResult> {
-  const input = idOrUrl.trim();
-  if (!input) {
-    throw new Error('请输入歌单链接或 ID');
-  }
-
-  let actualSource = source;
-  let actualId = input;
-
+export async function importPlaylist( // 实现
+  source: string, // 实现
+  idOrUrl: string, // 实现
+): Promise<PlaylistImportResult> { // 实现
+  const input = idOrUrl.trim(); // 实现
+  if (!input) { // 实现
+    throw new Error('请输入歌单链接或 ID'); // 实现
+  } // 实现
+  let actualSource = source; // 实现
+  let actualId = input; // 实现
   if (input.startsWith('https://') || input.startsWith('http://')) {
-    const parsed = parseLink(input);
-    if (parsed) {
-      actualSource = parsed.source;
-      actualId = parsed.playlistId;
-    } else {
+    const parsed = parseLink(input); // 实现
+    if (parsed) { // 实现
+      actualSource = parsed.source; // 实现
+      actualId = parsed.playlistId; // 实现
+    } else { // 实现
       // LX 生态识别不了的链接（汽水/酷狗短链等）：遍历插件精确导入
       return importPlaylistExactFromPlugins(input);
-    }
-  } else if (source === 'auto') {
+    } // 实现
+  } else if (source === 'auto') { // 实现
     // 纯数字歌单 ID 等无法识别平台的输入：遍历插件精确导入，
     // 以第一个命中的音源为准，也可手动切换音源重试
     if (looksLikeSheetLinkOrId(input)) {
       return importPlaylistExactFromPlugins(input);
     }
-    throw new Error('请选择对应音源后重试，或直接粘贴歌单链接');
-  }
-
+    throw new Error('请选择对应音源后重试，或直接粘贴歌单链接'); // 实现
+  } // 实现
   let result: PlaylistImportResult;
   switch (actualSource) {
     case 'wy':
@@ -313,7 +306,7 @@ export async function importPlaylist(
       break;
     default:
       throw new Error(`不支持的音源: ${actualSource}`);
-  }
+  } // 实现
 
   return {
     ...result,

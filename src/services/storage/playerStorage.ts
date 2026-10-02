@@ -1,7 +1,7 @@
 import type { AppSettings, HistoryItem, Playlist, Song, EqualizerPreset } from '../../types';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import { localStore } from './localStore';
-import { fileStore } from './fileStore';
+import { fileStore } from './fileStore'; // 文件存储
 
 // —— 排序模式相关类型（仅是各视图可选排序项的联合） ——
 export type ArtistSortMode =
@@ -209,22 +209,20 @@ export const playerStorage = {
     return pickValidPlaylists(localStore.getJson<unknown>(key));
   },
 
-  async readPlaylistsAsync(key = playerStorageKeys.playlists): Promise<Playlist[]> {
+  async readPlaylistsAsync(key = playerStorageKeys.playlists): Promise<Playlist[]> { // 读歌单
     // 优先读文件态存储；文件侧没有（返回 null）时回退到 localStorage。
     const fromFile = await fileStore.getJson<unknown>(key);
     if (fromFile !== null) return pickValidPlaylists(fromFile);
     return pickValidPlaylists(localStore.getJson<unknown>(key));
-  },
-
-  async writePlaylistsAsync(playlists: Playlist[], key = playerStorageKeys.playlists): Promise<void> {
-    await fileStore.setJson(key, playlists);
-    try {
-      localStore.setJson(key, playlists);
-    } catch {
-      localStore.remove(key);
-    }
-  },
-
+  }, // 读取结束
+  async writePlaylistsAsync(playlists: Playlist[], key = playerStorageKeys.playlists): Promise<void> { // 写歌单
+    await fileStore.setJson(key, playlists); // 优先文件存储
+    try { // 兜底尝试
+      localStore.setJson(key, playlists); // 本地兜底
+    } catch { // 忽略异常
+      localStore.remove(key); // 移除旧值
+    } // 兜底结束
+  }, // 写入结束
   readEqualizerPresets(): EqualizerPreset[] {
     const parsed = localStore.getJson<unknown>(playerStorageKeys.equalizerPresets);
     if (!Array.isArray(parsed)) return [];

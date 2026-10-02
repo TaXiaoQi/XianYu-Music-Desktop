@@ -164,7 +164,7 @@ impl Read for StreamingTempFileReader {
             {
                 return Ok(0);
             }
-            std::thread::sleep(Duration::from_millis(3));
+            std::thread::sleep(Duration::from_millis(3)); // 轮询间隔
         }
     }
 }
@@ -207,7 +207,7 @@ impl Seek for StreamingTempFileReader {
                     "等待流缓存下载缓冲超时",
                 ));
             }
-            std::thread::sleep(Duration::from_millis(3));
+            std::thread::sleep(Duration::from_millis(3)); // 短暂让路
         }
     }
 }

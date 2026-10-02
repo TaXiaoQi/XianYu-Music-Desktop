@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'; // 实现
 import { storeToRefs } from 'pinia';
 import {
   convertLyricsToAmlLines, getLyricsFontFamily, loadSystemLyricsFonts, normalizeLyricsFontPreset, systemLyricsFontOptions,
@@ -17,10 +17,10 @@ import { useToast } from '../../composables/toast';
 const WordLyricPlayer = defineAsyncComponent({
   loader: () => import('./WordLyricPlayer.vue'),
   loadingComponent: () => h('div', { class: 'word-lyric-loading-placeholder' }),
-  errorComponent: () =>
+  errorComponent: () => // 实现
     h('div', { class: 'word-lyric-load-error' }, '歌词组件加载失败，请刷新'),
-  delay: 0,
-  timeout: 10000,
+  delay: 0, // 实现
+  timeout: 10000, // 实现
 });
 import { getPlaybackSeekSecondsForLyricLine } from './seekLayout';
 import type { WordLyricLineClickEvent } from './WordLyricPlayer';
@@ -61,8 +61,8 @@ const panelAnchorRef = ref<HTMLElement | null>(null);
 const menuAnchorRef = ref<HTMLElement | null>(null);
 const menuPanelRef = ref<HTMLElement | null>(null);
 interface WordPlayerHandle {
-  syncSeekLayout: (timeMs: number, lineIndex?: number) => void;
-}
+  syncSeekLayout: (timeMs: number, lineIndex?: number) => void; // 实现
+} // 实现
 const wordPlayerRef = ref<WordPlayerHandle | null>(null);
 const isFontMenuVisible = ref(false);
 const fontMenuPositionStyle = ref<Record<string, string>>({});
@@ -161,7 +161,6 @@ const fadeWidth = computed(() => stylePrefs.enableWordEffect ? 0.5 : 0);
 
 // 中西文分拆时，从字体栈里裁掉通用族，再以系统字体兜底拼接
 const GENERIC_FAMILY_TAIL = /,\s*(system-ui|sans-serif|ui-sans-serif).*$/i;
-
 const playerVars = computed(() => {
   let familyStack: string;
   if (stylePrefs.playerFontSplitEnabled) {
@@ -364,8 +363,7 @@ function flipRomaji() {
 
 function flipWordEffect() {
   stylePrefs.enableWordEffect = !stylePrefs.enableWordEffect;
-}
-
+} // 实现
 const activeSubtitleCount = computed(() => Number(stylePrefs.showTranslation) + Number(stylePrefs.showRomaji));
 
 // 滑杆轨道的渐变填充样式（进度值决定分界位置）
@@ -869,19 +867,18 @@ watch(() => props.coverHidden, async () => {
             </button>
           </div>
 
-          <div class="mt-4">
-            <button
-              type="button"
-              class="flex h-10 w-full items-center justify-center rounded-2xl border px-3 text-sm font-medium transition"
+          <div class="mt-4"> 
+            <button 
+              type="button" 
+              class="flex h-10 w-full items-center justify-center rounded-2xl border px-3 text-sm font-medium transition" 
               :class="!stylePrefs.enableWordEffect
                 ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
               @click="flipWordEffect"
-            >
-              逐字歌词效果
-            </button>
-          </div>
-
+            > 
+              逐字歌词效果 
+            </button> 
+          </div> 
           <div class="mt-6 mb-3">
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Alignment</div>
             <div class="mt-1.5 flex items-center justify-between gap-3">
@@ -1148,25 +1145,25 @@ watch(() => props.coverHidden, async () => {
           @click.stop
           @mousedown.stop
         >
-          <div class="min-h-0 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
-            <button
+          <div class="min-h-0 space-y-1 overflow-y-auto pr-1 custom-scrollbar"> 
+            <button 
               v-for="item in fontOptions"
               :key="item.value"
-              type="button"
-              class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition"
+              type="button" 
+              class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition" 
               :class="currentMenuPreset !== item.value
                 ? 'text-white/72 hover:bg-white/[0.07] hover:text-white'
                 : 'bg-white/[0.14] text-white active-font-preset'"
               @click="pickFontPreset(item.value)"
             >
               <span>{{ item.label }}</span>
-              <span
+              <span 
                 v-if="currentMenuPreset === item.value"
-                class="text-[11px] font-medium text-white/50"
+                class="text-[11px] font-medium text-white/50" 
               >
-                当前
-              </span>
-            </button>
+                当前 
+              </span> 
+            </button> 
           </div>
         </div>
       </transition>

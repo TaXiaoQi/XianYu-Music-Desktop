@@ -1,61 +1,50 @@
 import { computed, shallowRef } from 'vue';
 import { useSettingsStore } from '../features/settings/store';
 import type { PerformanceMode } from '../types';
-
-interface HardwareCapability {
-  cores: number;
-  memory: number;
-  hasWebGL2: boolean;
-}
-
-let hardwareCache: HardwareCapability | null = null;
-
-function detectHardwareCapability(): HardwareCapability {
-  if (hardwareCache) return hardwareCache;
-
-  const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-    ? navigator.hardwareConcurrency
-    : 4;
-
-  const memory = typeof navigator !== 'undefined' && (navigator as Navigator & { deviceMemory?: number }).deviceMemory
-    ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory!
-    : 8;
-
-  let hasWebGL2 = false;
-  try {
-    const probe = document.createElement('canvas');
-    const ctx = probe.getContext('webgl2');
-    hasWebGL2 = !!ctx;
-    const loseExt = ctx?.getExtension('WEBGL_lose_context');
-    loseExt?.loseContext();
-    probe.width = 0;
-    probe.height = 0;
-  } catch {
-    hasWebGL2 = false;
-  }
-
-  hardwareCache = { cores, memory, hasWebGL2 };
-  return hardwareCache;
-}
-
-function detectAutoMode(): 'low' | 'high' {
-  const hw = detectHardwareCapability();
-  if (hw.cores <= 4) return 'low';
-  if (hw.memory <= 4) return 'low';
-  if (!hw.hasWebGL2) return 'low';
-  return 'high';
-}
-
-const autoDetectedMode = shallowRef<'low' | 'high' | null>(null);
-
-function getAutoDetectedMode(): 'low' | 'high' {
-  if (autoDetectedMode.value === null) {
-    autoDetectedMode.value = detectAutoMode();
-  }
-  return autoDetectedMode.value;
-}
-
-export function usePerformanceMode() {
+interface HardwareCapability { // 实现
+  cores: number; // 实现
+  memory: number; // 实现
+  hasWebGL2: boolean; // 实现
+} // 实现
+let hardwareCache: HardwareCapability | null = null; // 实现
+function detectHardwareCapability(): HardwareCapability { // 实现
+  if (hardwareCache) return hardwareCache; // 实现
+  const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency // 实现
+    ? navigator.hardwareConcurrency // 实现
+    : 4; // 实现
+  const memory = typeof navigator !== 'undefined' && (navigator as Navigator & { deviceMemory?: number }).deviceMemory // 实现
+    ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory! // 实现
+    : 8; // 实现
+  let hasWebGL2 = false; // 实现
+  try { // 实现
+    const probe = document.createElement('canvas'); // 实现
+    const ctx = probe.getContext('webgl2'); // 实现
+    hasWebGL2 = !!ctx; // 实现
+    const loseExt = ctx?.getExtension('WEBGL_lose_context'); // 实现
+    loseExt?.loseContext(); // 实现
+    probe.width = 0; // 实现
+    probe.height = 0; // 实现
+  } catch { // 实现
+    hasWebGL2 = false; // 实现
+  } // 实现
+  hardwareCache = { cores, memory, hasWebGL2 }; // 实现
+  return hardwareCache; // 实现
+} // 实现
+function detectAutoMode(): 'low' | 'high' { // 实现
+  const hw = detectHardwareCapability(); // 实现
+  if (hw.cores <= 4) return 'low'; // 实现
+  if (hw.memory <= 4) return 'low'; // 实现
+  if (!hw.hasWebGL2) return 'low'; // 实现
+  return 'high'; // 实现
+} // 实现
+const autoDetectedMode = shallowRef<'low' | 'high' | null>(null); // 实现
+function getAutoDetectedMode(): 'low' | 'high' { // 实现
+  if (autoDetectedMode.value === null) { // 实现
+    autoDetectedMode.value = detectAutoMode(); // 实现
+  } // 实现
+  return autoDetectedMode.value; // 实现
+} // 实现
+export function usePerformanceMode() { // 实现
   const settingsStore = useSettingsStore();
 
   const selectedMode = computed<PerformanceMode>(() =>
@@ -75,18 +64,15 @@ export function usePerformanceMode() {
         return autoLow.value;
     }
   });
-
-  const isLowPerformance = computed(() => effectiveMode.value === 'low');
-  const isHighPerformance = computed(() => effectiveMode.value === 'high');
-
-  const hardwareCapability = computed<HardwareCapability>(() => detectHardwareCapability());
-
-  return {
+  const isLowPerformance = computed(() => effectiveMode.value === 'low'); // 实现
+  const isHighPerformance = computed(() => effectiveMode.value === 'high'); // 实现
+  const hardwareCapability = computed<HardwareCapability>(() => detectHardwareCapability()); // 实现
+  return { // 实现
     selectedMode,
     isAutoLowPerformance: computed(() => autoLow.value === 'low'),
-    effectiveMode,
-    isLowPerformance,
-    isHighPerformance,
-    hardwareCapability,
-  };
-}
+    effectiveMode, // 实现
+    isLowPerformance, // 实现
+    isHighPerformance, // 实现
+    hardwareCapability, // 实现
+  }; // 实现
+} // 实现

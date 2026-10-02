@@ -11,7 +11,7 @@ import { useFeedbackNotification } from '../../composables/useFeedbackNotificati
 import { useNicknameChangeNotification } from '../../composables/useNicknameChangeNotification';
 import { useListenResetNotification } from '../../composables/useListenResetNotification';
 import { useLxUpdateAlert } from '../../composables/useLxUpdateAlert';
-import { useUpdateCheck } from '../../composables/useUpdateCheck';
+import { useUpdateCheck } from '../../composables/useUpdateCheck'; // 更新检查
 import { useOnboarding } from '../../composables/useOnboarding';
 import { useSettingsStore } from '../../features/settings/store';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
@@ -128,16 +128,15 @@ const {
   confirmLxUpdateAlert: applyLxUpdate,
 } = useLxUpdateAlert();
 
-const {
+const { // 解构更新状态
   updateVisible: upgradeShown,
   latestUpdate: upgradeInfo,
   closeUpdate: dismissUpgrade,
-  isDownloading,
-  downloadProgress,
-  downloadAndInstall,
+  isDownloading, // 下载中标记
+  downloadProgress, // 下载进度
+  downloadAndInstall, // 下载安装
   checkUpdateOnStartup: pollUpgradeOnStartup,
-} = useUpdateCheck();
-
+} = useUpdateCheck(); // 解构结束
 /* --- 首次启动引导与启动期例行检查 --- */
 const { showOnboarding, completeOnboarding } = useOnboarding();
 const preferenceHub = useSettingsStore();

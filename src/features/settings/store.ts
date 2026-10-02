@@ -229,11 +229,10 @@ export const defaultPluginSettings: PluginSettings = {
   autoUpdateOnStartup: false, lazyLoad: true, skipVersionCheck: false,
 };
 
-export const defaultAutoSyncConfig: AutoSyncConfig = {
+export const defaultAutoSyncConfig: AutoSyncConfig = { // 自动同步默认配置
   enabled: true, syncIntervalSeconds: 3600, maxDelayMinutes: 5,
   delayedCount: 0, lastSyncAttemptAt: 0, lastSyncSuccessAt: 0, nextSyncAt: 0,
-};
-
+}; // 默认值结束
 export const defaultLogSettings: LogSettings = {
   minimumLevel: 'info', retentionDays: 1, autoAnalyze: true,
 };
@@ -320,7 +319,6 @@ export function createDefaultUploadSettings(): UploadSettings {
 export function createDefaultAutoSyncConfig(): AutoSyncConfig {
   return { ...defaultAutoSyncConfig };
 }
-
 export function createDefaultLogSettings(): LogSettings {
   return { ...defaultLogSettings };
 }
@@ -733,7 +731,6 @@ export const useSettingsStore = defineStore(
   'settings',
   () => {
     const settingsState = ref<AppSettings>(createDefaultAppSettings());
-
     const setThemeState = (next: ThemeSettings) => {
       settingsState.value = { ...settingsState.value, theme: next };
     };

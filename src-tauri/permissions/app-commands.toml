@@ -59,7 +59,7 @@ commands.allow = [
   "get_track_loudness_info",
   "update_loudness_settings",
   "set_equalizer_settings",
-  "set_sound_effect_settings",
+  "set_sound_effect_settings", # 音效参数
   "plugin_host_scan_plugins",
   "plugin_host_get_rack",
   "plugin_host_set_rack",
@@ -187,7 +187,7 @@ commands.allow = [
   "download_update_file",
   "is_store_build",
   "download_online_song",
-  "download_wallpaper",
+  "download_wallpaper", # 壁纸下载
   "probe_url_size",
   "read_download_history",
   "write_download_history",
@@ -206,8 +206,8 @@ commands.allow = [
   "clear_sleep_timer",
   "get_sleep_timer",
   "run_sleep_action",
-  "plugin_http_request",
-  "plugin_http_request_binary",
+  "plugin_http_request", # 插件 HTTP
+  "plugin_http_request_binary", # 插件二进制请求
   "plugin_engine_load_musicfree",
   "plugin_engine_load_lx",
   "plugin_engine_call",
@@ -222,11 +222,11 @@ commands.allow = [
     "host_sha256_hex",
     "verify_fallback_module_signature",
     "parse_lyrics_text",
-  "read_plugin_file",
+  "read_plugin_file", # 读插件文件
   "save_plugin_script",
   "read_file_bytes",
-  "proxy_image",
-  "download_audio_to_temp",
+  "proxy_image", # 图片代理
+  "download_audio_to_temp", # 临时音频下载
   "download_video_to_cache",
   "remove_cached_background_video",
   "mv_proxy_url",
@@ -234,10 +234,10 @@ commands.allow = [
   "register_external_program",
   "save_text_via_dialog",
   "save_bytes_via_dialog",
-  "recognize_system_audio",
+  "recognize_system_audio", # 系统音频识别
   "cancel_recognize_system_audio",
-  "write_state_json",
-  "read_state_json",
+  "write_state_json", # 写状态
+  "read_state_json", # 读状态
   "open_devtools",
   "fetch_lyric_from_source",
   "get_lx_cover",

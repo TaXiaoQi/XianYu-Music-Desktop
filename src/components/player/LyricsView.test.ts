@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import source from './LyricsView.vue?raw';
 
-describe('LyricsView', () => {
-  it('passes enableWordEffect to convertLyricsToAmlLines and computes wordFadeWidth', () => {
+describe('LyricsView', () => { // 实现
+  it('passes enableWordEffect to convertLyricsToAmlLines and computes wordFadeWidth', () => { // 实现
     expect(source).toContain('stylePrefs.enableWordEffect');
     expect(source).toContain('const fadeWidth = computed');
     expect(source).toContain(':word-fade-width="fadeWidth"');
   });
 
-  it('uses playerFontPreset directly as layout-version', () => {
+  it('uses playerFontPreset directly as layout-version', () => { // 实现
     expect(source).toContain(':layout-version="stylePrefs.playerFontPreset"');
   });
 
@@ -18,23 +18,23 @@ describe('LyricsView', () => {
     expect(source).toContain(':playing="nowPlaying"');
   });
 
-  it('uses lyricsSettings.playerLineGap directly for line-gap', () => {
+  it('uses lyricsSettings.playerLineGap directly for line-gap', () => { // 实现
     expect(source).toContain(':line-gap="stylePrefs.playerLineGap"');
   });
 
-  it('uses seekTo from usePlayer for line click seeking', () => {
+  it('uses seekTo from usePlayer for line click seeking', () => { // 实现
     expect(source).toMatch(/const \{[^}]*\bseekTo\b[^}]*\} = usePlayer\(\);/);
     expect(source).toContain('await performSeek(targetSeconds);');
   });
 
   it('loads WordLyricPlayer via defineAsyncComponent', () => {
-    expect(source).toContain('defineAsyncComponent');
+    expect(source).toContain('defineAsyncComponent'); // 实现
     expect(source).toContain("import('./WordLyricPlayer.vue')");
   });
 
-  it('toggles word effect via a button', () => {
+  it('toggles word effect via a button', () => { // 实现
     expect(source).toContain('flipWordEffect');
-    expect(source).toContain('逐字歌词效果');
+    expect(source).toContain('逐字歌词效果'); // 实现
   });
 
   it('uses a readable blurred glass background for lyrics settings panels', () => {

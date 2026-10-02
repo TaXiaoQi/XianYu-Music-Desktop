@@ -216,8 +216,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         crate::player::equalizer::EqualizerSettings::default(),
     ));
     let worker_se = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
-        crate::player::sound_effect::SoundEffectSettings::default(),
-    ));
+        crate::player::sound_effect::SoundEffectSettings::default(), // 默认音效参数
+    )); // 构造完成
     let master_volume = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
     let worker_master_volume = master_volume.clone();
 
@@ -1315,9 +1315,9 @@ mod tests {
         let eq_handle = Arc::new(crate::player::equalizer::EqualizerHandle::new(
             crate::player::equalizer::EqualizerSettings::default(),
         ));
-        let se_handle = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
-            crate::player::sound_effect::SoundEffectSettings::default(),
-        ));
+        let se_handle = Arc::new(crate::player::sound_effect::SoundEffectHandle::new( // 默认音效句柄
+            crate::player::sound_effect::SoundEffectSettings::default(), // 默认参数
+        )); // 构造完成
         let user_volume = Arc::new(std::sync::atomic::AtomicU32::new(1.0_f32.to_bits()));
 
         handle_play(
@@ -1331,7 +1331,7 @@ mod tests {
             1.0,
             &mut current_normalizer_handle,
             eq_handle,
-            se_handle,
+            se_handle, // 挂载音效句柄
             user_volume,
         );
 

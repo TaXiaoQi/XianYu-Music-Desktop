@@ -16,7 +16,7 @@ pub(crate) mod qmc2;
 mod remote_reader;
 mod runtime;
 mod session;
-pub mod sound_effect;
+pub mod sound_effect; // 音效引擎模块
 mod source_pipeline;
 mod spectrum;
 pub mod stream_cache;

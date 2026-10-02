@@ -179,7 +179,7 @@ async function selectRange(range: TimeRangeType) {
   }
 }
 
-let statsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let statsRefreshTimer: ReturnType<typeof setInterval> | null = null; // 刷新定时器
 let statsFirstActivation = true;
 
 const refreshCurrentRange = async () => {
@@ -205,18 +205,16 @@ const stopStatsTimer = () => {
     statsRefreshTimer = null;
   }
 };
-
 onMounted(async () => {
   statisticsStore.cancelHeavyDataRelease();
   selectedRange.value = 'All';
-  await statisticsStore.refreshBehaviorOnly('All');
-  if (!statisticsStore.stats) {
-    await statisticsStore.ensureLoaded('All');
-  }
+  await statisticsStore.refreshBehaviorOnly('All'); // 刷新行为统计
+  if (!statisticsStore.stats) { // 未加载时
+    await statisticsStore.ensureLoaded('All'); // 确保已加载
+  } // 加载结束
   void refreshListenDisplay();
   isLeaderboardReady.value = true;
   void loadLeaderboard();
-
   startStatsTimer();
 });
 
@@ -227,12 +225,12 @@ onActivated(() => {
   }
   startStatsTimer();
   void (async () => {
-    try {
+    try { // 容错处理
       await refreshCurrentRange();
       await loadLeaderboard();
-    } catch {
+    } catch { // 忽略异常
       // 刷新失败静默处理
-    }
+    } // 容错结束
   })();
 });
 

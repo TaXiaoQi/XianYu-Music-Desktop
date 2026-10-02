@@ -25,7 +25,7 @@ export function useLibraryCollections() {
     playerStorage.remove(LEGACY_HISTORY_STORAGE_KEY);
   };
 
-  const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) =>
+  const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) => // 新建歌单入口
     store.createPlaylist(name, initialSongs, fullSongs);
 
   const renamePlaylist = (playlistId: string, name: string) =>

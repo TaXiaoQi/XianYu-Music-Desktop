@@ -153,7 +153,7 @@ export const useCollectionsStore = defineStore('collections', () => {
   const setPlaylists = (nextPlaylists: Playlist[]) => { playlists.value = nextPlaylists; };
   const setRecentSongs = (historyItems: HistoryItem[]) => { recentSongs.value = historyItems; };
 
-  const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) => {
+  const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) => { // 新建歌单
     if (name.trim() === '') {
       return null;
     }
@@ -163,7 +163,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       name,
       songPaths: [...initialSongs],
       createdAt: todayStamp(),
-      songs: fullSongs?.length ? [...fullSongs] : undefined,
+      songs: fullSongs?.length ? [...fullSongs] : undefined, // 可选歌曲列表
     };
 
     playlists.value.push(playlist);
@@ -205,16 +205,14 @@ export const useCollectionsStore = defineStore('collections', () => {
 
     target.cloudId = cloudId && cloudId.length > 0 ? cloudId : undefined;
     return true;
-  };
-
-  const setPlaylistCloudCoverUrl = (id: string, cloudCoverUrl: string) => {
+  }; // 歌单构造结束
+  const setPlaylistCloudCoverUrl = (id: string, cloudCoverUrl: string) => { // 设置云端封面
     const target = locatePlaylist(id);
     if (!target) return false;
 
     target.cloudCoverUrl = cloudCoverUrl;
     return true;
-  };
-
+  }; // 设置封面结束
   const setPlaylistSource = (
     id: string,
     source: { sourcePluginId?: string; sourceUrl?: string; sourceRaw?: any } | null,
@@ -255,7 +253,6 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   const getPlaylistByCloudId = (cloudId?: string) =>
     cloudId ? playlists.value.find(item => item.cloudId === cloudId) : undefined;
-
   const addToPlaylist = (playlistId: string, path: string) => {
     const target = locatePlaylist(playlistId);
     if (!target || target.songPaths.includes(path)) {
@@ -319,8 +316,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     // 元数据齐全时直接返回副本，缺元数据再回查本地曲库。
     if (target.songs && target.songs.length > 0) {
       return [...target.songs];
-    }
-
+    } // 分支结束
     const lookup = useLibraryStore().songLookup;
     const resolved: Song[] = [];
     for (const path of target.songPaths) {
@@ -508,11 +504,11 @@ export const useCollectionsStore = defineStore('collections', () => {
     deletePlaylist,
     renamePlaylist,
     setPlaylistCover,
-    setPlaylistCloudId,
-    setPlaylistCloudCoverUrl,
+    setPlaylistCloudId, // 云同步标识
+    setPlaylistCloudCoverUrl, // 云封面
     setPlaylistSource,
     applySourceSync,
-    getPlaylistByCloudId,
+    getPlaylistByCloudId, // 按云标识查歌单
     getPlaylistById: (playlistId: string) => locatePlaylist(playlistId),
     addToPlaylist,
     removeFromPlaylist,

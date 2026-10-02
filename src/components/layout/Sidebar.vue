@@ -19,7 +19,7 @@ import { useSidebarImportConfirmers } from '../../composables/useSidebarImportCo
 import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop';
 import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection';
 import { useSidebarWidthResizer } from '../../composables/useSidebarWidthResizer';
-import { useToast } from '../../composables/toast';
+import { useToast } from '../../composables/toast'; // 轻提示
 import type { SidebarItemKey } from '../../types';
 import { useCollectionsStore, type FavoriteCollectionEntry } from '../../features/collections/store';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
@@ -93,7 +93,7 @@ const navRouter = useRouter();
 const currentRoute = useRoute();
 const homeNav = useHomeNavigation(navRouter);
 const { openHomeAll, openHomeFolder, openHomePlaylist, openHomeStatistics, openArtists, openAlbums, openFavorites, openRecent, openPlugins, openAuth } = homeNav;
-const { preloadCovers, loadCover, primeCoverPath } = useCoverCache();
+const { preloadCovers, loadCover, primeCoverPath } = useCoverCache(); // 封面缓存
 
 const playlistsGroupOpen = ref(true);
 const playlistDialogVisible = ref(false);
