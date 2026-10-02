@@ -546,10 +546,6 @@ fn chain_result_serialization<'js>(
 }
 
 impl PluginEngine {
-    pub fn new(store_path: Option<std::path::PathBuf>) -> Self {
-        Self::with_emitter(store_path, None)
-    }
-
     pub fn with_emitter(
         store_path: Option<std::path::PathBuf>,
         emitter: Option<PluginEventEmitter>,
@@ -984,7 +980,7 @@ mod tests {
     use super::*;
 
     fn engine() -> PluginEngine {
-        PluginEngine::new(None)
+        PluginEngine::with_emitter(None, None)
     }
 
     #[tokio::test]
