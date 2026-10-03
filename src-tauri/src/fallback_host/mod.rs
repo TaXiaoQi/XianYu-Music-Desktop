@@ -43,6 +43,16 @@ pub(crate) const FALLBACK_MODULE_METHODS: &[(&str, &[&str])] = &[
             "fillSongDurations",
         ],
     ),
+    (
+        "playlist_import",
+        &[
+            "getListDetailKg",
+            "getListDetailWy",
+            "getListDetailTx",
+            "getListDetailKw",
+            "getListDetailQishui",
+        ],
+    ),
 ];
 
 fn expected_methods(module_key: &str) -> Option<&'static [&'static str]> {

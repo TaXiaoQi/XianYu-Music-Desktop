@@ -18,6 +18,7 @@ import {
   qqHostAlbumSearchFallback,
   qqHostSearchFallback,
 } from './qqHostSearchFallback';
+import { dispatchFallbackModule } from '../fallbackModules/registry';
 import { log, pluginInstanceErrors } from './pluginEngineBase';
 import { ensurePluginInstance } from './pluginEngineInstance';
 import {
@@ -275,11 +276,11 @@ async function hostSheetFallback(
   keyword: string,
 ): Promise<PluginPlaylistSearchResult | null> {
   const runners: [HostPlatform, () => Promise<PlaylistImportResult>][] = [
-    ['kg', () => getListDetailKg(keyword)],
-    ['qishui', () => getListDetailQishui(keyword)],
-    ['wy', () => getListDetailWy(keyword)],
-    ['tx', () => getListDetailTx(keyword)],
-    ['kw', () => getListDetailKw(keyword)],
+    ['kg', () => dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: keyword }, () => getListDetailKg(keyword))],
+    ['qishui', () => dispatchFallbackModule('playlist_import', 'getListDetailQishui', { rawId: keyword }, () => getListDetailQishui(keyword))],
+    ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: keyword }, () => getListDetailWy(keyword))],
+    ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: keyword }, () => getListDetailTx(keyword))],
+    ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: keyword }, () => getListDetailKw(keyword))],
   ];
   for (const [platform, run] of runners) {
     const applicable = isHostPlatformKeyword(platform, keyword) ||

@@ -14,6 +14,7 @@ import { getListDetailKg } from './playlistImportKg';
 import { getListDetailKw } from './playlistImportKw';
 import { getListDetailTx } from './playlistImportTx';
 import { getListDetailWy } from './playlistImportWy';
+import { dispatchFallbackModule } from '../fallbackModules/registry';
 import { looksLikeSheetLinkOrId, sourceMatchesHostPlatform } from './pluginCatalogSearch';
 import type { PluginSearchResult, PluginSource } from '../../types';
 
@@ -293,16 +294,16 @@ export async function importPlaylist( // 实现
   let result: PlaylistImportResult;
   switch (actualSource) {
     case 'wy':
-      result = await getListDetailWy(actualId);
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: actualId }, () => getListDetailWy(actualId));
       break;
     case 'tx':
-      result = await getListDetailTx(actualId);
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: actualId }, () => getListDetailTx(actualId));
       break;
     case 'kw':
-      result = await getListDetailKw(actualId);
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: actualId }, () => getListDetailKw(actualId));
       break;
     case 'kg':
-      result = await getListDetailKg(actualId);
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: actualId }, () => getListDetailKg(actualId));
       break;
     default:
       throw new Error(`不支持的音源: ${actualSource}`);

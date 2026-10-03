@@ -5,7 +5,8 @@ export type FallbackModuleKey =
   | 'lx_duration'
   | 'lx_lyric'
   | 'lx_cover'
-  | 'plugin_fallback';
+  | 'plugin_fallback'
+  | 'playlist_import';
 
 export const FALLBACK_MODULE_METHODS: Record<FallbackModuleKey, string[]> = {
   lx_search: ['search'],
@@ -21,6 +22,13 @@ export const FALLBACK_MODULE_METHODS: Record<FallbackModuleKey, string[]> = {
     'isQqTrialMediaUrl',
     'fillSongDurations',
   ],
+  playlist_import: [
+    'getListDetailKg',
+    'getListDetailWy',
+    'getListDetailTx',
+    'getListDetailKw',
+    'getListDetailQishui',
+  ],
 };
 
 export const FALLBACK_MODULE_NAMES: Record<FallbackModuleKey, string> = {
@@ -30,6 +38,7 @@ export const FALLBACK_MODULE_NAMES: Record<FallbackModuleKey, string> = {
   lx_lyric: '逐字歌词解码',
   lx_cover: '歌曲封面提取',
   plugin_fallback: '插件宿主兜底',
+  playlist_import: '歌单导入',
 };
 
 export interface FallbackModuleImpl {

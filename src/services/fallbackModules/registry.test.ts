@@ -257,6 +257,51 @@ describe('dispatchFallbackModule', () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it('playlist_import 键：模块结果透传，失败回退内置', async () => {
+    seedModule('playlist_import');
+    mockHostLoadOk();
+    const moduleResult = {
+      source: 'kg',
+      songs: [{ id: '1', title: '歌', rawData: { hash: 'h1' } }],
+      total: 1,
+      info: { name: '歌单', img: '', desc: '', author: '', playCount: '' },
+    };
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fallback_module_load') return { ok: true, version: 1, logs: null };
+      if (command === 'fallback_module_call') return { ok: true, data: moduleResult, error: null, logs: null };
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    const out = await dispatchFallbackModule(
+      'playlist_import',
+      'getListDetailKg',
+      { rawId: 'https://example.com/gcid_x' },
+      () => {
+        throw new Error('builtin should not run');
+      },
+    );
+    expect(out).toEqual(moduleResult);
+    expect(invokeMock).toHaveBeenCalledWith(
+      'fallback_module_call',
+      expect.objectContaining({ moduleKey: 'playlist_import', method: 'getListDetailKg' }),
+    );
+
+    // 模块执行失败 → 内置实现接管
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fallback_module_load') return { ok: true, version: 1, logs: null };
+      if (command === 'fallback_module_call') return { ok: false, data: null, error: '上游改版', logs: null };
+      throw new Error(`unexpected command: ${command}`);
+    });
+    const builtinResult = { ...moduleResult, total: 0, songs: [] };
+    const out2 = await dispatchFallbackModule(
+      'playlist_import',
+      'getListDetailKg',
+      { rawId: 'x' },
+      () => builtinResult,
+    );
+    expect(out2).toBe(builtinResult);
+  });
+
   it('「模块未加载」错误删除加载标记，下次调用重新 load', async () => {
     seedModule('plugin_fallback');
     mockHostLoadOk();
