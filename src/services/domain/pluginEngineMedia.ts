@@ -28,7 +28,10 @@ import { pluginApi } from '../tauri/pluginApi';
 // ==================== 获取播放 URL（与 MusicFree PluginMethodsWrapper.getMediaSource 完全一致）====================
 
 // ==================== 同歌并发/连发探测去重 ====================
-const GET_MEDIA_SOURCE_DEDUP_WINDOW_MS = 400;
+// 探针/播放解析对同一首歌同档的调用间隔常超 400ms，导致重复请求第三方音源
+// （每首歌对付费源多打 1-2 次）。拉长到 3s：同 key 复用解析结果，直链不可能
+// 3s 内过期；探针缓存死链时播放解析仍有 resolveOnlineQualityUrl 重解析兜底
+const GET_MEDIA_SOURCE_DEDUP_WINDOW_MS = 3_000;
 const _dedupGetMediaSource = new Map<
   string,
   { at: number; p: Promise<PluginMusicInfo | null> }

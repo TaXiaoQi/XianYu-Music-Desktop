@@ -30,7 +30,10 @@ export interface SharedQualityProbe {
   _controller: AbortController;
 }
 
-const PROBE_TTL_MS = 60_000;
+// 探针结果保留时长。此前 60s 过短：同首歌播放中/展开音质菜单即重扫全档，
+// 每次全档扫描对第三方音源逐档打 2-4 次请求（付费源请求量暴增主因）。
+// 3 分钟内复用结果；缓存直链若已失效，播放解析路径有重新解析兜底
+const PROBE_TTL_MS = 180_000;
 const PROBE_FAIL_TTL_MS = 3_000;
 
 const _sharedProbes = new Map<string, SharedQualityProbe>();
