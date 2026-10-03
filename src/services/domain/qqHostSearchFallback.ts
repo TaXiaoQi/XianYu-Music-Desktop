@@ -1,14 +1,14 @@
 import { lxGetAlbumSongs, lxSearch, txBatchTrackInterval, txSearchAlbumsRaw } from './lxMusicSdk';
-import { dispatchFallbackModule, dispatchFallbackModuleSync } from '../fallbackModules/registry';
+import { dispatchFallbackModule } from '../fallbackModules/registry';
 import type { LxSearchResult, LxSearchResultItem } from './lxMusicSdk';
-import { resetMediaItem, toPluginSearchResult } from './pluginResultMappers';
+import { resetMediaItem, toPluginSearchResults } from './pluginResultMappers';
 import type { PluginAlbumResult } from './pluginEngine';
 import type { PluginSearchResult, PluginSource } from '../../types';
 
 const QQ_PLATFORM_PATTERN = /qq/i;
 
-export function isQqMusicPluginSource(source: PluginSource, platform?: string): boolean {
-  return dispatchFallbackModuleSync('plugin_fallback', 'isQqMusicPluginSource', { source, platform },
+export async function isQqMusicPluginSource(source: PluginSource, platform?: string): Promise<boolean> {
+  return dispatchFallbackModule('plugin_fallback', 'isQqMusicPluginSource', { source, platform },
     () => isQqMusicPluginSourceBuiltin(source, platform));
 }
 
@@ -59,10 +59,10 @@ async function qqHostSearchFallbackBuiltin(
   try {
     const result: LxSearchResult = await lxSearch('tx', keyword, page, limit);
     if (!result?.list?.length) return [];
-    return result.list.map(item => {
-      const musicFreeItem = resetMediaItem(lxItemToQqMusicFreeItem(item), source.name);
-      return toPluginSearchResult(musicFreeItem, source);
-    });
+    return await toPluginSearchResults(
+      result.list.map(item => resetMediaItem(lxItemToQqMusicFreeItem(item), source.name)),
+      source,
+    );
   } catch {
     return [];
   }
@@ -142,18 +142,18 @@ async function qqHostAlbumSongsFallbackBuiltin(
   try {
     const list = await lxGetAlbumSongs('tx', { id: albumMid, name: '' }, page, limit);
     if (!list?.length) return [];
-    return list.map(item => {
-      const musicFreeItem = resetMediaItem(lxItemToQqMusicFreeItem(item), source.name);
-      return toPluginSearchResult(musicFreeItem, source);
-    });
+    return await toPluginSearchResults(
+      list.map(item => resetMediaItem(lxItemToQqMusicFreeItem(item), source.name)),
+      source,
+    );
   } catch {
     return [];
   }
 }
 
 const QQ_TRIAL_URL_RE = /\/RS0\d[A-Za-z0-9]{8,}\.(mp3|m4a|flac)(?:[?#]|$)/i;
-export function isQqTrialMediaUrl(url: string | undefined | null): boolean {
-  return dispatchFallbackModuleSync('plugin_fallback', 'isQqTrialMediaUrl', { url },
+export async function isQqTrialMediaUrl(url: string | undefined | null): Promise<boolean> {
+  return dispatchFallbackModule('plugin_fallback', 'isQqTrialMediaUrl', { url },
     () => isQqTrialMediaUrlBuiltin(url));
 }
 
@@ -175,7 +175,7 @@ async function qqFillSongDurationsBuiltin(
   platform: string | undefined,
   results: PluginSearchResult[],
 ): Promise<PluginSearchResult[]> {
-  if (!results.length || !isQqMusicPluginSource(source, platform)) return results;
+  if (!results.length || !(await isQqMusicPluginSource(source, platform))) return results;
   const missing = results.filter(r =>
     !r.duration
     && r.rawData

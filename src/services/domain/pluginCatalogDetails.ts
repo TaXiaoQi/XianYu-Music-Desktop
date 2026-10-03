@@ -8,12 +8,12 @@ import { normalizeQualityKey } from '../../types';
 import {
   extractAlbum,
   extractArtist,
-  extractCoverUrl,
+  extractCoverUrls,
   extractResultList,
   extractIsEnd,
   resetMediaItem,
   stripHtmlTags,
-  toPluginSearchResult,
+  toPluginSearchResults,
   flattenTopListCategories,
 } from './pluginResultMappers';
 import {
@@ -45,7 +45,7 @@ export async function pluginGetTopLists(source: PluginSource): Promise<PluginPla
     }
     if (typeof inst.instance.getTopLists !== 'function') return [];
     const topLists = await inst.instance.getTopLists();
-    return flattenTopListCategories(topLists, source);
+    return await flattenTopListCategories(topLists, source);
   } catch (e: any) {
     console.warn(`[${source.name}] getTopLists 调用失败:`, e?.message || e);
     return [];
@@ -71,7 +71,7 @@ async function pluginGetPlaylistDetailInner(
     if (page === 1) {
       const list = sheetItem._importedTracks;
       list.forEach((_: any) => { resetMediaItem(_, source.name); });
-      return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: true };
+      return { list: await toPluginSearchResults(list, source), isEnd: true };
     }
     return { list: [], isEnd: true };
   }
@@ -98,7 +98,7 @@ async function pluginGetPlaylistDetailInner(
           const list = extractResultList(result);
           if (list.length > 0) {
             list.forEach((_: any) => { resetMediaItem(_, source.name); });
-            return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: extractIsEnd(result) };
+            return { list: await toPluginSearchResults(list, source), isEnd: extractIsEnd(result) };
           }
         } catch (e: any) {
           log(`[${source.name}] getAlbumInfo(album as playlist) 调用失败: ${e?.message}`);
@@ -113,7 +113,7 @@ async function pluginGetPlaylistDetailInner(
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
-          return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: extractIsEnd(result) };
+          return { list: await toPluginSearchResults(list, source), isEnd: extractIsEnd(result) };
         }
       } catch (e: any) {
         log(`[${source.name}] getTopListDetail 调用失败: ${e?.message}`);
@@ -132,7 +132,7 @@ async function pluginGetPlaylistDetailInner(
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
-          return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: extractIsEnd(result) };
+          return { list: await toPluginSearchResults(list, source), isEnd: extractIsEnd(result) };
         }
       } catch (e: any) {
         log(`[${source.name}] getMusicSheetInfo 调用失败，尝试搜索回退: ${e?.message}`);
@@ -146,7 +146,7 @@ async function pluginGetPlaylistDetailInner(
         const result = (await inst.instance.search(sheetTitle, 1, 'music')) ?? {};
         const list = extractResultList(result);
         list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: true };
+        return { list: await toPluginSearchResults(list, source), isEnd: true };
       }
     }
 
@@ -198,7 +198,7 @@ export async function pluginImportMusicSheet(
     const imported = await inst.instance.importMusicSheet(urlLike);
     if (!Array.isArray(imported) || imported.length === 0) return [];
     imported.forEach((_: any) => { resetMediaItem(_, source.name); });
-    return imported.map((item: any) => toPluginSearchResult(item, source));
+    return toPluginSearchResults(imported, source);
   } catch (e: any) {
     log(`[${source.name}] importMusicSheet 失败: ${e?.message}`);
     return [];
@@ -234,7 +234,7 @@ async function pluginGetArtistWorksInner(
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
-          return list.map((item: any) => toPluginSearchResult(item, source));
+          return toPluginSearchResults(list, source);
         }
       } catch (e: any) {
         log(`[${source.name}] getArtistWorks 调用失败，尝试搜索回退: ${e?.message}`);
@@ -248,7 +248,7 @@ async function pluginGetArtistWorksInner(
         const result = (await inst.instance.search(artistName, 1, 'music')) ?? {};
         const list = extractResultList(result);
         list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return list.map((item: any) => toPluginSearchResult(item, source));
+        return toPluginSearchResults(list, source);
       }
     }
 
@@ -297,17 +297,17 @@ export async function pluginGetArtistAlbums(
     const list = extractResultList(result);
     if (list.length === 0) return [];
 
-    return list.map((item: any) => {
+    const covers = await extractCoverUrls(list);
+    return list.map((item: any, i: number) => {
       resetMediaItem(item, source.name);
       const id = item.id || item.albumId || '';
       const name = stripHtmlTags(item.title || item.name || item.album || '');
       const artist = extractArtist(item);
-      const coverUrl = extractCoverUrl(item);
       return {
         id,
         name,
         artist,
-        coverUrl,
+        coverUrl: covers[i],
         platform: item.platform || source.name,
         platformId: id,
         pluginId: source.id,
@@ -382,14 +382,14 @@ async function pluginGetAlbumSongsInner(
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
-          return list.map((item: any) => toPluginSearchResult(item, source));
+          return toPluginSearchResults(list, source);
         }
       } catch (e: any) {
         log(`[${source.name}] getAlbumInfo 调用失败，尝试搜索回退: ${e?.message}`);
       }
     }
 
-    if (isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
+    if (await isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
       const albumMidForHost = albumItem?.albumMID || albumItem?.albummid || albumItem?.albumMid;
       if (albumMidForHost) {
         log(`[pluginGetAlbumSongs] ${source.name} getAlbumInfo 为空，走宿主 QQ 专辑曲目兜底: ${albumMidForHost}`);
@@ -411,7 +411,7 @@ async function pluginGetAlbumSongsInner(
         });
         const songs = (filtered.length > 0 ? filtered : list);
         songs.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return songs.map((item: any) => toPluginSearchResult(item, source));
+        return toPluginSearchResults(songs, source);
       }
     }
 

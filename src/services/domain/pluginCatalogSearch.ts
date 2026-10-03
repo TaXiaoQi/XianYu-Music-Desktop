@@ -7,10 +7,11 @@ import {
   extractArtist,
   extractArtistAvatarUrl,
   extractCoverUrl,
+  extractCoverUrls,
   extractResultList,
   resetMediaItem,
   stripHtmlTags,
-  toPluginSearchResult,
+  toPluginSearchResults,
 } from './pluginResultMappers';
 import {
   isQqMusicPluginSource,
@@ -100,7 +101,7 @@ export async function pluginMusicSearchWithDiagnostics(
 
     let { result, list } = await callSearch(1);
 
-    if (list.length === 0 && isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
+    if (list.length === 0 && await isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
       log(`[pluginSearch] ${source.name} 插件搜索为空，走宿主 QQ 兜底链: "${keyword}"`);
       const hostResults = await qqHostSearchFallback(source, keyword, page);
       if (hostResults.length > 0) {
@@ -139,7 +140,7 @@ export async function pluginMusicSearchWithDiagnostics(
         resetMediaItem(_, source.name);
       });
 
-      const results = list.map((item: any) => toPluginSearchResult(item, source));
+      const results = await toPluginSearchResults(list, source);
       return {
         results,
         status: results.length > 0 ? 'success' : 'empty',
@@ -340,7 +341,7 @@ export async function pluginPlaylistSearch(
           return [{
             id: keyword,
             title,
-            coverUrl: extractCoverUrl(direct[0]),
+            coverUrl: await extractCoverUrl(direct[0]),
             trackCount: direct.length,
             artist: '',
             platform: source.name,
@@ -370,15 +371,15 @@ export async function pluginPlaylistSearch(
       result = (await inst.instance.search(keyword, page, 'album')) ?? {};
       list = extractResultList(result);
       if (list.length > 0) {
-        return list.map((item: any) => {
+        const covers = await extractCoverUrls(list);
+        return list.map((item: any, i: number) => {
           resetMediaItem(item, source.name);
           const id = item.id || item.albumId || item.songId || item.musicId || '';
           const title = stripHtmlTags(item.title || item.name || item.album || '');
-          const coverUrl = extractCoverUrl(item);
           return {
             id,
             title,
-            coverUrl,
+            coverUrl: covers[i],
             playCount: item.playCount ?? item.playcount ?? item.play_count,
             trackCount: item.trackCount ?? item.trackcount ?? item.track_count,
             artist: stripHtmlTags(item.artist || item.author || item.singer || ''),
@@ -399,7 +400,7 @@ export async function pluginPlaylistSearch(
             return [{
               id: keyword,
               title,
-              coverUrl: extractCoverUrl(imported[0]),
+              coverUrl: await extractCoverUrl(imported[0]),
               trackCount: imported.length,
               artist: '',
               platform: source.name,
@@ -422,15 +423,15 @@ export async function pluginPlaylistSearch(
       return [];
     }
 
-    return list.map((item: any) => {
+    const covers = await extractCoverUrls(list);
+    return list.map((item: any, i: number) => {
       resetMediaItem(item, source.name);
       const id = item.id || item.songId || item.musicId || '';
       const title = stripHtmlTags(item.title || item.name || '');
-      const coverUrl = extractCoverUrl(item);
       return {
         id,
         title,
-        coverUrl,
+        coverUrl: covers[i],
         playCount: item.playCount ?? item.playcount ?? item.play_count,
         trackCount: item.trackCount ?? item.trackcount ?? item.track_count,
         artist: stripHtmlTags(item.artist || item.author || ''),
@@ -483,27 +484,29 @@ export async function pluginArtistSearch(
     }
     const list = extractResultList(result ?? {});
     if (list.length === 0) return [];
-    const valid = list
-      .map((item: any) => {
-        resetMediaItem(item, source.name);
-        const id = item.id || item.artistId || item.singerId || item.sid || '';
-        const name = stripHtmlTags(item.name || item.title || item.artist || item.singername || item.singer || '');
-        if (!name) return null;
-        const avatarUrl = extractArtistAvatarUrl(item);
-        return {
-          id,
-          name,
-          avatarUrl,
-          description: extractArtistDescription(item),
-          songCount: item.songCount || item.musicCount || undefined,
-          albumCount: item.albumCount || undefined,
-          platform: item.platform || source.name,
-          platformId: id,
-          pluginId: source.id,
-          rawData: item,
-        } as PluginArtistResult;
-      })
-      .filter(Boolean) as PluginArtistResult[];
+    const valid = (
+      await Promise.all(
+        list.map(async (item: any) => {
+          resetMediaItem(item, source.name);
+          const id = item.id || item.artistId || item.singerId || item.sid || '';
+          const name = stripHtmlTags(item.name || item.title || item.artist || item.singername || item.singer || '');
+          if (!name) return null;
+          const avatarUrl = await extractArtistAvatarUrl(item);
+          return {
+            id,
+            name,
+            avatarUrl,
+            description: extractArtistDescription(item),
+            songCount: item.songCount || item.musicCount || undefined,
+            albumCount: item.albumCount || undefined,
+            platform: item.platform || source.name,
+            platformId: id,
+            pluginId: source.id,
+            rawData: item,
+          } as PluginArtistResult;
+        }),
+      )
+    ).filter(Boolean) as PluginArtistResult[];
     if (valid.length === 0) {
       catalogLog(`${artistLabel} 提取出 ${list.length} 条但无有效 artist 字段`);
       return [];
@@ -531,17 +534,17 @@ export async function pluginAlbumSearch(
     const result = (await inst.instance.search(keyword, page, 'album')) ?? {};
     const list = extractResultList(result);
     if (list.length > 0) {
-      return list.map((item: any) => {
+      const covers = await extractCoverUrls(list);
+      return list.map((item: any, i: number) => {
         resetMediaItem(item, source.name);
         const id = item.id || item.albumId || '';
         const name = stripHtmlTags(item.title || item.name || item.album || '');
         const artist = extractArtist(item);
-        const coverUrl = extractCoverUrl(item);
         return {
           id,
           name,
           artist,
-          coverUrl,
+          coverUrl: covers[i],
           description: item.description || item.desc || '',
           year: item.year || item.publishTime || undefined,
           songCount: item.songCount || item.musicCount || undefined,
@@ -553,7 +556,7 @@ export async function pluginAlbumSearch(
       });
     }
 
-    if (list.length === 0 && page === 1 && isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
+    if (list.length === 0 && page === 1 && await isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
       log(`[pluginAlbumSearch] ${source.name} 插件专辑搜索为空，走宿主 QQ 专辑兜底: "${keyword}"`);
       const hostAlbums = await qqHostAlbumSearchFallback(source, keyword, page);
       if (hostAlbums.length > 0) {

@@ -1,6 +1,8 @@
 import { signedRequest } from '../auth/authService';
 import { tauriInvoke } from '../tauri/invoke';
-import { applyServerFallbackModules, sanitizeFallbackModuleCache } from './registry';
+import { useSettingsStore } from '../../features/settings/store';
+import { watch } from 'vue';
+import { applyServerFallbackModules, prewarmFallbackModules, sanitizeFallbackModuleCache } from './registry';
 import type { ServerFallbackModule } from './types';
 
 const SYNC_INTERVAL_MS = 30 * 60 * 1000;
@@ -65,6 +67,7 @@ export const syncFallbackModules = async (): Promise<boolean> => {
       modules.push(item);
     }
     applyServerFallbackModules(modules);
+    prewarmFallbackModules();
     return true;
   } catch (error) {
     console.warn('[FallbackModule] 拉取兜底模块失败（保留本地缓存）:', error);
@@ -79,9 +82,49 @@ export const initFallbackModuleSync = (): void => {
   if (_timerId !== null) return;
   void (async () => {
     await sanitizeFallbackModuleCache();
+    prewarmFallbackModules();
     void syncFallbackModules();
   })();
   _timerId = window.setInterval(() => {
     void syncFallbackModules();
   }, SYNC_INTERVAL_MS);
+};
+
+// ==================== 兜底模块配置快照推送 ====================
+
+const CONFIG_PUSH_DEBOUNCE_MS = 500;
+
+let _configWatchInstalled = false;
+
+const pushFallbackModuleConfig = (): void => {
+  try {
+    const store = useSettingsStore();
+    const configJson = JSON.stringify(store.settings);
+    void tauriInvoke('fallback_module_update_config', { configJson }).catch((error) => {
+      console.warn('[FallbackModule] 推送兜底模块配置失败:', error);
+    });
+  } catch (error) {
+    console.warn('[FallbackModule] 读取设置以推送兜底模块配置失败:', error);
+  }
+};
+
+/// 启动时整包推一次，之后设置变化（深比较，500ms 防抖）整包推。
+/// 需在 pinia 初始化完成后调用。
+export const installFallbackModuleConfigWatch = (): void => {
+  if (_configWatchInstalled) return;
+  _configWatchInstalled = true;
+  pushFallbackModuleConfig();
+  const store = useSettingsStore();
+  let timer: number | null = null;
+  watch(
+    () => store.settings,
+    () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        pushFallbackModuleConfig();
+      }, CONFIG_PUSH_DEBOUNCE_MS);
+    },
+    { deep: true },
+  );
 };

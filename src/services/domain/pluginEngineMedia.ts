@@ -588,7 +588,7 @@ export async function pluginGetCover(
         const dur = extractDurationMs(result);
         if (dur) item.duration = dur;
       }
-      const coverUrl = extractCoverUrl(result);
+      const coverUrl = await extractCoverUrl(result);
       if (coverUrl) return coverUrl;
       const albumCover = await tryNeteaseAlbumCover();
       if (albumCover) return albumCover;

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { extractCoverUrl, extractDurationMs } from './pluginResultMappers';
 
 describe('extractCoverUrl netease picId fallback', () => {
-  it('builds CDN url from reliable picId_str', () => {
-    const url = extractCoverUrl({
+  it('builds CDN url from reliable picId_str', async () => {
+    const url = await extractCoverUrl({
       id: 509781655,
       name: '想你就写信 (Live)',
       al: {
@@ -18,14 +18,14 @@ describe('extractCoverUrl netease picId fallback', () => {
     );
   });
 
-  it('skips precision-lost number picId so async cover backfill can run', () => {
-    expect(extractCoverUrl({
+  it('skips precision-lost number picId so async cover backfill can run', async () => {
+    expect(await extractCoverUrl({
       al: { picId: 109951163038292176 },
     })).toBe('');
   });
 
-  it('prefers existing picUrl over picId', () => {
-    const url = extractCoverUrl({
+  it('prefers existing picUrl over picId', async () => {
+    const url = await extractCoverUrl({
       al: {
         picUrl: 'https://p2.music.126.net/existing.jpg',
         picId: 109951163038292176,
@@ -34,8 +34,8 @@ describe('extractCoverUrl netease picId fallback', () => {
     expect(url).toBe('https://p2.music.126.net/existing.jpg');
   });
 
-  it('supports raw / rawData nested fields in MF plugin result items', () => {
-    const url = extractCoverUrl({
+  it('supports raw / rawData nested fields in MF plugin result items', async () => {
+    const url = await extractCoverUrl({
       title: '测试歌曲',
       rawData: {
         al: {
@@ -50,45 +50,45 @@ describe('extractCoverUrl netease picId fallback', () => {
 });
 
 describe('extractCoverUrl Baka plugin cover fields', () => { // 实现
-  it('extracts coverImg (Baka top list / playlist cover)', () => { // 实现
-    expect(extractCoverUrl({ coverImg: 'https://d.musicapp.migu.cn/cover.png' })) 
-      .toBe('https://d.musicapp.migu.cn/cover.png'); 
+  it('extracts coverImg (Baka top list / playlist cover)', async () => { // 实现
+    expect(await extractCoverUrl({ coverImg: 'https://d.musicapp.migu.cn/cover.png' }))
+      .toBe('https://d.musicapp.migu.cn/cover.png');
   });
 
-  it('extracts imgUrl (camelCase variant)', () => { // 实现
-    expect(extractCoverUrl({ imgUrl: 'https://example.com/img.jpg' })) 
-      .toBe('https://example.com/img.jpg'); 
+  it('extracts imgUrl (camelCase variant)', async () => { // 实现
+    expect(await extractCoverUrl({ imgUrl: 'https://example.com/img.jpg' }))
+      .toBe('https://example.com/img.jpg');
   });
 
-  it('extracts imgurl (lowercase variant)', () => { // 实现
-    expect(extractCoverUrl({ imgurl: 'https://example.com/img.jpg' })) 
-      .toBe('https://example.com/img.jpg'); 
+  it('extracts imgurl (lowercase variant)', async () => { // 实现
+    expect(await extractCoverUrl({ imgurl: 'https://example.com/img.jpg' }))
+      .toBe('https://example.com/img.jpg');
   });
 
-  it('extracts picurl (lowercase variant)', () => { // 实现
-    expect(extractCoverUrl({ picurl: 'https://example.com/pic.jpg' })) 
-      .toBe('https://example.com/pic.jpg'); 
+  it('extracts picurl (lowercase variant)', async () => { // 实现
+    expect(await extractCoverUrl({ picurl: 'https://example.com/pic.jpg' }))
+      .toBe('https://example.com/pic.jpg');
   });
 
-  it('extracts coverImg from rawData nested object', () => { // 实现
-    expect(extractCoverUrl({ rawData: { coverImg: 'https://example.com/cover.png' } })) 
-      .toBe('https://example.com/cover.png'); 
+  it('extracts coverImg from rawData nested object', async () => { // 实现
+    expect(await extractCoverUrl({ rawData: { coverImg: 'https://example.com/cover.png' } }))
+      .toBe('https://example.com/cover.png');
   });
 
-  it('upgrades http:// coverImg to https://', () => { 
-    expect(extractCoverUrl({ coverImg: 'http://example.com/cover.png' })) 
-      .toBe('https://example.com/cover.png'); 
+  it('upgrades http:// coverImg to https://', async () => {
+    expect(await extractCoverUrl({ coverImg: 'http://example.com/cover.png' }))
+      .toBe('https://example.com/cover.png');
   });
 });
 
 describe('extractCoverUrl nested netease shapes', () => {
-  it('extracts al.picUrl nested under song', () => {
-    expect(extractCoverUrl({ song: { al: { picUrl: 'https://p3.music.126.net/song.jpg' } } }))
+  it('extracts al.picUrl nested under song', async () => {
+    expect(await extractCoverUrl({ song: { al: { picUrl: 'https://p3.music.126.net/song.jpg' } } }))
       .toBe('https://p3.music.126.net/song.jpg');
   });
 
-  it('extracts picId_str nested under rawData.data.album to build CDN url', () => {
-    const url = extractCoverUrl({
+  it('extracts picId_str nested under rawData.data.album to build CDN url', async () => {
+    const url = await extractCoverUrl({
       rawData: { data: { album: { picId_str: '109951163038292176' } } },
     });
     expect(url).toBe(

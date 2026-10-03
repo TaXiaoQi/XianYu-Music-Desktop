@@ -185,7 +185,7 @@ export class BakaPluginMedia extends BakaPluginCore {
       if (!candidateRawUrl) return false;
 
       const candidateUrl = isKugou ? cleanKugouPluginUrl(candidateRawUrl) : sanitizeMediaUrl(candidateRawUrl);
-      if (!isKugou && isQqTrialMediaUrl(candidateUrl)) {
+      if (!isKugou && await isQqTrialMediaUrl(candidateUrl)) {
         lastError = new Error('该音源仅能获取 60 秒试听');
         log(`[getMediaSource] quality=${qualityLabel} 返回 QQ 试听链(RS02)，拒绝并继续: ${candidateUrl.substring(0, 80)}`);
         return false;
@@ -380,7 +380,7 @@ export class BakaPluginMedia extends BakaPluginCore {
       || (/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(lyric) ? lyric : '');
     const yrc = result.yrc || '';
     const eslrc = result.eslrc || '';
-    const coverUrl = extractCoverUrl(result) || result.coverUrl || result.artwork || '';
+    const coverUrl = await extractCoverUrl(result) || result.coverUrl || result.artwork || '';
 
     if (!url) {
       log(`[getMediaSource] ${source.name} 返回空URL, result=${JSON.stringify(result)?.substring(0, 200)}`);
@@ -608,7 +608,7 @@ export class BakaPluginMedia extends BakaPluginCore {
           const dur = extractDurationMs(result);
           if (dur) item.duration = dur;
         }
-        const coverUrl = extractCoverUrl(result);
+        const coverUrl = await extractCoverUrl(result);
         if (coverUrl) return coverUrl;
       }
       const albumCover = await tryNeteaseAlbumCover();

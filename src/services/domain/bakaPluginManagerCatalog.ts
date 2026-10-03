@@ -10,7 +10,7 @@ import {
   retryWithBackoff,
 } from './bakaPluginManagerBase';
 import {
-  extractCoverUrl,
+  extractCoverUrls,
   extractArtist,
   extractArtistAvatarUrl,
   extractIsEnd,
@@ -19,6 +19,7 @@ import {
   resetMediaItem,
   stripHtmlTags,
   toPluginSearchResult,
+  toPluginSearchResults,
 } from './pluginResultMappers';
 
 export class BakaPluginCatalog extends BakaPluginMedia {
@@ -39,10 +40,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       const list = extractResultList(result);
       if (list.length === 0) return [];
 
-      return list.map((item: any) => {
+      list.forEach((item: any) => {
         resetMediaItem(item, source.name);
-        return toPluginSearchResult(item, source);
       });
+      return toPluginSearchResults(list, source);
     } catch (e: any) {
       log(`[searchMusic] ${source.name} 失败: ${e?.message || e}`);
       return [];
@@ -64,12 +65,12 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       const list = extractResultList(result);
       if (list.length === 0) return [];
 
-      return list.map((item: any) => {
+      return Promise.all(list.map(async (item: any) => {
         resetMediaItem(item, source.name);
         return {
           id: item.id || item.artistId || item.singerId || '',
           name: stripHtmlTags(item.name || item.title || item.artist || ''),
-          avatarUrl: extractArtistAvatarUrl(item),
+          avatarUrl: await extractArtistAvatarUrl(item),
           description: item.description || item.desc || '',
           songCount: item.songCount || item.musicCount || undefined,
           albumCount: item.albumCount || undefined,
@@ -78,7 +79,7 @@ export class BakaPluginCatalog extends BakaPluginMedia {
           pluginId: source.id,
           rawData: item,
         };
-      });
+      }));
     } catch (e: any) {
       log(`[searchArtists] ${source.name} 失败: ${e?.message || e}`);
       return [];
@@ -98,13 +99,14 @@ export class BakaPluginCatalog extends BakaPluginMedia {
 
       const result = (await inst.search(keyword, page, 'album')) ?? {};
       const list = extractResultList(result);
-      return list.map((item: any) => {
+      const covers = await extractCoverUrls(list);
+      return list.map((item: any, i: number) => {
         resetMediaItem(item, source.name);
         return {
           id: item.id || item.albumId || '',
           name: stripHtmlTags(item.title || item.name || item.album || ''),
           artist: extractArtist(item),
-          coverUrl: extractCoverUrl(item),
+          coverUrl: covers[i],
           description: item.description || item.desc || '',
           year: item.year || item.publishTime || undefined,
           songCount: item.songCount || item.musicCount || undefined,
@@ -133,12 +135,13 @@ export class BakaPluginCatalog extends BakaPluginMedia {
 
       const result = (await inst.search(keyword, page, 'sheet')) ?? {};
       const list = extractResultList(result);
-      return list.map((item: any) => {
+      const covers = await extractCoverUrls(list);
+      return list.map((item: any, i: number) => {
         resetMediaItem(item, source.name);
         return {
           id: String(item.id || item.sheetId || ''),
           title: stripHtmlTags(item.title || item.name || ''),
-          coverUrl: extractCoverUrl(item) || '',
+          coverUrl: covers[i] || '',
           playCount: item.playCount || item.playcount || undefined,
           trackCount: item.trackCount || item.musicCount || undefined,
           artist: extractArtist(item),
@@ -176,10 +179,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
           log(`[getAlbumInfo] ${source.name} 多次尝试仍空/异常: ${e?.message || e}`);
         }
         if (list.length > 0) {
-          return list.map((item: any) => {
+          list.forEach((item: any) => {
             resetMediaItem(item, source.name);
-            return toPluginSearchResult(item, source);
           });
+          return toPluginSearchResults(list, source);
         }
       }
       if (page === 1) {
@@ -228,11 +231,9 @@ export class BakaPluginCatalog extends BakaPluginMedia {
     }
 
     if (list.length > 0) {
+      list.forEach((item: any) => { resetMediaItem(item, source.name); });
       return {
-        list: list.map((item: any) => {
-          resetMediaItem(item, source.name);
-          return toPluginSearchResult(item, source);
-        }),
+        list: await toPluginSearchResults(list, source),
         isEnd,
       };
     }
@@ -253,11 +254,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
 
     const label = `[${source.name}] BilibiliDetail item="${item?.title || item?.name || ''}"`;
 
-    const mapList = (list: any[]) =>
-      list.map((it: any) => {
-        resetMediaItem(it, source.name);
-        return toPluginSearchResult(it, source);
-      });
+    const mapList = (list: any[]) => {
+      list.forEach((it: any) => { resetMediaItem(it, source.name); });
+      return toPluginSearchResults(list, source);
+    };
 
     if (typeof inst.getAlbumInfo === 'function') {
       const getAlbumInfo = inst.getAlbumInfo;
@@ -268,7 +268,7 @@ export class BakaPluginCatalog extends BakaPluginMedia {
           (r) => extractResultList(r).length === 0,
         );
         const list = extractResultList(result);
-        if (list.length > 0) return { list: mapList(list), isEnd: extractIsEnd(result) };
+        if (list.length > 0) return { list: await mapList(list), isEnd: extractIsEnd(result) };
       } catch (e: any) {
         log(`[BilibiliDetail] ${source.name} getAlbumInfo 失败: ${e?.message || e}`);
       }
@@ -283,7 +283,7 @@ export class BakaPluginCatalog extends BakaPluginMedia {
           (r) => extractResultList(r).length === 0,
         );
         const list = extractResultList(result);
-        if (list.length > 0) return { list: mapList(list), isEnd: extractIsEnd(result) };
+        if (list.length > 0) return { list: await mapList(list), isEnd: extractIsEnd(result) };
       } catch (e: any) {
         log(`[BilibiliDetail] ${source.name} getMusicSheetInfo 失败: ${e?.message || e}`);
       }
@@ -314,10 +314,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
         const result = await getArtistWorks(artistItem, page, type);
         const list = extractResultList(result);
         if (list.length > 0) {
-          return list.map((item: any) => {
+          list.forEach((item: any) => {
             resetMediaItem(item, source.name);
-            return toPluginSearchResult(item, source);
           });
+          return toPluginSearchResults(list, source);
         }
         catalogLog(`[${source.name}] BilibiliArtistWorks(${type}) 空间列表为空(疑似风控)`);
       } catch (e: any) {
@@ -355,10 +355,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
           log(`[getArtistWorks] ${source.name} 多次尝试仍空/异常: ${e?.message || e}`);
         }
         if (list.length > 0) {
-          return list.map((item: any) => {
+          list.forEach((item: any) => {
             resetMediaItem(item, source.name);
-            return toPluginSearchResult(item, source);
           });
+          return toPluginSearchResults(list, source);
         }
       }
       if (page === 1) {
@@ -397,7 +397,7 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       if (typeof inst.getTopLists !== 'function') return [];
       const result = (await inst.getTopLists()) ?? [];
       const topLists = Array.isArray(result) ? result : (result?.data || []);
-      return flattenTopListCategories(topLists, source);
+      return await flattenTopListCategories(topLists, source);
     } catch (e: any) {
       log(`[getTopLists] ${source.name} 失败: ${e?.message || e}`);
       return [];
@@ -413,10 +413,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       const result = (await inst.getTopListDetail(topListItem, page)) ?? {};
       const list = extractResultList(result);
       if (list.length > 0) {
-        return list.map((item: any) => {
+        list.forEach((item: any) => {
           resetMediaItem(item, source.name);
-          return toPluginSearchResult(item, source);
         });
+        return toPluginSearchResults(list, source);
       }
       return [];
     } catch (e: any) {
@@ -447,12 +447,13 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       if (typeof inst.getRecommendSheetsByTag !== 'function') return [];
       const result = (await inst.getRecommendSheetsByTag(tag, page)) ?? {};
       const list = extractResultList(result);
-      return list.map((item: any) => {
+      const covers = await extractCoverUrls(list);
+      return list.map((item: any, i: number) => {
         resetMediaItem(item, source.name);
         return {
           id: String(item.id || item.sheetId || ''),
           title: stripHtmlTags(item.title || item.name || ''),
-          coverUrl: extractCoverUrl(item) || '',
+          coverUrl: covers[i] || '',
           playCount: item.playCount || undefined,
           trackCount: item.trackCount || undefined,
           platform: item.platform || source.name,
@@ -477,10 +478,10 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       if (typeof inst.importMusicSheet !== 'function') return [];
       const result = (await inst.importMusicSheet(urlLike)) ?? [];
       const list = Array.isArray(result) ? result : (result?.data || []);
-      return list.map((item: any) => {
+      list.forEach((item: any) => {
         resetMediaItem(item, source.name);
-        return toPluginSearchResult(item, source);
       });
+      return toPluginSearchResults(list, source);
     } catch (e: any) {
       log(`[importMusicSheet] ${source.name} 失败: ${e?.message || e}`);
       return [];
@@ -496,7 +497,7 @@ export class BakaPluginCatalog extends BakaPluginMedia {
       const result = (await inst.importMusicItem(urlLike)) ?? null;
       if (!result) return null;
       resetMediaItem(result, source.name);
-      return toPluginSearchResult(result, source);
+      return await toPluginSearchResult(result, source);
     } catch (e: any) {
       log(`[importMusicItem] ${source.name} 失败: ${e?.message || e}`);
       return null;

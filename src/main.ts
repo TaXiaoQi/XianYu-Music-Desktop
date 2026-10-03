@@ -9,7 +9,7 @@ import router from './router' // 实现
 import { applyPersistedStartupTheme, applyPersistedThemeColor, shouldApplyStartupThemePaint } from './composables/startupTheme' // 实现
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
 import { installApplicationLogger } from './services/applicationLogger' // 实现
-import { initFallbackModuleSync } from './services/fallbackModules/sync'
+import { initFallbackModuleSync, installFallbackModuleConfigWatch } from './services/fallbackModules/sync'
 import { reportError } from './services/domain/usageStats'
 import { installScrollbarController } from './utils/scrollbarController'
 import { setLoggerCallback } from './services/domain/pluginEngineBase'
@@ -147,6 +147,12 @@ const formatComponentChain = (instance: unknown): string => {
 
 app.use(pinia) // 实现
 app.use(router) // 实现
+
+// 兜底模块配置快照：启动推一次，设置变化防抖整包推（依赖 pinia，故在 use(pinia) 后）
+if (currentWindowLabel === 'main') {
+  installFallbackModuleConfigWatch()
+}
+
 app.config.errorHandler = (error, _instance, info) => { // 实现
   const chain = _instance ? formatComponentChain(_instance) : ''
   console.error(`[VueError ${info}] component chain: ${chain || '(no instance)'}`)

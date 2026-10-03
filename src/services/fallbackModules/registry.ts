@@ -1,11 +1,10 @@
+import { APP_VERSION } from '../../../version';
 import { localStore } from '../storage/localStore';
 import { tauriInvoke } from '../tauri/invoke';
-import { createFallbackHostCtx } from './hostCtx';
 import {
   FALLBACK_MODULE_METHODS,
   type CachedFallbackModule,
   type FallbackModuleCache,
-  type FallbackModuleImpl,
   type FallbackModuleKey,
   type ServerFallbackModule,
 } from './types';
@@ -14,14 +13,19 @@ const STORAGE_KEY = 'xianyu_fallback_modules_v1';
 
 const MAX_CONSECUTIVE_ERRORS = 3;
 
+// 模块已迁到桌面端 Rust QuickJS 宿主执行：验签 + 编译 + 四条硬校验在
+// fallback_module_load 一体完成，调用走 fallback_module_call / call_many。
+// _loaded 只保存「已加载标记 + 熔断状态」，不再持有 JS impl。
 interface LoadedModule {
-  impl: FallbackModuleImpl;
   version: number;
   consecutiveErrors: number;
   disabled: boolean;
 }
 
 const _loaded = new Map<FallbackModuleKey, LoadedModule>();
+
+// 防预热/首调竞态（R8）：同 key 的 load 只发一次，其余等待同一 Promise
+const loadPromises = new Map<FallbackModuleKey, Promise<LoadedModule | null>>();
 
 const readCache = (): {
   fetchedAt: number;
@@ -88,38 +92,70 @@ export async function sanitizeFallbackModuleCache(): Promise<{ removed: number }
   return { removed };
 }
 
-const loadModuleFromCode = (key: FallbackModuleKey, code: string): FallbackModuleImpl | null => {
-  try {
-    const factory = new Function('ctx', `"use strict";\n${code}`) as (ctx: unknown) => FallbackModuleImpl;
-    const impl = factory(createFallbackHostCtx());
-    if (!impl || typeof impl !== 'object') return null;
-    if (typeof impl.version !== 'number' || !Number.isFinite(impl.version) || impl.version < 1) return null;
-    const expected = FALLBACK_MODULE_METHODS[key] ?? [];
-    if (!expected.some(m => typeof impl[m] === 'function')) return null;
-    return impl;
-  } catch (e) {
-    console.warn(`[FallbackModule] 模块 ${key} 代码加载失败，回退内置实现:`, e);
-    return null;
+const printModuleLogs = (
+  key: FallbackModuleKey,
+  logs?: { level: string; message: string; callId: number }[] | null,
+): void => {
+  if (!Array.isArray(logs)) return;
+  for (const entry of logs) {
+    const line = `[FallbackModule] ${key}: ${entry.message}`;
+    if (entry.level === 'error') console.error(line);
+    else if (entry.level === 'warn') console.warn(line);
+    else console.log(line);
   }
 };
 
-const getLoadedModule = (key: FallbackModuleKey): LoadedModule | null => {
-  const existing = _loaded.get(key);
-  if (existing) return existing;
-
+const loadModuleFromCache = async (
+  key: FallbackModuleKey,
+): Promise<LoadedModule | null> => {
   const cached = readCacheModules()[key];
   if (!cached?.code || typeof cached.signature !== 'string' || !cached.signature) return null;
-
-  const impl = loadModuleFromCode(key, cached.code);
-  if (!impl) {
-    _loaded.set(key, { impl: { version: cached.version }, version: cached.version, consecutiveErrors: 0, disabled: true });
+  try {
+    const res = await tauriInvoke('fallback_module_load', {
+      moduleKey: key,
+      version: cached.version,
+      code: cached.code,
+      signature: cached.signature,
+      appVersion: APP_VERSION,
+    });
+    printModuleLogs(key, res?.logs);
+    if (res?.ok) {
+      return { version: res.version ?? cached.version, consecutiveErrors: 0, disabled: false };
+    }
+    // 验签/编译失败是确定性错误：本会话禁用，避免每次调用都重试
+    console.warn(`[FallbackModule] 模块 ${key} v${cached.version} 宿主加载失败，本会话回退内置实现:`, res?.error);
+    return { version: cached.version, consecutiveErrors: 0, disabled: true };
+  } catch (error) {
+    // IPC 异常可能是暂时的：不缓存状态，下次调用重试 load
+    console.warn(`[FallbackModule] ${key} 宿主加载命令不可用，本次回退内置实现:`, error);
     return null;
   }
-
-  const loaded: LoadedModule = { impl, version: impl.version, consecutiveErrors: 0, disabled: false };
-  _loaded.set(key, loaded);
-  return loaded;
 };
+
+const ensureModuleLoaded = (key: FallbackModuleKey): Promise<LoadedModule | null> => {
+  const existing = _loaded.get(key);
+  if (existing) return Promise.resolve(existing);
+  let pending = loadPromises.get(key);
+  if (!pending) {
+    pending = loadModuleFromCache(key)
+      .then(loaded => {
+        if (loaded) _loaded.set(key, loaded);
+        return loaded;
+      })
+      .finally(() => {
+        loadPromises.delete(key);
+      });
+    loadPromises.set(key, pending);
+  }
+  return pending;
+};
+
+/// 启动/同步后把缓存中的模块批量加载进 Rust 宿主，消除首次调用的 load 延迟
+export function prewarmFallbackModules(): void {
+  for (const key of Object.keys(readCacheModules()) as FallbackModuleKey[]) {
+    void ensureModuleLoaded(key);
+  }
+}
 
 const reportModuleError = (key: FallbackModuleKey, method: string, error: unknown) => {
   const loaded = _loaded.get(key);
@@ -136,44 +172,71 @@ export async function dispatchFallbackModule<T>(
   key: FallbackModuleKey,
   method: string,
   args: Record<string, unknown>,
-  builtin: () => Promise<T>,
+  builtin: () => Promise<T> | T,
 ): Promise<T> {
-  const loaded = getLoadedModule(key);
+  const loaded = await ensureModuleLoaded(key);
   if (loaded && !loaded.disabled) {
-    const fn = loaded.impl[method];
-    if (typeof fn === 'function') {
-      try {
-        const result = await (fn as (a: Record<string, unknown>) => Promise<T> | T)(args);
+    try {
+      const res = await tauriInvoke('fallback_module_call', {
+        moduleKey: key,
+        method,
+        argsJson: JSON.stringify(args),
+        timeoutMs: null,
+      });
+      printModuleLogs(key, res?.logs);
+      if (res?.ok) {
         loaded.consecutiveErrors = 0;
-        return result;
-      } catch (error) {
-        reportModuleError(key, method, error);
+        return res.data as T;
       }
+      // Rust 侧超时/中断会销毁实例：删掉已加载标记，下次调用重新 load
+      if (typeof res?.error === 'string' && res.error.includes('模块未加载')) {
+        _loaded.delete(key);
+      }
+      reportModuleError(key, method, res?.error || '模块调用失败');
+    } catch (error) {
+      reportModuleError(key, method, error);
     }
   }
   return builtin();
 }
 
-export function dispatchFallbackModuleSync<T>(
+/// 列表边界批量调用：一次 IPC call_many，逐项错误计数（连续失败熔断语义与
+/// 单发一致），失败项逐项回退内置实现
+export async function dispatchFallbackModuleMany<T>(
   key: FallbackModuleKey,
   method: string,
-  args: Record<string, unknown>,
-  builtin: () => T,
-): T {
-  const loaded = getLoadedModule(key);
+  argsList: Record<string, unknown>[],
+  builtinMany: (args: Record<string, unknown>, index: number) => T,
+): Promise<T[]> {
+  if (argsList.length === 0) return [];
+  const loaded = await ensureModuleLoaded(key);
   if (loaded && !loaded.disabled) {
-    const fn = loaded.impl[method];
-    if (typeof fn === 'function') {
-      try {
-        const result = (fn as (a: Record<string, unknown>) => T)(args);
-        loaded.consecutiveErrors = 0;
-        return result;
-      } catch (error) {
-        reportModuleError(key, method, error);
+    try {
+      const res = await tauriInvoke('fallback_module_call_many', {
+        moduleKey: key,
+        method,
+        argsJsonList: argsList.map(args => JSON.stringify(args)),
+        timeoutMs: null,
+      });
+      printModuleLogs(key, res?.logs);
+      const results = Array.isArray(res?.results) ? res.results : [];
+      const out: T[] = [];
+      for (let i = 0; i < argsList.length; i++) {
+        const item = results[i];
+        if (item?.ok) {
+          loaded.consecutiveErrors = 0;
+          out.push(item.data as T);
+        } else {
+          reportModuleError(key, method, item?.error || '模块调用失败');
+          out.push(builtinMany(argsList[i], i));
+        }
       }
+      return out;
+    } catch (error) {
+      reportModuleError(key, method, error);
     }
   }
-  return builtin();
+  return argsList.map((args, i) => builtinMany(args, i));
 }
 
 export function applyServerFallbackModules(modules: ServerFallbackModule[]): {

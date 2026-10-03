@@ -1,7 +1,7 @@
 import type { PluginPlaylistSearchResult, PluginSearchResult, PluginSource, QualityKey } from '../../types';
 import { qualityKeyToBakaPluginQuality } from '../../types';
 import { extractNeteasePicId, neteasePicIdToUrl, normalizeKuwoCoverUrl } from '../../utils/coverUrl';
-import { dispatchFallbackModuleSync } from '../fallbackModules/registry';
+import { dispatchFallbackModule, dispatchFallbackModuleMany } from '../fallbackModules/registry';
 
 export const stripHtmlTags = (str: unknown): string => {
   if (!str || typeof str !== 'string') return '';
@@ -32,9 +32,16 @@ const extractCoverFromNode = (node: any): string => {
 
 const NESTED_ITEM_KEYS = ['song', 'data', 'music', 'musicInfo', 'detail'];
 
-export const extractCoverUrl = (item: any): string => {
-  return dispatchFallbackModuleSync('lx_cover', 'extractCoverUrl', { item },
+export const extractCoverUrl = async (item: any): Promise<string> => {
+  return dispatchFallbackModule('lx_cover', 'extractCoverUrl', { item },
     () => extractCoverUrlBuiltin(item));
+};
+
+// 列表边界批量取封面：一次 fallback_module_call_many，失败项逐项回退内置实现
+export const extractCoverUrls = (items: any[]): Promise<string[]> => {
+  return dispatchFallbackModuleMany('lx_cover', 'extractCoverUrl',
+    items.map(item => ({ item })),
+    (args) => extractCoverUrlBuiltin(args.item));
 };
 
 const extractCoverUrlBuiltin = (item: any): string => {
@@ -74,12 +81,29 @@ export const qualityKeyToPluginString = (quality: QualityKey): string => (
   qualityKeyToBakaPluginQuality(quality)
 );
 
-export const toPluginSearchResult = (item: any, source: PluginSource): PluginSearchResult => {
+export const toPluginSearchResult = async (item: any, source: PluginSource): Promise<PluginSearchResult> => {
+  return buildPluginSearchResult(item, source, await extractCoverUrl(item));
+};
+
+// 列表边界批量组装：封面一次 call_many 批量预取后再逐项组装，避免逐项 IPC
+export const toPluginSearchResults = async (
+  list: any[],
+  source: PluginSource,
+): Promise<PluginSearchResult[]> => {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const covers = await extractCoverUrls(list);
+  return list.map((item, i) => buildPluginSearchResult(item, source, covers[i]));
+};
+
+const buildPluginSearchResult = (
+  item: any,
+  source: PluginSource,
+  coverUrl: string,
+): PluginSearchResult => {
   const id = item.id || item.songId || item.musicId || '';
   const title = stripHtmlTags(item.title || item.name || item.songname || '');
   const artist = extractArtist(item);
   const album = extractAlbum(item);
-  const coverUrl = extractCoverUrl(item);
   const duration = extractDurationMs(item);
 
   return {
@@ -184,7 +208,7 @@ export const extractDurationMs = (item: any): number => {
 
 export const extractDuration = extractDurationMs;
 
-export const extractArtistAvatarUrl = (item: any): string => {
+export const extractArtistAvatarUrl = async (item: any): Promise<string> => {
   if (!item || typeof item !== 'object') return '';
   const candidates = [
     'avatarUrl', 'avatar', 'avatar_url', 'picUrl', 'pic_url', 'pic',
@@ -248,43 +272,43 @@ export const extractResultList = (result: any): any[] => {
   return [];
 };
 
-export const flattenTopListCategories = (
+export const flattenTopListCategories = async (
   topLists: any,
   source: PluginSource,
-): PluginPlaylistSearchResult[] => {
+): Promise<PluginPlaylistSearchResult[]> => {
   if (!Array.isArray(topLists)) return [];
 
-  const results: PluginPlaylistSearchResult[] = [];
+  // 先收集需要取封面的条目，一次 call_many 批量预取，再按原顺序组装
+  type CoverRow = { item: any; categoryTitle: string; standalone: boolean };
+  const rows: CoverRow[] = [];
   for (const category of topLists) {
     if (category?.data && Array.isArray(category.data)) {
       for (const item of category.data) {
-        results.push({
-          id: String(item.id || ''),
-          title: stripHtmlTags(item.title || item.name || ''),
-          coverUrl: item.coverImg || item.cover || extractCoverUrl(item),
-          playCount: item.playCount ?? item.playcount,
-          trackCount: item.trackCount ?? item.trackcount,
-          artist: stripHtmlTags(category.title || ''),
-          platform: source.name,
-          platformId: String(item.id || ''),
-          pluginId: source.id,
-          rawData: { ...item, _isTopList: true },
-        });
+        rows.push({ item, categoryTitle: category.title || '', standalone: false });
       }
     } else if (category && typeof category === 'object') {
-      results.push({
-        id: String(category.id || ''),
-        title: stripHtmlTags(category.title || category.name || ''),
-        coverUrl: category.coverImg || category.cover || extractCoverUrl(category),
-        playCount: category.playCount ?? category.playcount,
-        trackCount: category.trackCount ?? category.trackcount,
-        artist: stripHtmlTags(category.artist || category.author || ''),
-        platform: source.name,
-        platformId: String(category.id || ''),
-        pluginId: source.id,
-        rawData: { ...category, _isTopList: true },
-      });
+      rows.push({ item: category, categoryTitle: '', standalone: true });
     }
   }
-  return results;
+  const covers = await extractCoverUrls(rows.map(row => row.item));
+
+  return rows.map((row, i) => {
+    const item = row.item;
+    const coverUrl = item.coverImg || item.cover || covers[i];
+    const artist = row.standalone
+      ? stripHtmlTags(item.artist || item.author || '')
+      : stripHtmlTags(row.categoryTitle);
+    return {
+      id: String(item.id || ''),
+      title: stripHtmlTags(item.title || item.name || ''),
+      coverUrl,
+      playCount: item.playCount ?? item.playcount,
+      trackCount: item.trackCount ?? item.trackcount,
+      artist,
+      platform: source.name,
+      platformId: String(item.id || ''),
+      pluginId: source.id,
+      rawData: { ...item, _isTopList: true },
+    };
+  });
 };

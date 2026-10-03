@@ -63,17 +63,17 @@ const makeLxItem = (overrides: Partial<LxSearchResultItem> = {}): LxSearchResult
 });
 
 describe('isQqMusicPluginSource', () => {
-  it('matches QQ platform variants by name', () => {
-    expect(isQqMusicPluginSource(makeSource('QQ音乐'))).toBe(true);
-    expect(isQqMusicPluginSource(makeSource('QQ音乐(赞助版)[永久]'))).toBe(true);
-    expect(isQqMusicPluginSource(makeSource('qq音乐'))).toBe(true);
-    expect(isQqMusicPluginSource(makeSource('酷狗音乐'))).toBe(false);
-    expect(isQqMusicPluginSource(makeSource('网易云'))).toBe(false);
+  it('matches QQ platform variants by name', async () => {
+    expect(await isQqMusicPluginSource(makeSource('QQ音乐'))).toBe(true);
+    expect(await isQqMusicPluginSource(makeSource('QQ音乐(赞助版)[永久]'))).toBe(true);
+    expect(await isQqMusicPluginSource(makeSource('qq音乐'))).toBe(true);
+    expect(await isQqMusicPluginSource(makeSource('酷狗音乐'))).toBe(false);
+    expect(await isQqMusicPluginSource(makeSource('网易云'))).toBe(false);
   });
 
-  it('falls back to the instance platform field', () => {
-    expect(isQqMusicPluginSource(makeSource('自定义源'), 'QQ音乐')).toBe(true);
-    expect(isQqMusicPluginSource(makeSource('自定义源'), '酷我音乐')).toBe(false);
+  it('falls back to the instance platform field', async () => {
+    expect(await isQqMusicPluginSource(makeSource('自定义源'), 'QQ音乐')).toBe(true);
+    expect(await isQqMusicPluginSource(makeSource('自定义源'), '酷我音乐')).toBe(false);
   });
 });
 
@@ -160,21 +160,21 @@ describe('qqHostSearchFallback', () => {
 });
 
 describe('isQqTrialMediaUrl', () => {
-  it('识别 RS02/RS03 试听链（含查询参数）', () => {
-    expect(isQqTrialMediaUrl('http://ws.stream.qqmusic.qq.com/RS02003Qui1q2u1Zho.mp3?guid=x&vkey=y')).toBe(true);
-    expect(isQqTrialMediaUrl('https://isure.stream.qqmusic.qq.com/RS0300MAx3b3Y0N3q8.m4a?fromtag=8')).toBe(true);
+  it('识别 RS02/RS03 试听链（含查询参数）', async () => {
+    expect(await isQqTrialMediaUrl('http://ws.stream.qqmusic.qq.com/RS02003Qui1q2u1Zho.mp3?guid=x&vkey=y')).toBe(true);
+    expect(await isQqTrialMediaUrl('https://isure.stream.qqmusic.qq.com/RS0300MAx3b3Y0N3q8.m4a?fromtag=8')).toBe(true);
   });
 
-  it('完整版直链（M500/M800/F000/C400）不误判', () => {
-    expect(isQqTrialMediaUrl('http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc')).toBe(false);
-    expect(isQqTrialMediaUrl('http://dl.stream.qqmusic.qq.com/F000003Qui1q2u1Zho.flac?vkey=abc')).toBe(false);
-    expect(isQqTrialMediaUrl('http://ws.stream.qqmusic.qq.com/C400003Qui1q2u1Zho.m4a?vkey=abc')).toBe(false);
+  it('完整版直链（M500/M800/F000/C400）不误判', async () => {
+    expect(await isQqTrialMediaUrl('http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc')).toBe(false);
+    expect(await isQqTrialMediaUrl('http://dl.stream.qqmusic.qq.com/F000003Qui1q2u1Zho.flac?vkey=abc')).toBe(false);
+    expect(await isQqTrialMediaUrl('http://ws.stream.qqmusic.qq.com/C400003Qui1q2u1Zho.m4a?vkey=abc')).toBe(false);
   });
 
-  it('空值与非字符串安全返回 false', () => {
-    expect(isQqTrialMediaUrl(undefined)).toBe(false);
-    expect(isQqTrialMediaUrl(null)).toBe(false);
-    expect(isQqTrialMediaUrl('')).toBe(false);
+  it('空值与非字符串安全返回 false', async () => {
+    expect(await isQqTrialMediaUrl(undefined)).toBe(false);
+    expect(await isQqTrialMediaUrl(null)).toBe(false);
+    expect(await isQqTrialMediaUrl('')).toBe(false);
   });
 });
 

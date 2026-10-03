@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractDuration, extractDurationMs, extractResultList, parseDuration, toPluginSearchResult } from './pluginResultMappers';
+import { extractDuration, extractDurationMs, extractResultList, parseDuration, toPluginSearchResult, toPluginSearchResults } from './pluginResultMappers';
 import type { PluginSource } from '../../types';
 
 function makePlugin(): PluginSource {
@@ -139,7 +139,7 @@ describe('extractDuration', () => {
 });
 
 describe('toPluginSearchResult duration mapping', () => {
-  it('maps Netease dt field correctly onto search result duration', () => {
+  it('maps Netease dt field correctly onto search result duration', async () => {
     const plugin = makePlugin();
     const item = {
       id: '1001',
@@ -149,7 +149,7 @@ describe('toPluginSearchResult duration mapping', () => {
       dt: 320000,
     };
 
-    const result = toPluginSearchResult(item, plugin);
+    const result = await toPluginSearchResult(item, plugin);
     expect(result.duration).toBe(320000);
   });
 });
@@ -157,7 +157,7 @@ describe('toPluginSearchResult duration mapping', () => {
 describe('detail page data flow (extractResultList → toPluginSearchResult)', () => {
   const plugin = makePlugin();
 
-  it('QQ 歌手详情页：formatMusicItem 返回 duration(秒)，列表在 data 字段', () => {
+  it('QQ 歌手详情页：formatMusicItem 返回 duration(秒)，列表在 data 字段', async () => {
     const result = {
       isEnd: true,
       data: [
@@ -167,12 +167,12 @@ describe('detail page data flow (extractResultList → toPluginSearchResult)', (
     };
     const list = extractResultList(result);
     expect(list.length).toBe(2);
-    const mapped = list.map((item) => toPluginSearchResult(item, plugin));
+    const mapped = await toPluginSearchResults(list, plugin);
     expect(mapped[0].duration).toBe(269000);
     expect(mapped[1].duration).toBe(302000);
   });
 
-  it('网易云 专辑详情页：duration 在 musicList 字段', () => {
+  it('网易云 专辑详情页：duration 在 musicList 字段', async () => {
     const result = {
       albumItem: { id: 'a1', name: '专辑' },
       musicList: [
@@ -182,12 +182,12 @@ describe('detail page data flow (extractResultList → toPluginSearchResult)', (
     };
     const list = extractResultList(result);
     expect(list.length).toBe(2);
-    const mapped = list.map((item) => toPluginSearchResult(item, plugin));
+    const mapped = await toPluginSearchResults(list, plugin);
     expect(mapped[0].duration).toBe(223000);
     expect(mapped[1].duration).toBe(240000);
   });
 
-  it('酷我 歌单详情页：duration 在 musicList 字段', () => {
+  it('酷我 歌单详情页：duration 在 musicList 字段', async () => {
     const result = {
       isEnd: true,
       musicList: [
@@ -197,14 +197,14 @@ describe('detail page data flow (extractResultList → toPluginSearchResult)', (
     };
     const list = extractResultList(result);
     expect(list.length).toBe(2);
-    const mapped = list.map((item) => toPluginSearchResult(item, plugin));
+    const mapped = await toPluginSearchResults(list, plugin);
     expect(mapped[0].duration).toBe(215000);
     expect(mapped[1].duration).toBe(300000);
   });
 
-  it('歌曲无 duration 字段时返回 0（mfResultToSong 会显示 --:--）', () => {
+  it('歌曲无 duration 字段时返回 0（mfResultToSong 会显示 --:--）', async () => {
     const item = { id: '1', name: '歌', singer: '歌手', album: '专辑' };
-    const mapped = toPluginSearchResult(item, plugin);
+    const mapped = await toPluginSearchResult(item, plugin);
     expect(mapped.duration).toBe(0);
   });
 });
