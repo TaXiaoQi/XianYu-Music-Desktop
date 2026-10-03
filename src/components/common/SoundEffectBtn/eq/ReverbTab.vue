@@ -3,7 +3,7 @@
  * 混响标签页：环境混响（卷积）、算法混响、原始/环境增益
  * 与 3D/8D/36D/虚拟多声道空间环绕。自 EqualizerPanel.vue 原样搬出。
  */
-import RangeSlider from '../RangeSlider.vue';
+import RangeSlider from '../../RangeSlider.vue';
 import { useSoundEffectStore } from '../../../../features/playback/soundEffectStore';
 import {
   useReverbOptions,

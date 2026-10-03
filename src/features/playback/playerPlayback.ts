@@ -33,10 +33,23 @@ import {
   isQishuiPluginPath,
   extractPluginTrackId,
 } from './onlineFailover';
-import {likelyFullCoverPaths, likelyThumbnailPaths} from './coverState';
 import {createPlaybackTimers} from './playbackTimers';
 import {createPreviewPlayback} from './previewPlayback';
 import {createPlaybackSeek} from './playbackSeek';
+import {
+  buildQueueWithInsertedSong as buildQueueWithInsertedSongPure,
+  clampResumeTimeToPreviewClip,
+  getErrorMessage,
+  getSmtcTitle,
+  isOriginalOnlinePath,
+  isQualitySwitchRequest,
+  isSameCurrentlyPlayingSong as isSameCurrentlyPlayingSongPure,
+  isStaleRequest,
+  shouldFadeOnSwitch as shouldFadeOnSwitchPure,
+  shouldStopPreviousAudioBeforeOnlineResolve as shouldStopPreviousAudioBeforeOnlineResolvePure,
+} from './playbackPlaySongSupport';
+import {createPreloadScheduling} from './playbackPreloadScheduling';
+import {createCoverPreparation} from './playbackCoverPreparation';
 
 interface CreatePlayerPlaybackDeps {
   getDisplaySongList: () => Song[];
@@ -57,8 +70,6 @@ let onlineStreamFailureCtx: {
   requestId: number;
 } | null = null;
 let shareLinkPlaybackActive = false;
-const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
-const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export const createPlayerPlayback = ({
   getDisplaySongList,
@@ -124,87 +135,26 @@ export const createPlayerPlayback = ({
   const getCurrentBackendVolume = () => playbackVolumeController?.getCurrentVolume() ?? playbackStore.volume / 100;
   const setCurrentBackendVolume = (value: number) => playbackVolumeController?.setCurrentVolume(value);
 
-  const scheduleAddToHistory = (song: Song) => {
-    const idle = typeof window !== 'undefined' && 'requestIdleCallback' in window
-      ? window.requestIdleCallback.bind(window)
-      : undefined;
+  const { scheduleLyricsPlayerPreload, scheduleAddToHistory } = createPreloadScheduling({
+    isMainWindowLowPower: () => isMainWindowLowPower.value,
+    preloadLyricPlayer: preloadAmlLyricPlayer,
+    setManagedTimeout,
+    addToHistory,
+  });
 
-    if (idle) {
-      idle(() => addToHistory(song), { timeout: 2000 });
-    } else {
-      setManagedTimeout(() => {
-        void addToHistory(song);
-      }, 500);
-    }
-  };
+  const buildQueueWithInsertedSong = (song: Song, previousSong: Song | null, queue: Song[]) =>
+    buildQueueWithInsertedSongPure(song, previousSong, queue);
 
-  const buildQueueWithInsertedSong = (song: Song, previousSong: Song | null, queue: Song[]) => {
-    if (previousSong?.path === song.path) {
-      return queue.length > 0 ? [...queue] : [song];
-    }
-
-    const queueWithoutSong = queue.filter(item => item.path !== song.path);
-
-    if (!previousSong) {
-      return [song];
-    }
-
-    const baseQueue = queueWithoutSong.length > 0 ? queueWithoutSong : [previousSong];
-    const currentIndex = baseQueue.findIndex(item => item.path === previousSong.path);
-
-    if (currentIndex === -1) {
-      return [previousSong, song, ...baseQueue];
-    }
-
-    return [
-      ...baseQueue.slice(0, currentIndex + 1),
-      song,
-      ...baseQueue.slice(currentIndex + 1),
-    ];
-  };
-
-  const scheduleLyricsPlayerPreload = (song: Song) => {
-    const songPath = song.cue_source_path || song.path;
-    if (!songPath.startsWith('lx://') && !songPath.startsWith('plugin://')) {
-      return;
-    }
-
-    const preload = () => {
-      if (!isMainWindowLowPower.value) {
-        void preloadAmlLyricPlayer().catch(() => {});
-      }
-    };
-
-    const requestIdle = typeof window !== 'undefined' && 'requestIdleCallback' in window
-      ? window.requestIdleCallback.bind(window)
-      : undefined;
-
-    if (requestIdle) {
-      requestIdle(preload, { timeout: 1500 });
-    } else {
-      setManagedTimeout(preload, 0);
-    }
-  };
-
-  const prepareDetailFullCovers = (song: Song) => {
-    if (!showPlayerDetail.value) {
-      return [];
-    }
-
-    const retainedPaths = likelyFullCoverPaths({song, tempQueue: tempQueue.value, playQueue: playQueue.value});
-    retainFullCoverPaths(retainedPaths);
-    return retainedPaths;
-  };
-
-  const getLikelyThumbnailPaths = (song: Song) => {
-    return likelyThumbnailPaths({
-      song,
-      tempQueuePaths: tempQueuePaths.value,
-      playQueuePaths: playQueuePaths.value,
-      playMode: playMode.value,
-      getDisplaySongList,
-    });
-  };
+  const { prepareDetailFullCovers, getLikelyThumbnailPaths } = createCoverPreparation({
+    showPlayerDetail: () => showPlayerDetail.value,
+    tempQueue: () => tempQueue.value,
+    playQueue: () => playQueue.value,
+    tempQueuePaths: () => tempQueuePaths.value,
+    playQueuePaths: () => playQueuePaths.value,
+    playMode: () => playMode.value,
+    getDisplaySongList,
+    retainFullCoverPaths,
+  });
 
   const stopPlaybackRuntime = () => playbackRuntimeController?.stop();
   const startPlaybackRuntime = () => playbackRuntimeController?.start();
@@ -277,13 +227,12 @@ export const createPlayerPlayback = ({
       shareLinkPlaybackActive = !!options.shareLinkPlayback;
     }
     const previousSong = currentSong.value;
-    const isSameCurrentlyPlayingSong = !!previousSong
-      && previousSong.path === song.path
-      && isPlaying.value
-      && !options.continueStatisticsSession
-      && options.startTime === undefined
-      && !options.forceReplay
-      && !options._sourceSwitchCtx;
+    const isSameCurrentlyPlayingSong = isSameCurrentlyPlayingSongPure(
+      song,
+      previousSong,
+      isPlaying.value,
+      options,
+    );
 
     if (isSameCurrentlyPlayingSong) {
       return;
@@ -301,21 +250,26 @@ export const createPlayerPlayback = ({
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
-    const isQualitySwitch = !!options.continueStatisticsSession
-      && !!previousSong
-      && previousSong.path === song.path;
+    const isQualitySwitch = isQualitySwitchRequest(song, previousSong, options);
 
     let audioFilePath = song.cue_source_path || song.path;
-    const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
+    const isOriginalOnlineSong = isOriginalOnlinePath(audioFilePath);
 
-    const shouldStopPreviousAudioBeforeOnlineResolve = isOriginalOnlineSong
-      && (isPlaying.value || playbackStore.isPlaying)
-      && (previousSong?.path !== song.path || isQualitySwitch);
+    const shouldStopPreviousAudioBeforeOnlineResolve = shouldStopPreviousAudioBeforeOnlineResolvePure(
+      audioFilePath,
+      isPlaying.value,
+      playbackStore.isPlaying,
+      previousSong,
+      song,
+      isQualitySwitch,
+    );
 
-    const shouldFadeOnSwitch = fadeEnabled
-      && isPlaying.value
-      && !!previousSong
-      && previousSong.path !== song.path;
+    const shouldFadeOnSwitch = shouldFadeOnSwitchPure(
+      fadeEnabled,
+      isPlaying.value,
+      previousSong,
+      song,
+    );
 
     const effectiveFadeDuration = fadeDuration;
 
@@ -417,7 +371,7 @@ export const createPlayerPlayback = ({
     let displayCover = '';
     if (immediateCover) {
       displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+        if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
         currentCover.value = dataUrl;
         currentCoverFull.value = dataUrl;
       });
@@ -431,7 +385,7 @@ export const createPlayerPlayback = ({
       : Promise.all([loadCover(coverLookupPath), loadCoverPath(coverLookupPath)]);
     void currentThumbnailLoad
       .then(([cover]) => {
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+        if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) {
           return;
         }
 
@@ -448,7 +402,7 @@ export const createPlayerPlayback = ({
         }
       })
       .catch(() => {
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path || immediateCover) {
+        if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path) || immediateCover) {
           return;
         }
         currentCover.value = '';
@@ -457,7 +411,7 @@ export const createPlayerPlayback = ({
     if (showPlayerDetail.value && !cachedFullCover) {
       void loadFullCover(song.path)
         .then((fullCoverUrl) => {
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path || !fullCoverUrl) {
+          if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path) || !fullCoverUrl) {
             return;
           }
 
@@ -485,12 +439,7 @@ export const createPlayerPlayback = ({
       }
     }
     const activeClip = getActivePreviewClip();
-    if (activeClip) {
-      resumeTime = Math.max(
-        activeClip.start,
-        Math.min(resumeTime, activeClip.start + activeClip.duration - 1),
-      );
-    }
+    resumeTime = clampResumeTimeToPreviewClip(resumeTime, activeClip);
     reanchorPlaybackClock(resumeTime);
     resetPlaybackProgressTracking();
     startPlaybackRuntime();
@@ -499,8 +448,7 @@ export const createPlayerPlayback = ({
     const recordStartedSongToHistory = () => {
       if (
         historyRecordedForRequest
-        || requestId !== playRequestId
-        || currentSong.value?.path !== song.path
+        || isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)
         || cancelledPlayRequestId === requestId
       ) {
         return;
@@ -577,7 +525,7 @@ export const createPlayerPlayback = ({
           song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
           if (requestId === playRequestId && currentSong.value?.path === song.path) {
             const displayCover = getDisplayCoverUrl(resolvedOnlineAudio.coverThumbPath, (dataUrl) => {
-              if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+              if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
               currentCover.value = dataUrl;
               currentCoverFull.value = dataUrl;
             });
@@ -635,7 +583,7 @@ export const createPlayerPlayback = ({
 
         void currentThumbnailLoad
           .then(async ([cover, coverPath]) => {
-            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+            if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) {
               return;
             }
 
@@ -721,7 +669,7 @@ export const createPlayerPlayback = ({
         const probeStart = Date.now();
         let ready = false;
         while (Date.now() - probeStart < READY_TIMEOUT_MS) {
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+          if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) {
             return true;
           }
           try {
@@ -755,7 +703,7 @@ export const createPlayerPlayback = ({
             flyPromise,
             new Promise<void>(resolve => setTimeout(resolve, 1200)),
           ]);
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+          if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
           if (cancelledPlayRequestId === requestId) {
             isPlaying.value = false;
             isSongLoaded.value = false;
@@ -766,7 +714,7 @@ export const createPlayerPlayback = ({
         }
 
         const rustOk = await tryPlayOnlineViaRust();
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+        if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
 
         if (cancelledPlayRequestId === requestId) {
           try { await playbackApi.stopAudio(); } catch {}
@@ -839,7 +787,7 @@ export const createPlayerPlayback = ({
           } else {
             await playbackApi.playAudio(localPlayAudioParams);
           }
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+          if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
 
           if (cancelledPlayRequestId === requestId) {
             isSongLoaded.value = true;
@@ -856,7 +804,7 @@ export const createPlayerPlayback = ({
             flyPromise,
             new Promise<void>(resolve => setTimeout(resolve, 1200)),
           ]);
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+          if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
           if (cancelledPlayRequestId === requestId) {
             if (playBeforeFlyCover) {
               isSongLoaded.value = true;
@@ -886,7 +834,7 @@ export const createPlayerPlayback = ({
           } else {
             await playbackApi.playAudio(localPlayAudioParams);
           }
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+          if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
 
           if (cancelledPlayRequestId === requestId) {
             isSongLoaded.value = true;
@@ -917,7 +865,7 @@ export const createPlayerPlayback = ({
 
         void currentThumbnailLoad
           .then(async ([cover, coverPath]) => {
-            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+            if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) {
               return;
             }
 
@@ -944,7 +892,7 @@ export const createPlayerPlayback = ({
           .catch(() => {});
       }
     } catch {
-      if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+      if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
 
       if (shouldFadeOnSwitch) {
         setCurrentBackendVolume(playbackStore.volume / 100);

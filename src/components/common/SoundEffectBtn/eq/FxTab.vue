@@ -5,7 +5,7 @@
  * （激励器/次低音/去齿音/AGC）与复古风格（Lo-Fi/比特粉碎）。
  * 自 EqualizerPanel.vue 原样搬出。
  */
-import RangeSlider from '../RangeSlider.vue';
+import RangeSlider from '../../RangeSlider.vue';
 import { useSoundEffectStore } from '../../../../features/playback/soundEffectStore';
 
 const store = useSoundEffectStore();
