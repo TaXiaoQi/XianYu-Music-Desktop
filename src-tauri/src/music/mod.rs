@@ -11,6 +11,7 @@ pub mod lx_search;
 pub mod lyric_fetcher;
 pub mod lyrics; // 实现
 pub mod palette;
+pub mod playlist_fetcher;
 pub mod scanner; // 实现
 pub mod tags; // 实现
 pub mod types; // 实现
@@ -26,6 +27,7 @@ pub use auth::{
   get_auth_credentials, save_auth_credentials, set_auth_api_secret, set_auth_base_url,
 };
 pub use lyric_fetcher::{decrypt_plugin_lyric, fetch_lyric_from_source};
+pub use playlist_fetcher::fetch_playlist_from_source;
 pub use palette::extract_palette;
 pub use url_resolver::{find_alternative_lx_source, get_lx_cover};
 

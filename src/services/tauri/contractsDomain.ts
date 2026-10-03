@@ -62,6 +62,35 @@ export interface LyricResultContract {
   lxlyric: string;
 }
 
+/** 对齐 Rust playlist_fetcher::common 的 PlaylistSong（serde camelCase，冻结） */
+export interface PlaylistSongResultContract {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  coverUrl: string;
+  /** 毫秒 */
+  duration: number;
+  platform: string;
+  platformId: string;
+  pluginId: string;
+  rawData: unknown;
+}
+
+/** 对齐 Rust playlist_fetcher::common 的 PlaylistImportResult（serde camelCase，冻结） */
+export interface PlaylistImportResultContract {
+  source: string;
+  songs: PlaylistSongResultContract[];
+  total: number;
+  info: {
+    name: string;
+    img: string;
+    desc: string;
+    author: string;
+    playCount: string;
+  };
+}
+
 export interface PlaybackSessionDataContract {
   currentSongPath: string | null;
   playQueuePaths: string[];

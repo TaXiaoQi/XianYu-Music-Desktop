@@ -32,15 +32,8 @@ import type {
   PluginArtistResult,
 } from './pluginCatalogShared';
 import type { PlaylistImportResult } from './playlistImportBase';
-import { getListDetailKg } from './playlistImportKg';
-import { getListDetailWy } from './playlistImportWy';
-import { getListDetailTx } from './playlistImportTx';
-import { getListDetailKw } from './playlistImportKw';
-import {
-  getListDetailQishui,
-  isQishuiKeyword,
-  isQishuiSource,
-} from './playlistImportQishui';
+import { isQishuiKeyword, isQishuiSource } from './playlistImportQishui';
+import { playlistImportApi } from '../tauri/playlistImportApi';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -275,12 +268,13 @@ async function hostSheetFallback(
   source: PluginSource,
   keyword: string,
 ): Promise<PluginPlaylistSearchResult | null> {
+  // 内置实现已下沉 Rust（src-tauri music/playlist_fetcher），热修模块双链路保留
   const runners: [HostPlatform, () => Promise<PlaylistImportResult>][] = [
-    ['kg', () => dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: keyword }, () => getListDetailKg(keyword))],
-    ['qishui', () => dispatchFallbackModule('playlist_import', 'getListDetailQishui', { rawId: keyword }, () => getListDetailQishui(keyword))],
-    ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: keyword }, () => getListDetailWy(keyword))],
-    ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: keyword }, () => getListDetailTx(keyword))],
-    ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: keyword }, () => getListDetailKw(keyword))],
+    ['kg', () => dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('kg', keyword))],
+    ['qishui', () => dispatchFallbackModule('playlist_import', 'getListDetailQishui', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('qishui', keyword))],
+    ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('wy', keyword))],
+    ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('tx', keyword))],
+    ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('kw', keyword))],
   ];
   for (const [platform, run] of runners) {
     const applicable = isHostPlatformKeyword(platform, keyword) ||

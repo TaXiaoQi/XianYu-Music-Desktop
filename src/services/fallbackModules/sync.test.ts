@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // sync.ts 的外部依赖全部 mock：IPC / 服务端请求 / settings store / registry
 const { invokeMock, signedRequestMock, settingsState, registryMock } = vi.hoisted(() => ({
@@ -36,6 +36,26 @@ const loadSync = async () => {
   return await import('./sync');
 };
 
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const pushCalls = () =>
+  invokeMock.mock.calls.filter(([c]) => c === 'fallback_module_update_config');
+
+// 对账链路第一步是 crypto.subtle.digest——真实原生异步任务，不走 vitest 定时器。
+// 固定「睡一拍再断言」在全量并发跑时会输给事件循环调度（隔离跑恒过、全量偶发挂），
+// 因此改为有界轮询直至条件成立，超时才算失败。
+const settle = async (cond: () => boolean, maxTicks = 200) => {
+  for (let i = 0; i < maxTicks && !cond(); i += 1) {
+    await tick();
+  }
+  if (!cond()) throw new Error('条件未在限定时间内收敛（settle 超时）');
+};
+
+beforeEach(() => {
+  // invokeMock 跨用例共享，先清空调用记录：
+  // 防止前一用例迟到的异步链把调用算进当前用例的计数
+  invokeMock.mockClear();
+});
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -51,11 +71,14 @@ describe('配置推送启动对账', () => {
     });
 
     sync.installFallbackModuleConfigWatch();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    // 等对账链路（含 crypto.subtle 真实异步）完整走完
+    await settle(() =>
+      invokeMock.mock.calls.some(([c]) => c === 'fallback_module_config_hash'),
+    );
+    await tick();
+    await tick(); // 再静默两拍，确认没有迟到的推送
 
-    expect(
-      invokeMock.mock.calls.filter(([c]) => c === 'fallback_module_update_config'),
-    ).toHaveLength(0);
+    expect(pushCalls()).toHaveLength(0);
   });
 
   it('hash 不一致（Rust 侧配置漂移/丢失）时重推', async () => {
@@ -67,9 +90,11 @@ describe('配置推送启动对账', () => {
     });
 
     sync.installFallbackModuleConfigWatch();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await settle(() => pushCalls().length >= 1);
+    await tick();
+    await tick(); // 静默两拍：确认只推一次、无重复推送
 
-    const pushes = invokeMock.mock.calls.filter(([c]) => c === 'fallback_module_update_config');
+    const pushes = pushCalls();
     expect(pushes).toHaveLength(1);
     expect(pushes[0][1]).toEqual({
       configJson: JSON.stringify(settingsState.settings),
@@ -85,17 +110,30 @@ describe('配置推送启动对账', () => {
     });
 
     sync.installFallbackModuleConfigWatch();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await settle(() => pushCalls().length >= 1);
+    await tick();
+    await tick();
 
-    expect(
-      invokeMock.mock.calls.filter(([c]) => c === 'fallback_module_update_config'),
-    ).toHaveLength(1);
+    expect(pushCalls()).toHaveLength(1);
   });
 });
 
 describe('配置推送失败重试', () => {
+  // 模块加载须在真实定时器下完成：fake timers 会卡住 vitest 动态 import。
+  // 对账的 crypto.subtle 是真实异步、不受 fake timers 驱动，固定 advance 步长
+  // 在高负载下会与它竞速；只有「首次尝试发生与否」依赖这段真实异步，
+  // 之后的退避重试全在 fake timers 掌控内，可精确断言。
+  const advanceUntilFirstAttempt = async (
+    attempts: () => number,
+    maxMs = 5_000,
+  ) => {
+    for (let elapsed = 0; elapsed < maxMs && attempts() < 1; elapsed += 100) {
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    if (attempts() < 1) throw new Error('首次推送未在限定时间内发生（advance 超时）');
+  };
+
   it('按 1s/2s 退避重试，第 3 次成功', async () => {
-    // 模块加载须在真实定时器下完成：fake timers 会卡住 vitest 动态 import
     const sync = await loadSync();
     vi.useFakeTimers();
     let attempts = 0;
@@ -110,9 +148,13 @@ describe('配置推送失败重试', () => {
     });
 
     sync.installFallbackModuleConfigWatch();
-    await vi.advanceTimersByTimeAsync(1); // 首次尝试失败
-    await vi.advanceTimersByTimeAsync(1000); // 第 2 次失败
-    await vi.advanceTimersByTimeAsync(2000); // 第 3 次成功
+    await advanceUntilFirstAttempt(() => attempts); // 首次尝试失败
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000); // 1s 退避后第 2 次失败
+    expect(attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(2000); // 2s 退避后第 3 次成功
+    expect(attempts).toBe(3);
+    await vi.advanceTimersByTimeAsync(8000); // 成功后不再重试
     expect(attempts).toBe(3);
   });
 
@@ -130,9 +172,10 @@ describe('配置推送失败重试', () => {
     });
 
     sync.installFallbackModuleConfigWatch();
-    await vi.advanceTimersByTimeAsync(1);
+    await advanceUntilFirstAttempt(() => attempts);
     await vi.advanceTimersByTimeAsync(1000);
     await vi.advanceTimersByTimeAsync(2000);
+    expect(attempts).toBe(3);
     await vi.advanceTimersByTimeAsync(8000); // 远超剩余退避时间
     expect(attempts).toBe(3);
   });

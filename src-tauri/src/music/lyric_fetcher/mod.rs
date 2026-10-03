@@ -11,6 +11,7 @@ mod orchestrator;
 mod qq;
 
 pub use common::{LyricResult, LyricSongInfo};
+pub(crate) use common::http_fetch_text;
 pub(crate) use common::decode_html_entities;
 pub use orchestrator::fetch_lyric_from_source;
 pub use qq::decrypt_plugin_lyric;

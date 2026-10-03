@@ -248,6 +248,7 @@ commands.allow = [
   "read_state_json", # 读状态
   "open_devtools",
   "fetch_lyric_from_source",
+  "fetch_playlist_from_source",
   "get_lx_cover",
   "find_alternative_lx_source",
   "resolve_download_path",

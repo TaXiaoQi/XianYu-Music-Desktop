@@ -5,16 +5,9 @@ import {
   pluginPlaylistSearch,
 } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
-import {
-  parseLink,
-  type PlaylistImportResult,
-  type PlaylistSource,
-} from './playlistImportBase';
-import { getListDetailKg } from './playlistImportKg';
-import { getListDetailKw } from './playlistImportKw';
-import { getListDetailTx } from './playlistImportTx';
-import { getListDetailWy } from './playlistImportWy';
+import { parseLink, type PlaylistImportResult, type PlaylistSource } from './playlistImportBase';
 import { dispatchFallbackModule } from '../fallbackModules/registry';
+import { playlistImportApi } from '../tauri/playlistImportApi';
 import { looksLikeSheetLinkOrId, sourceMatchesHostPlatform } from './pluginCatalogSearch';
 import type { PluginSearchResult, PluginSource } from '../../types';
 
@@ -293,17 +286,18 @@ export async function importPlaylist( // 实现
   } // 实现
   let result: PlaylistImportResult;
   switch (actualSource) {
+    // 内置实现已下沉 Rust（src-tauri music/playlist_fetcher），前端仅薄壳透传
     case 'wy':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: actualId }, () => getListDetailWy(actualId));
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('wy', actualId));
       break;
     case 'tx':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: actualId }, () => getListDetailTx(actualId));
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('tx', actualId));
       break;
     case 'kw':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: actualId }, () => getListDetailKw(actualId));
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('kw', actualId));
       break;
     case 'kg':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: actualId }, () => getListDetailKg(actualId));
+      result = await dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('kg', actualId));
       break;
     default:
       throw new Error(`不支持的音源: ${actualSource}`);

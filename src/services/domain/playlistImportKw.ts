@@ -1,80 +1,7 @@
-import { decodeName } from '../../utils/musicFormat';
-import type { PluginSearchResult } from '../../types';
-import {
-  createSearchResult,
-  formatPlayTime,
-  getKwListId,
-  httpFetch,
-  type PlaylistImportResult,
-  type PlaylistInfo,
-  type WyTrackMetaPatch,
-} from './playlistImportBase';
+import { httpFetch, type WyTrackMetaPatch } from './playlistImportBase';
 
-
-async function getListDetailKw(rawId: string): Promise<PlaylistImportResult> {
-  const id = getKwListId(rawId);
-  if (!id) return { source: 'kw', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
-
-  const url = `http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${id}` +
-    `&pn=0&rn=1000&encode=utf8&keyset=pl2012` +
-    `&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1`;
-
-  const resp = await httpFetch(url, 'GET', {
-    'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9;)',
-  });
-
-  const body = resp.body;
-  if (typeof body !== 'object' || body === null || body.result !== 'ok') {
-    throw new Error(`酷我歌单获取失败: result=${body?.result ?? 'unknown'}`);
-  }
-
-  const musiclist = body.musiclist || [];
-  const songs: PluginSearchResult[] = [];
-  for (const item of musiclist) {
-    const parsed = parseKwSong(item);
-    if (parsed) songs.push(parsed);
-  }
-
-  const info: PlaylistInfo = {
-    name: decodeName(body.title || ''),
-    img: body.pic || '',
-    desc: decodeName(body.info || ''),
-    author: decodeName(body.uname || ''),
-    playCount: String(body.playnum || 0),
-  };
-
-  return { source: 'kw', songs, total: body.total || songs.length, info };
-}
-
-function parseKwSong(item: any): PluginSearchResult | null {
-  const idStr = String(item.id ?? '');
-  if (!idStr) return null;
-
-  const name = decodeName(item.name || '');
-  const artist = decodeName(item.artist || '');
-  const album = decodeName(item.album || '');
-  const durationSec = parseInt(item.duration || '0', 10) || 0;
-
-  const rawData = {
-    songmid: idStr,
-    name,
-    singer: artist,
-    source: 'kw',
-    interval: formatPlayTime(durationSec),
-  };
-
-  return createSearchResult({
-    id: idStr,
-    title: name,
-    artist,
-    album,
-    coverUrl: '',
-    duration: durationSec * 1000,
-    platform: '酷我',
-    sourceKey: 'kw',
-    rawData,
-  });
-}
+// 歌单导入内置实现已下沉 Rust（src-tauri music/playlist_fetcher/kw.rs），
+// 本文件仅保留 TrackMeta 富字段补齐链路（fetchKwTrackMetaByIds）。
 
 async function buildKwSheetIndex(sheetId: string): Promise<Map<string, number>> {
   const index = new Map<string, number>();
@@ -226,5 +153,3 @@ export async function fetchKwTrackMetaByIds(
 
   return patches;
 }
-
-export { getListDetailKw };

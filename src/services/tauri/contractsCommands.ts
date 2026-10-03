@@ -29,6 +29,7 @@ import type {
   LyricSongInfoContract,
   LxUrlSongInfoContract,
   PlaybackSessionDataContract,
+  PlaylistImportResultContract,
   RecognizeResponseContract,
 } from './contractsDomain';
 
@@ -699,6 +700,10 @@ export interface TauriCommandMap {
   fetch_lyric_from_source: {
     payload: { source: string; songInfo: LyricSongInfoContract };
     response: LyricResultContract | null;
+  };
+  fetch_playlist_from_source: {
+    payload: { source: string; rawId: string };
+    response: PlaylistImportResultContract;
   };
   decrypt_plugin_lyric: {
     payload: { encryptedHex: string };

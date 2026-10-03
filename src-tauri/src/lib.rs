@@ -128,6 +128,7 @@ use music::{ // 实现
     decrypt_plugin_lyric,
     extract_palette,
     fetch_lyric_from_source,
+    fetch_playlist_from_source,
     find_alternative_lx_source,
     get_auth_api_secret,
     get_auth_base_url,
@@ -696,6 +697,7 @@ pub fn run() { // run
             read_state_json, // 读状态文件
             open_devtools,
             fetch_lyric_from_source,
+            fetch_playlist_from_source,
             decrypt_plugin_lyric,
             get_lx_cover,
             find_alternative_lx_source,
