@@ -1,31 +1,30 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, provide, reactive, ref, watch, onMounted, onUnmounted } from 'vue';
-import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound, Eye, EyeOff } from 'lucide-vue-next';
-import { open as openDialog } from '@tauri-apps/plugin-dialog'; // 实现
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { computed, defineAsyncComponent, provide, ref, watch, onMounted, onUnmounted } from 'vue';
+import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, FileCode2 } from 'lucide-vue-next';
 import { useToast } from '../../composables/toast';
-import type { PluginSource, PluginSubscription } from '../../types'; // 实现
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, getLastPluginLoadError, log, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/domain/pluginEngine';
+import type { PluginSource } from '../../types'; // 实现
+import { getStoredPlugins, loadPlugins, removePluginSource, togglePlugin, log, pluginsVersion } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
-import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
 import SettingHint, { SETTING_HINT_Z_INDEX } from './SettingHint.vue';
 import { getCiyuanxiId } from '../../services/domain/playlistSync';
 import { deleteCloudPlugins } from '../../services/domain/pluginSync';
 import { getSyncedPluginIds, isPluginSynced, addDownloadSkipIds, addUploadSkipIds } from '../../services/domain/pluginSyncState';
-import { getPluginSubTag } from '../../utils/remoteSong';
 import type { SyncDeleteScope } from '../overlays/SyncDeleteScopeModal.vue';
+import { usePluginList } from '../../composables/settings/usePluginList';
+import { usePluginBadges } from '../../composables/settings/usePluginBadges';
+import { usePluginDragSort } from '../../composables/settings/usePluginDragSort';
+import { usePluginInstall, PluginInstallCancelled } from '../../composables/settings/usePluginInstall';
+import { usePluginSubscriptions } from '../../composables/settings/usePluginSubscriptions';
+import { usePluginUpdates } from '../../composables/settings/usePluginUpdates';
+import PluginLocalInstallPanel from './plugins/PluginLocalInstallPanel.vue';
+import PluginUrlInstallPanel from './plugins/PluginUrlInstallPanel.vue';
+import PluginSubscriptionPanel from './plugins/PluginSubscriptionPanel.vue';
+import PluginCard from './plugins/PluginCard.vue';
+import PluginDetailDialog from './plugins/PluginDetailDialog.vue';
+import PluginConfirmDialog from './plugins/PluginConfirmDialog.vue';
 
 const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
-
-/** 用户取消在线导入（面板取消按钮/关闭面板）：在请求间隙抛出，静默终止安装流程；
- *  安装面板已随取消收起，调用方不再弹失败提示（对齐移动端 PluginInstallCancelled）。 */
-class PluginInstallCancelled extends Error {
-  constructor() {
-    super('PluginInstallCancelled');
-    this.name = 'PluginInstallCancelled';
-  }
-}
 
 /** WebView fetch 的 body 下载超时：对齐移动端 bodyTimeout（60s） */
 const BODY_DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -83,12 +82,8 @@ if (overlayZMatch) {
   provide(SETTING_HINT_Z_INDEX, parseInt(overlayZMatch[1], 10) + 100);
 }
 
-const { showToast, showProgressToast } = useToast();
+const { showToast } = useToast();
 const { settings, patchSettings } = useSettings();
-
-const pwdVisible = reactive<Record<string, boolean>>({});
-
-const pwdFocused = reactive<Record<string, boolean>>({});
 
 const pluginSettings = computed(() => settings.value.plugins);
 function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVersionCheck') {
@@ -96,6 +91,83 @@ function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVers
     plugins: { [key]: !pluginSettings.value[key] },
   });
 }
+
+// ==================== 已安装插件列表 ====================
+const {
+  plugins,
+  searchQuery,
+  isPluginBusy,
+  sortPlugins,
+  filteredPlugins,
+  refreshPluginList,
+  pluginStatsLabel,
+  allPluginsEnabled,
+  handleToggleAllPlugins,
+  subBrandLabelById,
+} = usePluginList();
+
+const {
+  pluginsWithUserVars,
+  pluginsBakaIds,
+  refreshUserVarBadges,
+  refreshBakaBadges,
+} = usePluginBadges();
+
+const {
+  draggingIndex,
+  listRef,
+  startDragging,
+  stopDragging,
+} = usePluginDragSort({ plugins, filteredPlugins, searchQuery, sortPlugins });
+
+// ==================== 安装面板显隐 ====================
+const showSubscriptionPanel = ref(false);
+const showInstallFromUrlDialog = ref(false);
+const showInstallFromFilePanel = ref(false);
+
+const {
+  installUrl,
+  isDragOverDropZone,
+  setupDragDropListeners,
+  handleInstallFromFile,
+  handleInstallFromUrl,
+} = usePluginInstall({
+  fetchRemoteScript,
+  refreshPluginList,
+  pluginsBakaIds,
+  pluginSettings,
+  showInstallFromUrlDialog,
+  showInstallFromFilePanel,
+  isPluginBusy,
+});
+
+const {
+  subscriptions,
+  showAddSubscriptionInput,
+  newSubscriptionUrl,
+  syncingAll,
+  editingSubId,
+  editingSubName,
+  showRemoveSubscriptionConfirm,
+  pendingRemoveSubscription,
+  handleAddSubscription,
+  confirmAddSubscription,
+  handleInstallFromSubscription,
+  handleSyncAllSubscriptions,
+  startEditSubName,
+  saveSubName,
+  cancelEditSubName,
+  handleRemoveSubscription,
+  confirmRemoveSubscription,
+} = usePluginSubscriptions({ isPluginBusy, refreshPluginList, pluginSettings });
+
+const {
+  updateCheckResults,
+  checkingUpdates,
+  updatingPluginId,
+  handleUpdatePlugin,
+  handleCheckAllUpdates,
+} = usePluginUpdates({ refreshPluginList });
 
 onMounted(async () => { // 实现
   await loadPlugins(pluginSettings.value.lazyLoad);
@@ -111,557 +183,38 @@ watch(pluginsVersion, () => {
 });
 
 onUnmounted(() => {
-  unlistenDragDrop?.();
-  unlistenDragOver?.();
-  unlistenDragLeave?.();
   stopDragging();
 }); // 实现
-const searchQuery = ref('');
-const showSubscriptionPanel = ref(false);
-const showInstallFromUrlDialog = ref(false);
-const showInstallFromFilePanel = ref(false);
-const isDragOverDropZone = ref(false);
-const installUrl = ref('');
 
-// 在线链接安装的取消状态与进度条句柄（面板取消按钮/关闭面板触发终止）
-const urlInstallCancelled = ref(false);
-let urlInstallProgress: ReturnType<typeof showProgressToast> | null = null;
-
-function cancelUrlInstall() {
-  urlInstallCancelled.value = true;
-  // 立即收起进度条：取消后台安装的收尾由 cancelled 检查点兜底
-  urlInstallProgress?.close();
-  urlInstallProgress = null;
+function toggleSubscriptionPanel() {
+  const willOpen = !showSubscriptionPanel.value;
+  if (willOpen) {
+    showInstallFromUrlDialog.value = false;
+    showInstallFromFilePanel.value = false;
+  }
+  showSubscriptionPanel.value = willOpen;
 }
 
-// 安装面板经任何途径被关闭（取消按钮/切换其他面板/再次点击安装按钮）时：
-// 若在线导入仍在进行，视为用户取消导入（对齐移动端「返回=取消导入」语义），
-// 避免出现「面板已关、导入仍在跑、进度条永不消失且无法取消」的死状态。
-// urlInstallProgress 仅在 URL 安装期间非 null，其他 busy 操作不会误触发。
-watch(showInstallFromUrlDialog, (now, was) => {
-  if (!now && was && isPluginBusy.value && urlInstallProgress) {
-    cancelUrlInstall();
+function toggleInstallFromUrlDialog() {
+  const willOpen = !showInstallFromUrlDialog.value;
+  if (willOpen) {
+    showSubscriptionPanel.value = false;
+    showInstallFromFilePanel.value = false;
   }
-});
-
-let unlistenDragDrop: UnlistenFn | null = null;
-let unlistenDragOver: UnlistenFn | null = null;
-let unlistenDragLeave: UnlistenFn | null = null;
-
-const plugins = ref<PluginSource[]>(getStoredPlugins()); // 实现
-const subscriptions = ref<PluginSubscription[]>(getSubscriptions()); // 实现
-const showAddSubscriptionInput = ref(false);
-const newSubscriptionUrl = ref('');
-
-const isPluginBusy = ref(false);
-
-function sortPlugins(list: PluginSource[]): PluginSource[] { // 实现
-  return [...list].sort((a, b) => { // 实现
-    const sa = a.sortOrder ?? 0;
-    const sb = b.sortOrder ?? 0;
-    if (sa !== sb) return sa - sb;
-    return list.indexOf(a) - list.indexOf(b);
-  }); // 实现
-} // 实现
-const filteredPlugins = computed(() => {
-  const keyword = searchQuery.value.trim().toLowerCase();
-  const sorted = sortPlugins(plugins.value); // 实现
-  if (!keyword) return sorted; // 实现
-  return sorted.filter((p) => // 实现
-    p.name.toLowerCase().includes(keyword) || // 实现
-    p.sources.join(',').toLowerCase().includes(keyword) || // 实现
-    (p.author?.toLowerCase().includes(keyword) ?? false) // 实现
-  );
-});
-
-const pluginsWithUserVars = ref<Set<string>>(new Set());
-let badgeRefreshInProgress = false;
-
-async function refreshUserVarBadges() {
-  if (badgeRefreshInProgress) return;
-  badgeRefreshInProgress = true;
-  try {
-    pluginsWithUserVars.value = await refreshUserVariableBadges();
-  } finally {
-    badgeRefreshInProgress = false;
-  }
+  showInstallFromUrlDialog.value = willOpen;
 }
 
-const pluginsBakaIds = ref<Set<string>>(new Set());
-let bakaRefreshInProgress = false;
-
-// 付费订阅来源品牌标签（付费聆澜/付费ikun，无来源名回落「付费」），随插件列表联动
-const subBrandLabelById = computed(() => {
-  const map = new Map<string, string>();
-  for (const p of plugins.value) {
-    const tag = getPluginSubTag(p);
-    if (tag) map.set(p.id, tag.label === '付费' ? '付费' : `付费${tag.label}`);
+function toggleInstallFromFilePanel() {
+  const willOpen = !showInstallFromFilePanel.value;
+  if (willOpen) {
+    showSubscriptionPanel.value = false;
+    showInstallFromUrlDialog.value = false;
   }
-  return map;
-});
-
-async function refreshBakaBadges() {
-  if (bakaRefreshInProgress) return;
-  bakaRefreshInProgress = true;
-  try {
-    const allPlugins = getStoredPlugins();
-    const bakaSet = new Set<string>();
-    await Promise.all(
-      allPlugins
-        .filter((p) => p.format === 'musicfree')
-        .map(async (p) => {
-          try {
-            if (await isBakaPlugin(p)) bakaSet.add(p.id);
-          } catch { /* ignore */ }
-        }),
-    );
-    pluginsBakaIds.value = bakaSet;
-  } finally {
-    bakaRefreshInProgress = false;
-  }
+  showInstallFromFilePanel.value = willOpen;
+  isDragOverDropZone.value = false;
 }
 
-// ==================== 拖拽排序（基于 pointer 事件）====================
-const draggingIndex = ref<number | null>(null);
-const listRef = ref<HTMLElement | null>(null);
-const scrollContainer = ref<HTMLElement | null>(null);
-let latestPointerY = 0;
-let autoScrollFrame: number | null = null;
-
-const resolveTargetIndex = (clientY: number, currentIndex: number): number | null => {
-  return resolveDragTargetIndex(listRef.value, '[data-plugin-row]', clientY, currentIndex);
-};
-
-const movePluginItem = (from: number, to: number) => {
-  if (from < 0 || from >= filteredPlugins.value.length || to < 0 || to >= filteredPlugins.value.length || from === to) return;
-  const sorted = [...filteredPlugins.value];
-  const [moved] = sorted.splice(from, 1);
-  sorted.splice(to, 0, moved);
-  sorted.forEach((p, i) => {
-    const plugin = plugins.value.find(item => item.id === p.id);
-    if (plugin) plugin.sortOrder = i;
-  });
-};
-const updateDraggedItemPosition = (clientY: number) => {
-  const currentIndex = draggingIndex.value;
-  if (currentIndex === null) return;
-
-  const target = resolveTargetIndex(clientY, currentIndex);
-  if (target === null || target === currentIndex) return;
-
-  movePluginItem(currentIndex, target);
-  draggingIndex.value = target;
-};
-
-const runAutoScroll = () => {
-  autoScrollFrame = null;
-  if (draggingIndex.value === null) return;
-
-  const container = scrollContainer.value;
-  if (!container) return;
-
-  const speed = getEdgeAutoScrollSpeed(container, latestPointerY);
-  if (speed === 0) return;
-  const previousScrollTop = container.scrollTop;
-  container.scrollTop += speed;
-  if (container.scrollTop !== previousScrollTop) {
-    updateDraggedItemPosition(latestPointerY);
-    autoScrollFrame = requestAnimationFrame(runAutoScroll);
-  }
-};
-const scheduleAutoScroll = () => {
-  if (autoScrollFrame === null) {
-    autoScrollFrame = requestAnimationFrame(runAutoScroll);
-  }
-};
-
-const handlePointerMove = (event: PointerEvent) => {
-  if (draggingIndex.value === null) return;
-  event.preventDefault();
-
-  latestPointerY = event.clientY;
-  updateDraggedItemPosition(event.clientY);
-  scheduleAutoScroll();
-};
-
-const stopDragging = () => {
-  if (draggingIndex.value !== null) {
-    const finalOrder = sortPlugins(plugins.value).map(p => p.id);
-    reorderPlugins(finalOrder);
-    plugins.value = getStoredPlugins();
-  }
-  draggingIndex.value = null;
-  scrollContainer.value = null;
-  if (autoScrollFrame !== null) {
-    cancelAnimationFrame(autoScrollFrame);
-    autoScrollFrame = null;
-  }
-  window.removeEventListener('pointermove', handlePointerMove);
-  window.removeEventListener('pointerup', stopDragging);
-  window.removeEventListener('pointercancel', stopDragging);
-};
-
-const startDragging = (index: number, event: PointerEvent) => {
-  if (searchQuery.value.trim()) return;
-  if (event.button !== 0) return;
-  event.preventDefault();
-
-  draggingIndex.value = index;
-  latestPointerY = event.clientY;
-  scrollContainer.value = listRef.value ? findVerticalScrollContainer(listRef.value) : null;
-  window.addEventListener('pointermove', handlePointerMove, { passive: false });
-  window.addEventListener('pointerup', stopDragging);
-  window.addEventListener('pointercancel', stopDragging);
-};
-const pluginStatsLabel = computed(() => {
-  const total = plugins.value.length;
-  const enabled = plugins.value.filter((p) => p.enabled).length;
-  return `共 ${total} 个插件，已启用 ${enabled} 个`;
-});
-
-const allPluginsEnabled = computed(() => {
-  return plugins.value.length > 0 && plugins.value.every((p) => p.enabled);
-});
-
-async function handleToggleAllPlugins() {
-  const targetEnabled = !allPluginsEnabled.value;
-  isPluginBusy.value = true;
-  let successCount = 0;
-  let failCount = 0;
-  for (const plugin of plugins.value) {
-    if (plugin.enabled === targetEnabled) continue;
-    const result = await togglePlugin(plugin.id);
-    if (result.success) {
-      successCount++;
-    } else {
-      failCount++;
-    }
-  }
-  refreshPluginList();
-  isPluginBusy.value = false;
-  if (failCount === 0) {
-    showToast(`已${targetEnabled ? '启用' : '禁用'} ${successCount} 个插件`, 'success');
-  } else {
-    showToast(`已${targetEnabled ? '启用' : '禁用'} ${successCount} 个，${failCount} 个失败`, 'error');
-  }
-}
-
-function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
-  if (format === 'lx') { // 实现
-    return { // 实现
-      iconBg: 'bg-gradient-to-br from-green-500/12 to-emerald-400/12', // 实现
-      iconText: 'text-green-600 dark:text-green-400', // 实现
-      toggle: 'bg-green-500', // 实现
-      tagClass: 'settings-plugin-tag--lx',
-      label: '落雪', // 实现
-    }; // 实现
-  } // 实现
-  if (format === 'anime') {
-    return {
-      iconBg: 'bg-gradient-to-br from-purple-500/12 to-fuchsia-400/12',
-      iconText: 'text-purple-600 dark:text-purple-400',
-      toggle: 'bg-purple-500',
-      tagClass: 'settings-plugin-tag--anime',
-      label: 'anime',
-    };
-  }
-  if (format === 'musicfree') { // 实现
-    if (isBaka) {
-      return {
-        iconBg: 'bg-gradient-to-br from-blue-500/12 to-indigo-400/12',
-        iconText: 'text-blue-600 dark:text-blue-400',
-        toggle: 'bg-blue-500',
-        tagClass: 'settings-plugin-tag--baka',
-        label: 'BakaMusic',
-      };
-    }
-    return { // 实现
-      iconBg: 'bg-gradient-to-br from-orange-500/12 to-amber-400/12', // 实现
-      iconText: 'text-orange-600 dark:text-orange-400', // 实现
-      toggle: 'bg-orange-500', // 实现
-      tagClass: 'settings-plugin-tag--musicfree',
-      label: 'MusicFree', // 实现
-    }; // 实现
-  } // 实现
-  return { // 实现
-    iconBg: 'bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12', // 实现
-    iconText: 'text-[#EC4141]', // 实现
-    toggle: 'bg-[#EC4141]', // 实现
-    tagClass: '',
-    label: '未知', // 实现
-  }; // 实现
-} // 实现
-function refreshPluginList() { // 实现
-  plugins.value = getStoredPlugins(); // 实现
-} // 实现
-// ==================== 从本地文件安装 ==================== 
-
-async function setupDragDropListeners() {
-  unlistenDragOver = await listen('tauri://drag-over', () => {
-    if (showInstallFromFilePanel.value) {
-      isDragOverDropZone.value = true;
-    }
-  });
-
-  unlistenDragLeave = await listen('tauri://drag-leave', () => {
-    isDragOverDropZone.value = false;
-  });
-
-  unlistenDragDrop = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
-    isDragOverDropZone.value = false;
-    if (!showInstallFromFilePanel.value) return;
-
-    const paths = event.payload?.paths ?? [];
-    const pluginFiles = paths.filter((p) => {
-      const lower = p.toLowerCase();
-      return lower.endsWith('.js') || lower.endsWith('.json');
-    }); // 实现
-    if (pluginFiles.length === 0) return;
-    if (pluginFiles.length === 1) {
-      await installFromFilePath(pluginFiles[0]);
-      return;
-    }
-
-    const progress = showProgressToast(`正在导入插件文件 (0/${pluginFiles.length})`);
-    for (let i = 0; i < pluginFiles.length; i++) {
-      const fileName = pluginFiles[i].split(/[\\/]/).pop() || pluginFiles[i];
-      progress.update(
-        `正在导入 ${fileName} (${i + 1}/${pluginFiles.length})`,
-        ((i + 1) / pluginFiles.length) * 100,
-      );
-      await installFromFilePath(pluginFiles[i]);
-    }
-    progress.complete(`已处理 ${pluginFiles.length} 个插件文件`, 'success');
-  });
-}
-
-async function installFromFilePath(filePath: string) {
-  try {
-    isPluginBusy.value = true;
-    const script = await pluginApi.readPluginFile(filePath);
-    if (!script || script.trim().length === 0) { // 实现
-      showToast('插件文件为空', 'error'); // 实现
-      return; // 实现
-    } // 实现
-    await installPluginFromScript(script, filePath); // 实现
-  } catch (e: any) { // 实现
-    showToast(`安装失败: ${e?.message || e}`, 'error'); // 实现
-  } finally { // 实现
-    isPluginBusy.value = false; // 实现
-  } // 实现
-}
-
-async function handleInstallFromFile() {
-  try {
-    const selected = await openDialog({
-      title: '选择插件文件',
-      filters: [
-        { name: '插件文件', extensions: ['js', 'json'] },
-        { name: 'JavaScript 插件', extensions: ['js'] },
-        { name: 'JSON 插件索引', extensions: ['json'] },
-      ],
-      multiple: false,
-    });
-    if (!selected || typeof selected !== 'string') return;
-    await installFromFilePath(selected as string);
-  } catch (e: any) {
-    showToast(`安装失败: ${e?.message || e}`, 'error');
-  } finally {
-    isPluginBusy.value = false;
-  }
-}
-
-// ==================== 从网络 URL 安装 ==================== 
-function validatePluginUrl(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return false;
-    }
-    const hostname = parsed.hostname.toLowerCase();
-    if (
-      hostname === 'localhost' ||
-      hostname.endsWith('.localhost') ||
-      hostname.endsWith('.local') ||
-      hostname.endsWith('.internal') ||
-      hostname === '127.0.0.1' ||
-      hostname === '::1' ||
-      hostname.startsWith('192.168.') ||
-      hostname.startsWith('10.') ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
-    ) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function handleInstallFromUrl() {
-  // 单飞互斥：导入进行中忽略再次触发（回车/连点），避免重复导入两份插件
-  if (isPluginBusy.value) return;
-  const url = installUrl.value.trim();
-  if (!url) {
-    showToast('请输入插件 URL', 'error');
-    return;
-  }
-
-  if (!validatePluginUrl(url)) {
-    showToast('禁止访问内网或非法协议，仅支持公网 http/https 链接', 'error');
-    return;
-  }
-
-  isPluginBusy.value = true;
-  urlInstallCancelled.value = false;
-  const progress = showProgressToast('正在导入插件...');
-  urlInstallProgress = progress;
-  try {
-    const content = await fetchRemoteScript(url, () => urlInstallCancelled.value);
-    if (!content || !content.trim()) { // 实现
-      showToast('获取链接内容失败，请检查 URL 是否正确', 'error'); // 实现
-      return; // 实现
-    } // 实现
-    const trimmed = content.trim(); // 实现
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) { // 实现
-      try { // 实现
-        const json = JSON.parse(trimmed); // 实现
-        const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null); // 实现
-        if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) { // 实现
-          // 批量导入复用同一条进度条，逐项响应取消
-          await importMultiplePlugins(pluginList, () => urlInstallCancelled.value, progress); // 实现
-          installUrl.value = ''; // 实现
-          showInstallFromUrlDialog.value = false; // 实现
-          return; // 实现
-        } // 实现
-      } catch (e) {
-        if (e instanceof PluginInstallCancelled) throw e;
-        /* 不是有效 JSON，当作普通脚本处理 */
-      } // 实现
-    }
-    await installPluginFromScript(content, url); // 实现
-    installUrl.value = ''; // 实现
-    showInstallFromUrlDialog.value = false; // 实现
-  } catch (e: any) {
-    if (e instanceof PluginInstallCancelled) {
-      // 用户已取消：面板与进度条均已收起，静默终止，不再弹失败提示
-      return;
-    }
-    progress.fail(`安装失败: ${e?.message || e}`);
-  } finally {
-    isPluginBusy.value = false;
-    // 软失败路径（获取失败/插件加载失败）只弹 toast 不抛异常，进度条在此统一收尾；
-    // 对已完成/已取消的进度条 close 是 no-op
-    progress.close();
-    if (urlInstallProgress === progress) { urlInstallProgress = null; }
-  }
-}
-
-async function importMultiplePlugins(
-  pluginList: Array<{ name?: string; url: string; version?: string }>,
-  cancelled?: () => boolean,
-  externalProgress?: ReturnType<typeof showProgressToast>,
-) { // 实现
-  const items = pluginList.filter(p => p?.url);
-  if (items.length === 0) return;
-
-  let successCount = 0; // 实现
-  let failCount = 0; // 实现
-  const names: string[] = []; // 实现
-  const progress = externalProgress ?? showProgressToast(`正在导入插件 (0/${items.length})`);
-  for (let i = 0; i < items.length; i++) {
-    // 批量导入逐项响应取消（PluginInstallCancelled 向上穿透，由调用方静默处理）
-    if (cancelled?.()) throw new PluginInstallCancelled();
-    const item = items[i];
-    progress.update(
-      `正在导入 ${item.name || '未命名插件'} (${i + 1}/${items.length})`,
-      ((i + 1) / items.length) * 100,
-    );
-    try { // 实现
-      const script = await fetchRemoteScript(item.url, cancelled);
-      if (cancelled?.()) throw new PluginInstallCancelled();
-      if (!script || !script.trim()) { // 实现
-        failCount++; // 实现
-        continue; // 实现
-      } // 实现
-      const source = await loadPluginFromScript(script, item.url); // 实现
-      if (source) { // 实现
-        if (item.name) source.name = item.name; // 实现
-        if (item.version) source.version = item.version; // 实现
-        addPluginSource(source); // 实现
-        names.push(source.name); // 实现
-        successCount++; // 实现
-      } else { // 实现
-        failCount++; // 实现
-      } // 实现
-    } catch (e) {
-      // 取消不能被吞成单项失败：向上穿透交给调用方静默处理
-      if (e instanceof PluginInstallCancelled) throw e;
-      failCount++; // 实现
-    } // 实现
-  } // 实现
-  refreshPluginList(); // 实现
-  if (successCount > 0) { // 实现
-    progress.complete(
-      `成功导入 ${successCount} 个插件: ${names.join(', ')}${failCount > 0 ? `，${failCount} 个失败` : ''}`,
-      'success',
-    );
-  } else { // 实现
-    progress.fail(`所有插件导入失败 (${failCount} 个)`);
-  } // 实现
-} // 实现
-// ==================== 核心安装逻辑 ==================== 
-function compareVer(a: string, b: string): number {
-  const pa = (a || '0').split(/[.-]/).filter(Boolean);
-  const pb = (b || '0').split(/[.-]/).filter(Boolean);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const na = parseInt(pa[i]) || 0;
-    const nb = parseInt(pb[i]) || 0;
-    if (na !== nb) return na - nb;
-  }
-  return 0;
-}
-
-async function installPluginFromScript(script: string, filePath: string) { // 实现
-  const source = await loadPluginFromScript(script, filePath); // 实现
-  if (!source) { // 实现
-    const reason = getLastPluginLoadError();
-    showToast(reason ? `插件加载失败: ${reason}` : '插件加载失败', 'error');
-    return; // 实现
-  } // 实现
-
-  const savedPath = await persistPluginScriptToDataDir(source, script);
-  if (savedPath) {
-    source.filePath = savedPath;
-  }
-
-  if (!pluginSettings.value.skipVersionCheck) {
-    const existing = getStoredPlugins().find(p => p.name === source.name);
-    if (existing) {
-      const cmp = compareVer(source.version, existing.version);
-      if (cmp <= 0) {
-        showToast(`已存在同名插件 v${existing.version}，新版本 v${source.version} 未高于已安装版本，已跳过`, 'info');
-        return;
-      }
-    }
-  }
-
-  addPluginSource(source); // 实现
-  refreshPluginList(); // 实现
-  let isBaka = false;
-  if (source.format === 'musicfree') {
-    try {
-      isBaka = await isBakaPlugin(source);
-    } catch { /* 识别失败时按 MusicFree 展示，不影响安装成功 */ }
-  }
-  if (isBaka) {
-    pluginsBakaIds.value = new Set([...pluginsBakaIds.value, source.id]);
-  }
-  const formatLabel = pluginColorClasses(source.format, isBaka).label;
-  showToast(`成功安装插件: ${source.name} (${formatLabel})`, 'success');
-} // 实现
-// ==================== 插件管理 ==================== 
+// ==================== 插件管理 ====================
 const showUninstallAllConfirm = ref(false); // 实现
 
 const showPluginDeleteScope = ref(false);
@@ -763,337 +316,11 @@ async function handleTogglePlugin(plugin: PluginSource) { // 实现
   } // 实现
 }
 
-const updateCheckResults = ref<Map<string, PluginUpdateCheckResult>>(new Map());
-const checkingUpdates = ref(false);
-const updatingPluginId = ref<string | null>(null);
-
-async function handleUpdatePlugin(plugin: PluginSource) { // 实现
-  const cached = updateCheckResults.value.get(plugin.id);
-  if (cached?.hasUpdate && cached.newScript) {
-    updatingPluginId.value = plugin.id;
-    try {
-      const result = await performPluginUpdate(plugin, cached);
-      if (result.success) {
-        showToast(`${plugin.name} 已更新到 v${cached.newVersion}`, 'success');
-        updateCheckResults.value.delete(plugin.id);
-        await refreshPluginList();
-      } else {
-        showToast(result.message || '更新失败', 'error');
-      }
-    } catch (e: any) {
-      showToast(`更新失败: ${e?.message || e}`, 'error');
-    } finally {
-      updatingPluginId.value = null;
-    }
-    return;
-  }
-
-  updatingPluginId.value = plugin.id;
-  try {
-    const result = await checkPluginUpdate(plugin);
-    if (!result) {
-      showToast(`${plugin.name} 无可用更新源`, 'info');
-    } else if (result.hasUpdate) {
-      updateCheckResults.value.set(plugin.id, result);
-      showToast(`${plugin.name} 发现新版本 v${result.newVersion}，再次点击更新`, 'info');
-    } else {
-      showToast(`${plugin.name} 已是最新版本`, 'info');
-    }
-  } catch (e: any) {
-    showToast(`检查更新失败: ${e?.message || e}`, 'error');
-  } finally {
-    updatingPluginId.value = null;
-  }
-}
-
-async function handleCheckAllUpdates() {
-  if (checkingUpdates.value) return;
-  checkingUpdates.value = true;
-  try {
-    const results = await checkAllPluginUpdates();
-    updateCheckResults.value = results;
-    let updateCount = 0;
-    for (const [, result] of results) {
-      if (result.hasUpdate) updateCount++;
-    }
-    if (updateCount > 0) {
-      showToast(`发现 ${updateCount} 个插件可更新`, 'info');
-    } else {
-      showToast('所有插件均为最新版本', 'info');
-    }
-    await refreshPluginList();
-  } catch (e: any) {
-    showToast(`批量检查失败: ${e?.message || e}`, 'error');
-  } finally {
-    checkingUpdates.value = false;
-  }
-}
-
-function toggleSubscriptionPanel() {
-  const willOpen = !showSubscriptionPanel.value;
-  if (willOpen) {
-    showInstallFromUrlDialog.value = false;
-    showInstallFromFilePanel.value = false;
-  }
-  showSubscriptionPanel.value = willOpen;
-}
-
-function toggleInstallFromUrlDialog() {
-  const willOpen = !showInstallFromUrlDialog.value;
-  if (willOpen) {
-    showSubscriptionPanel.value = false;
-    showInstallFromFilePanel.value = false;
-  }
-  showInstallFromUrlDialog.value = willOpen;
-}
-
-function toggleInstallFromFilePanel() {
-  const willOpen = !showInstallFromFilePanel.value;
-  if (willOpen) {
-    showSubscriptionPanel.value = false;
-    showInstallFromUrlDialog.value = false;
-  }
-  showInstallFromFilePanel.value = willOpen;
-  isDragOverDropZone.value = false;
-}
-
-function handleAddSubscription() {
-  showAddSubscriptionInput.value = !showAddSubscriptionInput.value;
-  newSubscriptionUrl.value = '';
-}
-
-function confirmAddSubscription() {
-  const url = newSubscriptionUrl.value.trim();
-  if (!url) {
-    showToast('请输入订阅 URL', 'error');
-    return;
-  }
-
-  if (!validatePluginUrl(url) || !isValidSubscriptionUrl(url)) {
-    showToast('订阅链接需为公网 http/https 链接且以 .js 或 .json 结尾', 'error');
-    return;
-  }
-
-  const sub = addSubscription({ name: '', url }); // 实现
-  if (!sub) { // 实现
-    showToast('该订阅已存在或 URL 无效', 'error'); // 实现
-    return;
-  }
-  subscriptions.value = getSubscriptions(); // 实现
-  newSubscriptionUrl.value = ''; // 实现
-  showAddSubscriptionInput.value = false; // 实现
-  showToast(`已添加订阅: ${sub.name}`, 'success'); // 实现
-} // 实现
-
-async function handleInstallFromSubscription(sub: PluginSubscription) { // 实现
-  if (isPluginBusy.value) return; // 实现
-  isPluginBusy.value = true; // 实现
-  const progress = showProgressToast(`正在同步订阅 ${sub.name}...`);
-  try {
-    const result = await installFromSubscriptionUrl(sub.url, { // 实现
-      skipVersionCheck: pluginSettings.value.skipVersionCheck, // 实现
-      onPluginProgress: (done, total, name) => {
-        const current = Math.min(done + 1, total);
-        progress.update(
-          name ? `正在安装 ${name} (${current}/${total})` : `正在安装插件 (${current}/${total})`,
-          total > 0 ? (current / total) * 100 : 100,
-        );
-      },
-    }); // 实现
-    updateSubscription(sub.id, { // 实现
-      lastSyncAt: Date.now(), // 实现
-      lastSyncStatus: result.failCount === 0 ? 'success' : (result.successCount > 0 ? 'partial' : 'failed'), // 实现
-      lastSyncMessage: result.errors[0] || `成功安装 ${result.successCount} 个插件`, // 实现
-      lastSyncCount: result.successCount, // 实现
-    }); // 实现
-    subscriptions.value = getSubscriptions(); // 实现
-    refreshPluginList(); // 实现
-    if (result.successCount > 0) { // 实现
-      progress.complete(
-        `从 ${sub.name} 安装 ${result.successCount} 个插件${result.failCount ? `，${result.failCount} 个失败` : ''}`, // 实现
-        'success', // 实现
-      ); // 实现
-    } else { // 实现
-      progress.fail(`从 ${sub.name} 安装失败: ${result.errors[0] || '无可安装插件'}`);
-    } // 实现
-  } catch (e: any) { // 实现
-    progress.fail(`同步失败: ${e?.message || e}`);
-  } finally { // 实现
-    isPluginBusy.value = false; // 实现
-    progress.close();
-  } // 实现
-} // 实现
-
-const syncingAll = ref(false); // 实现
-async function handleSyncAllSubscriptions() { // 实现
-  if (syncingAll.value || isPluginBusy.value) return; // 实现
-  if (subscriptions.value.length === 0) { // 实现
-    showToast('暂无订阅源', 'info'); // 实现
-    return; // 实现
-  } // 实现
-  syncingAll.value = true; // 实现
-  const progress = showProgressToast(`正在同步订阅 (0/${subscriptions.value.length})`);
-  try { // 实现
-    const res = await installAllSubscriptions((index, total, sub) => {
-      progress.update(
-        `正在同步 ${sub.name || '订阅'} (${index + 1}/${total})`,
-        ((index + 1) / total) * 100,
-      );
-    });
-    subscriptions.value = getSubscriptions(); // 实现
-    refreshPluginList(); // 实现
-    progress.complete(
-      `同步完成: 共安装 ${res.totalInstalled} 个插件${res.failedSubs ? `，${res.failedSubs} 个订阅失败` : ''}`, // 实现
-      res.failedSubs ? 'info' : 'success', // 实现
-    ); // 实现
-  } catch (e: any) { // 实现
-    progress.fail(`同步失败: ${e?.message || e}`);
-  } finally { // 实现
-    syncingAll.value = false; // 实现
-    progress.close();
-  } // 实现
-} // 实现
-// ==================== 订阅名称编辑 ==================== 
-const editingSubId = ref<string | null>(null); // 实现
-const editingSubName = ref(''); // 实现
-function startEditSubName(sub: PluginSubscription) { // 实现
-  editingSubId.value = sub.id; // 实现
-  editingSubName.value = sub.name; // 实现
-} // 实现
-function saveSubName(sub: PluginSubscription) { // 实现
-  if (editingSubId.value !== sub.id) return; // 实现
-  const name = editingSubName.value.trim(); // 实现
-  if (name && name !== sub.name) { // 实现
-    updateSubscription(sub.id, { name }); // 实现
-    subscriptions.value = getSubscriptions(); // 实现
-  } // 实现
-  editingSubId.value = null; // 实现
-} // 实现
-function cancelEditSubName() { // 实现
-  editingSubId.value = null; // 实现
-}
-
-function formatRelativeTime(ts: number | undefined): string { // 实现
-  if (!ts) return ''; // 实现
-  const diff = Date.now() - ts; // 实现
-  if (diff < 60_000) return '刚刚'; // 实现
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`; // 实现
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`; // 实现
-  const d = new Date(ts); // 实现
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; // 实现
-}
-
-const showRemoveSubscriptionConfirm = ref(false); // 实现
-const pendingRemoveSubscription = ref<PluginSubscription | null>(null); // 实现
-
-function handleRemoveSubscription(sub: PluginSubscription) { // 实现
-  pendingRemoveSubscription.value = sub; // 实现
-  showRemoveSubscriptionConfirm.value = true; // 实现
-}
-
-function confirmRemoveSubscription() { // 实现
-  const sub = pendingRemoveSubscription.value; // 实现
-  if (!sub) return; // 实现
-  removeSubscription(sub.id); // 实现
-  subscriptions.value = getSubscriptions(); // 实现
-  showRemoveSubscriptionConfirm.value = false; // 实现
-  pendingRemoveSubscription.value = null; // 实现
-  showToast(`已移除订阅 ${sub.name}`, 'success');
-}
-
-// ==================== 插件详情弹窗 ==================== 
+// ==================== 插件详情弹窗 ====================
 const detailPlugin = ref<PluginSource | null>(null); // 实现
 
-// ==================== 用户变量编辑 ====================
-const detailUserVariables = ref<PluginUserVariable[]>([]);
-const detailUserVarValues = ref<Record<string, string>>({});
-const savingUserVars = ref(false);
-const loadingUserVars = ref(false);
-
-async function openPluginDetail(plugin: PluginSource) {
+function openPluginDetail(plugin: PluginSource) { // 实现
   detailPlugin.value = plugin; // 实现
-  detailUserVariables.value = getPluginUserVariables(plugin.id);
-  detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
-  migrateOldVarKeys(detailUserVariables.value, detailUserVarValues.value);
-  for (const v of detailUserVariables.value) {
-    if (!(v.name in detailUserVarValues.value) && v.defaultValue !== undefined) {
-      detailUserVarValues.value[v.name] = v.defaultValue;
-    }
-  }
-
-  if (detailUserVariables.value.length === 0 && plugin.format !== 'lx') {
-    loadingUserVars.value = true;
-    try {
-      const vars = await ensurePluginUserVariables(plugin);
-      if (vars.length > 0) {
-        detailUserVariables.value = vars;
-        detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
-        migrateOldVarKeys(vars, detailUserVarValues.value);
-        for (const v of vars) {
-          if (!(v.name in detailUserVarValues.value) && v.defaultValue !== undefined) {
-            detailUserVarValues.value[v.name] = v.defaultValue;
-          }
-        }
-      }
-    } catch {
-      // 加载失败不阻塞详情面板
-    } finally {
-      loadingUserVars.value = false;
-    }
-  }
-}
-
-function migrateOldVarKeys(vars: PluginUserVariable[], values: Record<string, string>) {
-  let migrated = false;
-  for (const v of vars) {
-    if (v.name in values) continue;
-    const oldKeys = [v.title, v.placeholder, v.description].filter((k): k is string => !!k && k !== v.name);
-    for (const oldKey of oldKeys) {
-      if (oldKey in values && values[oldKey]) {
-        values[v.name] = values[oldKey];
-        delete values[oldKey];
-        migrated = true;
-        break;
-      }
-    }
-  }
-  if (migrated) {
-    if (detailPlugin.value) {
-      setPluginUserVariableValues(detailPlugin.value.id, values);
-    }
-  }
-}
-
-function closePluginDetail() { // 实现
-  detailPlugin.value = null; // 实现
-  detailUserVariables.value = [];
-  detailUserVarValues.value = {};
-  loadingUserVars.value = false;
-}
-
-async function copyPluginLink() { // 实现
-  if (!detailPlugin.value?.filePath) return; // 实现
-  try {
-    await navigator.clipboard.writeText(detailPlugin.value.filePath); // 实现
-    showToast('插件链接已复制', 'success'); // 实现
-  } catch {
-    showToast('复制失败，请手动选择复制', 'error'); // 实现
-  }
-}
-
-async function saveUserVariables() {
-  if (!detailPlugin.value) return;
-  savingUserVars.value = true;
-  try {
-    setPluginUserVariableValues(detailPlugin.value.id, { ...detailUserVarValues.value });
-    reloadPluginInstance(detailPlugin.value.id);
-    showToast('已保存用户变量，开始生效', 'success');
-    closePluginDetail();
-  } catch {
-    showToast('保存失败，请重试', 'error');
-  } finally {
-    savingUserVars.value = false;
-  }
 }
 </script>
 
@@ -1157,187 +384,38 @@ async function saveUserVariables() {
           </button>
         </div>
 
-        <transition name="settings-pop-panel">
-          <div v-if="showInstallFromFilePanel" class="px-4 pb-4">
-            <div class="settings-plugin-inline-panel">
-              <div
-                class="settings-plugin-dropzone"
-                :class="{ 'settings-plugin-dropzone--active': isDragOverDropZone }"
-                @click="handleInstallFromFile"
-              >
-                <div class="settings-plugin-dropzone-icon">
-                  <UploadCloud class="h-8 w-8" />
-                </div>
-                <div class="settings-plugin-dropzone-title">
-                  点击选择文件或拖拽到此处
-                </div>
-                <SettingHint severity="warning" class="absolute right-4 top-4" text="支持 .js 或 .json 格式的插件文件" /> 
-              </div>
-              <div class="flex justify-end mt-3">
-                <button
-                  type="button" 
-                  class="settings-plugin-button settings-plugin-button--ghost" 
-                  @click="toggleInstallFromFilePanel"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          </div>
-        </transition>
+        <PluginLocalInstallPanel
+          :visible="showInstallFromFilePanel"
+          :is-drag-over-drop-zone="isDragOverDropZone"
+          @select="handleInstallFromFile"
+          @cancel="toggleInstallFromFilePanel"
+        />
 
-        <transition name="settings-pop-panel">
-          <div v-if="showInstallFromUrlDialog" class="px-4 pb-4">
-            <div class="settings-plugin-inline-panel">
-              <div class="flex items-center justify-between gap-4">
-                <div class="shrink-0 text-sm font-medium text-gray-800 dark:text-gray-200">插件地址</div>
-                <div class="flex min-w-0 flex-1 items-center gap-3">
-                  <SettingHint severity="warning" text="粘贴插件的 JS 文件直链或 JSON 索引地址" /> 
-                  <input
-                    v-model="installUrl"
-                    type="text"
-                    class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10 flex-1"
-                    @keydown.enter="handleInstallFromUrl"
-                  />
-                  <button
-                    type="button"
-                    class="settings-plugin-button"
-                    @click="handleInstallFromUrl"
-                  >
-                    <Download class="h-4 w-4" />
-                    安装
-                  </button>
-                  <button
-                    type="button"
-                    class="settings-plugin-button settings-plugin-button--ghost"
-                    @click="toggleInstallFromUrlDialog(); installUrl = ''"
-                  >
-                    取消
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </transition>
+        <PluginUrlInstallPanel
+          v-model="installUrl"
+          :visible="showInstallFromUrlDialog"
+          @install="handleInstallFromUrl"
+          @cancel="toggleInstallFromUrlDialog(); installUrl = ''"
+        />
 
-        <transition name="settings-pop-panel">
-          <div v-if="showSubscriptionPanel" class="px-4 pb-4">
-            <div class="settings-plugin-inline-panel">
-              <div class="flex items-center justify-between mb-3 gap-2"> 
-                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">订阅管理</div>
-                <div class="flex shrink-0 items-center gap-3">
-                  <SettingHint severity="warning" text="订阅可自动同步远端插件列表，方便一次性安装多个来源" /> 
-                  <button 
-                    type="button" 
-                    class="settings-plugin-button settings-plugin-button--sm settings-plugin-button--secondary" 
-                    :disabled="syncingAll || subscriptions.length === 0" 
-                    :class="{ 'settings-plugin-button--disabled': syncingAll || subscriptions.length === 0 }" 
-                    :title="subscriptions.length === 0 ? '暂无订阅' : '拉取所有订阅并安装插件'" 
-                    @click="handleSyncAllSubscriptions" 
-                  > 
-                    <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': syncingAll }" /> 
-                    {{ syncingAll ? '同步中...' : '更新全部' }} 
-                  </button> 
-                  <button 
-                    type="button" 
-                    class="settings-plugin-button settings-plugin-button--sm" 
-                    @click="handleAddSubscription" 
-                  > 
-                    {{ showAddSubscriptionInput ? '取消' : '添加订阅' }} 
-                  </button> 
-                </div> 
-              </div>
-
-              <transition name="settings-pop-panel">
-                <div v-if="showAddSubscriptionInput" class="mb-3">
-                  <div class="flex items-center gap-3">
-                    <input
-                      v-model="newSubscriptionUrl"
-                      type="text"
-                      placeholder="https://example.com/subscription.json"
-                      class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10 flex-1"
-                      @keydown.enter="confirmAddSubscription"
-                    />
-                    <button
-                      type="button"
-                      class="settings-plugin-button"
-                      @click="confirmAddSubscription"
-                    >
-                      <Download class="h-4 w-4" />
-                      添加
-                    </button>
-                  </div>
-                </div>
-              </transition>
-
-              <div v-if="subscriptions.length === 0 && !showAddSubscriptionInput" class="settings-plugin-empty">
-                暂无订阅源，点击「添加订阅」导入
-              </div>
-              <div v-else class="flex flex-col gap-2">
-                <div
-                  v-for="sub in subscriptions"
-                  :key="sub.id"
-                  class="flex items-center gap-3 p-2.5 rounded-lg bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
-                >
-                  <div class="min-w-0 flex-1">
-                    <input 
-                      v-if="editingSubId === sub.id" 
-                      v-model="editingSubName" 
-                      type="text" 
-                      class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                      @keydown.enter="saveSubName(sub)" 
-                      @keydown.esc="cancelEditSubName" 
-                      @blur="saveSubName(sub)" 
-                    /> 
-                    <div 
-                      v-else 
-                      class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate cursor-text hover:text-[#EC4141] transition-colors" 
-                      :title="`点击编辑「${sub.name}」名称`" 
-                      @click="startEditSubName(sub)" 
-                    > 
-                      {{ sub.name || sub.url }} 
-                    </div> 
-                    <div class="text-xs text-gray-500 dark:text-white/50 truncate">{{ sub.url }}</div>
-                    <div 
-                      v-if="sub.lastSyncAt" 
-                      class="flex items-center gap-1.5 mt-0.5 text-[11px] truncate" 
-                      :class="sub.lastSyncStatus === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-white/40'" 
-                      :title="sub.lastSyncMessage" 
-                    > 
-                      <span 
-                        class="inline-block w-1.5 h-1.5 rounded-full shrink-0" 
-                        :class="{ 
-                          'bg-green-500': sub.lastSyncStatus === 'success', 
-                          'bg-amber-500': sub.lastSyncStatus === 'partial', 
-                          'bg-red-500': sub.lastSyncStatus === 'failed', 
-                        }" 
-                      ></span> 
-                      <span class="truncate">上次同步: {{ formatRelativeTime(sub.lastSyncAt) }} · {{ sub.lastSyncCount ?? 0 }} 个</span> 
-                    </div> 
-                  </div>
-                  <button
-                    type="button"
-                    class="settings-plugin-icon-button"
-                    :disabled="isPluginBusy" 
-                    :class="{ 'settings-plugin-icon-button--updating': isPluginBusy }" 
-                    title="从订阅安装"
-                    @click="handleInstallFromSubscription(sub)"
-                  >
-                    <Download class="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    class="settings-plugin-icon-button settings-plugin-icon-button--danger"
-                    title="移除订阅"
-                    @click="handleRemoveSubscription(sub)"
-                  >
-                    <Trash2 class="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </transition>
+        <PluginSubscriptionPanel
+          v-model:editing-sub-name="editingSubName"
+          v-model:new-subscription-url="newSubscriptionUrl"
+          :visible="showSubscriptionPanel"
+          :subscriptions="subscriptions"
+          :show-add-subscription-input="showAddSubscriptionInput"
+          :syncing-all="syncingAll"
+          :is-plugin-busy="isPluginBusy"
+          :editing-sub-id="editingSubId"
+          @sync-all="handleSyncAllSubscriptions"
+          @toggle-add="handleAddSubscription"
+          @confirm-add="confirmAddSubscription"
+          @install="handleInstallFromSubscription"
+          @remove="handleRemoveSubscription"
+          @edit-name="startEditSubName"
+          @save-name="saveSubName"
+          @cancel-name="cancelEditSubName"
+        />
       </div>
     </section>
 
@@ -1353,9 +431,9 @@ async function saveUserVariables() {
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">启动时自动更新插件</p>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint severity="warning" text="软件启动时自动检查并安装插件更新" /> 
+            <SettingHint severity="warning" text="软件启动时自动检查并安装插件更新" />
             <button
-              type="button" 
+              type="button"
               class="glass-switch"
               :class="{ 'is-checked': pluginSettings.autoUpdateOnStartup }"
               @click="togglePluginSetting('autoUpdateOnStartup')"
@@ -1370,7 +448,7 @@ async function saveUserVariables() {
           <div class="flex items-center gap-3">
             <SettingHint text="首次使用时才初始化插件，加快启动速度" />
             <button
-              type="button" 
+              type="button"
               class="glass-switch"
               :class="{ 'is-checked': pluginSettings.lazyLoad }"
               @click="togglePluginSetting('lazyLoad')"
@@ -1383,9 +461,9 @@ async function saveUserVariables() {
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">安装时不校验版本</p>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint severity="warning" text="允许安装相同或更低版本的插件" /> 
+            <SettingHint severity="warning" text="允许安装相同或更低版本的插件" />
             <button
-              type="button" 
+              type="button"
               class="glass-switch"
               :class="{ 'is-checked': pluginSettings.skipVersionCheck }"
               @click="togglePluginSetting('skipVersionCheck')"
@@ -1463,227 +541,49 @@ async function saveUserVariables() {
         class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
       >
       <TransitionGroup name="plugin-sort" tag="div" class="flex flex-col">
-        <div
+        <PluginCard
           v-for="(plugin, index) in filteredPlugins"
           :key="plugin.id"
-          data-plugin-row
-          class="settings-plugin-card"
-          :class="{ 
-            'settings-plugin-card--dragging': draggingIndex === index,
-          }" 
-        >
-          <div 
-            class="plugin-drag-handle touch-none select-none"
-            :class="{
-              'plugin-drag-handle--disabled': !!searchQuery.trim(),
-              'cursor-grabbing': draggingIndex === index,
-              'cursor-grab': draggingIndex !== index,
-            }"
-            @pointerdown="startDragging(index, $event)"
-          > 
-            <GripVertical class="h-5 w-5" /> 
-          </div> 
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            <div 
-              class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" 
-              :class="[pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).iconBg, pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).iconText]"
-            > 
-              <Puzzle class="h-5 w-5" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2 min-w-0">
-                <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate min-w-0">
-                  {{ plugin.name }}
-                </div>
-                <span 
-                  class="settings-plugin-tag shrink-0 whitespace-nowrap"
-                  :class="pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).tagClass"
-                > 
-                  {{ pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).label }}
-                </span> 
-                <span
-                  v-if="subBrandLabelById.get(plugin.id)"
-                  class="settings-plugin-tag settings-plugin-tag--brand shrink-0 whitespace-nowrap"
-                  title="付费订阅来源"
-                >
-                  {{ subBrandLabelById.get(plugin.id) }}
-                </span>
-                <span
-                  v-if="plugin.updateAvailable"
-                  class="settings-plugin-tag settings-plugin-tag--accent shrink-0 whitespace-nowrap"
-                >
-                  可更新
-                </span>
-                <span
-                  v-if="pluginsWithUserVars.has(plugin.id)"
-                  class="settings-plugin-tag settings-plugin-tag--vars shrink-0 whitespace-nowrap"
-                  title="此插件支持用户变量配置"
-                >
-                  <KeyRound class="h-3 w-3 shrink-0" />
-                  <span class="whitespace-nowrap">变量</span>
-                </span>
-              </div>
-              <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5 truncate">
-                v{{ plugin.version }} 
-                <span v-if="plugin.author"> · {{ plugin.author }}</span>
-                <span v-if="plugin.description"> · {{ plugin.description }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button" 
-              class="settings-plugin-icon-button" 
-              title="详情信息" 
-              @click="openPluginDetail(plugin)" 
-            >
-              <Info class="h-4 w-4" /> 
-            </button>
-            <button
-              type="button"
-              class="settings-plugin-icon-button"
-              :class="{
-                'settings-plugin-icon-button--updating': updatingPluginId === plugin.id,
-                'settings-plugin-icon-button--update-available': !!updateCheckResults.get(plugin.id)?.hasUpdate,
-              }"
-              :disabled="updatingPluginId === plugin.id"
-              :title="updateCheckResults.get(plugin.id)?.hasUpdate
-                ? `${plugin.name} 可更新到 v${updateCheckResults.get(plugin.id)?.newVersion}，点击执行更新`
-                : (updatingPluginId === plugin.id ? '正在更新...' : `检查 ${plugin.name} 的更新`)"
-              @click="handleUpdatePlugin(plugin)"
-            >
-              <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': updatingPluginId === plugin.id }" />
-            </button>
-            <button
-              type="button"
-              class="settings-plugin-icon-button settings-plugin-icon-button--danger"
-              title="卸载此插件"
-              @click="handleUninstallPlugin(plugin)"
-            >
-              <Trash2 class="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              class="glass-switch ml-1"
-              :class="{ 'is-checked': plugin.enabled }"
-              @click="handleTogglePlugin(plugin)"
-            ></button>
-          </div>
-        </div>
+          :plugin="plugin"
+          :index="index"
+          :dragging="draggingIndex === index"
+          :search-query="searchQuery"
+          :is-baka="pluginsBakaIds.has(plugin.id)"
+          :has-user-vars="pluginsWithUserVars.has(plugin.id)"
+          :sub-brand-label="subBrandLabelById.get(plugin.id)"
+          :update-check="updateCheckResults.get(plugin.id)"
+          :updating="updatingPluginId === plugin.id"
+          @drag-start="startDragging"
+          @open-detail="openPluginDetail"
+          @update="handleUpdatePlugin"
+          @uninstall="handleUninstallPlugin"
+          @toggle="handleTogglePlugin"
+        />
       </TransitionGroup>
       </div>
     </section>
 
-    <Teleport to="body"> 
-      <Transition name="plugin-detail"> 
-        <div
-          v-if="showUninstallAllConfirm" 
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
-          :class="overlayZClass" 
-          @click.self="showUninstallAllConfirm = false" 
-        >
-          <div class="plugin-detail-card"> 
-            <div class="plugin-detail-header"> 
-              <div class="flex items-center gap-3 min-w-0"> 
-                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500"> 
-                  <Trash2 class="h-5 w-5" /> 
-                </div>
-                <div class="min-w-0"> 
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载全部插件</div> 
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div> 
-                </div>
-              </div>
-              <button
-                type="button" 
-                class="plugin-detail-close" 
-                aria-label="关闭" 
-                @click="showUninstallAllConfirm = false" 
-              >
-                <X class="h-4 w-4" /> 
-              </button>
-            </div>
-            <div class="plugin-detail-body"> 
-              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed"> 
-                确认要卸载全部 <strong class="text-[#EC4141]">{{ plugins.length }}</strong> 个插件吗？卸载后无法恢复，需重新安装。 
-              </p>
-              <div class="flex justify-end gap-2 pt-1"> 
-                <button
-                  type="button" 
-                  class="settings-plugin-button settings-plugin-button--ghost" 
-                  @click="showUninstallAllConfirm = false" 
-                >
-                  取消
-                </button>
-                <button
-                  type="button" 
-                  class="settings-plugin-button settings-plugin-button--danger" 
-                  @click="confirmUninstallAll" 
-                >
-                  <Trash2 class="h-4 w-4" /> 
-                  确认卸载
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition> 
-    </Teleport>
+    <PluginConfirmDialog
+      :visible="showUninstallAllConfirm"
+      title="卸载全部插件"
+      confirm-text="确认卸载"
+      :overlay-z-class="overlayZClass"
+      @cancel="showUninstallAllConfirm = false"
+      @confirm="confirmUninstallAll"
+    >
+      确认要卸载全部 <strong class="text-[#EC4141]">{{ plugins.length }}</strong> 个插件吗？卸载后无法恢复，需重新安装。
+    </PluginConfirmDialog>
 
-    <Teleport to="body"> 
-      <Transition name="plugin-detail"> 
-        <div
-          v-if="showUninstallPluginConfirm" 
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
-          :class="overlayZClass" 
-          @click.self="showUninstallPluginConfirm = false" 
-        >
-          <div class="plugin-detail-card"> 
-            <div class="plugin-detail-header"> 
-              <div class="flex items-center gap-3 min-w-0"> 
-                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500"> 
-                  <Trash2 class="h-5 w-5" /> 
-                </div>
-                <div class="min-w-0"> 
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载插件</div> 
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div> 
-                </div>
-              </div>
-              <button
-                type="button" 
-                class="plugin-detail-close" 
-                aria-label="关闭" 
-                @click="showUninstallPluginConfirm = false" 
-              >
-                <X class="h-4 w-4" /> 
-              </button>
-            </div>
-            <div class="plugin-detail-body"> 
-              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed"> 
-                确认要卸载插件 <strong class="text-[#EC4141]">{{ pendingUninstallPlugin?.name }}</strong> 吗？卸载后无法恢复，需重新安装。 
-              </p>
-              <div class="flex justify-end gap-2 pt-1"> 
-                <button
-                  type="button" 
-                  class="settings-plugin-button settings-plugin-button--ghost" 
-                  @click="showUninstallPluginConfirm = false" 
-                >
-                  取消
-                </button>
-                <button
-                  type="button" 
-                  class="settings-plugin-button settings-plugin-button--danger" 
-                  @click="confirmUninstallPlugin" 
-                >
-                  <Trash2 class="h-4 w-4" /> 
-                  确认卸载
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition> 
-    </Teleport>
+    <PluginConfirmDialog
+      :visible="showUninstallPluginConfirm"
+      title="卸载插件"
+      confirm-text="确认卸载"
+      :overlay-z-class="overlayZClass"
+      @cancel="showUninstallPluginConfirm = false"
+      @confirm="confirmUninstallPlugin"
+    >
+      确认要卸载插件 <strong class="text-[#EC4141]">{{ pendingUninstallPlugin?.name }}</strong> 吗？卸载后无法恢复，需重新安装。
+    </PluginConfirmDialog>
 
     <SyncDeleteScopeModal
       v-model:visible="showPluginDeleteScope"
@@ -1695,219 +595,33 @@ async function saveUserVariables() {
       @scope="confirmPluginDeleteScope"
     />
 
-    <Teleport to="body"> 
-      <Transition name="plugin-detail"> 
-        <div
-          v-if="showRemoveSubscriptionConfirm" 
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
-          :class="overlayZClass" 
-          @click.self="showRemoveSubscriptionConfirm = false" 
-        >
-          <div class="plugin-detail-card"> 
-            <div class="plugin-detail-header"> 
-              <div class="flex items-center gap-3 min-w-0"> 
-                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500"> 
-                  <Trash2 class="h-5 w-5" /> 
-                </div>
-                <div class="min-w-0"> 
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">移除订阅</div> 
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div> 
-                </div>
-              </div>
-              <button
-                type="button" 
-                class="plugin-detail-close" 
-                aria-label="关闭" 
-                @click="showRemoveSubscriptionConfirm = false" 
-              >
-                <X class="h-4 w-4" /> 
-              </button>
-            </div>
-            <div class="plugin-detail-body"> 
-              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed"> 
-                确认要移除订阅 <strong class="text-[#EC4141]">{{ pendingRemoveSubscription?.name }}</strong> 吗？移除后需重新添加。 
-              </p>
-              <div class="flex justify-end gap-2 pt-1"> 
-                <button
-                  type="button" 
-                  class="settings-plugin-button settings-plugin-button--ghost" 
-                  @click="showRemoveSubscriptionConfirm = false" 
-                >
-                  取消
-                </button>
-                <button
-                  type="button" 
-                  class="settings-plugin-button settings-plugin-button--danger" 
-                  @click="confirmRemoveSubscription" 
-                >
-                  <Trash2 class="h-4 w-4" /> 
-                  确认移除
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition> 
-    </Teleport>
+    <PluginConfirmDialog
+      :visible="showRemoveSubscriptionConfirm"
+      title="移除订阅"
+      confirm-text="确认移除"
+      :overlay-z-class="overlayZClass"
+      @cancel="showRemoveSubscriptionConfirm = false"
+      @confirm="confirmRemoveSubscription"
+    >
+      确认要移除订阅 <strong class="text-[#EC4141]">{{ pendingRemoveSubscription?.name }}</strong> 吗？移除后需重新添加。
+    </PluginConfirmDialog>
 
-    <Teleport to="body"> 
-      <Transition name="plugin-detail"> 
-        <div
-          v-if="detailPlugin" 
-          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
-          :class="overlayZClass" 
-          @click.self="closePluginDetail"
-        >
-          <div class="plugin-detail-card"> 
-            <div class="plugin-detail-header"> 
-              <div class="flex items-center gap-3 min-w-0"> 
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12 flex items-center justify-center shrink-0 text-[#EC4141]"> 
-                  <Puzzle class="h-5 w-5" /> 
-                </div>
-                <div class="min-w-0"> 
-                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{{ detailPlugin.name }}</div> 
-                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5"> 
-                    {{ detailPlugin.format === 'lx' ? '落雪格式' : detailPlugin.format === 'anime' ? 'anime 格式' : 'MusicFree 格式' }}
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button" 
-                class="plugin-detail-close" 
-                aria-label="关闭" 
-                @click="closePluginDetail" 
-              >
-                <X class="h-4 w-4" /> 
-              </button>
-            </div>
-
-            <div class="plugin-detail-body"> 
-              <div class="plugin-detail-row"> 
-                <span class="plugin-detail-label">版本</span> 
-                <span class="plugin-detail-value">v{{ detailPlugin.version || '—' }}</span> 
-              </div>
-              <div class="plugin-detail-row"> 
-                <span class="plugin-detail-label">作者</span> 
-                <span class="plugin-detail-value">{{ detailPlugin.author || '—' }}</span> 
-              </div>
-              <div class="plugin-detail-row"> 
-                <span class="plugin-detail-label">描述</span> 
-                <span class="plugin-detail-value">{{ detailPlugin.description || '—' }}</span> 
-              </div>
-              <div class="plugin-detail-row"> 
-                <span class="plugin-detail-label">音源</span> 
-                <div class="flex flex-wrap gap-1.5"> 
-                  <span
-                    v-for="src in detailPlugin.sources" 
-                    :key="src"
-                    class="settings-plugin-tag" 
-                  >{{ src }}</span> 
-                  <span v-if="detailPlugin.sources.length === 0" class="plugin-detail-value">—</span> 
-                </div>
-              </div>
-              <div class="plugin-detail-row"> 
-                <span class="plugin-detail-label">插件链接</span> 
-                <button
-                  type="button" 
-                  class="plugin-detail-link" 
-                  :title="detailPlugin.filePath || ''" 
-                  @click="copyPluginLink" 
-                >
-                  <Copy class="h-3.5 w-3.5 shrink-0" /> 
-                  <span class="truncate">{{ detailPlugin.filePath || '—' }}</span> 
-                </button>
-              </div>
-            </div>
-
-            <div v-if="detailUserVariables.length > 0 || loadingUserVars" class="plugin-detail-user-vars">
-              <div class="plugin-detail-user-vars-header">
-                <KeyRound class="h-4 w-4 text-[#EC4141] shrink-0" />
-                <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">用户变量</span>
-                <span class="text-xs text-gray-400 dark:text-white/40">插件运行所需的自定义参数</span>
-              </div>
-              <div v-if="loadingUserVars" class="flex items-center gap-2 py-3 px-1">
-                <RefreshCw class="h-3.5 w-3.5 animate-spin text-gray-400" />
-                <span class="text-xs text-gray-400 dark:text-white/40">正在加载插件用户变量...</span>
-              </div>
-              <template v-else>
-              <div class="plugin-detail-user-vars-body">
-                <div
-                  v-for="v in detailUserVariables"
-                  :key="v.name"
-                  class="plugin-detail-var-row"
-                >
-                  <label class="plugin-detail-var-label">
-                    {{ v.title || v.name }}
-                    <span v-if="v.required" class="text-[#EC4141]">*</span>
-                  </label>
-                  <p v-if="v.description" class="plugin-detail-var-desc">{{ v.description }}</p>
-                  <select
-                    v-if="v.type === 'select'"
-                    v-model="detailUserVarValues[v.name]"
-                    class="plugin-detail-var-select"
-                  >
-                    <option value="" disabled>{{ v.placeholder || '请选择' }}</option>
-                    <option v-for="opt in v.options" :key="opt" :value="opt">{{ opt }}</option>
-                  </select>
-                  <div v-else-if="v.type === 'password'" class="relative" @focusin="pwdFocused[v.name] = true" @focusout="pwdFocused[v.name] = false; pwdVisible[v.name] = false">
-                    <input
-                      :type="pwdVisible[v.name] ? 'text' : 'password'"
-                      v-model="detailUserVarValues[v.name]"
-                      :placeholder="v.placeholder || ''"
-                      class="h-8 w-full rounded-lg border border-black/10 bg-white/45 px-3 pr-9 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                      autocomplete="off"
-                    />
-                    <button
-                      type="button"
-                      v-show="pwdFocused[v.name] && (detailUserVarValues[v.name] || '').length > 0"
-                      class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
-                      :aria-label="pwdVisible[v.name] ? '隐藏密码' : '查看密码'"
-                      @mousedown.prevent
-                      @click="pwdVisible[v.name] = !pwdVisible[v.name]"
-                    >
-                      <EyeOff v-if="pwdVisible[v.name]" class="h-4 w-4" />
-                      <Eye v-else class="h-4 w-4" />
-                    </button>
-                  </div>
-                  <input
-                    v-else
-                    type="text"
-                    v-model="detailUserVarValues[v.name]"
-                    :placeholder="v.placeholder || ''"
-                    class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                    autocomplete="off"
-                  />
-                </div>
-              </div>
-              <div class="plugin-detail-user-vars-footer">
-                <button
-                  type="button" 
-                  class="plugin-detail-var-cancel"
-                  :disabled="savingUserVars"
-                  @click="closePluginDetail"
-                >
-                  取消
-                </button>
-                <button
-                  type="button" 
-                  class="plugin-detail-var-save"
-                  :disabled="savingUserVars"
-                  @click="saveUserVariables"
-                >
-                  <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': savingUserVars }" />
-                  {{ savingUserVars ? '保存中...' : '保存并重载插件' }}
-                </button>
-              </div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </Transition> 
-    </Teleport>
+    <PluginDetailDialog
+      :plugin="detailPlugin"
+      :overlay-z-class="overlayZClass"
+      @close="detailPlugin = null"
+    />
   </div>
 </template>
 
 <style scoped>
+.settings-plugin-toolbar {
+  flex-wrap: nowrap;
+}
+</style>
+
+<style>
+/* ==================== 子组件共用样式（PluginCard/安装面板/弹窗等，类名保持不变） ==================== */
 .settings-plugin-button {
   display: inline-flex;
   align-items: center;
@@ -1947,10 +661,6 @@ async function saveUserVariables() {
 .settings-plugin-button--active:hover:not(:disabled) {
   border-color: rgba(236, 65, 65, 0.6); /* 样式 */
   background: rgba(236, 65, 65, 0.18); /* 样式 */
-}
-
-.settings-plugin-toolbar {
-  flex-wrap: nowrap;
 }
 
 .settings-plugin-button--uninstall {
@@ -2082,129 +792,6 @@ async function saveUserVariables() {
   padding-top: 14px;
 }
 
-.settings-plugin-dropzone {
-  position: relative;
-  display: flex; /* 样式 */
-  flex-direction: column; /* 样式 */
-  align-items: center; /* 样式 */
-  justify-content: center; /* 样式 */
-  gap: 8px;
-  padding: 32px 20px;
-  border: 2px dashed rgba(148, 163, 184, 0.35);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.4);
-  cursor: pointer; /* 样式 */
-  transition:
-    border-color 200ms ease,
-    background-color 200ms ease,
-    transform 200ms ease;
-}
-
-.settings-plugin-dropzone:hover {
-  border-color: rgba(236, 65, 65, 0.4); /* 样式 */
-  background: rgba(236, 65, 65, 0.04);
-  transform: translateY(-1px);
-}
-
-.settings-plugin-dropzone--active {
-  border-color: rgba(236, 65, 65, 0.6); /* 样式 */
-  background: rgba(236, 65, 65, 0.08);
-  transform: scale(1.01);
-}
-
-.settings-plugin-dropzone-icon {
-  display: flex; /* 样式 */
-  align-items: center; /* 样式 */
-  justify-content: center; /* 样式 */
-  width: 56px;
-  height: 56px;
-  border-radius: 16px; /* 样式 */
-  background: rgba(236, 65, 65, 0.08);
-  color: #ec4141; /* 样式 */
-  transition: background-color 200ms ease, color 200ms ease;
-}
-
-.settings-plugin-dropzone--active .settings-plugin-dropzone-icon {
-  background: rgba(236, 65, 65, 0.16);
-}
-
-.settings-plugin-dropzone-title {
-  font-size: 14px;
-  font-weight: 600; /* 样式 */
-  color: rgba(55, 65, 81, 0.9);
-}
-
-.settings-plugin-dropzone-hint {
-  display: flex; /* 样式 */
-  align-items: center; /* 样式 */
-  gap: 5px;
-  font-size: 12px; /* 样式 */
-  color: rgba(100, 116, 139, 0.8);
-}
-
-.settings-plugin-empty {
-  padding: 20px 0;
-  text-align: center;
-  color: rgba(100, 116, 139, 0.7);
-  font-size: 12px;
-}
-
-.settings-plugin-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 16px;
-  border: none; /* 样式 */
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 0;
-  background: transparent;
-  transition: background-color 160ms ease; /* 样式 */
-}
-
-.settings-plugin-card:last-child {
-  border-bottom: none;
-}
-
-.settings-plugin-card:hover {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.plugin-drag-handle { /* 样式 */
-  display: flex; /* 样式 */
-  align-items: center; /* 样式 */
-  justify-content: center; /* 样式 */
-  width: 24px; /* 样式 */
-  height: 24px; /* 样式 */
-  border-radius: 6px; /* 样式 */
-  color: rgba(148, 163, 184, 0.6); /* 样式 */
-  cursor: grab; /* 样式 */
-  flex-shrink: 0; /* 样式 */
-  transition: color 160ms ease, background-color 160ms ease; /* 样式 */
-} /* 样式 */
-.plugin-drag-handle:hover { /* 样式 */
-  color: rgba(100, 116, 139, 0.9); /* 样式 */
-  background: rgba(148, 163, 184, 0.1); /* 样式 */
-} /* 样式 */
-.plugin-drag-handle:active { /* 样式 */
-  cursor: grabbing; /* 样式 */
-} /* 样式 */
-.plugin-drag-handle--disabled { /* 样式 */
-  opacity: 0.3; /* 样式 */
-  cursor: not-allowed; /* 样式 */
-} /* 样式 */
-.settings-plugin-card--dragging { /* 样式 */
-  background: rgba(236, 65, 65, 0.06); /* 样式 */
-}
-
-.plugin-sort-move {
-  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-} /* 样式 */
-@media (prefers-reduced-motion: reduce) {
-  .plugin-sort-move {
-    transition: none;
-  }
-} /* 样式 */
 .settings-plugin-tag {
   display: inline-flex;
   align-items: center;
@@ -2410,149 +997,6 @@ async function saveUserVariables() {
   background: rgba(236, 65, 65, 0.12); /* 样式 */
 }
 
-.plugin-detail-user-vars {
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 16px 20px;
-}
-
-.dark .plugin-detail-user-vars {
-  border-top-color: rgba(255, 255, 255, 0.06);
-}
-
-.plugin-detail-user-vars-header {
-  display: flex; /* 样式 */
-  align-items: center; /* 样式 */
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.plugin-detail-user-vars-body {
-  display: flex; /* 样式 */
-  flex-direction: column; /* 样式 */
-  gap: 12px;
-}
-
-.plugin-detail-var-row {
-  display: flex; /* 样式 */
-  flex-direction: column; /* 样式 */
-  gap: 4px;
-}
-
-.plugin-detail-var-label {
-  font-size: 12px; /* 样式 */
-  font-weight: 600; /* 样式 */
-  color: #374151;
-  user-select: none;
-}
-
-.dark .plugin-detail-var-label {
-  color: rgba(255, 255, 255, 0.8); /* 样式 */
-}
-
-.plugin-detail-var-desc {
-  font-size: 11px;
-  color: #9ca3af;
-  line-height: 1.4;
-  margin: 0;
-}
-
-.dark .plugin-detail-var-desc {
-  color: rgba(255, 255, 255, 0.4); /* 样式 */
-}
-
-.plugin-detail-var-input,
-.plugin-detail-var-select {
-  width: 100%;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px; /* 样式 */
-  background: rgba(0, 0, 0, 0.02);
-  font-size: 12px; /* 样式 */
-  color: #1f2937; /* 样式 */
-  outline: none;
-  transition: border-color 160ms ease, background-color 160ms ease;
-}
-
-.dark .plugin-detail-var-input,
-.dark .plugin-detail-var-select {
-  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
-  background: rgba(255, 255, 255, 0.05); /* 样式 */
-  color: rgba(255, 255, 255, 0.9); /* 样式 */
-}
-
-.plugin-detail-var-input:focus,
-.plugin-detail-var-select:focus {
-  border-color: rgba(236, 65, 65, 0.4); /* 样式 */
-  background: rgba(236, 65, 65, 0.04);
-}
-
-.dark .plugin-detail-var-input:focus,
-.dark .plugin-detail-var-select:focus {
-  border-color: rgba(236, 65, 65, 0.5);
-  background: rgba(236, 65, 65, 0.08);
-}
-
-.plugin-detail-user-vars-footer {
-  display: flex; /* 样式 */
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.plugin-detail-var-cancel,
-.plugin-detail-var-save {
-  display: inline-flex; /* 样式 */
-  align-items: center; /* 样式 */
-  gap: 6px;
-  height: 34px;
-  padding: 0 16px;
-  border: none; /* 样式 */
-  border-radius: 8px; /* 样式 */
-  background: #EC4141;
-  color: #fff;
-  font-size: 12px; /* 样式 */
-  font-weight: 600; /* 样式 */
-  cursor: pointer; /* 样式 */
-  transition: background-color 160ms ease, opacity 160ms ease;
-}
-
-.plugin-detail-var-cancel {
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(0, 0, 0, 0.04);
-  color: #4b5563;
-}
-
-.dark .plugin-detail-var-cancel {
-  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
-  background: rgba(255, 255, 255, 0.06); /* 样式 */
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.plugin-detail-var-cancel:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.dark .plugin-detail-var-cancel:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1); /* 样式 */
-}
-
-.plugin-detail-var-save {
-  border: none; /* 样式 */
-  background: #EC4141;
-  color: #fff;
-}
-
-.plugin-detail-var-save:hover:not(:disabled) {
-  background: #d63a3a;
-}
-
-.plugin-detail-var-cancel:disabled,
-.plugin-detail-var-save:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .plugin-detail-enter-active, /* 样式 */
 .plugin-detail-leave-active { /* 样式 */
   transition: opacity 0.2s ease; /* 样式 */
@@ -2573,10 +1017,8 @@ async function saveUserVariables() {
   opacity: 0;
   transform: scale(0.92) translateY(8px); /* 样式 */
 }
-</style>
 
-<style>
-/* ==================== 暗色模式适配 ==================== */ 
+/* ==================== 暗色模式适配 ==================== */
 .dark .plugin-drag-handle { /* 样式 */
   color: rgba(255, 255, 255, 0.5); /* 样式 */
 }
@@ -2821,5 +1263,40 @@ async function saveUserVariables() {
 
 .dark .plugin-detail-link:hover { /* 样式 */
   background: rgba(236, 65, 65, 0.22); /* 样式 */
+}
+
+.dark .plugin-detail-user-vars {
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .plugin-detail-var-label {
+  color: rgba(255, 255, 255, 0.8); /* 样式 */
+}
+
+.dark .plugin-detail-var-desc {
+  color: rgba(255, 255, 255, 0.4); /* 样式 */
+}
+
+.dark .plugin-detail-var-input,
+.dark .plugin-detail-var-select {
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  background: rgba(255, 255, 255, 0.05); /* 样式 */
+  color: rgba(255, 255, 255, 0.9); /* 样式 */
+}
+
+.dark .plugin-detail-var-input:focus,
+.dark .plugin-detail-var-select:focus {
+  border-color: rgba(236, 65, 65, 0.5);
+  background: rgba(236, 65, 65, 0.08);
+}
+
+.dark .plugin-detail-var-cancel {
+  border-color: rgba(255, 255, 255, 0.1); /* 样式 */
+  background: rgba(255, 255, 255, 0.06); /* 样式 */
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.dark .plugin-detail-var-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1); /* 样式 */
 }
 </style>

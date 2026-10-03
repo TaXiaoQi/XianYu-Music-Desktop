@@ -1,7 +1,24 @@
 <script setup lang="ts"> // 实现
-import { ref, computed, onBeforeUnmount, onMounted } from "vue";
-import { getStoredAuth, signedRequest } from "../../services/auth/authService";
-import { toolboxApi } from "../../services/tauri/toolboxApi";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { getStoredAuth } from "../../services/auth/authService";
+import {
+    useWallpaperList,
+} from "../../composables/settings/useWallpaperList";
+import {
+    useWallpaperActions,
+} from "../../composables/settings/useWallpaperActions";
+import {
+    useWallpaperUpload,
+} from "../../composables/settings/useWallpaperUpload";
+import type {
+    MediaType,
+    WallpaperTab,
+} from "../../composables/settings/wallpaperTypes";
+import WallpaperCard from "./wallpaper/WallpaperCard.vue";
+import MyWallpaperCard from "./wallpaper/MyWallpaperCard.vue";
+import DownloadedWallpaperCard from "./wallpaper/DownloadedWallpaperCard.vue";
+import WallpaperUploadModal from "./wallpaper/WallpaperUploadModal.vue";
+
 const props = defineProps<{
     currentPath?: string;
 }>(); // 实现
@@ -9,44 +26,10 @@ const emit = defineEmits<{ // 实现
     (e: "close"): void;
     (e: "select", localPath: string, mediaType: MediaType): void;
 }>(); // 实现
-interface Wallpaper { // 实现
-    id: number;
-    title: string;
-    description: string;
-    imageUrl: string;
-    thumbnailUrl: string;
-    videoUrl?: string;
-    videoSha256?: string;
-    mediaType?: string;
-    category: string;
-    uploaderId?: string;
-    uploaderNickname?: string;
-} // 实现
-interface MyWallpaper extends Wallpaper { // 实现
-    status: "normal" | "disabled" | "pending" | "rejected" | string;
-    reviewedAt?: string | null;
-    reviewedBy?: string;
-    createdAt?: string;
-} // 实现
-interface DownloadedWallpaper extends Wallpaper {
-    localPath: string;
-    downloadedAt: string;
-}
 
-type MediaType = "image" | "video";
-const resolveMediaType = (v?: string): MediaType =>
-    v === "video" ? "video" : "image";
-type WallpaperTab = "browse" | "mine" | "downloads";
-const DOWNLOADED_WALLPAPERS_KEY = "xianyu_downloaded_wallpapers_v1";
-const wallpapers = ref<Wallpaper[]>([]); // 实现
-const isLoading = ref(true); // 实现
-const loadError = ref("");
-const downloadingId = ref<number | null>(null); // 实现
-const downloadError = ref("");
 // --- 淡出动画 ---
 const isClosing = ref(false);
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
-let uploadCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 const handleClose = () => {
     if (isClosing.value) return;
@@ -61,196 +44,61 @@ const activeTab = ref<WallpaperTab>("browse");
 const auth = getStoredAuth(); // 实现
 const isLoggedIn = computed(() => !!auth && !!auth.user?.ciyuanxi_id); // 实现
 const currentUser = computed(() => auth?.user); // 实现
-const myWallpapers = ref<MyWallpaper[]>([]); // 实现
-const myLoading = ref(false); // 实现
-const myError = ref("");
-const downloadedWallpapers = ref<DownloadedWallpaper[]>([]);
-const selectedDownloadIds = ref<number[]>([]);
-const deletingDownloads = ref(false);
-const showBatchOps = ref(false);
 
-const isCurrentWallpaper = (localPath: string) => {
-    return !!props.currentPath && props.currentPath === localPath;
-};
+const {
+    wallpapers,
+    isLoading,
+    loadError,
+    fetchWallpapers,
+    myWallpapers,
+    myLoading,
+    myError,
+    fetchMyWallpapers,
+} = useWallpaperList({ isLoggedIn, currentUser });
 
-const isWallpaperInUse = (id: number) => {
-    const record = downloadedRecord(id);
-    return !!record && isCurrentWallpaper(record.localPath);
-};
+const {
+    downloadingId,
+    downloadError,
+    downloadedWallpapers,
+    selectedDownloadIds,
+    deletingDownloads,
+    showBatchOps,
+    loadDownloadedWallpapers,
+    isDownloaded,
+    isCurrentWallpaper,
+    isWallpaperInUse,
+    toggleDownloadSelection,
+    selectAllDownloads,
+    clearDownloadSelection,
+    deleteSelectedDownloads,
+    downloadAndUse,
+    useDownloadedWallpaper,
+} = useWallpaperActions({
+    currentPath: () => props.currentPath,
+    onSelect: (localPath, mediaType) => emit("select", localPath, mediaType),
+    onCloseRequest: handleClose,
+});
 
-const showUploadModal = ref(false); // 实现
-const isUploadClosing = ref(false);
-const uploadForm = ref({ title: "", description: "", category: "" });
-const uploadFile = ref<File | null>(null); // 实现
-const uploadPreview = ref("");
-const uploadVideoUrl = ref("");
-const uploadIsVideo = ref(false);
-const uploadVideoDuration = ref(0);
-const uploading = ref(false); // 实现
-const uploadError = ref("");
-const clearUploadPreview = () => {
-    if (uploadPreview.value) {
-        URL.revokeObjectURL(uploadPreview.value);
-        uploadPreview.value = "";
-    }
-    if (uploadVideoUrl.value) {
-        URL.revokeObjectURL(uploadVideoUrl.value);
-        uploadVideoUrl.value = "";
-    }
-    uploadIsVideo.value = false;
-    uploadVideoDuration.value = 0;
-}; // 实现
-const fetchWallpapers = async () => { // 实现
-    isLoading.value = true;
-    loadError.value = "";
-    try {
-        const data = await signedRequest<Record<string, unknown>[]>(
-            "list_wallpapers",
-            { platform: "desktop" },
-        );
-        wallpapers.value = Array.isArray(data)
-            ? data.map((w: Record<string, unknown>) => ({
-                  id: Number(w.id || 0),
-                  title: String(w.title || ""),
-                  description: String(w.description || ""),
-                  imageUrl: String(w.imageUrl ?? w.image_url ?? w.image ?? ""),
-                  thumbnailUrl: String(
-                      w.thumbnailUrl ??
-                          w.thumbnail_url ??
-                          w.imageUrl ??
-                          w.image_url ??
-                          w.image ??
-                          "",
-                  ),
-                  videoUrl: String(w.videoUrl ?? w.video_url ?? ""),
-                  videoSha256: String(w.videoSha256 ?? w.video_sha256 ?? ""),
-                  mediaType: String(w.mediaType ?? w.media_type ?? ""),
-                  category: String(w.category || ""),
-                  uploaderId: String(
-                      w.uploaderId ??
-                          w.uploader_id ??
-                          w.ciyuanxi_id ??
-                          w.uploader ??
-                          "",
-                  ),
-                  uploaderNickname: String(
-                      w.uploaderNickname ??
-                          w.uploaded_by_nickname ??
-                          w.nickname ??
-                          "",
-                  ),
-              }))
-            : [];
-    } catch (err) {
-        loadError.value =
-            err instanceof Error ? err.message : "获取壁纸列表失败";
-    } finally {
-        isLoading.value = false;
-    }
-}; // 实现
-const fetchMyWallpapers = async () => { // 实现
-    if (!isLoggedIn.value || !currentUser.value?.ciyuanxi_id) return;
-    myLoading.value = true;
-    myError.value = "";
-    try {
-        const data = await signedRequest<Record<string, unknown>[]>(
-            "my_wallpapers",
-            {
-                ciyuanxi_id: currentUser.value.ciyuanxi_id,
-                platform: "desktop",
-            },
-        );
-        myWallpapers.value = Array.isArray(data)
-            ? (data.map((w: Record<string, unknown>) => ({
-                  id: Number(w.id || 0),
-                  title: String(w.title || ""),
-                  description: String(w.description || ""),
-                  imageUrl: String(w.imageUrl ?? w.image_url ?? w.image ?? ""),
-                  thumbnailUrl: String(
-                      w.thumbnailUrl ??
-                          w.thumbnail_url ??
-                          w.imageUrl ??
-                          w.image_url ??
-                          w.image ??
-                          "",
-                  ),
-                  videoUrl: String(w.videoUrl ?? w.video_url ?? ""),
-                  videoSha256: String(w.videoSha256 ?? w.video_sha256 ?? ""),
-                  mediaType: String(w.mediaType ?? w.media_type ?? ""),
-                  category: String(w.category || ""),
-                  status: String(w.status || "pending"),
-                  reviewedAt: w.reviewedAt ?? w.reviewed_at ?? null,
-                  reviewedBy:
-                      (w.reviewedBy ?? w.reviewed_by)
-                          ? String(w.reviewedBy ?? w.reviewed_by)
-                          : undefined,
-                  createdAt:
-                      (w.createdAt ?? w.created_at)
-                          ? String(w.createdAt ?? w.created_at)
-                          : undefined,
-                  uploaderId: String(
-                      w.uploaderId ?? w.uploader_id ?? w.ciyuanxi_id ?? "",
-                  ),
-                  uploaderNickname: String(
-                      w.uploaderNickname ??
-                          w.uploaded_by_nickname ??
-                          w.nickname ??
-                          "",
-                  ),
-              })) as MyWallpaper[])
-            : [];
-    } catch (err) {
-        myError.value = err instanceof Error ? err.message : "获取我的上传失败";
-    } finally {
-        myLoading.value = false;
-    }
-}; // 实现
-const loadDownloadedWallpapers = () => {
-    try {
-        const raw = localStorage.getItem(DOWNLOADED_WALLPAPERS_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        downloadedWallpapers.value = Array.isArray(parsed)
-            ? parsed.filter(
-                  (item): item is DownloadedWallpaper =>
-                      !!item &&
-                      typeof item.id === "number" &&
-                      typeof item.localPath === "string",
-              )
-            : [];
-    } catch {
-        downloadedWallpapers.value = [];
-    }
-};
-
-const persistDownloadedWallpapers = () => {
-    localStorage.setItem(
-        DOWNLOADED_WALLPAPERS_KEY,
-        JSON.stringify(downloadedWallpapers.value),
-    );
-};
-
-const downloadedIdSet = computed(
-    () => new Set(downloadedWallpapers.value.map((item) => item.id)),
-);
-
-const isDownloaded = (id: number) => downloadedIdSet.value.has(id);
-
-const downloadedRecord = (id: number) =>
-    downloadedWallpapers.value.find((item) => item.id === id);
-
-const uploaderLabel = (wallpaper: Wallpaper) => {
-    const nick = (wallpaper.uploaderNickname || "").trim();
-    const id = (wallpaper.uploaderId || "").trim();
-    if (nick && id) return `${nick}（${id}）`;
-    if (nick) return nick;
-    if (id) return `@${id}`;
-    return "管理员";
-};
-
-const isVideo = (wallpaper: Wallpaper): boolean =>
-    resolveMediaType(
-        wallpaper.mediaType || (wallpaper.videoUrl ? "video" : "image"),
-    ) === "video";
+const {
+    showUploadModal,
+    isUploadClosing,
+    uploadForm,
+    uploadPreview,
+    uploadVideoUrl,
+    uploading,
+    uploadError,
+    openUploadModal,
+    closeUploadModal,
+    onFileChange,
+    doUpload,
+} = useWallpaperUpload({
+    isLoggedIn,
+    currentUser,
+    onUploadSuccess: async () => {
+        activeTab.value = "mine";
+        await fetchMyWallpapers();
+    },
+});
 
 const switchTab = (tab: WallpaperTab) => {
     activeTab.value = tab;
@@ -267,387 +115,6 @@ const switchTab = (tab: WallpaperTab) => {
         selectedDownloadIds.value = [];
     }
 }; // 实现
-const openUploadModal = () => { // 实现
-    if (!isLoggedIn.value) {
-        uploadError.value = "请先登录账号后再上传壁纸";
-        return;
-    }
-    clearUploadPreview();
-    uploadForm.value = { title: "", description: "", category: "" };
-    uploadFile.value = null; // 实现
-    uploadError.value = "";
-    showUploadModal.value = true;
-}; // 实现
-const closeUploadModal = () => { // 实现
-    if (uploading.value || isUploadClosing.value) return;
-    isUploadClosing.value = true;
-    uploadCloseTimer = setTimeout(() => {
-        showUploadModal.value = false;
-        isUploadClosing.value = false;
-        uploadFile.value = null;
-        clearUploadPreview();
-        uploadCloseTimer = null;
-    }, 150);
-}; // 实现
-const onFileChange = (e: Event) => { // 实现
-    const input = e.target as HTMLInputElement;
-    uploadError.value = "";
-    if (!input.files || !input.files[0]) {
-        uploadFile.value = null;
-        clearUploadPreview();
-        return;
-    }
-    const file = input.files[0];
-    if (/^video\/mp4$/i.test(file.type) || /\.mp4$/i.test(file.name)) {
-        if (file.size > 50 * 1024 * 1024) {
-            uploadError.value = "视频过大，请选择 50MB 以内的 MP4 视频";
-            input.value = "";
-            uploadFile.value = null;
-            clearUploadPreview();
-            return;
-        }
-        clearUploadPreview();
-        uploadFile.value = file;
-        uploadIsVideo.value = true;
-        uploadVideoUrl.value = URL.createObjectURL(file);
-        // 读视频时长，兜底失败时按 0 上报（服务端仅校验 0-86400）
-        const probe = document.createElement("video");
-        probe.preload = "metadata";
-        probe.muted = true;
-        probe.onloadedmetadata = () => {
-            uploadVideoDuration.value = Math.max(
-                0,
-                Math.round(probe.duration || 0),
-            );
-            probe.removeAttribute("src");
-            probe.load();
-        };
-        probe.onerror = () => {
-            probe.removeAttribute("src");
-            probe.load();
-        };
-        probe.src = uploadVideoUrl.value;
-        return;
-    }
-    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
-        uploadError.value = "只支持 JPG / PNG / WEBP / GIF 图片或 MP4 视频";
-        input.value = "";
-        uploadFile.value = null;
-        clearUploadPreview();
-        return;
-    }
-    if (file.size > 30 * 1024 * 1024) {
-        uploadError.value = "图片过大，请选择 30MB 以内的图片";
-        input.value = "";
-        uploadFile.value = null;
-        clearUploadPreview();
-        return;
-    }
-    clearUploadPreview();
-    uploadFile.value = file;
-    uploadPreview.value = URL.createObjectURL(file);
-}; // 实现
-const compressImageToDataUrl = (
-    file: File,
-    maxWidth = 1920,
-    quality = 0.85,
-): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const img = new Image();
-            img.onload = () => {
-                let width = img.width;
-                let height = img.height;
-                if (width > maxWidth) {
-                    height = Math.round(height * (maxWidth / width));
-                    width = maxWidth;
-                }
-                const canvas = document.createElement("canvas");
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext("2d");
-                if (!ctx) {
-                    reject(new Error("Canvas 上下文不可用"));
-                    return;
-                }
-                ctx.drawImage(img, 0, 0, width, height);
-                const dataUrl = canvas.toDataURL("image/jpeg", quality);
-                canvas.width = 0;
-                canvas.height = 0;
-                img.onload = null;
-                img.onerror = null;
-                img.src = "";
-                resolve(dataUrl);
-            };
-            img.onerror = () => reject(new Error("图片加载失败"));
-            img.src = reader.result as string;
-        };
-        reader.onerror = () => reject(new Error("文件读取失败"));
-        reader.readAsDataURL(file);
-    });
-}; // 实现
-const fileToDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error("文件读取失败"));
-        reader.readAsDataURL(file);
-    });
-
-// 视频首帧封面：loadeddata 时首帧已就绪，直接绘到 canvas 导出 JPEG
-const captureVideoPoster = (url: string): Promise<string> =>
-    new Promise((resolve, reject) => {
-        const video = document.createElement("video");
-        video.muted = true;
-        video.preload = "auto";
-        const cleanup = () => {
-            video.onloadeddata = null;
-            video.onerror = null;
-            video.removeAttribute("src");
-            video.load();
-        };
-        video.onloadeddata = () => {
-            try {
-                const w = video.videoWidth;
-                const h = video.videoHeight;
-                if (!w || !h) {
-                    cleanup();
-                    reject(new Error("无法读取视频画面"));
-                    return;
-                }
-                let cw = w;
-                let ch = h;
-                if (cw > 1920) {
-                    ch = Math.round(ch * (1920 / cw));
-                    cw = 1920;
-                }
-                const canvas = document.createElement("canvas");
-                canvas.width = cw;
-                canvas.height = ch;
-                const ctx = canvas.getContext("2d");
-                if (!ctx) {
-                    cleanup();
-                    reject(new Error("Canvas 上下文不可用"));
-                    return;
-                }
-                ctx.drawImage(video, 0, 0, cw, ch);
-                const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-                canvas.width = 0;
-                cleanup();
-                resolve(dataUrl);
-            } catch (err) {
-                cleanup();
-                reject(
-                    err instanceof Error ? err : new Error("视频封面提取失败"),
-                );
-            }
-        };
-        video.onerror = () => {
-            cleanup();
-            reject(new Error("视频无法解析，请换一个文件"));
-        };
-        video.src = url;
-    });
-
-const doUpload = async () => { // 实现
-    if (!isLoggedIn.value || !currentUser.value?.ciyuanxi_id) {
-        uploadError.value = "请先登录";
-        return;
-    }
-    const title = uploadForm.value.title.trim();
-    if (!title) {
-        uploadError.value = "请填写壁纸标题";
-        return;
-    }
-    if (!uploadFile.value) {
-        uploadError.value = "请选择壁纸图片或视频";
-        return;
-    }
-    uploading.value = true;
-    uploadError.value = "";
-    try {
-        if (uploadIsVideo.value) {
-            const poster = await captureVideoPoster(uploadVideoUrl.value);
-            const videoData = await fileToDataUrl(uploadFile.value);
-            await signedRequest(
-                "upload_wallpaper",
-                {
-                    ciyuanxi_id: currentUser.value.ciyuanxi_id,
-                    nickname:
-                        currentUser.value.nickname ||
-                        currentUser.value.username ||
-                        "",
-                    title,
-                    description: uploadForm.value.description.trim(),
-                    category: uploadForm.value.category.trim() || "用户上传",
-                    platform: "desktop",
-                    image_data: poster,
-                    video_data: videoData,
-                    video_duration: uploadVideoDuration.value,
-                },
-                { fetchTimeoutMs: 600_000, timeoutMs: 610_000 },
-            );
-        } else {
-            const imageData = await compressImageToDataUrl(
-                uploadFile.value,
-                1920,
-                0.8,
-            );
-            await signedRequest(
-                "upload_wallpaper",
-                {
-                    ciyuanxi_id: currentUser.value.ciyuanxi_id,
-                    nickname:
-                        currentUser.value.nickname ||
-                        currentUser.value.username ||
-                        "",
-                    title,
-                    description: uploadForm.value.description.trim(),
-                    category: uploadForm.value.category.trim() || "用户上传",
-                    platform: "desktop",
-                    image_data: imageData,
-                },
-                { fetchTimeoutMs: 90_000, timeoutMs: 95_000 },
-            );
-        }
-        isUploadClosing.value = true;
-        uploadCloseTimer = setTimeout(() => {
-            showUploadModal.value = false;
-            isUploadClosing.value = false;
-            uploadFile.value = null;
-            clearUploadPreview();
-            uploadCloseTimer = null;
-        }, 150);
-        activeTab.value = "mine";
-        await fetchMyWallpapers();
-    } catch (err) {
-        uploadError.value = err instanceof Error ? err.message : "上传失败";
-    } finally {
-        uploading.value = false;
-    }
-}; // 实现
-const statusMeta = (status: string): { text: string; cls: string } => { // 实现
-    switch (status) {
-        case "normal":
-            return { text: "已通过", cls: "bg-green-500/20 text-green-300" };
-        case "pending":
-            return { text: "待审核", cls: "bg-amber-500/20 text-amber-300" };
-        case "rejected":
-            return { text: "未通过", cls: "bg-red-500/20 text-red-300" };
-        case "disabled":
-            return { text: "已禁用", cls: "bg-gray-500/20 text-gray-300" };
-        default:
-            return { text: status, cls: "bg-white/10 text-white/60" };
-    }
-}; // 实现
-const downloadAndUse = async (wallpaper: Wallpaper) => { // 实现
-    if (downloadingId.value !== null) return;
-    downloadingId.value = wallpaper.id;
-    downloadError.value = "";
-    try {
-        const mediaType = resolveMediaType(
-            wallpaper.mediaType || (wallpaper.videoUrl ? "video" : "image"),
-        );
-        const isVideo = mediaType === "video";
-        // 文件名含 sha8：服务端 hash 变化自动产生新文件，命中即复用免下载
-        const sha8 =
-            isVideo && wallpaper.videoSha256
-                ? wallpaper.videoSha256.slice(0, 8)
-                : "";
-        const targetName = `wallpaper_${wallpaper.id}${sha8 ? `_${sha8}` : ""}.${isVideo ? "mp4" : "jpg"}`;
-        const record = downloadedRecord(wallpaper.id);
-        const reuse =
-            record &&
-            record.localPath &&
-            record.localPath.split(/[\\/]/).pop() === targetName;
-        let localPath = reuse ? record!.localPath : "";
-        if (!localPath) {
-            const sourceUrl = isVideo
-                ? wallpaper.videoUrl || wallpaper.imageUrl
-                : wallpaper.imageUrl;
-            localPath = await toolboxApi.downloadWallpaper(
-                sourceUrl,
-                targetName,
-                props.currentPath || undefined,
-            );
-            const fresh: DownloadedWallpaper = {
-                ...wallpaper,
-                mediaType,
-                localPath,
-                downloadedAt: new Date().toISOString(),
-            };
-            downloadedWallpapers.value = [
-                fresh,
-                ...downloadedWallpapers.value.filter(
-                    (item) => item.id !== wallpaper.id,
-                ),
-            ];
-            persistDownloadedWallpapers();
-        }
-        emit(
-            "select",
-            localPath,
-            resolveMediaType(
-                downloadedRecord(wallpaper.id)?.mediaType || mediaType,
-            ),
-        );
-        handleClose();
-    } catch (err) {
-        downloadError.value = err instanceof Error ? err.message : String(err);
-    } finally {
-        downloadingId.value = null;
-    }
-}; // 实现
-const toggleDownloadSelection = (id: number) => {
-    selectedDownloadIds.value = selectedDownloadIds.value.includes(id)
-        ? selectedDownloadIds.value.filter((item) => item !== id)
-        : [...selectedDownloadIds.value, id];
-};
-
-const selectAllDownloads = () => {
-    selectedDownloadIds.value = downloadedWallpapers.value.map(
-        (item) => item.id,
-    );
-};
-
-const clearDownloadSelection = () => {
-    selectedDownloadIds.value = [];
-};
-
-const deleteSelectedDownloads = async () => {
-    if (selectedDownloadIds.value.length === 0 || deletingDownloads.value)
-        return;
-    const ids = new Set(selectedDownloadIds.value);
-    const targets = downloadedWallpapers.value.filter((item) =>
-        ids.has(item.id),
-    );
-    deletingDownloads.value = true;
-    downloadError.value = "";
-    try {
-        await Promise.all(
-            targets.map((item) =>
-                toolboxApi
-                    .deleteWallpaperFile(item.localPath)
-                    .catch(() => undefined),
-            ),
-        );
-        downloadedWallpapers.value = downloadedWallpapers.value.filter(
-            (item) => !ids.has(item.id),
-        );
-        selectedDownloadIds.value = [];
-        persistDownloadedWallpapers();
-    } catch (err) {
-        downloadError.value = err instanceof Error ? err.message : String(err);
-    } finally {
-        deletingDownloads.value = false;
-    }
-};
-
-const useDownloadedWallpaper = (item: DownloadedWallpaper) => {
-    emit("select", item.localPath, resolveMediaType(item.mediaType));
-    handleClose();
-};
 
 onMounted(() => { // 实现
     loadDownloadedWallpapers();
@@ -655,30 +122,25 @@ onMounted(() => { // 实现
 }); // 实现
 
 onBeforeUnmount(() => {
-    clearUploadPreview();
     if (closeTimer) {
         clearTimeout(closeTimer);
         closeTimer = null;
     }
-    if (uploadCloseTimer) {
-        clearTimeout(uploadCloseTimer);
-        uploadCloseTimer = null;
-    }
 });
 </script> // 实现
-<template> 
+<template>
     <Teleport to="body">
         <div
             class="wallpaper-overlay fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
             :class="{ 'is-closing': isClosing }"
         >
-            <div 
+            <div
                 class="wallpaper-card flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
                 :class="{ 'is-closing': isClosing }"
-            > 
+            >
                 <div
                     class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3"
-                > 
+                >
                     <div class="flex items-center gap-2">
                         <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -999,126 +461,16 @@ onBeforeUnmount(() => {
                         v-else-if="activeTab === 'browse'"
                         class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
                     >
-                        <div
+                        <WallpaperCard
                             v-for="wallpaper in wallpapers"
                             :key="wallpaper.id"
-                            class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
-                            :class="
-                                isWallpaperInUse(wallpaper.id)
-                                    ? 'border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]'
-                                    : 'border-white/10 hover:border-[#EC4141]/50 hover:shadow-[0_0_15px_rgba(236,65,65,0.25)]'
-                            "
-                        >
-                            <div class="aspect-[3/2] w-full overflow-hidden">
-                                <img
-                                    :src="
-                                        wallpaper.thumbnailUrl ||
-                                        wallpaper.imageUrl
-                                    "
-                                    :alt="wallpaper.title"
-                                    loading="eager"
-                                    class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                />
-                            </div>
-                            <div
-                                v-if="isWallpaperInUse(wallpaper.id)"
-                                class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm"
-                            >
-                                <svg
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="3"
-                                >
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg>
-                                正在使用
-                            </div>
-                            <div
-                                v-else-if="isDownloaded(wallpaper.id)"
-                                class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm"
-                            >
-                                已下载
-                            </div>
-                            <div
-                                v-if="isVideo(wallpaper)"
-                                class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm"
-                            >
-                                <svg
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                >
-                                    <path d="M8 5v14l11-7z" />
-                                </svg>
-                                视频
-                            </div>
-                            <div
-                                v-if="downloadingId === wallpaper.id"
-                                class="absolute inset-0 flex items-center justify-center bg-black/50"
-                            >
-                                <svg
-                                    class="h-6 w-6 animate-spin text-white"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <circle
-                                        class="opacity-25"
-                                        cx="12"
-                                        cy="12"
-                                        r="10"
-                                        stroke="currentColor"
-                                        stroke-width="4"
-                                    ></circle>
-                                    <path
-                                        class="opacity-75"
-                                        fill="currentColor"
-                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    ></path>
-                                </svg>
-                            </div>
-                            <div class="p-2.5">
-                                <h3 class="truncate text-sm font-semibold">
-                                    {{ wallpaper.title }}
-                                </h3>
-                                <p
-                                    class="mt-0.5 truncate text-[11px] text-white/50"
-                                >
-                                    上传者：{{ uploaderLabel(wallpaper) }}
-                                </p>
-                                <p
-                                    v-if="wallpaper.description"
-                                    class="mt-0.5 line-clamp-2 text-xs text-white/60"
-                                >
-                                    {{ wallpaper.description }}
-                                </p>
-                                <div
-                                    v-if="isWallpaperInUse(wallpaper.id)"
-                                    class="mt-2 w-full rounded-full bg-green-500/15 py-1.5 text-center text-xs font-medium text-green-300"
-                                >
-                                    当前正在使用
-                                </div>
-                                <button
-                                    v-else
-                                    @click="downloadAndUse(wallpaper)"
-                                    :disabled="downloadingId !== null"
-                                    class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    <span v-if="downloadingId === wallpaper.id"
-                                        >下载中…</span
-                                    >
-                                    <span v-else>{{
-                                        isDownloaded(wallpaper.id)
-                                            ? "使用已下载"
-                                            : "下载并使用"
-                                    }}</span>
-                                </button>
-                            </div>
-                        </div>
+                            :wallpaper="wallpaper"
+                            :in-use="isWallpaperInUse(wallpaper.id)"
+                            :downloaded="isDownloaded(wallpaper.id)"
+                            :downloading="downloadingId === wallpaper.id"
+                            :any-downloading="downloadingId !== null"
+                            @use="downloadAndUse(wallpaper)"
+                        />
                     </div>
 
                     <!-- ====== 我的上传：加载中 ====== -->
@@ -1198,108 +550,16 @@ onBeforeUnmount(() => {
                         v-else-if="activeTab === 'mine'"
                         class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
                     >
-                        <div
+                        <MyWallpaperCard
                             v-for="wp in myWallpapers"
                             :key="wp.id"
-                            class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
-                            :class="
-                                isWallpaperInUse(wp.id)
-                                    ? 'border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]'
-                                    : wp.status === 'normal'
-                                      ? 'border-white/10 hover:border-[#EC4141]/50'
-                                      : 'border-white/10'
-                            "
-                        >
-                            <div class="aspect-[3/2] w-full overflow-hidden">
-                                <img
-                                    :src="wp.thumbnailUrl || wp.imageUrl"
-                                    :alt="wp.title"
-                                    loading="eager"
-                                    class="h-full w-full object-cover"
-                                    :class="
-                                        wp.status === 'rejected' ||
-                                        wp.status === 'disabled'
-                                            ? 'opacity-50 grayscale'
-                                            : ''
-                                    "
-                                />
-                            </div>
-                            <div class="absolute left-2 top-2">
-                                <span
-                                    :class="[
-                                        'rounded-full px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm',
-                                        statusMeta(wp.status).cls,
-                                    ]"
-                                    >{{ statusMeta(wp.status).text }}</span
-                                >
-                            </div>
-                            <div
-                                v-if="isWallpaperInUse(wp.id)"
-                                class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm"
-                            >
-                                <svg
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="3"
-                                >
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg>
-                                正在使用
-                            </div>
-                            <div class="p-2.5">
-                                <h3 class="truncate text-sm font-semibold">
-                                    {{ wp.title }}
-                                </h3>
-                                <p
-                                    v-if="wp.status === 'pending'"
-                                    class="mt-1 text-[11px] text-amber-300/80"
-                                >
-                                    等待管理员审核
-                                </p>
-                                <p
-                                    v-else-if="wp.status === 'rejected'"
-                                    class="mt-1 text-[11px] text-red-300/80"
-                                >
-                                    审核未通过
-                                </p>
-                                <p
-                                    v-else-if="wp.status === 'normal'"
-                                    class="mt-1 text-[11px] text-green-300/80"
-                                >
-                                    已通过审核，壁纸中心可见
-                                </p>
-                                <p
-                                    v-else-if="wp.status === 'disabled'"
-                                    class="mt-1 text-[11px] text-gray-300/60"
-                                >
-                                    已被管理员禁用
-                                </p>
-                                <div
-                                    v-if="isWallpaperInUse(wp.id)"
-                                    class="mt-2 w-full rounded-full bg-green-500/15 py-1.5 text-center text-xs font-medium text-green-300"
-                                >
-                                    当前正在使用
-                                </div>
-                                <button
-                                    v-else-if="wp.status === 'normal'"
-                                    @click="downloadAndUse(wp)"
-                                    :disabled="downloadingId !== null"
-                                    class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    <span v-if="downloadingId === wp.id"
-                                        >下载中…</span
-                                    >
-                                    <span v-else>{{
-                                        isDownloaded(wp.id)
-                                            ? "使用已下载"
-                                            : "下载并使用"
-                                    }}</span>
-                                </button>
-                            </div>
-                        </div>
+                            :wp="wp"
+                            :in-use="isWallpaperInUse(wp.id)"
+                            :downloaded="isDownloaded(wp.id)"
+                            :downloading="downloadingId === wp.id"
+                            :any-downloading="downloadingId !== null"
+                            @use="downloadAndUse(wp)"
+                        />
                     </div>
 
                     <!-- ====== 我的下载 ====== -->
@@ -1328,120 +588,16 @@ onBeforeUnmount(() => {
                             <div
                                 class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
                             >
-                                <div
+                                <DownloadedWallpaperCard
                                     v-for="item in downloadedWallpapers"
                                     :key="item.id"
-                                    class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
-                                    :class="
-                                        selectedDownloadIds.includes(item.id)
-                                            ? 'border-[#EC4141]/70 shadow-[0_0_15px_rgba(236,65,65,0.2)]'
-                                            : isCurrentWallpaper(item.localPath)
-                                              ? 'border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]'
-                                              : 'border-white/10 hover:border-[#EC4141]/50'
-                                    "
-                                >
-                                    <div
-                                        v-if="
-                                            isCurrentWallpaper(item.localPath)
-                                        "
-                                        class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm"
-                                    >
-                                        <svg
-                                            width="10"
-                                            height="10"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="3"
-                                        >
-                                            <polyline points="20 6 9 17 4 12" />
-                                        </svg>
-                                        正在使用
-                                    </div>
-                                    <button
-                                        v-if="showBatchOps"
-                                        @click.stop="
-                                            toggleDownloadSelection(item.id)
-                                        "
-                                        class="absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition"
-                                        :class="
-                                            selectedDownloadIds.includes(
-                                                item.id,
-                                            )
-                                                ? 'border-[#EC4141] bg-[#EC4141] text-white'
-                                                : 'border-white/30 bg-black/45 text-transparent hover:text-white'
-                                        "
-                                    >
-                                        <svg
-                                            width="14"
-                                            height="14"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="3"
-                                        >
-                                            <polyline points="20 6 9 17 4 12" />
-                                        </svg>
-                                    </button>
-                                    <div
-                                        class="aspect-[3/2] w-full overflow-hidden"
-                                    >
-                                        <img
-                                            :src="
-                                                item.thumbnailUrl ||
-                                                item.imageUrl
-                                            "
-                                            :alt="item.title"
-                                            loading="eager"
-                                            class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                        />
-                                    </div>
-                                    <div
-                                        v-if="isVideo(item)"
-                                        class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm"
-                                    >
-                                        <svg
-                                            width="10"
-                                            height="10"
-                                            viewBox="0 0 24 24"
-                                            fill="currentColor"
-                                        >
-                                            <path d="M8 5v14l11-7z" />
-                                        </svg>
-                                        视频
-                                    </div>
-                                    <div class="p-2.5">
-                                        <h3
-                                            class="truncate text-sm font-semibold"
-                                        >
-                                            {{ item.title }}
-                                        </h3>
-                                        <p
-                                            class="mt-1 truncate text-[11px] text-white/50"
-                                        >
-                                            上传者：{{ uploaderLabel(item) }}
-                                        </p>
-                                        <button
-                                            v-if="
-                                                !isCurrentWallpaper(
-                                                    item.localPath,
-                                                )
-                                            "
-                                            @click="
-                                                useDownloadedWallpaper(item)
-                                            "
-                                            class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a]"
-                                        >
-                                            使用此壁纸
-                                        </button>
-                                        <div
-                                            v-else
-                                            class="mt-2 w-full rounded-full bg-green-500/15 py-1.5 text-center text-xs font-medium text-green-300"
-                                        >
-                                            当前正在使用
-                                        </div>
-                                    </div>
-                                </div>
+                                    :item="item"
+                                    :selected="selectedDownloadIds.includes(item.id)"
+                                    :in-use="isCurrentWallpaper(item.localPath)"
+                                    :show-batch-ops="showBatchOps"
+                                    @toggle="toggleDownloadSelection(item.id)"
+                                    @use="useDownloadedWallpaper(item)"
+                                />
                             </div>
                         </template>
                     </div>
@@ -1467,155 +623,23 @@ onBeforeUnmount(() => {
                         >我的下载支持多选删除；删除只影响本机已保存的壁纸文件</template
                     >
                 </div>
-            </div> 
+            </div>
 
-            <div
+            <WallpaperUploadModal
                 v-if="showUploadModal"
-                class="upload-overlay fixed inset-0 z-[10002] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-                :class="{ 'is-closing': isUploadClosing }"
-                @click.self="closeUploadModal"
-            >
-                <div
-                    class="upload-card w-full max-w-md overflow-hidden rounded-2xl border border-white/20 bg-neutral-900/95 text-white shadow-2xl"
-                    :class="{ 'is-closing': isUploadClosing }"
-                >
-                    <div
-                        class="flex items-center justify-between border-b border-white/10 px-5 py-3.5"
-                    >
-                        <span class="text-sm font-bold">上传壁纸</span>
-                        <button
-                            @click="closeUploadModal"
-                            :disabled="uploading"
-                            class="text-white/50 transition hover:text-white disabled:opacity-40"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="h-4 w-4"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                            >
-                                <path
-                                    fill-rule="evenodd"
-                                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                                    clip-rule="evenodd"
-                                />
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="max-h-[70vh] overflow-y-auto p-5">
-                        <div class="mb-3">
-                            <label class="mb-1 block text-xs text-white/60"
-                                >标题
-                                <span class="text-[#EC4141]">*</span></label
-                            >
-                            <input
-                                v-model="uploadForm.title"
-                                maxlength="60"
-                                placeholder="给壁纸起个名字"
-                                class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                            />
-                        </div>
-                        <div class="mb-3">
-                            <label class="mb-1 block text-xs text-white/60"
-                                >描述</label
-                            >
-                            <textarea
-                                v-model="uploadForm.description"
-                                rows="2"
-                                placeholder="可选，简短描述"
-                                class="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-[#EC4141]/60"
-                            ></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label class="mb-1 block text-xs text-white/60"
-                                >分类</label
-                            >
-                            <input
-                                v-model="uploadForm.category"
-                                placeholder="留空默认为「用户上传」"
-                                class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                            />
-                        </div>
-                        <div class="mb-2">
-                            <label class="mb-1 block text-xs text-white/60"
-                                >壁纸文件
-                                <span class="text-[#EC4141]">*</span></label
-                            >
-                            <div
-                                class="rounded-lg border border-dashed border-white/15 bg-white/5 px-3 py-2"
-                            >
-                                <input
-                                    type="file"
-                                    accept=".jpg,.jpeg,.png,.webp,.gif,image/*,video/mp4,.mp4"
-                                    @change="onFileChange"
-                                    class="w-full text-xs text-white/70 file:mr-3 file:rounded file:border-0 file:bg-[#EC4141] file:px-3 file:py-1 file:text-xs file:font-medium file:text-white hover:file:bg-[#d13a3a]"
-                                />
-                                <p class="mt-1 text-[10px] text-white/40">
-                                    图片（JPG / PNG / WEBP / GIF，30MB 内）或
-                                    MP4 视频（50MB 内），图片自动压缩为 1920px
-                                    JPEG，视频封面自动截取首帧
-                                </p>
-                            </div>
-                            <div
-                                v-if="uploadPreview"
-                                class="mt-2 overflow-hidden rounded-lg border border-white/10"
-                            >
-                                <img
-                                    :src="uploadPreview"
-                                    alt="预览"
-                                    class="max-h-40 w-full object-cover"
-                                />
-                            </div>
-                            <div
-                                v-else-if="uploadVideoUrl"
-                                class="relative mt-2 overflow-hidden rounded-lg border border-white/10 bg-black"
-                            >
-                                <video
-                                    :src="uploadVideoUrl"
-                                    controls
-                                    muted
-                                    class="max-h-40 w-full object-contain"
-                                ></video>
-                                <span
-                                    class="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80"
-                                    >视频壁纸</span
-                                >
-                            </div>
-                        </div>
-                        <div
-                            v-if="uploadError"
-                            class="mt-3 rounded-lg border border-[#EC4141]/30 bg-[#EC4141]/10 px-3 py-2 text-xs text-[#ff8a8a]"
-                        >
-                            {{ uploadError }}
-                        </div>
-                        <p class="mt-3 text-[11px] text-white/40">
-                            上传后状态为「待审核」，管理员审核通过后才会展示在壁纸中心供所有人下载。
-                        </p>
-                    </div>
-                    <div
-                        class="flex justify-end gap-2 border-t border-white/10 px-5 py-3"
-                    >
-                        <button
-                            @click="closeUploadModal"
-                            :disabled="uploading"
-                            class="rounded-lg border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-white/70 transition hover:bg-white/10 disabled:opacity-40"
-                        >
-                            取消
-                        </button>
-                        <button
-                            @click="doUpload"
-                            :disabled="uploading"
-                            class="rounded-lg bg-[#EC4141] px-4 py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                            <span v-if="uploading">上传中…</span>
-                            <span v-else>上传</span>
-                        </button>
-                    </div>
-                </div>
-            </div> 
-        </div> 
+                :closing="isUploadClosing"
+                :form="uploadForm"
+                :preview="uploadPreview"
+                :video-url="uploadVideoUrl"
+                :error="uploadError"
+                :uploading="uploading"
+                @close="closeUploadModal"
+                @file-change="onFileChange"
+                @submit="doUpload"
+            />
+        </div>
     </Teleport>
-</template> 
+</template>
 
 <style scoped>
 /* ==================== 主弹窗动画 ==================== */
@@ -1656,48 +680,6 @@ onBeforeUnmount(() => {
 }
 
 .wallpaper-card.is-closing {
-    opacity: 0;
-    transform: scale(0.92) translateY(8px);
-}
-
-/* ==================== 上传弹窗动画 ==================== */
-.upload-overlay {
-    animation: upload-overlay-in 0.15s ease;
-    transition: opacity 0.15s ease;
-}
-
-.upload-card {
-    animation: upload-card-in 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
-    transition:
-        opacity 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
-        transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes upload-overlay-in {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-}
-
-@keyframes upload-card-in {
-    from {
-        opacity: 0;
-        transform: scale(0.92) translateY(8px);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-    }
-}
-
-.upload-overlay.is-closing {
-    opacity: 0;
-}
-
-.upload-card.is-closing {
     opacity: 0;
     transform: scale(0.92) translateY(8px);
 }

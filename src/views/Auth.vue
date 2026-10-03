@@ -1,1916 +1,433 @@
-<script setup lang="ts"> // 实现
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router'; // 实现
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { Eye, EyeOff } from 'lucide-vue-next';
 
-import { useAuthStore } from '../features/auth/store'; // 实现
+import { useAuthStore } from '../features/auth/store';
 import HumanCaptchaModal from '../components/common/HumanCaptchaModal.vue';
-import { downloadApi } from '../services/tauri/downloadApi';
-import { useCollectionsStore } from '../features/collections/store';
-import { useToast } from '../composables/toast'; // 实现
-import { useUiStore } from '../shared/stores/ui'; // 实现
-import { showProfileLimitDialog, type ProfileLimitDialogTarget } from '../composables/useProfileLimitDialog';
-import {
-  getProfile,
-  login,
-  loginByEmail,
-  logout,
-  register,
-  resetPassword, // 实现
-  sendEmailCode, // 实现
-  updateProfile, // 实现
-  uploadAvatar, // 实现
-  updateCiyuanxiId,
-  bindEmail,
-  createQrLoginCode,
-  pollQrLoginStatus,
-  getAvatarStatus, // 实现
-  getNicknameStatus, // 实现
-  getAvatarChangeLimitStatus,
-  getNicknameChangeLimitStatus,
-  getUserAgreement,
-  type AuthMode, // 实现
-  type HumanCaptchaPayload,
-  type ProfileStats, // 实现
-  type QrPollResult,
-  type VerifyCodeType, // 实现
-} from '../services/auth/authService'; // 实现
-import QRCode from 'qrcode';
+import AuthShell from '../components/auth/AuthShell.vue';
+import LoginForm from '../components/auth/LoginForm.vue';
+import RegisterForm from '../components/auth/RegisterForm.vue';
+import ForgotPasswordForm from '../components/auth/ForgotPasswordForm.vue';
+import AuthProfileHeader from '../components/auth/AuthProfileHeader.vue';
+import { useAuthForm } from '../composables/auth/useAuthForm';
+import { useAuthCaptcha } from '../composables/auth/useAuthCaptcha';
+import { useAuthAgreement } from '../composables/auth/useAuthAgreement';
+import { useAuthFlow } from '../composables/auth/useAuthFlow';
+import { useAuthProfile } from '../composables/auth/useAuthProfile';
+import { useUiStore } from '../shared/stores/ui';
+import type { AuthMode, ProfileStats } from '../services/auth/authService';
 
-const router = useRouter(); // 实现
-const authStore = useAuthStore(); // 实现
-const collectionsStore = useCollectionsStore();
-const { showToast } = useToast(); // 实现
-const uiStore = useUiStore(); // 实现
+// 账号页骨架：负责模式切换、区块编排与弹窗层；表单/流程/资料逻辑已拆分至 composables/auth 与 components/auth
+const router = useRouter();
+const authStore = useAuthStore();
+const uiStore = useUiStore();
 
-const mode = ref<AuthMode>('login'); // 实现
-const form = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
-const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' }); // 实现
-const fieldErrors = ref<Record<string, string>>({});
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const mode = ref<AuthMode>('login');
+const loginMethod = ref<'password' | 'email' | 'qr'>('password');
 
-const pwdVisible = reactive<Record<string, boolean>>({});
+const {
+  form,
+  forgotForm,
+  fieldErrors,
+  pwdVisible,
+  pwdFocused,
+  validateField,
+  clearFieldError,
+  onPasswordInput,
+} = useAuthForm({ mode, loginMethod });
 
-const pwdFocused = reactive<Record<string, boolean>>({});
+const {
+  captchaModalOpen,
+  captchaModalTitle,
+  captchaModalDescription,
+  requestHumanCaptcha,
+  handleCaptchaVerified,
+  handleCaptchaCancel,
+} = useAuthCaptcha();
 
-function validateField(field: string): boolean {
-  let error = '';
-  switch (field) {
-    case 'account': {
-      const val = form.value.account.trim();
-      if (mode.value === 'register') {
-        if (!val) error = '请填写弦予号';
-        else if (!/^[a-zA-Z0-9]{6,20}$/.test(val)) error = '弦予号需 6-20 位，支持纯数字、纯字母或数字字母组合';
-      } else {
-        if (!val) error = '请输入弦予号或邮箱';
-      }
-      break;
-    }
-    case 'nickname':
-      if (mode.value === 'register') {
-        const val = form.value.nickname.trim();
-        if (val && val.length > 20) error = '昵称最多 20 个字符';
-        else if (val && !/^[a-zA-Z0-9\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(val)) error = '昵称仅支持字母、数字、汉字';
-      }
-      break;
-    case 'email': {
-      if (mode.value === 'register' ||
-          (mode.value === 'login' && loginMethod.value === 'email')) {
-        const val = form.value.email.trim();
-        if (!val) error = '请填写邮箱';
-        else if (!EMAIL_RE.test(val)) error = '邮箱格式不正确';
-      }
-      break;
-    }
-    case 'code': {
-      if (mode.value === 'register' ||
-          (mode.value === 'login' && loginMethod.value === 'email')) {
-        if (!form.value.code.trim()) error = '请填写验证码';
-      }
-      break;
-    }
-    case 'password': {
-      const val = form.value.password;
-      if (!val) error = '请输入密码';
-      else if (mode.value === 'register' && val.length < 6) error = '密码至少 6 位';
-      break;
-    }
-    case 'confirmPassword':
-      if (mode.value === 'register') {
-        const val = form.value.confirmPassword;
-        if (!val) error = '请再次输入密码';
-        else if (val !== form.value.password) error = '两次输入的密码不一致';
-      }
-      break;
-  }
-  if (error) fieldErrors.value[field] = error;
-  else delete fieldErrors.value[field];
-  return !error;
-}
+const {
+  agreementAccepted,
+  termsModalOpen,
+  termsScrolledToEnd,
+  termsBodyRef,
+  agreementTitle,
+  agreementContent,
+  loadUserAgreement,
+  openTermsModal,
+  closeTermsModal,
+  refreshTermsScrollState,
+  handleAgreementCheckboxChange,
+  acceptTerms,
+} = useAuthAgreement();
 
-function clearFieldError(field: string) {
-  if (fieldErrors.value[field]) delete fieldErrors.value[field];
-}
+const stats = ref<ProfileStats | null>(null);
+const nicknameDraft = ref('');
+const avatarDraft = ref('');
 
-function onPasswordInput() {
-  clearFieldError('password');
-  if (form.value.confirmPassword) validateField('confirmPassword');
-}
+const {
+  message,
+  messageTone,
+  loading,
+  codeLoading,
+  codeCountdown,
+  showMessage,
+  onSubmit,
+  handleSendCode,
+  switchMode,
+  enterForgot,
+  qrStatus,
+  qrImage,
+  qrError,
+  startQrLogin,
+} = useAuthFlow({
+  mode,
+  loginMethod,
+  form,
+  forgotForm,
+  fieldErrors,
+  validateField,
+  requestHumanCaptcha,
+  agreementAccepted,
+  stats,
+  nicknameDraft,
+  avatarDraft,
+});
 
-watch(mode, () => { fieldErrors.value = {}; });
+const {
+  avatarUploading,
+  avatarStatus,
+  nicknameStatus,
+  avatarMenuPos,
+  avatarBtnRef,
+  avatarMenuOpen,
+  avatarPreviewOpen,
+  avatarInputRef,
+  showNicknameModal,
+  nicknameInputRef,
+  profileSaving,
+  refreshingAvatarStatus,
+  showLogoutConfirm,
+  showCiyuanxiModal,
+  ciyuanxiForm,
+  ciyuanxiLoading,
+  showBindEmailModal,
+  bindEmailForm,
+  bindEmailLoading,
+  bindCodeLoading,
+  bindCodeCountdown,
+  displayStats,
+  openAvatarMenu,
+  openNicknameEditModal,
+  submitNicknameEdit,
+  cancelNicknameEdit,
+  onNicknameBlur,
+  handleAvatarFileChange,
+  refreshAvatarStatus,
+  openAvatarPicker,
+  saveAvatarToLocal,
+  handleLogout,
+  confirmLogout,
+  openCiyuanxiModal,
+  submitCiyuanxi,
+  openBindEmailModal,
+  sendBindCode,
+  submitBindEmail,
+  loadLoggedInProfile,
+  startPolling,
+} = useAuthProfile({
+  mode,
+  loginMethod,
+  loading,
+  message,
+  showMessage,
+  stats,
+  nicknameDraft,
+  avatarDraft,
+  requestHumanCaptcha,
+});
 
-const message = ref(''); // 实现
-const messageTone = ref<'error' | 'success'>('error'); // 实现
-const loading = ref(false); // 实现
-const codeLoading = ref(false); // 实现
-const codeCountdown = ref(0);
-let codeCountdownTimer: ReturnType<typeof setInterval> | null = null;
-function startCodeCountdown() {
-  codeCountdown.value = 60;
-  if (codeCountdownTimer) clearInterval(codeCountdownTimer);
-  codeCountdownTimer = setInterval(() => {
-    codeCountdown.value--;
-    if (codeCountdown.value <= 0) {
-      codeCountdown.value = 0;
-      if (codeCountdownTimer) { clearInterval(codeCountdownTimer); codeCountdownTimer = null; }
-    }
-  }, 1000);
-}
-const agreementAccepted = ref(false);
-const termsModalOpen = ref(false);
-const termsScrolledToEnd = ref(false);
-const termsBodyRef = ref<HTMLElement | null>(null);
-const agreementTitle = ref('弦予音乐用户协议');
-const captchaModalOpen = ref(false);
-const captchaModalTitle = ref('人机验证');
-const captchaModalDescription = ref('请先完成验证，验证通过后将继续当前操作。');
-let captchaResolver: ((payload: HumanCaptchaPayload | null) => void) | null = null;
-const stats = ref<ProfileStats | null>(null); // 实现
-const nicknameDraft = ref(''); // 实现
-const avatarDraft = ref(''); // 实现
-const avatarUploading = ref(false); // 实现
-const avatarStatus = ref<'none' | 'pending' | 'rejected'>('none'); // 实现
-const nicknameStatus = ref<'none' | 'pending' | 'rejected'>('none'); // 实现
-const avatarMenuPos = ref<{ top: number; left: number } | null>(null); // 实现
-const avatarBtnRef = ref<HTMLElement | null>(null); // 实现
-
-async function confirmProfileLimit(target: ProfileLimitDialogTarget): Promise<boolean> {
-  const localStatus = target === 'avatar' ? avatarStatus.value : nicknameStatus.value;
-  const limit = target === 'avatar'
-    ? await getAvatarChangeLimitStatus()
-    : await getNicknameChangeLimitStatus();
-  if (target === 'avatar') {
-    avatarStatus.value = limit.status;
-  } else {
-    nicknameStatus.value = limit.status;
-  }
-  const blocked = limit.todayBlocked || limit.status === 'pending' || localStatus === 'pending';
-  if (blocked) {
-    const fallback = target === 'avatar'
-      ? (limit.status === 'pending' || localStatus === 'pending' ? '头像正在审核中哦' : '今日已修改过啦')
-      : (limit.status === 'pending' || localStatus === 'pending' ? '昵称正在审核中哦' : '今日已修改过啦');
-    await showProfileLimitDialog(target, {
-      blocked: true,
-      message: limit.blockMessage || fallback,
-    });
-    return false;
-  }
-  return showProfileLimitDialog(target);
-}
-
-function openAvatarMenu() { // 实现
-  const el = avatarBtnRef.value; // 实现
-  if (!el) {
-    avatarMenuOpen.value = true; // 实现
-    return;
-  }
-  const rect = el.getBoundingClientRect(); // 实现
-  const cardWidth = Math.min(window.innerWidth * 0.86, 320); // 实现
-  const gap = 12; // 实现
-  let left = rect.right + gap; // 实现
-  let top = rect.top; // 实现
-  if (left + cardWidth > window.innerWidth - 8) { // 实现
-    left = rect.left - cardWidth - gap; // 实现
-  }
-  if (left < 8) { // 实现
-    left = 8;
-  }
-  if (top + 200 > window.innerHeight - 8) { // 实现
-    top = Math.max(8, window.innerHeight - 220); // 实现
-  }
-  avatarMenuPos.value = { top, left }; // 实现
-  avatarMenuOpen.value = true; // 实现
-}
-const showNicknameModal = ref(false);
-const nicknameInputRef = ref<HTMLInputElement | null>(null); // 实现
-
-async function openNicknameEditModal() {
-  if (nicknameStatus.value === 'pending') { // 实现
-    await showProfileLimitDialog('nickname', {
-      blocked: true,
-      message: '昵称正在审核中哦',
-    });
-    return; // 实现
-  } // 实现
-  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
-  showNicknameModal.value = true;
-  await nextTick(); // 实现
-  nicknameInputRef.value?.focus(); // 实现
-  nicknameInputRef.value?.select(); // 实现
-}
-
-async function submitNicknameEdit() {
-  const next = nicknameDraft.value.trim(); // 实现
-  const current = authStore.user?.nickname || authStore.user?.username || ''; // 实现
-  if (!next || next === current) { // 实现
-    showNicknameModal.value = false;
-    return;
-  }
-  if (next.length > 20) {
-    showToast('昵称最多 20 个字符', 'error');
-    return;
-  }
-  if (!/^[a-zA-Z0-9\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(next)) {
-    showToast('昵称仅支持字母、数字、汉字', 'error');
-    return;
-  }
-  if (!await confirmProfileLimit('nickname')) return;
-  await handleSaveProfile(); // 实现
-  showNicknameModal.value = false;
-}
-
-function cancelNicknameEdit() { // 实现
-  if (!showNicknameModal.value) return;
-  showNicknameModal.value = false;
-  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
-}
-function onNicknameBlur() { // 实现
-  if (!showNicknameModal.value) return;
-  const next = nicknameDraft.value.trim(); // 实现
-  const current = authStore.user?.nickname || authStore.user?.username || ''; // 实现
-  if (!next || next === current) { // 实现
-    cancelNicknameEdit(); // 实现
-  } // 实现
-} // 实现
-const profileSaving = ref(false); // 实现
-
-const avatarMenuOpen = ref(false); // 实现
-const avatarPreviewOpen = ref(false); // 实现
-const avatarInputRef = ref<HTMLInputElement | null>(null); // 实现
-
-type Shortcut = { // 实现
-  label: string; // 实现
-  desc: string; // 实现
-  to: string;
-  icon: 'cog' | 'theme' | 'home' | 'folder' | 'plugin'; // 实现
-};
-
-const personalShortcuts: Shortcut[] = [ // 实现
-  { label: '账号设置', desc: '管理账号信息', to: '/settings?tab=account', icon: 'cog' },
-  { label: '插件管理', desc: '管理已安装插件', to: '/settings?tab=plugins', icon: 'plugin' }, // 实现
-  { label: '主题外观', desc: '换肤与界面风格', to: '/settings?tab=theme', icon: 'theme' }, // 实现
-  { label: '本地音乐', desc: '管理本地曲库', to: '/?view=all', icon: 'folder' }, // 实现
-];
-
-const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [ // 实现
-  { key: 'favorite_count', label: '收藏' }, // 实现
-  { key: 'playlist_count', label: '歌单' }, // 实现
-  { key: 'history_count', label: '历史' }, // 实现
-];
-
-const displayStats = computed((): ProfileStats => ({
-  favorite_count: collectionsStore.favoritePaths.length,
-  playlist_count: collectionsStore.playlists.length,
-  starred_count: stats.value?.starred_count ?? 0,
-  history_count: collectionsStore.recentSongs.length,
-  listening_count: stats.value?.listening_count ?? 0,
-  revision: stats.value?.revision ?? 0,
-  updated_at: stats.value?.updated_at ?? null,
-}));
-
-const title = computed(() => // 实现
-  mode.value === 'login' ? '欢迎回来' : mode.value === 'register' ? '创建你的账号' : '找回密码', // 实现
-); // 实现
-const subtitle = computed(() => // 实现
-  mode.value === 'login' // 实现
-    ? '登录后可同步个人资料到云端服务器。' // 实现
-    : mode.value === 'register' // 实现
-      ? '注册需要邮箱验证码，之后即可登录使用。' // 实现
-      : '通过注册邮箱验证码重置你的登录密码。', // 实现
-); // 实现
-const headerLabel = computed(() => // 实现
-  mode.value === 'login' ? '登录账号' : mode.value === 'register' ? '注册账号' : '找回密码', // 实现
+const title = computed(() =>
+  mode.value === 'login' ? '欢迎回来' : mode.value === 'register' ? '创建你的账号' : '找回密码',
+);
+const subtitle = computed(() =>
+  mode.value === 'login'
+    ? '登录后可同步个人资料到云端服务器。'
+    : mode.value === 'register'
+      ? '注册需要邮箱验证码，之后即可登录使用。'
+      : '通过注册邮箱验证码重置你的登录密码。',
+);
+const headerLabel = computed(() =>
+  mode.value === 'login' ? '登录账号' : mode.value === 'register' ? '注册账号' : '找回密码',
 );
 
-const defaultAgreementContent = `一、协议范围
-本协议适用于弦予音乐客户端账号系统及相关云端同步、资料管理、统计上报、风控安全服务。用户注册、登录或继续使用账号功能，即表示已阅读并同意本协议。
+// 头像按钮与文件选择框位于 AuthProfileHeader 内部，这里把模板引用同步给 useAuthProfile
+const profileHeaderRef = ref<InstanceType<typeof AuthProfileHeader> | null>(null);
+watch(profileHeaderRef, (instance) => {
+  avatarBtnRef.value = instance?.avatarBtnRef ?? null;
+  avatarInputRef.value = instance?.avatarInputRef ?? null;
+}, { flush: 'post' });
 
-二、账号注册与使用
-用户应使用真实、有效的邮箱完成注册，并妥善保管账号、密码和邮箱验证码。因用户主动泄露、共享账号或使用非官方客户端造成的损失，由用户自行承担。
-
-三、本地数据读取说明
-为提供账号登录、设备安全识别、播放统计、同步和故障排查功能，账号系统可能读取或生成以下本地数据：本机设备标识、客户端版本、操作系统版本、设备厂商与型号、登录状态凭证、用户主动上传的头像、本地收藏、歌单、播放历史、听歌时长等音乐使用数据，以及软件运行错误日志。上述数据仅用于账号服务、安全风控、功能同步、异常定位和产品维护。
-
-四、数据上报与安全
-客户端启动、登录、注册、搜索、播放统计、错误反馈等行为可能向服务器上报必要信息，包括设备ID、IP地址、账号ID、客户端版本、操作系统版本、设备厂商、设备型号、行为时间和必要的请求参数。为便于准确排查和定位问题，提交问题反馈或错误日志时，客户端还会一并上报当前设备的具体厂商、型号及系统版本等详细信息（例如手机厂商与机型、系统版本号；桌面端操作系统版本与设备型号）。我们将尽合理努力保护数据安全，不会主动出售用户个人信息。
-
-五、禁止行为
-用户不得利用账号系统进行恶意攻击、批量注册、刷量、破解、逆向、绕过限制、上传违法违规内容、干扰服务器稳定性或侵犯他人权益。发现异常行为时，平台有权限制、封禁账号或设备。
-
-六、封禁与申诉
-若账号或设备因违反协议、安全风控或恶意行为被封禁，登录时将提示封禁状态及原因。用户如认为处理有误，可联系管理员并提供账号、设备ID及相关说明进行核查。
-
-七、协议更新
-平台可根据功能调整、安全要求或法律合规需要更新本协议。更新后继续使用账号功能，视为接受更新后的协议内容。`;
-
-const agreementContent = ref(defaultAgreementContent);
-
-async function loadUserAgreement() {
-  try {
-    const agreement = await getUserAgreement();
-    if (agreement.title.trim()) {
-      agreementTitle.value = agreement.title.trim();
-    }
-    if (agreement.content.trim()) {
-      agreementContent.value = agreement.content.trim();
-    }
-  } catch {
-    agreementTitle.value = '弦予音乐用户协议';
-    agreementContent.value = defaultAgreementContent;
-  }
+function navigateShortcut(to: string) {
+  void router.push(to);
 }
 
-async function openTermsModal() {
-  termsScrolledToEnd.value = false;
-  termsModalOpen.value = true;
-  await nextTick(); // 实现
-  refreshTermsScrollState();
-}
-
-function closeTermsModal() {
-  termsModalOpen.value = false;
-}
-
-function refreshTermsScrollState() {
-  const el = termsBodyRef.value;
-  if (!el) return;
-  const hasScrollableContent = el.scrollHeight > el.clientHeight + 4;
-  if (!hasScrollableContent) {
-    termsScrolledToEnd.value = true;
-    return;
-  }
-  termsScrolledToEnd.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 6;
-}
-
-function handleAgreementCheckboxChange(event: Event) {
-  const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
-  if (!checked) {
-    agreementAccepted.value = false;
-    return;
-  }
-  agreementAccepted.value = false;
-  void openTermsModal();
-}
-
-function acceptTerms() {
-  if (!termsScrolledToEnd.value) {
-    showToast('请先阅读并滚动到用户协议底部', 'error');
-    return;
-  }
-  agreementAccepted.value = true;
-  termsModalOpen.value = false;
-}
-
-function showMessage(text: string, tone: 'error' | 'success' = 'error') { // 实现
-  messageTone.value = tone; // 实现
-  message.value = text; // 实现
-}
-
-function requestHumanCaptcha(title: string, description: string): Promise<HumanCaptchaPayload | null> {
-  captchaModalTitle.value = title;
-  captchaModalDescription.value = description;
-  captchaModalOpen.value = true;
-  return new Promise(resolve => {
-    captchaResolver = resolve;
-  });
-}
-
-function resolveHumanCaptcha(payload: HumanCaptchaPayload | null) {
-  captchaModalOpen.value = false;
-  captchaResolver?.(payload);
-  captchaResolver = null;
-}
-
-function handleCaptchaVerified(payload: HumanCaptchaPayload) {
-  resolveHumanCaptcha(payload);
-}
-
-function handleCaptchaCancel() {
-  resolveHumanCaptcha(null);
-}
-
-async function onSubmit() { // 实现
-  if (mode.value === 'forgot') { // 实现
-    await handleResetPassword(); // 实现
-    return; // 实现
-  } // 实现
-  if (!agreementAccepted.value) {
-    showMessage('请先勾选同意用户协议');
-    showToast('请先勾选同意用户协议', 'error');
-    return;
-  }
-  if (mode.value === 'login') {
-    if (loginMethod.value === 'email') {
-      if (!validateField('email') || !validateField('code')) {
-        const first = fieldErrors.value.email || fieldErrors.value.code;
-        showMessage(first);
-        showToast(first, 'error');
-        return;
-      }
-    } else if (!validateField('account')) {
-      showMessage(fieldErrors.value.account);
-      showToast(fieldErrors.value.account, 'error');
-      return;
-    }
-  } else if (mode.value === 'register') {
-    const fields = ['account', 'nickname', 'email', 'code', 'password', 'confirmPassword'] as const;
-    let allValid = true;
-    for (const f of fields) {
-      if (!validateField(f)) allValid = false;
-    }
-    if (!allValid) {
-      const firstError = Object.values(fieldErrors.value)[0];
-      if (firstError) {
-        showMessage(firstError);
-        showToast(firstError, 'error');
-      }
-      return;
-    }
-  }
-  const captchaPayload = await requestHumanCaptcha(
-    mode.value === 'login' ? '登录前验证' : '注册前验证',
-    mode.value === 'login'
-      ? '完成验证后将继续登录当前账号。'
-      : '完成验证后将继续创建账号。',
-  );
-  if (!captchaPayload) return;
-  loading.value = true; // 实现
-  message.value = ''; // 实现
-  try {
-    const result = // 实现
-      mode.value === 'login' // 实现
-        ? (loginMethod.value === 'email'
-            ? await loginByEmail(form.value.email.trim(), form.value.code.trim(), captchaPayload)
-            : await login(form.value.account, form.value.password, captchaPayload))
-        : await register( // 实现
-            form.value.account.trim(),
-            form.value.nickname.trim(),
-            form.value.password, // 实现
-            form.value.email, // 实现
-            form.value.code, // 实现
-            captchaPayload,
-          );
-
-    authStore.setAuth(result); // 实现
-    form.value = { account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' };
-    nicknameDraft.value = result.user.nickname || result.user.username; // 实现
-    avatarDraft.value = result.user.avatar || ''; // 实现
-    showMessage(mode.value === 'login' ? '登录成功' : '注册成功', 'success'); // 实现
-    showToast(mode.value === 'login' ? '登录成功' : '注册成功', 'success'); // 实现
-
-    try {
-      const profile = await getProfile(); // 实现
-      if (profile) { // 实现
-        authStore.setAuth({ token: result.token, user: profile.user }); // 实现
-        stats.value = profile.stats; // 实现
-        nicknameDraft.value = profile.user.nickname || profile.user.username; // 实现
-        avatarDraft.value = profile.user.avatar || ''; // 实现
-      }
-    } catch {
-      stats.value = null; // 实现
-    }
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '登录/注册失败，请检查后端接口'; // 实现
-    showMessage(tip); // 实现
-    showToast(tip, 'error'); // 实现
-    if (tip.includes('封禁') || tip.includes('禁用')) {
-      window.alert(tip);
-    }
-  } finally {
-    loading.value = false; // 实现
-  }
-}
-
-async function handleResetPassword() { // 实现
-  const { email, code, newPassword, confirmPassword } = forgotForm.value; // 实现
-  if (!email) { // 实现
-    showMessage('请先填写注册邮箱'); // 实现
-    return; // 实现
-  } // 实现
-  if (!code) { // 实现
-    showMessage('请输入邮箱验证码'); // 实现
-    return; // 实现
-  } // 实现
-  if (!newPassword || newPassword.length < 6) { // 实现
-    showMessage('新密码至少 6 位'); // 实现
-    return; // 实现
-  } // 实现
-  if (newPassword !== confirmPassword) { // 实现
-    showMessage('两次输入的新密码不一致'); // 实现
-    return; // 实现
-  } // 实现
-  const captchaPayload = await requestHumanCaptcha(
-    '重置密码前验证',
-    '完成验证后将继续提交密码重置请求。',
-  );
-  if (!captchaPayload) return;
-  loading.value = true; // 实现
-  message.value = ''; // 实现
-  try { // 实现
-    const result = await resetPassword(email, code, newPassword, captchaPayload);
-    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' }; // 实现
-    showMessage(result.message || '密码修改成功', 'success'); // 实现
-    showToast(result.message || '密码修改成功，请使用新密码登录', 'success'); // 实现
-    mode.value = 'login'; // 实现
-    form.value.account = '';
-    form.value.password = ''; // 实现
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '重置密码失败'; // 实现
-    showMessage(tip); // 实现
-    showToast(tip, 'error'); // 实现
-  } finally { // 实现
-    loading.value = false; // 实现
-  } // 实现
-} // 实现
-async function handleSendCode() { // 实现
-  const isForgot = mode.value === 'forgot'; // 实现
-  const isEmailLogin = mode.value === 'login' && loginMethod.value === 'email';
-  const email = isForgot ? forgotForm.value.email : form.value.email; // 实现
-  if (!email) { // 实现
-    showMessage('请先填写邮箱'); // 实现
-    return;
-  }
-  if (!EMAIL_RE.test(email.trim())) {
-    showMessage('邮箱格式不正确');
-    return;
-  }
-  const type: VerifyCodeType = isForgot ? 'reset_password' : (isEmailLogin ? 'login' : 'register');
-  const captchaPayload = await requestHumanCaptcha(
-    '发送验证码前验证',
-    '完成验证后将向邮箱发送验证码。',
-  );
-  if (!captchaPayload) return;
-  codeLoading.value = true; // 实现
-  message.value = ''; // 实现
-  try {
-    const ciyuanxiId = isForgot || isEmailLogin ? undefined : form.value.account.trim() || undefined;
-    const result = await sendEmailCode(email, type, captchaPayload, ciyuanxiId);
-    showMessage(result.message || '验证码已发送到邮箱', 'success'); // 实现
-    showToast(result.message || '验证码已发送到邮箱', 'success'); // 实现
-    startCodeCountdown();
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '验证码发送失败'; // 实现
-    showMessage(tip); // 实现
-    showToast(tip, 'error'); // 实现
-  } finally {
-    codeLoading.value = false; // 实现
-  }
-}
-
-async function handleSaveProfile() { // 实现
-  const nickname = nicknameDraft.value.trim(); // 实现
-  if (!nickname) { // 实现
-    showMessage('昵称不能为空'); // 实现
-    return;
-  }
-  profileSaving.value = true; // 实现
-  message.value = ''; // 实现
-  try {
-    const result = await updateProfile(nickname); // 实现
-    if (result?.user) { // 实现
-      authStore.setUser(result.user); // 实现
-      avatarDraft.value = result.user.avatar || ''; // 实现
-    }
-    if (result?.nicknamePending) { // 实现
-      nicknameStatus.value = 'pending'; // 实现
-      nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
-      showToast('改名申请已提交，等待管理员审核', 'success'); // 实现
-    } else { // 实现
-      showToast('个人信息已保存', 'success'); // 实现
-    } // 实现
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '保存失败'; // 实现
-    showToast(tip, 'error'); // 实现
-  } finally {
-    profileSaving.value = false; // 实现
-  }
-}
-
-async function handleAvatarFileChange(event: Event) { // 实现
-  const input = event.target as HTMLInputElement; // 实现
-  const file = input.files?.[0]; // 实现
-  input.value = ''; // 实现
-  if (!file) return; // 实现
-
-  if (!file.type.startsWith('image/')) { // 实现
-    const tip = '请选择图片文件'; // 实现
-    showToast(tip, 'error'); // 实现
-    return;
-  }
-  if (file.size > 5 * 1024 * 1024) { // 实现
-    const tip = '头像不能超过 5MB'; // 实现
-    showToast(tip, 'error'); // 实现
-    return;
-  }
-
-  avatarUploading.value = true; // 实现
-  try {
-    await uploadAvatar(file); // 实现
-    avatarStatus.value = 'pending'; // 实现
-    showToast('头像已上传，等待管理员审核', 'success'); // 实现
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '头像上传失败'; // 实现
-    showToast(tip, 'error'); // 实现
-  } finally {
-    avatarUploading.value = false; // 实现
-  }
-}
-
-const refreshingAvatarStatus = ref(false); // 实现
-async function refreshAvatarStatus() { // 实现
-  if (refreshingAvatarStatus.value) return; // 实现
-  refreshingAvatarStatus.value = true; // 实现
-  try { // 实现
-    const [avatarSt, nicknameSt] = await Promise.all([getAvatarStatus(), getNicknameStatus().catch(() => 'none' as const)]); // 实现
-    avatarStatus.value = avatarSt; // 实现
-    nicknameStatus.value = nicknameSt; // 实现
-    if (avatarSt === 'none' || nicknameSt === 'none') { // 实现
-      const profile = await getProfile(); // 实现
-      if (profile) { // 实现
-        authStore.setUser(profile.user); // 实现
-        avatarDraft.value = profile.user.avatar || ''; // 实现
-        nicknameDraft.value = profile.user.nickname || profile.user.username || ''; // 实现
-      } // 实现
-      if (avatarSt === 'none' && avatarStatus.value !== 'none') { // 实现
-        showToast('头像已更新', 'success'); // 实现
-      } // 实现
-      if (nicknameSt === 'none' && nicknameStatus.value !== 'none') { // 实现
-        showToast('用户名已更新', 'success'); // 实现
-      } // 实现
-    } else if (avatarSt === 'pending' && nicknameSt === 'pending') { // 实现
-      showToast('头像和改名均在审核中', 'info'); // 实现
-    } else if (avatarSt === 'pending') { // 实现
-      showToast('头像仍在审核中', 'info'); // 实现
-    } else if (nicknameSt === 'pending') { // 实现
-      showToast('改名仍在审核中', 'info'); // 实现
-    } // 实现
-  } catch { // 实现
-    showToast('查询审核状态失败', 'error'); // 实现
-  } finally { // 实现
-    refreshingAvatarStatus.value = false; // 实现
-  } // 实现
-} // 实现
-async function openAvatarPicker() {
-  avatarMenuOpen.value = false; // 实现
-  if (!await confirmProfileLimit('avatar')) {
-    return;
-  }
-  requestAnimationFrame(() => { // 实现
-    avatarInputRef.value?.click(); // 实现
-  });
-}
-
-async function saveAvatarToLocal() { // 实现
-  const url = avatarDraft.value || authStore.user?.avatar; // 实现
-  if (!url) {
-    showToast('暂无头像可保存', 'error'); // 实现
-    return;
-  }
-  avatarMenuOpen.value = false; // 实现
-  avatarUploading.value = true; // 实现
-  try {
-    const image = await downloadApi.fetchImageBytes(url);
-    const ext = image.mime.includes('png') ? 'png'
-      : image.mime.includes('webp') ? 'webp'
-      : image.mime.includes('gif') ? 'gif'
-      : image.mime.includes('jpeg') || image.mime.includes('jpg') ? 'jpg'
-      : 'png';
-    const defaultName = `avatar_${authStore.user?.username || 'user'}.${ext}`; // 实现
-    const savedPath = await downloadApi.saveBytesViaDialog(
-      defaultName,
-      { name: '图片', extensions: [ext] },
-      image.data,
-    );
-    if (savedPath === null) return;
-    showToast('头像已保存到本地', 'success'); // 实现
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '保存失败'; // 实现
-    showToast(tip, 'error'); // 实现
-  } finally {
-    avatarUploading.value = false; // 实现
-  }
-}
-
-const showLogoutConfirm = ref(false); // 实现
-
-function handleLogout() { // 实现
-  showLogoutConfirm.value = true; // 实现
-}
-
-async function confirmLogout() { // 实现
-  showLogoutConfirm.value = false; // 实现
-  loading.value = true; // 实现
-  try {
-    await logout(); // 实现
-    authStore.reset(); // 实现
-    stats.value = null; // 实现
-    mode.value = 'login'; // 实现
-    loginMethod.value = 'password';
-    message.value = ''; // 实现
-    showToast('已退出登录', 'info'); // 实现
-  } finally {
-    loading.value = false; // 实现
-  }
-}
-
-const showCiyuanxiModal = ref(false);
-const ciyuanxiForm = ref({ oldId: '', newId: '', password: '' });
-const ciyuanxiLoading = ref(false);
-
-function openCiyuanxiModal() {
-  ciyuanxiForm.value = {
-    oldId: authStore.user?.ciyuanxi_id || authStore.user?.username || '',
-    newId: '',
-    password: '',
-  };
-  showCiyuanxiModal.value = true;
-}
-
-async function submitCiyuanxi() {
-  const oldId = ciyuanxiForm.value.oldId.trim();
-  const newId = ciyuanxiForm.value.newId.trim();
-  const password = ciyuanxiForm.value.password;
-  if (!oldId) {
-    showToast('未获取到当前弦予号，请重新登录', 'error');
-    return;
-  }
-  if (newId.length < 6 || newId.length > 20) {
-    showToast('弦予号需 6-20 位', 'error');
-    return;
-  }
-  if (!/^[a-zA-Z0-9]{6,20}$/.test(newId)) {
-    showToast('弦予号仅支持纯数字、纯字母或数字字母组合', 'error');
-    return;
-  }
-  if (!password) {
-    showToast('请输入登录密码', 'error');
-    return;
-  }
-  ciyuanxiLoading.value = true;
-  try {
-    const res = await updateCiyuanxiId(oldId, newId, password);
-    showToast(res.message || '弦予号修改成功', 'success');
-    showCiyuanxiModal.value = false;
-    const user = authStore.user;
-    if (user) {
-      authStore.setUser({ ...user, ciyuanxi_id: res.ciyuanxi_id });
-    }
-  } catch (error) { // 实现
-    showToast(error instanceof Error ? error.message : '弦予号修改失败', 'error');
-  } finally {
-    ciyuanxiLoading.value = false;
-  }
-}
-
-const showBindEmailModal = ref(false);
-const bindEmailForm = ref({ email: '', code: '' });
-const bindEmailLoading = ref(false);
-const bindCodeLoading = ref(false);
-const bindCodeCountdown = ref(0);
-let bindCodeTimer: ReturnType<typeof setInterval> | null = null;
-
-function startBindCodeCountdown() {
-  bindCodeCountdown.value = 60;
-  if (bindCodeTimer) clearInterval(bindCodeTimer);
-  bindCodeTimer = setInterval(() => {
-    bindCodeCountdown.value--;
-    if (bindCodeCountdown.value <= 0) {
-      bindCodeCountdown.value = 0;
-      if (bindCodeTimer) {
-        clearInterval(bindCodeTimer);
-        bindCodeTimer = null;
-      }
-    }
-  }, 1000);
-}
-
-function openBindEmailModal() {
-  bindEmailForm.value = { email: '', code: '' };
-  bindCodeCountdown.value = 0;
-  showBindEmailModal.value = true;
-}
-
-async function sendBindCode() {
-  const email = bindEmailForm.value.email.trim();
-  if (!email) {
-    showToast('请输入邮箱', 'error');
-    return;
-  }
-  if (!EMAIL_RE.test(email)) {
-    showToast('邮箱格式不正确', 'error');
-    return;
-  }
-  const captchaPayload = await requestHumanCaptcha('发送验证码前验证', '完成验证后将向邮箱发送绑定验证码。');
-  if (!captchaPayload) return;
-  bindCodeLoading.value = true;
-  try {
-    const ciyuanxiId = authStore.user?.ciyuanxi_id || authStore.user?.username || '';
-    const result = await sendEmailCode(email, 'bind', captchaPayload, ciyuanxiId || undefined);
-    showToast(result.message || '验证码已发送到邮箱', 'success'); // 实现
-    startBindCodeCountdown();
-  } catch (error) { // 实现
-    showToast(error instanceof Error ? error.message : '验证码发送失败', 'error');
-  } finally {
-    bindCodeLoading.value = false;
-  }
-}
-
-async function submitBindEmail() {
-  const ciyuanxiId = authStore.user?.ciyuanxi_id || authStore.user?.username || '';
-  const email = bindEmailForm.value.email.trim();
-  const code = bindEmailForm.value.code.trim();
-  if (!ciyuanxiId) {
-    showToast('未获取到当前账号，请重新登录', 'error');
-    return;
-  }
-  if (!email) {
-    showToast('请输入邮箱', 'error');
-    return;
-  }
-  if (!EMAIL_RE.test(email)) {
-    showToast('邮箱格式不正确', 'error');
-    return;
-  }
-  if (!code) {
-    showToast('请输入邮箱验证码', 'error');
-    return;
-  }
-  bindEmailLoading.value = true;
-  try {
-    const res = await bindEmail(ciyuanxiId, email, code);
-    showToast(res.message || '邮箱绑定成功', 'success');
-    showBindEmailModal.value = false;
-    const user = authStore.user;
-    if (user) {
-      authStore.setUser({ ...user, email: res.email });
-    }
-  } catch (error) { // 实现
-    showToast(error instanceof Error ? error.message : '邮箱绑定失败', 'error');
-  } finally {
-    bindEmailLoading.value = false;
-  }
-}
-
-function navigateShortcut(to: string) { // 实现
-  void router.push(to); // 实现
-}
-
-function switchMode(next: AuthMode) { // 实现
-  mode.value = next; // 实现
-  message.value = ''; // 实现
-  form.value.password = '';
-  form.value.confirmPassword = '';
-  if (next === 'forgot') {
-    agreementAccepted.value = false;
-  }
-  if (next !== 'forgot') { // 实现
-    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' }; // 实现
-  } // 实现
-} // 实现
-function enterForgot() { // 实现
-  switchMode('forgot'); // 实现
-}
-
-// ------- 扫码登录（桌面端二维码 / 手机 App 扫码确认） -------
-const loginMethod = ref<'password' | 'email' | 'qr'>('password');
-const qrStatus = ref<'loading' | 'pending' | 'scanned' | 'expired' | 'error' | 'logged'>('loading');
-const qrCode = ref('');
-const qrImage = ref('');
-const qrExpireAt = ref(0);
-const qrError = ref('');
-let qrPollTimer: ReturnType<typeof setInterval> | null = null;
-
-function stopQrPolling() {
-  if (qrPollTimer) {
-    clearInterval(qrPollTimer);
-    qrPollTimer = null;
-  }
-}
-
-async function startQrLogin() {
-  stopQrPolling();
-  qrStatus.value = 'loading';
-  qrCode.value = '';
-  qrImage.value = '';
-  qrError.value = '';
-  try {
-    const { code, expireSeconds } = await createQrLoginCode();
-    if (!code) throw new Error('二维码内容为空');
-    qrCode.value = code;
-    qrExpireAt.value = Date.now() + expireSeconds * 1000;
-    qrImage.value = await QRCode.toDataURL(`xianyumusic://tvlogin/${code}`, {
-      width: 320,
-      margin: 2,
-      errorCorrectionLevel: 'M',
-    });
-    qrStatus.value = 'pending';
-    startQrPolling();
-  } catch (error) { // 实现
-    qrStatus.value = 'error';
-    qrError.value = error instanceof Error ? error.message : '二维码获取失败，请重试';
-  }
-}
-
-function startQrPolling() {
-  stopQrPolling();
-  qrPollTimer = setInterval(async () => {
-    if (qrStatus.value === 'logged') return;
-    if (Date.now() > qrExpireAt.value) {
-      qrStatus.value = 'expired';
-      stopQrPolling();
-      return;
-    }
-    if (!qrCode.value) return;
-    let result: QrPollResult;
-    try {
-      result = await pollQrLoginStatus(qrCode.value);
-    } catch {
-      return;
-    }
-    if (result.status === 'logged_in' && result.token) {
-      await handleQrLoggedIn(result);
-    } else if (result.status === 'scanned' && qrStatus.value === 'pending') {
-      qrStatus.value = 'scanned';
-    } else if (result.status === 'invalid') {
-      qrStatus.value = 'expired';
-      stopQrPolling();
-    }
-  }, 2000);
-}
-
-async function handleQrLoggedIn(result: QrPollResult) {
-  stopQrPolling();
-  qrStatus.value = 'logged';
-  const token = result.token || '';
-  const user = result.user ?? {
-    id: '',
-    username: '',
-    nickname: '',
-    email: '',
-    avatar: '',
-    ciyuanxi_id: undefined,
-  };
-  authStore.setAuth({ token, user });
-  nicknameDraft.value = user.nickname || user.username;
-  avatarDraft.value = user.avatar || '';
-  showMessage('登录成功', 'success');
-  showToast('登录成功', 'success');
-  try {
-    const profile = await getProfile(); // 实现
-    if (profile) { // 实现
-      authStore.setAuth({ token, user: profile.user });
-      stats.value = profile.stats; // 实现
-      nicknameDraft.value = profile.user.nickname || profile.user.username; // 实现
-      avatarDraft.value = profile.user.avatar || ''; // 实现
-    }
-  } catch {
-    stats.value = null; // 实现
-  }
-}
-
-watch(loginMethod, (m) => {
-  if (m === 'qr' && mode.value === 'login') {
-    void startQrLogin();
-  } else {
-    stopQrPolling();
-  }
-});
-
-watch(mode, () => {
-  if (mode.value === 'login' && loginMethod.value === 'qr') {
-    void startQrLogin();
-  } else {
-    stopQrPolling();
-  }
-});
-
-onMounted(async () => { // 实现
-  uiStore.showPlayerDetail = false; // 实现
+onMounted(async () => {
+  uiStore.showPlayerDetail = false;
   void loadUserAgreement();
-  if (!authStore.initialized) { // 实现
-    await authStore.restoreSession(); // 实现
+  if (!authStore.initialized) {
+    await authStore.restoreSession();
   }
-  if (!authStore.isLoggedIn) { // 实现
+  if (!authStore.isLoggedIn) {
     return;
   }
-  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || ''; // 实现
-  avatarDraft.value = authStore.user?.avatar || ''; // 实现
-  try {
-    const profile = await getProfile(); // 实现
-    if (profile) { // 实现
-      authStore.setUser(profile.user); // 实现
-      stats.value = profile.stats; // 实现
-      nicknameDraft.value = profile.user.nickname || profile.user.username; // 实现
-      avatarDraft.value = profile.user.avatar || ''; // 实现
-    }
-  } catch {
-    stats.value = null; // 实现
-  }
-  avatarStatus.value = await getAvatarStatus(); // 实现
-  try { // 实现
-    nicknameStatus.value = await getNicknameStatus(); // 实现
-  } catch { // 实现
-    nicknameStatus.value = 'none'; // 实现
-  } // 实现
+  await loadLoggedInProfile();
   startPolling();
 });
-
-onUnmounted(() => {
-  stopPolling();
-  stopQrPolling();
-  if (bindCodeTimer) {
-    clearInterval(bindCodeTimer);
-    bindCodeTimer = null;
-  }
-});
-
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-const POLL_INTERVAL = 30000;
-
-function startPolling() {
-  stopPolling();
-  pollTimer = setInterval(async () => {
-    if (!authStore.isLoggedIn) return;
-    if (avatarStatus.value !== 'pending' && nicknameStatus.value !== 'pending') {
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = setInterval(silentPoll, 120000);
-      }
-      return;
-    }
-    await silentPoll();
-  }, POLL_INTERVAL);
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
-
-async function silentPoll() {
-  try {
-    const [avatarSt, nicknameSt] = await Promise.all([
-      getAvatarStatus().catch(() => 'none' as const),
-      getNicknameStatus().catch(() => 'none' as const),
-    ]);
-    const prevAvatar = avatarStatus.value;
-    const prevNickname = nicknameStatus.value;
-    avatarStatus.value = avatarSt;
-    nicknameStatus.value = nicknameSt;
-
-    if (prevAvatar === 'pending' && avatarSt === 'none') {
-      const profile = await getProfile(); // 实现
-      if (profile) { // 实现
-        authStore.setUser(profile.user);
-        avatarDraft.value = profile.user.avatar || ''; // 实现
-      }
-      showToast('头像已更新', 'success');
-    }
-    if (prevNickname === 'pending' && nicknameSt === 'none') {
-      const profile = await getProfile(); // 实现
-      if (profile) { // 实现
-        authStore.setUser(profile.user);
-        nicknameDraft.value = profile.user.nickname || profile.user.username || '';
-      }
-      showToast('用户名已更新', 'success');
-    }
-    if (prevAvatar === 'pending' && prevNickname === 'pending' && avatarSt === 'none' && nicknameSt === 'none') {
-      const profile = await getProfile(); // 实现
-      if (profile) { // 实现
-        authStore.setUser(profile.user);
-        avatarDraft.value = profile.user.avatar || ''; // 实现
-        nicknameDraft.value = profile.user.nickname || profile.user.username || '';
-      }
-      showToast('头像和用户名已更新', 'success');
-    }
-  } catch {
-    // 静默失败，不影响用户体验
-  }
-}
 </script>
 
 <template>
-  <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200"> 
-    <div class="px-[clamp(1rem,1.5vw,1.75rem)] pt-[clamp(1rem,1.5vw,1.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto"> 
+  <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200">
+    <div class="px-[clamp(1rem,1.5vw,1.75rem)] pt-[clamp(1rem,1.5vw,1.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
 
-      <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up"> 
-        <header class="pb-[clamp(0.25rem,0.5vw,0.5rem)]"> 
-          <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ headerLabel }}</p>
-          <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">{{ title }}</h2> 
-          <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-2 max-w-xl">{{ subtitle }}</p>
-        </header>
-
-        <nav class="mt-[clamp(1rem,1.5vw,1.75rem)]"> 
-          <div 
-            v-if="mode !== 'forgot'" 
-            class="flex items-center gap-2 border-b border-black/10 dark:border-white/10"
-          > 
-            <button
-              type="button" 
-              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer" 
-              :class="mode === 'login' 
-                ? 'text-[#EC4141]' 
-                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'" 
-              @click="switchMode('login')" 
-            >
-              登录
-              <span
-                class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out" 
-                :class="mode === 'login' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'" 
-              ></span>
-            </button>
-            <button
-              type="button" 
-              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer" 
-              :class="mode === 'register' 
-                ? 'text-[#EC4141]' 
-                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'" 
-              @click="switchMode('register')" 
-            >
-              注册
-              <span
-                class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out" 
-                :class="mode === 'register' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'" 
-              ></span>
-            </button>
-          </div>
-          <div v-else class="flex items-center mb-4"> 
-            <button 
-              type="button" 
-              class="inline-flex items-center gap-1 text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer" 
-              @click="switchMode('login')" 
-            > 
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg> 
-              返回登录 
-            </button> 
-          </div> 
-        </nav>
-
-        <Transition name="auth-mode" mode="out-in"> 
-          <form 
-            v-if="mode === 'forgot'" 
-            key="forgot" 
-            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl" 
-            @submit.prevent="onSubmit" 
-          > 
-            <label class="grid gap-3"> 
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">注册邮箱</span> 
-              <input 
-                v-model="forgotForm.email" 
-                type="email" 
-                placeholder="name@example.com" 
-                autocomplete="email" 
-                required 
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30" 
-              /> 
-            </label> 
-            <div class="grid grid-cols-[1fr_auto] items-end gap-4"> 
-              <label class="grid gap-3"> 
-                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span> 
-                <input 
-                  v-model="forgotForm.code" 
-                  type="text" 
-                  placeholder="填写验证码" 
-                  autocomplete="one-time-code" 
-                  required 
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30" 
-                /> 
-              </label> 
-              <button 
-                type="button" 
-                class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
-                :disabled="codeLoading || codeCountdown > 0"
-                @click="handleSendCode" 
-              > 
-                {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
-              </button> 
-            </div> 
-            <label class="grid gap-3"> 
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">新密码</span> 
-              <div class="relative" @focusin="pwdFocused.newPassword = true" @focusout="pwdFocused.newPassword = false; pwdVisible.newPassword = false">
-                <input
-                  v-model="forgotForm.newPassword"
-                  :type="pwdVisible.newPassword ? 'text' : 'password'"
-                  placeholder="至少 6 位"
-                  autocomplete="new-password"
-                  required
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b border-black/15 dark:border-white/15 pl-1 pr-10 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                />
-                <button
-                  type="button" 
-                  v-show="pwdFocused.newPassword && forgotForm.newPassword.length > 0"
-                  class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
-                  :aria-label="pwdVisible.newPassword ? '隐藏密码' : '查看密码'"
-                  @mousedown.prevent
-                  @click="pwdVisible.newPassword = !pwdVisible.newPassword"
-                >
-                  <EyeOff v-if="pwdVisible.newPassword" class="h-5 w-5" />
-                  <Eye v-else class="h-5 w-5" />
-                </button>
-              </div>
-            </label> 
-            <label class="grid gap-3"> 
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认新密码</span> 
-              <div class="relative" @focusin="pwdFocused.confirmNewPassword = true" @focusout="pwdFocused.confirmNewPassword = false; pwdVisible.confirmNewPassword = false">
-                <input
-                  v-model="forgotForm.confirmPassword"
-                  :type="pwdVisible.confirmNewPassword ? 'text' : 'password'"
-                  placeholder="再次输入新密码"
-                  autocomplete="new-password"
-                  required
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b border-black/15 dark:border-white/15 pl-1 pr-10 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                />
-                <button
-                  type="button" 
-                  v-show="pwdFocused.confirmNewPassword && forgotForm.confirmPassword.length > 0"
-                  class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
-                  :aria-label="pwdVisible.confirmNewPassword ? '隐藏密码' : '查看密码'"
-                  @mousedown.prevent
-                  @click="pwdVisible.confirmNewPassword = !pwdVisible.confirmNewPassword"
-                >
-                  <EyeOff v-if="pwdVisible.confirmNewPassword" class="h-5 w-5" />
-                  <Eye v-else class="h-5 w-5" />
-                </button>
-              </div>
-            </label> 
-            <div class="pt-4 flex items-center gap-5 flex-wrap"> 
-              <button 
-                type="submit" 
-                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-2 rounded-full text-sm font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                :disabled="loading" 
-              > 
-                {{ loading ? '提交中…' : '重置密码' }} 
-              </button> 
-              <button 
-                type="button" 
-                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer" 
-                @click="switchMode('login')" 
-              > 
-                返回登录 
-              </button> 
-            </div> 
-          </form> 
-          <form 
-            v-else 
-            :key="mode" 
-            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl" 
-            @submit.prevent="onSubmit" 
-          > 
-            <div v-if="mode === 'login'" class="flex w-fit gap-1 p-1 rounded-full bg-black/5 dark:bg-white/10">
-              <button
-                type="button" 
-                class="rounded-full px-5 py-2 text-sm font-medium transition cursor-pointer"
-                :class="loginMethod === 'password'
-                  ? 'bg-[#EC4141] text-white shadow-sm'
-                  : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
-                @click="loginMethod = 'password'"
-              >
-                账号密码登录
-              </button>
-              <button
-                type="button" 
-                class="rounded-full px-5 py-2 text-sm font-medium transition cursor-pointer"
-                :class="loginMethod === 'email'
-                  ? 'bg-[#EC4141] text-white shadow-sm'
-                  : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
-                @click="loginMethod = 'email'"
-              >
-                邮箱验证码登录
-              </button>
-              <button
-                type="button" 
-                class="rounded-full px-5 py-2 text-sm font-medium transition cursor-pointer"
-                :class="loginMethod === 'qr'
-                  ? 'bg-[#EC4141] text-white shadow-sm'
-                  : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
-                @click="loginMethod = 'qr'"
-              >
-                扫码登录
-              </button>
-            </div>
-
-            <div
-              v-if="mode === 'login' && loginMethod === 'qr'"
-              key="qr"
-              class="flex flex-col items-center gap-5 pt-2 pb-2"
-            >
-              <div
-                class="relative grid place-items-center w-[clamp(200px,22vw,236px)] h-[clamp(200px,22vw,236px)] rounded-2xl bg-white border border-black/5 shadow-sm overflow-hidden"
-              >
-                <img
-                  v-if="qrImage"
-                  :src="qrImage"
-                  alt="登录二维码"
-                  class="w-full h-full object-contain p-2"
-                />
-                <div v-else class="text-black/40 dark:text-white/40 text-sm px-6 text-center">
-                  {{ qrStatus === 'loading' ? '二维码加载中…' : '二维码加载失败' }}
-                </div>
-                <div
-                  v-if="qrStatus === 'scanned'"
-                  class="absolute inset-0 bg-white/85 backdrop-blur flex flex-col items-center justify-center gap-2 text-center"
-                >
-                  <span class="text-black text-lg font-semibold">已扫描</span>
-                  <span class="text-black/50 text-sm">等待移动端确认登录</span>
-                </div>
-                <div
-                  v-if="qrStatus === 'expired'"
-                  class="absolute inset-0 bg-white/85 backdrop-blur flex flex-col items-center justify-center gap-3 text-center"
-                >
-                  <span class="text-black/70 text-sm font-medium">二维码已过期</span>
-                  <button
-                    type="button"
-                    class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-5 py-2 rounded-full text-sm transition cursor-pointer"
-                    @click="startQrLogin"
-                  >
-                    刷新二维码
-                  </button>
-                </div>
-              </div>
-
-              <div class="text-center">
-                <p
-                  v-if="qrStatus === 'loading'"
-                  class="text-black/60 dark:text-white/60 text-sm"
-                >正在生成二维码…</p>
-                <p
-                  v-else-if="qrStatus === 'error'"
-                  class="text-[#EC4141] text-sm"
-                >{{ qrError || '二维码获取失败' }}</p>
-                <p
-                  v-else-if="qrStatus === 'scanned'"
-                  class="text-black/60 dark:text-white/60 text-sm"
-                >二维码已扫描，等待移动端确认登录</p>
-                <p
-                  v-else
-                  class="text-black/60 dark:text-white/60 text-sm"
-                >请使用 <strong class="text-black dark:text-white">「弦予音乐」App</strong> 首页右上角扫码入口扫描</p>
-              </div>
-
-              <div class="flex items-center gap-3">
-                <button
-                  type="button" 
-                  class="text-black/50 dark:text-white/50 hover:text-[#EC4141] text-xs flex items-center gap-1 transition cursor-pointer"
-                  @click="startQrLogin"
-                >刷新二维码</button>
-                <span class="text-black/30 dark:text-white/30 text-xs">有效期 5 分钟</span>
-              </div>
-            </div>
-
-            <template v-else>
-            <template v-if="mode === 'login' && loginMethod === 'email'">
-              <label class="grid gap-3"> 
-                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span> 
-                <input
-                  v-model="form.email" 
-                  type="email" 
-                  placeholder="name@example.com" 
-                  autocomplete="email" 
-                  required
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  :class="fieldErrors.email ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                  @blur="validateField('email')"
-                  @input="clearFieldError('email')"
-                />
-                <span v-if="fieldErrors.email" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.email }}</span>
-              </label>
-
-              <div class="grid grid-cols-[1fr_auto] items-end gap-4"> 
-                <label class="grid gap-3"> 
-                  <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span> 
-                  <input
-                    v-model="form.code" 
-                    type="text"
-                    placeholder="填写验证码" 
-                    autocomplete="one-time-code" 
-                    required
-                    class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                    :class="fieldErrors.code ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                    @blur="validateField('code')"
-                    @input="clearFieldError('code')"
-                  />
-                  <span v-if="fieldErrors.code" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.code }}</span>
-                </label>
-                <button
-                  type="button" 
-                  class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
-                  :disabled="codeLoading || codeCountdown > 0"
-                  @click="handleSendCode" 
-                >
-                  {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
-                </button>
-              </div>
-            </template>
-
-            <label v-if="loginMethod !== 'email'" class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">{{ mode === 'login' ? '弦予号/邮箱' : '弦予号' }}</span>
-              <input
-                v-model="form.account"
-                type="text"
-                :placeholder="mode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，支持纯数字、纯字母或组合'"
-                :autocomplete="mode === 'login' ? 'off' : 'username'"
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                :class="fieldErrors.account ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                @blur="validateField('account')"
-                @input="clearFieldError('account')"
-              />
-              <span v-if="fieldErrors.account" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.account }}</span>
-            </label>
-
-            <template v-if="mode === 'register'"> 
-              <label class="grid gap-3"> 
-                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">昵称（选填）</span>
-                <input
-                  v-model="form.nickname"
-                  type="text"
-                  placeholder='留空则默认"弦予+弦予号"'
-                  autocomplete="nickname"
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  :class="fieldErrors.nickname ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                  @blur="validateField('nickname')"
-                  @input="clearFieldError('nickname')"
-                />
-                <span v-if="fieldErrors.nickname" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.nickname }}</span>
-              </label>
-              <label class="grid gap-3"> 
-                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span> 
-                <input
-                  v-model="form.email" 
-                  type="email" 
-                  placeholder="name@example.com" 
-                  autocomplete="email" 
-                  required
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  :class="fieldErrors.email ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                  @blur="validateField('email')"
-                  @input="clearFieldError('email')"
-                />
-                <span v-if="fieldErrors.email" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.email }}</span>
-              </label>
-
-              <div class="grid grid-cols-[1fr_auto] items-end gap-4"> 
-                <label class="grid gap-3"> 
-                  <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span> 
-                  <input
-                    v-model="form.code" 
-                    type="text"
-                    placeholder="填写验证码" 
-                    autocomplete="one-time-code" 
-                    required
-                    class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                    :class="fieldErrors.code ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                    @blur="validateField('code')"
-                    @input="clearFieldError('code')"
-                  />
-                  <span v-if="fieldErrors.code" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.code }}</span>
-                </label>
-                <button
-                  type="button" 
-                  class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
-                  :disabled="codeLoading || codeCountdown > 0"
-                  @click="handleSendCode" 
-                >
-                  {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
-                </button>
-              </div>
-            </template>
-
-            <label v-if="loginMethod !== 'email'" class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">密码</span> 
-              <div class="relative" @focusin="pwdFocused.password = true" @focusout="pwdFocused.password = false; pwdVisible.password = false">
-                <input
-                  v-model="form.password"
-                  :type="pwdVisible.password ? 'text' : 'password'"
-                  placeholder="请输入密码"
-                  :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-                  required
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b pl-1 pr-10 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  :class="fieldErrors.password ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                  @blur="validateField('password')"
-                  @input="onPasswordInput"
-                />
-                <button
-                  type="button" 
-                  v-show="pwdFocused.password && form.password.length > 0"
-                  class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
-                  :aria-label="pwdVisible.password ? '隐藏密码' : '查看密码'"
-                  @mousedown.prevent
-                  @click="pwdVisible.password = !pwdVisible.password"
-                >
-                  <EyeOff v-if="pwdVisible.password" class="h-5 w-5" />
-                  <Eye v-else class="h-5 w-5" />
-                </button>
-              </div>
-              <span v-if="fieldErrors.password" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.password }}</span>
-            </label>
-
-            <label v-if="mode === 'register'" class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认密码</span>
-              <div class="relative" @focusin="pwdFocused.confirmPassword = true" @focusout="pwdFocused.confirmPassword = false; pwdVisible.confirmPassword = false">
-                <input
-                  v-model="form.confirmPassword"
-                  :type="pwdVisible.confirmPassword ? 'text' : 'password'"
-                  placeholder="再次输入密码"
-                  autocomplete="new-password"
-                  required
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b pl-1 pr-10 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  :class="fieldErrors.confirmPassword ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
-                  @blur="validateField('confirmPassword')"
-                  @input="clearFieldError('confirmPassword')"
-                />
-                <button
-                  type="button" 
-                  v-show="pwdFocused.confirmPassword && form.confirmPassword.length > 0"
-                  class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
-                  :aria-label="pwdVisible.confirmPassword ? '隐藏密码' : '查看密码'"
-                  @mousedown.prevent
-                  @click="pwdVisible.confirmPassword = !pwdVisible.confirmPassword"
-                >
-                  <EyeOff v-if="pwdVisible.confirmPassword" class="h-5 w-5" />
-                  <Eye v-else class="h-5 w-5" />
-                </button>
-              </div>
-              <span v-if="fieldErrors.confirmPassword" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.confirmPassword }}</span>
-            </label>
-
-            <div class="flex items-start gap-3 text-sm text-black/60 dark:text-white/60 select-none">
-              <input
-                v-model="agreementAccepted"
-                type="checkbox"
-                class="mt-1 h-4 w-4 accent-[#EC4141] cursor-pointer"
-                @change="handleAgreementCheckboxChange"
-              />
-              <span>
-                我已阅读并同意
-                <button
-                  type="button" 
-                  class="text-[#EC4141] hover:text-[#d13b3b] underline underline-offset-4 cursor-pointer"
-                  @click="openTermsModal"
-                >
-                  用户协议
-                </button>
-                ，并知悉账号系统会读取必要的本地数据用于登录、安全风控、同步和统计。
-              </span>
-            </div>
-
-            <div class="pt-4 flex items-center gap-5 flex-wrap"> 
-              <button
-                type="submit" 
-                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-2 rounded-full text-sm font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                :disabled="loading || !agreementAccepted"
-              >
-                {{ loading ? '提交中…' : mode === 'login' ? '登录' : '注册' }} 
-              </button>
-              <button
-                type="button" 
-                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer" 
-                @click="switchMode(mode === 'login' ? 'register' : 'login')" 
-              >
-                {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }} 
-              </button>
-              <button 
-                v-if="mode === 'login'" 
-                type="button" 
-                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer ml-auto" 
-                @click="enterForgot" 
-              > 
-                忘记密码？ 
-              </button> 
-            </div>
-            </template>
-          </form>
-        </Transition> 
-
-        <div
-          v-if="message" 
-          class="mt-4" 
+      <AuthShell
+        v-if="!authStore.isLoggedIn"
+        :mode="mode"
+        :header-label="headerLabel"
+        :title="title"
+        :subtitle="subtitle"
+        :message="message"
+        :message-tone="messageTone"
+        @switch-mode="switchMode"
+      >
+        <form
+          v-if="mode === 'forgot'"
+          key="forgot"
+          class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
+          @submit.prevent="onSubmit"
         >
-          <p
-            class="text-base font-medium" 
-            :class="messageTone === 'error' 
-              ? 'text-[#EC4141]' 
-              : 'text-emerald-600 dark:text-emerald-400'" 
-          >
-            {{ message }} 
-          </p>
-        </div>
-      </div>
+          <ForgotPasswordForm
+            :forgot-form="forgotForm"
+            :pwd-visible="pwdVisible"
+            :pwd-focused="pwdFocused"
+            :loading="loading"
+            :code-loading="codeLoading"
+            :code-countdown="codeCountdown"
+            @send-code="handleSendCode"
+            @switch-mode="switchMode"
+          />
+        </form>
+        <form
+          v-else
+          :key="mode"
+          class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
+          @submit.prevent="onSubmit"
+        >
+          <LoginForm
+            v-if="mode === 'login'"
+            :mode="mode"
+            :login-method="loginMethod"
+            :form="form"
+            :field-errors="fieldErrors"
+            :pwd-visible="pwdVisible"
+            :pwd-focused="pwdFocused"
+            :loading="loading"
+            :code-loading="codeLoading"
+            :code-countdown="codeCountdown"
+            :agreement-accepted="agreementAccepted"
+            :qr-image="qrImage"
+            :qr-status="qrStatus"
+            :qr-error="qrError"
+            @switch-method="loginMethod = $event"
+            @qr-refresh="startQrLogin"
+            @validate="validateField"
+            @clear-error="clearFieldError"
+            @password-input="onPasswordInput"
+            @send-code="handleSendCode"
+            @agreement-change="handleAgreementCheckboxChange"
+            @open-terms="openTermsModal"
+            @switch-mode="switchMode"
+            @enter-forgot="enterForgot"
+          />
+          <RegisterForm
+            v-else
+            :mode="mode"
+            :login-method="loginMethod"
+            :form="form"
+            :field-errors="fieldErrors"
+            :pwd-visible="pwdVisible"
+            :pwd-focused="pwdFocused"
+            :loading="loading"
+            :code-loading="codeLoading"
+            :code-countdown="codeCountdown"
+            :agreement-accepted="agreementAccepted"
+            @validate="validateField"
+            @clear-error="clearFieldError"
+            @password-input="onPasswordInput"
+            @send-code="handleSendCode"
+            @agreement-change="handleAgreementCheckboxChange"
+            @open-terms="openTermsModal"
+            @switch-mode="switchMode"
+          />
+        </form>
+      </AuthShell>
 
-      <div v-else class="space-y-[clamp(1rem,1.8vw,1.5rem)]"> 
-        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(1.25rem,1.8vw,2rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up"> 
-          <div class="flex items-center gap-[clamp(0.75rem,1.2vw,1.25rem)] min-w-0"> 
-            <div class="flex flex-col items-center gap-1 shrink-0">
-              <div class="relative shrink-0">
-                <button
-                  ref="avatarBtnRef"
-                  type="button" 
-                  class="grid h-[clamp(6rem,7vw,7rem)] w-[clamp(6rem,7vw,7rem)] place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.25rem,2vw,1.75rem)] font-black ring-2 ring-transparent hover:ring-[#EC4141]/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                  :disabled="avatarUploading || loading"
-                  :title="avatarUploading ? '上传中…' : '点击管理头像'"
-                  @click="openAvatarMenu"
-                >
-                  <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
-                  <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
-                </button>
-                <input
-                  ref="avatarInputRef"
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
-                  class="hidden"
-                  :disabled="avatarUploading || loading"
-                  @change="handleAvatarFileChange"
-                />
-              </div>
-              <div
-                v-if="avatarStatus === 'pending'"
-                class="flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300 w-fit"
-              >
-                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                审核中
-                <button
-                  type="button" 
-                  class="ml-0.5 flex items-center gap-0.5 underline-offset-2 hover:underline cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="refreshingAvatarStatus"
-                  @click="refreshAvatarStatus"
-                >
-                  <svg v-if="refreshingAvatarStatus" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  刷新
-                </button>
-              </div>
-              <div
-                v-else-if="avatarStatus === 'rejected'"
-                class="flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-600 dark:text-rose-300 w-fit"
-              > 
-                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                未通过
-              </div>
-            </div> 
-            <div class="min-w-0"> 
-              <div class="flex items-center gap-2 min-w-0"> 
-                <h2
-                  class="text-black dark:text-white text-[clamp(1.1rem,2.2vw,1.7rem)] font-black tracking-tight leading-none truncate cursor-pointer hover:text-[#EC4141] transition"
-                  :title="authStore.user?.nickname || authStore.user?.username || '点击修改昵称'"
-                  @click="openNicknameEditModal"
-                >
-                  {{ authStore.user?.nickname || authStore.user?.username }} 
-                </h2>
-              </div>
-              <div 
-                v-if="nicknameStatus === 'pending'" 
-                class="mt-1.5 flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300 w-fit"
-              > 
-                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> 
-                改名审核中 
-                <button 
-                  type="button" 
-                  class="ml-0.5 flex items-center gap-0.5 underline-offset-2 hover:underline cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="refreshingAvatarStatus" 
-                  @click="refreshAvatarStatus" 
-                > 
-                  <svg v-if="refreshingAvatarStatus" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  刷新 
-                </button> 
-              </div> 
-              <div 
-                v-else-if="nicknameStatus === 'rejected'" 
-                class="mt-1.5 flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-600 dark:text-rose-300 w-fit"
-              > 
-                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg> 
-                改名审核未通过 
-              </div> 
-              <div class="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
-                <p
-                  v-if="authStore.user?.ciyuanxi_id"
-                  class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate cursor-pointer hover:text-[#EC4141] transition"
-                  title="点击修改弦予号"
-                  @click="openCiyuanxiModal"
-                >
-                  弦予号：{{ authStore.user.ciyuanxi_id }}
-                </p>
-                <p
-                  v-else-if="authStore.user?.email"
-                  class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate"
-                >
-                  {{ authStore.user.email }}
-                </p>
-                <p
-                  v-else
-                  class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate"
-                >
-                  未设置
-                </p>
-                <button
-                  v-if="!authStore.user?.email"
-                  type="button" 
-                  class="shrink-0 text-[#EC4141] hover:text-[#d13b3b] text-[clamp(0.65rem,0.85vw,0.75rem)] font-medium transition cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10"
-                  title="绑定邮箱"
-                  @click="openBindEmailModal"
-                >
-                  绑定邮箱
-                </button>
-              </div>
-              <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap mt-3"> 
-                <div v-for="item in meterItems" :key="item.key" class="flex items-baseline gap-1.5"> 
-                  <span class="text-black dark:text-white text-[clamp(1rem,1.4vw,1.2rem)] font-bold tracking-tight leading-none">{{ displayStats[item.key] }}</span> 
-                  <span class="text-black/50 dark:text-white/50 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wide">{{ item.label }}</span> 
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0"> 
-            <button
-              type="button" 
-              class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
-              :disabled="loading" 
-              @click="handleLogout" 
-            >
-              {{ loading ? '退出中…' : '退出登录' }} 
-            </button>
-          </div>
-        </header>
+      <div v-else class="space-y-[clamp(1rem,1.8vw,1.5rem)]">
+        <AuthProfileHeader
+          ref="profileHeaderRef"
+          :user="authStore.user"
+          :avatar-draft="avatarDraft"
+          :avatar-status="avatarStatus"
+          :nickname-status="nicknameStatus"
+          :avatar-uploading="avatarUploading"
+          :refreshing-avatar-status="refreshingAvatarStatus"
+          :loading="loading"
+          :display-stats="displayStats"
+          @open-avatar-menu="openAvatarMenu"
+          @avatar-file-change="handleAvatarFileChange"
+          @refresh-status="refreshAvatarStatus"
+          @edit-nickname="openNicknameEditModal"
+          @open-ciyuanxi="openCiyuanxiModal"
+          @open-bind-email="openBindEmailModal"
+          @logout="handleLogout"
+          @navigate-shortcut="navigateShortcut"
+        />
 
-        <Teleport to="body"> 
-          <Transition name="avatar-modal"> 
+        <Teleport to="body">
+          <Transition name="avatar-modal">
             <div
-              v-if="avatarMenuOpen" 
-              class="fixed inset-0 z-[200]" 
-              @click.self="avatarMenuOpen = false" 
+              v-if="avatarMenuOpen"
+              class="fixed inset-0 z-[200]"
+              @click.self="avatarMenuOpen = false"
             >
               <div
-                v-if="avatarMenuPos" 
-                class="avatar-menu-card fixed" 
-                :style="{ top: avatarMenuPos.top + 'px', left: avatarMenuPos.left + 'px' }" 
+                v-if="avatarMenuPos"
+                class="avatar-menu-card fixed"
+                :style="{ top: avatarMenuPos.top + 'px', left: avatarMenuPos.left + 'px' }"
               >
-                <div class="avatar-menu-body"> 
-                  <button type="button" class="avatar-menu-item" @click="openAvatarPicker"> 
-                    <span class="avatar-menu-icon"> 
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /> 
+                <div class="avatar-menu-body">
+                  <button type="button" class="avatar-menu-item" @click="openAvatarPicker">
+                    <span class="avatar-menu-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                     </span>
-                    <span class="avatar-menu-text"> 
-                      <strong>更换头像</strong> 
-                      <small>从本地选择图片上传</small> 
+                    <span class="avatar-menu-text">
+                      <strong>更换头像</strong>
+                      <small>从本地选择图片上传</small>
                     </span>
                   </button>
-                  <button type="button" class="avatar-menu-item" @click="avatarMenuOpen = false; avatarPreviewOpen = true"> 
-                    <span class="avatar-menu-icon"> 
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /> 
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /> 
+                  <button type="button" class="avatar-menu-item" @click="avatarMenuOpen = false; avatarPreviewOpen = true">
+                    <span class="avatar-menu-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                     </span>
-                    <span class="avatar-menu-text"> 
-                      <strong>放大查看</strong> 
-                      <small>查看当前头像大图</small> 
+                    <span class="avatar-menu-text">
+                      <strong>放大查看</strong>
+                      <small>查看当前头像大图</small>
                     </span>
                   </button>
-                  <button type="button" class="avatar-menu-item" @click="saveAvatarToLocal"> 
-                    <span class="avatar-menu-icon"> 
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /> 
+                  <button type="button" class="avatar-menu-item" @click="saveAvatarToLocal">
+                    <span class="avatar-menu-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                       </svg>
                     </span>
-                    <span class="avatar-menu-text"> 
-                      <strong>保存到本地</strong> 
-                      <small>下载当前头像到电脑</small> 
+                    <span class="avatar-menu-text">
+                      <strong>保存到本地</strong>
+                      <small>下载当前头像到电脑</small>
                     </span>
                   </button>
                 </div>
               </div>
             </div>
-          </Transition> 
+          </Transition>
 
-          <Transition name="avatar-preview"> 
+          <Transition name="avatar-preview">
             <div
-              v-if="avatarPreviewOpen" 
-              class="fixed inset-0 z-[201] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm" 
-              @click="avatarPreviewOpen = false" 
+              v-if="avatarPreviewOpen"
+              class="fixed inset-0 z-[201] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm"
+              @click="avatarPreviewOpen = false"
             >
-              <div class="relative max-w-full max-h-full"> 
-                <div class="w-[min(80vw,70vh)] h-[min(80vw,70vh)] rounded-full overflow-hidden ring-4 ring-white/10 shadow-2xl"> 
+              <div class="relative max-w-full max-h-full">
+                <div class="w-[min(80vw,70vh)] h-[min(80vw,70vh)] rounded-full overflow-hidden ring-4 ring-white/10 shadow-2xl">
                   <img
-                    v-if="avatarDraft || authStore.user?.avatar" 
-                    :src="avatarDraft || authStore.user?.avatar || ''" 
+                    v-if="avatarDraft || authStore.user?.avatar"
+                    :src="avatarDraft || authStore.user?.avatar || ''"
                     alt="头像"
-                    class="h-full w-full object-cover" 
+                    class="h-full w-full object-cover"
                   />
                   <div
                     v-else
-                    class="h-full w-full grid place-items-center bg-white/10 text-white text-[20vh] font-black" 
+                    class="h-full w-full grid place-items-center bg-white/10 text-white text-[20vh] font-black"
                   >
-                    {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }} 
+                    {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}
                   </div>
                 </div>
                 <button
-                  type="button" 
-                  class="absolute -top-2 -right-2 grid h-9 w-9 place-items-center rounded-full bg-white text-black hover:bg-white/90 transition shadow-lg cursor-pointer" 
-                  @click="avatarPreviewOpen = false" 
-                  aria-label="关闭" 
+                  type="button"
+                  class="absolute -top-2 -right-2 grid h-9 w-9 place-items-center rounded-full bg-white text-black hover:bg-white/90 transition shadow-lg cursor-pointer"
+                  @click="avatarPreviewOpen = false"
+                  aria-label="关闭"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"> 
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /> 
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
             </div>
-          </Transition> 
+          </Transition>
         </Teleport>
-
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 340ms;"> 
-          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p> 
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-3"> 
-            <button
-              v-for="item in personalShortcuts" 
-              :key="item.label" 
-              type="button" 
-              class="grid gap-2 p-4 rounded-xl border border-black/10 dark:border-white/10 hover:border-[#EC4141]/40 hover:bg-red-50/40 dark:hover:bg-red-500/5 text-left transition-colors cursor-pointer" 
-              @click="navigateShortcut(item.to)" 
-            >
-              <span class="grid h-9 w-9 place-items-center rounded-lg bg-black/5 dark:bg-white/10 text-[#EC4141]"> 
-                <svg v-if="item.icon === 'cog'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> 
-                <svg v-else-if="item.icon === 'theme'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg> 
-                <svg v-else-if="item.icon === 'home'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg> 
-                <svg v-else-if="item.icon === 'plugin'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> 
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg> 
-              </span>
-              <span class="grid gap-0.5 min-w-0"> 
-                <strong class="text-[clamp(0.8rem,1vw,0.9rem)] font-medium text-black dark:text-white truncate">{{ item.label }}</strong> 
-                <small class="text-[clamp(0.65rem,0.8vw,0.75rem)] text-black/55 dark:text-white/55 truncate">{{ item.desc }}</small> 
-              </span>
-            </button>
-          </div>
-        </section>
       </div>
 
     </div>
 
-    <Teleport to="body"> 
-      <Transition name="avatar-modal"> 
+    <Teleport to="body">
+      <Transition name="avatar-modal">
         <div
-          v-if="showLogoutConfirm" 
-          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" 
-          @click.self="showLogoutConfirm = false" 
+          v-if="showLogoutConfirm"
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showLogoutConfirm = false"
         >
-          <div class="logout-confirm-card"> 
-            <div class="logout-confirm-icon"> 
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> 
-                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /> 
+          <div class="logout-confirm-card">
+            <div class="logout-confirm-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
             </div>
-            <h3 class="logout-confirm-title">退出登录</h3> 
-            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p> 
-            <div class="logout-confirm-actions"> 
+            <h3 class="logout-confirm-title">退出登录</h3>
+            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p>
+            <div class="logout-confirm-actions">
               <button
-                type="button" 
-                class="logout-btn logout-btn--ghost" 
-                @click="showLogoutConfirm = false" 
+                type="button"
+                class="logout-btn logout-btn--ghost"
+                @click="showLogoutConfirm = false"
               >
                 取消
               </button>
               <button
-                type="button" 
-                class="logout-btn logout-btn--danger" 
-                @click="confirmLogout" 
+                type="button"
+                class="logout-btn logout-btn--danger"
+                @click="confirmLogout"
               >
                 确认退出
               </button>
             </div>
           </div>
         </div>
-      </Transition> 
+      </Transition>
     </Teleport>
 
-    <Teleport to="body"> 
-      <Transition name="avatar-modal"> 
+    <Teleport to="body">
+      <Transition name="avatar-modal">
         <div
           v-if="showCiyuanxiModal"
           class="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           @click.self="showCiyuanxiModal = false"
         >
-          <div class="logout-confirm-card"> 
+          <div class="logout-confirm-card">
             <h3 class="logout-confirm-title">修改弦予号</h3>
             <p class="logout-confirm-desc">弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。</p>
             <div class="flex flex-col gap-3 mt-4">
@@ -1950,16 +467,16 @@ async function silentPoll() {
             </div>
             <div class="logout-confirm-actions mt-5">
               <button
-                type="button" 
-                class="logout-btn logout-btn--ghost" 
+                type="button"
+                class="logout-btn logout-btn--ghost"
                 :disabled="ciyuanxiLoading"
                 @click="showCiyuanxiModal = false"
               >
                 取消
               </button>
               <button
-                type="button" 
-                class="logout-btn logout-btn--danger" 
+                type="button"
+                class="logout-btn logout-btn--danger"
                 :disabled="ciyuanxiLoading"
                 @click="submitCiyuanxi"
               >
@@ -1968,17 +485,17 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition> 
+      </Transition>
     </Teleport>
 
-    <Teleport to="body"> 
-      <Transition name="avatar-modal"> 
+    <Teleport to="body">
+      <Transition name="avatar-modal">
         <div
           v-if="showBindEmailModal"
           class="fixed inset-0 z-[211] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           @click.self="showBindEmailModal = false"
         >
-          <div class="logout-confirm-card"> 
+          <div class="logout-confirm-card">
             <h3 class="logout-confirm-title">绑定邮箱</h3>
             <p class="logout-confirm-desc">绑定邮箱后可用于登录与找回密码，请填写常用且可接收邮件的地址。</p>
             <div class="flex flex-col gap-3 mt-4">
@@ -1986,7 +503,7 @@ async function silentPoll() {
                 <span class="text-xs text-gray-500 dark:text-white/50">邮箱</span>
                 <input
                   v-model="bindEmailForm.email"
-                  type="email" 
+                  type="email"
                   placeholder="请输入邮箱"
                   spellcheck="false"
                   class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
@@ -2015,16 +532,16 @@ async function silentPoll() {
             </div>
             <div class="logout-confirm-actions mt-5">
               <button
-                type="button" 
-                class="logout-btn logout-btn--ghost" 
+                type="button"
+                class="logout-btn logout-btn--ghost"
                 :disabled="bindEmailLoading"
                 @click="showBindEmailModal = false"
               >
                 取消
               </button>
               <button
-                type="button" 
-                class="logout-btn logout-btn--danger" 
+                type="button"
+                class="logout-btn logout-btn--danger"
                 :disabled="bindEmailLoading"
                 @click="submitBindEmail"
               >
@@ -2033,17 +550,17 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition> 
+      </Transition>
     </Teleport>
 
-    <Teleport to="body"> 
-      <Transition name="avatar-modal"> 
+    <Teleport to="body">
+      <Transition name="avatar-modal">
         <div
           v-if="showNicknameModal"
           class="fixed inset-0 z-[212] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           @click.self="cancelNicknameEdit"
         >
-          <div class="logout-confirm-card"> 
+          <div class="logout-confirm-card">
             <h3 class="logout-confirm-title">修改昵称</h3>
             <p class="logout-confirm-desc">昵称修改后需管理员审核，审核通过后才会正式生效。</p>
             <div class="flex flex-col gap-3 mt-4">
@@ -2065,16 +582,16 @@ async function silentPoll() {
             </div>
             <div class="logout-confirm-actions mt-5">
               <button
-                type="button" 
-                class="logout-btn logout-btn--ghost" 
+                type="button"
+                class="logout-btn logout-btn--ghost"
                 :disabled="profileSaving"
                 @click="cancelNicknameEdit"
               >
                 取消
               </button>
               <button
-                type="button" 
-                class="logout-btn logout-btn--danger" 
+                type="button"
+                class="logout-btn logout-btn--danger"
                 :disabled="profileSaving"
                 @click="submitNicknameEdit"
               >
@@ -2083,11 +600,11 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition> 
+      </Transition>
     </Teleport>
 
-    <Teleport to="body"> 
-      <Transition name="avatar-modal"> 
+    <Teleport to="body">
+      <Transition name="avatar-modal">
         <div
           v-if="termsModalOpen"
           class="fixed inset-0 z-[202] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
@@ -2112,8 +629,8 @@ async function silentPoll() {
             <div class="terms-actions">
               <button type="button" class="logout-btn logout-btn--ghost" @click="closeTermsModal">关闭</button>
               <button
-                type="button" 
-                class="logout-btn logout-btn--danger" 
+                type="button"
+                class="logout-btn logout-btn--danger"
                 :disabled="!termsScrolledToEnd"
                 @click="acceptTerms"
               >
@@ -2122,7 +639,7 @@ async function silentPoll() {
             </div>
           </div>
         </div>
-      </Transition> 
+      </Transition>
     </Teleport>
 
     <HumanCaptchaModal
@@ -2135,28 +652,28 @@ async function silentPoll() {
   </div>
 </template>
 
-<style scoped> /* 样式 */
-.logout-confirm-card { /* 样式 */
-  width: min(86vw, 360px); /* 样式 */
-  background: #ffffff; /* 样式 */
-  color: #1f2937; /* 样式 */
-  border-radius: 16px; /* 样式 */
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08); /* 样式 */
-  padding: 24px 22px 20px; /* 样式 */
-  text-align: center; /* 样式 */
-  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
+<style scoped>
+.logout-confirm-card {
+  width: min(86vw, 360px);
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 24px 22px 20px;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.logout-confirm-icon { /* 样式 */
-  display: inline-flex; /* 样式 */
-  align-items: center; /* 样式 */
-  justify-content: center; /* 样式 */
-  width: 48px; /* 样式 */
-  height: 48px; /* 样式 */
-  border-radius: 999px; /* 样式 */
-  background: rgba(236, 65, 65, 0.1); /* 样式 */
-  color: #EC4141; /* 样式 */
-  margin: 0 auto 14px; /* 样式 */
+.logout-confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(236, 65, 65, 0.1);
+  color: #EC4141;
+  margin: 0 auto 14px;
 }
 
 .logout-confirm-icon--success {
@@ -2164,65 +681,65 @@ async function silentPoll() {
   color: #16a34a;
 }
 
-.logout-confirm-title { /* 样式 */
-  font-size: 1.05rem; /* 样式 */
-  font-weight: 700; /* 样式 */
-  color: #1f2937; /* 样式 */
-  margin: 0 0 8px; /* 样式 */
+.logout-confirm-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 8px;
 }
 
-.logout-confirm-desc { /* 样式 */
-  font-size: 0.85rem; /* 样式 */
-  line-height: 1.55; /* 样式 */
-  color: rgba(75, 85, 99, 0.9); /* 样式 */
-  margin: 0 0 20px; /* 样式 */
+.logout-confirm-desc {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(75, 85, 99, 0.9);
+  margin: 0 0 20px;
 }
 
-.logout-confirm-actions { /* 样式 */
-  display: flex; /* 样式 */
+.logout-confirm-actions {
+  display: flex;
   gap: 10px;
-  justify-content: center; /* 样式 */
+  justify-content: center;
 }
 
 .logout-confirm-actions--single {
-  display: grid; /* 样式 */
+  display: grid;
   grid-template-columns: 1fr;
 }
 
-.logout-btn { /* 样式 */
+.logout-btn {
   flex: 1;
-  height: 38px; /* 样式 */
-  border-radius: 999px; /* 样式 */
-  font-size: 0.85rem; /* 样式 */
-  font-weight: 600; /* 样式 */
-  cursor: pointer; /* 样式 */
-  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease; /* 样式 */
-  border: 1px solid transparent; /* 样式 */
+  height: 38px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  border: 1px solid transparent;
 }
 
-.logout-btn--ghost { /* 样式 */
-  border-color: rgba(148, 163, 184, 0.24); /* 样式 */
-  background: transparent; /* 样式 */
-  color: rgba(100, 116, 139, 0.9); /* 样式 */
+.logout-btn--ghost {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: transparent;
+  color: rgba(100, 116, 139, 0.9);
 }
 
-.logout-btn--ghost:hover { /* 样式 */
-  background: rgba(15, 23, 42, 0.04); /* 样式 */
-  color: rgb(31 41 55); /* 样式 */
+.logout-btn--ghost:hover {
+  background: rgba(15, 23, 42, 0.04);
+  color: rgb(31 41 55);
 }
 
-.logout-btn--danger { /* 样式 */
-  background: #EC4141; /* 样式 */
-  color: #ffffff; /* 样式 */
+.logout-btn--danger {
+  background: #EC4141;
+  color: #ffffff;
 }
 
-.logout-btn--danger:hover { /* 样式 */
-  background: #d13b3b; /* 样式 */
+.logout-btn--danger:hover {
+  background: #d13b3b;
 }
 
 .logout-btn--success {
   background: #16a34a;
-  color: #ffffff; /* 样式 */
+  color: #ffffff;
 }
 
 .logout-btn--success:hover {
@@ -2242,23 +759,23 @@ async function silentPoll() {
 .terms-card {
   width: min(92vw, 680px);
   max-height: min(86vh, 760px);
-  display: flex; /* 样式 */
-  flex-direction: column; /* 样式 */
-  background: #ffffff; /* 样式 */
-  color: #1f2937; /* 样式 */
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #1f2937;
   border-radius: 18px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22), 0 6px 20px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
-  overflow: hidden; /* 样式 */
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  overflow: hidden;
 }
 
 .terms-header {
-  display: flex; /* 样式 */
+  display: flex;
   align-items: flex-start;
-  justify-content: space-between; /* 样式 */
+  justify-content: space-between;
   gap: 16px;
   padding: 20px 22px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .terms-header p {
@@ -2275,20 +792,20 @@ async function silentPoll() {
 }
 
 .terms-close {
-  width: 32px; /* 样式 */
-  height: 32px; /* 样式 */
-  border: none; /* 样式 */
-  border-radius: 999px; /* 样式 */
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
   background: rgba(15, 23, 42, 0.05);
   color: rgba(31, 41, 55, 0.75);
   font-size: 1.35rem;
   line-height: 1;
-  cursor: pointer; /* 样式 */
+  cursor: pointer;
 }
 
 .terms-close:hover {
-  background: rgba(236, 65, 65, 0.1); /* 样式 */
-  color: #EC4141; /* 样式 */
+  background: rgba(236, 65, 65, 0.1);
+  color: #EC4141;
 }
 
 .terms-body {
@@ -2301,13 +818,13 @@ async function silentPoll() {
 .terms-content {
   white-space: pre-wrap;
   color: rgba(75, 85, 99, 0.92);
-  font-size: 0.9rem; /* 样式 */
+  font-size: 0.9rem;
   line-height: 1.8;
   padding: 14px 0 4px;
 }
 
 .terms-actions {
-  display: flex; /* 样式 */
+  display: flex;
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 22px 18px;
@@ -2316,31 +833,31 @@ async function silentPoll() {
 
 .terms-scroll-tip {
   padding: 10px 22px 0;
-  color: #EC4141; /* 样式 */
+  color: #EC4141;
   font-size: 0.78rem;
   text-align: right;
 }
 
-.avatar-modal-enter-active .logout-confirm-card, /* 样式 */
-.avatar-modal-leave-active .logout-confirm-card { /* 样式 */
-  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); /* 样式 */
+.avatar-modal-enter-active .logout-confirm-card,
+.avatar-modal-leave-active .logout-confirm-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.avatar-modal-enter-from .logout-confirm-card, /* 样式 */
-.avatar-modal-leave-to .logout-confirm-card { /* 样式 */
+.avatar-modal-enter-from .logout-confirm-card,
+.avatar-modal-leave-to .logout-confirm-card {
   opacity: 0;
-  transform: scale(0.92) translateY(8px); /* 样式 */
+  transform: scale(0.92) translateY(8px);
 }
 
-:global(.dark) .logout-confirm-card { /* 样式 */
+:global(.dark) .logout-confirm-card {
   background: #262626;
-  color: rgba(255, 255, 255, 0.92); /* 样式 */
-  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .logout-confirm-icon { /* 样式 */
-  background: rgba(236, 65, 65, 0.18); /* 样式 */
-  color: #ff8b8b; /* 样式 */
+:global(.dark) .logout-confirm-icon {
+  background: rgba(236, 65, 65, 0.18);
+  color: #ff8b8b;
 }
 
 :global(.dark) .logout-confirm-icon--success {
@@ -2348,33 +865,33 @@ async function silentPoll() {
   color: #86efac;
 }
 
-:global(.dark) .logout-confirm-title { /* 样式 */
-  color: rgba(255, 255, 255, 0.96); /* 样式 */
+:global(.dark) .logout-confirm-title {
+  color: rgba(255, 255, 255, 0.96);
 }
 
-:global(.dark) .logout-confirm-desc { /* 样式 */
-  color: rgba(255, 255, 255, 0.6); /* 样式 */
+:global(.dark) .logout-confirm-desc {
+  color: rgba(255, 255, 255, 0.6);
 }
 
-:global(.dark) .logout-btn--ghost { /* 样式 */
-  border-color: rgba(255, 255, 255, 0.12); /* 样式 */
-  color: rgba(255, 255, 255, 0.7); /* 样式 */
+:global(.dark) .logout-btn--ghost {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
 }
 
-:global(.dark) .logout-btn--ghost:hover { /* 样式 */
-  background: rgba(255, 255, 255, 0.06); /* 样式 */
-  color: rgba(255, 255, 255, 0.96); /* 样式 */
+:global(.dark) .logout-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.96);
 }
 
 :global(.dark) .terms-card {
   background: #262626;
-  color: rgba(255, 255, 255, 0.92); /* 样式 */
-  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 :global(.dark) .terms-header,
 :global(.dark) .terms-actions {
-  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 :global(.dark) .terms-close {
@@ -2386,238 +903,238 @@ async function silentPoll() {
   color: rgba(255, 255, 255, 0.68);
 }
 
-.custom-scrollbar::-webkit-scrollbar { /* 样式 */
+.custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track { /* 样式 */
-  background: transparent; /* 样式 */
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
-  background: rgba(0, 0, 0, 0.1); /* 样式 */
-  border-radius: 10px; /* 样式 */
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
 }
 
-.dark .custom-scrollbar::-webkit-scrollbar-thumb { /* 样式 */
-  background: rgba(255, 255, 255, 0.1); /* 样式 */
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.auth-mode-enter-active, /* 样式 */
-.auth-mode-leave-active { /* 样式 */
-  transition: opacity 0.25s ease, transform 0.25s ease, filter 0.25s ease; /* 样式 */
+.auth-mode-enter-active,
+.auth-mode-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease, filter 0.25s ease;
 }
 
-.auth-mode-enter-from { /* 样式 */
+.auth-mode-enter-from {
   opacity: 0;
-  transform: translateY(8px); /* 样式 */
-  filter: blur(4px); /* 样式 */
+  transform: translateY(8px);
+  filter: blur(4px);
 }
 
-.auth-mode-leave-to { /* 样式 */
+.auth-mode-leave-to {
   opacity: 0;
-  transform: translateY(-8px); /* 样式 */
-  filter: blur(4px); /* 样式 */
+  transform: translateY(-8px);
+  filter: blur(4px);
 }
 
-@media (prefers-reduced-motion: reduce) { /* 样式 */
-  .auth-mode-enter-active, /* 样式 */
-  .auth-mode-leave-active { /* 样式 */
-    transition: opacity 0.15s ease; /* 样式 */
+@media (prefers-reduced-motion: reduce) {
+  .auth-mode-enter-active,
+  .auth-mode-leave-active {
+    transition: opacity 0.15s ease;
   }
 
-  .auth-mode-enter-from, /* 样式 */
-  .auth-mode-leave-to { /* 样式 */
-    transform: none; /* 样式 */
-    filter: none; /* 样式 */
+  .auth-mode-enter-from,
+  .auth-mode-leave-to {
+    transform: none;
+    filter: none;
   }
 }
 
-.avatar-menu-card { /* 样式 */
-  width: min(86vw, 320px); /* 样式 */
-  background: #ffffff; /* 样式 */
-  color: #1f2937; /* 样式 */
-  border-radius: 16px; /* 样式 */
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08); /* 样式 */
-  overflow: hidden; /* 样式 */
-  border: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
+.avatar-menu-card {
+  width: min(86vw, 320px);
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-:global(.dark) .avatar-menu-card { /* 样式 */
+:global(.dark) .avatar-menu-card {
   background: #262626;
-  color: rgba(255, 255, 255, 0.92); /* 样式 */
-  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
-.avatar-menu-header { /* 样式 */
-  display: flex; /* 样式 */
-  align-items: center; /* 样式 */
-  justify-content: space-between; /* 样式 */
-  padding: 14px 16px; /* 样式 */
-  font-size: 0.9rem; /* 样式 */
-  font-weight: 600; /* 样式 */
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06); /* 样式 */
+.avatar-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-:global(.dark) .avatar-menu-header { /* 样式 */
-  border-color: rgba(255, 255, 255, 0.08); /* 样式 */
+:global(.dark) .avatar-menu-header {
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
-.avatar-menu-close { /* 样式 */
-  display: grid; /* 样式 */
-  place-items: center; /* 样式 */
-  width: 24px; /* 样式 */
-  height: 24px; /* 样式 */
-  border-radius: 6px; /* 样式 */
-  border: none; /* 样式 */
-  background: transparent; /* 样式 */
-  color: inherit; /* 样式 */
-  opacity: 0.6; /* 样式 */
-  cursor: pointer; /* 样式 */
-  transition: opacity 0.2s, background 0.2s; /* 样式 */
+.avatar-menu-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s;
 }
 
-.avatar-menu-close:hover { /* 样式 */
+.avatar-menu-close:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.06); /* 样式 */
+  background: rgba(0, 0, 0, 0.06);
 }
 
-:global(.dark) .avatar-menu-close:hover { /* 样式 */
-  background: rgba(255, 255, 255, 0.1); /* 样式 */
+:global(.dark) .avatar-menu-close:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.avatar-menu-body { /* 样式 */
-  padding: 6px; /* 样式 */
-  display: grid; /* 样式 */
+.avatar-menu-body {
+  padding: 6px;
+  display: grid;
   gap: 2px;
 }
 
-.avatar-menu-item { /* 样式 */
-  display: flex; /* 样式 */
-  align-items: center; /* 样式 */
+.avatar-menu-item {
+  display: flex;
+  align-items: center;
   gap: 12px;
-  width: 100%; /* 样式 */
-  padding: 10px 12px; /* 样式 */
-  border: none; /* 样式 */
-  background: transparent; /* 样式 */
-  color: inherit; /* 样式 */
-  border-radius: 10px; /* 样式 */
-  cursor: pointer; /* 样式 */
-  text-align: left; /* 样式 */
-  transition: background 0.2s; /* 样式 */
-  font: inherit; /* 样式 */
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s;
+  font: inherit;
 }
 
-.avatar-menu-item:hover { /* 样式 */
-  background: rgba(236, 65, 65, 0.08); /* 样式 */
+.avatar-menu-item:hover {
+  background: rgba(236, 65, 65, 0.08);
 }
 
-.avatar-menu-item:active { /* 样式 */
-  background: rgba(236, 65, 65, 0.14); /* 样式 */
+.avatar-menu-item:active {
+  background: rgba(236, 65, 65, 0.14);
 }
 
-.avatar-menu-icon { /* 样式 */
-  display: grid; /* 样式 */
-  place-items: center; /* 样式 */
-  width: 32px; /* 样式 */
-  height: 32px; /* 样式 */
-  border-radius: 8px; /* 样式 */
-  background: rgba(236, 65, 65, 0.1); /* 样式 */
-  color: #EC4141; /* 样式 */
-  flex-shrink: 0; /* 样式 */
+.avatar-menu-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(236, 65, 65, 0.1);
+  color: #EC4141;
+  flex-shrink: 0;
 }
 
-.avatar-menu-text { /* 样式 */
-  display: flex; /* 样式 */
-  flex-direction: column; /* 样式 */
+.avatar-menu-text {
+  display: flex;
+  flex-direction: column;
   gap: 1px;
-  min-width: 0; /* 样式 */
+  min-width: 0;
 }
 
-.avatar-menu-text strong { /* 样式 */
-  font-size: 0.875rem; /* 样式 */
-  font-weight: 600; /* 样式 */
+.avatar-menu-text strong {
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
-.avatar-menu-text small { /* 样式 */
-  font-size: 0.7rem; /* 样式 */
-  opacity: 0.6; /* 样式 */
-  line-height: 1.3; /* 样式 */
+.avatar-menu-text small {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  line-height: 1.3;
 }
 
-.avatar-modal-enter-active, /* 样式 */
-.avatar-modal-leave-active { /* 样式 */
-  transition: opacity 0.2s ease; /* 样式 */
+.avatar-modal-enter-active,
+.avatar-modal-leave-active {
+  transition: opacity 0.2s ease;
 }
 
-.avatar-menu-card { /* 样式 */
-  transform-origin: top left; /* 样式 */
+.avatar-menu-card {
+  transform-origin: top left;
 }
 
-.avatar-modal-enter-active .avatar-menu-card, /* 样式 */
-.avatar-modal-leave-active .avatar-menu-card { /* 样式 */
-  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); /* 样式 */
+.avatar-modal-enter-active .avatar-menu-card,
+.avatar-modal-leave-active .avatar-menu-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.avatar-modal-enter-from, /* 样式 */
-.avatar-modal-leave-to { /* 样式 */
+.avatar-modal-enter-from,
+.avatar-modal-leave-to {
   opacity: 0;
 }
 
-.avatar-modal-enter-from .avatar-menu-card, /* 样式 */
-.avatar-modal-leave-to .avatar-menu-card { /* 样式 */
+.avatar-modal-enter-from .avatar-menu-card,
+.avatar-modal-leave-to .avatar-menu-card {
   opacity: 0;
-  transform: scale(0.92) translateY(8px); /* 样式 */
+  transform: scale(0.92) translateY(8px);
 }
 
-.avatar-preview-enter-active, /* 样式 */
-.avatar-preview-leave-active { /* 样式 */
-  transition: opacity 0.25s ease; /* 样式 */
+.avatar-preview-enter-active,
+.avatar-preview-leave-active {
+  transition: opacity 0.25s ease;
 }
 
-.avatar-preview-enter-active > div, /* 样式 */
-.avatar-preview-leave-active > div { /* 样式 */
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease; /* 样式 */
+.avatar-preview-enter-active > div,
+.avatar-preview-leave-active > div {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
 }
 
-.avatar-preview-enter-from, /* 样式 */
-.avatar-preview-leave-to { /* 样式 */
+.avatar-preview-enter-from,
+.avatar-preview-leave-to {
   opacity: 0;
 }
 
-.avatar-preview-enter-from > div, /* 样式 */
-.avatar-preview-leave-to > div { /* 样式 */
+.avatar-preview-enter-from > div,
+.avatar-preview-leave-to > div {
   opacity: 0;
-  transform: scale(0.7); /* 样式 */
+  transform: scale(0.7);
 }
 </style>
 
 <style>
-@keyframes fadeInUp { /* 样式 */
+@keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(20px); /* 样式 */
-    filter: blur(4px); /* 样式 */
+    transform: translateY(20px);
+    filter: blur(4px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0); /* 样式 */
-    filter: blur(0); /* 样式 */
+    transform: translateY(0);
+    filter: blur(0);
   }
 }
 
-.animate-fade-in-up { /* 样式 */
+.animate-fade-in-up {
   opacity: 0;
-  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; /* 样式 */
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@media (prefers-reduced-motion: reduce) { /* 样式 */
-  .animate-fade-in-up { /* 样式 */
-    animation: none; /* 样式 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up {
+    animation: none;
     opacity: 1;
-    transform: none; /* 样式 */
-    filter: none; /* 样式 */
+    transform: none;
+    filter: none;
   }
 }
 </style>
