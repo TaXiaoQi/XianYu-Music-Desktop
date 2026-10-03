@@ -1,2 +1,4 @@
 # 强制所有文件在提交时使用 LF 换行符 
-* text=auto eol=lf 
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
