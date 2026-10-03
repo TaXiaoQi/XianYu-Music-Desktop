@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // localStore / tauriInvoke 均为 hoisted mock，避免 vitest 提升顺序问题
-const { store, invokeMock } = vi.hoisted(() => ({
+const { store, invokeMock, reportErrorMock } = vi.hoisted(() => ({
   store: new Map<string, unknown>(),
   invokeMock: vi.fn(),
+  reportErrorMock: vi.fn(),
 }));
 
 vi.mock('../storage/localStore', () => ({
@@ -20,6 +21,10 @@ vi.mock('../storage/localStore', () => ({
 
 vi.mock('../tauri/invoke', () => ({
   tauriInvoke: (...args: unknown[]) => invokeMock(...args),
+}));
+
+vi.mock('../domain/usageStats', () => ({
+  reportError: (...args: unknown[]) => reportErrorMock(...args),
 }));
 
 import {
@@ -59,6 +64,7 @@ const mockHostLoadOk = (): void => {
 beforeEach(() => {
   store.clear();
   invokeMock.mockReset();
+  reportErrorMock.mockReset();
   clearFallbackModules();
 });
 
@@ -350,5 +356,64 @@ describe('prewarmFallbackModules', () => {
 
     const loadCmds = invokeMock.mock.calls.filter(([cmd]) => cmd === 'fallback_module_load');
     expect(loadCmds).toHaveLength(2);
+  });
+});
+
+describe('降级/熔断事件上报（statistics 通道）', () => {
+  it('宿主加载失败上报 FallbackModuleLoadFail（含 key 与版本）', async () => {
+    seedModule('lx_cover', 7);
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fallback_module_load') return { ok: false, error: '签名校验未通过', logs: null };
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await dispatchFallbackModule('lx_cover', 'search', { kw: 'x' }, () => 'builtin');
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      'FallbackModuleLoadFail',
+      expect.stringContaining('lx_cover v7'),
+    );
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      'FallbackModuleLoadFail',
+      expect.stringContaining('签名校验未通过'),
+    );
+  });
+
+  it('调用失败上报 FallbackModuleCallFail（含 key.method），熔断时上报 FallbackModuleCircuitOpen', async () => {
+    seedModule('lx_lyric');
+    mockHostLoadOk();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fallback_module_load') return { ok: true, version: 1, logs: null };
+      if (command === 'fallback_module_call') return { ok: false, data: null, error: '上游改版', logs: null };
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    const call = () =>
+      dispatchFallbackModule('lx_lyric', 'fetchLyric', { id: '1' }, () => 'builtin');
+    await call();
+    await call();
+    await call();
+
+    // 同一错误 60s 内去重：3 次失败只报 1 次 CallFail
+    const callFailEvents = reportErrorMock.mock.calls.filter(([t]) => t === 'FallbackModuleCallFail');
+    expect(callFailEvents).toHaveLength(1);
+    expect(callFailEvents[0][1]).toContain('lx_lyric.fetchLyric');
+
+    // 第 3 次连续失败触发熔断，上报 1 次 CircuitOpen
+    const circuitEvents = reportErrorMock.mock.calls.filter(([t]) => t === 'FallbackModuleCircuitOpen');
+    expect(circuitEvents).toHaveLength(1);
+    expect(circuitEvents[0][1]).toContain('lx_lyric');
+  });
+
+  it('成功路径不上报任何事件', async () => {
+    seedModule('plugin_fallback');
+    mockHostLoadOk();
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fallback_module_load') return { ok: true, version: 1, logs: null };
+      if (command === 'fallback_module_call') return { ok: true, data: true, error: null, logs: null };
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await dispatchFallbackModule('plugin_fallback', 'isQqMusicPluginSource', {}, () => false);
+    expect(reportErrorMock).not.toHaveBeenCalled();
   });
 });

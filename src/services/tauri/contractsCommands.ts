@@ -624,7 +624,12 @@ export interface TauriCommandMap {
   };
   fallback_module_update_config: {
     payload: { configJson: string };
-    response: void;
+    response: string;
+  };
+  // 启动对账：返回 Rust 已存配置的 sha256-hex（未推送过为空串）
+  fallback_module_config_hash: {
+    payload: undefined;
+    response: string;
   };
   // ===== 宿主侧平台签名/加密（Rust host_crypto）=====
   host_zzc_sign: {

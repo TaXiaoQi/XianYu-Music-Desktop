@@ -99,6 +99,7 @@ use fallback_verify::verify_beta_access_signature;
 use fallback_host::commands::{
     fallback_module_call,
     fallback_module_call_many,
+    fallback_module_config_hash,
     fallback_module_load,
     fallback_module_update_config,
 };
@@ -638,6 +639,7 @@ pub fn run() { // run
             fallback_module_call,
             fallback_module_call_many,
             fallback_module_update_config,
+            fallback_module_config_hash,
             verify_beta_access_signature,
             read_plugin_file,
             save_plugin_script,

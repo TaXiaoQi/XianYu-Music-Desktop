@@ -126,6 +126,8 @@ pub struct FallbackEngine {
     pub(super) cache: Arc<StdMutex<HashMap<String, CacheEntry>>>,
     /// 配置快照（fallback_module_update_config 整包替换）。
     pub(super) config: Arc<RwLock<serde_json::Value>>,
+    /// 最近一次推送配置的 sha256-hex（对原始入参字符串取摘要，启动对账用）。
+    pub(super) config_hash: Arc<RwLock<String>>,
     pub(super) instances: AsyncMutex<HashMap<String, Arc<FallbackInstance>>>,
 }
 
@@ -135,6 +137,7 @@ impl FallbackEngine {
             http,
             cache: Arc::new(StdMutex::new(HashMap::new())),
             config: Arc::new(RwLock::new(serde_json::Value::Null)),
+            config_hash: Arc::new(RwLock::new(String::new())),
             instances: AsyncMutex::new(HashMap::new()),
         }
     }

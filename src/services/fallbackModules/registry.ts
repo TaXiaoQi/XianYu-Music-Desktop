@@ -1,4 +1,5 @@
 import { APP_VERSION } from '../../../version';
+import { reportError } from '../domain/usageStats';
 import { localStore } from '../storage/localStore';
 import { tauriInvoke } from '../tauri/invoke';
 import {
@@ -12,6 +13,35 @@ import {
 const STORAGE_KEY = 'xianyu_fallback_modules_v1';
 
 const MAX_CONSECUTIVE_ERRORS = 3;
+
+// ==================== 降级/熔断事件上报（statistics 通道） ====================
+// 走 reportError → 服务端 error_log，按 error_type 聚合即可量化热修效果；
+// 上报失败静默，且同事件 60s 去重，避免模块故障时刷屏。
+
+const EVENT_REPORT_DEDUP_MS = 60_000;
+const MAX_RECENT_EVENT_REPORTS = 32;
+const _recentEventReports = new Map<string, number>();
+
+const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const reportFallbackEvent = (eventType: string, detail: string): void => {
+  const now = Date.now();
+  if (_recentEventReports.size > MAX_RECENT_EVENT_REPORTS) {
+    for (const [k, t] of _recentEventReports) {
+      if (now - t > EVENT_REPORT_DEDUP_MS) _recentEventReports.delete(k);
+    }
+  }
+  const dedupKey = `${eventType}::${detail}`;
+  const last = _recentEventReports.get(dedupKey);
+  if (last && now - last < EVENT_REPORT_DEDUP_MS) return;
+  _recentEventReports.set(dedupKey, now);
+  try {
+    reportError(eventType, detail);
+  } catch {
+    // 上报层异常不影响兜底主流程
+  }
+};
 
 // 模块已迁到桌面端 Rust QuickJS 宿主执行：验签 + 编译 + 四条硬校验在
 // fallback_module_load 一体完成，调用走 fallback_module_call / call_many。
@@ -124,10 +154,12 @@ const loadModuleFromCache = async (
     }
     // 验签/编译失败是确定性错误：本会话禁用，避免每次调用都重试
     console.warn(`[FallbackModule] 模块 ${key} v${cached.version} 宿主加载失败，本会话回退内置实现:`, res?.error);
+    reportFallbackEvent('FallbackModuleLoadFail', `${key} v${cached.version} 宿主加载失败: ${errorText(res?.error)}`);
     return { version: cached.version, consecutiveErrors: 0, disabled: true };
   } catch (error) {
     // IPC 异常可能是暂时的：不缓存状态，下次调用重试 load
     console.warn(`[FallbackModule] ${key} 宿主加载命令不可用，本次回退内置实现:`, error);
+    reportFallbackEvent('FallbackModuleLoadFail', `${key} 宿主加载命令不可用: ${errorText(error)}`);
     return null;
   }
 };
@@ -162,9 +194,11 @@ const reportModuleError = (key: FallbackModuleKey, method: string, error: unknow
   if (!loaded) return;
   loaded.consecutiveErrors += 1;
   console.warn(`[FallbackModule] 模块 ${key}.${method} 第 ${loaded.consecutiveErrors} 次执行失败，本次回退内置实现:`, error);
+  reportFallbackEvent('FallbackModuleCallFail', `${key}.${method}: ${errorText(error)}`);
   if (loaded.consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
     loaded.disabled = true;
     console.warn(`[FallbackModule] 模块 ${key} 连续失败 ${loaded.consecutiveErrors} 次，本会话内已禁用（等待服务器下发新版本）`);
+    reportFallbackEvent('FallbackModuleCircuitOpen', `${key} 连续失败 ${loaded.consecutiveErrors} 次已熔断（method=${method}）`);
   }
 };
 

@@ -228,6 +228,7 @@ commands.allow = [
     "fallback_module_call",
     "fallback_module_call_many",
     "fallback_module_update_config",
+    "fallback_module_config_hash",
     "parse_lyrics_text",
   "read_plugin_file", # 读插件文件
   "save_plugin_script",

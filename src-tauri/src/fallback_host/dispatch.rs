@@ -324,11 +324,24 @@ impl FallbackEngine {
         }
     }
 
-    /// 整包替换配置快照。
-    pub fn update_config(&self, config_json: &str) -> Result<(), String> {
+    /// 整包替换配置快照；返回所存配置的 sha256-hex（对原始入参字符串取摘要）。
+    /// 前端用 crypto.subtle 对同一 JSON 字符串算同样的 hash 做启动对账。
+    pub fn update_config(&self, config_json: &str) -> Result<String, String> {
         let value: serde_json::Value = serde_json::from_str(config_json)
             .map_err(|e| format!("配置解析失败: {e}"))?;
+        let hash = {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(config_json.as_bytes());
+            hex::encode(hasher.finalize())
+        };
         *self.config.write().unwrap() = value;
-        Ok(())
+        *self.config_hash.write().unwrap() = hash.clone();
+        Ok(hash)
+    }
+
+    /// 当前已存配置的 hash；从未推送过时为空串（前端对账必不相等 → 触发推送）。
+    pub fn config_hash(&self) -> String {
+        self.config_hash.read().unwrap().clone()
     }
 }

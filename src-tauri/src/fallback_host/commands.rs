@@ -60,11 +60,19 @@ pub async fn fallback_module_call_many(
         .await)
 }
 
-/// 整包替换配置快照（前端 settings 深拷贝 JSON）。
+/// 整包替换配置快照（前端 settings 深拷贝 JSON），返回所存配置的 sha256-hex。
 #[tauri::command]
 pub async fn fallback_module_update_config(
     state: tauri::State<'_, FallbackHostState>,
     config_json: String,
-) -> Result<(), String> {
+) -> Result<String, String> {
     state.engine.update_config(&config_json)
+}
+
+/// 启动对账：返回当前已存配置的 hash（未推送过为空串），前端比对不一致即重推。
+#[tauri::command]
+pub async fn fallback_module_config_hash(
+    state: tauri::State<'_, FallbackHostState>,
+) -> Result<String, String> {
+    Ok(state.engine.config_hash())
 }
