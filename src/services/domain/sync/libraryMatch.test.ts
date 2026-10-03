@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildLibraryMatchIndex, resolveLocalPath } from './playlistSyncLibrary';
-import type { Song } from '../types';
+import { buildLibraryMatchIndex, resolveLocalPath } from './libraryMatch';
+import type { Song } from '../../../types';
 
 const song = (path: string, title: string, artist: string, duration: number): Song =>
   ({ path, title, name: title, artist, duration } as Song);
@@ -25,5 +25,12 @@ describe('playlist sync library matching', () => {
     const index = buildLibraryMatchIndex([]);
 
     expect(resolveLocalPath(index, song('lx://song', 'Song', 'Artist', 180))).toBe('lx://song');
+  });
+
+  it('falls back to the first candidate when duration is unknown', () => {
+    const only = song('C:/Music/only.mp3', 'Song', 'Artist', 180);
+    const index = buildLibraryMatchIndex([only]);
+
+    expect(resolveLocalPath(index, song('remote://song', 'Song', 'Artist', 0))).toBe(only.path);
   });
 });

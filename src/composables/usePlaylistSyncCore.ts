@@ -5,65 +5,15 @@ import { useAuthStore } from '../features/auth/store';
 import { useSettingsStore } from '../features/settings/store';
 import { useStatisticsStore } from '../features/statistics/store';
 import { useToast } from './toast';
-import {
-  classifySyncPlaylist,
-  deleteCloudPlaylist,
-  fileSyncDownload,
-  fileSyncUpload,
-  firstRemoteSongCover,
-  getCiyuanxiId,
-  songToSyncPayload,
-  syncPayloadToSong,
-  type FileSyncPlaylistData,
-  type SyncResult,
-} from '../services/domain/playlistSync';
-import {
-  uploadPlugins as uploadPluginsToCloud,
-  downloadPlugins as downloadPluginsFromCloud,
-  type PluginSyncResult,
-} from '../services/domain/pluginSync';
-import {
-  uploadSettings as uploadSettingsToCloud,
-  downloadSettings as downloadSettingsFromCloud,
-  areSettingsEqual,
-  type SettingsSyncResult,
-} from '../services/domain/settingsSync';
-import {
-  uploadFavorites as uploadFavoritesToCloud,
-  downloadFavorites as downloadFavoritesFromCloud,
-} from '../services/domain/favoritesSync';
-import {
-  syncListenStats,
-} from '../services/domain/listenStatsSync';
-import {
-  showSettingsConflict,
-  type SyncCategoryChoices,
-} from './useSettingsConflict';
-import {
-  getAutoSyncScheduler,
-} from '../services/domain/autoSync';
-import { playerStorage } from '../services/storage/playerStorage';
-import {
-  loadSyncedFavoritePaths,
-  persistSyncedFavoritePaths,
-  getCloudKeepPaths,
-  removeCloudKeepPaths,
-  getLocalOnlyPaths,
-  removeLocalOnlyPaths,
-} from '../services/domain/favoritesSyncState';
-import {
-  getCloudKeepSongs,
-  pruneCloudKeepSongs,
-  getLocalOnlySongs,
-  pruneLocalOnlySongs,
-  getPendingDeletedSongs,
-  prunePendingDeletedSongs,
-  clearPlaylistSongTombstones,
-} from '../services/domain/playlistSongSyncState';
-import { mergeAppSettings, createDefaultAppSettings } from '../features/settings/store';
-import { signedRequest } from '../services/auth/authService';
-import { readImageBase64 } from '../services/tauri/pluginApi';
-import type { AutoSyncConfig, Playlist, Song } from '../types';
+import { showSettingsConflict } from './useSettingsConflict';
+import { getAutoSyncScheduler } from '../services/domain/autoSync';
+import type { SyncResult } from '../services/domain/playlistSync';
+import type { AutoSyncConfig } from '../types';
+import { createPlaylistSyncService } from '../services/domain/sync/playlistSyncService';
+import { createPluginSyncFlow } from '../services/domain/sync/pluginSyncService';
+import { createSettingsSyncFlow } from '../services/domain/sync/settingsSyncService';
+import { createFavoritesSyncFlow } from '../services/domain/sync/favoritesSyncService';
+import { createAutoSyncFlow } from '../services/domain/sync/autoSyncService';
 import {
   autoSyncStatus,
   autoSyncDelayed,
@@ -86,7 +36,6 @@ import {
   favoritesSyncProgress,
   favoritesSyncing,
 } from './playlistSyncState';
-import { buildLibraryMatchIndex, resolveLocalPath } from './playlistSyncLibrary';
 
 export type SyncDirection = 'upload' | 'download' | 'sync';
 
@@ -94,8 +43,6 @@ const LOG = '[usePlaylistSync]';
 
 let autoSyncInitialized = false;
 let autoSyncStatusTimer: ReturnType<typeof setTimeout> | null = null;
-let loginSyncInProgress = false;
-let syncOperationInProgress = false;
 
 function logSync(_msg: string, ..._args: unknown[]) {
 }
@@ -133,329 +80,85 @@ export function usePlaylistSync() {
     return settingsStore.settings.upload.favorites;
   }
 
-  function collectPlaylistSongs(playlist: Playlist): Song[] {
-    const songs: Song[] = [];
+  // ==================== 各域服务（业务与 IO 在 services 层，UI 状态经端口写入） ====================
 
-    if (playlist.songs && playlist.songs.length > 0) {
-      songs.push(...playlist.songs);
-    }
+  const { uploadPlaylists, downloadPlaylists, deleteCloudPlaylistLocal } = createPlaylistSyncService({
+    collections: collectionsStore,
+    library: libraryStore,
+    onProgress: msg => { syncProgress.value = msg; },
+    notify: showToast,
+    log: logSync,
+    logError: logSyncError,
+  });
 
-    const songMap = new Map<string, Song>();
-    libraryStore.songList.forEach(song => songMap.set(song.path, song));
-    for (const path of playlist.songPaths) {
-      const song = songMap.get(path);
-      if (song && !songs.some(s => s.path === song.path)) {
-        songs.push(song);
-      }
-    }
+  const pluginFlow = createPluginSyncFlow({
+    canSync,
+    isUploadEnabled: isPluginUploadEnabled,
+    onProgress: msg => { pluginSyncProgress.value = msg; },
+    notify: showToast,
+    setSyncing: v => { pluginSyncing.value = v; },
+    setLastResult: result => { lastPluginSyncResult.value = result; },
+    setLastTime: time => { lastPluginSyncTime.value = time; },
+    log: logSync,
+    logError: logSyncError,
+  });
 
-    logSync(`collectPlaylistSongs: playlist="${playlist.name}", songPaths=${playlist.songPaths.length}, songs.meta=${playlist.songs?.length ?? 0}, collected=${songs.length}`);
-    return songs;
-  }
+  const settingsFlow = createSettingsSyncFlow({
+    canSync,
+    isSettingsUploadEnabled,
+    isPlaylistUploadEnabled: isUploadEnabled,
+    isPluginUploadEnabled,
+    getSettings: () => settingsStore.settings,
+    replaceSettings: next => settingsStore.replaceSettings(next),
+    onProgress: msg => { settingsSyncProgress.value = msg; },
+    notify: showToast,
+    setSyncing: v => { settingsSyncing.value = v; },
+    setLastResult: result => { lastSettingsSyncResult.value = result; },
+    setLastTime: time => { lastSettingsSyncTime.value = time; },
+    resolveConflict: uploadedAt => showSettingsConflict(uploadedAt),
+    uploadPlaylists,
+    downloadPlaylists,
+    log: logSync,
+    logError: logSyncError,
+  });
 
-  async function resolvePlaylistCloudCover(
-    playlist: Playlist,
-    songs: Song[],
-  ): Promise<string> {
-    if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) {
-      return playlist.cloudCoverUrl;
-    }
+  const favoritesFlow = createFavoritesSyncFlow({
+    canSync,
+    isUploadEnabled: isFavoritesUploadEnabled,
+    collections: collectionsStore,
+    library: libraryStore,
+    onProgress: msg => { favoritesSyncProgress.value = msg; },
+    notify: showToast,
+    setSyncing: v => { favoritesSyncing.value = v; },
+    setLastResult: result => { lastFavoritesSyncResult.value = result; },
+    setLastTime: time => { lastFavoritesSyncTime.value = time; },
+    log: logSync,
+    logError: logSyncError,
+  });
 
-    const coverPath = playlist.coverPath;
-    if (coverPath) {
-      try {
-        let dataUrl = '';
-        if (/^https?:\/\//i.test(coverPath)) {
-          return coverPath;
-        } else if (coverPath.startsWith('data:')) {
-          dataUrl = coverPath;
-        } else if (!coverPath.startsWith('asset:')) {
-          const { mime, base64 } = await readImageBase64(coverPath);
-          if (base64) {
-            dataUrl = `data:${mime || 'image/jpeg'};base64,${base64}`;
-          }
-        }
-        if (dataUrl) {
-          const res = await signedRequest<{ cover_url?: string }>(
-            'upload_cover',
-            { image_data: dataUrl },
-            { timeoutMs: 20_000, fetchTimeoutMs: 18_000 },
-          );
-          if (res?.cover_url) return res.cover_url;
-        }
-      } catch {
-        // 封面上传失败静默降级到在线歌曲封面
-      }
-    }
+  const { performAutoSync, syncOnLoginSuccess } = createAutoSyncFlow({
+    getUploadConfig: () => settingsStore.settings.upload,
+    tasks: {
+      uploadPlaylists,
+      uploadPluginsOnly: pluginFlow.uploadPluginsOnly,
+      uploadFavoritesOnly: favoritesFlow.uploadFavoritesOnly,
+      uploadSettingsOnly: settingsFlow.uploadSettingsOnly,
+      syncPlaylists: () => syncPlaylists(),
+      syncPlugins: pluginFlow.syncPlugins,
+      syncFavorites: favoritesFlow.syncFavorites,
+      syncSettings: settingsFlow.syncSettings,
+    },
+    statistics: statisticsStore,
+    isLoginSyncCompleted: () => loginSyncCompleted.value,
+    markLoginSyncCompleted: () => {
+      loginSyncCompleted.value = true;
+      persistLoginSyncCompleted();
+    },
+    log: logSync,
+    logError: logSyncError,
+  });
 
-    return firstRemoteSongCover(songs);
-  }
-
-  async function uploadPlaylists(): Promise<SyncResult> {
-    const result: SyncResult = {
-      uploadedPlaylists: 0,
-      downloadedPlaylists: 0,
-      uploadedSongs: 0,
-      downloadedSongs: 0,
-      errors: [],
-    };
-
-    const ciyuanxiId = getCiyuanxiId();
-    if (!ciyuanxiId) {
-      logSyncError('uploadPlaylists: 未获取到弦予号，取消上传');
-      result.errors.push('未登录或未获取到弦予号');
-      return result;
-    }
-
-    const playlists = [...collectionsStore.playlists];
-    logSync(`uploadPlaylists: 共 ${playlists.length} 个本地歌单待上传`);
-    playlists.forEach((pl, idx) => {
-      logSync(`  本地歌单[${idx}]: name="${pl.name}", id=${pl.id}, cloudId=${pl.cloudId ?? 'none'}, songPaths=${pl.songPaths.length}, songs.meta=${pl.songs?.length ?? 0}`);
-    });
-    if (playlists.length === 0) {
-      logSync('uploadPlaylists: 无歌单，直接返回');
-      return result;
-    }
-
-    syncProgress.value = '正在上传歌单到云端...';
-
-    try {
-      const playlistData: FileSyncPlaylistData[] = [];
-      for (const pl of playlists) {
-        const songs = collectPlaylistSongs(pl);
-        const cloudCoverUrl = await resolvePlaylistCloudCover(pl, songs);
-        if (cloudCoverUrl && cloudCoverUrl !== pl.cloudCoverUrl) {
-          collectionsStore.setPlaylistCloudCoverUrl(pl.id, cloudCoverUrl);
-        }
-        let payloadSongs = songs.map(songToSyncPayload);
-        let deletedSongPaths: string[] | undefined;
-        if (pl.cloudId) {
-          const cloudId = pl.cloudId;
-          const localPaths = new Set(songs.map(s => s.path));
-          const keepMap = getCloudKeepSongs(cloudId);
-          for (const [path, payloadJson] of Object.entries(keepMap)) {
-            if (!payloadSongs.some(s => s.path === path)) {
-              try {
-                payloadSongs.push(JSON.parse(payloadJson) as typeof payloadSongs[number]);
-              } catch {
-                // 缓存载荷损坏时忽略，云端将由下次有效上传覆盖
-              }
-            }
-          }
-          pruneCloudKeepSongs(cloudId, localPaths);
-          const localOnly = getLocalOnlySongs(cloudId);
-          if (localOnly.size > 0) {
-            payloadSongs = payloadSongs.filter(s => !localOnly.has(s.path));
-            pruneLocalOnlySongs(cloudId, localPaths);
-          }
-          const pending = getPendingDeletedSongs(cloudId);
-          if (pending.size > 0) {
-            prunePendingDeletedSongs(cloudId, Array.from(pending).filter(p => localPaths.has(p)));
-          }
-          const report = new Set<string>([...getLocalOnlySongs(cloudId), ...getPendingDeletedSongs(cloudId)]);
-          if (report.size > 0) deletedSongPaths = Array.from(report);
-        }
-        playlistData.push({
-          id: pl.id,
-          name: pl.name,
-          type: classifySyncPlaylist(songs),
-          cloudId: pl.cloudId,
-          cloudCoverUrl,
-          isFavorite: pl.isFavorite,
-          createdAt: pl.createdAt,
-          songs: payloadSongs,
-          ...(pl.sourcePluginId ? { sourcePluginId: pl.sourcePluginId } : {}),
-          ...(pl.sourceUrl ? { sourceUrl: pl.sourceUrl } : {}),
-          ...(pl.sourceRaw ? { sourceRaw: pl.sourceRaw } : {}),
-          ...(deletedSongPaths ? { deletedSongPaths } : {}),
-        });
-      }
-
-      const totalSongs = playlistData.reduce((sum, pl) => sum + pl.songs.length, 0);
-      logSync(`uploadPlaylists: 收集完成, 歌单=${playlistData.length}, 总歌曲=${totalSongs}`);
-
-      const uploadResult = await fileSyncUpload(ciyuanxiId, playlistData);
-      result.uploadedPlaylists = uploadResult.playlist_count;
-      result.uploadedSongs = uploadResult.song_total;
-      logSync(`uploadPlaylists 完成: uploadedPlaylists=${result.uploadedPlaylists}, uploadedSongs=${result.uploadedSongs}`);
-
-      if (uploadResult.id_map?.length) {
-        let written = 0;
-        for (const { id, cloudId } of uploadResult.id_map) {
-          if (id && cloudId && collectionsStore.setPlaylistCloudId(id, cloudId)) {
-            written++;
-          }
-        }
-        logSync(`uploadPlaylists: 已写回 ${written}/${uploadResult.id_map.length} 个歌单的云端 id`);
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`uploadPlaylists 异常: ${msg}`, error);
-      result.errors.push(`上传失败: ${msg}`);
-    }
-
-    return result;
-  }
-
-  async function downloadPlaylists(): Promise<SyncResult> {
-    const result: SyncResult = {
-      uploadedPlaylists: 0,
-      downloadedPlaylists: 0,
-      uploadedSongs: 0,
-      downloadedSongs: 0,
-      errors: [],
-    };
-
-    const ciyuanxiId = getCiyuanxiId();
-    if (!ciyuanxiId) {
-      logSyncError('downloadPlaylists: 未获取到弦予号，取消下载');
-      result.errors.push('未登录或未获取到弦予号');
-      return result;
-    }
-
-    syncProgress.value = '正在从云端下载歌单...';
-
-    try {
-      const downloadData = await fileSyncDownload(ciyuanxiId);
-      if (!downloadData || !downloadData.playlists || downloadData.playlists.length === 0) {
-        logSync('downloadPlaylists: 云端无歌单数据');
-        return result;
-      }
-
-      logSync(`downloadPlaylists: 云端共 ${downloadData.playlists.length} 个歌单, ${downloadData.stats?.song_total ?? 0} 首歌曲`);
-
-      const matchIndex = buildLibraryMatchIndex(libraryStore.songList);
-
-      for (let i = 0; i < downloadData.playlists.length; i++) {
-        const cloudPl = downloadData.playlists[i];
-        logSync(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
-        syncProgress.value = `正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`;
-
-        const deletedPaths = new Set(cloudPl.deletedSongPaths ?? []);
-        const songCloudId = cloudPl.cloudId || '';
-        const songKeepMap = songCloudId ? getCloudKeepSongs(songCloudId) : {};
-        const songPendingSet = songCloudId ? getPendingDeletedSongs(songCloudId) : new Set<string>();
-
-        const cloudSongs = cloudPl.songs ?? [];
-
-        const expandedDeleted = new Set(deletedPaths);
-        if (deletedPaths.size > 0) {
-          for (const raw of cloudSongs) {
-            const p = (raw as any).path as string | undefined;
-            if (p && deletedPaths.has(p)) {
-              const restored = syncPayloadToSong(raw);
-              expandedDeleted.add(resolveLocalPath(matchIndex, restored));
-            }
-          }
-        }
-
-        const visibleCloudSongs = cloudSongs.filter(raw => {
-          const p = (raw as any).path as string | undefined;
-          if (!p) return true;
-          if (expandedDeleted.has(p) || songPendingSet.has(p)) return false;
-          return songKeepMap[p] === undefined;
-        });
-        const localSongs = visibleCloudSongs.map(song => {
-          const restored = syncPayloadToSong(song);
-          const resolved = resolveLocalPath(matchIndex, restored);
-          return resolved === restored.path ? restored : { ...restored, path: resolved };
-        });
-
-        const pathRemapFromCloud = new Map<string, string>();
-        visibleCloudSongs.forEach((raw, i) => {
-          const originalPath = (raw as any).path as string | undefined;
-          const newPath = localSongs[i]?.path;
-          if (originalPath && newPath && originalPath !== newPath) {
-            pathRemapFromCloud.set(originalPath, newPath);
-          }
-        });
-
-        const existing = collectionsStore.playlists.find(p => p.id === cloudPl.id);
-
-        if (existing) {
-          if (pathRemapFromCloud.size > 0) {
-            existing.songPaths = existing.songPaths.map(p => pathRemapFromCloud.get(p) ?? p);
-          }
-
-          if (expandedDeleted.size > 0) {
-            existing.songPaths = existing.songPaths.filter(p => !expandedDeleted.has(p));
-            if (existing.songs?.length) {
-              const kept = existing.songs.filter(s => !expandedDeleted.has(s.path));
-              existing.songs = kept.length > 0 ? kept : undefined;
-            }
-          }
-
-          const localSongPaths = new Set(existing.songPaths);
-          const newPaths: string[] = [];
-
-          for (const song of localSongs) {
-            if (!localSongPaths.has(song.path)) {
-              newPaths.push(song.path);
-            }
-          }
-
-          existing.songPaths = [...existing.songPaths, ...newPaths];
-
-          const existingSongPaths = new Set((existing.songs ?? []).map(s => s.path));
-          const mergedSongs = [...(existing.songs ?? [])];
-          for (const song of localSongs) {
-            if (!existingSongPaths.has(song.path)) {
-              mergedSongs.push(song);
-              existingSongPaths.add(song.path);
-            }
-          }
-          existing.songs = mergedSongs.length > 0 ? mergedSongs : undefined;
-          for (const song of localSongs) {
-            libraryStore.setExtraSong(song);
-          }
-          if (cloudPl.cloudCoverUrl) existing.cloudCoverUrl = cloudPl.cloudCoverUrl;
-          if (cloudPl.sourcePluginId) existing.sourcePluginId = cloudPl.sourcePluginId;
-          if (cloudPl.sourceUrl) existing.sourceUrl = cloudPl.sourceUrl;
-          if (cloudPl.sourceRaw) existing.sourceRaw = cloudPl.sourceRaw;
-          existing.isCloud = true;
-          if (cloudPl.cloudId) existing.cloudId = cloudPl.cloudId;
-
-          result.downloadedPlaylists++;
-          result.downloadedSongs += localSongs.length;
-          logSync(`downloadPlaylists: 合并到已有歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
-        } else {
-          const allPaths = localSongs.map(s => s.path);
-
-          const newPlaylist: Playlist = {
-            id: cloudPl.id,
-            name: cloudPl.name,
-            songPaths: allPaths,
-            songs: localSongs.length > 0 ? localSongs : undefined,
-            cloudId: cloudPl.cloudId,
-            isCloud: true,
-            cloudCoverUrl: cloudPl.cloudCoverUrl || '',
-            isFavorite: cloudPl.isFavorite,
-            createdAt: cloudPl.createdAt,
-            ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
-            ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
-            ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
-          };
-
-          collectionsStore.playlists.push(newPlaylist);
-          for (const song of localSongs) {
-            libraryStore.setExtraSong(song);
-          }
-
-          result.downloadedPlaylists++;
-          result.downloadedSongs += localSongs.length;
-          logSync(`downloadPlaylists: 创建新歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
-        }
-      }
-
-      logSync(`downloadPlaylists 完成: downloadedPlaylists=${result.downloadedPlaylists}, downloadedSongs=${result.downloadedSongs}`);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`downloadPlaylists 异常: ${msg}`, error);
-      result.errors.push(`下载失败: ${msg}`);
-    }
-
-    return result;
-  }
+  // ==================== 歌单同步编排壳（syncing/syncProgress/toast） ====================
 
   async function syncPlaylists(): Promise<SyncResult> {
     logSync('========== syncPlaylists 开始 ==========');
@@ -543,77 +246,6 @@ export function usePlaylistSync() {
     }
   }
 
-  async function syncPlugins(): Promise<PluginSyncResult> {
-    logSync('========== syncPlugins 开始 ==========');
-    if (!canSync()) {
-      logSyncError('syncPlugins: 未登录或无弦予号，取消同步');
-      showToast('请先登录后再同步', 'error');
-      return { uploadedPlugins: 0, downloadedPlugins: 0, syncedSubscriptions: 0, errors: ['未登录'] };
-    }
-
-    pluginSyncing.value = true;
-    pluginSyncProgress.value = '正在同步插件...';
-    lastPluginSyncResult.value = null;
-
-    try {
-      let uploadResult: PluginSyncResult = {
-        uploadedPlugins: 0,
-        downloadedPlugins: 0,
-        syncedSubscriptions: 0,
-        errors: [],
-      };
-      if (isPluginUploadEnabled()) {
-        logSync('syncPlugins: 步骤 1/2 - 开始上传插件');
-        pluginSyncProgress.value = '正在上传插件到云端...';
-        uploadResult = await uploadPluginsToCloud();
-        logSync('syncPlugins: 步骤 1/2 - 上传插件完成', uploadResult);
-      } else {
-        logSync('syncPlugins: 步骤 1/2 - 插件上传未开启，跳过');
-      }
-
-      logSync('syncPlugins: 步骤 2/2 - 开始下载插件');
-      pluginSyncProgress.value = '正在从云端恢复插件...';
-      const downloadResult = await downloadPluginsFromCloud();
-      logSync('syncPlugins: 步骤 2/2 - 下载插件完成', downloadResult);
-
-      const combined: PluginSyncResult = {
-        uploadedPlugins: uploadResult.uploadedPlugins,
-        downloadedPlugins: downloadResult.downloadedPlugins,
-        syncedSubscriptions: downloadResult.syncedSubscriptions,
-        errors: [...uploadResult.errors, ...downloadResult.errors],
-      };
-
-      lastPluginSyncResult.value = combined;
-      lastPluginSyncTime.value = Date.now();
-
-      logSync(`syncPlugins 完成: uploaded=${combined.uploadedPlugins}, downloaded=${combined.downloadedPlugins}, errors=${combined.errors.length}`);
-      if (combined.errors.length > 0) {
-        combined.errors.forEach((err, idx) => logSyncError(`syncPlugins error[${idx}]: ${err}`));
-      }
-
-      if (combined.errors.length > 0) {
-        showToast(`插件同步完成（${combined.errors.length} 个错误）`, 'error');
-      } else {
-        const parts: string[] = [];
-        if (combined.uploadedPlugins > 0) parts.push(`上传 ${combined.uploadedPlugins} 个插件`);
-        if (combined.downloadedPlugins > 0) parts.push(`恢复 ${combined.downloadedPlugins} 个插件`);
-        if (combined.syncedSubscriptions > 0) parts.push(`同步 ${combined.syncedSubscriptions} 个订阅`);
-        showToast(parts.length > 0 ? `插件同步完成：${parts.join('，')}` : '插件已是最新', 'success');
-      }
-
-      logSync('========== syncPlugins 结束 ==========');
-      return combined;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`syncPlugins 异常: ${msg}`, error);
-      showToast(`插件同步失败：${msg}`, 'error');
-      return { uploadedPlugins: 0, downloadedPlugins: 0, syncedSubscriptions: 0, errors: [msg] };
-    } finally {
-      pluginSyncing.value = false;
-      pluginSyncProgress.value = '';
-    }
-  }
-
   async function uploadOnly(): Promise<void> {
     logSync('========== uploadOnly 开始 ==========');
     if (!canSync()) {
@@ -690,609 +322,7 @@ export function usePlaylistSync() {
     }
   }
 
-  async function deleteCloudPlaylistLocal(playlistId: string): Promise<boolean> {
-    const ciyuanxiId = getCiyuanxiId();
-    if (!ciyuanxiId) {
-      showToast('请先登录', 'error');
-      return false;
-    }
-
-    const playlist = collectionsStore.getPlaylistById(playlistId);
-    if (!playlist?.cloudId) {
-      showToast('该歌单未同步到云端', 'info');
-      return false;
-    }
-
-    try {
-      await deleteCloudPlaylist(ciyuanxiId, [playlist.cloudId]);
-      clearPlaylistSongTombstones(playlist.cloudId);
-      collectionsStore.setPlaylistCloudId(playlistId, '');
-      showToast('已从云端删除歌单', 'success');
-      return true;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      showToast(`删除云端歌单失败：${msg}`, 'error');
-      return false;
-    }
-  }
-
-  async function uploadSettingsOnly(): Promise<void> {
-    logSync('========== uploadSettingsOnly 开始 ==========');
-    if (!canSync()) {
-      logSyncError('uploadSettingsOnly: 未登录或无弦予号');
-      showToast('请先登录后再同步', 'error');
-      return;
-    }
-
-    if (!isSettingsUploadEnabled()) {
-      logSync('uploadSettingsOnly: 设置同步未开启');
-      showToast('设置同步已关闭，请在设置中开启', 'info');
-      return;
-    }
-
-    settingsSyncing.value = true;
-    settingsSyncProgress.value = '正在上传设置到云端...';
-
-    try {
-      const result = await uploadSettingsToCloud(settingsStore.settings);
-      lastSettingsSyncTime.value = Date.now();
-      lastSettingsSyncResult.value = result;
-      logSync(`uploadSettingsOnly 完成: uploaded=${result.uploaded}, errors=${result.errors.length}`);
-
-      if (result.errors.length > 0) {
-        showToast(`设置上传完成（${result.errors.length} 个错误）`, 'error');
-      } else if (result.uploaded) {
-        showToast('设置已上传到云端', 'success');
-      } else {
-        showToast('设置上传失败', 'info');
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`uploadSettingsOnly 异常: ${msg}`, error);
-      showToast(`设置上传失败：${msg}`, 'error');
-    } finally {
-      settingsSyncing.value = false;
-      settingsSyncProgress.value = '';
-    }
-  }
-
-  async function downloadSettingsOnly(): Promise<void> {
-    logSync('========== downloadSettingsOnly 开始 ==========');
-    if (!canSync()) {
-      logSyncError('downloadSettingsOnly: 未登录或无弦予号');
-      showToast('请先登录后再同步', 'error');
-      return;
-    }
-
-    settingsSyncing.value = true;
-    settingsSyncProgress.value = '正在从云端下载设置...';
-
-    try {
-      const { settings: cloudSettings, result } = await downloadSettingsFromCloud();
-      lastSettingsSyncTime.value = Date.now();
-      lastSettingsSyncResult.value = result;
-      logSync(`downloadSettingsOnly 完成: downloaded=${result.downloaded}, errors=${result.errors.length}`);
-
-      if (result.errors.length > 0) {
-        showToast(`设置下载完成（${result.errors.length} 个错误）`, 'error');
-      } else if (cloudSettings) {
-        const currentSettings = settingsStore.settings;
-        const merged = mergeAppSettings(createDefaultAppSettings(), cloudSettings as any);
-        merged.download.downloadPath = currentSettings.download.downloadPath;
-        merged.upload = currentSettings.upload;
-        merged.organizeRoot = currentSettings.organizeRoot;
-        settingsStore.replaceSettings(merged);
-
-        playerStorage.writeSettings(merged);
-
-        showToast('设置已从云端恢复', 'success');
-      } else {
-        showToast('云端暂无设置数据', 'info');
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`downloadSettingsOnly 异常: ${msg}`, error);
-      showToast(`设置下载失败：${msg}`, 'error');
-    } finally {
-      settingsSyncing.value = false;
-      settingsSyncProgress.value = '';
-    }
-  }
-
-  function collectFavoriteSongs(): Song[] {
-    const lookup = libraryStore.songLookup;
-    return collectionsStore.favoritePaths
-      .map(path => lookup.get(path) || collectionsStore.favoriteSongMeta[path])
-      .filter((song): song is Song => !!song);
-  }
-
-  async function uploadFavoritesOnly(): Promise<void> {
-    logSync('========== uploadFavoritesOnly 开始 ==========');
-    if (!canSync()) {
-      logSyncError('uploadFavoritesOnly: 未登录或无弦予号');
-      showToast('请先登录后再同步', 'error');
-      return;
-    }
-
-    if (!isFavoritesUploadEnabled()) {
-      logSync('uploadFavoritesOnly: 收藏上传未开启');
-      showToast('收藏同步已关闭，请在设置中开启', 'info');
-      return;
-    }
-
-    favoritesSyncing.value = true;
-    favoritesSyncProgress.value = '正在上传收藏到云端...';
-
-    try {
-      const songs = collectFavoriteSongs();
-      const ciyuanxiId = getCiyuanxiId();
-      if (!ciyuanxiId) {
-        showToast('未获取到弦予号', 'error');
-        return;
-      }
-      if (songs.length === 0) {
-        logSync('uploadFavoritesOnly: 本地收藏为空，跳过上传');
-        showToast('本地收藏为空，跳过上传', 'info');
-        return;
-      }
-      const localOnly = getLocalOnlyPaths();
-      const payload = songs.filter(s => !localOnly.has(s.path));
-      const currentPaths = new Set(songs.map(s => s.path));
-      removeLocalOnlyPaths(Array.from(localOnly).filter(p => !currentPaths.has(p)));
-      const cloudKeep = getCloudKeepPaths();
-      removeCloudKeepPaths(Array.from(cloudKeep).filter(p => currentPaths.has(p)));
-      const result = await uploadFavoritesToCloud(ciyuanxiId, payload, {
-        deletePaths: loadSyncedFavoritePaths().filter(p => !currentPaths.has(p) && !cloudKeep.has(p)),
-      });
-      persistSyncedFavoritePaths(songs.map(s => s.path));
-      lastFavoritesSyncTime.value = Date.now();
-      lastFavoritesSyncResult.value = {
-        uploadedPlaylists: 0,
-        downloadedPlaylists: 0,
-        uploadedSongs: result.song_count,
-        downloadedSongs: 0,
-        errors: [],
-      };
-      logSync(`uploadFavoritesOnly 完成: uploaded=${result.song_count}`);
-      showToast(result.song_count > 0 ? `已上传 ${result.song_count} 首收藏歌曲` : '收藏已是最新', 'success');
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`uploadFavoritesOnly 异常: ${msg}`, error);
-      showToast(`收藏上传失败：${msg}`, 'error');
-    } finally {
-      favoritesSyncing.value = false;
-      favoritesSyncProgress.value = '';
-    }
-  }
-
-  async function downloadFavoritesOnly(): Promise<void> {
-    logSync('========== downloadFavoritesOnly 开始 ==========');
-    if (!canSync()) {
-      logSyncError('downloadFavoritesOnly: 未登录或无弦予号');
-      showToast('请先登录后再同步', 'error');
-      return;
-    }
-
-    favoritesSyncing.value = true;
-    favoritesSyncProgress.value = '正在从云端下载收藏...';
-
-    try {
-      const ciyuanxiId = getCiyuanxiId();
-      if (!ciyuanxiId) {
-        showToast('未获取到弦予号', 'error');
-        return;
-      }
-      const offlineList = await downloadFavoritesFromCloud(ciyuanxiId);
-      const count = offlineList.length;
-
-      const matchIndex = buildLibraryMatchIndex(libraryStore.songList);
-      const matchedList = offlineList.map(song => {
-        const resolved = resolveLocalPath(matchIndex, song);
-        return resolved === song.path ? song : { ...song, path: resolved };
-      });
-
-      const cloudKeep = getCloudKeepPaths();
-      const lookup = libraryStore.songLookup;
-      const existingPaths = new Set(collectionsStore.favoritePaths);
-      const mergedPaths = [...collectionsStore.favoritePaths];
-      const metaMap: Record<string, Song> = {};
-      for (const song of matchedList) {
-        if (cloudKeep.has(song.path)) continue;
-        if (existingPaths.has(song.path)) continue;
-        existingPaths.add(song.path);
-        mergedPaths.push(song.path);
-        if (!lookup.has(song.path)) {
-          metaMap[song.path] = song;
-        }
-      }
-      collectionsStore.setFavoritePaths(mergedPaths);
-      if (Object.keys(metaMap).length > 0) {
-        collectionsStore.setFavoriteSongMetaMap(metaMap);
-      }
-
-      lastFavoritesSyncTime.value = Date.now();
-      lastFavoritesSyncResult.value = {
-        uploadedPlaylists: 0,
-        downloadedPlaylists: 0,
-        uploadedSongs: 0,
-        downloadedSongs: count,
-        errors: [],
-      };
-      logSync(`downloadFavoritesOnly 完成: downloaded=${count}`);
-      showToast(count > 0 ? `已下载 ${count} 首收藏歌曲` : '云端暂无收藏数据', 'success');
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`downloadFavoritesOnly 异常: ${msg}`, error);
-      showToast(`收藏下载失败：${msg}`, 'error');
-    } finally {
-      favoritesSyncing.value = false;
-      favoritesSyncProgress.value = '';
-    }
-  }
-
-  async function syncFavorites(): Promise<void> {
-    logSync('========== syncFavorites 开始 ==========');
-    if (!canSync()) {
-      logSyncError('syncFavorites: 未登录或无弦予号');
-      showToast('请先登录后再同步', 'error');
-      return;
-    }
-
-    favoritesSyncing.value = true;
-    favoritesSyncProgress.value = '正在从云端下载收藏...';
-
-    try {
-      await downloadFavoritesOnly();
-      favoritesSyncProgress.value = '正在上传收藏到云端...';
-      await uploadFavoritesOnly();
-    } finally {
-      favoritesSyncing.value = false;
-      favoritesSyncProgress.value = '';
-    }
-  }
-
-  async function syncSettings(): Promise<SettingsSyncResult> {
-    logSync('========== syncSettings 开始 ==========');
-    if (!canSync()) {
-      logSyncError('syncSettings: 未登录或无弦予号，取消同步');
-      showToast('请先登录后再同步', 'error');
-      return { uploaded: false, downloaded: false, errors: ['未登录'] };
-    }
-
-    settingsSyncing.value = true;
-    settingsSyncProgress.value = '正在同步设置...';
-    lastSettingsSyncResult.value = null;
-
-    try {
-      logSync('syncSettings: 步骤 1/2 - 下载云端设置进行比较');
-      settingsSyncProgress.value = '正在从云端获取设置...';
-      const { settings: cloudSettings, uploadedAt, result: downloadResult } = await downloadSettingsFromCloud();
-      logSync('syncSettings: 步骤 1/2 - 云端设置下载完成', downloadResult);
-
-      if (!cloudSettings) {
-        if (isSettingsUploadEnabled()) {
-          logSync('syncSettings: 云端无数据，上传本地设置');
-          settingsSyncProgress.value = '正在上传本地设置到云端...';
-          const uploadResult = await uploadSettingsToCloud(settingsStore.settings);
-          lastSettingsSyncResult.value = uploadResult;
-          lastSettingsSyncTime.value = Date.now();
-          if (uploadResult.errors.length > 0) {
-            showToast(`设置同步完成（${uploadResult.errors.length} 个错误）`, 'error');
-          } else {
-            showToast('设置已上传到云端', 'success');
-          }
-          logSync('========== syncSettings 结束（首次上传） ==========');
-          return uploadResult;
-        }
-        logSync('syncSettings: 云端无数据且上传未开启，跳过');
-        lastSettingsSyncResult.value = downloadResult;
-        lastSettingsSyncTime.value = Date.now();
-        showToast('云端暂无设置数据', 'info');
-        return downloadResult;
-      }
-
-      const localSettings = settingsStore.settings;
-      const isEqual = areSettingsEqual(localSettings, cloudSettings);
-
-      if (isEqual) {
-        logSync('syncSettings: 本地与云端设置一致，跳过同步');
-        lastSettingsSyncResult.value = { uploaded: false, downloaded: false, errors: [] };
-        lastSettingsSyncTime.value = Date.now();
-        showToast('本地与云端设置一致，无需同步', 'info');
-        logSync('========== syncSettings 结束（一致跳过） ==========');
-        return { uploaded: false, downloaded: false, errors: [] };
-      }
-
-      logSync('syncSettings: 本地与云端设置不一致，等待用户选择');
-      settingsSyncProgress.value = '检测到设置不一致，等待用户选择...';
-      const choice = await showSettingsConflict(uploadedAt ?? undefined);
-
-      if (choice === 'cancel') {
-        logSync('syncSettings: 用户取消同步');
-        lastSettingsSyncResult.value = { uploaded: false, downloaded: false, errors: [] };
-        lastSettingsSyncTime.value = Date.now();
-        showToast('已取消设置同步', 'info');
-        logSync('========== syncSettings 结束（用户取消） ==========');
-        return { uploaded: false, downloaded: false, errors: [] };
-      }
-
-      const choices = choice as SyncCategoryChoices;
-      const errors: string[] = [];
-      let uploaded = false;
-      let downloaded = false;
-
-      // --- 设置 ---
-      if (choices.settings === 'local') {
-        if (isSettingsUploadEnabled()) {
-          logSync('syncSettings: 设置 → 保留本地，上传覆盖云端');
-          settingsSyncProgress.value = '正在上传本地设置到云端...';
-          const r = await uploadSettingsToCloud(localSettings);
-          uploaded = r.uploaded;
-          errors.push(...r.errors);
-        } else {
-          logSync('syncSettings: 设置 → 保留本地，但上传未开启，跳过');
-        }
-      } else {
-        logSync('syncSettings: 设置 → 保留云端，下载覆盖本地');
-        settingsSyncProgress.value = '正在从云端恢复设置...';
-        const merged = mergeAppSettings(createDefaultAppSettings(), cloudSettings as any);
-        merged.download.downloadPath = localSettings.download.downloadPath;
-        merged.upload = localSettings.upload;
-        merged.organizeRoot = localSettings.organizeRoot;
-        settingsStore.replaceSettings(merged);
-        playerStorage.writeSettings(merged);
-        downloaded = true;
-        errors.push(...downloadResult.errors);
-      }
-
-      // --- 歌单 ---
-      if (choices.playlists === 'local') {
-        if (isUploadEnabled()) {
-          logSync('syncSettings: 歌单 → 保留本地，上传到云端');
-          settingsSyncProgress.value = '正在上传本地歌单到云端...';
-          try {
-            await uploadPlaylists();
-          } catch (e) {
-            errors.push(e instanceof Error ? e.message : String(e));
-          }
-        } else {
-          logSync('syncSettings: 歌单 → 保留本地，但上传未开启，跳过');
-        }
-      } else {
-        logSync('syncSettings: 歌单 → 保留云端，下载到本地');
-        settingsSyncProgress.value = '正在从云端下载歌单...';
-        try {
-          await downloadPlaylists();
-        } catch (e) {
-          errors.push(e instanceof Error ? e.message : String(e));
-        }
-      }
-
-      // --- 插件 ---
-      if (choices.plugins === 'local') {
-        if (isPluginUploadEnabled()) {
-          logSync('syncSettings: 插件 → 保留本地，上传到云端');
-          settingsSyncProgress.value = '正在上传本地插件到云端...';
-          try {
-            await uploadPluginsToCloud();
-          } catch (e) {
-            errors.push(e instanceof Error ? e.message : String(e));
-          }
-        } else {
-          logSync('syncSettings: 插件 → 保留本地，但上传未开启，跳过');
-        }
-      } else {
-        logSync('syncSettings: 插件 → 保留云端，下载到本地');
-        settingsSyncProgress.value = '正在从云端下载插件...';
-        try {
-          await downloadPluginsFromCloud();
-        } catch (e) {
-          errors.push(e instanceof Error ? e.message : String(e));
-        }
-      }
-
-      const combinedResult: SettingsSyncResult = { uploaded, downloaded, errors };
-      lastSettingsSyncResult.value = combinedResult;
-      lastSettingsSyncTime.value = Date.now();
-
-      if (errors.length > 0) {
-        showToast(`同步完成（${errors.length} 个错误）`, 'error');
-      } else {
-        showToast('同步完成', 'success');
-      }
-      logSync('========== syncSettings 结束（按类别同步） ==========');
-      return combinedResult;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`syncSettings 异常: ${msg}`, error);
-      showToast(`设置同步失败：${msg}`, 'error');
-      return { uploaded: false, downloaded: false, errors: [msg] };
-    } finally {
-      settingsSyncing.value = false;
-      settingsSyncProgress.value = '';
-    }
-  }
-
-  async function uploadPluginsOnly(): Promise<void> {
-    logSync('========== uploadPluginsOnly 开始 ==========');
-    if (!canSync()) {
-      logSyncError('uploadPluginsOnly: 未登录或无弦予号');
-      showToast('请先登录后再同步', 'error');
-      return;
-    }
-
-    if (!isPluginUploadEnabled()) {
-      logSync('uploadPluginsOnly: 插件上传未开启');
-      showToast('插件同步已关闭，请在设置中开启', 'info');
-      return;
-    }
-
-    pluginSyncing.value = true;
-    pluginSyncProgress.value = '正在上传插件到云端...';
-
-    try {
-      const result = await uploadPluginsToCloud();
-      lastPluginSyncTime.value = Date.now();
-      lastPluginSyncResult.value = result;
-      logSync(`uploadPluginsOnly 完成: uploadedPlugins=${result.uploadedPlugins}, errors=${result.errors.length}`);
-
-      if (result.errors.length > 0) {
-        showToast(`插件上传完成（${result.errors.length} 个错误）`, 'error');
-      } else if (result.uploadedPlugins > 0) {
-        showToast(`已上传 ${result.uploadedPlugins} 个插件`, 'success');
-      } else {
-        showToast('插件已同步，无需上传', 'info');
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`uploadPluginsOnly 异常: ${msg}`, error);
-      showToast(`插件上传失败：${msg}`, 'error');
-    } finally {
-      pluginSyncing.value = false;
-      pluginSyncProgress.value = '';
-    }
-  }
-
-  async function downloadPluginsOnly(): Promise<void> {
-    logSync('========== downloadPluginsOnly 开始 ==========');
-    if (!canSync()) {
-      logSyncError('downloadPluginsOnly: 未登录或无弦予号');
-      showToast('请先登录后再同步', 'error');
-      return;
-    }
-
-    pluginSyncing.value = true;
-    pluginSyncProgress.value = '正在从云端下载插件...';
-
-    try {
-      const result = await downloadPluginsFromCloud();
-      lastPluginSyncTime.value = Date.now();
-      lastPluginSyncResult.value = result;
-      logSync(`downloadPluginsOnly 完成: downloadedPlugins=${result.downloadedPlugins}, errors=${result.errors.length}`);
-
-      if (result.errors.length > 0) {
-        showToast(`插件下载完成（${result.errors.length} 个错误）`, 'error');
-      } else if (result.downloadedPlugins > 0) {
-        showToast(`已恢复 ${result.downloadedPlugins} 个插件`, 'success');
-      } else {
-        showToast('云端暂无插件', 'info');
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logSyncError(`downloadPluginsOnly 异常: ${msg}`, error);
-      showToast(`插件下载失败：${msg}`, 'error');
-    } finally {
-      pluginSyncing.value = false;
-      pluginSyncProgress.value = '';
-    }
-  }
-
-  async function performAutoSync(): Promise<void> {
-    if (syncOperationInProgress) {
-      logSync('performAutoSync: 其他同步流程进行中，跳过本次自动同步');
-      return;
-    }
-    syncOperationInProgress = true;
-    try {
-      logSync('performAutoSync: 开始自动同步（客户端为主，只上传）');
-      const upload = settingsStore.settings.upload;
-      let hasError = false;
-
-      const parallelTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
-      if (upload.playlists) {
-        parallelTasks.push({ label: '上传歌单', run: uploadPlaylists });
-      }
-      if (upload.plugins) {
-        parallelTasks.push({ label: '上传插件', run: uploadPluginsOnly });
-      }
-      if (upload.favorites) {
-        parallelTasks.push({ label: '上传收藏', run: uploadFavoritesOnly });
-      }
-      if (upload.settings) {
-        parallelTasks.push({ label: '上传设置', run: uploadSettingsOnly });
-      }
-
-      if (parallelTasks.length > 0) {
-        const results = await Promise.allSettled(parallelTasks.map(task => task.run()));
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            logSyncError(`performAutoSync: ${parallelTasks[index].label}失败`, result.reason);
-            hasError = true;
-          }
-        });
-      }
-
-      logSync('performAutoSync: 上传完成，开始听歌时长快照同步');
-      try {
-        await syncListenStats();
-        await statisticsStore.refreshBehaviorOnly('All');
-      } catch (e) {
-        logSyncError('performAutoSync: 听歌时长快照同步失败', e);
-        hasError = true;
-        await statisticsStore.refreshBehaviorOnly('All').catch(() => undefined);
-      }
-
-      logSync('performAutoSync: 自动同步完成');
-      if (hasError) {
-        throw new Error('部分同步项失败');
-      }
-    } finally {
-      syncOperationInProgress = false;
-    }
-  }
-
-  async function syncOnLoginSuccess(): Promise<void> {
-    if (loginSyncCompleted.value) {
-      logSync('syncOnLoginSuccess: 首次登录同步已完成，跳过');
-      return;
-    }
-    if (loginSyncInProgress) return;
-    if (syncOperationInProgress) {
-      logSync('syncOnLoginSuccess: 其他同步流程进行中，跳过本次登录同步');
-      return;
-    }
-    loginSyncInProgress = true;
-    syncOperationInProgress = true;
-    logSync('========== 首次登录全量同步开始 ==========');
-    const upload = settingsStore.settings.upload;
-    try {
-      const tasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
-      if (upload.playlists) {
-        tasks.push({ label: '同步歌单', run: syncPlaylists });
-      }
-      if (upload.plugins) {
-        tasks.push({ label: '同步插件', run: syncPlugins });
-      }
-      if (upload.favorites) {
-        tasks.push({ label: '同步收藏', run: syncFavorites });
-      }
-      if (tasks.length > 0) {
-        await Promise.allSettled(tasks.map(task => task.run()));
-      }
-      try {
-        await syncListenStats();
-        await statisticsStore.refreshBehaviorOnly('All');
-      } catch (e) {
-        logSyncError('syncOnLoginSuccess: 听歌时长快照同步失败', e);
-        await statisticsStore.refreshBehaviorOnly('All').catch(() => undefined);
-      }
-      if (upload.settings) {
-        try {
-          await syncSettings();
-        } catch (e) {
-          logSyncError('syncOnLoginSuccess: 首次设置同步失败', e);
-        }
-      }
-    } catch (e) {
-      logSyncError('syncOnLoginSuccess: 首次全量同步异常', e);
-    } finally {
-      loginSyncCompleted.value = true;
-      persistLoginSyncCompleted();
-      loginSyncInProgress = false;
-      syncOperationInProgress = false;
-      logSync('========== 首次登录全量同步结束 ==========');
-    }
-  }
+  // ==================== 自动同步调度挂载 ====================
 
   function patchAutoSyncConfig(patch: Partial<AutoSyncConfig>) {
     settingsStore.patchSettings({
@@ -1372,17 +402,17 @@ export function usePlaylistSync() {
     isSettingsUploadEnabled,
     isFavoritesUploadEnabled,
     syncPlaylists,
-    syncPlugins,
-    syncSettings,
+    syncPlugins: pluginFlow.syncPlugins,
+    syncSettings: settingsFlow.syncSettings,
     uploadOnly,
     downloadOnly,
-    uploadPluginsOnly,
-    downloadPluginsOnly,
-    uploadSettingsOnly,
-    downloadSettingsOnly,
-    uploadFavoritesOnly,
-    downloadFavoritesOnly,
-    syncFavorites,
+    uploadPluginsOnly: pluginFlow.uploadPluginsOnly,
+    downloadPluginsOnly: pluginFlow.downloadPluginsOnly,
+    uploadSettingsOnly: settingsFlow.uploadSettingsOnly,
+    downloadSettingsOnly: settingsFlow.downloadSettingsOnly,
+    uploadFavoritesOnly: favoritesFlow.uploadFavoritesOnly,
+    downloadFavoritesOnly: favoritesFlow.downloadFavoritesOnly,
+    syncFavorites: favoritesFlow.syncFavorites,
     uploadPlaylists,
     downloadPlaylists,
     deleteCloudPlaylistLocal,

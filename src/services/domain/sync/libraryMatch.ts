@@ -1,4 +1,4 @@
-import type { Song } from '../types';
+import type { Song } from '../../../types';
 
 // ==================== 本地曲库匹配 ====================
 

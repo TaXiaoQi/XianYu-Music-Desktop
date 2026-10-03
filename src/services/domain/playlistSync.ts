@@ -5,6 +5,13 @@ export type {
     SyncResult,
     FileSyncPlaylistData,
     FileSyncDownloadData,
+    SyncOpsStats,
+    SyncOp,
+    SyncOpCreatePlaylist,
+    SyncOpAddSongs,
+    SyncOpRemoveSongs,
+    SyncOpUpdatePlaylistMeta,
+    SyncOpsDownloadData,
 } from "./playlistSyncTypes";
 
 export {

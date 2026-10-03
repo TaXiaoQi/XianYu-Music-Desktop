@@ -1,15 +1,13 @@
 
 import { ref } from 'vue';
+import type { SettingsConflictChoice } from '../services/domain/sync/settingsSyncService';
 
-export type CategoryChoice = 'local' | 'cloud';
-
-export interface SyncCategoryChoices {
-  settings: CategoryChoice;
-  playlists: CategoryChoice;
-  plugins: CategoryChoice;
-}
-
-export type SettingsConflictChoice = 'cancel' | SyncCategoryChoices;
+// 冲突分支类型以 settingsSyncService 为准（UI 弹窗端口实现该协议）
+export type {
+  SettingsChoiceValue as CategoryChoice,
+  SettingsCategoryChoices as SyncCategoryChoices,
+  SettingsConflictChoice,
+} from '../services/domain/sync/settingsSyncService';
 
 export interface SettingsConflictState {
   visible: boolean;
