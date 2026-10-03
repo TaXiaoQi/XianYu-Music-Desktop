@@ -3,7 +3,7 @@
  * 音调变速标签页：升降调（百分比/半音）、速度调节、音调补偿、
  * 卡拉OK消人声与动态漂移/颤音/抖音。自 EqualizerPanel.vue 原样搬出。
  */
-import RangeSlider from '../RangeSlider.vue';
+import RangeSlider from '../../RangeSlider.vue';
 import { useSoundEffectStore } from '../../../../features/playback/soundEffectStore';
 import { usePitchControls } from '../../../../composables/soundEffect/usePitchControls';
 

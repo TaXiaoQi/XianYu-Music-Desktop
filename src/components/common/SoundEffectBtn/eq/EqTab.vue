@@ -3,7 +3,7 @@
  * 均衡器标签页：内置/衍生/自定义预设、垂直频段推子、
  * 动态均衡与 Bass 重低音增强。自 EqualizerPanel.vue 原样搬出。
  */
-import RangeSlider from '../RangeSlider.vue';
+import RangeSlider from '../../RangeSlider.vue';
 import { useSoundEffectStore, eqPresetNames, advancedEqPresetNames } from '../../../../features/playback/soundEffectStore';
 import { useEqPresets } from '../../../../composables/soundEffect/useEqPresets';
 import { useEqBands } from '../../../../composables/soundEffect/useEqBands';

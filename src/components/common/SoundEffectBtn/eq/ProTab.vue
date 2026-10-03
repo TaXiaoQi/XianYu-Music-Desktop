@@ -4,7 +4,7 @@
  * 单声道合并、声道交换、AB 对比与整套预设管理。
  * 自 EqualizerPanel.vue 原样搬出。
  */
-import RangeSlider from '../RangeSlider.vue';
+import RangeSlider from '../../RangeSlider.vue';
 import { useSoundEffectStore } from '../../../../features/playback/soundEffectStore';
 import { useFullEffectPresets } from '../../../../composables/soundEffect/useFullEffectPresets';
 
