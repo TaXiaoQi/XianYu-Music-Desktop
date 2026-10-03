@@ -566,9 +566,12 @@ pub(crate) fn setup_app( // setup_app
         FULL_COVER_IMAGE_CONCURRENCY_LIMIT, // 实现
     )));
 
-    app.manage(crate::plugin_host::commands::init_engine_state(
-        app.handle(),
+    let plugin_engine_state = crate::plugin_host::commands::init_engine_state(app.handle());
+    // 兜底模块宿主复用插件引擎的 HTTP 桥（SSRF 防护 / client 缓存共享）
+    app.manage(crate::fallback_host::commands::init_fallback_state(
+        plugin_engine_state.engine.http().clone(),
     ));
+    app.manage(plugin_engine_state);
 
     run_cache_cleanup(app.handle()); // 实现
 

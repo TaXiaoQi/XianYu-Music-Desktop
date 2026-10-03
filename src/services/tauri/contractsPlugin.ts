@@ -36,6 +36,39 @@ export interface PluginHttpBinaryResponseContract {
   body_base64: string;
 }
 
+// ===== 兜底模块宿主类型契约（与 Rust fallback_host 对应）=====
+
+export interface FallbackLogContract {
+  level: string;
+  message: string;
+  callId: number;
+}
+
+export interface FallbackLoadResultContract {
+  ok: boolean;
+  error: string | null;
+  version: number | null;
+  logs: FallbackLogContract[];
+}
+
+export interface FallbackCallResultContract {
+  ok: boolean;
+  error: string | null;
+  data: any;
+  logs: FallbackLogContract[];
+}
+
+export interface FallbackCallItemContract {
+  ok: boolean;
+  error: string | null;
+  data: any;
+}
+
+export interface FallbackCallManyResultContract {
+  results: FallbackCallItemContract[];
+  logs: FallbackLogContract[];
+}
+
 // ===== VST3/CLAP 原生插件宿主类型契约（与 Rust plugin_host 对应）=====
 
 export interface PluginHostScanEntry {

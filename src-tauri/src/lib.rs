@@ -1,7 +1,7 @@
 // 模块布局：按「运行时骨架 → 音频/媒体 → 窗口体系 → 工具与系统」的顺序登记。
 mod app_runtime; mod audio_convert; mod audio_trim; mod autostart;
 pub(crate) mod control_channel; mod custom_fonts; mod database; pub(crate) mod dlna;
-pub mod error; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
+pub mod error; mod fallback_host; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
 mod host_crypto; mod install_language; mod music; mod netproxy;
 mod player; mod plugin_host; mod plugins; mod power;
 mod recognize; mod remote; mod security; mod skin_image;
@@ -96,6 +96,12 @@ use custom_fonts::{
 use database::{clear_all_app_data};
 use fallback_verify::verify_fallback_module_signature;
 use fallback_verify::verify_beta_access_signature;
+use fallback_host::commands::{
+    fallback_module_call,
+    fallback_module_call_many,
+    fallback_module_load,
+    fallback_module_update_config,
+};
 use foreground_window::{get_foreground_fullscreen_state};
 use host_crypto::{
     host_kugou_request_key,
@@ -628,6 +634,10 @@ pub fn run() { // run
             host_weapi_encrypt,
             host_sha256_hex,
             verify_fallback_module_signature,
+            fallback_module_load,
+            fallback_module_call,
+            fallback_module_call_many,
+            fallback_module_update_config,
             verify_beta_access_signature,
             read_plugin_file,
             save_plugin_script,

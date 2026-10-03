@@ -97,6 +97,9 @@ import type {
 } from './contractsPlayback';
 
 import type {
+  FallbackCallManyResultContract,
+  FallbackCallResultContract,
+  FallbackLoadResultContract,
   PluginEngineCallResultContract,
   PluginEngineLoadResultContract,
   PluginHostEditorStateEntry,
@@ -605,6 +608,23 @@ export interface TauriCommandMap {
   plugin_engine_cookie_header_for_domain: {
     payload: { domain: string };
     response: string;
+  };
+  // ===== 兜底模块宿主命令（Rust fallback_host）=====
+  fallback_module_load: {
+    payload: { moduleKey: string; version: number; code: string; signature: string; appVersion: string };
+    response: FallbackLoadResultContract;
+  };
+  fallback_module_call: {
+    payload: { moduleKey: string; method: string; argsJson: string; timeoutMs?: number | null };
+    response: FallbackCallResultContract;
+  };
+  fallback_module_call_many: {
+    payload: { moduleKey: string; method: string; argsJsonList: string[]; timeoutMs?: number | null };
+    response: FallbackCallManyResultContract;
+  };
+  fallback_module_update_config: {
+    payload: { configJson: string };
+    response: void;
   };
   // ===== 宿主侧平台签名/加密（Rust host_crypto）=====
   host_zzc_sign: {

@@ -224,6 +224,10 @@ commands.allow = [
   "host_weapi_encrypt",
     "host_sha256_hex",
     "verify_fallback_module_signature",
+    "fallback_module_load",
+    "fallback_module_call",
+    "fallback_module_call_many",
+    "fallback_module_update_config",
     "parse_lyrics_text",
   "read_plugin_file", # 读插件文件
   "save_plugin_script",

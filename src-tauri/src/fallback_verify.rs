@@ -29,7 +29,7 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-fn verify_with_public_key(msg: &[u8], signature: &str) -> Result<bool, String> {
+pub(crate) fn verify_with_public_key(msg: &[u8], signature: &str) -> Result<bool, String> {
     let pub_bytes = hex_to_bytes(FALLBACK_VERIFY_PUBLIC_KEY_HEX)?;
     let pub_key = VerifyingKey::from_bytes(
         pub_bytes

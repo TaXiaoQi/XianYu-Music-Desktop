@@ -103,6 +103,11 @@ impl PluginEngine {
         &self.store
     }
 
+    /// 供 fallback_host 复用同一 HTTP 桥（SSRF 防护 / client 缓存 / cookie 捕获共享）。
+    pub fn http(&self) -> &Arc<HttpBridge> {
+        &self.http
+    }
+
     /// 供网络代理开关变化后清空 HTTP client 缓存（见 `netproxy::save`）。
     pub fn clear_http_clients(&self) {
         self.http.clear_clients();
