@@ -6,8 +6,10 @@
 import localStoreSource from "./localStore.ts?raw";
 import { localStore } from "./localStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sourceCountOf } from "../../testing/sourceText";
 
-const GUARD_SNIPPET = "typeof localStorage === 'undefined'";
+// 不绑定引号风格：prettier 可能在单/双引号间重排，守护只关心守卫表达式本身在位。
+const GUARD_SNIPPET = "typeof localStorage ===";
 
 const stubLiveStorage = () => {
     const backing: Record<string, string> = {};
@@ -81,8 +83,7 @@ describe("localStore — behaviour without a localStorage global", () => {
     }
 
     it("source keeps the typeof localStorage guard in place", () => {
-        const guardOccurrences =
-            localStoreSource.split(GUARD_SNIPPET).length - 1;
+        const guardOccurrences = sourceCountOf(localStoreSource, GUARD_SNIPPET);
         expect(guardOccurrences).toBeGreaterThanOrEqual(6);
     });
 });

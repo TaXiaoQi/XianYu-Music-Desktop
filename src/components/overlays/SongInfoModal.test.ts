@@ -1,19 +1,21 @@
 // SongInfoModal 源码约定：拖拽区、文本选中、暗色令牌、定向编辑与响应式布局
-import { it, describe, expect } from "vitest";
+import { it, describe } from "vitest";
 
+import { condense, expectSourceContains, expectSourceNotContains } from "../../testing/sourceText";
 import source from "./SongInfoModal.vue?raw";
 
 const modalSource = source;
 
 // 截取窄窗口媒体查询之后的全部样式，用于响应式约定断言
+const flat = condense(modalSource);
 const gatherNarrowStyles = () =>
-    modalSource.slice(modalSource.indexOf("@media (max-width: 1100px)"));
+    flat.slice(flat.indexOf(condense("@media (max-width: 1100px)")));
 
 describe("SongInfoModal window drag area", () => {
     it("exposes a Tauri drag strip along the top of the dialog", () => {
         ["song-info-window-drag-strip", "data-tauri-drag-region"].forEach(
             (needle) => {
-                expect(modalSource).toContain(needle);
+                expectSourceContains(modalSource, needle);
             },
         );
     });
@@ -26,7 +28,7 @@ describe("SongInfoModal text selection", () => {
             "-webkit-user-select: text;",
             "user-select: text;",
         ].forEach((needle) => {
-            expect(modalSource).toContain(needle);
+            expectSourceContains(modalSource, needle);
         });
     });
 });
@@ -41,7 +43,7 @@ describe("SongInfoModal lyrics editor theme", () => {
             "--modal-external-header-bg: rgba(15, 23, 42, 0.72);",
             "--lyrics-editor-button-bg: rgba(255, 255, 255, 0.06);",
         ].forEach((needle) => {
-            expect(modalSource).toContain(needle);
+            expectSourceContains(modalSource, needle);
         });
     });
 
@@ -51,18 +53,18 @@ describe("SongInfoModal lyrics editor theme", () => {
             ":global(.dark) .lyrics-editor-expand-button",
             ":global(.dark) .modal-action-button",
         ].forEach((needle) => {
-            expect(modalSource).not.toContain(needle);
+            expectSourceNotContains(modalSource, needle);
         });
     });
 });
 
 describe("SongInfoModal targeted editing", () => {
     it("jumps straight into cover or lyrics editing when an initial action is given", () => {
-        expect(modalSource).toContain("props.initialAction === 'cover'");
-        expect(modalSource).toContain("await handleChooseCover()");
-        expect(modalSource).toContain("props.initialAction === 'lyrics'");
-        expect(modalSource).toContain("lyricsTextareaRef.value?.focus()");
-        expect(modalSource).toContain('ref="lyricsTextareaRef"');
+        expectSourceContains(modalSource, 'props.initialAction === "cover"');
+        expectSourceContains(modalSource, "await handleChooseCover()");
+        expectSourceContains(modalSource, 'props.initialAction === "lyrics"');
+        expectSourceContains(modalSource, "lyricsTextareaRef.value?.focus()");
+        expectSourceContains(modalSource, 'ref="lyricsTextareaRef"');
     });
 });
 
@@ -70,9 +72,9 @@ describe("SongInfoModal responsive layout", () => {
     it("preserves natural body height for the stacked narrow-window layout", () => {
         const narrowWindowStyles = gatherNarrowStyles();
 
-        expect(narrowWindowStyles).toContain(".song-info-main {");
-        expect(narrowWindowStyles).toContain("flex: 0 0 auto;");
-        expect(narrowWindowStyles).toContain(".song-info-content {");
-        expect(narrowWindowStyles).toContain("overflow: visible;");
+        expectSourceContains(narrowWindowStyles, ".song-info-main {");
+        expectSourceContains(narrowWindowStyles, "flex: 0 0 auto;");
+        expectSourceContains(narrowWindowStyles, ".song-info-content {");
+        expectSourceContains(narrowWindowStyles, "overflow: visible;");
     });
 });

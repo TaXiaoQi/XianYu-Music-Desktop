@@ -1,44 +1,53 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
+import { expectSourceContains, expectSourceNotContains } from "../../testing/sourceText";
 import appSource from "../../App.vue?raw";
 import settingsGeneralSource from "../../components/settings/SettingsGeneral.vue?raw";
 
 describe("language switching reliability", () => {
     it("switches the active interface language without reloading the page", () => {
-        expect(appSource).not.toContain("previousLanguage");
-        expect(appSource).not.toContain("window.location.reload()");
-        expect(appSource).toContain(
+        expectSourceNotContains(appSource, "previousLanguage");
+        expectSourceNotContains(appSource, "window.location.reload()");
+        expectSourceContains(
+            appSource,
             "document.documentElement.dataset.language = value",
         );
     });
 
     it("recreates the rendered interface so legacy DOM translations cannot leak across languages", () => {
-        expect(appSource).toContain('<MainShell v-else :key="language"');
-        expect(appSource).toContain(
+        expectSourceContains(appSource, '<MainShell v-else :key="language"');
+        expectSourceContains(
+            appSource,
             '<DesktopLyricsWindow v-if="isDesktopLyricsWindow" :key="language"',
         );
-        expect(appSource).toContain(
+        expectSourceContains(
+            appSource,
             '<MiniPlayerWindow v-else-if="isMiniPlayerWindow" :key="language"',
         );
     });
 
     it("persists a manual language choice synchronously", () => {
-        expect(settingsGeneralSource).toContain(
+        expectSourceContains(
+            settingsGeneralSource,
             "patchSettings({ language: value })",
         );
-        expect(settingsGeneralSource).toContain(
+        expectSourceContains(
+            settingsGeneralSource,
             "playerStorage.writeSettings(settings.value)",
         );
     });
 
     it("does not let a delayed installer read overwrite a manual choice", () => {
-        expect(appSource).toContain(
+        expectSourceContains(
+            appSource,
             "const languageBeforeInstallRead = settings.value.language",
         );
-        expect(appSource).toContain(
+        expectSourceContains(
+            appSource,
             "settings.value.language === languageBeforeInstallRead",
         );
-        expect(appSource).toContain(
+        expectSourceContains(
+            appSource,
             "settings.value.language !== languageBeforeInstallRead",
         );
     });

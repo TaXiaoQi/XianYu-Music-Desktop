@@ -12,6 +12,7 @@ import type {
 } from "../../types";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sourceContains } from "../../testing/sourceText";
 import {
     createDefaultAppSettings,
     createDefaultAudioSettings,
@@ -707,7 +708,7 @@ describe("P3: unused code cleanup", () => {
             "updateEqualizerPreset",
             "deleteEqualizerPreset",
         ]) {
-            expect(playerStorageSource.includes(removedHelper)).toBe(false);
+            expect(sourceContains(playerStorageSource, removedHelper)).toBe(false);
         }
     });
 

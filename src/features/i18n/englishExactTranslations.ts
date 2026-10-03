@@ -2811,4 +2811,11 @@ export const exactEnglishTranslations: Record<string, string> = {
   "音乐整理 · 批处理流程": "Music Organizer · Batch Workflows",
   "首次开启时 Windows 可能弹出防火墙授权，请允许「专用网络」访问，否则设备将无法被发现。": "The first time you enable this, Windows may prompt for firewall permission; allow access on \"Private networks\", or the device won't be discoverable.",
   "首页右上角扫码入口扫描": "scan via the QR entry at the top-right of the home page",
+  // 关于页与歌单导入弹窗补漏（src/components/settings/SettingsAbout.vue、src/components/overlays/PlaylistModal.vue）
+  "Copyright © 2026 XianYu Music Developer · 基于 XSAL-1.0 开源可见。": "Copyright © 2026 XianYu Music Developer · Open-sourced under XSAL-1.0.",
+  "开发者模式入口": "Developer mode entry",
+  "重新搜索": "Search again",
+  // 歌单导入预览里的插值后缀片段（「共 {{ n }}」由「共」条目单独翻译），
+  // 参照「首源端已移除的歌曲，并添加新歌曲」的片段写法，译文以空格开头。
+  "首歌曲 · 确认无误后点击「确认导入」": " songs · click \"Confirm Import\" once everything looks right",
 };

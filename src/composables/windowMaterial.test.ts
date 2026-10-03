@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'; // 实现
 
 import source from './windowMaterial.ts?raw';
+import { expectSourceContains } from '../testing/sourceText';
 
 import {
   rebuildWindowMaterialForCompositor, // 实现
@@ -106,8 +107,8 @@ describe('rebuildWindowMaterialForCompositor 重建编排', () => {
 
 describe('materialSwitching 过渡抑制范围', () => {
   it('无材质重同步（none → none）不禁用 CSS 过渡', () => {
-    expect(source).toContain('const shouldSuppressTransitions = needsTransitionMask;');
-    expect(source).toContain('if (shouldSuppressTransitions) {\n        materialSwitching.value = true;');
+    expectSourceContains(source, 'const shouldSuppressTransitions = needsTransitionMask;');
+    expectSourceContains(source, 'if (shouldSuppressTransitions) {\n        materialSwitching.value = true;');
   });
 
   it('材质切换后不会残留过渡抑制标志', () => {
@@ -116,6 +117,6 @@ describe('materialSwitching 过渡抑制范围', () => {
   });
 
   it('恢复过渡时同样受 shouldSuppressTransitions 约束，避免误清他人设置的标志', () => {
-    expect(source).toContain('if (shouldSuppressTransitions) {\n          materialSwitching.value = false;');
+    expectSourceContains(source, 'if (shouldSuppressTransitions) {\n          materialSwitching.value = false;');
   });
 });

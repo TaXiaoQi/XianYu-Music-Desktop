@@ -4,38 +4,46 @@ import mainShellSource from "../components/layout/MainShell.vue?raw";
 import sidebarSource from "../components/layout/Sidebar.vue?raw";
 import routerSource from "../router/index.ts?raw";
 import searchSource from "./Search.vue?raw";
+import searchQuerySource from "../composables/search/useSearchQuery.ts?raw";
+import { expectSourceContains, expectSourceNotContains } from "../testing/sourceText";
 
 describe("Search page lifecycle", () => {
     it("destroys routed main pages after navigation instead of keeping them alive", () => {
-        expect(mainShellSource).not.toContain("<KeepAlive");
-        expect(routerSource).toContain(
+        expectSourceNotContains(mainShellSource, "<KeepAlive");
+        expectSourceContains(
+            routerSource,
             "{ path: '/', name: 'Home', component: Home }",
         );
-        expect(routerSource).toContain(
+        expectSourceContains(
+            routerSource,
             "{ path: '/search', name: 'Search', component: Search }",
         );
     });
 
     it("cleans up pending search work when the page is destroyed", () => {
-        expect(searchSource).toContain("onBeforeUnmount(() => {");
-        expect(searchSource).toContain("searchAbortController?.abort();");
-        expect(searchSource).toContain("clearTimeout(searchDebounceTimer);");
-        expect(searchSource).toContain("playbackStore.tempQueue = [];");
-        expect(searchSource).not.toContain("onDeactivated(() => {");
+        expectSourceContains(searchSource, "onBeforeUnmount(() => {");
+        expectSourceContains(searchSource, "playbackStore.tempQueue = [];");
+        expectSourceNotContains(searchSource, "onDeactivated(() => {");
+        expectSourceContains(searchQuerySource, "onBeforeUnmount(() => {");
+        expectSourceContains(searchQuerySource, "searchAbortController?.abort();");
+        expectSourceContains(searchQuerySource, "clearTimeout(searchDebounceTimer);");
     });
 
     it("clears the shared main search query when navigating from the sidebar", () => {
-        expect(sidebarSource).toContain("const handleOpenHomeView = () => {");
-        expect(sidebarSource).toContain(
+        expectSourceContains(sidebarSource, "const handleOpenHomeView = () => {");
+        expectSourceContains(
+            sidebarSource,
             "const handleSidebarSelect = (key: SidebarItemKey) => {",
         );
-        expect(sidebarSource).toContain(
+        expectSourceContains(
+            sidebarSource,
             "const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {",
         );
         expect(
             sidebarSource.match(/setSearch\(''\);/g)?.length,
         ).toBeGreaterThanOrEqual(3);
-        expect(sidebarSource).toContain(
+        expectSourceContains(
+            sidebarSource,
             '@playlistClick="handleSidebarPlaylistClick"',
         );
     });

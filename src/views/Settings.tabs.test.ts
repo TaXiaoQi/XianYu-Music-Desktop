@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import source from './Settings.vue?raw';
+import { sourceContains } from '../testing/sourceText';
 
 /**
  * 设置页新增一个 tab 要登记五处：`SettingsTabId` 联合类型、`VALID_TABS`、`settingsLoaders`、
@@ -28,7 +29,7 @@ describe('Settings 页 tab 登记一致性', () => {
   it('每个 tab 在模板渲染链里都有对应分支', () => {
     const missing = validTabs.filter(tab => (
       !INTENTIONAL_PLACEHOLDER_TABS.includes(tab)
-      && !source.includes(`activeTab === '${tab}'`)
+      && !sourceContains(source, `activeTab === '${tab}'`)
     ));
     expect(missing).toEqual([]);
   });

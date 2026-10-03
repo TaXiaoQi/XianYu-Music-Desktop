@@ -1,5 +1,6 @@
-import { it, describe, expect } from 'vitest';
+import { it, describe } from 'vitest';
 
+import { expectSourceContains } from '../testing/sourceText';
 import playerFooterMarkup from '../components/layout/PlayerFooter.vue?raw';
 import footerControlItemMarkup from '../components/layout/FooterControlItem.vue?raw';
 import sidebarPlaylistsMarkup from '../components/layout/SidebarPlaylists.vue?raw';
@@ -14,34 +15,34 @@ import songDragLogic from '../composables/useSongDrag.ts?raw';
 
 describe('触摸拖拽支持', () => {
   it('歌曲表格的行拖拽走 pointer 事件', () => {
-    expect(songTableMarkup).toContain('@pointerdown="onRowPointerDown($event, song, song.virtualIndex)"');
-    expect(songTableMarkup).toContain('@pointermove="onTablePointerMove"');
-    expect(songDragLogic).toContain("window.addEventListener('pointermove'");
-    expect(songDragLogic).toContain("window.addEventListener('pointerup'");
-    expect(songDragLogic).toContain("window.addEventListener('pointercancel'");
+    expectSourceContains(songTableMarkup, '@pointerdown="onRowPointerDown($event, song, song.virtualIndex)"');
+    expectSourceContains(songTableMarkup, '@pointermove="onTablePointerMove"');
+    expectSourceContains(songDragLogic, "window.addEventListener('pointermove'");
+    expectSourceContains(songDragLogic, "window.addEventListener('pointerup'");
+    expectSourceContains(songDragLogic, "window.addEventListener('pointercancel'");
   });
 
   it('媒体库歌单重排的拖拽走 pointer 事件', () => {
-    expect(sidebarPlaylistsMarkup).toContain('@pointerdown="$emit(\'pointerDown\', $event, index, list)"');
-    expect(sidebarPlaylistsMarkup).toContain('@pointermove="$emit(\'itemPointerMove\', $event, list.id)"');
-    expect(sidebarDragLogic).toContain("window.addEventListener('pointermove'");
-    expect(sidebarDragLogic).toContain("window.addEventListener('pointerup'");
-    expect(sidebarDragLogic).toContain("window.addEventListener('pointercancel'");
+    expectSourceContains(sidebarPlaylistsMarkup, '@pointerdown="$emit(\'pointerDown\', $event, index, list)"');
+    expectSourceContains(sidebarPlaylistsMarkup, '@pointermove="$emit(\'itemPointerMove\', $event, list.id)"');
+    expectSourceContains(sidebarDragLogic, "window.addEventListener('pointermove'");
+    expectSourceContains(sidebarDragLogic, "window.addEventListener('pointerup'");
+    expectSourceContains(sidebarDragLogic, "window.addEventListener('pointercancel'");
   });
 
   it('播放进度与音量滑杆的拖拽走 pointer 事件', () => {
-    expect(playerFooterMarkup).toContain('@pointerdown="startProgressDrag"');
-    expect(footerControlItemMarkup).toContain('@pointerdown="startDrag"');
-    expect(playerFooterMarkup).toContain("window.addEventListener('pointermove'");
-    expect(playerFooterMarkup).toContain("window.addEventListener('pointerup'");
-    expect(playerFooterMarkup).toContain("window.addEventListener('pointercancel'");
-    expect(volumePopoverMarkup).toContain('@pointerdown.stop="startVolumeDrag"');
-    expect(miniPlayerMarkup).toContain('@pointerdown.stop="startProgressDrag"');
-    expect(miniPlayerMarkup).toContain("window.addEventListener('pointermove'");
-    expect(miniPlayerMarkup).toContain("window.addEventListener('pointerup'");
-    expect(miniPlayerMarkup).toContain("window.addEventListener('pointercancel'");
-    expect(volumePopoverMarkup).toContain("window.addEventListener('pointermove'");
-    expect(volumePopoverMarkup).toContain("window.addEventListener('pointerup'");
-    expect(volumePopoverMarkup).toContain("window.addEventListener('pointercancel'");
+    expectSourceContains(playerFooterMarkup, '@pointerdown="startProgressDrag"');
+    expectSourceContains(footerControlItemMarkup, '@pointerdown="startDrag"');
+    expectSourceContains(playerFooterMarkup, "window.addEventListener('pointermove'");
+    expectSourceContains(playerFooterMarkup, "window.addEventListener('pointerup'");
+    expectSourceContains(playerFooterMarkup, "window.addEventListener('pointercancel'");
+    expectSourceContains(volumePopoverMarkup, '@pointerdown.stop="startVolumeDrag"');
+    expectSourceContains(miniPlayerMarkup, '@pointerdown.stop="startProgressDrag"');
+    expectSourceContains(miniPlayerMarkup, "window.addEventListener('pointermove'");
+    expectSourceContains(miniPlayerMarkup, "window.addEventListener('pointerup'");
+    expectSourceContains(miniPlayerMarkup, "window.addEventListener('pointercancel'");
+    expectSourceContains(volumePopoverMarkup, "window.addEventListener('pointermove'");
+    expectSourceContains(volumePopoverMarkup, "window.addEventListener('pointerup'");
+    expectSourceContains(volumePopoverMarkup, "window.addEventListener('pointercancel'");
   });
 });

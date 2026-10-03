@@ -1,5 +1,6 @@
-import { it, describe, expect } from 'vitest';
+import { it, describe } from 'vitest';
 
+import { expectSourceContains } from '../../testing/sourceText';
 import miniPlayerWindowCode from './MiniPlayerWindow.vue?raw';
 import trayMenuWindowCode from './TrayMenuWindow.vue?raw';
 
@@ -9,14 +10,14 @@ const outsideClickDismissBinding = '@pointerdown.self="hideWindow"';
 
 describe('辅助透明窗口', () => {
   it('迷你播放器 webview 背景强制透明', () => {
-    expect(miniPlayerWindowCode).toContain(transparentBackgroundSnippet);
+    expectSourceContains(miniPlayerWindowCode, transparentBackgroundSnippet);
   });
 
   it('自定义托盘菜单 webview 背景强制透明', () => {
-    expect(trayMenuWindowCode).toContain(transparentBackgroundSnippet);
+    expectSourceContains(trayMenuWindowCode, transparentBackgroundSnippet);
   });
 
   it('点击托盘透明外壳中菜单面板以外的区域时隐藏托盘菜单', () => {
-    expect(trayMenuWindowCode).toContain(outsideClickDismissBinding);
+    expectSourceContains(trayMenuWindowCode, outsideClickDismissBinding);
   });
 });

@@ -1,21 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'vitest';
 
 import favoritesHeaderSource from '../components/headers/FavoritesHeader.vue?raw';
 import favoritesSource from './Favorites.vue?raw';
+import { expectSourceContains } from '../testing/sourceText';
 
 describe('favorites view', () => {
   it('switches between songs and collection tabs', () => {
-    expect(favoritesSource).toContain('favTab === \'songs\'');
-    expect(favoritesSource).toContain('favTab === \'playlists\'');
-    expect(favoritesSource).toContain('<FavoriteCollectionsGrid');
-    expect(favoritesSource).toContain('favoritePlaylistEntries');
-    expect(favoritesSource).toContain('favoriteAlbumEntries');
+    expectSourceContains(favoritesSource, 'favTab === \'songs\'');
+    expectSourceContains(favoritesSource, 'favTab === \'playlists\'');
+    expectSourceContains(favoritesSource, '<FavoriteCollectionsGrid');
+    expectSourceContains(favoritesSource, 'favoritePlaylistEntries');
+    expectSourceContains(favoritesSource, 'favoriteAlbumEntries');
   });
 
   it('exposes song-level actions only for the songs tab', () => {
-    expect(favoritesHeaderSource).toContain('favTab === \'songs\'');
-    expect(favoritesHeaderSource).toContain("favTab = 'songs'");
-    expect(favoritesHeaderSource).toContain("favTab = 'playlists'");
-    expect(favoritesHeaderSource).toContain("favTab = 'albums'");
+    expectSourceContains(favoritesHeaderSource, 'favTab === \'songs\'');
+    expectSourceContains(favoritesHeaderSource, "favTab = 'songs'");
+    expectSourceContains(favoritesHeaderSource, "favTab = 'playlists'");
+    expectSourceContains(favoritesHeaderSource, "favTab = 'albums'");
   });
 });

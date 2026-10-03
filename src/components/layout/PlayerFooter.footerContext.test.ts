@@ -21,12 +21,14 @@ function sliceBetween(text: string, startMarker: string, endMarker: string): str
 function collectKeys(block: string): string[] {
   const keys: string[] = [];
   for (const line of block.split('\n')) {
-    const match = line.match(/^\s*([A-Za-z_$][\w$]*)\s*[:,]?\s*$/);
+    // 行尾可能带“// 实现”类标注注释，先剥离再匹配键名
+    const code = line.replace(/\/\/.*$/, '');
+    const match = code.match(/^\s*([A-Za-z_$][\w$]*)\s*[:,]?\s*$/);
     if (match) {
       keys.push(match[1]);
       continue;
     }
-    const withValue = line.match(/^\s*([A-Za-z_$][\w$]*)\s*:/);
+    const withValue = code.match(/^\s*([A-Za-z_$][\w$]*)\s*:/);
     if (withValue) keys.push(withValue[1]);
   }
   return keys;

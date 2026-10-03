@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { condense, expectSourceContains, sourceIndexOf } from '../../testing/sourceText';
 import source from './SettingsPlugins.vue?raw';
 
 /**
@@ -9,9 +10,10 @@ import source from './SettingsPlugins.vue?raw';
  * 先行，WebView fetch 只能兜底；两条都失败时也必须留下日志，否则失败会静默。
  */
 
-const start = source.indexOf('async function fetchRemoteScript');
-const end = source.indexOf('const props = withDefaults', start);
-const fetchRemoteScriptBody = start >= 0 && end > start ? source.slice(start, end) : '';
+const flat = condense(source);
+const start = flat.indexOf(condense('async function fetchRemoteScript'));
+const end = flat.indexOf(condense('const props = withDefaults'), start);
+const fetchRemoteScriptBody = start >= 0 && end > start ? flat.slice(start, end) : '';
 
 describe('SettingsPlugins 远程脚本取数', () => {
   it('fetchRemoteScript 存在且可被定位', () => {
@@ -19,14 +21,14 @@ describe('SettingsPlugins 远程脚本取数', () => {
   });
 
   it('原生请求排在 WebView fetch 之前', () => {
-    const nativeAt = fetchRemoteScriptBody.indexOf('pluginApi.fetchPluginUrl');
-    const webviewAt = fetchRemoteScriptBody.indexOf('await fetch(');
+    const nativeAt = sourceIndexOf(fetchRemoteScriptBody, 'pluginApi.fetchPluginUrl');
+    const webviewAt = sourceIndexOf(fetchRemoteScriptBody, 'await fetch(');
     expect(nativeAt).toBeGreaterThanOrEqual(0);
     expect(webviewAt).toBeGreaterThan(nativeAt);
   });
 
   it('两条路径都失败时留下诊断日志', () => {
-    expect(fetchRemoteScriptBody).toContain('[fetchRemoteScript] 两种取数方式均失败');
-    expect(fetchRemoteScriptBody).toContain('WebView fetch 失败');
+    expectSourceContains(fetchRemoteScriptBody, '[fetchRemoteScript] 两种取数方式均失败');
+    expectSourceContains(fetchRemoteScriptBody, 'WebView fetch 失败');
   });
 });

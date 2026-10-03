@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import source from './pluginApi.ts?raw';
+import { condense, expectSourceContains } from '../../testing/sourceText';
 
 /**
  * fetchPluginUrl 的坑是踩出来的：
@@ -10,9 +11,10 @@ import source from './pluginApi.ts?raw';
  * 否则这类 4xx 的原因完全不可见。
  */
 
-const start = source.indexOf('async function fetchPluginUrl');
-const end = source.indexOf('async function proxyImage', start);
-const body = start >= 0 && end > start ? source.slice(start, end) : '';
+const condensed = condense(source);
+const start = condensed.indexOf(condense('async function fetchPluginUrl'));
+const end = condensed.indexOf(condense('async function proxyImage'), start);
+const body = start >= 0 && end > start ? condensed.slice(start, end) : '';
 
 describe('pluginApi.fetchPluginUrl', () => {
   it('函数体可被定位', () => {
@@ -20,12 +22,12 @@ describe('pluginApi.fetchPluginUrl', () => {
   });
 
   it('显式带上 WebView 的 User-Agent', () => {
-    expect(body).toContain('navigator.userAgent');
-    expect(body).toContain("'User-Agent'");
+    expectSourceContains(body, 'navigator.userAgent');
+    expectSourceContains(body, "'User-Agent'");
   });
 
   it('非 2xx 时把响应体片段带进错误信息', () => {
-    expect(body).toContain('const detail = String(resp.body');
-    expect(body).toContain('HTTP ${resp.status}${detail');
+    expectSourceContains(body, 'const detail = String(resp.body');
+    expectSourceContains(body, 'HTTP ${resp.status}${detail');
   });
 });

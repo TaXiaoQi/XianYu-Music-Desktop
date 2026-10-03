@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
+import { expectSourceContains } from "../../testing/sourceText";
 import source from "./AudioVisualizer.vue?raw";
 
-// 组件源码中必须存在的关键片段（低功耗时不取样本、不驱动动画，逐字匹配）
+// 组件源码中必须存在的关键片段（低功耗时不取样本、不驱动动画）
 const requiredSnippets = [
     "useRenderingPower",
     "!isMainWindowLowPower.value",
@@ -13,7 +14,7 @@ const requiredSnippets = [
 describe("AudioVisualizer 低功耗渲染约定", () => {
     it("主窗口低功耗时停止采样拉取与动画", () => {
         requiredSnippets.forEach((snippet) => {
-            expect(source).toContain(snippet);
+            expectSourceContains(source, snippet);
         });
     });
 });

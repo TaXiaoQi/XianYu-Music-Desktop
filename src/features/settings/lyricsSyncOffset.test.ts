@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { expectSourceContains } from "../../testing/sourceText";
 import audioOutputSource from "../../components/settings/SettingsAudioOutput.vue?raw";
 import desktopLyricsSource from "../../components/settings/SettingsDesktopLyrics.vue?raw";
 import {
@@ -23,12 +24,14 @@ describe("lyrics sync offset settings", () => {
     it.each([audioOutputSource, desktopLyricsSource])(
         "places 5ms decrement and increment controls around the slider",
         (source) => {
-            expect(source).toContain('aria-label="歌词偏移减少 5 毫秒"');
-            expect(source).toContain(
+            expectSourceContains(source, 'aria-label="歌词偏移减少 5 毫秒"');
+            expectSourceContains(
+                source,
                 '@click="adjustLyricsSyncOffset(-LYRICS_SYNC_OFFSET_STEP_MS)"',
             );
-            expect(source).toContain('aria-label="歌词偏移增加 5 毫秒"');
-            expect(source).toContain(
+            expectSourceContains(source, 'aria-label="歌词偏移增加 5 毫秒"');
+            expectSourceContains(
+                source,
                 '@click="adjustLyricsSyncOffset(LYRICS_SYNC_OFFSET_STEP_MS)"',
             );
         },

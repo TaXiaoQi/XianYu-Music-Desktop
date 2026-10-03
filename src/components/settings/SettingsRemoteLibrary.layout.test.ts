@@ -3,6 +3,8 @@ import * as nodeFs from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { expectSourceContains, expectSourceNotContains } from "../../testing/sourceText";
+
 // The remote-library form markup (and its scoped layout rules) now lives in
 // remoteLibrary/RemoteSourceForm.vue, so the assertions below read that file.
 const specDirectory = dirname(fileURLToPath(import.meta.url));
@@ -29,11 +31,13 @@ const darkInputRuleBody = extractRuleBody(
 
 describe("SettingsRemoteLibrary layout", () => {
     it("keeps the remote source fields in a single column", () => {
-        expect(gridRuleBody).toContain(
+        expectSourceContains(
+            gridRuleBody,
             "grid-template-columns: minmax(0, 1fr);",
         );
-        expect(gridRuleBody).not.toContain("repeat(2");
-        expect(formComponentSource).not.toContain(
+        expectSourceNotContains(gridRuleBody, "repeat(2");
+        expectSourceNotContains(
+            formComponentSource,
             "remote-field remote-field--wide",
         );
     });
@@ -49,16 +53,20 @@ describe("SettingsRemoteLibrary layout", () => {
     });
 
     it("uses translucent input surfaces instead of solid white fields", () => {
-        expect(inputRuleBody).toContain(
+        expectSourceContains(
+            inputRuleBody,
             "background: rgba(255, 255, 255, 0.45);",
         );
-        expect(inputRuleBody).toContain(
+        expectSourceContains(
+            inputRuleBody,
             "border: 1px solid rgba(15, 23, 42, 0.1);",
         );
-        expect(inputRuleBody).not.toContain(
+        expectSourceNotContains(
+            inputRuleBody,
             "background: rgba(255, 255, 255, 0.72);",
         );
-        expect(darkInputRuleBody).toContain(
+        expectSourceContains(
+            darkInputRuleBody,
             "background: rgba(255, 255, 255, 0.05);",
         );
     });

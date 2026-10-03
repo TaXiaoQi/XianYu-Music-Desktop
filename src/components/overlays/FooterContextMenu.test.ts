@@ -1,5 +1,6 @@
-import { it, describe, expect } from 'vitest';
+import { it, describe } from 'vitest';
 
+import { expectSourceContains } from '../../testing/sourceText';
 import footerMenuMarkup from './FooterContextMenu.vue?raw';
 import pointerAwaySource from './contextMenu/onPointerAway.ts?raw';
 
@@ -16,14 +17,14 @@ const requiredEntryLabels = [
 
 describe('播放条右键菜单入口', () => {
   it.each(requiredEntryLabels)('菜单提供入口文案：%s', (entryLabel) => {
-    expect(footerMenuMarkup).toContain(entryLabel);
+    expectSourceContains(footerMenuMarkup, entryLabel);
   });
 });
 
 describe('播放条右键菜单关闭行为', () => {
   it('uses capture-phase pointerdown to dismiss on outside presses', () => {
-    expect(footerMenuMarkup).toContain('watchPointerAway');
-    expect(pointerAwaySource).toContain("window.addEventListener('pointerdown', onPress, true)");
-    expect(pointerAwaySource).toContain("window.removeEventListener('pointerdown', onPress, true)");
+    expectSourceContains(footerMenuMarkup, 'watchPointerAway');
+    expectSourceContains(pointerAwaySource, "window.addEventListener('pointerdown', onPress, true)");
+    expectSourceContains(pointerAwaySource, "window.removeEventListener('pointerdown', onPress, true)");
   });
 });

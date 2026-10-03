@@ -6,7 +6,8 @@ import {
     normalizeLxPlaylistResults,
     type LxSearchResultItem,
 } from "./lxMusicSdk";
-import searchSource from "../../views/Search.vue?raw";
+import searchQuerySource from "../../composables/search/useSearchQuery.ts?raw";
+import { expectSourceContains, expectSourceNotContains } from "../../testing/sourceText";
 
 function song(overrides: Partial<LxSearchResultItem>): LxSearchResultItem { // 实现
     return {
@@ -88,15 +89,18 @@ describe("LX catalog search adapters", () => {
     });
 
     it("routes LX artist, album, and playlist tabs through catalog search", () => {
-        expect(searchSource).toContain(
+        expectSourceContains(
+            searchQuerySource,
             "lxCatalogSearch(source.lxSourceId, query, 'artist', 1)",
         );
-        expect(searchSource).toContain(
+        expectSourceContains(
+            searchQuerySource,
             "lxCatalogSearch(source.lxSourceId, query, 'album', 1)",
         );
-        expect(searchSource).toContain(
+        expectSourceContains(
+            searchQuerySource,
             "lxCatalogSearch(source.lxSourceId, query, 'playlist', 1)",
         );
-        expect(searchSource).not.toContain("该类型搜索功能开发中");
+        expectSourceNotContains(searchQuerySource, "该类型搜索功能开发中");
     });
 });

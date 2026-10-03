@@ -1,19 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
 import recentHeaderSource from "../components/headers/RecentHeader.vue?raw";
 import recentSource from "./Recent.vue?raw";
+import { expectSourceContains, expectSourceNotContains } from "../testing/sourceText";
 
 describe("recent view", () => {
     it("renders songs only without collection tabs", () => {
-        expect(recentSource).toContain("<SongTable");
-        expect(recentSource).not.toContain("recentTab");
-        expect(recentSource).not.toContain("<RecentCollectionGrid");
+        expectSourceContains(recentSource, "<SongTable");
+        expectSourceNotContains(recentSource, "recentTab");
+        expectSourceNotContains(recentSource, "<RecentCollectionGrid");
     });
 
     it("keeps only song-level actions in the header", () => {
-        expect(recentHeaderSource).not.toContain("recentTab");
-        expect(recentHeaderSource).toContain("playAll");
-        expect(recentHeaderSource).toContain("clearHistory");
-        expect(recentHeaderSource).toContain("addAllToQueue");
+        expectSourceNotContains(recentHeaderSource, "recentTab");
+        expectSourceContains(recentHeaderSource, "playAll");
+        expectSourceContains(recentHeaderSource, "clearHistory");
+        expectSourceContains(recentHeaderSource, "addAllToQueue");
     });
 });

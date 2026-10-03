@@ -1,34 +1,36 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 
+import { expectSourceContains, expectSourceNotContains } from "../../testing/sourceText";
 import source from "./SettingsDesktopLyrics.vue?raw";
 
 describe("SettingsDesktopLyrics preview copy", () => {
     it("uses the requested coastline lyric and translation", () => {
-        expect(source).toContain(">I'm leaving&nbsp;</span>");
-        expect(source).toContain(">home&nbsp;</span>");
-        expect(source).toContain(">for the coastline</span>");
-        expect(source).toContain("我要离开家去往海岸线");
-        expect(source).not.toContain("第一次参观卢浮宫");
+        expectSourceContains(source, ">I'm leaving&nbsp;</span>");
+        expectSourceContains(source, ">home&nbsp;</span>");
+        expectSourceContains(source, ">for the coastline</span>");
+        expectSourceContains(source, "我要离开家去往海岸线");
+        expectSourceNotContains(source, "第一次参观卢浮宫");
     });
 
     it("shows color schemes as a labeled dropdown", () => {
-        expect(source).toContain('@click="toggleColorSchemeMenu"');
-        expect(source).toContain("{{ selectedColorScheme.label }}");
-        expect(source).toContain("{{ option.label }}");
-        expect(source).toContain("{{ option.hint }}");
-        expect(source).toContain(
+        expectSourceContains(source, '@click="toggleColorSchemeMenu"');
+        expectSourceContains(source, "{{ selectedColorScheme.label }}");
+        expectSourceContains(source, "{{ option.label }}");
+        expectSourceContains(source, "{{ option.hint }}");
+        expectSourceContains(
+            source,
             '@click="selectColorSchemeFromMenu(option.value)"',
         );
-        expect(source).not.toContain("desktop-compact-selector-scheme");
+        expectSourceNotContains(source, "desktop-compact-selector-scheme");
     });
 
     it("pairs typography controls without leaving an empty grid cell", () => {
         // 行三/行四/行六的成对控件锚点：控件本体必须都在（网格不留空位）。
         // 此前断言依赖分组注释，注释清理后改用控件文本锚点。
-        expect(source).toContain(">描边阴影<");
-        expect(source).toContain(">双行显示<");
-        expect(source).toContain(">字体方案<");
-        expect(source).toContain(">配色方案<");
-        expect(source).not.toContain("desktop-compact-row-full");
+        expectSourceContains(source, ">描边阴影<");
+        expectSourceContains(source, ">双行显示<");
+        expectSourceContains(source, ">字体方案<");
+        expectSourceContains(source, ">配色方案<");
+        expectSourceNotContains(source, "desktop-compact-row-full");
     });
 });
