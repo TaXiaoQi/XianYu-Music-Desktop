@@ -37,7 +37,8 @@ export function classifySyncPlaylist(songs: Song[]): PlaylistType {
   return 'mixed';
 }
 
-function generateSongHash(song: Song): string {
+/** v2 协议 song_hash：online=md5(path)，local=md5(name|artist|local)（与 Server song_diff_key 回退式对齐）。 */
+export function computeSongHash(song: Song): string {
   if (isOnlineSong(song) && song.path) {
     return md5(song.path);
   }
@@ -101,7 +102,7 @@ export function songToSyncPayload(song: Song): SyncSongPayload {
   const payload: any = {
     ...JSON.parse(JSON.stringify(song)),
     syncType: classifySyncSong(song),
-    song_hash: generateSongHash(song),
+    song_hash: computeSongHash(song),
   };
   if (classifySyncSong(song) === 'online') {
     const extra = buildOnlineSyncExtra(song);

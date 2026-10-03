@@ -191,6 +191,24 @@ describe('applySyncOps', () => {
     expect(outcome.addedSongs).toBe(1);
   });
 
+  it('id 兜底命中时回写 cloudId，已有一致 cloudId 时不重复写', () => {
+    const env = createFakeTarget();
+    env.addPlaylist({ id: 'pl-1', name: '已有', songPaths: [] });
+    const ops: SyncOp[] = [{ type: 'add_songs', cloudId: 'c-1', id: 'pl-1', songs: [] }];
+
+    applySyncOps(ops, env.target);
+
+    expect(env.writes[0]?.next.meta.cloudId).toBe('c-1');
+
+    const env2 = createFakeTarget();
+    env2.addPlaylist({ id: 'pl-2', name: '已有', songPaths: ['a'], cloudId: 'c-9' });
+    applySyncOps(
+      [{ type: 'add_songs', cloudId: 'c-9', songs: [] }],
+      env2.target,
+    );
+    expect(env2.writes[0]?.next.meta).toEqual({});
+  });
+
   it('remove_songs 过滤墓碑路径（songPaths 与 songs 元数据同步清理）', () => {
     const env = createFakeTarget();
     env.addPlaylist({

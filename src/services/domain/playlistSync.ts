@@ -21,6 +21,7 @@ export {
     classifySyncPlaylist,
     songToSyncPayload,
     syncPayloadToSong,
+    computeSongHash,
     firstRemoteSongCover,
 } from "./playlistSyncSong";
 

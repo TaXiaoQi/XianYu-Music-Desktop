@@ -9,9 +9,11 @@ import {
   getCiyuanxiId,
   songToSyncPayload,
   syncPayloadToSong,
+  computeSongHash,
   type FileSyncPlaylistData,
   type SyncResult,
 } from '../playlistSync';
+import { fileSyncV2DownloadOps, type LocalPlaylistReportPayload } from '../playlistSyncApi';
 import {
   clearPlaylistSongTombstones,
   getCloudKeepSongs,
@@ -24,6 +26,13 @@ import {
 import type { ToastKind } from './toastKind';
 import { buildLibraryMatchIndex, resolveLocalPath } from './libraryMatch';
 import { applyUploadIdMap, buildPlaylistUploadItem } from './playlistSyncUploadPayload';
+import { applySyncOps, type SyncOpsTarget } from './playlistOpsApply';
+
+/**
+ * v2 下载协议开关：true 走 file_sync_v2_download_ops（服务端 diff），
+ * 回退改 false 即恢复 v1 全量快照下载，其余代码不变。
+ */
+const USE_SYNC_V2 = true;
 
 // ==================== 端口（由 UI 层注入 store 实例） ====================
 
@@ -224,137 +233,11 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     deps.onProgress('正在从云端下载歌单...');
 
     try {
-      const downloadData = await fileSyncDownload(ciyuanxiId);
-      if (!downloadData || !downloadData.playlists || downloadData.playlists.length === 0) {
-        deps.log('downloadPlaylists: 云端无歌单数据');
-        return result;
+      if (USE_SYNC_V2) {
+        await downloadViaOps(ciyuanxiId, result);
+      } else {
+        await downloadViaSnapshot(ciyuanxiId, result);
       }
-
-      deps.log(`downloadPlaylists: 云端共 ${downloadData.playlists.length} 个歌单, ${downloadData.stats?.song_total ?? 0} 首歌曲`);
-
-      const matchIndex = buildLibraryMatchIndex(library.songList);
-
-      for (let i = 0; i < downloadData.playlists.length; i++) {
-        const cloudPl = downloadData.playlists[i];
-        deps.log(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
-        deps.onProgress(`正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`);
-
-        const deletedPaths = new Set(cloudPl.deletedSongPaths ?? []);
-        const songCloudId = cloudPl.cloudId || '';
-        const songKeepMap = songCloudId ? getCloudKeepSongs(songCloudId) : {};
-        const songPendingSet = songCloudId ? getPendingDeletedSongs(songCloudId) : new Set<string>();
-
-        const cloudSongs = cloudPl.songs ?? [];
-
-        const expandedDeleted = new Set(deletedPaths);
-        if (deletedPaths.size > 0) {
-          for (const raw of cloudSongs) {
-            const p = (raw as any).path as string | undefined;
-            if (p && deletedPaths.has(p)) {
-              const restored = syncPayloadToSong(raw);
-              expandedDeleted.add(resolveLocalPath(matchIndex, restored));
-            }
-          }
-        }
-
-        const visibleCloudSongs = cloudSongs.filter(raw => {
-          const p = (raw as any).path as string | undefined;
-          if (!p) return true;
-          if (expandedDeleted.has(p) || songPendingSet.has(p)) return false;
-          return songKeepMap[p] === undefined;
-        });
-        const localSongs = visibleCloudSongs.map(song => {
-          const restored = syncPayloadToSong(song);
-          const resolved = resolveLocalPath(matchIndex, restored);
-          return resolved === restored.path ? restored : { ...restored, path: resolved };
-        });
-
-        const pathRemapFromCloud = new Map<string, string>();
-        visibleCloudSongs.forEach((raw, i) => {
-          const originalPath = (raw as any).path as string | undefined;
-          const newPath = localSongs[i]?.path;
-          if (originalPath && newPath && originalPath !== newPath) {
-            pathRemapFromCloud.set(originalPath, newPath);
-          }
-        });
-
-        const existing = collections.playlists.find(p => p.id === cloudPl.id);
-
-        if (existing) {
-          if (pathRemapFromCloud.size > 0) {
-            existing.songPaths = existing.songPaths.map(p => pathRemapFromCloud.get(p) ?? p);
-          }
-
-          if (expandedDeleted.size > 0) {
-            existing.songPaths = existing.songPaths.filter(p => !expandedDeleted.has(p));
-            if (existing.songs?.length) {
-              const kept = existing.songs.filter(s => !expandedDeleted.has(s.path));
-              existing.songs = kept.length > 0 ? kept : undefined;
-            }
-          }
-
-          const localSongPaths = new Set(existing.songPaths);
-          const newPaths: string[] = [];
-
-          for (const song of localSongs) {
-            if (!localSongPaths.has(song.path)) {
-              newPaths.push(song.path);
-            }
-          }
-
-          existing.songPaths = [...existing.songPaths, ...newPaths];
-
-          const existingSongPaths = new Set((existing.songs ?? []).map(s => s.path));
-          const mergedSongs = [...(existing.songs ?? [])];
-          for (const song of localSongs) {
-            if (!existingSongPaths.has(song.path)) {
-              mergedSongs.push(song);
-              existingSongPaths.add(song.path);
-            }
-          }
-          existing.songs = mergedSongs.length > 0 ? mergedSongs : undefined;
-          for (const song of localSongs) {
-            library.setExtraSong(song);
-          }
-          if (cloudPl.cloudCoverUrl) existing.cloudCoverUrl = cloudPl.cloudCoverUrl;
-          if (cloudPl.sourcePluginId) existing.sourcePluginId = cloudPl.sourcePluginId;
-          if (cloudPl.sourceUrl) existing.sourceUrl = cloudPl.sourceUrl;
-          if (cloudPl.sourceRaw) existing.sourceRaw = cloudPl.sourceRaw;
-          existing.isCloud = true;
-          if (cloudPl.cloudId) existing.cloudId = cloudPl.cloudId;
-
-          result.downloadedPlaylists++;
-          result.downloadedSongs += localSongs.length;
-          deps.log(`downloadPlaylists: 合并到已有歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
-        } else {
-          const allPaths = localSongs.map(s => s.path);
-
-          const newPlaylist: Playlist = {
-            id: cloudPl.id,
-            name: cloudPl.name,
-            songPaths: allPaths,
-            songs: localSongs.length > 0 ? localSongs : undefined,
-            cloudId: cloudPl.cloudId,
-            isCloud: true,
-            cloudCoverUrl: cloudPl.cloudCoverUrl || '',
-            isFavorite: cloudPl.isFavorite,
-            createdAt: cloudPl.createdAt,
-            ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
-            ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
-            ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
-          };
-
-          collections.playlists.push(newPlaylist);
-          for (const song of localSongs) {
-            library.setExtraSong(song);
-          }
-
-          result.downloadedPlaylists++;
-          result.downloadedSongs += localSongs.length;
-          deps.log(`downloadPlaylists: 创建新歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
-        }
-      }
-
       deps.log(`downloadPlaylists 完成: downloadedPlaylists=${result.downloadedPlaylists}, downloadedSongs=${result.downloadedSongs}`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -363,6 +246,195 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     }
 
     return result;
+  }
+
+  /** v2 路径：上报本地歌单概要（song_hash），由服务端算 diff 下发最小 ops。 */
+  async function downloadViaOps(ciyuanxiId: string, result: SyncResult): Promise<void> {
+    const matchIndex = buildLibraryMatchIndex(library.songList);
+    const localReports: LocalPlaylistReportPayload[] = collections.playlists.map(pl => {
+      const songs = collectPlaylistSongs(pl);
+      const createdMs = pl.createdAt ? new Date(pl.createdAt).getTime() : NaN;
+      return {
+        localId: pl.id,
+        ...(pl.cloudId ? { cloudId: pl.cloudId } : {}),
+        name: pl.name,
+        cloudCoverUrl: pl.cloudCoverUrl || '',
+        isFavorite: !!pl.isFavorite,
+        ...(Number.isFinite(createdMs) ? { createdAt: createdMs } : {}),
+        ...(pl.sourcePluginId ? { sourcePluginId: pl.sourcePluginId } : {}),
+        ...(pl.sourceUrl ? { sourceUrl: pl.sourceUrl } : {}),
+        song_hashes: songs.map(computeSongHash),
+      };
+    });
+
+    const data = await fileSyncV2DownloadOps(ciyuanxiId, localReports);
+    const ops = data?.ops ?? [];
+    if (ops.length === 0) {
+      deps.log('downloadPlaylists(v2): 云端无变更');
+      return;
+    }
+
+    const target: SyncOpsTarget = {
+      matchIndex,
+      findByCloudId: cloudId => collections.playlists.find(p => p.cloudId === cloudId),
+      findById: id => collections.playlists.find(p => p.id === id),
+      isSongKept: (cloudId, path) => !!getCloudKeepSongs(cloudId)[path],
+      isSongPendingDeleted: (cloudId, path) => getPendingDeletedSongs(cloudId).has(path),
+      createPlaylist: pl => { collections.playlists.push(pl); },
+      writePlaylist: (id, next) => {
+        const pl = collections.playlists.find(p => p.id === id);
+        if (!pl) return;
+        pl.songPaths = next.songPaths;
+        pl.songs = next.songs;
+        const meta = next.meta;
+        if (meta.cloudCoverUrl !== undefined) pl.cloudCoverUrl = meta.cloudCoverUrl;
+        if (meta.sourcePluginId !== undefined) pl.sourcePluginId = meta.sourcePluginId;
+        if (meta.sourceUrl !== undefined) pl.sourceUrl = meta.sourceUrl;
+        if (meta.sourceRaw !== undefined) pl.sourceRaw = meta.sourceRaw;
+        if (meta.cloudId !== undefined) pl.cloudId = meta.cloudId;
+        if (meta.isCloud !== undefined) pl.isCloud = meta.isCloud;
+      },
+      setExtraSongs: songs => { for (const s of songs) library.setExtraSong(s); },
+    };
+
+    const outcome = applySyncOps(ops, target);
+    result.downloadedPlaylists = outcome.createdPlaylists + outcome.mergedPlaylists;
+    result.downloadedSongs = outcome.addedSongs;
+    deps.log(`downloadPlaylists(v2): created=${outcome.createdPlaylists}, merged=${outcome.mergedPlaylists}, added=${outcome.addedSongs}, removed=${outcome.removedSongs}`);
+  }
+
+  /** v1 路径：全量快照下载 + 本地合并（回退开关用）。 */
+  async function downloadViaSnapshot(ciyuanxiId: string, result: SyncResult): Promise<void> {
+    const downloadData = await fileSyncDownload(ciyuanxiId);
+    if (!downloadData || !downloadData.playlists || downloadData.playlists.length === 0) {
+      deps.log('downloadPlaylists: 云端无歌单数据');
+      return;
+    }
+
+    deps.log(`downloadPlaylists: 云端共 ${downloadData.playlists.length} 个歌单, ${downloadData.stats?.song_total ?? 0} 首歌曲`);
+
+    const matchIndex = buildLibraryMatchIndex(library.songList);
+
+    for (let i = 0; i < downloadData.playlists.length; i++) {
+      const cloudPl = downloadData.playlists[i];
+      deps.log(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
+      deps.onProgress(`正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`);
+
+      const deletedPaths = new Set(cloudPl.deletedSongPaths ?? []);
+      const songCloudId = cloudPl.cloudId || '';
+      const songKeepMap = songCloudId ? getCloudKeepSongs(songCloudId) : {};
+      const songPendingSet = songCloudId ? getPendingDeletedSongs(songCloudId) : new Set<string>();
+
+      const cloudSongs = cloudPl.songs ?? [];
+
+      const expandedDeleted = new Set(deletedPaths);
+      if (deletedPaths.size > 0) {
+        for (const raw of cloudSongs) {
+          const p = (raw as any).path as string | undefined;
+          if (p && deletedPaths.has(p)) {
+            const restored = syncPayloadToSong(raw);
+            expandedDeleted.add(resolveLocalPath(matchIndex, restored));
+          }
+        }
+      }
+
+      const visibleCloudSongs = cloudSongs.filter(raw => {
+        const p = (raw as any).path as string | undefined;
+        if (!p) return true;
+        if (expandedDeleted.has(p) || songPendingSet.has(p)) return false;
+        return songKeepMap[p] === undefined;
+      });
+      const localSongs = visibleCloudSongs.map(song => {
+        const restored = syncPayloadToSong(song);
+        const resolved = resolveLocalPath(matchIndex, restored);
+        return resolved === restored.path ? restored : { ...restored, path: resolved };
+      });
+
+      const pathRemapFromCloud = new Map<string, string>();
+      visibleCloudSongs.forEach((raw, i) => {
+        const originalPath = (raw as any).path as string | undefined;
+        const newPath = localSongs[i]?.path;
+        if (originalPath && newPath && originalPath !== newPath) {
+          pathRemapFromCloud.set(originalPath, newPath);
+        }
+      });
+
+      const existing = collections.playlists.find(p => p.id === cloudPl.id);
+
+      if (existing) {
+        if (pathRemapFromCloud.size > 0) {
+          existing.songPaths = existing.songPaths.map(p => pathRemapFromCloud.get(p) ?? p);
+        }
+
+        if (expandedDeleted.size > 0) {
+          existing.songPaths = existing.songPaths.filter(p => !expandedDeleted.has(p));
+          if (existing.songs?.length) {
+            const kept = existing.songs.filter(s => !expandedDeleted.has(s.path));
+            existing.songs = kept.length > 0 ? kept : undefined;
+          }
+        }
+
+        const localSongPaths = new Set(existing.songPaths);
+        const newPaths: string[] = [];
+
+        for (const song of localSongs) {
+          if (!localSongPaths.has(song.path)) {
+            newPaths.push(song.path);
+          }
+        }
+
+        existing.songPaths = [...existing.songPaths, ...newPaths];
+
+        const existingSongPaths = new Set((existing.songs ?? []).map(s => s.path));
+        const mergedSongs = [...(existing.songs ?? [])];
+        for (const song of localSongs) {
+          if (!existingSongPaths.has(song.path)) {
+            mergedSongs.push(song);
+            existingSongPaths.add(song.path);
+          }
+        }
+        existing.songs = mergedSongs.length > 0 ? mergedSongs : undefined;
+        for (const song of localSongs) {
+          library.setExtraSong(song);
+        }
+        if (cloudPl.cloudCoverUrl) existing.cloudCoverUrl = cloudPl.cloudCoverUrl;
+        if (cloudPl.sourcePluginId) existing.sourcePluginId = cloudPl.sourcePluginId;
+        if (cloudPl.sourceUrl) existing.sourceUrl = cloudPl.sourceUrl;
+        if (cloudPl.sourceRaw) existing.sourceRaw = cloudPl.sourceRaw;
+        existing.isCloud = true;
+        if (cloudPl.cloudId) existing.cloudId = cloudPl.cloudId;
+
+        result.downloadedPlaylists++;
+        result.downloadedSongs += localSongs.length;
+        deps.log(`downloadPlaylists: 合并到已有歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
+      } else {
+        const allPaths = localSongs.map(s => s.path);
+
+        const newPlaylist: Playlist = {
+          id: cloudPl.id,
+          name: cloudPl.name,
+          songPaths: allPaths,
+          songs: localSongs.length > 0 ? localSongs : undefined,
+          cloudId: cloudPl.cloudId,
+          isCloud: true,
+          cloudCoverUrl: cloudPl.cloudCoverUrl || '',
+          isFavorite: cloudPl.isFavorite,
+          createdAt: cloudPl.createdAt,
+          ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
+          ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
+          ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
+        };
+
+        collections.playlists.push(newPlaylist);
+        for (const song of localSongs) {
+          library.setExtraSong(song);
+        }
+
+        result.downloadedPlaylists++;
+        result.downloadedSongs += localSongs.length;
+        deps.log(`downloadPlaylists: 创建新歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
+      }
+    }
   }
 
   async function deleteCloudPlaylistLocal(playlistId: string): Promise<boolean> {

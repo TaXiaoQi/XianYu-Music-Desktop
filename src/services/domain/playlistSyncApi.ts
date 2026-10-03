@@ -1,7 +1,7 @@
 
 import { signedRequest } from '../auth/authService';
 import type { SignedRequestOptions } from '../auth/authService';
-import type { FileSyncPlaylistData, FileSyncDownloadData, FileSyncUploadResult } from './playlistSyncTypes';
+import type { FileSyncPlaylistData, FileSyncDownloadData, FileSyncUploadResult, SyncOpsDownloadData } from './playlistSyncTypes';
 
 const LOG = '[PlaylistSync]';
 
@@ -188,6 +188,40 @@ export async function fileSyncDownload(
     return data;
   } catch (e) {
     logSyncError(`fileSyncDownload 失败:`, e);
+    throw e;
+  }
+}
+
+// ===== v2 下载协议：上报本地概要，服务端返回最小 diff ops =====
+
+/** file_sync_v2_download_ops 请求中的本地歌单概要（字段名与 Server LocalPlaylistReport 对齐）。 */
+export interface LocalPlaylistReportPayload {
+  localId: string;
+  cloudId?: string;
+  name: string;
+  cloudCoverUrl?: string;
+  isFavorite?: boolean;
+  /** epoch ms（服务端 diff 当前不使用，仅协议字段；无法解析时省略） */
+  createdAt?: number;
+  sourcePluginId?: string;
+  sourceUrl?: string;
+  song_hashes: string[];
+}
+
+export async function fileSyncV2DownloadOps(
+  ciyuanxiId: string,
+  localPlaylists: LocalPlaylistReportPayload[],
+): Promise<SyncOpsDownloadData> {
+  logSync(`fileSyncV2DownloadOps → user_id=${ciyuanxiId}, local_playlists=${localPlaylists.length}`);
+  try {
+    const data = await signedRequest<SyncOpsDownloadData>('file_sync_v2_download_ops', {
+      user_id: ciyuanxiId,
+      local_playlists: localPlaylists,
+    });
+    logSync(`fileSyncV2DownloadOps ← ops=${data?.ops?.length ?? 0}, playlist_count=${data?.stats?.playlist_count ?? 0}`);
+    return data;
+  } catch (e) {
+    logSyncError('fileSyncV2DownloadOps 失败:', e);
     throw e;
   }
 }

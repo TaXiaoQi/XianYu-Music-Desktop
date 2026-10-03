@@ -229,7 +229,9 @@ export function applySyncOps(ops: SyncOp[], target: SyncOpsTarget): SyncOpsOutco
           return !target.isSongKept(cloudId, p);
         });
         const localSongs = toLocalSongs(visible, target.matchIndex);
-        const netAdded = mergeIntoExisting(existing, localSongs, new Map(), new Set(), {}, target);
+        // id 兜底命中的歌单回写 cloudId（对齐 v1 按 id 合并时的行为）
+        const meta: PlaylistMetaPatch = existing.cloudId ? {} : { cloudId: op.cloudId };
+        const netAdded = mergeIntoExisting(existing, localSongs, new Map(), new Set(), meta, target);
         outcome.mergedPlaylists++;
         outcome.addedSongs += netAdded;
         break;
@@ -247,7 +249,11 @@ export function applySyncOps(ops: SyncOp[], target: SyncOpsTarget): SyncOpsOutco
           const kept = songs.filter(s => !tombstones.has(s.path));
           songs = kept.length > 0 ? kept : undefined;
         }
-        target.writePlaylist(existing.id, { songPaths, songs, meta: {} });
+        target.writePlaylist(existing.id, {
+          songPaths,
+          songs,
+          meta: existing.cloudId ? {} : { cloudId: op.cloudId },
+        });
         outcome.removedSongs += before - songPaths.length;
         break;
       }
@@ -255,7 +261,7 @@ export function applySyncOps(ops: SyncOp[], target: SyncOpsTarget): SyncOpsOutco
       case 'update_playlist_meta': {
         const existing = findExisting(target, op.cloudId, op.id);
         if (!existing) break;
-        const meta: PlaylistMetaPatch = {};
+        const meta: PlaylistMetaPatch = existing.cloudId ? {} : { cloudId: op.cloudId };
         if (op.cloudCoverUrl !== undefined) meta.cloudCoverUrl = op.cloudCoverUrl;
         if (op.sourcePluginId !== undefined) meta.sourcePluginId = op.sourcePluginId;
         if (op.sourceUrl !== undefined) meta.sourceUrl = op.sourceUrl;
