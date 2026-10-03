@@ -186,6 +186,7 @@ commands.allow = [
   "check_update_by_rust", 
   "download_update_file", 
   "is_store_build",
+  "verify_beta_access_signature", # 测试版访问校验签名
   "download_online_song",
   "download_wallpaper", # 壁纸下载
   "probe_url_size",
