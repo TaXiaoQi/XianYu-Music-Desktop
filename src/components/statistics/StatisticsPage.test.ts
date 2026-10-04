@@ -258,8 +258,8 @@ describe('flat look folds the leaderboard in, glass look keeps it standalone', (
     expectSourceContains(flat, '<section v-if="theme.showLeaderboard" class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 400ms;">');
     expectSourceContains(flat, '{{ TEXT.leaderboard }}');
     expectSourceContains(flat, 'v-for="p in PERIOD_OPTIONS"');
-    expectSourceContains(flat, 'class="leaderboard-row animate-fade-in-up"');
-    expectSourceContains(flat, 'class="leaderboard-row is-me is-sticky animate-fade-in-up"');
+    expectSourceContains(flat, 'class="leaderboard-row leaderboard-row-enter"');
+    expectSourceContains(flat, 'class="leaderboard-row is-me is-sticky leaderboard-row-enter"');
     expectSourceContains(flat, '@contextmenu="handleLeaderboardContextMenu($event, item)"');
     expectSourceContains(flat, 'class="leaderboard-row leaderboard-row--login is-me is-sticky w-full text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EC4141]/50"');
     // 指标与排行榜在同一扁平分支里并存

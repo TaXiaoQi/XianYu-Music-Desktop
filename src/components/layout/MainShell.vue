@@ -370,11 +370,15 @@ onMounted(() => {
 </template>
 
 <style>
-/* ---- 路由页切换：纯渐隐渐显（全局动效 token，无位移无缩放） ---- */
-.page-fade-enter-active, .page-fade-leave-active { transition: opacity var(--motion-dur-base) var(--motion-ease-standard); }
+/* ---- 路由页切换：下方 8px 上移淡入 / 上方 6px 淡出（reduced-motion 下由 style.css 覆盖为纯透明度） ---- */
+.page-fade-enter-active, .page-fade-leave-active {
+  transition:
+    opacity var(--motion-dur-base) var(--motion-ease-emphasized),
+    transform var(--motion-dur-base) var(--motion-ease-emphasized);
+}
 .page-fade-leave-active { pointer-events: none; }
-.page-fade-enter-from { opacity: 0; }
-.page-fade-leave-to { opacity: 0; }
+.page-fade-enter-from { opacity: 0; transform: translateY(8px) scale(0.996); }
+.page-fade-leave-to { opacity: 0; transform: translateY(-6px) scale(0.996); }
 
 .footer-slide-enter-active, .footer-slide-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; }
 .footer-slide-enter-from, .footer-slide-leave-to { transform: translateY(100%); max-height: 0 !important; opacity: 0; }

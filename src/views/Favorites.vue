@@ -28,6 +28,7 @@
                         :selectedPaths="selectedPaths"
                         memoryScopeKey="favorites-view"
                         :download-completed-as-local="true"
+                        stagger-enter
                         @play="handlePlaySong"
                         @contextmenu="handleContextMenu"
                         @update:selectedPaths="selectedPaths = $event"

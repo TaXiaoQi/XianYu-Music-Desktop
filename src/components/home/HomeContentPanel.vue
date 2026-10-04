@@ -170,6 +170,7 @@ const detailHeaderListeners = {
                 v-if="songListingShown"
                 :ref="attachTableInstance"
                 :songs="panelProps.localSongList"
+                :stagger-enter="panelProps.localViewMode === 'all' || panelProps.localViewMode === 'playlist' || panelProps.localViewMode === 'folder'"
                 :song-paths="
                     panelProps.localViewMode === 'playlist'
                         ? panelProps.localSongPaths

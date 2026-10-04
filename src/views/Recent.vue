@@ -15,6 +15,7 @@
                     :selectedPaths="checkedSongPaths"
                     memoryScopeKey="recent-view"
                     :download-completed-as-local="true"
+                    stagger-enter
                     @play="playSingleTrack"
                     @contextmenu="openTrackContextMenu"
                     @drag-start="beginTableDrag"

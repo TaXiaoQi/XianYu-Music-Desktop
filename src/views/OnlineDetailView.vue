@@ -1237,6 +1237,7 @@ watch(
                     :memory-scope-key="(isUserMode ? 'online-detail-user' : 'online-detail-artist') + '::' + detailMemoryKey + '::d' + navToken"
                     page-scroll-mode
                     :scroll-container-ref="detailScrollRef"
+                    stagger-enter
                     @play="handlePlaySong"
                     @contextmenu="handleMySongContextMenu"
                     @update:selectedPaths="selectedPaths = $event"
@@ -1346,6 +1347,7 @@ watch(
                   page-scroll-mode
                   :scroll-container-ref="detailScrollRef"
                   :disable-scroll-memory="true"
+                  stagger-enter
                   @play="handlePlaySong"
                   @contextmenu="handleMySongContextMenu"
                   @update:selectedPaths="selectedPaths = $event"
@@ -1403,6 +1405,7 @@ watch(
                   page-scroll-mode
                   :scroll-container-ref="detailScrollRef"
                   :disable-scroll-memory="true"
+                  stagger-enter
                   @play="handlePlaySong"
                   @contextmenu="handleMySongContextMenu"
                   @update:selectedPaths="selectedPaths = $event"

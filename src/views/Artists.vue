@@ -388,6 +388,27 @@ function gradientFor(name: string): string {
   return artistGradients[Math.abs(hash) % artistGradients.length];
 }
 
+// —— 进入页面逐行入场动画（对齐音源榜单页手法；节奏与歌曲列表一致，快进快出不让用户等）——
+const ROW_ENTER_BASE_DELAY = 40;
+const ROW_ENTER_STAGGER = 40;
+const ROW_ENTER_DURATION = 400;
+const gridEnterAnimating = ref(false);
+let gridEnterTimer: ReturnType<typeof setTimeout> | undefined;
+
+function playGridEnterAnimation() {
+  clearTimeout(gridEnterTimer);
+  gridEnterAnimating.value = true;
+  const rows = Math.ceil(viewportHeight.value / ROW_SPAN) + OVERSCAN_ROW_COUNT * 2 + 1;
+  gridEnterTimer = setTimeout(() => {
+    gridEnterAnimating.value = false;
+  }, ROW_ENTER_BASE_DELAY + Math.max(0, rows - 1) * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
+}
+
+function rowEnterStyle(rowIndex: number, extra?: Record<string, string>) {
+  if (!gridEnterAnimating.value) return extra;
+  return { ...extra, animationDelay: `${ROW_ENTER_BASE_DELAY + rowIndex * ROW_ENTER_STAGGER}ms` };
+}
+
 // —— 排序菜单 ——
 function toggleSortMenu() {
   sortMenuOpen.value = !sortMenuOpen.value;
@@ -495,6 +516,7 @@ function onDocClick(event: MouseEvent) {
 
 onMounted(() => { // 实现
   syncLayoutMetrics();
+  playGridEnterAnimation();
   window.addEventListener('pointermove', onWindowPointerMove);
   window.addEventListener('pointerup', onWindowPointerUp);
   window.addEventListener('pointercancel', onWindowPointerCancel);
@@ -513,6 +535,7 @@ onMounted(() => { // 实现
 onBeforeUnmount(() => { persistSnapshotCovers(); });
 
 onUnmounted(() => { // 实现
+  clearTimeout(gridEnterTimer);
   window.removeEventListener('pointermove', onWindowPointerMove);
   window.removeEventListener('pointerup', onWindowPointerUp);
   window.removeEventListener('pointercancel', onWindowPointerCancel);
@@ -559,12 +582,12 @@ onUnmounted(() => { // 实现
       </div>
 
       <div v-if="artistSortMode === 'name'" :style="{ paddingTop: groupedViewState.paddingTop, paddingBottom: groupedViewState.paddingBottom }">
-        <template v-for="row in groupedViewState.rows" :key="row.key">
-          <div v-if="row.type === 'header'" :class="{ 'opacity-0': shouldFadeSourceHeader(row.key, row.top) }" class="h-6 flex items-end gap-3 pb-0 transition-opacity duration-150">
+        <template v-for="(row, rowIndex) in groupedViewState.rows" :key="row.key">
+          <div v-if="row.type === 'header'" :class="{ 'opacity-0': shouldFadeSourceHeader(row.key, row.top), 'row-enter-anim': gridEnterAnimating && !shouldFadeSourceHeader(row.key, row.top) }" :style="rowEnterStyle(rowIndex)" class="h-6 flex items-end gap-3 pb-0 transition-opacity duration-150">
             <div class="text-xl md:text-2xl font-black tracking-[0.2em] text-gray-900 dark:text-white/90">{{ row.title }}</div>
           </div>
 
-          <div v-else class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6" :style="{ paddingBottom: `${row.bottomGap}px` }">
+          <div v-else :class="{ 'row-enter-anim': gridEnterAnimating }" :style="rowEnterStyle(rowIndex, { paddingBottom: `${row.bottomGap}px` })" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6">
             <div v-for="item in row.items" :key="item.artist.name" @pointerdown="onCardPress($event, item.index, item.artist)" @pointermove="onCardPointerMove($event, item.artist.name)" @click="onArtistCardClick(item.artist)" :class="artistCardClass(item.artist.name)" class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]">
               <div class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200" :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath" :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': isDropTarget(item.artist.name) }">
                 <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center"> 
@@ -581,7 +604,7 @@ onUnmounted(() => { // 实现
       </div>
 
       <div v-else class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6 gap-y-4" :style="{ paddingTop: flatViewState.paddingTop, paddingBottom: flatViewState.paddingBottom }">
-        <div v-for="item in flatViewState.items" :key="item.artist.name" @pointerdown="onCardPress($event, item.index, item.artist)" @pointermove="onCardPointerMove($event, item.artist.name)" @click="onArtistCardClick(item.artist)" :class="artistCardClass(item.artist.name)" class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]">
+        <div v-for="(item, itemOffset) in flatViewState.items" :key="item.artist.name" @pointerdown="onCardPress($event, item.index, item.artist)" @pointermove="onCardPointerMove($event, item.artist.name)" @click="onArtistCardClick(item.artist)" :class="[artistCardClass(item.artist.name), { 'row-enter-anim': gridEnterAnimating }]" :style="rowEnterStyle(Math.floor(itemOffset / columnCount))" class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]">
           <div class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200" :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath" :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': isDropTarget(item.artist.name) }">
             <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center"> 
               <img v-if="avatarFor(item.artist)" :src="avatarFor(item.artist)" :alt="item.artist.name" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false">
@@ -601,4 +624,12 @@ onUnmounted(() => { // 实现
 <style scoped> /* 样式 */
 /* 关闭滚动锚定，避免虚拟列表占位高度变化时浏览器自行调整滚动位置。 */
 .artists-scroll-container { overflow-anchor: none; }
+
+/* 进入页面：行自下而上错峰浮入（与音源榜单页同一套曲线与步长）。 */
+.row-enter-anim { animation: row-enter-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+@keyframes row-enter-in {
+  from { opacity: 0; transform: translateY(30px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 </style>

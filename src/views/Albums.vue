@@ -389,6 +389,27 @@ watch([albumSortMode, columnCount, visibleAlbums], () => {
   void remeasureCardHeight();
 }, { flush: 'post', immediate: true });
 
+// —— 进入页面逐行入场动画（对齐音源榜单页手法：行自下浮入、逐行错峰，一轮结束即关闭）——
+const ROW_ENTER_BASE_DELAY = 200;
+const ROW_ENTER_STAGGER = 140;
+const ROW_ENTER_DURATION = 600;
+const gridEnterAnimating = ref(false);
+let gridEnterTimer: ReturnType<typeof setTimeout> | undefined;
+
+function playGridEnterAnimation() {
+  clearTimeout(gridEnterTimer);
+  gridEnterAnimating.value = true;
+  const rows = Math.ceil(viewportHeight.value / Math.max(1, rowSpan.value)) + OVERSCAN_ROW_COUNT * 2 + 1;
+  gridEnterTimer = setTimeout(() => {
+    gridEnterAnimating.value = false;
+  }, ROW_ENTER_BASE_DELAY + Math.max(0, rows - 1) * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
+}
+
+function rowEnterStyle(rowIndex: number, extra?: Record<string, string>) {
+  if (!gridEnterAnimating.value) return extra;
+  return { ...extra, animationDelay: `${ROW_ENTER_BASE_DELAY + rowIndex * ROW_ENTER_STAGGER}ms` };
+}
+
 // —— 排序菜单 ——
 function toggleSortMenu() {
   sortMenuOpen.value = !sortMenuOpen.value;
@@ -506,6 +527,7 @@ function onDocClick(event: MouseEvent) {
 
 onMounted(() => { // 实现
   syncLayoutMetrics();
+  playGridEnterAnimation();
   window.addEventListener('pointermove', onWindowPointerMove);
   window.addEventListener('pointerup', onWindowPointerUp);
   window.addEventListener('pointercancel', onWindowPointerCancel);
@@ -530,6 +552,7 @@ onMounted(() => { // 实现
 onBeforeUnmount(() => { persistSnapshotCovers(); });
 
 onUnmounted(() => { // 实现
+  clearTimeout(gridEnterTimer);
   window.removeEventListener('pointermove', onWindowPointerMove);
   window.removeEventListener('pointerup', onWindowPointerUp);
   window.removeEventListener('pointercancel', onWindowPointerCancel);
@@ -582,12 +605,12 @@ onUnmounted(() => { // 实现
       </div>
 
       <div v-if="albumSortMode === 'name'" :style="{ paddingTop: groupedViewState.paddingTop, paddingBottom: groupedViewState.paddingBottom }">
-        <template v-for="row in groupedViewState.rows" :key="row.key">
-          <div v-if="row.type === 'header'" :class="{ 'opacity-0': shouldFadeSourceHeader(row.key, row.top) }" class="h-6 flex items-end gap-3 pb-0 transition-opacity duration-150">
+        <template v-for="(row, rowIndex) in groupedViewState.rows" :key="row.key">
+          <div v-if="row.type === 'header'" :class="{ 'opacity-0': shouldFadeSourceHeader(row.key, row.top), 'row-enter-anim': gridEnterAnimating && !shouldFadeSourceHeader(row.key, row.top) }" :style="rowEnterStyle(rowIndex)" class="h-6 flex items-end gap-3 pb-0 transition-opacity duration-150">
             <div class="text-xl md:text-2xl font-black tracking-[0.2em] text-gray-900 dark:text-white/90">{{ row.title }}</div>
           </div>
 
-          <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6" :style="{ paddingBottom: `${row.bottomGap}px` }">
+          <div v-else :class="{ 'row-enter-anim': gridEnterAnimating }" :style="rowEnterStyle(rowIndex, { paddingBottom: `${row.bottomGap}px` })" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6">
             <div v-for="item in row.items" :key="item.album.key" data-album-card @pointerdown="onCardPress($event, item.index, item.album)" @pointermove="onCardPointerMove($event, item.album.key)" @click="openAlbumTarget(item.album.key)" :class="albumCardClass(item.album.key)" class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5 [touch-action:none]">
               <div class="relative w-full aspect-square mb-3 mt-1" :data-cover-path="item.album.firstSongPath"> 
                 <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]"> 
@@ -610,7 +633,7 @@ onUnmounted(() => { // 实现
       </div>
 
       <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6 gap-y-10" :style="{ paddingTop: flatViewState.paddingTop, paddingBottom: flatViewState.paddingBottom }">
-        <div v-for="item in flatViewState.items" :key="item.album.key" data-album-card @pointerdown="onCardPress($event, item.index, item.album)" @pointermove="onCardPointerMove($event, item.album.key)" @click="openAlbumTarget(item.album.key)" :class="albumCardClass(item.album.key)" class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5 [touch-action:none]">
+        <div v-for="(item, itemOffset) in flatViewState.items" :key="item.album.key" data-album-card @pointerdown="onCardPress($event, item.index, item.album)" @pointermove="onCardPointerMove($event, item.album.key)" @click="openAlbumTarget(item.album.key)" :class="[albumCardClass(item.album.key), { 'row-enter-anim': gridEnterAnimating }]" :style="rowEnterStyle(Math.floor(itemOffset / columnCount))" class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5 [touch-action:none]">
           <div class="relative w-full aspect-square mb-3 mt-1" :data-cover-path="item.album.firstSongPath"> 
             <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]"> 
               <div class="absolute inset-0 rounded-t-full border border-white/5 scale-90"></div><div class="absolute inset-0 rounded-t-full border border-white/5 scale-75"></div><div class="absolute inset-0 rounded-t-full border border-white/5 scale-50"></div>
@@ -636,4 +659,12 @@ onUnmounted(() => { // 实现
 <style scoped> /* 样式 */
 /* 关闭滚动锚定，避免虚拟列表占位高度变化时浏览器自行调整滚动位置。 */
 .albums-scroll-container { overflow-anchor: none; }
+
+/* 进入页面：行自下而上错峰浮入（与音源榜单页同一套曲线与步长）。 */
+.row-enter-anim { animation: row-enter-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+@keyframes row-enter-in {
+  from { opacity: 0; transform: translateY(30px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 </style>

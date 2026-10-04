@@ -92,6 +92,22 @@ const handleWindowResize = () => {
   windowWidth.value = window.innerWidth;
 };
 
+// ==================== 入场逐行动画（对齐榜单/歌手/专辑页手法） ====================
+const ROW_ENTER_BASE_DELAY = 200;
+const ROW_ENTER_STAGGER = 140;
+const ROW_ENTER_DURATION = 600;
+const enterAnimating = ref(false);
+let enterTimer: ReturnType<typeof setTimeout> | undefined;
+
+function playRowEnterAnimation() {
+  clearTimeout(enterTimer);
+  enterAnimating.value = true;
+  const rows = Math.ceil(catalogGridViewportHeight.value / Math.max(1, catalogGridRowHeight.value)) + CATALOG_GRID_OVERSCAN_ROWS * 2 + 1;
+  enterTimer = setTimeout(() => {
+    enterAnimating.value = false;
+  }, ROW_ENTER_BASE_DELAY + Math.max(0, rows - 1) * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
+}
+
 const syncCatalogGridVirtualScrollState = () => {
   const el = resultsScrollRef.value;
   if (!el) return;
@@ -138,11 +154,13 @@ const setupScrollResizeObserver = () => {
 
 onMounted(() => {
   window.addEventListener('resize', handleWindowResize);
+  playRowEnterAnimation();
 });
 
 watch(resultsScrollRef, () => setupScrollResizeObserver());
 
 onBeforeUnmount(() => {
+  clearTimeout(enterTimer);
   window.removeEventListener('resize', handleWindowResize);
   scrollResizeObserver?.disconnect();
   scrollResizeObserver = null;
@@ -313,7 +331,7 @@ defineExpose({
   >
     <div class="relative w-full" :style="{ height: `${catalogGridVirtualTotalHeight}px` }">
       <div
-        v-for="row in virtualCatalogGridRows"
+        v-for="(row, rowIndex) in virtualCatalogGridRows"
         :key="row.key"
         class="absolute left-0 grid w-full gap-x-6"
         :class="catalogGridClass"
@@ -326,8 +344,10 @@ defineExpose({
           class="search-card rounded-xl p-3 transition-colors cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5"
           :class="[
             entry.type === 'artist' ? 'flex flex-col items-center gap-2' : 'flex flex-col gap-2',
-            cardHopDirections[entry.key] === 'left' ? 'hop-left' : cardHopDirections[entry.key] === 'right' ? 'hop-right' : ''
+            cardHopDirections[entry.key] === 'left' ? 'hop-left' : cardHopDirections[entry.key] === 'right' ? 'hop-right' : '',
+            { 'search-card-enter': enterAnimating }
           ]"
+          :style="enterAnimating ? { animationDelay: `${ROW_ENTER_BASE_DELAY + rowIndex * ROW_ENTER_STAGGER}ms` } : undefined"
           @mouseenter="handleMouseEnterCard($event, entry.key)"
           @mouseleave="handleMouseLeaveCard(entry.key)"
           @click="handleCatalogEntryClick(entry)"
@@ -429,14 +449,22 @@ defineExpose({
   transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-.search-card.hop-right:hover {
+.search-card.hop-right:hover:not(.search-card-enter) {
   transform: translateX(12px);
   animation: search-card-hop-right 0.36s;
 }
 
-.search-card.hop-left:hover {
+.search-card.hop-left:hover:not(.search-card-enter) {
   transform: translateX(-12px);
   animation: search-card-hop-left 0.36s;
+}
+
+/* 入场逐行动画：卡片自下而上错峰浮入（与榜单页同一套曲线与步长）。 */
+.search-card-enter { animation: search-card-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+@keyframes search-card-in {
+  from { opacity: 0; transform: translateY(30px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes search-card-hop-right {

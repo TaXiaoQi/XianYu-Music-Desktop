@@ -381,7 +381,7 @@ async function handleRefresh() {
             <div
               v-for="(item, index) in leaderboardDisplay.top"
               :key="item.username"
-              class="leaderboard-row animate-fade-in-up"
+              class="leaderboard-row leaderboard-row-enter"
               :class="{ 'is-me': item.isMe, 'is-top-3': item.rank <= 3 }"
               :style="{ animationDelay: `${index * 60}ms` }"
               @contextmenu="handleLeaderboardContextMenu($event, item)"
@@ -414,7 +414,7 @@ async function handleRefresh() {
             </div>
             <div
               :key="`lb-me-${leaderboardSwitchKey}`"
-              class="leaderboard-row is-me is-sticky animate-fade-in-up"
+              class="leaderboard-row is-me is-sticky leaderboard-row-enter"
               :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
               :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"
               @contextmenu="handleLeaderboardContextMenu($event, leaderboardDisplay.me)"
@@ -666,6 +666,14 @@ async function handleRefresh() {
   animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* 排行榜行入场：与榜单/歌手/专辑页同一套曲线（自下浮入 + 轻缩放）。 */
+.leaderboard-row-enter { animation: leaderboard-row-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+@keyframes leaderboard-row-in {
+  from { opacity: 0; transform: translateY(30px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .animate-rank-pop {
   animation: rankPop 0.4s cubic-bezier(0.34, 1.15, 0.64, 1) forwards;
 }
@@ -689,6 +697,10 @@ async function handleRefresh() {
   }
 
   .animate-rank-pop {
+    animation: none;
+  }
+
+  .leaderboard-row-enter {
     animation: none;
   }
 }

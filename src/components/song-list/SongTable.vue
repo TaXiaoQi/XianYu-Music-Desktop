@@ -137,6 +137,7 @@ const props = defineProps<{ // 实现
   downloadCompletedAsLocal?: boolean;
   indexOffset?: number;
   songReasons?: Map<string, string>;
+  staggerEnter?: boolean;
 }>();
 
 const emit = defineEmits<{ // 实现
@@ -841,11 +842,13 @@ onMounted(() => { // 实现
   measureViewport();
   fillSegmentFloor();
   void resumeViewportState();
+  playRowEnterAnimation();
 });
 
 onActivated(() => { // 实现
   fillSegmentFloor();
   void resumeViewportState();
+  playRowEnterAnimation();
 });
 
 onDeactivated(() => { // 实现
@@ -868,6 +871,7 @@ onBeforeUnmount(() => { // 实现
 });
 
 onUnmounted(() => { // 实现
+  clearTimeout(enterTimer);
   window.removeEventListener('resize', measureViewport);
 });
 
@@ -888,6 +892,29 @@ const draggingPos = computed(() => {
 });
 
 const DRAG_EASE = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+
+// ==================== 入场逐行动画（staggerEnter 开启时） ====================
+// 对齐歌手/专辑/榜单页手法，但表格行密集，节奏收紧（快进快出不让用户等）。
+const ROW_ENTER_BASE_DELAY = 40;
+const ROW_ENTER_STAGGER = 40;
+const ROW_ENTER_DURATION = 400;
+const enterAnimating = ref(false);
+let enterTimer: ReturnType<typeof setTimeout> | undefined;
+
+function playRowEnterAnimation() {
+  if (!props.staggerEnter) return;
+  clearTimeout(enterTimer);
+  enterAnimating.value = true;
+  const rows = Math.ceil(viewportH.value / ROW_PX) + RENDER_OVERSCAN_ROWS * 2 + 1;
+  enterTimer = setTimeout(() => {
+    enterAnimating.value = false;
+  }, ROW_ENTER_BASE_DELAY + Math.max(0, rows - 1) * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
+}
+
+const rowEnterStyle = (rowOffset: number): Record<string, string | number> | undefined =>
+  enterAnimating.value
+    ? { animationDelay: `${ROW_ENTER_BASE_DELAY + rowOffset * ROW_ENTER_STAGGER}ms` }
+    : undefined;
 
 const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string | number> => {
   const base: Record<string, string | number> = { height: `${ROW_PX}px` };
@@ -956,11 +983,11 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
         <div :style="{ height: virtualPadTop }"></div>
 
         <div
-          v-for="song in rowsForRender"
-          :key="song.path" 
+          v-for="(song, rowOffset) in rowsForRender"
+          :key="song.path"
           class="group relative flex w-full min-w-[580px] items-center gap-3 border-b border-black/5 pl-2 pr-6 [touch-action:none] select-none cursor-default hover:bg-black/5 dark:border-white/5 dark:hover:bg-white/5"
-          :class="{ 'bg-red-500/10 dark:bg-red-500/20': selectedPaths.has(song.path) }"
-          :style="rowShiftStyle(song.virtualIndex, song.path)"
+          :class="{ 'bg-red-500/10 dark:bg-red-500/20': selectedPaths.has(song.path), 'row-stagger-enter': enterAnimating }"
+          :style="[rowShiftStyle(song.virtualIndex, song.path), rowEnterStyle(rowOffset)]"
           :data-index="song.virtualIndex" 
           @pointerdown="onRowPointerDown($event, song, song.virtualIndex)"
           @click="onRowClick(song)"
@@ -1285,6 +1312,15 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 <style scoped> /* 样式 */
 /* ===== 滚动容器与滚动条 ===== */
 .song-list-scroll-container { overflow-anchor: none; }
+
+/* staggerEnter：进入时行自下而上错峰浮入（与歌手/专辑/榜单页同一套曲线与步长）。 */
+.row-stagger-enter { animation: row-stagger-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+@keyframes row-stagger-in {
+  from { opacity: 0; transform: translateY(30px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .song-list-scroll-container::-webkit-scrollbar { width: 10px; }
 .song-list-scroll-container::-webkit-scrollbar-track { background: transparent; }
 .song-list-scroll-container::-webkit-scrollbar-thumb { /* 样式 */

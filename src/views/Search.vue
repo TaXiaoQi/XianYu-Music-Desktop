@@ -20,6 +20,7 @@
             :is-batch-mode="false"
             :selected-paths="new Set()"
             memory-scope-key="search-track-list"
+            stagger-enter
             @play="handlePlaySong"
             @contextmenu="handleTrackContextMenu"
             @load-more="loadMore"
