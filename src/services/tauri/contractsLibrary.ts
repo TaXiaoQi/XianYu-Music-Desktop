@@ -70,36 +70,6 @@ export interface ListenDurations {
   total: number;
 }
 
-export interface CloudMergeResult {
-  total_duration: number;
-  merged: boolean;
-}
-
-export interface ListenSnapshotGlobal {
-  total_play_count: number;
-  total_play_time_ms: number;
-  first_played_at: string | null;
-  last_played_at: string | null;
-}
-
-export interface ListenSnapshotDaily {
-  date: string;
-  play_count: number;
-  play_time_ms: number;
-  unique_songs: number;
-  unique_artists: number;
-}
-
-export interface ListenSnapshot {
-  global: ListenSnapshotGlobal;
-  daily: ListenSnapshotDaily[];
-}
-
-export interface ListenSnapshotMergeResult {
-  total_play_time_ms: number;
-  total_play_count: number;
-}
-
 export interface TopSong {
   song_path: string;
   play_count: number;

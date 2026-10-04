@@ -1,6 +1,5 @@
 import type { // 实现
     BehaviorStats,
-    CloudMergeResult,
     FormatDistribution,
     LibraryStats,
     ListenDurations,
@@ -44,18 +43,6 @@ export const statisticsApi = { // 实现
         tauriInvoke("get_behavior_stats", { timeRange }),
     getListenDurations: (): Promise<ListenDurations> =>
         tauriInvoke("get_listen_durations"),
-    mergeCloudListenDuration: (
-        totalSeconds: number,
-    ): Promise<CloudMergeResult> =>
-        tauriInvoke("merge_cloud_listen_duration", { totalSeconds }),
-    exportListenSnapshot: (): Promise<string> =>
-        tauriInvoke("export_listen_snapshot"),
-    mergeListenSnapshot: (
-        snapshotJson: string,
-        mode: "add" | "max",
-    ): Promise<{ total_play_time_ms: number; total_play_count: number }> =>
-        tauriInvoke("merge_listen_snapshot", { snapshotJson, mode }),
-    clearListenStats: (): Promise<void> => tauriInvoke("clear_listen_stats"),
     getQualityDistribution: (): Promise<QualityDistribution> =>
         tauriInvoke("get_quality_distribution"),
     getFormatDistribution: (): Promise<FormatDistribution> =>

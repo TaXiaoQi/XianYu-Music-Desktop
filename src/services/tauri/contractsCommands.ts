@@ -51,14 +51,12 @@ import type {
 import type {
   BatchMoveMusicFilesResult,
   BehaviorStats,
-  CloudMergeResult,
   ConvertAudioResult,
   FfmpegDetection,
   FormatDistribution,
   GeneratedFolder,
   LibraryStats,
   ListenDurations,
-  ListenSnapshotMergeResult,
   LyricsStorageSource,
   QualityDistribution,
   RenameConfig,
@@ -801,19 +799,6 @@ export interface TauriCommandMap {
   get_library_stats: { payload: undefined; response: LibraryStats };
   get_behavior_stats: { payload: { timeRange: TimeRange }; response: BehaviorStats };
   get_listen_durations: { payload: undefined; response: ListenDurations };
-  merge_cloud_listen_duration: {
-    payload: { totalSeconds: number };
-    response: CloudMergeResult;
-  };
-  export_listen_snapshot: {
-    payload: undefined;
-    response: string;
-  };
-  merge_listen_snapshot: {
-    payload: { snapshotJson: string; mode: 'add' | 'max' };
-    response: ListenSnapshotMergeResult;
-  };
-  clear_listen_stats: { payload: undefined; response: void };
   get_quality_distribution: { payload: undefined; response: QualityDistribution };
   get_format_distribution: { payload: undefined; response: FormatDistribution };
   reset_local_statistics: { payload: undefined; response: void };

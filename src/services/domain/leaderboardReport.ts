@@ -9,6 +9,8 @@ const LOG = '[Leaderboard]';
 const RESET_AT_KEY = 'listen_stats_last_reset_at';
 const BASELINE_KEY = 'listen_stats_report_baseline';
 const SERVER_SNAPSHOT_KEY = 'listen_stats_server_snapshot';
+const PENDING_RESET_AT_KEY = 'xianyumusic.pendingListenResetAt';
+const PENDING_RESET_REASON_KEY = 'xianyumusic.pendingListenResetReason';
 
 interface ReportBaseline extends ListenDurations {
   date: string;
@@ -105,7 +107,7 @@ export async function getListenStatsDisplay(): Promise<ListenDurations> {
 
 async function reportListenDelta(
   uniqueSongsCount = 0,
-): Promise<{ reset_at?: string } | null> {
+): Promise<{ reset_at?: string; reason?: string } | null> {
   const ciyuanxiId = getCiyuanxiId();
   if (!ciyuanxiId) return null;
 
@@ -138,6 +140,7 @@ async function reportListenDelta(
 
     const data = await signedRequest<{
       reset_at?: string;
+      reason?: string;
       server_total_duration?: number;
       server_daily_duration?: number;
       server_weekly_duration?: number;
@@ -159,7 +162,7 @@ async function reportListenDelta(
     );
 
     if (data?.reset_at) {
-      return { reset_at: data.reset_at };
+      return { reset_at: data.reset_at, reason: data.reason ?? '' };
     }
 
     // 响应回执对账：服务端确认量 = 回执总量 − 上次快照总量，两方对上账才推进
@@ -190,10 +193,15 @@ async function reportListenDelta(
   }
 }
 
-async function handleResetSignal(resetAt: string): Promise<void> {
+async function handleResetSignal(resetAt: string, reason: string): Promise<void> {
   try {
     await statisticsApi.resetLocalStatistics();
     localStorage.setItem(RESET_AT_KEY, resetAt);
+    // 重置通知：useListenResetNotification 按 epoch 秒消费，且 reason 非空才弹出
+    const atMs = new Date(resetAt).getTime();
+    const atSec = Number.isFinite(atMs) && atMs > 0 ? Math.floor(atMs / 1000) : Math.floor(Date.now() / 1000);
+    localStorage.setItem(PENDING_RESET_AT_KEY, String(atSec));
+    localStorage.setItem(PENDING_RESET_REASON_KEY, reason);
     saveBaseline({ total: 0, daily: 0, weekly: 0, date: todayStr(), reported_at: 0 });
     saveServerSnapshot({ total: 0, daily: 0, weekly: 0 });
   } catch (e) {
@@ -215,7 +223,7 @@ export async function reportAndHandleReset(): Promise<{ resetApplied: boolean }>
   if (result?.reset_at) {
     const lastResetAt = localStorage.getItem(RESET_AT_KEY);
     if (!lastResetAt || result.reset_at > lastResetAt) {
-      await handleResetSignal(result.reset_at);
+      await handleResetSignal(result.reset_at, result.reason ?? '');
       await reportListenDelta();
       return { resetApplied: true };
     }
@@ -227,4 +235,25 @@ export async function checkForResetSignal(_localDuration = 0): Promise<boolean> 
   const ciyuanxiId = getCiyuanxiId();
   if (!ciyuanxiId) return false;
   return (await reportAndHandleReset()).resetApplied;
+}
+
+// 登录/自动同步后主动拉一次云端现算值写显示快照，替代已删除的快照同步回填
+export async function fetchServerListenSummary(): Promise<void> {
+  const ciyuanxiId = getCiyuanxiId();
+  if (!ciyuanxiId) return;
+  try {
+    const data = await signedRequest<{
+      server_total_duration?: number;
+      server_daily_duration?: number;
+      server_weekly_duration?: number;
+    }>('get_listen_stats_summary', { ciyuanxi_id: ciyuanxiId });
+    saveServerSnapshot({
+      total: Math.max(0, Math.floor(data?.server_total_duration ?? 0)),
+      daily: Math.max(0, Math.floor(data?.server_daily_duration ?? 0)),
+      weekly: Math.max(0, Math.floor(data?.server_weekly_duration ?? 0)),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`${LOG} 拉取云端听歌统计失败: ${msg}`);
+  }
 }

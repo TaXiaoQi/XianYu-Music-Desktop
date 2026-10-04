@@ -15,13 +15,11 @@
 //! * behavior —— 听歌行为统计（排行、时段、近七日）；
 //! * history  —— 播放历史与最近播放列表；
 //! * catalog  —— 收藏 / 最近播放的歌手、专辑、歌单目录视图；
-//! * backup   —— 统计备份文件的导出与导入；
-//! * cloud    —— 云端时长与快照的合并。
+//! * backup   —— 统计备份文件的导出与导入。
 
 mod backup;
 mod behavior;
 mod catalog;
-mod cloud;
 mod history;
 mod library;
 mod matching;
@@ -35,9 +33,6 @@ pub use behavior::{get_behavior_stats, get_listen_durations};
 pub use catalog::{
     get_favorite_album_catalog, get_favorite_artist_catalog, get_favorite_song_paths_view,
     get_recent_album_catalog, get_recent_playlist_catalog, get_recent_song_paths_view,
-};
-pub use cloud::{
-    clear_listen_stats, export_listen_snapshot, merge_cloud_listen_duration, merge_listen_snapshot,
 };
 pub use history::{
     add_to_history, clear_recent_history, get_recent_history, import_recent_history,

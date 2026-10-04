@@ -266,9 +266,7 @@ use remote::{ // 实现
 use skin_image::import_skin_image;
 use statistics::{ // 实现
     add_to_history,
-    clear_listen_stats,
     clear_recent_history,
-    export_listen_snapshot,
     export_statistics_file,
     get_behavior_stats,
     get_favorite_album_catalog,
@@ -284,8 +282,6 @@ use statistics::{ // 实现
     get_recent_song_paths_view,
     import_recent_history,
     import_statistics_file,
-    merge_cloud_listen_duration,
-    merge_listen_snapshot,
     preview_statistics_import,
     record_play,
     remove_from_recent_history,
@@ -593,10 +589,6 @@ pub fn run() { // run
             reset_local_statistics,
             get_behavior_stats, // 实现
             get_listen_durations,
-            merge_cloud_listen_duration,
-            export_listen_snapshot,
-            merge_listen_snapshot,
-            clear_listen_stats,
             get_quality_distribution, // 实现
             get_format_distribution, // 实现
             clear_all_app_data, // 实现

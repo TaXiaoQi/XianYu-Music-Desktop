@@ -1,5 +1,5 @@
 import type { AppSettings } from '../../../types';
-import { syncListenStats } from '../listenStatsSync';
+import { fetchServerListenSummary } from '../leaderboardReport';
 
 // ==================== 端口（由 UI 层注入各域流程与登录同步状态） ====================
 
@@ -66,12 +66,12 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
         });
       }
 
-      deps.log('performAutoSync: 上传完成，开始听歌时长快照同步');
+      deps.log('performAutoSync: 上传完成，开始拉取云端听歌统计');
       try {
-        await syncListenStats();
+        await fetchServerListenSummary();
         await deps.statistics.refreshBehaviorOnly('All');
       } catch (e) {
-        deps.logError('performAutoSync: 听歌时长快照同步失败', e);
+        deps.logError('performAutoSync: 云端听歌统计拉取失败', e);
         hasError = true;
         await deps.statistics.refreshBehaviorOnly('All').catch(() => undefined);
       }
@@ -114,10 +114,10 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
         await Promise.allSettled(tasks.map(task => task.run()));
       }
       try {
-        await syncListenStats();
+        await fetchServerListenSummary();
         await deps.statistics.refreshBehaviorOnly('All');
       } catch (e) {
-        deps.logError('syncOnLoginSuccess: 听歌时长快照同步失败', e);
+        deps.logError('syncOnLoginSuccess: 云端听歌统计拉取失败', e);
         await deps.statistics.refreshBehaviorOnly('All').catch(() => undefined);
       }
       if (upload.settings) {
