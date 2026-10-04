@@ -1,9 +1,9 @@
-import js from "@eslint/js"; // 实现
-import vue from "eslint-plugin-vue"; // 实现
-import globals from "globals"; // 实现
-import tseslint from "typescript-eslint"; // 实现
+import js from "@eslint/js";
+import vue from "eslint-plugin-vue";
+import globals from "globals";
+import tseslint from "typescript-eslint";
 
-export default tseslint.config( // 实现
+export default tseslint.config(
     {
         ignores: [
             "dist/**",
@@ -11,6 +11,7 @@ export default tseslint.config( // 实现
             "src-tauri/**",
             "truce-rack-feasibility/**",
             "public/**",
+            "scripts/ffmpeg/toolchain/**",
         ],
     },
     js.configs.recommended,
