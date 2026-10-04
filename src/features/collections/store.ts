@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'; // 实现
 import type { PlaylistSortMode } from '../../services/storage/playerStorage'; // 实现
 import type { HistoryItem, Playlist, Song } from '../../types'; // 实现
 import type { OnlineDetailContext } from '../onlineDetail/store';
+import { localStore } from '../../services/storage/localStore'; // 实现
 import { useLibraryStore } from '../library/store'; // 实现
 
 /** 生成歌单的建档日期（本地时区 YYYY-MM-DD）。 */
@@ -74,6 +75,22 @@ export const resolveOnlineCollectionPlatformId = (
 
 export const buildLocalPlaylistCollectionKey = (playlistId: string) =>
   `local:playlist:${playlistId}`;
+
+/** 在线歌单缓存键（与详情页 detailMemoryKey 同构），用于「缓存优先、后台刷新」。 */
+export const buildSheetCacheKey = (ctx: {
+  engineType?: 'musicfree' | 'lx' | null;
+  lxSourceId?: string | null;
+  pluginSource?: { id: string } | null;
+  type: 'playlist' | 'album' | 'artist' | 'user';
+  rawData?: any;
+  platformId?: string;
+  title?: string;
+}): string => {
+  const engine = ctx.engineType === 'lx'
+    ? `lx:${ctx.lxSourceId ?? ''}`
+    : `mf:${ctx.pluginSource?.id ?? ''}`;
+  return `sheet:${engine}::${resolveOnlineCollectionPlatformId(ctx) || ctx.title || ''}`;
+};
 
 /* —— store 内部的纯函数工具 —— */
 
@@ -399,7 +416,12 @@ export const useCollectionsStore = defineStore('collections', () => { // 实现
   const toggleFavoriteCollection = (entry: FavoriteCollectionEntry) => {
     const existingAt = favoriteCollections.value.findIndex(item => item.key === entry.key);
     if (existingAt !== -1) {
+      const removed = favoriteCollections.value[existingAt];
       favoriteCollections.value.splice(existingAt, 1);
+      // 取消收藏歌单时同步清理详情页缓存
+      if (removed.type === 'playlist' && removed.onlineContext) {
+        localStore.remove(buildSheetCacheKey(removed.onlineContext));
+      }
       return false; // 实现
     }
 
@@ -408,7 +430,11 @@ export const useCollectionsStore = defineStore('collections', () => { // 实现
   };
 
   const removeFavoriteCollection = (key: string) => {
+    const removed = favoriteCollections.value.find(entry => entry.key === key);
     favoriteCollections.value = favoriteCollections.value.filter(entry => entry.key !== key);
+    if (removed?.type === 'playlist' && removed.onlineContext) {
+      localStore.remove(buildSheetCacheKey(removed.onlineContext));
+    }
   };
 
   /* —— 最近播放 —— */

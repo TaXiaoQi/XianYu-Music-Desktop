@@ -12,9 +12,11 @@ import {
 } from '../features/onlineDetail/store';
 import {
   buildOnlineCollectionKey,
+  buildSheetCacheKey,
   resolveOnlineCollectionPlatformId,
   type FavoriteCollectionEntry,
 } from '../features/collections/store';
+import { localStore } from '../services/storage/localStore';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryStore } from '../features/library/store';
@@ -103,6 +105,28 @@ const detailMemoryKey = computed(() => {
 });
 const navToken = computed(() => String(route.query.d ?? ''));
 const songs = ref<any[]>([]);
+
+// 收藏歌单的本地缓存（缓存优先、后台刷新；离线/音源挂时兜底）
+const sheetCacheKey = computed(() =>
+  detailType.value === 'playlist' && ctx.value
+    ? buildSheetCacheKey(ctx.value)
+    : '',
+);
+const persistSheetCache = () => {
+  const key = sheetCacheKey.value;
+  if (!key || songs.value.length === 0) return;
+  localStore.setJson(key, { savedAt: Date.now(), songs: songs.value });
+};
+const restoreSheetCache = () => {
+  const key = sheetCacheKey.value;
+  if (!key || songs.value.length > 0) return false;
+  const cached = localStore.getJson<{ songs?: any[] }>(key);
+  const list = cached?.songs;
+  if (!Array.isArray(list) || list.length === 0) return false;
+  songs.value = list;
+  hasInitialLoad.value = true;
+  return true;
+};
 
 let pendingScrollTop: number | null = null;
 let scrollApplyToken = 0;
@@ -604,6 +628,8 @@ async function loadData(page = 1) {
   if (!ctx.value) return;
   if (isUserMode.value) return;
   const version = ++loadVersion;
+  // 缓存优先：先展示上次结果，随后的在线拉取失败时列表仍有内容兜底
+  if (page === 1) restoreSheetCache();
   loading.value = true;
   try {
     const userPlSongs = ctx.value.rawData?.userPlaylistSongs;
@@ -711,6 +737,7 @@ async function loadLxData(page: number, version: number) {
       if (version !== loadVersion) return;
       songs.value = searchResult.list;
     }
+    persistSheetCache();
   }
 }
 
@@ -766,6 +793,7 @@ async function loadMfData(page: number, version: number) {
       if (version !== loadVersion) return;
       songs.value = [...songs.value, ...results];
     }
+    persistSheetCache();
   }
 }
 
