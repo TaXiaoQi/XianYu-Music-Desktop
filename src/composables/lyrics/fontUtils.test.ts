@@ -33,8 +33,7 @@ describe("导入歌词字体的注册流程", () => {
             vi.fn(function MockedFontFace(this: {
                 load: () => Promise<unknown>;
             }) {
-                const instance = this;
-                this.load = vi.fn(() => Promise.resolve(instance));
+                this.load = vi.fn(() => Promise.resolve(this));
             }),
         );
 
