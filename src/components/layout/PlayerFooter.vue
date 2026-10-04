@@ -97,6 +97,7 @@ const {
 } = useFooterQualityProbe({
   getCurrentSong: () => currentSong.value,
   getCurrentPlayingQuality: () => currentPlayingQuality.value,
+  allowRealSizeProbe: () => settings.value.audio.showRealQualitySizes === true,
 });
 
 // --- 下载功能 ---
@@ -249,6 +250,8 @@ const footerQualityExtraText = (key: string) => {
 watch(
   () => currentSong.value?.cue_source_path || currentSong.value?.path,
   () => {
+    // 真实体积探测关闭时切歌零预热：起播仅解析当前档，打开菜单再按需补
+    if (settings.value.audio.showRealQualitySizes !== true) return;
     void ensureFooterQualityInfo();
   },
   { immediate: true },

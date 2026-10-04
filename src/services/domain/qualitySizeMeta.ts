@@ -57,10 +57,11 @@ export async function probeSizesForKeys(
   keys: QualityKey[],
   urlFor: (q: QualityKey) => string | undefined,
   onSize: (q: QualityKey, bytes: number) => void,
+  opts?: { metaOnly?: boolean },
 ): Promise<Set<QualityKey>> {
   const sized = new Set<QualityKey>();
   await Promise.all(keys.map(async (q) => {
-    const url = urlFor(q);
+    const url = opts?.metaOnly ? undefined : urlFor(q);
     if (url) {
       try {
         const info = await downloadApi.probeUrlSize(url);

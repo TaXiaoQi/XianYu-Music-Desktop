@@ -661,6 +661,8 @@ export interface AudioSettings { // 实现
   equalizer: EqualizerSettings; // 实现
   showEqualizerInFooter: boolean;
   onlineDefaultQuality: OnlineDefaultQuality; // 实现
+  /** 音质菜单真实体积探测+全档位预解析开关（默认关，避免每首歌对音源多发 5~8 次请求） */
+  showRealQualitySizes: boolean;
   onlineFailureBehavior: OnlineFailureBehavior; // 实现
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
   streamCacheSizeMB: number;

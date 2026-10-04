@@ -1534,6 +1534,8 @@ export const exactEnglishTranslations: Record<string, string> = {
   'MV 默认画质': 'Default MV quality',
   '下载 MV 视频弹窗中预选的画质档位': 'Quality preselected in the MV download dialog',
   '开启 MV 背景视频时优先使用的画质档位，实际以片源提供为准。': 'Preferred quality for MV background video; actual quality depends on the source.',
+  '显示真实音质体积': 'Show real quality file sizes',
+  '开启后每首在线歌会向音源多请求约 5~8 次（预解析全部档位并探测真实体积），可能触发音源限流；关闭时仅按需解析，体积显示插件自报值。': 'When enabled, each online song sends about 5~8 extra requests to the source (pre-resolving all qualities and probing real sizes), which may trigger source rate limiting; when disabled, qualities resolve on demand and sizes come from plugin-reported values.',
   '当前歌曲不支持 MV（仅插件在线歌曲可用）': 'MV is unavailable for this song (plugin online tracks only)',
   '当前播放': 'Now playing',
   '歌手详情': 'Artist details',

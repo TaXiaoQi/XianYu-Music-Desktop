@@ -15,6 +15,8 @@ import type { QualityKey, Song } from '../../../types';
 interface QualityProbeDeps {
   getCurrentSong: () => Song | null;
   getCurrentPlayingQuality: () => QualityKey | null | undefined;
+  /** 真实体积探测开关（默认关）：关闭时体积仅用插件元数据自报值，不发 Range 请求 */
+  allowRealSizeProbe: () => boolean;
 }
 
 /**
@@ -24,6 +26,7 @@ interface QualityProbeDeps {
 export const useFooterQualityProbe = ({
   getCurrentSong,
   getCurrentPlayingQuality,
+  allowRealSizeProbe,
 }: QualityProbeDeps) => {
   const footerAvailableQualityKeys = ref<QualityKey[] | null>(null);
   const footerQualityUrls = ref<Partial<Record<QualityKey, string>>>({});
@@ -63,7 +66,7 @@ export const useFooterQualityProbe = ({
     // 只有真正拿到体积的档位才算探测完成，失败的等直链到位后重试
     const sized = await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
       footerQualitySizes.value = { ...footerQualitySizes.value, [q]: bytes };
-    });
+    }, { metaOnly: !allowRealSizeProbe() });
     targets.forEach(k => {
       if (!sized.has(k)) footerQualitySizesProbed.delete(k);
     });

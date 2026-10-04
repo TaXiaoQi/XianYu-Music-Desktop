@@ -209,6 +209,7 @@ export const defaultAudioSettings: AudioSettings = { // 实现
     enabled: false, preamp: 0.0, gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
   showEqualizerInFooter: true, onlineDefaultQuality: 'flac',
+  showRealQualitySizes: false,
   onlineFailureBehavior: 'stop', onlineQualityFallbackBehavior: 'lower',
   streamCacheSizeMB: 512, streamCacheDir: '',
   fadeInOutEnabled: true, fadeInOutDurationMs: 500, mvDefaultQuality: '720P',
@@ -653,6 +654,7 @@ export const mergeAudioSettings = (base: AudioSettings, patch: AudioSettingsPatc
     equalizer,
     showEqualizerInFooter: withFallback(patch.showEqualizerInFooter, base.showEqualizerInFooter ?? true),
     onlineDefaultQuality: pickOption(patch.onlineDefaultQuality, base.onlineDefaultQuality ?? '320k', ALL_QUALITY_KEYS),
+    showRealQualitySizes: chooseBoolean(patch.showRealQualitySizes, base.showRealQualitySizes ?? false),
     onlineFailureBehavior: resolveOnlineFailureBehavior(base, patch.onlineFailureBehavior),
     onlineQualityFallbackBehavior: pickOption(
       patch.onlineQualityFallbackBehavior,

@@ -708,7 +708,22 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <div class="desktop-setting-row"> 
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">显示真实音质体积</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              开启后每首在线歌会向音源多请求约 5~8 次（预解析全部档位并探测真实体积），可能触发音源限流；关闭时仅按需解析，体积显示插件自报值。
+            </div>
+          </div>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.audio.showRealQualitySizes }"
+            @click="patchSettings({ audio: { ...settings.audio, showRealQualitySizes: !settings.audio.showRealQualitySizes } })"
+          ></button>
+        </div>
+
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MV 默认画质</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
