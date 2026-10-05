@@ -1,5 +1,6 @@
 
 import type { PluginSearchResult } from '../../types';
+import type { LxSearchResultItem } from './lxMusicSdkBase';
 
 export type RecommendStrategyType = 'artist_search' | 'song_search' | 'keyword_search';
 
@@ -35,6 +36,8 @@ export interface DailyRecommendItem {
   reason: string;
   strategyId: string;
   pluginName: string;
+  /** lx 源原始条目：存在时播放走 lx:// 链路（与移动端 pluginFormat='lx' 对齐） */
+  lxItem?: LxSearchResultItem;
 }
 
 export interface DailyRecommendResult {

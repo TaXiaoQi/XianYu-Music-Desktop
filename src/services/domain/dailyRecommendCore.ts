@@ -1,8 +1,11 @@
 
 import { getStoredPlugins, pluginSearch, canPlayMusic, pluginGetMusicInfo } from './pluginEngine';
 import { resolveLxUrlForSingleQuality } from './lxUrlResolver';
+import { lxSearch } from './lxMusicSdkSearch';
+import type { LxSearchResultItem } from './lxMusicSdkBase';
+import type { LxSourceId } from './lxMusicSdkTypes';
 import { signedRequest, getStoredAuth } from '../auth/authService';
-import type { PluginSource } from '../../types';
+import type { PluginSearchResult, PluginSource } from '../../types';
 import { DailyRecommendError } from './dailyRecommendTypes';
 import type { DailyRecommendAlgorithm, DailyRecommendItem, DailyRecommendStrategy } from './dailyRecommendTypes';
 
@@ -83,6 +86,8 @@ type SearchTask = {
   strategy: DailyRecommendStrategy;
   query: string;
   plugin: PluginSource;
+  /** lx 插件按查询轮换内部平台（wy/kg/kw/tx），与 musicfree 单查询单请求次数一致 */
+  lxSource?: LxSourceId;
 };
 
 function buildSearchTasks(algorithm: DailyRecommendAlgorithm, plugins: PluginSource[]): SearchTask[] {
@@ -92,11 +97,37 @@ function buildSearchTasks(algorithm: DailyRecommendAlgorithm, plugins: PluginSou
     const queries = strategy.queries || [];
     for (let qi = 0; qi < queries.length; qi++) {
       const plugin = plugins[(slot + qi) % plugins.length];
-      tasks.push({ strategy, query: queries[qi], plugin });
+      let lxSource: LxSourceId | undefined;
+      if (plugin.format === 'lx') {
+        const srcs = plugin.sources?.length ? plugin.sources : ['kw'];
+        lxSource = srcs[(slot + qi) % srcs.length] as LxSourceId;
+      }
+      tasks.push({ strategy, query: queries[qi], plugin, lxSource });
     }
     slot += queries.length;
   }
   return tasks;
+}
+
+/** lx 搜索条目 → PluginSearchResult 投影；lxItem 保留原始数据供 lx:// 播放链路使用 */
+function lxItemToSearchResult(item: LxSearchResultItem): { song: DailyRecommendItem['song']; lxItem: LxSearchResultItem } {
+  const [mm, ss] = String(item.interval || '').split(':').map(Number);
+  const durationMs = Number.isFinite(mm) && Number.isFinite(ss) ? (mm * 60 + ss) * 1000 : 0;
+  return {
+    song: {
+      id: item.songmid,
+      title: item.name,
+      artist: item.singer,
+      album: item.albumName || '',
+      coverUrl: item.img || '',
+      duration: durationMs,
+      platform: item.source,
+      platformId: item.songmid,
+      pluginId: '',
+      rawData: item,
+    },
+    lxItem: item,
+  };
 }
 
 export async function executeDailyRecommend(
@@ -104,7 +135,7 @@ export async function executeDailyRecommend(
   batch = 0,
 ): Promise<DailyRecommendItem[]> {
   const enabled = getStoredPlugins()
-    .filter(p => p.enabled && p.format === 'musicfree')
+    .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'lx'))
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const probeKeyword = algorithm.strategies.find(s => s.queries.length > 0)?.queries[0] ?? '热门音乐';
   const alive = await Promise.all(enabled.map(p => probePluginAlive(p, probeKeyword)));
@@ -121,15 +152,19 @@ export async function executeDailyRecommend(
 
   const tasks = buildSearchTasks(algorithm, plugins);
   const searchResults = await mapWithLimit(tasks, SEARCH_CONCURRENCY, async (task) => {
+    if (task.plugin.format === 'lx' && task.lxSource) {
+      const r = await lxSearch(task.lxSource, task.query, 1, SEARCH_LIMIT);
+      return { task, results: r.list.map(lxItemToSearchResult) };
+    }
     const results = await pluginSearch(task.plugin, task.query, 1, SEARCH_LIMIT);
-    return { task, results };
+    return { task, results: results.map(song => ({ song, lxItem: undefined })) };
   });
 
   const best = new Map<string, { item: DailyRecommendItem; score: number }>();
   for (const entry of searchResults) {
     if (!entry) continue;
     const { task, results } = entry;
-    results.forEach((song, rank) => {
+    results.forEach(({ song, lxItem }, rank) => {
       if (!song?.title || !song.artist) return;
       if (song.duration > 0 && song.duration < MIN_DURATION_MS) return;
       const normTitle = normalizeText(song.title);
@@ -147,6 +182,7 @@ export async function executeDailyRecommend(
             reason: task.strategy.reason,
             strategyId: task.strategy.id,
             pluginName: task.plugin.name,
+            lxItem,
           },
         });
       }
@@ -183,7 +219,15 @@ export async function probePluginAlive(source: PluginSource, keyword: string): P
   let alive = false;
   try {
     if (!(await canPlayMusic(source))) throw new Error('not playable');
-    const hits = await withProbeTimeout(pluginSearch(source, keyword, 1, 1), ALIVE_PROBE_TIMEOUT_MS);
+    let hits: PluginSearchResult[] = [];
+    if (source.format === 'lx') {
+      // lx 插件无 JS search 方法，走内置 lx_search 探测
+      const lxSource = (source.sources?.[0] ?? 'kw') as LxSourceId;
+      const r = await withProbeTimeout(lxSearch(lxSource, keyword, 1, 1), ALIVE_PROBE_TIMEOUT_MS);
+      hits = r.list.map(item => lxItemToSearchResult(item).song);
+    } else {
+      hits = await withProbeTimeout(pluginSearch(source, keyword, 1, 1), ALIVE_PROBE_TIMEOUT_MS);
+    }
     if (!hits?.length) {
       alive = true;
     } else if (source.format === 'lx') {

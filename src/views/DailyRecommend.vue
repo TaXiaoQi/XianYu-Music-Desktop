@@ -163,6 +163,7 @@ import {
 import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngine';
 import { extractDurationMs } from '../services/domain/pluginResultMappers';
 import { fetchWyTrackMetaByIds } from '../services/domain/playlistImport';
+import { parseIntervalToSeconds } from '../utils/remoteSong';
 import type { PluginSearchResult, PluginSource, Song } from '../types';
 
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
@@ -190,8 +191,9 @@ const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const songTableRef = ref<any>(null);
 
+// lx 音源插件（format='lx'）与 musicfree 插件均可参与日推
 const hasPlugin = () =>
-  getStoredPlugins().some(p => p.enabled && p.format === 'musicfree');
+  getStoredPlugins().some(p => p.enabled && (p.format === 'musicfree' || p.format === 'lx'));
 
 // ==================== 展示文案 ====================
 const dateLabel = computed(() => {
@@ -331,6 +333,43 @@ watch(items, () => {
 // ==================== 列表数据 ====================
 
 function recommendItemToSong(item: DailyRecommendItem): Song {
+  // lx 源条目：与搜索页 lxResultToSong 同构，播放走 lx:// 解析链路
+  const lx = item.lxItem;
+  if (lx?.songmid && lx.source) {
+    const artistNames = lx.singer
+      ? lx.singer.split(/[、,/&]/).filter(Boolean).map(s => s.trim())
+      : ['未知歌手'];
+    const album = lx.albumName || '未知专辑';
+    const songPath = `lx://${lx.source}/${lx.songmid}`;
+    return {
+      name: lx.name,
+      title: lx.name,
+      path: songPath,
+      artist: lx.singer || '未知歌手',
+      artist_names: artistNames,
+      effective_artist_names: artistNames,
+      album,
+      album_artist: lx.singer || '未知歌手',
+      album_key: `${album}-${lx.singer || '未知歌手'}`,
+      is_various_artists_album: false,
+      collapse_artist_credits: false,
+      duration: Math.floor(parseIntervalToSeconds(lx.interval)),
+      cover_thumb_path: lx.img || '',
+      source_type: 'remote',
+      remote_source_id: songPath,
+      _hash: lx.hash,
+      _types: lx._types,
+      _copyrightId: lx.copyrightId,
+      _songmid: lx.songmid,
+      _source: lx.source,
+      _songId: lx.songId,
+      _strMediaMid: lx.strMediaMid,
+      _albumMid: lx.albumMid,
+      _albumId: lx.albumId,
+      rawData: lx,
+    } as any;
+  }
+
   const result: PluginSearchResult = item.song;
   const artistNames = result.artist
     ? result.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim())
