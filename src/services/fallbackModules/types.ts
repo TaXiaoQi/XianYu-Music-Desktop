@@ -1,6 +1,7 @@
 
 export type FallbackModuleKey =
   | 'lx_search'
+  | 'lx_toplist'
   | 'lx_album'
   | 'lx_duration'
   | 'lx_lyric'
@@ -10,6 +11,7 @@ export type FallbackModuleKey =
 
 export const FALLBACK_MODULE_METHODS: Record<FallbackModuleKey, string[]> = {
   lx_search: ['search'],
+  lx_toplist: ['getTopLists', 'getTopListDetail'],
   lx_album: ['searchAlbums', 'getAlbumSongs'],
   lx_duration: ['batchTrackInterval'],
   lx_lyric: ['fetchLyric'],
@@ -33,6 +35,7 @@ export const FALLBACK_MODULE_METHODS: Record<FallbackModuleKey, string[]> = {
 
 export const FALLBACK_MODULE_NAMES: Record<FallbackModuleKey, string> = {
   lx_search: '落雪歌曲搜索',
+  lx_toplist: '落雪音源榜单',
   lx_album: '专辑/歌单获取',
   lx_duration: '歌曲时长加载',
   lx_lyric: '逐字歌词解码',

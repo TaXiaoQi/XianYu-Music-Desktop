@@ -32,10 +32,30 @@ import {
 import type {
   PluginAlbumResult,
 } from './pluginCatalogShared';
+import { lxToplistFetchTopLists, lxToplistFetchTracks } from './lxToplist';
 
 // ==================== 插件榜单 ====================
 
-export async function pluginGetTopLists(source: PluginSource): Promise<PluginPlaylistSearchResult[]> {
+// LX 榜单源子集（lx_toplist 兜底模块支持的平台）
+const LX_TOPLIST_SOURCES = ['wy', 'kg', 'kw', 'tx'];
+
+export const lxToplistSourcesOf = (source: PluginSource, lxKey?: string): string[] =>
+  (source.sources ?? []).filter((s) => LX_TOPLIST_SOURCES.includes(s) && (!lxKey || s === lxKey));
+
+export async function pluginGetTopLists(source: PluginSource, lxKey?: string): Promise<PluginPlaylistSearchResult[]> {
+  if (source.format === 'lx') {
+    const sources = lxToplistSourcesOf(source, lxKey);
+    if (sources.length === 0) return [];
+    try {
+      return await flattenTopListCategories(
+        await lxToplistFetchTopLists(sources),
+        source,
+      );
+    } catch (e: any) {
+      console.warn(`[${source.name}] lx_toplist getTopLists 调用失败:`, e?.message || e);
+      return [];
+    }
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -53,6 +73,7 @@ export async function pluginGetTopLists(source: PluginSource): Promise<PluginPla
 }
 
 export async function pluginSupportsTopLists(source: PluginSource): Promise<boolean> {
+  if (source.format === 'lx') return lxToplistSourcesOf(source).length > 0;
   const inst = await ensurePluginInstance(source);
   return !!inst && typeof inst.instance.getTopLists === 'function';
 }
@@ -63,7 +84,8 @@ async function pluginGetPlaylistDetailInner(
   source: PluginSource,
   sheetItem: any,
   page: number = 1,
-): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
+  // list 常规为 PluginSearchResult[]；LX 榜单分支返回 lx_search 同构条目（由调用方按引擎区分消费）
+): Promise<{ list: any[]; isEnd?: boolean }> {
   // 精确导入的合成歌单（_importedTracks）直接返回导入曲目，必须放在
   // Baka 分支之前：Baka 插件对合成 raw 会落到自己的详情分页查询，
   // 把全量数据截断成单页
@@ -72,6 +94,19 @@ async function pluginGetPlaylistDetailInner(
       const list = sheetItem._importedTracks;
       list.forEach((_: any) => { resetMediaItem(_, source.name); });
       return { list: await toPluginSearchResults(list, source), isEnd: true };
+    }
+    return { list: [], isEnd: true };
+  }
+  // LX 榜单：走 lx_toplist 兜底模块，条目已转为与 lx_search 结果同构的形状
+  if (source.format === 'lx' && sheetItem?._isTopList) {
+    const lxSource = sheetItem?.rawData?._lxSource || sheetItem?.rawData?.source;
+    const toplistId = String(sheetItem?.id ?? sheetItem?.rawData?.id ?? '');
+    if (lxSource && toplistId) {
+      try {
+        return await lxToplistFetchTracks(String(lxSource), toplistId, page);
+      } catch (e: any) {
+        log(`[${source.name}] lx_toplist getTopListDetail 调用失败: ${e?.message}`);
+      }
     }
     return { list: [], isEnd: true };
   }

@@ -119,6 +119,13 @@ export async function httpGetJson(url: string, headers?: Record<string, string>)
   }
 }
 
+// GET 返回原始响应文本（酷我 rid_pic 封面接口为纯文本响应）
+export async function httpGetText(url: string, headers?: Record<string, string>): Promise<string> {
+  const resp = await httpFetch(url, { method: 'GET', headers });
+  if (resp.status !== 200) throw new Error(`HTTP ${resp.status} for ${url}`);
+  return resp.body;
+}
+
 export async function httpPostJson(url: string, body: string, headers?: Record<string, string>): Promise<any> {
   const resp = await httpFetch(url, { method: 'POST', headers, body });
   if (resp.status !== 200) throw new Error(`HTTP ${resp.status} for ${url}`);

@@ -125,7 +125,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router';
 
 import type { PluginPlaylistSearchResult, PluginSource } from '../types';
-import { getStoredPlugins, pluginGetTopLists, pluginSupportsTopLists, pluginsVersion } from '../services/domain/pluginEngine';
+import { getStoredPlugins, pluginGetTopLists, pluginSupportsTopLists, pluginsVersion, lxToplistSourcesOf } from '../services/domain/pluginEngine';
+import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk';
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import { useOnlineDetailStore, openOnlineDetail, type TopListsCache } from '../features/onlineDetail/store';
 import { useDragScrollX } from '../composables/useDragScrollX';
@@ -138,6 +139,7 @@ type SourceItem = {
   id: string;
   name: string;
   source: PluginSource;
+  lxKey?: string;
 };
 
 const sourceList = ref<SourceItem[]>([]);
@@ -159,9 +161,10 @@ async function refreshSourceList(silent = false) {
   if (!silent) checkingSources.value = true;
   try {
     // anime 插件的榜单能力由 pluginSupportsTopLists 判定（wrapper 恒有
-    // getTopLists，不支持的平台返回空列表走「暂无榜单」空态）
+    // getTopLists，不支持的平台返回空列表走「暂无榜单」空态）；
+    // lx 插件由 lx_toplist 兜底模块判定（sources 与 wy/kg/kw/tx 有交集）
     const plugins = getStoredPlugins()
-      .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'anime'))
+      .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'anime' || p.format === 'lx'))
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
     const results = await Promise.all(plugins.map(async (p) => {
@@ -176,7 +179,22 @@ async function refreshSourceList(silent = false) {
 
     const items: SourceItem[] = results
       .filter((p): p is PluginSource => p !== null)
-      .map(p => ({ id: p.id, name: p.name, source: p }));
+      .flatMap((p): SourceItem[] => {
+        if (p.format !== 'lx') {
+          return [{ id: p.id, name: p.name, source: p }];
+        }
+        // lx 按内部平台拆分展示（与搜索结果页同款）；单平台保留插件名
+        const keys = lxToplistSourcesOf(p);
+        if (keys.length <= 1) {
+          return [{ id: p.id, name: p.name, source: p, lxKey: keys[0] }];
+        }
+        return keys.map((k) => ({
+          id: `${p.id}__${k}`,
+          name: LX_SOURCE_NAMES[k as LxSourceId] ?? k,
+          source: p,
+          lxKey: k,
+        }));
+      });
 
     sourceList.value = items;
 
@@ -210,7 +228,7 @@ async function loadTopLists() {
   stopGridEnterAnimation();
   resetGridScroll();
   try {
-    const results = await pluginGetTopLists(source.source);
+    const results = await pluginGetTopLists(source.source, source.lxKey);
     if (version !== loadVersion) return;
     topLists.value = results;
     if (results.length > 0) playGridEnterAnimation();
@@ -249,6 +267,9 @@ function stopGridEnterAnimation() {
 const cardHopDirections = ref<Record<string, 'left' | 'right'>>({});
 const cardHopLockTimestamps = new Map<string, number>();
 const HOP_ANIMATION_LOCK_MS = 500;
+// 边缘防抖：位移量 12px，光标离拖尾边缘不足此余量时跳跃会把卡片
+// 移出鼠标下方 → leave/enter 循环抽搐，该次悬停保持静止只做高亮
+const HOP_EDGE_MARGIN_PX = 16;
 
 function handleMouseEnterCard(e: MouseEvent, key: string) {
   if (cardHopDirections.value[key]) return;
@@ -264,9 +285,15 @@ function handleMouseEnterCard(e: MouseEvent, key: string) {
 
   const rect = target.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
-  
+  const hopLeft = e.clientX >= centerX;
+  // 拖尾边缘 = 跳跃时朝光标方向移动、可能扫过光标的那条边
+  const edgeDistance = hopLeft ? rect.right - e.clientX : e.clientX - rect.left;
+  if (edgeDistance < HOP_EDGE_MARGIN_PX) {
+    return;
+  }
+
   cardHopLockTimestamps.set(key, now);
-  cardHopDirections.value[key] = e.clientX >= centerX ? 'left' : 'right';
+  cardHopDirections.value[key] = hopLeft ? 'left' : 'right';
 }
 
 function handleMouseLeaveCard(key: string) {
@@ -480,15 +507,22 @@ const handleTopListClick = (entry: GridEntry) => {
   const source = selectedSourceItem.value;
   if (!source) return;
   const item = entry.item;
+  const isLx = source.source.format === 'lx';
+  // chip 即平台：条目缺 source（如下发 JS 模块形状差异）时回退 chip 的 lxKey
+  const lxSource = isLx ? String(item.rawData?.source || source.lxKey || '') : '';
+  if (isLx && !lxSource) return;
   openOnlineDetail({
     type: 'playlist',
     title: item.title,
     subtitle: item.trackCount ? `${item.trackCount} 首` : (item.artist || ''),
     coverUrl: item.coverUrl,
     pluginSource: source.source,
-    rawData: item.rawData,
+    // lx 榜单补 _lxSource，OnlineDetailView 据此进 lx 引擎分支
+    rawData: isLx ? { ...item.rawData, _lxSource: lxSource } : item.rawData,
     platformId: item.platformId || item.id,
-    engineType: 'musicfree',
+    ...(isLx
+      ? { engineType: 'lx' as const, lxSourceId: lxSource }
+      : { engineType: 'musicfree' as const }),
     origin: 'toplist',
   });
 };

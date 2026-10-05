@@ -61,6 +61,7 @@ import {
   type LxArtistSearchResult,
 } from '../services/domain/lxMusicSdk';
 import { ensureLxPluginInstance, lxPluginGetPic } from '../services/domain/lxPluginEngine';
+import { lxToplistFetchTracks } from '../services/domain/lxToplist';
 import { cacheLxSong } from '../services/domain/lxSongCache';
 import { cacheLxSongInfo } from '../services/domain/lxLyricFetcher';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
@@ -713,6 +714,33 @@ async function loadLxData(page: number, version: number) {
     if (page === 1) songs.value = results;
     else songs.value = [...songs.value, ...results];
   } else if (type === 'playlist') {
+    // lx 榜单（lx_toplist 兜底模块）：条目与 lx_search 结果同构，播放链路复用
+    if (rawData?._isTopList) {
+      const lxSource = String(rawData?._lxSource || rawData?.source || source);
+      const toplistId = String(rawData?.id ?? ctx.value?.platformId ?? '');
+      if (toplistId) {
+        if (page === 1) {
+          let allTracks: LxSearchResultItem[] = [];
+          let currentPage = 1;
+          const MAX_PAGES = 50;
+          while (currentPage <= MAX_PAGES) {
+            const { list, isEnd } = await lxToplistFetchTracks(lxSource, toplistId, currentPage);
+            if (version !== loadVersion) return;
+            if (list.length === 0) break;
+            allTracks = [...allTracks, ...list];
+            if (isEnd) break;
+            currentPage++;
+          }
+          songs.value = allTracks;
+        } else {
+          const { list } = await lxToplistFetchTracks(lxSource, toplistId, page);
+          if (version !== loadVersion) return;
+          songs.value = [...songs.value, ...list];
+        }
+        persistSheetCache();
+      }
+      return;
+    }
     if (page === 1) {
       let allTracks: LxSearchResultItem[] = [];
       let currentPage = 1;

@@ -28,6 +28,7 @@ pub const FALLBACK_SHIM_JS: &str = include_str!("shim.js");
 /// 已注册的模块 key 与期望导出方法（与前端 FALLBACK_MODULE_METHODS 同步维护）。
 pub(crate) const FALLBACK_MODULE_METHODS: &[(&str, &[&str])] = &[
     ("lx_search", &["search"]),
+    ("lx_toplist", &["getTopLists", "getTopListDetail"]),
     ("lx_album", &["searchAlbums", "getAlbumSongs"]),
     ("lx_duration", &["batchTrackInterval"]),
     ("lx_lyric", &["fetchLyric"]),
