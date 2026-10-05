@@ -286,6 +286,7 @@ fn clear_plugin_http_clients(app: &AppHandle) {
     if let Some(state) = app.try_state::<crate::plugin_host::commands::PluginEngineState>() {
         state.engine.clear_http_clients();
     }
+    crate::plugins::clear_cached_http_clients();
 }
 
 #[tauri::command]

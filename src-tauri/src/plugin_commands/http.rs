@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use super::format_reqwest_error;
@@ -73,6 +74,54 @@ fn plugin_ssrf_redirect_policy(redirect_limit: usize) -> reqwest::redirect::Poli
     })
 }
 
+/// 插件 HTTP 客户端缓存：按 (超时秒数, 重定向上限, 压缩开关) 复用连接池，
+/// 免去每个请求重建 DNS 解析器（pinned resolver 零缓存）、TLS 上下文与 TCP 连接的开销。
+/// redirect policy 与超时都是 Client 级配置，故必须进缓存 key。
+type ClientCacheKey = (Option<u64>, u32, bool);
+
+static PLUGIN_HTTP_CLIENTS: OnceLock<Mutex<HashMap<ClientCacheKey, reqwest::Client>>> =
+    OnceLock::new();
+
+fn client_cache() -> &'static Mutex<HashMap<ClientCacheKey, reqwest::Client>> {
+    PLUGIN_HTTP_CLIENTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 代理切换时清空缓存（由 netproxy::clear_plugin_http_clients 调用），下次请求按新代理重建。
+pub(crate) fn clear_cached_http_clients() {
+    if let Ok(mut guard) = client_cache().lock() {
+        guard.clear();
+    }
+}
+
+fn cached_plugin_http_client(
+    timeout_secs: Option<u64>,
+    redirect_limit: u32,
+    compression: bool,
+) -> Result<reqwest::Client, String> {
+    let map = client_cache();
+    let key = (timeout_secs, redirect_limit, compression);
+    if let Ok(guard) = map.lock() {
+        if let Some(client) = guard.get(&key) {
+            return Ok(client.clone());
+        }
+    }
+    let mut builder = crate::netproxy::client_builder()
+        .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    if compression {
+        builder = builder.gzip(true).brotli(true).deflate(true);
+    }
+    if let Some(secs) = timeout_secs {
+        builder = builder.timeout(Duration::from_secs(secs));
+    }
+    let client = builder.build().map_err(|error| error.to_string())?;
+    if let Ok(mut guard) = map.lock() {
+        guard.insert(key, client.clone());
+    }
+    Ok(client)
+}
+
 #[tauri::command]
 pub async fn plugin_http_request(
     method: String,
@@ -88,21 +137,11 @@ pub async fn plugin_http_request(
 
     let redirect_limit = follow.unwrap_or(10);
     let timeout_secs = timeout.unwrap_or(30);
-    let client_builder = crate::netproxy::client_builder()
-        .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
-        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
-        .gzip(true)
-        .brotli(true)
-        .deflate(true)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-    let client = if timeout_secs == 0 {
-        client_builder.build()
-    } else {
-        client_builder
-            .timeout(Duration::from_secs(timeout_secs))
-            .build()
-    }
-    .map_err(|error| error.to_string())?;
+    let client = cached_plugin_http_client(
+        if timeout_secs == 0 { None } else { Some(timeout_secs) },
+        redirect_limit,
+        true,
+    )?;
 
     let mut request = client.request(method, &url);
     if let Some(headers) = headers {
@@ -168,14 +207,7 @@ pub async fn plugin_http_request_binary(
         reqwest::Method::from_bytes(method.trim().as_bytes()).map_err(|error| error.to_string())?;
 
     let redirect_limit = follow.unwrap_or(10);
-    let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
-    let client = crate::netproxy::client_builder()
-        .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
-        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
-        .timeout(request_timeout)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = cached_plugin_http_client(Some(timeout.unwrap_or(30)), redirect_limit, false)?;
 
     let mut request = client.request(method, &url);
     if let Some(headers) = headers {
