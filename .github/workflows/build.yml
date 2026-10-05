@@ -26,6 +26,10 @@ jobs:
         with:
           persist-credentials: false 
 
+      - name: Shared-code drift check
+        shell: pwsh
+        run: ./tools/code_sync/check_shared_code.ps1 -Check
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
