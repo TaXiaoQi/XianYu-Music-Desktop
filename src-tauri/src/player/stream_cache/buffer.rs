@@ -18,6 +18,10 @@ pub struct StreamingTempFileReader {
     download_failed: Arc<AtomicBool>,
     pos: u64,
     total_bytes: Option<u64>,
+    /// 下载线程实时回填的总长槽位：`total_bytes` 是 Clone 时刻快照（下载中必为 None），
+    /// rodio ReadSeekSource 打开时靠 `seek(End(0))` 探测 byte_len，symphonia FLAC/MP3
+    /// demuxer 的原地 seek 依赖该值，缺失会导致每次 seek 都退化成整链重建。
+    content_length_shared: Arc<AtomicU64>,
     post_check_pending: Option<Arc<AtomicBool>>,
 }
 
@@ -66,6 +70,14 @@ impl Seek for StreamingTempFileReader {
                         p
                     });
                 }
+                // 下载中：Content-Length 已回填共享槽时以它为 End 基准，byte_len 探测据此成功，
+                // symphonia 才能原地 seek（二分偏移可能超前下载前沿，由 Start 分支等待下载）。
+                let shared_len = self.content_length_shared.load(Ordering::Relaxed);
+                if shared_len > 0 {
+                    let target = (shared_len as i64 + n).max(0) as u64;
+                    self.pos = target;
+                    return self.file.seek(SeekFrom::Start(target)).map(|_| target);
+                }
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Unsupported,
                     "Cannot seek from end while download is in progress",
@@ -112,9 +124,8 @@ pub struct StreamingTempFileState {
     pub download_error: Arc<std::sync::Mutex<Option<String>>>,
     /// 共享总长槽位（字节，0 = 未知）：下载线程拿到 Content-Length 后实时回填。
     /// `total_bytes` 是 Clone 时刻快照（start_streaming_download 返回时必然 None），
-    /// symphonia FLAC/MP3 demuxer 的 seek 依赖 `MediaSource::byte_len()`，必须实时可读。
-    /// 消费端待接线：rodio ReadSeekSource 的 byte_len 是一次性快照，换自定义 MediaSource 后启用。
-    #[allow(dead_code)]
+    /// symphonia FLAC/MP3 demuxer 的 seek 依赖 `MediaSource::byte_len()`，必须实时可读；
+    /// new_reader() 将槽位注入 StreamingTempFileReader，End 定位/byte_len 探测据此实时可读。
     pub content_length_shared: Arc<AtomicU64>,
 }
 
@@ -157,6 +168,7 @@ impl StreamingTempFileState {
             download_failed: self.download_failed.clone(),
             pos: 0,
             total_bytes: self.total_bytes,
+            content_length_shared: self.content_length_shared.clone(),
             post_check_pending: self.post_check_pending.clone(),
         })
     }
