@@ -25,6 +25,7 @@ export interface FavoritesSyncCollectionsPort {
 export interface FavoritesSyncLibraryPort {
   songList: Song[];
   songLookup: Map<string, Song>;
+  setExtraSongs(songs: Song[]): void;
 }
 
 export interface FavoritesSyncFlowDeps {
@@ -142,7 +143,9 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
       const lookup = library.songLookup;
       const existingPaths = new Set(collections.favoritePaths);
       const mergedPaths = [...collections.favoritePaths];
-      const metaMap: Record<string, Song> = {};
+      // 以现有元数据表为底合并，避免整体替换清掉既有在线收藏元数据。
+      const metaMap: Record<string, Song> = { ...collections.favoriteSongMeta };
+      const extraSongs: Song[] = [];
       for (const song of matchedList) {
         if (cloudKeep.has(song.path)) continue;
         if (existingPaths.has(song.path)) continue;
@@ -150,11 +153,14 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
         mergedPaths.push(song.path);
         if (!lookup.has(song.path)) {
           metaMap[song.path] = song;
+          extraSongs.push(song);
         }
       }
       collections.setFavoritePaths(mergedPaths);
-      if (Object.keys(metaMap).length > 0) {
-        collections.setFavoriteSongMetaMap(metaMap);
+      collections.setFavoriteSongMetaMap(metaMap);
+      // 不在曲库的在线收藏需补挂进曲库索引，否则收藏页按索引解析时会被全部过滤显示 0 首。
+      if (extraSongs.length > 0) {
+        library.setExtraSongs(extraSongs);
       }
 
       deps.setLastTime(Date.now());
