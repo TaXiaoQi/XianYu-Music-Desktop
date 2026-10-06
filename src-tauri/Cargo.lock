@@ -7703,7 +7703,7 @@ dependencies = [
 
 [[package]]
 name = "xianyu_music"
-version = "2.0.4-beta2"
+version = "2.0.5"
 dependencies = [
  "aes",
  "axum",
