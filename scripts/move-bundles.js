@@ -21,7 +21,10 @@ if (process.env.BUILD_RELEASES_MODE === 'true') {
 
 // 收集所有 bundle 根目录：宿主 target/release/bundle + 交叉编译 target/<triple>/release/bundle。
 // 交叉目标按 triple 归档到对应平台目录（如 aarch64-pc-windows-msvc → releases/windows）。
-const targetRoot = path.join(rootDir, 'src-tauri', 'target');
+// 设置了 CARGO_TARGET_DIR 时（如 WSL 构建转发），改扫描该目录的 release/bundle，
+// 平台按产物扩展名识别（deb/rpm/appimage → linux，dmg/app → macos，exe/msi → windows）。
+const envTargetDir = process.env.CARGO_TARGET_DIR ? path.resolve(process.env.CARGO_TARGET_DIR) : null;
+const targetRoot = envTargetDir ?? path.join(rootDir, 'src-tauri', 'target');
 
 function platformForTargetDir(name) {
   if (name.includes('windows')) return 'windows';
@@ -30,20 +33,44 @@ function platformForTargetDir(name) {
   return null;
 }
 
+function platformForBundleFile(file) {
+  switch (path.extname(file).toLowerCase()) {
+    case '.deb':
+    case '.rpm':
+    case '.appimage':
+      return 'linux';
+    case '.dmg':
+    case '.app':
+      return 'macos';
+    case '.exe':
+    case '.msi':
+      return 'windows';
+    default:
+      return null;
+  }
+}
+
 const bundleRoots = [];
-for (const entry of fs.existsSync(targetRoot)
-  ? fs.readdirSync(targetRoot, { withFileTypes: true })
-  : []) {
-  if (!entry.isDirectory()) continue;
-  // 宿主原生目录是 target/release/bundle，交叉目标是 target/<triple>/release/bundle
-  const dir = entry.name === 'release'
-    ? path.join(targetRoot, 'release', 'bundle')
-    : path.join(targetRoot, entry.name, 'release', 'bundle');
-  const platform = entry.name === 'release'
-    ? 'windows'
-    : platformForTargetDir(entry.name);
-  if (platform && fs.existsSync(dir)) {
-    bundleRoots.push({ dir, platform });
+if (envTargetDir) {
+  const dir = path.join(envTargetDir, 'release', 'bundle');
+  if (fs.existsSync(dir)) {
+    bundleRoots.push({ dir, platform: 'auto' });
+  }
+} else {
+  for (const entry of fs.existsSync(targetRoot)
+    ? fs.readdirSync(targetRoot, { withFileTypes: true })
+    : []) {
+    if (!entry.isDirectory()) continue;
+    // 宿主原生目录是 target/release/bundle，交叉目标是 target/<triple>/release/bundle
+    const dir = entry.name === 'release'
+      ? path.join(targetRoot, 'release', 'bundle')
+      : path.join(targetRoot, entry.name, 'release', 'bundle');
+    const platform = entry.name === 'release'
+      ? 'windows'
+      : platformForTargetDir(entry.name);
+    if (platform && fs.existsSync(dir)) {
+      bundleRoots.push({ dir, platform });
+    }
   }
 }
 
@@ -82,7 +109,10 @@ for (const root of bundleRoots) {
   const found = [];
   collectFreshBundles(root.dir, found);
   for (const f of found) {
-    files.push({ path: f, platform: root.platform });
+    const platform = root.platform === 'auto' ? platformForBundleFile(f) : root.platform;
+    if (platform) {
+      files.push({ path: f, platform });
+    }
   }
 }
 
@@ -111,7 +141,8 @@ function detectArch(originalName) {
 }
 
 function archiveName(originalName, platform) {
-  const ext = path.extname(originalName).toLowerCase();
+  // 保留原始扩展名大小写：AppImage 桌面集成按大写 .AppImage 识别，其余扩展名本身即小写
+  const ext = path.extname(originalName);
   const version = readAppVersion();
   if (!version) return originalName; // 兜底：读不到版本号就保留原名
   const platformLabel = platform === 'macos' ? 'MacOS' : platform === 'linux' ? 'Linux' : 'Desktop';

@@ -1,7 +1,10 @@
 use crate::player::output_runtime::{
-    boot_media_key_hub, broadcast_output_state, drain_finished_exclusive, launch_exclusive_session,
-    rebuild_output_stack, reopen_shared_pipeline, should_restore_for_default_device_change,
-    teardown_exclusive_session,
+    boot_media_key_hub, broadcast_output_state, rebuild_output_stack, reopen_shared_pipeline,
+    should_restore_for_default_device_change,
+};
+#[cfg(windows)]
+use crate::player::output_runtime::{
+    drain_finished_exclusive, launch_exclusive_session, teardown_exclusive_session,
 };
 use crate::player::source_pipeline::{handle_play, reposition_playhead};
 use crate::player::device::default_output_device_name;

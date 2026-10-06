@@ -1,7 +1,7 @@
 {
   "name": "xianyu-music",
   "private": true,
-  "version": "2.0.4-beta2",
+  "version": "2.0.5",
   "license": "XSAL-1.0",
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "pretauri": "node scripts/sync-version.js",
     "tauri": "tauri",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
-    "tauri:build:linux": "node scripts/sync-version.js && tauri build --config src-tauri/tauri.linux.conf.json && node scripts/move-bundles.js --force",
+    "tauri:build:linux": "node scripts/build-linux.js",
     "tauri:build:mac": "node scripts/sync-version.js && tauri build --config src-tauri/tauri.macos.conf.json && node scripts/move-bundles.js --force",
     "tauri:build:arm64": "node scripts/build-arm64.js",
     "tauri:build:store": "node scripts/sync-version.js && tauri build --config src-tauri/tauri.microsoftstore.conf.json --features store-build && node scripts/move-bundles.js --force && node scripts/rename-store-msi.js",
