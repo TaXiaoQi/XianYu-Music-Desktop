@@ -29,6 +29,9 @@ import {
   extractArtistDescription,
   catalogLog,
 } from './pluginCatalogShared';
+import { dispatchFallbackModule } from '../fallbackModules/registry';
+import { playlistImportApi } from '../tauri/playlistImportApi';
+import type { PlaylistImportResult } from './playlistImportBase';
 import type {
   PluginAlbumResult,
 } from './pluginCatalogShared';
@@ -166,6 +169,15 @@ async function pluginGetPlaylistDetailInner(
         );
         const list = extractResultList(result);
         if (list.length > 0) {
+          if (page === 1) {
+            // 插件歌单详情单页截断时用宿主全量补齐（酷狗 31 / QQ 50 场景）
+            const fullSheet = await hostFullSheetIfTruncated(
+              source, sheetItem, list, extractIsEnd(result), getSheetInfo,
+            );
+            if (fullSheet && fullSheet.length > 0) {
+              return { list: fullSheet, isEnd: true };
+            }
+          }
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
           return { list: await toPluginSearchResults(list, source), isEnd: extractIsEnd(result) };
         }
@@ -190,6 +202,102 @@ async function pluginGetPlaylistDetailInner(
     log(`[${source.name}] 获取歌单详情失败: ${e?.message}`);
     return { list: [], isEnd: true };
   }
+}
+
+// ==================== 宿主歌单全量兜底（插件单页截断） ====================
+
+// 部分聚合插件歌单详情不分页，且上游接口单页有上限（酷狗 31 / QQ 50），
+// 而宿主 playlist_fetcher（导入链路）能拿全量。此处仅在插件首页之后做
+// 截断检测，命中时用宿主实现补全（kg/wy/tx/kw 四个有宿主实现的平台）。
+function sheetDeclaredCount(sheetItem: any): number | null {
+  const keys = [
+    'trackCount', 'trackcount', 'track_count', 'worksNum', 'worksnum',
+    'totalworks', 'songcount', 'songCount', 'song_count', 'totalSongNum', 'total_song_num',
+  ];
+  for (const item of [sheetItem, sheetItem?.rawData]) {
+    if (!item || typeof item !== 'object') continue;
+    for (const k of keys) {
+      const v = item[k];
+      const n = typeof v === 'number'
+        ? v
+        : (typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : NaN);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return null;
+}
+
+// ID 比对键并集（小写）：插件条目与宿主条目的标识字段形态不同，取双方常见字段
+function sheetSongIdKeys(item: any): string[] {
+  const raw = item?.rawData;
+  return [
+    item?.id, item?.songmid, item?.songId, item?.song_id, item?.hash,
+    item?.audioId, item?.audio_id, item?.musicId,
+    raw?.songmid, raw?.songId, raw?.hash, raw?.id,
+  ]
+    .filter(v => v !== undefined && v !== null && v !== '')
+    .map(v => String(v).toLowerCase());
+}
+
+// 截断检测与宿主补全（仅 page===1 调用）：
+// 1) 声明曲目数已知且 ≤ 插件首页 → 首页已完整；
+// 2) 插件未声称结尾（isEnd !== true）→ 交回常规分页循环；
+// 3) 插件声称结尾 → 探测第二页确认单页型后，依次试宿主全量；结果必须
+//    严格多于插件首页，且至少 1 首能与首页对上 ID（防纯数字 ID 跨平台撞车串单）。
+async function hostFullSheetIfTruncated(
+  source: PluginSource,
+  sheetItem: any,
+  page1List: any[],
+  page1IsEnd: boolean | undefined,
+  getSheetInfo: (item: any, page: number) => Promise<any>,
+): Promise<PluginSearchResult[] | null> {
+  const declared = sheetDeclaredCount(sheetItem);
+  if (declared !== null && declared <= page1List.length) return null;
+  if (page1IsEnd !== true) return null;
+
+  let probeCount = 0;
+  try {
+    probeCount = extractResultList(await getSheetInfo(sheetItem, 2)).length;
+  } catch {
+    // 第二页异常按「不翻页」处理
+  }
+  if (probeCount > 0) return null;
+
+  const sheetId = String(sheetItem?.id ?? sheetItem?.rawData?.id ?? '').trim();
+  if (!sheetId) return null;
+  const page1Keys = new Set(page1List.flatMap(sheetSongIdKeys));
+
+  const runners: [string, () => Promise<PlaylistImportResult>][] = [
+    ['kg', () => dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('kg', sheetId))],
+    ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('wy', sheetId))],
+    ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('tx', sheetId))],
+    ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('kw', sheetId))],
+  ];
+  for (const [platform, run] of runners) {
+    try {
+      const result = await run();
+      if (!result.songs.length || result.songs.length <= page1List.length) continue;
+      const overlapped = result.songs.some(s => sheetSongIdKeys(s).some(k => page1Keys.has(k)));
+      if (!overlapped) continue;
+      log(`[${source.name}] 歌单详情单页截断(${page1List.length}/${result.songs.length})，宿主 ${platform} 全量兜底: ${sheetId}`);
+      // 复用 _importedTracks 形状：播放链路与导入歌单一致
+      const tracks = result.songs.map(s => ({
+        ...(s.rawData as Record<string, any>),
+        _hostFallback: true,
+        id: s.id,
+        title: s.title,
+        artist: s.artist,
+        album: s.album,
+        coverUrl: s.coverUrl,
+        duration: s.duration,
+      }));
+      tracks.forEach((_: any) => { resetMediaItem(_, source.name); });
+      return await toPluginSearchResults(tracks, source);
+    } catch (e: any) {
+      log(`[${source.name}] 宿主 ${platform} 歌单详情兜底失败: ${e?.message || e}`);
+    }
+  }
+  return null;
 }
 
 async function withQqDurations(
