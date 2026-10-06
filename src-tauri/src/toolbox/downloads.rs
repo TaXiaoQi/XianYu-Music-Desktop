@@ -29,8 +29,10 @@ pub fn read_authorized_download_dir(app_handle: &tauri::AppHandle) -> Result<Pat
     Ok(dir)
 }
 
+// async 命令在异步运行时线程执行：blocking_pick_folder 若在主线程（同步命令）调用，
+// 会用 rx.recv() 卡死事件循环整个对话框时长，部分机型上表现为设置下载位置时窗口未响应/失败。
 #[tauri::command]
-pub fn register_download_directory(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn register_download_directory(app_handle: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let Some(picked) = app_handle.dialog().file().blocking_pick_folder() else {

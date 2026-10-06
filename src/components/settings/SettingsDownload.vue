@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
 import { useI18n } from '../../features/i18n'; // 实现
+import { useToast } from '../../composables/toast';
 import { useSettings } from '../../features/settings/useSettings';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior, MvQualityKey } from '../../types';
@@ -10,6 +11,7 @@ import { computed, ref } from 'vue'; // 实现
 
 const { settings, patchSettings } = useSettings();
 const { isEnglish } = useI18n(); // 实现
+const { showToast } = useToast();
 
 const showDownloadQualityModal = ref(false);
 const showDownloadBehaviorModal = ref(false);
@@ -125,6 +127,8 @@ const chooseDir = async () => {
     patchSettings({ download: { ...settings.value.download, downloadPath: selected } });
   } catch (error) {
     console.error(error);
+    const msg = error instanceof Error ? error.message : String(error);
+    showToast(msg, 'error');
   }
 };
 

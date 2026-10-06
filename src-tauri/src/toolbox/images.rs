@@ -102,8 +102,9 @@ fn write_file_bytes(dest: &Path, data: &[u8]) -> Result<(), String> {
     fs::write(dest, data).map_err(|e| format!("写入文件失败: {e}"))
 }
 
+// async：对话框阻塞调用需离开主线程（同 register_download_directory 注释）
 #[tauri::command] // 实现
-pub fn save_text_via_dialog(
+pub async fn save_text_via_dialog(
     app_handle: tauri::AppHandle, // 实现
     default_file_name: String,
     filter: Option<SaveDialogFilter>,
@@ -116,8 +117,9 @@ pub fn save_text_via_dialog(
     Ok(Some(dest.to_string_lossy().to_string()))
 }
 
+// async：对话框阻塞调用需离开主线程（同 register_download_directory 注释）
 #[tauri::command] // 实现
-pub fn save_bytes_via_dialog(
+pub async fn save_bytes_via_dialog(
     app_handle: tauri::AppHandle, // 实现
     default_file_name: String,
     filter: Option<SaveDialogFilter>,

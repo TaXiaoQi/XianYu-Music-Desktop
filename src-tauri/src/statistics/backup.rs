@@ -79,8 +79,9 @@ fn gather_export_payload(
 }
 
 /// 导出统计到用户选择的位置；取消保存对话框时按「已取消导出」返回。
+// async：对话框阻塞调用需离开主线程（同 register_download_directory 注释）
 #[tauri::command]
-pub fn export_statistics_file(app_handle: tauri::AppHandle, db: State<DbState>, options: StatisticsExportOptions) -> Result<StatisticsExportResult, String> {
+pub async fn export_statistics_file(app_handle: tauri::AppHandle, db: State<'_, DbState>, options: StatisticsExportOptions) -> Result<StatisticsExportResult, String> {
     let conn = db.conn.lock().map_err(error_text)?;
     ensure_statistics_aggregates(&conn)?;
 
