@@ -512,6 +512,9 @@ pub(crate) fn handle_opened_urls<R: tauri::Runtime>(
 pub(crate) fn setup_app( // setup_app
     app: &mut tauri::App<tauri::Wry>, // 实现
 ) -> Result<(), Box<dyn std::error::Error>> { // 实现
+    // 黑匣子最先装：后续任何启动期 panic 也要有落盘痕迹。
+    crate::crash_log::install(app.handle());
+
     // 网络代理必须在构造任何 HTTP client 之前确定，故放在 setup 的第一步。
     crate::netproxy::load(app.handle());
 

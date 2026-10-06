@@ -1,6 +1,6 @@
 // 模块布局：按「运行时骨架 → 音频/媒体 → 窗口体系 → 工具与系统」的顺序登记。
 mod app_runtime; mod audio_convert; mod audio_trim; mod autostart;
-pub(crate) mod control_channel; mod custom_fonts; mod database; pub(crate) mod dlna;
+pub(crate) mod control_channel; pub(crate) mod crash_log; mod custom_fonts; mod database; pub(crate) mod dlna;
 pub mod error; mod fallback_host; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
 mod host_crypto; mod install_language; mod music; mod netproxy;
 mod player; mod plugin_host; mod plugins; mod power;
@@ -369,6 +369,8 @@ pub fn graceful_shutdown(app: &tauri::AppHandle) {
     window_z_order::shutdown_topmost_guard();
     taskbar::shutdown_taskbar_zorder_guard();
     webview_settings::clear_webview_cache(app);
+    // 排查闪退的关键标记：crash.log 里紧邻本条的异常/panic 记录即非崩溃退出
+    crash_log::log_event("正常退出");
     app.exit(0);
 }
 
