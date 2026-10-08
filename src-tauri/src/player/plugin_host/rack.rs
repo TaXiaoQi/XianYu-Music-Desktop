@@ -13,6 +13,8 @@ use super::{RackConfig, RackSlotConfig};
 pub(crate) const BLOCK_SIZE: usize = 512;
 
 const DEFAULT_CHANNELS: u16 = 2;
+// 预留：宿主尚未以默认采样率初始化机架的调用点（ensure_ready_default 使用）。
+#[allow(dead_code)]
 const DEFAULT_SAMPLE_RATE: u32 = 44_100;
 
 fn close_editor_blocking(format: &str, unique_id: &str) {
@@ -120,6 +122,8 @@ impl SharedRack {
         self.sync_chain(Some(act), &HashMap::new());
     }
 
+    // 预留便捷入口：以默认声道数/采样率初始化机架，宿主接线后移除本标注。
+    #[allow(dead_code)]
     pub fn ensure_ready_default(&self) {
         self.ensure_ready(DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE);
     }
@@ -311,6 +315,8 @@ impl SharedRack {
     // ------------------------------------------------------------------
     // ------------------------------------------------------------------
 
+    // 预留查询接口：生产链路暂未调用（测试在用），宿主接线后移除本标注。
+    #[allow(dead_code)]
     pub fn slot_loaded(&self, format: &str, unique_id: &str) -> bool {
         self.state
             .lock()
@@ -328,6 +334,8 @@ impl SharedRack {
         find_chain_slot(&mut state, format, unique_id).map(f)
     }
 
+    // 预留非阻塞访问接口：音频线程持锁期间主线程可安全探测，宿主接线后移除本标注。
+    #[allow(dead_code)]
     pub fn try_with_slot<R>(
         &self,
         format: &str,

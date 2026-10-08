@@ -8,14 +8,18 @@
 use std::sync::atomic::{Ordering, AtomicIsize};
 
 /// 最近一次成功绑定的任务栏（Shell_TrayWnd）窗口句柄；0 表示尚未绑定。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))] // 仅 Windows 读写
 pub static LAST_TASKBAR_HWND: AtomicIsize = AtomicIsize::new(0);
 
 /// 承担任务栏迷你播放器职责的隐藏窗口标签。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))] // 仅 Windows 查找窗口
 const PLAYER_WINDOW_LABEL: &str = "taskbar-player";
 
 /// 迷你窗口与任务栏的绑定结果。
 #[derive(Eq, PartialEq, Debug, Copy, Clone, serde::Serialize)]
 #[serde(rename_all = "snake_case")] // 实现
+// Bound/Failed/AlreadyBound 仅在 Windows 分支构造，非 Windows 只产 Unsupported。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub enum OwnerBindingState {
   Bound,
   Failed,
@@ -26,6 +30,8 @@ pub enum OwnerBindingState {
 /// 几何信息来源：托盘子窗口或任务栏兜底。
 #[derive(Eq, PartialEq, Debug, Copy, Clone, serde::Serialize)]
 #[serde(rename_all = "snake_case")] // 实现
+// 两个变体都只在 Windows 分支构造，非 Windows 分支不产出几何信息。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub enum GeometrySource {
   Tray,
   TaskbarFallback,

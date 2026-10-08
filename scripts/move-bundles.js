@@ -21,8 +21,9 @@ if (process.env.BUILD_RELEASES_MODE === 'true') {
 
 // 收集所有 bundle 根目录：宿主 target/release/bundle + 交叉编译 target/<triple>/release/bundle。
 // 交叉目标按 triple 归档到对应平台目录（如 aarch64-pc-windows-msvc → releases/windows）。
-// 设置了 CARGO_TARGET_DIR 时（如 WSL 构建转发），改扫描该目录的 release/bundle，
-// 平台按产物扩展名识别（deb/rpm/appimage → linux，dmg/app → macos，exe/msi → windows）。
+// 设置了 CARGO_TARGET_DIR 时（如 WSL 构建转发），扫描该目录下 release/bundle 与各
+// triple 子目录（交叉编译产物在 <target>/<triple>/release/bundle），平台按产物扩展名识别
+// （deb/rpm/appimage → linux，dmg/app → macos，exe/msi → windows）。
 const envTargetDir = process.env.CARGO_TARGET_DIR ? path.resolve(process.env.CARGO_TARGET_DIR) : null;
 const targetRoot = envTargetDir ?? path.join(rootDir, 'src-tauri', 'target');
 
@@ -52,9 +53,17 @@ function platformForBundleFile(file) {
 
 const bundleRoots = [];
 if (envTargetDir) {
-  const dir = path.join(envTargetDir, 'release', 'bundle');
-  if (fs.existsSync(dir)) {
-    bundleRoots.push({ dir, platform: 'auto' });
+  for (const entry of fs.existsSync(envTargetDir)
+    ? fs.readdirSync(envTargetDir, { withFileTypes: true })
+    : []) {
+    if (!entry.isDirectory()) continue;
+    // release 是宿主原生目录，其余按 triple 命名（交叉编译目标）
+    const dir = entry.name === 'release'
+      ? path.join(envTargetDir, 'release', 'bundle')
+      : path.join(envTargetDir, entry.name, 'release', 'bundle');
+    if (fs.existsSync(dir)) {
+      bundleRoots.push({ dir, platform: 'auto' });
+    }
   }
 } else {
   for (const entry of fs.existsSync(targetRoot)
@@ -121,23 +130,26 @@ if (files.length === 0) {
   process.exit(0);
 }
 
-// 归档命名对齐移动端/腕上端标准：弦予音乐v<版本>-Desktop-<架构>.<扩展名>
+// 归档命名三端（Windows/macOS/Linux）统一标准：弦予音乐v<版本>-Desktop-<架构>.<扩展名>
 // 版本号以 version.ts 为唯一源头（构建前 sync-version 已同步到各处）；
-// 架构从 Tauri 产物名提取（如 弦予音乐_2.0.4_x64-setup.exe → X64），
-// 识别不出架构时兜底旧规则（exe 用 -Setup 后缀，其余直接用扩展名）。
+// 架构从 Tauri 产物名提取（如 弦予音乐_2.0.4_x64-setup.exe → X64、弦予音乐_2.0.5_amd64.deb → X64、
+// 弦予音乐_2.0.5_aarch64.dmg → ARM64），识别不出架构时兜底旧规则
+// （exe 用 -Setup 后缀，其余直接用扩展名）。
 function readAppVersion() {
   const content = fs.readFileSync(path.join(rootDir, 'version.ts'), 'utf8');
   const match = content.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
   return match ? match[1] : null;
 }
 
+// 各平台产物名的架构段写法不一：Windows/macOS 用 x64/aarch64，
+// Linux（deb/rpm/AppImage）用 amd64/x86_64/aarch64，rpm 还用点分隔（xianyu-2.0.5.x86_64.rpm）。
 function detectArch(originalName) {
-  const m = originalName.match(/_(x64|x86|aarch64|arm64)(?:_|-|\.|$)/i);
+  const m = originalName.match(/[._-](x86_64|x64|amd64|x86|aarch64|arm64)(?:[._-]|$)/i);
   if (!m) return null;
   const raw = m[1].toLowerCase();
-  if (raw === 'x64') return 'X64';
   if (raw === 'x86') return 'X86';
-  return 'ARM64'; // aarch64 / arm64
+  if (raw === 'aarch64' || raw === 'arm64') return 'ARM64';
+  return 'X64'; // x64 / amd64 / x86_64
 }
 
 function archiveName(originalName, platform) {
@@ -145,13 +157,12 @@ function archiveName(originalName, platform) {
   const ext = path.extname(originalName);
   const version = readAppVersion();
   if (!version) return originalName; // 兜底：读不到版本号就保留原名
-  const platformLabel = platform === 'macos' ? 'MacOS' : platform === 'linux' ? 'Linux' : 'Desktop';
   const arch = detectArch(originalName);
   if (!arch) {
     const suffix = platform === 'windows' && ext === '.exe' ? '-Setup' : '';
-    return `弦予音乐v${version}-${platformLabel}${suffix}${ext}`;
+    return `弦予音乐v${version}-Desktop${suffix}${ext}`;
   }
-  return `弦予音乐v${version}-${platformLabel}-${arch}${ext}`;
+  return `弦予音乐v${version}-Desktop-${arch}${ext}`;
 }
 
 console.log('[move-bundles] 正在移动构建产物到 releases/ ...');

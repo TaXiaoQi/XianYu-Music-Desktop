@@ -22,6 +22,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{WM_MOVING, WM_NCCALCSIZE};
 static DRAG_LIMIT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// 沉浸式全屏是否开启（开关由 window_fullscreen 模块维护）。
+// 读写点都在 Windows 专属回调里，非 Windows 目标下不参与编译。
+#[cfg_attr(not(windows), allow(dead_code))]
 pub static FULLSCREEN_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// 子类槽位号，进程内保持唯一即可。
