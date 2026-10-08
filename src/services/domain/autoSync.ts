@@ -1,5 +1,6 @@
 import type { AutoSyncConfig, ServerLoadStatus } from "../../types";
 import { signedRequest } from "../auth/authService";
+import { pullListenServerSnapshot } from "./leaderboardReport";
 import { getCiyuanxiId } from "./playlistSync";
 const LOG = "[AutoSync]";
 const MIN_INTERVAL_MS = 60_000;
@@ -76,26 +77,26 @@ export class AutoSyncScheduler { // 实现
             logWarn("start: 调度器未初始化");
             return;
         }
-        const config = this.getConfig();
-        if (!config.enabled) {
-            log("start: 自动同步未启用，跳过");
-            return;
-        }
         if (!this.canSync()) {
             log("start: 未登录或无弦予号，跳过");
             return;
         }
-        const now = Date.now();
-        let nextSyncAt = config.nextSyncAt;
-        if (nextSyncAt <= 0 || nextSyncAt <= now) {
-            nextSyncAt = calculateNextSyncTime(config, now);
-            this.updateConfig?.({ nextSyncAt });
+        const config = this.getConfig();
+        if (config.enabled) {
+            const now = Date.now();
+            let nextSyncAt = config.nextSyncAt;
+            if (nextSyncAt <= 0 || nextSyncAt <= now) {
+                nextSyncAt = calculateNextSyncTime(config, now);
+                this.updateConfig?.({ nextSyncAt });
+            }
+            const intervalMs = getSyncIntervalMs(config);
+            const intervalDesc = `${Math.floor(intervalMs / 3600000)}h ${Math.floor((intervalMs % 3600000) / 60000)}m ${Math.floor((intervalMs % 60000) / 1000)}s`;
+            log(
+                `start: 调度器已启动，同步间隔 ${intervalDesc}，下次同步时间: ${new Date(nextSyncAt).toLocaleString()}`,
+            );
+        } else {
+            log("start: 自动同步未启用，仅维持听歌统计快照拉取心跳");
         }
-        const intervalMs = getSyncIntervalMs(config);
-        const intervalDesc = `${Math.floor(intervalMs / 3600000)}h ${Math.floor((intervalMs % 3600000) / 60000)}m ${Math.floor((intervalMs % 60000) / 1000)}s`;
-        log(
-            `start: 调度器已启动，同步间隔 ${intervalDesc}，下次同步时间: ${new Date(nextSyncAt).toLocaleString()}`,
-        );
         this.timerId = setInterval(() => {
             void this.tick();
         }, 60_000);
@@ -127,6 +128,9 @@ export class AutoSyncScheduler { // 实现
         if (!this.getConfig || !this.canSync || !this.updateConfig) {
             return;
         }
+        // 听歌统计纯快照拉取：挂在既有 60s 心跳上（不受自动同步开关/间隔约束），
+        // 本机不播放时也能追平多端聚合值；50s 内有成功 delta 回执则门控跳过
+        await pullListenServerSnapshot(true);
         const config = this.getConfig();
         if (!config.enabled) {
             return;

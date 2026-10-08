@@ -363,7 +363,7 @@ export function usePlaylistSync() {
       },
     });
 
-    if (canSync() && settingsStore.settings.autoSync.enabled) {
+    if (canSync()) {
       scheduler.start();
     }
   }
@@ -373,7 +373,9 @@ export function usePlaylistSync() {
     if (settingsStore.settings.autoSync.enabled && canSync()) {
       scheduler.restart();
     } else {
-      scheduler.stop();
+      // 自动同步关闭/未登录也维持心跳（tick 内部门控：关闭时只做听歌统计
+      // 快照拉取，未登录时 start 直接不起定时器）
+      scheduler.start();
     }
   }
 
