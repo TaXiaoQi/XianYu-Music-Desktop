@@ -535,14 +535,22 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
         return resolvePlainArtistPaths();
       case 'album':
         return resolvePlainAlbumPaths();
-      case 'recent':
-        return localOrder.value !== 'custom'
-          ? (remoteRecentPaths.value.length > 0 ? remoteRecentPaths.value : listKnownRecentPaths())
-          : orderPathsBySortMode(listKnownRecentPaths(), localOrder.value, songsById.value);
-      case 'favorites':
-        return localOrder.value !== 'custom'
-          ? (remoteFavoritePaths.value.length > 0 ? remoteFavoritePaths.value : collectFavoriteFallbackPaths())
-          : orderPathsBySortMode(collectFavoriteFallbackPaths(), localOrder.value, songsById.value);
+      case 'recent': {
+        const pool = remoteRecentPaths.value.length > 0 ? remoteRecentPaths.value : listKnownRecentPaths();
+        return localOrder.value === 'custom'
+          ? pool
+          : orderPathsBySortMode(pool, localOrder.value, songsById.value);
+      }
+      case 'favorites': {
+        // 后端视图只对本地库曲目排序，在线曲目按原收藏序追加在尾部，
+        // 因此这里统一按排序模式做一次本地重排，保证在线曲目同样生效。
+        const pool = remoteFavoritePaths.value.length > 0
+          ? remoteFavoritePaths.value
+          : collectFavoriteFallbackPaths();
+        return localOrder.value === 'custom'
+          ? pool
+          : orderPathsBySortMode(pool, localOrder.value, songsById.value);
+      }
       case 'playlist':
         return orderPathsBySortMode(activePlaylistPaths.value, playlistOrder.value, songsById.value);
       default:
@@ -561,14 +569,18 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
     const matchesQuery = buildTextMatcher(needle);
 
     switch (viewMode.value) {
-      case 'favorites':
-        return localOrder.value !== 'custom'
-          ? remoteFavoritePaths.value
-          : collectFavoriteFallbackPaths().filter(matchesQuery);
-      case 'recent':
-        return localOrder.value !== 'custom'
-          ? remoteRecentPaths.value
-          : listKnownRecentPaths().filter(matchesQuery);
+      case 'favorites': {
+        const pool = localOrder.value === 'custom'
+          ? collectFavoriteFallbackPaths().filter(matchesQuery)
+          : remoteFavoritePaths.value;
+        return orderPathsBySortMode(pool, localOrder.value, songsById.value);
+      }
+      case 'recent': {
+        const pool = localOrder.value === 'custom'
+          ? listKnownRecentPaths().filter(matchesQuery)
+          : remoteRecentPaths.value;
+        return orderPathsBySortMode(pool, localOrder.value, songsById.value);
+      }
       case 'all':
         return localOrder.value !== 'custom'
           ? restrictToCanonical(remoteAllPaths.value)
