@@ -224,7 +224,15 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
                 .spawn()
                 .map_err(|e| format!("启动 MSI 安装程序失败: {e}"))?;
         } else {
-            Command::new(&path_str)
+            // NSIS 安装器（perMachine）要求管理员权限，CreateProcess 直接启动会报
+            // ERROR_ELEVATION_REQUIRED (740) 导致更新永远装不上，必须经 cmd start
+            // （ShellExecute 语义）触发 UAC 提权。/P 被动模式（仅进度条），/R 安装
+            // 成功后自动重启应用。
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            Command::new("cmd")
+                .args(["/C", "start", "", &path_str, "/P", "/R"])
+                .creation_flags(CREATE_NO_WINDOW)
                 .spawn()
                 .map_err(|e| format!("启动安装程序失败: {e}"))?;
         }
