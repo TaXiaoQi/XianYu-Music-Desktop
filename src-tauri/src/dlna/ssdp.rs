@@ -121,6 +121,47 @@ pub async fn search_renderers(timeout_ms: u64) -> Vec<String> {
     found
 }
 
+/// TCP 直连扫描兜底：部分环境组播不可达（Android 组播路由偏向蜂窝、AP 隔离、
+/// 双频不互转等），导致 M-SEARCH 发不出/收不到应答。本家族渲染器 httpd 固定
+/// 从 9958 起伺服 /dlna/desc.xml，对所在 /24 私网并发探测 9958 端口补充发现。
+pub async fn sweep_family_renderers() -> Vec<String> {
+    let Some(v4) = lan_ipv4() else {
+        return Vec::new();
+    };
+    let o = v4.octets();
+    // 仅扫 RFC1918 私网；蜂窝/VPN 网段扫了也够不到局域网设备
+    let private = o[0] == 10
+        || (o[0] == 172 && (16..=31).contains(&o[1]))
+        || (o[0] == 192 && o[1] == 168);
+    if !private {
+        return Vec::new();
+    }
+    const FAMILY_PORT: u16 = 9958;
+    let mut set = tokio::task::JoinSet::new();
+    for i in 1..=254u16 {
+        let host = format!("{}.{}.{}.{}", o[0], o[1], o[2], i);
+        set.spawn(async move {
+            let addr = format!("{host}:{FAMILY_PORT}");
+            let reachable = tokio::time::timeout(
+                Duration::from_millis(350),
+                tokio::net::TcpStream::connect(&addr),
+            )
+            .await
+            .map(|r| r.is_ok())
+            .unwrap_or(false);
+            reachable.then(|| format!("http://{host}:{FAMILY_PORT}/dlna/desc.xml"))
+        });
+    }
+    let mut out = Vec::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok(Some(loc)) = res {
+            out.push(loc);
+        }
+    }
+    out.sort();
+    out
+}
+
 pub struct SsdpAdvertiser {
     shutdown_tx: watch::Sender<bool>,
 }
@@ -324,10 +365,17 @@ mod tests {
 
     #[tokio::test]
     async fn advertiser_answers_msearch_after_join() {
-        let probe = match std::net::UdpSocket::bind("0.0.0.0:0") {
-            Ok(s) => s,
-            Err(_) => return,
-        };
+        // 与生产路径一致显式指定组播出接口：多网卡机器（含虚拟网卡）不指定时
+        // M-SEARCH 常从收不到局域网报文的接口发出，导致本测试假性失败。
+        let probe = (|| -> std::io::Result<std::net::UdpSocket> {
+            let s = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+            if let Some(iface) = lan_ipv4() {
+                let _ = s.set_multicast_if_v4(&iface);
+            }
+            s.bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)).into())?;
+            Ok(s.into())
+        })();
+        let Ok(probe) = probe else { return };
         probe
             .set_read_timeout(Some(Duration::from_millis(500)))
             .unwrap();
