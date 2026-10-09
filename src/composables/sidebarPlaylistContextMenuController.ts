@@ -2,6 +2,10 @@ import { computed, ref, type Ref } from 'vue';
 
 import type { Playlist, Song } from '../types';
 import type { SyncDeleteScope } from '../components/overlays/SyncDeleteScopeModal.vue';
+import {
+  addDownloadSkipPlaylistIds,
+  removeDownloadSkipPlaylistIds,
+} from '../services/domain/playlistSongSyncState';
 
 export interface UseSidebarPlaylistContextMenuOptions {
   selectedPlaylistIds: Ref<Set<string>>;
@@ -14,6 +18,7 @@ export interface UseSidebarPlaylistContextMenuOptions {
   deletePlaylist: (id: string) => void;
   isCloudOrigin: (id: string) => boolean;
   hasCloudId: (id: string) => boolean;
+  getPlaylistCloudId: (id: string) => string;
   deleteCloudPlaylist: (id: string) => Promise<boolean>;
   clearSelection: () => void;
 }
@@ -34,6 +39,7 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
     deletePlaylist,
     isCloudOrigin,
     hasCloudId,
+    getPlaylistCloudId,
     deleteCloudPlaylist,
     clearSelection,
   } = options;
@@ -82,8 +88,11 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
   /** 云端删除范围确认：local 仅删本地，all 连云端一起删，cloud 仅删云端 */
   const applyDeleteScope = async (scope: SyncDeleteScope) => {
     for (const id of scopeDialogIds.value) {
+      const cloudId = getPlaylistCloudId(id);
       const synced = hasCloudId(id);
       if (scope === 'local') {
+        // 记录下载跳过，防止下次同步 diff 把云端歌单重新 create 回来
+        if (cloudId) addDownloadSkipPlaylistIds([cloudId]);
         deletePlaylist(id);
         continue;
       }
@@ -91,12 +100,14 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
         if (synced) {
           await deleteCloudPlaylist(id);
         }
+        if (cloudId) removeDownloadSkipPlaylistIds([cloudId]);
         deletePlaylist(id);
         continue;
       }
       if (synced) {
         await deleteCloudPlaylist(id);
       }
+      if (cloudId) removeDownloadSkipPlaylistIds([cloudId]);
     }
     clearSelection();
     scopeDialogIds.value = [];

@@ -4,6 +4,7 @@ import { localStore } from '../storage/localStore';
 const CLOUD_KEEP_KEY = 'xianyumusic.playlistSongCloudKeep';
 const LOCAL_ONLY_KEY = 'xianyumusic.playlistSongLocalOnly';
 const PENDING_DELETED_KEY = 'xianyumusic.playlistSongPendingDeleted';
+const DOWNLOAD_SKIP_KEY = 'xianyumusic.playlistDownloadSkip';
 
 type CloudKeepMap = Record<string, Record<string, string>>;
 type PathListMap = Record<string, string[]>;
@@ -138,4 +139,31 @@ export function clearPlaylistSongTombstones(cloudId: string) {
     delete map[cloudId];
     return map;
   })());
+}
+
+// ==================== 歌单下载跳过（"仅删本地"防回拉） ====================
+// "删除本地（云端保留）"后，云端快照仍在；若无跳过记录，下次下载 diff 会因
+// 本地无匹配而 create_playlist 把歌单拉回来，用户感知为删除无效。
+
+export function getDownloadSkipPlaylistIds(): Set<string> {
+  return new Set(localStore.getJson<string[]>(DOWNLOAD_SKIP_KEY) ?? []);
+}
+
+export function addDownloadSkipPlaylistIds(ids: Iterable<string>) {
+  const set = getDownloadSkipPlaylistIds();
+  const before = set.size;
+  for (const id of ids) if (id) set.add(id);
+  if (set.size !== before) {
+    localStore.setJson(DOWNLOAD_SKIP_KEY, Array.from(set));
+  }
+}
+
+export function removeDownloadSkipPlaylistIds(ids: Iterable<string>) {
+  const remove = new Set(ids);
+  if (remove.size === 0) return;
+  const set = getDownloadSkipPlaylistIds();
+  const next = Array.from(set).filter(id => !remove.has(id));
+  if (next.length !== set.size) {
+    localStore.setJson(DOWNLOAD_SKIP_KEY, next);
+  }
 }

@@ -123,12 +123,16 @@ const contextMenuApi = useSidebarPlaylistContextMenu({
   ensurePlaylistSelected: requirePlaylistSelected,
   getSongsFromPlaylist, addSongsToQueue, clearQueue, playSong,
   openHomePlaylist, deletePlaylist,
+  // 三选一的前提是本地知道云端条目 id：无 cloudId 时即使 isCloud=true 也删不了
+  // 云端（弹了"删除全部/仅保留本地"也无从生效），回落普通删除避免误导。
   isCloudOrigin: (id) => Boolean(
-    playlists.value?.some?.((item) => item.id === id && (item.cloudId != null || item.isCloud === true)),
+    playlists.value?.some?.((item) => item.id === id && item.cloudId),
   ),
   hasCloudId: (id) => Boolean(
-    playlists.value?.some?.((item) => item.id === id && item.cloudId != null),
+    playlists.value?.some?.((item) => item.id === id && item.cloudId),
   ),
+  getPlaylistCloudId: (id) =>
+    playlists.value?.find?.((item) => item.id === id)?.cloudId || '',
   deleteCloudPlaylist: async (id) => deleteCloudPlaylistLocal(id),
   clearSelection: clearPlaylistSelection, // 实现
 });

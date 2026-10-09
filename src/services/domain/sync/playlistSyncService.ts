@@ -17,11 +17,13 @@ import { fileSyncV2DownloadOps, type LocalPlaylistReportPayload } from '../playl
 import {
   clearPlaylistSongTombstones,
   getCloudKeepSongs,
+  getDownloadSkipPlaylistIds,
   getLocalOnlySongs,
   getPendingDeletedSongs,
   pruneCloudKeepSongs,
   pruneLocalOnlySongs,
   prunePendingDeletedSongs,
+  removeDownloadSkipPlaylistIds,
 } from '../playlistSongSyncState';
 import type { ToastKind } from './toastKind';
 import { buildLibraryMatchIndex, resolveLocalPath } from './libraryMatch';
@@ -204,6 +206,11 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
       const written = applyUploadIdMap(uploadResult.id_map, collections.setPlaylistCloudId);
       if (uploadResult.id_map?.length) {
         deps.log(`uploadPlaylists: 已写回 ${written}/${uploadResult.id_map.length} 个歌单的云端 id`);
+        // 重新上传视为用户要回该歌单，解除"仅删本地"的下载跳过
+        const reUploaded = uploadResult.id_map
+          .map(entry => entry.cloudId ?? '')
+          .filter(Boolean);
+        removeDownloadSkipPlaylistIds(reUploaded);
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -274,6 +281,18 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
       return;
     }
 
+    // "仅删本地（云端保留）"的歌单：跳过 create，防止被同步拉回来
+    const downloadSkip = getDownloadSkipPlaylistIds();
+    const filteredOps = ops.filter(op => {
+      if (op.type !== 'create_playlist') return true;
+      const cid = op.playlist?.cloudId ?? '';
+      return !cid || !downloadSkip.has(cid);
+    });
+    if (filteredOps.length === 0) {
+      deps.log('downloadPlaylists(v2): 过滤下载跳过后无变更');
+      return;
+    }
+
     const target: SyncOpsTarget = {
       matchIndex,
       findByCloudId: cloudId => collections.playlists.find(p => p.cloudId === cloudId),
@@ -297,7 +316,7 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
       setExtraSongs: songs => { for (const s of songs) library.setExtraSong(s); },
     };
 
-    const outcome = applySyncOps(ops, target);
+    const outcome = applySyncOps(filteredOps, target);
     result.downloadedPlaylists = outcome.createdPlaylists + outcome.mergedPlaylists;
     result.downloadedSongs = outcome.addedSongs;
     deps.log(`downloadPlaylists(v2): created=${outcome.createdPlaylists}, merged=${outcome.mergedPlaylists}, added=${outcome.addedSongs}, removed=${outcome.removedSongs}`);
@@ -315,8 +334,15 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
 
     const matchIndex = buildLibraryMatchIndex(library.songList);
 
+    // 与 v2 一致："仅删本地"的歌单不再从云端拉回
+    const downloadSkip = getDownloadSkipPlaylistIds();
+
     for (let i = 0; i < downloadData.playlists.length; i++) {
       const cloudPl = downloadData.playlists[i];
+      if (cloudPl.cloudId && downloadSkip.has(cloudPl.cloudId)) {
+        deps.log(`downloadPlaylists: 跳过 "${cloudPl.name}" - 处于仅删本地墓碑中`);
+        continue;
+      }
       deps.log(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
       deps.onProgress(`正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`);
 
