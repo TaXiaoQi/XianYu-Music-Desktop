@@ -15,8 +15,13 @@
  * 带 arm64 参数时（tauri:build:linux:arm64）交叉编译 aarch64 包：
  *   - 产出 deb/rpm/appimage。AppImage 交叉打包依赖 qemu-user-static binfmt
  *     （x86 宿主上透明模拟运行 arm64 版 linuxdeploy），未安装时脚本退出并提示
- *   - WSL 内需先备好交叉环境：gcc-aarch64-linux-gnu + multiarch 的
- *     libwebkit2gtk-4.1-dev:arm64（缺失时脚本会打印准备命令并退出）
+ *
+ * webkit2gtk dev 架构依赖自动切换（ensureWebKitDev）：
+ *   libwebkit2gtk-4.1-dev 的 :amd64 与 :arm64 含跨架构共享的头文件，apt 层面互斥
+ *   （安装其一 apt 会自动移除另一个，二者不能共存）。构建前探测 WSL 内已装的架构，
+ *   与目标不符或缺失时经 `wsl -u root` 自动 apt 安装/切换（ARM64 方向连同
+ *   gcc-aarch64-linux-gnu、multiarch 与 ports 源一并补齐）。
+ *   可单独执行 `node scripts/build-linux.js [arm64] --check-deps` 提前就绪依赖。
  *
  * 在 Linux/WSL 内直接执行时走原生链路：sync-version → tauri build → move-bundles。
  */
@@ -88,6 +93,83 @@ function toWslPath(windowsPath) {
   return `/mnt/${windowsPath[0].toLowerCase()}${windowsPath.slice(2).replace(/\\/g, '/')}`;
 }
 
+// 经 wsl.exe 执行一段 bash 脚本（写到临时文件再传路径，规避 wsl.exe 重组 argv 丢引号）。
+// asRoot 时以 root 运行（WSL 免密，用于 apt 装依赖）；capture 时捕获 stdout 供解析。
+function wslBash(script, { tag, asRoot = false, capture = false } = {}) {
+  const winPath = path.join(os.tmpdir(), `xy-build-linux-${tag}.sh`);
+  const wslPath = toWslPath(winPath);
+  fs.writeFileSync(winPath, script.trim() + '\n', 'utf8');
+  try {
+    return spawnSync('wsl.exe', [...(asRoot ? ['-u', 'root'] : []), 'bash', wslPath], {
+      stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+      encoding: 'utf8',
+    });
+  } finally {
+    fs.rmSync(winPath, { force: true });
+  }
+}
+
+// libwebkit2gtk-4.1-dev 的 :amd64 与 :arm64 因跨架构共享头文件在 apt 层互斥
+//（安装其一 apt 会自动移除另一个）。构建前探测 WSL 内已装架构，与目标不符或
+// 缺失时经 `wsl -u root` 自动安装/切换；无互斥的配套依赖（交叉工具链等）一并补齐。
+function ensureWebKitDev() {
+  const probe = wslBash(`
+    echo "HOST_ARCH=$(uname -m)"
+    A=0; B=0
+    dpkg -s libwebkit2gtk-4.1-dev:amd64 >/dev/null 2>&1 && A=1
+    dpkg -s libwebkit2gtk-4.0-dev:amd64 >/dev/null 2>&1 && A=1
+    dpkg -s libwebkit2gtk-4.1-dev:arm64 >/dev/null 2>&1 && B=1
+    dpkg -s libwebkit2gtk-4.0-dev:arm64 >/dev/null 2>&1 && B=1
+    echo "AMD64_DEV=$A"
+    echo "ARM64_DEV=$B"
+  `, { tag: 'wkprobe', capture: true });
+  if (probe.error || probe.status !== 0) {
+    console.error('[build-linux] 无法探测 WSL 内 webkit2gtk 依赖状态（WSL 不可用或 bash 执行失败）。');
+    if (probe.stderr) console.error(String(probe.stderr).trim());
+    process.exit(1);
+  }
+  const out = probe.stdout || '';
+  const hostArch = (out.match(/HOST_ARCH=(\S+)/) || [])[1] || 'x86_64';
+  const hasAmd64 = /AMD64_DEV=1/.test(out);
+  const hasArm64 = /ARM64_DEV=1/.test(out);
+  // 本次构建需要的 dpkg 架构：aarch64 宿主或 ARM64 交叉 → arm64；其余 → amd64
+  const need = hostArch === 'aarch64' || crossArm64 ? 'arm64' : 'amd64';
+  if ((need === 'arm64' && hasArm64) || (need === 'amd64' && hasAmd64)) {
+    console.log(`[build-linux] WSL webkit2gtk dev（${need}）就绪。`);
+    return;
+  }
+  const other = need === 'arm64' ? 'amd64' : 'arm64';
+  const wrongArch = need === 'arm64' ? hasAmd64 : hasArm64;
+  console.log(
+    wrongArch
+      ? `[build-linux] WSL 内 webkit2gtk dev 当前为 ${other} 版，与本次目标架构互斥，自动切换（将移除 ${other} 版，构建另一架构时会自动切回）...`
+      : `[build-linux] WSL 内缺少 ${need} 架构 webkit2gtk 开发依赖，自动安装...`,
+  );
+  const pkgs = need === 'arm64'
+    ? 'gcc-aarch64-linux-gnu libwebkit2gtk-4.1-dev:arm64 libssl-dev:arm64'
+    : 'libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev';
+  const install = wslBash(`
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    # ARM64 首次使用：补 multiarch 与 ports 源（已配置则跳过）
+    if [ "${need}" = "arm64" ]; then
+      dpkg --print-foreign-architectures | grep -qx arm64 || dpkg --add-architecture arm64
+      if ! grep -qs 'ports.ubuntu.com' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; then
+        . /etc/os-release
+        echo "deb [arch=arm64] https://ports.ubuntu.com/ubuntu-ports $VERSION_CODENAME main universe" > /etc/apt/sources.list.d/arm64-ports.list
+      fi
+    fi
+    apt-get update -qq
+    apt-get install -y ${pkgs}
+  `, { tag: 'wkswitch', asRoot: true });
+  if (install.status !== 0) {
+    console.error('[build-linux] webkit2gtk 架构依赖自动切换失败（apt 报错见上方输出）。');
+    console.error(`  可在 WSL 内手动执行后重试：sudo apt install -y ${pkgs}`);
+    process.exit(1);
+  }
+  console.log(`[build-linux] webkit2gtk dev（${need}）切换完成。`);
+}
+
 // 读取 Linux 配置并关闭 beforeBuildCommand（dist 已在 Windows 侧构建完成）；
 // 交叉编译 ARM64 时产出 deb/rpm/appimage（AppImage 经 qemu binfmt 运行 arm64 版 linuxdeploy）。
 function readMergedLinuxConf() {
@@ -111,6 +193,10 @@ function runViaWsl() {
   }
 
   // 1. Windows 侧完成版本同步与前端构建
+  // webkit2gtk dev 架构依赖探测/自动切换（:amd64 与 :arm64 互斥，详见函数注释），
+  // 在前端构建前执行以便依赖问题尽早失败
+  ensureWebKitDev();
+
   const sync = spawnSync(process.execPath, [path.join(__dirname, 'sync-version.js')], { stdio: 'inherit' });
   if (sync.status !== 0) process.exit(sync.status ?? 1);
 
@@ -275,6 +361,16 @@ function runViaWsl() {
     fs.rmSync(innerWinPath, { force: true });
   }
   process.exit(exitStatus);
+}
+
+// 仅就绪依赖、不构建：node scripts/build-linux.js [arm64] --check-deps
+if (process.argv.includes('--check-deps')) {
+  if (os.platform() !== 'win32') {
+    console.error('[build-linux] --check-deps 仅在 Windows 上（转发 WSL 场景）有意义。');
+    process.exit(1);
+  }
+  ensureWebKitDev();
+  process.exit(0);
 }
 
 if (os.platform() === 'win32') {
