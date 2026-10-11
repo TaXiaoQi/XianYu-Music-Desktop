@@ -386,3 +386,35 @@ html.no-glass-switch .glass-switch.is-checked::before {
 html.no-glass-switch .glass-switch::after {
   display: none !important;
 }
+
+/* ---- 全局按压弹簧反馈（对齐移动端手感）：按下平滑缩小，松手过冲回弹 ---- */
+/* 覆盖原生 button 与 role="button" 可点元素；specificity 压过单类 Tailwind 过渡工具、
+   让位于组件 scoped 样式；.glass-switch 自带 !important 按压规则不受影响；
+   滑杆（input[type=range]）、拖拽行/把手均非此类选择器，天然跳过。
+   只过渡 transform 与合成器友好属性（scale/translate/rotate 为 Tailwind v4 独立变换属性，
+   与 transform 叠加生效），不引发布局重排。 */
+:root button,
+[role="button"] {
+  transition-property: transform, scale, translate, rotate, color, background-color, border-color, fill, stroke, opacity, box-shadow;
+  transition-duration: 380ms, 200ms, 200ms, 200ms, 200ms, 200ms, 200ms, 200ms, 200ms, 200ms, 200ms;
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1),
+    cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1),
+    cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1),
+    cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1),
+    cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 按下：快出曲线；松手后回到上方基础态，transform 走 380ms 过冲弹簧回弹 */
+:root button:active:not(:disabled),
+[role="button"]:active:not([aria-disabled="true"]) {
+  transform: scale(0.94);
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root button:active:not(:disabled),
+  [role="button"]:active:not([aria-disabled="true"]) {
+    transform: none;
+  }
+}

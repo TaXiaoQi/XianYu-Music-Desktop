@@ -27,6 +27,7 @@ import { useGlobalInterfaceLanguage } from './features/i18n/useGlobalInterfaceLa
 import { consumeInstallLanguage, syncLanguageToInstaller } from './features/i18n/installLanguage';
 import { playerStorage } from './services/storage/playerStorage'; // 实现
 import { usePlaylistSync } from './composables/usePlaylistSync';
+import { installCloudCredsSync, downloadCloudCredsOnLogin } from './services/domain/cloudCredsSync';
 import { useAuthStore } from './features/auth/store';
 import { useDlnaCastStore } from './features/playback/castStore';
 import { useDesktopLinkStore } from './features/playback/desktopLinkStore';
@@ -90,6 +91,7 @@ if (currentWindowLabel === 'main') { // 实现
   watch(() => authStore.isLoggedIn, (loggedIn) => {
     if (loggedIn) {
       void playlistSync.syncOnLoginSuccess();
+      void downloadCloudCredsOnLogin();
       playlistSync.checkAutoSync();
     }
   });
@@ -174,6 +176,7 @@ if (currentWindowLabel === 'main') { // 实现
     }
 
     playlistSync.initAutoSync();
+    installCloudCredsSync();
 
     try {
       const languageBeforeInstallRead = settings.value.language; // 实现

@@ -14,6 +14,7 @@ export type SettingsTabId = // 实现
   | 'plugins'
   | 'shortcuts' // 实现
   | 'account'
+  | 'cloud'
   | 'network'
   | 'advanced' // 实现
   | 'linkage'
@@ -39,6 +40,7 @@ type SearchItemInput = string | { // 实现
 
 const TAB_NAMES: Record<SettingsTabId, string> = { // 实现
   account: '账号', // 实现
+  cloud: '网盘',
   general: '常规', // 实现
   plugins: '音源',
   theme: '外观', // 实现
@@ -287,6 +289,12 @@ const staticItems: SettingsSearchItem[] = [ // 实现
     { label: '同步间隔', keywords: '小时 自动同步' }, // 实现
     { label: '最大延迟', keywords: '分钟 自动同步' }, // 实现
     { label: '退出登录', keywords: '注销 账号' }, // 实现
+  ]),
+
+  ...makeItems('cloud', '网盘音乐', [
+    { label: '绑定管理', keywords: '网盘 绑定 解绑 账号 云盘 百度 阿里 夸克 UC 天翼 139 迅雷 123 PikPak 蓝奏 微云' },
+    { label: '网盘浏览', keywords: '网盘 云盘 浏览 播放 文件 目录' },
+    { label: '分享链接导入', keywords: '分享 链接 提取码 转存 直链 解析 导入' },
   ]),
 
   ...makeItems('toolbox', '音乐整理工具箱', [ // 实现

@@ -1,7 +1,7 @@
 {
   "name": "xianyu-music",
   "private": true,
-  "version": "2.0.5",
+  "version": "2.0.6",
   "license": "XSAL-1.0",
   "type": "module",
   "scripts": {

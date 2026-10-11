@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'; // 实现
 const settingsLoaders = {
   about: () => import("../components/settings/SettingsAbout.vue").then(m => m.default),
   account: () => import("../components/settings/SettingsAccount.vue").then(m => m.default),
+  cloud: () => import("../components/settings/SettingsCloud.vue").then(m => m.default),
   desktopLyrics: () => import("../components/settings/SettingsDesktopLyrics.vue").then(m => m.default),
   sleepTimer: () => import("../components/settings/SettingsSleepTimer.vue").then(m => m.default),
   general: () => import("../components/settings/SettingsGeneral.vue").then(m => m.default),
@@ -48,6 +49,7 @@ const lazySettings = (loader: () => Promise<Component>) => defineAsyncComponent(
 
 const SettingsAbout = lazySettings(settingsLoaders.about);
 const SettingsAccount = lazySettings(settingsLoaders.account);
+const SettingsCloud = lazySettings(settingsLoaders.cloud);
 const SettingsDesktopLyrics = lazySettings(settingsLoaders.desktopLyrics);
 const SettingsSleepTimer = lazySettings(settingsLoaders.sleepTimer);
 const SettingsGeneral = lazySettings(settingsLoaders.general);
@@ -74,7 +76,7 @@ import { useI18n } from '../features/i18n'; // 实现
 
 type SettingsViewTabId = SettingsTabId | 'debug'; // 实现
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'sleepTimer', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'network', 'advanced', 'linkage', 'feedback', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'sleepTimer', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'cloud', 'network', 'advanced', 'linkage', 'feedback', 'debug', 'about'];
 
 const route = useRoute(); // 实现
 const router = useRouter(); // 实现
@@ -330,6 +332,7 @@ onBeforeUnmount(() => { // 实现
 
 const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => [ // 实现
   { id: 'account', name: t('settings.account') }, // 实现
+  { id: 'cloud', name: t('settings.cloud') },
   { id: 'general', name: t('settings.general') }, // 实现
   { id: 'theme', name: t('settings.theme') }, // 实现
   { id: 'plugins', name: t('settings.plugins') },
@@ -468,6 +471,7 @@ const tabs = computed(() => { // 实现
             <SettingsGeneral v-if="activeTab === 'general'" />
           <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
           <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
+          <SettingsCloud v-else-if="activeTab === 'cloud'" key="cloud" />
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
           <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
           <SettingsSleepTimer v-else-if="activeTab === 'sleepTimer'" key="sleepTimer" />

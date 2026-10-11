@@ -136,6 +136,9 @@ export const getSongSourceTag = (
   song: { path?: string; source_type?: string; plugin_id?: string; rawData?: any } | null | undefined,
 ): SongSourceTagInfo => {
   const path = song?.path;
+  if (path?.startsWith('cloud://')) {
+    return { label: '网盘', brand: false };
+  }
   if (path?.startsWith('lx://')) {
     const sourceId = path.slice('lx://'.length).split('/')[0] as LxSourceId;
     return { label: LX_SOURCE_NAMES[sourceId] ?? '在线', brand: false };

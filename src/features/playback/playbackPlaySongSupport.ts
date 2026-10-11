@@ -38,7 +38,9 @@ export const isQualitySwitchRequest = (
   && previousSong.path === song.path;
 
 export const isOriginalOnlinePath = (audioFilePath: string): boolean =>
-  audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
+  audioFilePath.startsWith('lx://')
+  || audioFilePath.startsWith('plugin://')
+  || audioFilePath.startsWith('cloud://');
 
 export const shouldStopPreviousAudioBeforeOnlineResolve = (
   audioFilePath: string,

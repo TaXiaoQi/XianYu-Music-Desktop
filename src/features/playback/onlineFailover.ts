@@ -25,7 +25,8 @@ export function isOnlineStreamPath(path: string): boolean {
       || path.startsWith('https://')
       || path.startsWith('lx://')
       || path.startsWith('plugin://')
-      || path.startsWith('remote://'));
+      || path.startsWith('remote://')
+      || path.startsWith('cloud://'));
 }
 
 const QISHUI_SEO_TRACK_URL = 'https://beta-luna.douyin.com/luna/h5/seo_track';

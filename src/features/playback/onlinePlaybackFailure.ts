@@ -45,6 +45,10 @@ export function createOnlinePlaybackFailureController(
   const recentFailurePaths = new Map<string, number>();
   const knownFailedPluginPrefixes = new Set<string>();
   const recentReSearch = new Map<string, number>();
+  // 重搜换源学习映射：源键（plugin:xxx / lx:xxx）→ 上次重搜命中的插件 id。
+  // 跨平台兜底成功后，同源后续歌曲直达命中插件，免去逐首全量重搜
+  const reSearchPluginForSource = new Map<string, string>();
+  const RE_SEARCH_SOURCE_MAP_MAX = 32;
 
   const pruneRecentFailurePaths = (now = Date.now()) => {
     for (const [path, failedAt] of recentFailurePaths) {
@@ -181,6 +185,8 @@ export function createOnlinePlaybackFailureController(
     const failedPluginId = failedSearchResult?.pluginId || '';
     const keyword = `${song.name} ${song.artist}`.trim();
     if (!keyword) return false;
+    // 源键与移动端 _onlineSourceKey 同语义：原歌绑定插件即源（不含具体歌曲）
+    const sourceKey: string | null = failedPluginId ? `plugin:${failedPluginId}` : null;
 
     console.info(`[Audio] 重搜换源: ${song.name}`);
     try {
@@ -193,6 +199,19 @@ export function createOnlinePlaybackFailureController(
         } catch { /* 单个插件探测失败不影响整体 */ }
       }
       if (playable.length === 0) return false;
+
+      // 上次该源重搜命中的插件置顶优先：同源后续歌曲直达命中插件；
+      // 插件被移除/禁用（不在可播列表）时映射自动失效
+      const learnedPluginId = sourceKey == null ? null : reSearchPluginForSource.get(sourceKey) ?? null;
+      if (learnedPluginId != null) {
+        const li = playable.findIndex(p => p.id === learnedPluginId);
+        if (li > 0) {
+          const [learned] = playable.splice(li, 1);
+          if (learned) playable.unshift(learned);
+        } else if (li < 0) {
+          reSearchPluginForSource.delete(sourceKey!);
+        }
+      }
 
       const searchResults = await Promise.all(playable.map(p => searchOnePlugin(p, keyword)));
       const normTitle = normalizeSongText(song.name);
@@ -225,6 +244,15 @@ export function createOnlinePlaybackFailureController(
           });
           const pluginName = getStoredPlugins().find(p => p.id === hit.pluginId)?.name || hit.pluginId;
           console.info(`[Audio] 重搜换源命中: ${pluginName}`);
+          if (sourceKey != null) {
+            // 学习映射写入：delete 先刷新插入序，超限 LRU 淘汰最早条目（与移动端一致）
+            reSearchPluginForSource.delete(sourceKey);
+            reSearchPluginForSource.set(sourceKey, hit.pluginId);
+            if (reSearchPluginForSource.size > RE_SEARCH_SOURCE_MAP_MAX) {
+              const oldest = reSearchPluginForSource.keys().next().value;
+              if (oldest != null) reSearchPluginForSource.delete(oldest);
+            }
+          }
           deps.showToast(`已切换到 ${pluginName} 音源`, 'info');
           return true;
         } catch (error) {

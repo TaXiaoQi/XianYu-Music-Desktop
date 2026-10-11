@@ -51,8 +51,10 @@ export async function prepareOnlinePlayback(
   }
 
   // 跨源模糊匹配兜底（对齐移动端）：精确播链键未命中时，按"标题+歌手+时长±3s"
-  // 找同一首歌其他源的已下载本地文件。仅对在线播链生效，本地歌零额外开销。
-  if (!preparedUsingDownloadedAudioFile && isOnlineStreamPath(preparedAudioFilePath)) {
+  // 找同一首歌其他源的已下载本地文件。仅对在线播链生效，本地歌零额外开销；
+  // 网盘曲目（cloud://）以盘内文件为准，不参与模糊匹配。
+  if (!preparedUsingDownloadedAudioFile && isOnlineStreamPath(preparedAudioFilePath)
+    && !preparedAudioFilePath.startsWith('cloud://')) {
     try {
       const fuzzyFilePath = await deps.findFuzzyDownloaded({
         title: input.song.title || input.song.name,

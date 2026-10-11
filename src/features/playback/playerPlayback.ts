@@ -17,6 +17,7 @@ import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoade
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getLastPluginError} from '../../services/domain/pluginEngine';
 import {prepareOnlinePlayback} from './onlinePlaybackFacade';
+import {getLastCloudResolveError} from './cloudPlaybackResolver';
 import {scheduleOnlinePrecache} from './onlinePrecache';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
@@ -564,6 +565,8 @@ export const createPlayerPlayback = ({
           showToast('该音源仅能获取 60 秒试听，已跳过', 'error');
         } else if (pluginError.includes('该音源无法提供此歌曲')) {
           showToast(`${pluginError}，已跳过`, 'error');
+        } else if (audioFilePath.startsWith('cloud://')) {
+          showToast(getLastCloudResolveError() || '网盘播放失败', 'error');
         }
         await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
         return;

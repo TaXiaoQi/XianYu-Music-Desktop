@@ -16,6 +16,7 @@ import {
 import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
 import { getPluginBilibiliCookies } from '../../services/domain/pluginCookieStore';
 import { resolveActualQuality } from '../../services/domain/audioQualityVerify';
+import { resolveCloudOnlineAudio } from './cloudPlaybackResolver';
 import { healDanglingPluginId } from '../../services/domain/pluginIdHeal';
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -125,6 +126,10 @@ export const resolveOnlineAudio = async ({
   availableQualities,
   preFetchedUrl,
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
+  if (audioFilePath.startsWith('cloud://')) {
+    // 网盘曲目：直链缓存 → 网盘直链；无音质列表/歌词/换源链路。
+    return resolveCloudOnlineAudio(audioFilePath, song);
+  }
   if (audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://')) {
     try {
       const probe = await ensureSharedQualityProbe(song, availableQualities);
