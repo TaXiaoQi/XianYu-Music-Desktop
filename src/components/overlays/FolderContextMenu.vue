@@ -29,6 +29,7 @@ const props = defineProps<{ // 实现
     x: number;
     y: number;
     isRootFolder?: boolean;
+    isCloudFolder?: boolean;
     isManagementMode?: boolean;
     selectedCount?: number;
 }>();
@@ -61,10 +62,14 @@ watchPointerAway(
     },
 );
 
-const mgmtUnlocked = computed(() =>
-    shouldShowFolderManagementActions(!!props.isManagementMode),
+const mgmtUnlocked = computed(
+    () =>
+        shouldShowFolderManagementActions(!!props.isManagementMode) &&
+        !props.isCloudFolder,
 );
-const canDetachRoot = computed(() => !!props.isRootFolder);
+const canDetachRoot = computed(
+    () => !!props.isRootFolder && !props.isCloudFolder,
+);
 const batchPicking = computed(
     () => !!props.selectedCount && props.selectedCount > 1,
 );
@@ -179,6 +184,7 @@ const ICON_TONE = "text-gray-500 group-hover:text-gray-800";
                 </CtxRow>
 
                 <CtxRow
+                    v-if="!isCloudFolder"
                     :step="5"
                     hover-group
                     :lead-class="ICON_TONE"
@@ -193,6 +199,7 @@ const ICON_TONE = "text-gray-500 group-hover:text-gray-800";
                 <div class="ctx-sep" :style="rowLag(6)"></div>
 
                 <CtxRow
+                    v-if="!isCloudFolder"
                     :step="7"
                     hover-group
                     :lead-class="ICON_TONE"

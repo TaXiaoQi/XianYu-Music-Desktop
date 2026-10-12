@@ -12,9 +12,7 @@ import type { PluginArtistResult, PluginAlbumResult } from '../../services/domai
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../../types';
 import { fetchWyTrackMetaByIds } from '../../services/domain/playlistImport';
 import { qqFillSongDurations } from '../../services/domain/qqHostSearchFallback';
-import { CloudPlayContext, cloudSongFromContext } from '../../features/playback/cloudPlaybackResolver';
-import { parseCloudFileName } from '../../services/cloud/cloudFilename';
-import type { CloudFile } from '../../services/cloud/cloudTypes';
+import { cloudFileToSong } from '../../features/library/cloudFolderTree';
 import type { SearchSources } from './useSearchSources';
 import type { SearchTypeKey } from './useSearchQuery';
 
@@ -185,24 +183,6 @@ export function useSearchResults(options: {
       _albumId: item.albumId,
       rawData: item,
     } as any;
-  }
-
-  /** 网盘文件 → 可播放 Song：文件名解析歌手/歌名，无歌手段时回落盘名 */
-  function cloudFileToSong(item: CloudFile, providerId: string, providerName: string, accountId: string): Song {
-    const ctx = new CloudPlayContext({ provider: providerId, accountId, file: item });
-    const parts = parseCloudFileName(item.name);
-    const artistName = parts.artist ?? providerName;
-    const base = cloudSongFromContext(ctx, artistName);
-    return {
-      ...base,
-      name: parts.title,
-      title: parts.title,
-      artist: artistName,
-      artist_names: [artistName],
-      effective_artist_names: [artistName],
-      // rawData 补充盘名（来源标签展示用），保留 cloud 播放上下文
-      rawData: { ...base.rawData, providerName },
-    } as Song;
   }
 
   const onlineTrackSongs = computed<Song[]>(() => {

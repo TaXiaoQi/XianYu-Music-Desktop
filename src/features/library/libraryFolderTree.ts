@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { storeToRefs } from 'pinia';
 
 import { useLibraryStore } from './store';
+import { buildCloudTreeNodes, isCloudFolderPath, listCloudFolderChildren } from './cloudFolderTree';
 import { libraryApi } from '../../services/tauri/libraryApi';
 import type { FolderNode } from '../../types';
 import { normalizePath } from '../../utils/path';
@@ -92,6 +93,28 @@ export const createLibraryFolderTree = ({
       return null;
     }
 
+    // 网盘目录分支：子目录走 provider.listDir 懒加载，不查本地后端
+    if (
+      targetNode.cloudProviderId &&
+      targetNode.cloudAccountId &&
+      targetNode.cloudDirPath &&
+      !targetNode.children_loaded
+    ) {
+      if (targetNode.is_loading) {
+        return targetNode;
+      }
+
+      targetNode.is_loading = true;
+      try {
+        targetNode.children = await listCloudFolderChildren(targetNode);
+        targetNode.children_loaded = true;
+      } finally {
+        targetNode.is_loading = false;
+      }
+
+      return targetNode;
+    }
+
     if (targetNode.children_loaded || targetNode.child_count === 0) {
       return targetNode;
     }
@@ -169,7 +192,8 @@ export const createLibraryFolderTree = ({
       return;
     }
 
-    if (targetNode.child_count > 0) {
+    // 网盘目录依赖哨兵 child_count 触发展开加载
+    if (targetNode.child_count > 0 || isCloudFolderPath(targetNode.path)) {
       await ensureFolderChildrenLoaded(targetNode);
     }
 
@@ -179,7 +203,12 @@ export const createLibraryFolderTree = ({
   const fetchFolderTree = async () => {
     try {
       const expandedPaths = collectExpandedPaths(folderTree.value);
-      folderTree.value = await libraryApi.getLibraryHierarchy();
+      // 网盘虚拟根排最前，本地树来自后端
+      const [remoteTree, cloudNodes] = await Promise.all([
+        libraryApi.getLibraryHierarchy(),
+        buildCloudTreeNodes(),
+      ]);
+      folderTree.value = [...cloudNodes, ...remoteTree];
 
       for (const path of sortPathsByDepth(expandedPaths)) {
         await expandFolderPath(path);

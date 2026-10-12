@@ -20,6 +20,10 @@ import ModernInputModal from "../common/ModernInputModal.vue";
 import ModernModal from "../common/ModernModal.vue";
 import FolderContextMenu from "../overlays/FolderContextMenu.vue";
 import { useAddToPlaylistDialog } from "../../features/collections/addToPlaylistDialog";
+import {
+    isCloudFolderPath,
+    loadCloudFolderSongs,
+} from "../../features/library/cloudFolderTree";
 import { normalizePath } from "../../utils/path";
 
 /**
@@ -131,6 +135,11 @@ const menuFolderIsRoot = computed(() => {
             normalizePath(menuFolder.value?.path ?? ""),
     );
 });
+
+// 右键目标是否为网盘目录（虚拟根或盘内目录）
+const menuIsCloud = computed(() =>
+    isCloudFolderPath(menuFolder.value?.path ?? ""),
+);
 
 const treeMemoryKey = computed(() => "master-panel-tree");
 
@@ -252,6 +261,12 @@ const onMenuRefresh = async () => {
         return;
     }
 
+    if (isCloudFolderPath(folder.path)) {
+        notify("网盘目录无需刷新", "error");
+        menuOpen.value = false;
+        return;
+    }
+
     try {
         const summary = await refreshFolder(folder.path);
         if (
@@ -311,6 +326,13 @@ const pathHitsQuery = (p: string, needle: string) => {
 const collectFolderSongs = async (folderPath: string): Promise<Song[]> => {
     if (!folderPath) {
         return [];
+    }
+
+    // 网盘目录：实时加载网盘音频，不走本地排序缓存
+    if (isCloudFolderPath(folderPath)) {
+        const songs = await loadCloudFolderSongs(folderPath);
+        const kw = searchQuery.value.trim();
+        return kw ? songs.filter((s) => pathHitsQuery(s.path, kw)) : songs;
     }
 
     // 非文件夹视图直接取目录全部歌曲
@@ -420,6 +442,12 @@ const onMenuOpenFolder = () => {
         return;
     }
 
+    if (isCloudFolderPath(folder.path)) {
+        notify("网盘目录无法在资源管理器打开", "error");
+        menuOpen.value = false;
+        return;
+    }
+
     openInFinder(folder.path);
     menuOpen.value = false;
 };
@@ -427,6 +455,12 @@ const onMenuOpenFolder = () => {
 const onMenuRemove = async () => {
     const folder = menuFolder.value;
     if (!folder) {
+        return;
+    }
+
+    if (isCloudFolderPath(folder.path)) {
+        notify("网盘目录不支持从音乐库移除", "error");
+        menuOpen.value = false;
         return;
     }
 
@@ -453,6 +487,12 @@ const onMenuRemove = async () => {
 
 const onMenuNewFolder = () => {
     if (!props.isManagementMode || !menuFolder.value) {
+        return;
+    }
+
+    if (isCloudFolderPath(menuFolder.value.path)) {
+        notify("网盘目录不支持新建文件夹", "error");
+        menuOpen.value = false;
         return;
     }
 
@@ -485,6 +525,12 @@ const commitCreateFolder = async (folderName: string) => {
 
 const onMenuWipe = () => {
     if (!props.isManagementMode || !menuFolder.value) {
+        return;
+    }
+
+    if (isCloudFolderPath(menuFolder.value.path)) {
+        notify("网盘目录不支持删除", "error");
+        menuOpen.value = false;
         return;
     }
 
@@ -577,6 +623,16 @@ const clearMoveDraft = () => {
 };
 
 const commitMove = async () => {
+    // 网盘目录不支持接收移动文件
+    if (
+        moveTargetFolder.value &&
+        isCloudFolderPath(moveTargetFolder.value.path)
+    ) {
+        notify("网盘目录暂不支持移动文件", "error");
+        abortMove();
+        return;
+    }
+
     if (!moveTargetFolder.value || moveCandidatePaths.value.length === 0) {
         clearMoveDraft();
         return;
@@ -706,6 +762,7 @@ onUnmounted(() => { // 实现
             :folder-path="menuFolder?.path || ''"
             :selected-count="1"
             :is-root-folder="menuFolderIsRoot"
+            :is-cloud-folder="menuIsCloud"
             :isManagementMode="isManagementMode"
             @play="onMenuPlay"
             @add-to-queue="onMenuQueue"

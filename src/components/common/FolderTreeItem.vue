@@ -118,8 +118,14 @@ const statToneClass = computed(() =>
             <FolderArtwork :cover="coverUrl" />
 
             <div class="flex min-w-0 flex-1 flex-col justify-center">
-                <div class="truncate text-sm font-medium leading-tight">
-                    {{ node.name }}
+                <div class="flex min-w-0 items-center gap-1">
+                    <span class="truncate text-sm font-medium leading-tight">
+                        {{ node.name }}
+                    </span>
+                    <span
+                        v-if="node.cloudProviderId || node.path === '__cloud_root__'"
+                        class="shrink-0 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 text-[10px] font-semibold leading-4 text-sky-600 dark:text-sky-400"
+                    >云</span>
                 </div>
                 <div
                     class="mt-0.5 flex items-center gap-1 truncate text-[10px]"

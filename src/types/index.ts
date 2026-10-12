@@ -207,6 +207,9 @@ export interface FolderNode { // 实现
   cover_song_path: string | null; // 实现
   is_expanded: boolean; // 实现
   is_loading?: boolean; // 实现
+  cloudProviderId?: string; // 网盘节点：provider id
+  cloudAccountId?: string; // 网盘节点：账号 id
+  cloudDirPath?: string; // 网盘节点：盘内目录路径（'/'=根；id 型盘为目录 id）
 }
 
 export type LibraryScanPhase = 'collecting' | 'parsing' | 'writing' | 'complete' | 'error'; // 实现

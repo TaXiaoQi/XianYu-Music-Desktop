@@ -1,6 +1,7 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'; // 实现
 
 import { useLibraryStore } from './store'; // 实现
+import { cloudFolderRegistryVersion, isCloudFolderPath, loadCloudFolderSongs } from './cloudFolderTree';
 
 import {
   isStaleLibraryPathRequestError, // 实现
@@ -10,7 +11,7 @@ import { useLibraryCollectionSongPathCache } from '../../composables/useLibraryC
 import { useLibraryDetailSongPathCache } from '../../composables/useLibraryDetailSongPathCache'; // 实现
 import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolderSongPathCache'; // 实现
 import type { AlbumDetailSortMode, FolderSortMode, LocalSortMode, PlaylistSortMode } from '../../services/storage/playerStorage'; // 实现
-import type { HistoryItem, Playlist, Song } from '../../types'; // 实现
+import type { HistoryItem, LibrarySong, Playlist, Song } from '../../types'; // 实现
 import { sortItemsByAlphabetIndex } from '../../utils/alphabetIndex'; // 实现
 import {
   getSongArtistSearchText, // 实现
@@ -332,11 +333,35 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
       activeFolderPaths,
       folderCacheVersion,
       () => catalogStore.libraryDataVersion,
+      cloudFolderRegistryVersion,
     ],
     async ([mode, folderKey, query, sortMode]) => {
       const ticket = folderViewTicket.next();
 
-      if (mode !== 'folder' || !folderKey || sortMode === 'custom') {
+      if (mode !== 'folder' || !folderKey) {
+        remoteFolderPaths.value = [];
+        return;
+      }
+
+      // 网盘目录：走 cloud:// 管线实时加载歌曲（注册进 songLookup 供解析展示）
+      if (isCloudFolderPath(folderKey)) {
+        try {
+          const songs = await loadCloudFolderSongs(folderKey);
+          if (folderViewTicket.isCurrent(ticket)) {
+            if (songs.length > 0) {
+              catalogStore.setExtraSongs(songs as LibrarySong[]);
+            }
+            remoteFolderPaths.value = songs.map(s => s.path);
+          }
+        } catch {
+          if (folderViewTicket.isCurrent(ticket)) {
+            remoteFolderPaths.value = [];
+          }
+        }
+        return;
+      }
+
+      if (sortMode === 'custom') {
         remoteFolderPaths.value = [];
         return;
       }
@@ -487,6 +512,11 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
   };
 
   const resolvePlainFolderPaths = () => {
+    // 网盘目录不支持自定义排序，按加载序返回
+    if (isCloudFolderPath(folderFilter.value)) {
+      return remoteFolderPaths.value;
+    }
+
     if (folderOrder.value === 'custom') {
       return activeFolderPaths.value;
     }
@@ -586,6 +616,10 @@ export function useLibraryCurrentViewSongs(viewOptions: UseLibraryCurrentViewSon
           ? restrictToCanonical(remoteAllPaths.value)
           : withAlphabetTitleOrder(canonicalSeq.value.filter(matchesQuery));
       case 'folder':
+        // 网盘目录：按标题字母序过滤展示
+        if (isCloudFolderPath(folderFilter.value)) {
+          return withAlphabetTitleOrder(remoteFolderPaths.value.filter(matchesQuery));
+        }
         if (folderOrder.value === 'custom') {
           return withAlphabetTitleOrder(activeFolderPaths.value.filter(matchesQuery));
         }
