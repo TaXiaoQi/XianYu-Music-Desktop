@@ -68,6 +68,9 @@ const zhCN = { // 实现
   'cloud.transferSuccess': '转存成功',
   'cloud.needBindFirst': '请先绑定该网盘',
   'cloud.noAudio': '没有可播放的音频文件',
+  'cloud.download': '下载',
+  'cloud.downloading': '下载中…',
+  'cloud.alreadyDownloaded': '该文件已在下载库中',
 
   'sleepTimer.title': '睡眠定时',
   'sleepTimer.description': '到点或一段时间没有操作后，自动暂停播放；也可以退出应用或隐藏到托盘。',
@@ -368,6 +371,9 @@ const enUS: Record<I18nKey, string> = { // 实现
   'cloud.transferSuccess': 'Transferred',
   'cloud.needBindFirst': 'Bind this drive first',
   'cloud.noAudio': 'No playable audio files',
+  'cloud.download': 'Download',
+  'cloud.downloading': 'Downloading…',
+  'cloud.alreadyDownloaded': 'Already in download library',
 
   'sleepTimer.title': 'Sleep timer',
   'sleepTimer.description': 'Pause playback at the set time, or after a period without input; can also exit the app or hide to the tray.',

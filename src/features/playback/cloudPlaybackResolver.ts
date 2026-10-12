@@ -154,7 +154,42 @@ const contextOf = (audioFilePath: string, song: Song): CloudPlayContext | null =
     typeof song.rawData?.cloud === 'string' ? song.rawData.cloud : null,
   ) ?? CloudPlayContext.tryParsePath(audioFilePath);
 
-/** 网盘曲目直链解析：缓存 → getDirectLink/getShareDirectLink → 在线直链。 */
+/** 网盘直链（播放与下载共用；headers 为原始请求头，播放侧再按需归一化）。 */
+export interface CloudDirectLink {
+  url: string;
+  headers: Record<string, string> | null;
+}
+
+/** 网盘直链解析：凭据 → 缓存 → getDirectLink/getShareDirectLink。 */
+export const resolveCloudDirectLink = async (
+  ctx: CloudPlayContext,
+): Promise<CloudDirectLink> => {
+  const provider: CloudProvider | null = cloudProviderById(ctx.provider);
+  if (!provider) throw new Error('该网盘暂未支持');
+
+  // 凭据：先按绑定的 accountId 精确取，再退该盘单账号便捷读取
+  let cred: Record<string, string> | null =
+    ctx.accountId === '_' || !ctx.accountId
+      ? null
+      : await CloudCredentialsStore.instance.credFor(provider.id, ctx.accountId);
+  cred ??= await CloudCredentialsStore.instance.soleCredFor(provider.id);
+
+  const fromShare = ctx.share?.directPlayable === true;
+  if (!cred && !fromShare) throw new Error('网盘账号未绑定或已失效');
+
+  const cacheKey = ctx.path;
+  let link = await DirectLinkCache.instance.get(cacheKey, provider.directLinkTtl);
+  if (!link) {
+    link = fromShare
+      ? await provider.getShareDirectLink(cred, ctx.share!, ctx.file)
+      : await provider.getDirectLink(cred ?? {}, ctx.file);
+    DirectLinkCache.instance.put(cacheKey, link);
+  }
+
+  return { url: link.url, headers: link.headers ?? null };
+};
+
+/** 网盘曲目直链解析（播放层）：缓存 → getDirectLink/getShareDirectLink → 在线直链。 */
 export const resolveCloudOnlineAudio = async (
   audioFilePath: string,
   song: Song,
@@ -162,31 +197,11 @@ export const resolveCloudOnlineAudio = async (
   try {
     const ctx = contextOf(audioFilePath, song);
     if (!ctx) throw new Error('网盘歌曲信息缺失，请重新添加');
-    const provider: CloudProvider | null = cloudProviderById(ctx.provider);
-    if (!provider) throw new Error('该网盘暂未支持');
-
-    // 凭据：先按绑定的 accountId 精确取，再退该盘单账号便捷读取
-    let cred: Record<string, string> | null =
-      ctx.accountId === '_' || !ctx.accountId
-        ? null
-        : await CloudCredentialsStore.instance.credFor(provider.id, ctx.accountId);
-    cred ??= await CloudCredentialsStore.instance.soleCredFor(provider.id);
-
-    const fromShare = ctx.share?.directPlayable === true;
-    if (!cred && !fromShare) throw new Error('网盘账号未绑定或已失效');
-
-    const cacheKey = audioFilePath;
-    let link = await DirectLinkCache.instance.get(cacheKey, provider.directLinkTtl);
-    if (!link) {
-      link = fromShare
-        ? await provider.getShareDirectLink(cred, ctx.share!, ctx.file)
-        : await provider.getDirectLink(cred ?? {}, ctx.file);
-      DirectLinkCache.instance.put(cacheKey, link);
-    }
+    const link = await resolveCloudDirectLink(ctx);
 
     return {
       audioFilePath: link.url,
-      pluginHeaders: normalizeMediaRequestHeaders(link.url, link.headers ?? null),
+      pluginHeaders: normalizeMediaRequestHeaders(link.url, link.headers),
       currentPlayingQuality: null,
       currentPlayingAudioUrl: link.url,
     };

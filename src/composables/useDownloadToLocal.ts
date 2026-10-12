@@ -1,12 +1,13 @@
 import { useToast } from './toast';
 import { useSettings } from '../features/settings/useSettings';
 import { useDownloadStore } from '../features/download/store';
-import { downloadSong, downloadSongExtras, isDownloadableOnlineSong } from '../services/domain/downloadService';
+import { downloadSong, downloadSongExtras, downloadCloudSong, isDownloadableOnlineSong } from '../services/domain/downloadService';
 import { recordDownload, fileNameFromPath } from '../services/domain/downloadHistory';
 import { useLibraryRuntimeActions } from '../features/library/useLibraryRuntimeActions';
 import { usePlaybackStore } from '../features/playback/store';
 import { usePlayerCore } from '../features/playback/playerCore';
 import { isOnlineStreamPath } from '../features/playback/onlineFailover';
+import type { CloudPlayContext } from '../features/playback/cloudPlaybackResolver';
 import { QUALITY_META } from '../types';
 import type { Song, QualityKey, DownloadQuality, DownloadFileNameStyle } from '../types';
 
@@ -142,6 +143,89 @@ export async function downloadToLocal(
       if (result.coverSaved) extras.push('封面'); // 实现
       const extraNote = extras.length > 0 ? `（${extras.join('、')}）` : ''; // 实现
       showToast(`下载完成${extraNote}`, 'success'); // 实现
+    }
+
+    try {
+      const { scanLibrary } = useLibraryRuntimeActions();
+      void scanLibrary({ trigger: 'manual-rescan', visibility: 'silent' });
+    } catch (e: any) {
+      console.warn('[Download] 下载后刷新本地库失败:', e?.message);
+    }
+
+    return true;
+  } catch (e: any) {
+    const msg = typeof e === 'string' ? e : (e?.message || JSON.stringify(e));
+    console.error('[Download] 下载失败:', e);
+    showToast(`下载失败：${msg}`, 'error');
+    return false;
+  } finally {
+    downloadStore.endDownload();
+  }
+}
+
+/**
+ * 网盘文件下载到本地音乐库（对齐移动端 downloadCloud）：与在线下载共用同一份
+ * 下载记录，songPath = cloud:// 播放标识，播放层按精确键本地优先自动生效。
+ * 网盘文件自带内嵌标签，无在线元数据，跳过歌词/封面/元数据收尾。
+ */
+export async function downloadCloudFileToLocal(
+  ctx: CloudPlayContext,
+  label: string,
+): Promise<boolean> {
+  const { showToast } = useToast();
+  const { settings } = useSettings();
+  const downloadStore = useDownloadStore();
+
+  if (!settings.value.download.downloadPath) {
+    showToast('请先在设置 - 下载中选择下载目录', 'error');
+    return false;
+  }
+
+  const songPath = ctx.path;
+  downloadStore.beginDownload(songPath);
+  showToast(`开始下载：${label}`, 'info');
+
+  try {
+    const result = await downloadCloudSong(ctx, {
+      keepSourceFilename: settings.value.download.keepSourceFilename,
+      fileNameStyle: settings.value.download.fileNameStyle,
+      overwriteExisting: settings.value.download.overwriteExisting,
+      onProgress: (percent: number) => downloadStore.setProgress(percent),
+    });
+
+    await recordDownload({
+      songPath,
+      filePath: result.filePath,
+      fileName: fileNameFromPath(result.filePath),
+      quality: 'source',
+      downloadedAt: Date.now(),
+      title: ctx.file.name,
+      artist: '',
+      durationMs: 0,
+    });
+    showToast('下载完成', 'success');
+
+    // 下载完成联运（对齐移动端 _switchCurrentToLocalAfterDownload）：
+    // 刚下载的正是正在播放的网盘歌 → 保进度无缝切本地源；暂停态切换后维持暂停。
+    try {
+      const playbackStore = usePlaybackStore();
+      const current = playbackStore.currentSong;
+      if (current && current.path === songPath) {
+        const wasPlaying = playbackStore.isPlaying;
+        console.info(`[Download] 当前播放网盘歌曲已下载，切换本地源: ${result.filePath} @${playbackStore.currentTime.toFixed(1)}s`);
+        const { playSong, pauseSong } = usePlayerCore().playbackDomain;
+        await playSong(current, {
+          startTime: playbackStore.currentTime,
+          continueStatisticsSession: true,
+          forceReplay: true,
+          preserveQueue: true,
+        });
+        if (!wasPlaying && playbackStore.isPlaying) {
+          await pauseSong();
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Download] 下载完成后切换本地播放源失败:', e?.message);
     }
 
     try {

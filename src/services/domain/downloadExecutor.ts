@@ -28,6 +28,10 @@ import {
   fetchLyricText,
   resolveCoverUrl,
 } from './downloadExtras';
+import {
+  CloudPlayContext,
+  resolveCloudDirectLink,
+} from '../../features/playback/cloudPlaybackResolver';
 
 function baseName(fullPath: string): string {
   const idx = Math.max(fullPath.lastIndexOf('\\'), fullPath.lastIndexOf('/'));
@@ -295,6 +299,48 @@ export async function downloadSong(
   }
 
   return { filePath, hitQuality, lyricsSaved, coverSaved, metadataEmbedded };
+}
+
+interface DownloadCloudSongOptions {
+  keepSourceFilename: boolean;
+  fileNameStyle?: DownloadFileNameStyle;
+  overwriteExisting: boolean;
+  onProgress?: (percent: number) => void;
+}
+
+interface DownloadCloudSongResult {
+  filePath: string;
+}
+
+/**
+ * 网盘文件下载到本地（对齐移动端 _performCloudDownload）：直链（缓存复用）
+ * → 文件名解析 → download_online_song（携直链请求头）。
+ * 直链文件名多为 hash：伪 URL 仅用于 rust 侧扩展名推断（白名单扩展名），
+ * 文件名主体取网盘文件名；quality 传 'source' 仅作无扩展名兜底。
+ */
+export async function downloadCloudSong(
+  ctx: CloudPlayContext,
+  options: DownloadCloudSongOptions,
+): Promise<DownloadCloudSongResult> {
+  const link = await resolveCloudDirectLink(ctx);
+
+  const pseudoUrl = `https://cloud-download.local/${encodeURIComponent(ctx.file.name)}`;
+  const dot = ctx.file.name.lastIndexOf('.');
+  const title = (dot > 0 ? ctx.file.name.slice(0, dot) : ctx.file.name).trim() || '未知歌曲';
+
+  const destPath = await downloadApi.resolveDownloadFullPath(
+    title,
+    '',
+    '',
+    pseudoUrl,
+    'source',
+    options.keepSourceFilename,
+    options.fileNameStyle ?? 'artist-title',
+    options.overwriteExisting,
+  );
+
+  const filePath = await downloadFromUrl(link.url, baseName(destPath), options.onProgress, null, link.headers);
+  return { filePath };
 }
 
 interface DownloadExtrasOptions {

@@ -24,6 +24,8 @@ import {
 import type { CloudProvider } from '../../services/cloud/cloudProvider';
 import { parseUrlToProvider } from '../../services/cloud/shareLinkParser';
 import { CloudPlayContext, cloudSongFromContext } from '../../features/playback/cloudPlaybackResolver';
+import { downloadCloudFileToLocal } from '../../composables/useDownloadToLocal';
+import { checkDownloadExists } from '../../services/domain/downloadHistory';
 
 const { t } = useI18n();
 const { showToast } = useToast();
@@ -282,6 +284,30 @@ const playBrowseFile = (file: CloudFile) => {
   if (!sel) return;
   const ctx = new CloudPlayContext({ provider: sel.provider.id, accountId: sel.account.accountId, file });
   void playSong(cloudSongFromContext(ctx, sel.provider.displayName));
+};
+
+// ── 网盘浏览：下载到本地音乐库 ────────────────────────────
+
+const browseDownloadingId = ref('');
+
+/** 下载网盘音频到本地（同一时刻单任务，进行中禁用所有下载按钮）。 */
+const downloadBrowseFile = (file: CloudFile) => {
+  const sel = browseSel.value;
+  if (!sel || browseDownloadingId.value) return;
+  const ctx = new CloudPlayContext({ provider: sel.provider.id, accountId: sel.account.accountId, file });
+  browseDownloadingId.value = file.id;
+  void (async () => {
+    try {
+      const existed = await checkDownloadExists(ctx.path);
+      if (existed) {
+        showToast(t('cloud.alreadyDownloaded'), 'info');
+      } else {
+        await downloadCloudFileToLocal(ctx, file.name);
+      }
+    } finally {
+      browseDownloadingId.value = '';
+    }
+  })();
 };
 
 // ── 分享链接导入 ──────────────────────────────────────────
@@ -636,6 +662,16 @@ onBeforeUnmount(() => {
           <span v-if="!f.isDir && f.size > 0" class="shrink-0 text-xs text-gray-400 dark:text-white/30">
             {{ (f.size / 1024 / 1024).toFixed(1) }} MB
           </span>
+          <button
+            v-if="f.isAudio"
+            type="button"
+            :class="selectChipClass(false)"
+            class="shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="browseDownloadingId !== ''"
+            @click.stop="downloadBrowseFile(f)"
+          >
+            {{ browseDownloadingId === f.id ? t('cloud.downloading') : t('cloud.download') }}
+          </button>
         </div>
 
         <div v-if="browseCursor != null" :class="rowClass">
