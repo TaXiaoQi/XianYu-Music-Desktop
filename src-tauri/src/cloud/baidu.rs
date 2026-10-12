@@ -159,6 +159,57 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
+/// 文件搜索 URL（纯函数，单测断言）。端点 api/filesearch 为设计稿形态，
+/// dir 固定全盘根；page/limit 分页参数照 /api/list 风格补充，以抓包为准。
+fn search_url(keyword: &str, page: i64) -> String {
+    format!(
+        "https://pan.baidu.com/api/filesearch?dir=%2F&key={}&web=1&clienttype=0&app_id={APP_ID}&limit=100&page={page}",
+        http::url_encode(keyword)
+    )
+}
+
+/// 文件搜索：keyword 必填，cursor 为页码（与 list_dir 同风格）；
+/// 响应 list 与 /api/list 同构（server_filename/isdir/size/path/fs_id）。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
+    let resp = http::get(&search_url(&keyword, page), &auth_headers(&req.cred))
+        .await
+        .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    if num_i64(j.get("errno")) != Some(0) {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut files = Vec::new();
+    for e in &list {
+        // 直链（filemetas/dlink）只需要 fs_id/name/size；path/parent_path
+        // 一并带回供展示。
+        files.push(file_json(
+            &jstr(e.get("fs_id")),
+            &jstr(e.get("server_filename")),
+            num_i64(e.get("isdir")) == Some(1),
+            num_i64(e.get("size")).unwrap_or(0),
+            Some(&jstr(e.get("parent_path"))),
+            Some(&jstr(e.get("path"))),
+            None,
+        ));
+    }
+    let next_cursor = if files.len() >= 100 {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+    Ok(CloudOut::plain(list_result_json(files, next_cursor)))
+}
+
 async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let info = pre_parse_share(req, "baidu")?;
     // Dart：info?.shareId ?? url。
@@ -478,6 +529,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -572,5 +624,45 @@ mod tests {
             Some("https://a.com/y?z=1")
         );
         assert_eq!(absolute_url("https://a.com/x", "y"), None);
+    }
+
+    #[test]
+    fn search_url_shape() {
+        // dir 固定全盘根（"/" 编码为 %2F），app_id 照抄 list，page/limit 照 list 风格。
+        assert_eq!(
+            search_url("lofi beats", 2),
+            "https://pan.baidu.com/api/filesearch?dir=%2F&key=lofi+beats&web=1&clienttype=0&app_id=250528&limit=100&page=2"
+        );
+    }
+
+    #[test]
+    fn search_entry_mapping() {
+        // 搜索响应条目与 /api/list 同构；isdir 数值 0/1、fs_id 数值形态均可。
+        let e = json!({
+            "fs_id": 123456,
+            "server_filename": "song.flac",
+            "isdir": 0,
+            "size": 4096,
+            "path": "/music/song.flac",
+            "parent_path": "/music",
+        });
+        let f = file_json(
+            &jstr(e.get("fs_id")),
+            &jstr(e.get("server_filename")),
+            num_i64(e.get("isdir")) == Some(1),
+            num_i64(e.get("size")).unwrap_or(0),
+            Some(&jstr(e.get("parent_path"))),
+            Some(&jstr(e.get("path"))),
+            None,
+        );
+        assert_eq!(f["id"], "123456");
+        assert_eq!(f["name"], "song.flac");
+        assert_eq!(f["isDir"], false);
+        assert_eq!(f["size"], 4096);
+        assert_eq!(f["parentId"], "/music");
+        assert_eq!(f["path"], "/music/song.flac");
+        // 目录条目。
+        let d = json!({ "fs_id": 9, "server_filename": "目录", "isdir": 1 });
+        assert_eq!(num_i64(d.get("isdir")) == Some(1), true);
     }
 }

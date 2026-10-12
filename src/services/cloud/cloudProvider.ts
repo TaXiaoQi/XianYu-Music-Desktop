@@ -115,4 +115,18 @@ export abstract class CloudProvider {
   ): Promise<CloudDirectLink> {
     throw new Error('该盘分享不支持免转存直链');
   }
+
+  /** 是否支持文件名搜索（支持时搜索来源栏展示该盘）。 */
+  get supportsSearch(): boolean {
+    return false;
+  }
+
+  /** 全盘文件名搜索（search_files；cursor 翻页续传，语义同 listDir）。 */
+  async searchFiles(
+    _cred: Record<string, string>,
+    _keyword: string,
+    _cursor?: string | null,
+  ): Promise<CloudListResult> {
+    throw new Error('该盘不支持文件搜索');
+  }
 }

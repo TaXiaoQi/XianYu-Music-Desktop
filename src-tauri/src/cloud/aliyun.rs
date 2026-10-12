@@ -221,6 +221,53 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     })
 }
 
+/// 文件搜索请求体（纯函数，单测断言）。端点 v3/file/search 为设计稿形态：
+/// 分页用 offset（无 marker），keyword 必填。
+fn search_body(drive: &str, keyword: &str, offset: i64) -> Value {
+    json!({
+        "drive_id": drive,
+        "keyword": keyword,
+        "limit": 100,
+        "offset": offset,
+        "fields": "*",
+    })
+}
+
+/// 文件搜索：keyword 必填，cursor 为 offset（与 list 的 marker 语义不同，
+/// 搜索按设计稿走 offset 翻页）；items 条目与 list 同构，复用 files_from_items。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let (at, rotated) = access_token(&req.cred).await?;
+    let drive = drive_id(&req.cred, &at).await?;
+    let offset: i64 = req.param_str("cursor").parse().unwrap_or(0);
+    let resp = http::post_json(
+        "https://openapi.alipan.com/adrive/v3/file/search",
+        &auth_headers(&at),
+        &search_body(&drive, &keyword, offset),
+    )
+    .await
+    .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let files = files_from_items(j.get("items").unwrap_or(&Value::Null));
+    // 设计稿约定：有更多时 cursor = offset + limit（不依赖 next_marker）。
+    let next_cursor = if files.len() as i64 >= 100 {
+        Some((offset + 100).to_string())
+    } else {
+        None
+    };
+    Ok(CloudOut {
+        result: list_result_json(files, next_cursor),
+        rotated_cred: rotated,
+    })
+}
+
 fn file_from_share_item(e: &Value) -> Value {
     let id = e
         .get("file_id")
@@ -414,6 +461,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -445,5 +493,38 @@ mod tests {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
         assert_eq!(expire, 0);
+    }
+
+    #[test]
+    fn search_body_shape() {
+        assert_eq!(
+            search_body("drv1", "lofi", 200),
+            json!({
+                "drive_id": "drv1",
+                "keyword": "lofi",
+                "limit": 100,
+                "offset": 200,
+                "fields": "*",
+            })
+        );
+    }
+
+    #[test]
+    fn search_items_mapping() {
+        // 搜索响应 items 与 list 同构（file_id/name/type/size/parent_file_id）。
+        let j = json!({
+            "items": [
+                { "file_id": "f1", "name": "a.flac", "type": "file", "size": 10, "parent_file_id": "root" },
+                { "file_id": "f2", "name": "目录", "type": "folder", "size": 0, "parent_file_id": "root" },
+            ],
+        });
+        let files = files_from_items(j.get("items").unwrap_or(&Value::Null));
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0]["id"], "f1");
+        assert_eq!(files[0]["name"], "a.flac");
+        assert_eq!(files[0]["isDir"], false);
+        assert_eq!(files[0]["size"], 10);
+        assert_eq!(files[0]["parentId"], "root");
+        assert_eq!(files[1]["isDir"], true);
     }
 }

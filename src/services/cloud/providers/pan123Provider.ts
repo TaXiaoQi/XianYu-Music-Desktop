@@ -14,7 +14,7 @@ import {
   encodeQueryComponent,
 } from '../cloudHttp';
 import { CloudProvider } from '../cloudProvider';
-import { rustDirectLink, rustListDir, rustParseShare, rustShareDirectLink, rustTransferShare, rustValidate } from '../cloudRemote';
+import { rustDirectLink, rustListDir, rustParseShare, rustSearchFiles, rustShareDirectLink, rustTransferShare, rustValidate } from '../cloudRemote';
 import {
   CloudAccount,
   CloudDirectLink,
@@ -158,6 +158,18 @@ export class Pan123Provider extends CloudProvider {
     cursor?: string | null,
   ): Promise<CloudListResult> {
     return rustListDir(this.id, cred, path, cursor);
+  }
+
+  override get supportsSearch(): boolean {
+    return true;
+  }
+
+  override async searchFiles(
+    cred: Record<string, string>,
+    keyword: string,
+    cursor?: string | null,
+  ): Promise<CloudListResult> {
+    return rustSearchFiles(this.id, cred, keyword, cursor);
   }
 
   override async parseShareLink(url: string, pwd: string | null): Promise<CloudShareParse> {

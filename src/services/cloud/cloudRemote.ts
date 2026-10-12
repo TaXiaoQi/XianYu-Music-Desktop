@@ -157,6 +157,20 @@ export async function rustListDir(
   return _listResultFrom(_resultOf(data));
 }
 
+/** 全盘文件名搜索（仅 supportsSearch 的盘转发）。 */
+export async function rustSearchFiles(
+  provider: string,
+  cred: Cred,
+  keyword: string,
+  cursor?: string | null,
+): Promise<CloudListResult> {
+  const data = await _callRust(provider, 'search_files', cred, {
+    keyword,
+    ...(cursor != null && cursor !== '' ? { cursor } : {}),
+  });
+  return _listResultFrom(_resultOf(data));
+}
+
 /** 分享链接解析。绝大多数盘免凭据；需登录态的盘（如百度）经 cred 携带。 */
 export async function rustParseShare(
   provider: string,

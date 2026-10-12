@@ -142,6 +142,59 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
+/// 文件搜索 URL（纯函数，单测断言）。端点 searchFiles.action 为设计稿形态：
+/// folderId=-11 全盘、pageNum/pageSize 照 listFiles 风格，以抓包为准。
+fn search_url(keyword: &str, page: i64) -> String {
+    format!(
+        "https://cloud.189.cn/api/open/file/searchFiles.action?filename={}&folderId=-11&pageNum={page}&pageSize=60",
+        http::url_encode(keyword)
+    )
+}
+
+/// 文件搜索：keyword 必填，cursor 为页码（与 list_dir 同风格）。
+/// 响应按 listFiles 同构解析（data.fileListAO.fileList）；顶层 fileListAO
+/// 形态防御兜底，条目 id/name/dir/isdir/size 照 list_dir 字段。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
+    let resp = http::get(&search_url(&keyword, page), &auth_headers(&req.cred_str("cookie")))
+        .await
+        .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let list = j
+        .pointer("/data/fileListAO/fileList")
+        .or_else(|| j.pointer("/fileListAO/fileList"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut files = Vec::new();
+    for e in &list {
+        // 直链（getFileDownloadUrl）只需要 id（fileId）；name/size 一并带回。
+        files.push(file_json(
+            &jstr(e.get("id")),
+            &jstr(e.get("name")),
+            dart_bool(e.get("dir")) || dart_bool(e.get("isdir")),
+            num_i64(e.get("size")).unwrap_or(0),
+            None,
+            None,
+            None,
+        ));
+    }
+    let next_cursor = if files.len() >= 60 {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+    Ok(CloudOut::plain(list_result_json(files, next_cursor)))
+}
+
 async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let info = pre_parse_share(req, "ecloud189")?;
     let share_code = if info.share_id.is_empty() {
@@ -374,6 +427,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -460,5 +514,37 @@ mod tests {
             Some("https://a.com/y?z=1")
         );
         assert_eq!(absolute_url("https://a.com/x", "y"), None);
+    }
+
+    #[test]
+    fn search_url_shape() {
+        // folderId=-11 全盘，pageNum/pageSize 照 listFiles 风格。
+        assert_eq!(
+            search_url("lofi beats", 2),
+            "https://cloud.189.cn/api/open/file/searchFiles.action?filename=lofi+beats&folderId=-11&pageNum=2&pageSize=60"
+        );
+    }
+
+    #[test]
+    fn search_entry_mapping() {
+        // 条目字段照 list_dir：id/name/dir|isdir/size；搜索场景无固定父目录。
+        let e = json!({ "id": "f1", "name": "a.flac", "dir": false, "size": 42 });
+        let f = file_json(
+            &jstr(e.get("id")),
+            &jstr(e.get("name")),
+            dart_bool(e.get("dir")) || dart_bool(e.get("isdir")),
+            num_i64(e.get("size")).unwrap_or(0),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(f["id"], "f1");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["isDir"], false);
+        assert_eq!(f["size"], 42);
+        assert!(f.get("parentId").is_none());
+        // isdir 严格布尔也兼容。
+        let d = json!({ "id": "d1", "name": "目录", "isdir": true });
+        assert!(dart_bool(d.get("isdir")) || dart_bool(d.get("dir")));
     }
 }

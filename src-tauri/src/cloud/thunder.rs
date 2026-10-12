@@ -30,6 +30,8 @@ const UA: &str = "ANDROID-com.xunlei.downloadprovider/8.31.0.9726 netWorkType/5G
 const CLIENT_ID: &str = "Xq00jqW5m1PrHnV8";
 /// Dart jsonEncode({'phase': {'in': ['PHASE_TYPE_COMPLETE']}, 'trashed': {'in': false}})。
 const LIST_FILTERS: &str = r#"{"phase":{"in":["PHASE_TYPE_COMPLETE"]},"trashed":{"in":false}}"#;
+/// 搜索 filters（设计稿约定：与 PikPak 搜索同构，trashed 精确匹配；以抓包为准）。
+const SEARCH_FILTERS: &str = r#"{"trashed":{"match":"exact","value":"false"}}"#;
 
 const EXPIRED: &str = "登录已过期，请重新绑定";
 
@@ -83,6 +85,17 @@ fn files_list_url(parent_id: &str, page_token: &str) -> String {
         http::url_encode(parent_id),
         http::url_encode(page_token),
         http::url_encode(LIST_FILTERS)
+    )
+}
+
+/// 文件搜索 URL（纯函数，单测断言）。与 PikPak 搜索同构：parent_id=* 全盘
+/// + search 参数；filters 用 SEARCH_FILTERS，以抓包为准。
+fn files_search_url(keyword: &str, page_token: &str) -> String {
+    format!(
+        "https://api-pan.xunlei.com/drive/v1/files?parent_id=*&search={}&filters={}&page_token={}",
+        http::url_encode(keyword),
+        http::url_encode(SEARCH_FILTERS),
+        http::url_encode(page_token)
     )
 }
 
@@ -209,6 +222,47 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let result = list_dir_at(&at, &path, &cursor).await?;
     Ok(CloudOut {
         result,
+        rotated_cred: rotated,
+    })
+}
+
+/// 搜索条目 → CloudFile（映射纯函数，单测断言）。直链（files/{id} 元数据）
+/// 只需要 id；kind==drive#folder 判目录，parentId 从响应 parent_id 取。
+fn file_from_search_item(e: &Value) -> Value {
+    let id = js_str(e.get("id"), "");
+    let name = js_str(e.get("name"), "");
+    let is_dir = e.get("kind").and_then(Value::as_str) == Some("drive#folder");
+    let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
+    let parent = js_str(e.get("parent_id"), "");
+    file_json(&id, &name, is_dir, size, Some(&parent), None, None)
+}
+
+/// 文件搜索：keyword 必填，cursor 为 page_token（与 list_dir 同风格）。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let (at, rotated) = auth(&req.cred).await?;
+    let cursor = req.param_str("cursor");
+    let resp = http::get(&files_search_url(&keyword, &cursor), &api_headers(&at))
+        .await
+        .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let mut files = Vec::new();
+    if let Some(items) = j.get("files").and_then(Value::as_array) {
+        for e in items {
+            files.push(file_from_search_item(e));
+        }
+    }
+    let next = js_str(j.get("next_page_token"), "");
+    let next_cursor = if next.is_empty() { None } else { Some(next) };
+    Ok(CloudOut {
+        result: list_result_json(files, next_cursor),
         rotated_cred: rotated,
     })
 }
@@ -396,6 +450,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -451,6 +506,35 @@ mod tests {
             files_list_url("", "pt1"),
             "https://api-pan.xunlei.com/drive/v1/files?parent_id=&limit=100&page_token=pt1&filters=%7B%22phase%22%3A%7B%22in%22%3A%5B%22PHASE_TYPE_COMPLETE%22%5D%7D%2C%22trashed%22%3A%7B%22in%22%3Afalse%7D%7D"
         );
+    }
+
+    #[test]
+    fn files_search_url_shape() {
+        // 与 PikPak 搜索同构：parent_id=* 全盘 + search；filters 为搜索形态。
+        assert_eq!(
+            files_search_url("lofi beats", "pt1"),
+            "https://api-pan.xunlei.com/drive/v1/files?parent_id=*&search=lofi+beats&filters=%7B%22trashed%22%3A%7B%22match%22%3A%22exact%22%2C%22value%22%3A%22false%22%7D%7D&page_token=pt1"
+        );
+    }
+
+    #[test]
+    fn search_item_mapping() {
+        let e = json!({
+            "id": "f1",
+            "name": "a.flac",
+            "kind": "drive#file",
+            "size": 4096,
+            "parent_id": "p9",
+        });
+        let f = file_from_search_item(&e);
+        assert_eq!(f["id"], "f1");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["isDir"], false);
+        assert_eq!(f["size"], 4096);
+        assert_eq!(f["parentId"], "p9");
+        // kind==drive#folder 判目录。
+        let d = file_from_search_item(&json!({ "id": "d1", "name": "目录", "kind": "drive#folder" }));
+        assert_eq!(d["isDir"], true);
     }
 
     #[test]

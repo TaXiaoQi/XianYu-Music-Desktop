@@ -7,7 +7,7 @@
 // rotated_cred 带回、由 cloudRemote 统一回写本地凭据存储。
 
 import { CloudProvider } from '../cloudProvider';
-import { rustDirectLink, rustListDir, rustParseShare, rustTransferShare, rustValidate } from '../cloudRemote';
+import { rustDirectLink, rustListDir, rustParseShare, rustSearchFiles, rustTransferShare, rustValidate } from '../cloudRemote';
 import {
   CloudAccount,
   CloudCaptureResult,
@@ -109,6 +109,18 @@ export class AliyunProvider extends CloudProvider {
     cursor?: string | null,
   ): Promise<CloudListResult> {
     return rustListDir(this.id, cred, path, cursor);
+  }
+
+  override get supportsSearch(): boolean {
+    return true;
+  }
+
+  override async searchFiles(
+    cred: Record<string, string>,
+    keyword: string,
+    cursor?: string | null,
+  ): Promise<CloudListResult> {
+    return rustSearchFiles(this.id, cred, keyword, cursor);
   }
 
   override async parseShareLink(url: string, pwd: string | null): Promise<CloudShareParse> {

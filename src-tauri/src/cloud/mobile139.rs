@@ -150,6 +150,18 @@ fn file_from_outlink(e: &Value) -> Value {
     file_json(&id, &name, is_dir, size, None, None, None)
 }
 
+/// 文件搜索请求体（纯函数，单测断言）。端点 hcy/file/search 为设计稿形态：
+/// 关键词字段名 key、parentCatalogId=-1 全盘，均以抓包为准；分页走
+/// pageBean（hcy 风格，区别于 list_dir 的 startNumber 区间）。
+fn search_body(keyword: &str, page: i64) -> Value {
+    json!({
+        "parentCatalogId": "-1",
+        "catalogType": 3,
+        "key": keyword,
+        "pageBean": { "pageNum": page, "pageSize": 100 },
+    })
+}
+
 // ── op 实现 ─────────────────────────────────────────────
 
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
@@ -218,6 +230,54 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let has_next = files.len() as i64 >= 100;
     let next_cursor = if has_next {
         Some((start + 100).to_string())
+    } else {
+        None
+    };
+    Ok(CloudOut::plain(list_result_json(files, next_cursor)))
+}
+
+/// 文件搜索：keyword 必填；cursor 为页码（hcy/file/search 走 pageBean.pageNum，
+/// 与 list_dir 的 startNumber 区间语义不同，搜索翻页内部自洽）。
+/// 响应按 hcy 形态解析（data.contentList），条目复用 file_from_content。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
+    if page < 1 {
+        return Err(biz_err("非法翻页游标"));
+    }
+    let resp = post_json_follow(
+        "https://personal-kd-njs.yun.139.com/hcy/file/search",
+        &h_headers(&req.cred_str("cookie")),
+        &search_body(&keyword, page),
+    )
+    .await
+    .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let list = j
+        .get("data")
+        .filter(|d| d.is_object())
+        .and_then(|d| d.get("contentList"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut files = Vec::new();
+    for e in &list {
+        if !e.is_object() {
+            continue;
+        }
+        // 直链（hcy/file/getDownloadUrl）只需要 contentId；搜索无固定
+        // 父目录，parentId 缺省回空串（file_from_content 兜底语义）。
+        files.push(file_from_content(e, ""));
+    }
+    let next_cursor = if files.len() as i64 >= 100 {
+        Some((page + 1).to_string())
     } else {
         None
     };
@@ -382,6 +442,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -450,6 +511,20 @@ mod tests {
         assert_eq!(f["name"], "song.mp3");
         assert!(f.get("parentId").is_none());
         assert!(f.get("token").is_none());
+    }
+
+    #[test]
+    fn search_body_shape() {
+        // 端点/字段名为设计稿约定（key、parentCatalogId=-1），以抓包为准。
+        assert_eq!(
+            search_body("lofi", 2),
+            json!({
+                "parentCatalogId": "-1",
+                "catalogType": 3,
+                "key": "lofi",
+                "pageBean": { "pageNum": 2, "pageSize": 100 },
+            })
+        );
     }
 
     #[test]
