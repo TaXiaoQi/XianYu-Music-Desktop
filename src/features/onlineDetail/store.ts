@@ -11,6 +11,8 @@ export type SourceSearchType = 'track' | 'artist' | 'album' | 'playlist';
 export interface SearchResultsSnapshot {
   hasMore: boolean;
   currentPage: number;
+  /** 网盘搜索翻页游标（恢复后可继续 loadMore） */
+  nextCloudCursor?: string | null;
   lists: Record<string, unknown[]>;
   scrollTop?: number;
 }

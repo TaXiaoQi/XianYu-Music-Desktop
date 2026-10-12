@@ -4,15 +4,19 @@ import {
   type LxSourceId,
 } from '../../services/domain/lxMusicSdk';
 import { getStoredPlugins, pluginsVersion } from '../../services/domain/pluginEngine';
+import { cloudProviders } from '../../services/cloud/cloudRegistry';
+import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
 import type { PluginSource } from '../../types';
 
 // ==================== 来源列表（从插件加载，无插件则索引本地）====================
 export type SourceItem = {
   id: string;
   name: string;
-  type: 'musicfree' | 'anime' | 'lx' | 'local';
+  type: 'musicfree' | 'anime' | 'lx' | 'local' | 'cloud';
   source?: PluginSource;
   lxSourceId?: LxSourceId;
+  /** type === 'cloud' 时的网盘注册 id（cloudRegistry 一致） */
+  cloudProviderId?: string;
 };
 
 export type SearchSources = ReturnType<typeof useSearchSources>;
@@ -61,11 +65,35 @@ export function useSearchSources() {
     pluginSourceList.value = items;
   }
 
-  const allSourceList = computed<SourceItem[]>(() => {
-    if (pluginSourceList.value.length === 0) {
-      return [{ id: 'local', name: '本地', type: 'local' }];
+  // ==================== 网盘来源（已绑定账号且支持文件搜索的盘）====================
+  const cloudSourceList = ref<SourceItem[]>([]);
+  let cloudRefreshVersion = 0;
+
+  async function refreshCloudSourceList() {
+    const version = ++cloudRefreshVersion;
+    const items: SourceItem[] = [];
+    for (const p of cloudProviders) {
+      if (p.supportsSearch !== true) continue;
+      const accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
+      if (version !== cloudRefreshVersion) return;
+      // 未绑定账号的盘不展示；同盘多账号只显示一个来源（搜索时取第一个账号）
+      if (accounts.length === 0) continue;
+      items.push({
+        id: `cloud:${p.id}`,
+        name: p.displayName,
+        type: 'cloud',
+        cloudProviderId: p.id,
+      });
     }
-    return pluginSourceList.value;
+    cloudSourceList.value = items;
+  }
+
+  const allSourceList = computed<SourceItem[]>(() => {
+    // 无插件时兜底本地来源；网盘来源统一追加在尾部
+    const base: SourceItem[] = pluginSourceList.value.length === 0
+      ? [{ id: 'local', name: '本地', type: 'local' }]
+      : pluginSourceList.value;
+    return [...base, ...cloudSourceList.value];
   });
   const selectedSourceId = ref<string>('');
 
@@ -86,6 +114,7 @@ export function useSearchSources() {
   watch(pluginsVersion, () => {
     const prevSelectedId = selectedSourceId.value;
     refreshPluginSourceList();
+    void refreshCloudSourceList();
     const stillExists = allSourceList.value.some(s => s.id === prevSelectedId);
     if (!stillExists && allSourceList.value.length > 0) {
       selectedSourceId.value = allSourceList.value[0].id;
@@ -94,12 +123,14 @@ export function useSearchSources() {
 
   return {
     pluginSourceList,
+    cloudSourceList,
     allSourceList,
     selectedSourceId,
     selectedSourceItem,
     selectedSourceName,
     isLocalSource,
     refreshPluginSourceList,
+    refreshCloudSourceList,
     handleSelectSource,
   };
 }

@@ -106,10 +106,11 @@ import { useOnlineDetailStore, type SearchResultsSnapshot } from '../features/on
 import DragGhost from '../components/common/DragGhost.vue';
 import SearchSourceBar from '../components/search/SearchSourceBar.vue';
 import SearchCatalogGrid from '../components/search/SearchCatalogGrid.vue';
-import { useSearchSources } from '../composables/search/useSearchSources';
+import { useSearchSources, type SourceItem } from '../composables/search/useSearchSources';
 import { useSearchResults } from '../composables/search/useSearchResults';
 import { useSearchQuery, type SearchTypeKey } from '../composables/search/useSearchQuery';
 import { useSearchNavigation } from '../composables/search/useSearchNavigation';
+import { useToast } from '../composables/toast';
 
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
@@ -131,7 +132,14 @@ const searchTabs: { type: SearchTypeKey; label: string }[] = [
 
 let restoringSession = false;
 
+const { showToast } = useToast();
+
 const handleSearchTypeChange = (type: SearchTypeKey) => {
+  // 网盘来源仅支持文件名（单曲）搜索，其他 tab 不切换
+  if (sources.selectedSourceItem.value?.type === 'cloud' && type !== 'track') {
+    showToast('该来源仅支持单曲搜索', 'info');
+    return;
+  }
   activeSearchType.value = type;
 };
 
@@ -142,8 +150,17 @@ const {
   selectedSourceId,
   selectedSourceName,
   refreshPluginSourceList,
-  handleSelectSource,
+  refreshCloudSourceList,
+  handleSelectSource: selectSource,
 } = sources;
+
+// 网盘来源仅支持单曲搜索：选中时自动切回单曲 tab
+const handleSelectSource = (source: SourceItem) => {
+  if (source.type === 'cloud' && activeSearchType.value !== 'track') {
+    activeSearchType.value = 'track';
+  }
+  selectSource(source);
+};
 
 // ==================== 搜索结果状态 ====================
 const results = useSearchResults({ activeSearchType, sources });
@@ -155,6 +172,8 @@ const {
   lxSearchResults,
   pluginSearchResults,
   localSearchResults,
+  cloudSearchResults,
+  nextCloudCursor,
   localArtistResults,
   localAlbumResults,
   localPlaylistResults,
@@ -211,10 +230,12 @@ function captureResultsSnapshot(): SearchResultsSnapshot {
   return {
     hasMore: hasMore.value,
     currentPage: currentPage.value,
+    nextCloudCursor: nextCloudCursor.value,
     lists: {
       lxSearchResults: [...lxSearchResults.value],
       pluginSearchResults: [...pluginSearchResults.value],
       localSearchResults: [...localSearchResults.value],
+      cloudSearchResults: [...cloudSearchResults.value],
       localArtistResults: [...localArtistResults.value],
       localAlbumResults: [...localAlbumResults.value],
       localPlaylistResults: [...localPlaylistResults.value],
@@ -229,9 +250,11 @@ function captureResultsSnapshot(): SearchResultsSnapshot {
 function restoreResultsSnapshot(snapshot: SearchResultsSnapshot) {
   hasMore.value = snapshot.hasMore;
   currentPage.value = snapshot.currentPage;
+  nextCloudCursor.value = snapshot.nextCloudCursor ?? null;
   lxSearchResults.value = snapshot.lists.lxSearchResults as LxSearchResultItem[];
   pluginSearchResults.value = snapshot.lists.pluginSearchResults as PluginSearchResult[];
   localSearchResults.value = snapshot.lists.localSearchResults as Song[];
+  cloudSearchResults.value = snapshot.lists.cloudSearchResults as Song[];
   localArtistResults.value = snapshot.lists.localArtistResults as ArtistCatalogItem[];
   localAlbumResults.value = snapshot.lists.localAlbumResults as AlbumCatalogItem[];
   localPlaylistResults.value = snapshot.lists.localPlaylistResults as Playlist[];
@@ -252,9 +275,11 @@ function restoreResultsSnapshot(snapshot: SearchResultsSnapshot) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   uiStore.showPlayerDetail = false;
   refreshPluginSourceList();
+  // 网盘来源需异步读取已绑定账号，先于来源选中/快照恢复逻辑
+  await refreshCloudSourceList();
   const cache = onlineDetailStore.consumeSearchPageCache();
   const restoredSourceId = cache?.selectedSourceId ?? '';
   const sourceRestored = !!(restoredSourceId && allSourceList.value.some(s => s.id === restoredSourceId));

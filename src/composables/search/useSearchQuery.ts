@@ -20,6 +20,8 @@ import {
 } from '../../services/domain/pluginEngine';
 import type { PluginArtistResult, PluginAlbumResult } from '../../services/domain/pluginEngine';
 import { reportSearch, reportInputStats } from '../../services/domain/usageStats';
+import { cloudProviderById } from '../../services/cloud/cloudRegistry';
+import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
 import type { SearchSources } from './useSearchSources';
 import type { SearchResults } from './useSearchResults';
 
@@ -44,6 +46,8 @@ export function useSearchQuery(options: {
     lxSearchResults,
     pluginSearchResults,
     localSearchResults,
+    cloudSearchResults,
+    nextCloudCursor,
     localArtistResults,
     localAlbumResults,
     localPlaylistResults,
@@ -51,6 +55,7 @@ export function useSearchQuery(options: {
     pluginAlbumResults,
     pluginPlaylistResults,
     resultCount,
+    cloudFileToSong,
     triggerCoverLoading,
     triggerMfCoverLoading,
     backfillWyTrackMeta,
@@ -73,6 +78,8 @@ export function useSearchQuery(options: {
       lxSearchResults.value = [];
       pluginSearchResults.value = [];
       localSearchResults.value = [];
+      cloudSearchResults.value = [];
+      nextCloudCursor.value = null;
       localArtistResults.value = [];
       localAlbumResults.value = [];
       localPlaylistResults.value = [];
@@ -101,6 +108,8 @@ export function useSearchQuery(options: {
       if (source.type === 'local') {
         pluginSearchResults.value = [];
         lxSearchResults.value = [];
+        cloudSearchResults.value = [];
+        nextCloudCursor.value = null;
         pluginArtistResults.value = [];
         pluginAlbumResults.value = [];
         pluginPlaylistResults.value = [];
@@ -132,6 +141,8 @@ export function useSearchQuery(options: {
         hasMore.value = false;
       } else if (source.type === 'lx' && source.lxSourceId) {
         pluginSearchResults.value = [];
+        cloudSearchResults.value = [];
+        nextCloudCursor.value = null;
         pluginArtistResults.value = [];
         pluginAlbumResults.value = [];
         pluginPlaylistResults.value = [];
@@ -191,6 +202,8 @@ export function useSearchQuery(options: {
       } else if ((source.type === 'musicfree' || source.type === 'anime') && source.source) {
         lxSearchResults.value = [];
         localSearchResults.value = [];
+        cloudSearchResults.value = [];
+        nextCloudCursor.value = null;
         localArtistResults.value = [];
         localAlbumResults.value = [];
         localPlaylistResults.value = [];
@@ -239,6 +252,37 @@ export function useSearchQuery(options: {
           }
           hasMore.value = false;
         }
+      } else if (source.type === 'cloud' && source.cloudProviderId) {
+        lxSearchResults.value = [];
+        pluginSearchResults.value = [];
+        localSearchResults.value = [];
+        localArtistResults.value = [];
+        localAlbumResults.value = [];
+        localPlaylistResults.value = [];
+        pluginArtistResults.value = [];
+        pluginAlbumResults.value = [];
+        pluginPlaylistResults.value = [];
+        cloudSearchResults.value = [];
+        nextCloudCursor.value = null;
+
+        // 网盘来源仅支持文件名（单曲）搜索
+        if (activeSearchType.value !== 'track') {
+          hasMore.value = false;
+          return;
+        }
+
+        // 来源列表已过滤出已绑定账号的盘，accounts[0] 必存在；同盘多账号取第一个
+        const accounts = await CloudCredentialsStore.instance.accountsFor(source.cloudProviderId);
+        const cred = accounts[0]?.cred ?? {};
+        const provider = cloudProviderById(source.cloudProviderId)!;
+        const res = await provider.searchFiles(cred, query);
+        if (activeController.signal.aborted) return;
+        const accountId = accounts[0]?.accountId ?? '_';
+        cloudSearchResults.value = res.files
+          .filter(f => !f.isDir && f.isAudio)
+          .map(f => cloudFileToSong(f, source.cloudProviderId!, source.name, accountId));
+        nextCloudCursor.value = res.nextCursor;
+        hasMore.value = nextCloudCursor.value != null;
       }
     } catch (err) {
       if (!activeController.signal.aborted) {
@@ -246,6 +290,8 @@ export function useSearchQuery(options: {
         lxSearchResults.value = [];
         pluginSearchResults.value = [];
         localSearchResults.value = [];
+        cloudSearchResults.value = [];
+        nextCloudCursor.value = null;
         localArtistResults.value = [];
         localAlbumResults.value = [];
         localPlaylistResults.value = [];
@@ -302,6 +348,19 @@ export function useSearchQuery(options: {
         } else {
           hasMore.value = false;
         }
+      } else if (source.type === 'cloud' && source.cloudProviderId && nextCloudCursor.value) {
+        // 网盘续搜：带上一页游标追加结果
+        const accounts = await CloudCredentialsStore.instance.accountsFor(source.cloudProviderId);
+        const cred = accounts[0]?.cred ?? {};
+        const provider = cloudProviderById(source.cloudProviderId)!;
+        const res = await provider.searchFiles(cred, query, nextCloudCursor.value);
+        const accountId = accounts[0]?.accountId ?? '_';
+        const songs = res.files
+          .filter(f => !f.isDir && f.isAudio)
+          .map(f => cloudFileToSong(f, source.cloudProviderId!, source.name, accountId));
+        cloudSearchResults.value = [...cloudSearchResults.value, ...songs];
+        nextCloudCursor.value = res.nextCursor;
+        hasMore.value = nextCloudCursor.value != null;
       }
     } catch (err) {
       console.warn('[Search] loadMore failed:', err);

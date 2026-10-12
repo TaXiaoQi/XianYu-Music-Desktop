@@ -137,7 +137,9 @@ export const getSongSourceTag = (
 ): SongSourceTagInfo => {
   const path = song?.path;
   if (path?.startsWith('cloud://')) {
-    return { label: '网盘', brand: false };
+    // 网盘歌曲：优先取搜索结果写入的盘名（rawData.providerName），缺失时兜底
+    const providerName = song?.rawData?.providerName;
+    return { label: typeof providerName === 'string' && providerName ? providerName : '网盘', brand: false };
   }
   if (path?.startsWith('lx://')) {
     const sourceId = path.slice('lx://'.length).split('/')[0] as LxSourceId;

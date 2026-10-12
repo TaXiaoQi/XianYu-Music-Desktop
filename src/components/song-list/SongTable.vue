@@ -1134,7 +1134,7 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
           <!-- 来源标签 -->
           <div class="w-16 flex shrink-0 items-center justify-center">
             <span
-              v-if="isStreamSong(song) && !(downloadCompletedAsLocal && savedStreamPaths.has(song.path))"
+              v-if="(isStreamSong(song) || song.path?.startsWith('cloud://')) && !(downloadCompletedAsLocal && savedStreamPaths.has(song.path))"
               class="max-w-full truncate rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
               :title="getSongSourceTag(song).label"
             >{{ getSongSourceTag(song).label }}</span>

@@ -12,6 +12,9 @@ import type { PluginArtistResult, PluginAlbumResult } from '../../services/domai
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../../types';
 import { fetchWyTrackMetaByIds } from '../../services/domain/playlistImport';
 import { qqFillSongDurations } from '../../services/domain/qqHostSearchFallback';
+import { CloudPlayContext, cloudSongFromContext } from '../../features/playback/cloudPlaybackResolver';
+import { parseCloudFileName } from '../../services/cloud/cloudFilename';
+import type { CloudFile } from '../../services/cloud/cloudTypes';
 import type { SearchSources } from './useSearchSources';
 import type { SearchTypeKey } from './useSearchQuery';
 
@@ -71,6 +74,9 @@ export function useSearchResults(options: {
   const lxSearchResults = shallowRef<LxSearchResultItem[]>([]);
   const pluginSearchResults = shallowRef<PluginSearchResult[]>([]);
   const localSearchResults = shallowRef<Song[]>([]);
+  const cloudSearchResults = shallowRef<Song[]>([]);
+  /** 网盘搜索翻页游标（null = 无更多/不支持翻页） */
+  const nextCloudCursor = ref<string | null>(null);
   const localArtistResults = shallowRef<ArtistCatalogItem[]>([]);
   const localAlbumResults = shallowRef<AlbumCatalogItem[]>([]);
   const localPlaylistResults = shallowRef<Playlist[]>([]);
@@ -82,6 +88,7 @@ export function useSearchResults(options: {
     if (activeSearchType.value === 'track') {
       if (isLocalSource.value) return localSearchResults.value.length;
       if (selectedSourceItem.value?.type === 'lx') return lxSearchResults.value.length;
+      if (selectedSourceItem.value?.type === 'cloud') return cloudSearchResults.value.length;
       return pluginSearchResults.value.length;
     }
     if (isLocalSource.value) {
@@ -97,7 +104,7 @@ export function useSearchResults(options: {
 
   const hasNoResults = computed(() => {
     if (activeSearchType.value === 'track') {
-      return lxSearchResults.value.length === 0 && pluginSearchResults.value.length === 0 && localSearchResults.value.length === 0;
+      return lxSearchResults.value.length === 0 && pluginSearchResults.value.length === 0 && localSearchResults.value.length === 0 && cloudSearchResults.value.length === 0;
     }
     if (isLocalSource.value) {
       if (activeSearchType.value === 'artist') return localArtistResults.value.length === 0;
@@ -180,11 +187,30 @@ export function useSearchResults(options: {
     } as any;
   }
 
+  /** 网盘文件 → 可播放 Song：文件名解析歌手/歌名，无歌手段时回落盘名 */
+  function cloudFileToSong(item: CloudFile, providerId: string, providerName: string, accountId: string): Song {
+    const ctx = new CloudPlayContext({ provider: providerId, accountId, file: item });
+    const parts = parseCloudFileName(item.name);
+    const artistName = parts.artist ?? providerName;
+    const base = cloudSongFromContext(ctx, artistName);
+    return {
+      ...base,
+      name: parts.title,
+      title: parts.title,
+      artist: artistName,
+      artist_names: [artistName],
+      effective_artist_names: [artistName],
+      // rawData 补充盘名（来源标签展示用），保留 cloud 播放上下文
+      rawData: { ...base.rawData, providerName },
+    } as Song;
+  }
+
   const onlineTrackSongs = computed<Song[]>(() => {
     if (isLocalSource.value) return localSearchResults.value;
     if (selectedSourceItem.value?.type === 'lx') {
       return lxSearchResults.value.map((item: LxSearchResultItem) => lxResultToSong(item));
     }
+    if (selectedSourceItem.value?.type === 'cloud') return cloudSearchResults.value;
     return pluginSearchResults.value.map((item: PluginSearchResult) => mfResultToSong(item));
   });
 
@@ -511,6 +537,8 @@ export function useSearchResults(options: {
     lxSearchResults,
     pluginSearchResults,
     localSearchResults,
+    cloudSearchResults,
+    nextCloudCursor,
     localArtistResults,
     localAlbumResults,
     localPlaylistResults,
@@ -521,6 +549,7 @@ export function useSearchResults(options: {
     hasNoResults,
     onlineTrackSongs,
     catalogGridItems,
+    cloudFileToSong,
     triggerCoverLoading,
     triggerMfCoverLoading,
     backfillWyTrackMeta,
