@@ -38,6 +38,8 @@ export interface DailyRecommendItem {
   pluginName: string;
   /** lx 源原始条目：存在时播放走 lx:// 链路（与移动端 pluginFormat='lx' 对齐） */
   lxItem?: LxSearchResultItem;
+  /** 网盘载荷：存在时播放走 cloud:// 链路（与移动端对齐）；fileJson 为 CloudFile.toJson() 串，便于缓存序列化 */
+  cloudCtx?: { providerId: string; accountId: string; providerName: string; fileJson: string };
 }
 
 export interface DailyRecommendResult {

@@ -6,6 +6,9 @@ import type { LxSearchResultItem } from './lxMusicSdkBase';
 import type { LxSourceId } from './lxMusicSdkTypes';
 import { signedRequest, getStoredAuth } from '../auth/authService';
 import type { PluginSearchResult, PluginSource } from '../../types';
+import { cloudProviders } from '../cloud/cloudRegistry';
+import { CloudCredentialsStore } from '../cloud/cloudCredentialsStore';
+import { parseCloudFileName } from '../cloud/cloudFilename';
 import { DailyRecommendError } from './dailyRecommendTypes';
 import type { DailyRecommendAlgorithm, DailyRecommendItem, DailyRecommendStrategy } from './dailyRecommendTypes';
 
@@ -13,6 +16,8 @@ const MAX_CANDIDATES = 90;
 const SEARCH_LIMIT = 20;
 const SEARCH_CONCURRENCY = 4;
 const MIN_DURATION_MS = 45_000;
+/** 网盘候选全局上限（收集时计数截断） */
+const CLOUD_MAX_CANDIDATES = 20;
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -130,6 +135,100 @@ function lxItemToSearchResult(item: LxSearchResultItem): { song: DailyRecommendI
   };
 }
 
+/** 网盘搜索任务：已绑定账号（取首个）× 推荐歌手关键词 */
+type CloudSearchTask = {
+  provider: (typeof cloudProviders)[number];
+  accountId: string;
+  cred: Record<string, string>;
+  keyword: string;
+};
+
+/**
+ * 收集网盘候选（与移动端 _collectCloudCandidates 同构）：
+ * 推荐歌手名作关键词，对「支持搜索且已绑定」的网盘并发 searchFiles 首页，
+ * 文件名解析出歌手/歌名，仅当某段命中关键词才收；异常逐盘捕获记日志，不阻塞整体。
+ */
+async function collectCloudCandidates(
+  algorithm: DailyRecommendAlgorithm,
+  exclusionSet: Set<string>,
+): Promise<Array<{ key: string; item: DailyRecommendItem; score: number }>> {
+  const out: Array<{ key: string; item: DailyRecommendItem; score: number }> = [];
+  const seen = new Set<string>();
+
+  const artists = (algorithm.profile?.top_artists || [])
+    .map(a => normalizeText(a.name))
+    .filter(Boolean)
+    .slice(0, 3);
+  if (artists.length === 0) return out;
+
+  const tasks: CloudSearchTask[] = [];
+  for (const provider of cloudProviders) {
+    if (!provider.supportsSearch) continue;
+    const accounts = await CloudCredentialsStore.instance.accountsFor(provider.id);
+    if (accounts.length === 0) continue;
+    const account = accounts[0];
+    for (const keyword of artists) {
+      tasks.push({ provider, accountId: account.accountId, cred: account.cred, keyword });
+    }
+  }
+  if (tasks.length === 0) return out;
+
+  await mapWithLimit(tasks, SEARCH_CONCURRENCY, async (task) => {
+    if (out.length >= CLOUD_MAX_CANDIDATES) return;
+    try {
+      const result = await task.provider.searchFiles(task.cred, task.keyword);
+      const files = result?.files || [];
+      files.forEach((file, rank) => {
+        if (out.length >= CLOUD_MAX_CANDIDATES) return;
+        if (file.isDir || !file.isAudio) return;
+        const parts = parseCloudFileName(file.name);
+        const normTitle = normalizeText(parts.title);
+        const normArtist = normalizeText(firstArtist(parts.artist || ''));
+        // 仅当歌名或歌手段（取 firstArtist）命中推荐歌手关键词才收
+        if (normTitle !== task.keyword && normArtist !== task.keyword) return;
+        if (!normTitle) return;
+        const key = `${normTitle}|${normArtist}`;
+        if (exclusionSet.has(key)) return;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({
+          key,
+          // 与插件打分同尺度，+0.05 偏置：同 key 竞争时网盘略优先
+          score: (1 - rank / Math.max(files.length, 1)) * 0.5 + 0.05,
+          item: {
+            // 兼容 PluginSearchResult 形状的占位对象：展示走 cloudCtx 载荷
+            song: {
+              id: file.id,
+              title: parts.title,
+              name: parts.title,
+              artist: parts.artist || task.keyword,
+              album: '',
+              coverUrl: '',
+              duration: 0,
+              platform: task.provider.id,
+              platformId: file.id,
+              pluginId: '',
+            },
+            reason: `来自${task.provider.displayName}网盘`,
+            strategyId: 'cloud',
+            pluginName: task.provider.displayName,
+            cloudCtx: {
+              providerId: task.provider.id,
+              accountId: task.accountId,
+              providerName: task.provider.displayName,
+              fileJson: JSON.stringify(file.toJson()),
+            },
+          },
+        });
+      });
+    } catch (e) {
+      console.warn(`[dailyRecommend] 网盘候选搜索失败（${task.provider.displayName}）:`, e);
+    }
+  });
+
+  return out;
+}
+
 export async function executeDailyRecommend(
   algorithm: DailyRecommendAlgorithm,
   batch = 0,
@@ -140,9 +239,6 @@ export async function executeDailyRecommend(
   const probeKeyword = algorithm.strategies.find(s => s.queries.length > 0)?.queries[0] ?? '热门音乐';
   const alive = await Promise.all(enabled.map(p => probePluginAlive(p, probeKeyword)));
   const plugins: PluginSource[] = enabled.filter((_, i) => alive[i]);
-  if (plugins.length === 0) {
-    return [];
-  }
 
   const exclusionSet = new Set(
     (algorithm.exclusions?.songs || [])
@@ -150,7 +246,7 @@ export async function executeDailyRecommend(
       .map(s => `${normalizeText(s.title)}|${normalizeText(firstArtist(s.artist))}`),
   );
 
-  const tasks = buildSearchTasks(algorithm, plugins);
+  const tasks = plugins.length > 0 ? buildSearchTasks(algorithm, plugins) : [];
   const searchResults = await mapWithLimit(tasks, SEARCH_CONCURRENCY, async (task) => {
     if (task.plugin.format === 'lx' && task.lxSource) {
       const r = await lxSearch(task.lxSource, task.query, 1, SEARCH_LIMIT);
@@ -187,6 +283,19 @@ export async function executeDailyRecommend(
         });
       }
     });
+  }
+
+  // 插件候选收集完成后收集网盘候选并并入同一候选池（同 key 按分数竞争）；
+  // 无可用插件时也可跑网盘收集，仅在两者皆空时提前返回
+  const cloudEntries = await collectCloudCandidates(algorithm, exclusionSet);
+  for (const entry of cloudEntries) {
+    const prev = best.get(entry.key);
+    if (!prev || entry.score > prev.score) {
+      best.set(entry.key, { score: entry.score, item: entry.item });
+    }
+  }
+  if (best.size === 0) {
+    return [];
   }
 
   const seed = algorithm.daily_seed + batch * 7919;

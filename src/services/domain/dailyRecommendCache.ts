@@ -2,7 +2,8 @@
 import { mulberry32 } from './dailyRecommendCore';
 import type { DailyRecommendAlgorithm, DailyRecommendItem } from './dailyRecommendTypes';
 
-const CACHE_KEY = 'xy.dailyRecommend.v1';
+// v2：候选新增 cloudCtx 网盘载荷（v1 无该字段，直接换 key 作废旧缓存）
+const CACHE_KEY = 'xy.dailyRecommend.v2';
 
 interface DailyRecommendCache {
   ciyuanxiId: string;

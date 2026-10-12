@@ -164,6 +164,8 @@ import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngin
 import { extractDurationMs } from '../services/domain/pluginResultMappers';
 import { fetchWyTrackMetaByIds } from '../services/domain/playlistImport';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
+import { CloudFile } from '../services/cloud/cloudTypes';
+import { cloudFileToSong } from '../features/library/cloudFolderTree';
 import type { PluginSearchResult, PluginSource, Song } from '../types';
 
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
@@ -333,6 +335,19 @@ watch(items, () => {
 // ==================== 列表数据 ====================
 
 function recommendItemToSong(item: DailyRecommendItem): Song {
+  // 网盘条目：解析 cloudCtx 载荷构造 cloud:// Song（与网盘浏览页 cloudFileToSong 同链路）
+  const cloud = item.cloudCtx;
+  if (cloud?.fileJson) {
+    try {
+      const file = CloudFile.fromJson(JSON.parse(cloud.fileJson));
+      if (file.id) {
+        return cloudFileToSong(file, cloud.providerId, cloud.providerName, cloud.accountId);
+      }
+    } catch {
+      /* 载荷损坏时回落插件占位展示 */
+    }
+  }
+
   // lx 源条目：与搜索页 lxResultToSong 同构，播放走 lx:// 解析链路
   const lx = item.lxItem;
   if (lx?.songmid && lx.source) {
