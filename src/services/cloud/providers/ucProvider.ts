@@ -30,7 +30,8 @@ export class UcProvider extends QuarkUcBase {
   }
 
   override get webviewLoginUrl(): string {
-    return 'https://pc.uc.cn/';
+    // pc.uc.cn 是 UC 浏览器官网，登录入口在网盘站。
+    return 'https://drive.uc.cn/';
   }
 
   override get captureRule(): CloudCaptureRule {

@@ -31,13 +31,14 @@ export class QuarkProvider extends QuarkUcBase {
   }
 
   override get webviewLoginUrl(): string {
-    return 'https://passport.quark.cn/login';
+    // passport.quark.cn 域名 DNS 不存在，从网盘首页登录。
+    return 'https://pan.quark.cn/';
   }
 
   override get captureRule(): CloudCaptureRule {
     return new CloudCaptureRule({
       cookieNames: ['kps', 'sign'],
-      cookieDomains: ['pan.quark.cn', 'passport.quark.cn'],
+      cookieDomains: ['pan.quark.cn'],
       pollIntervalMs: 500,
     });
   }
