@@ -572,6 +572,11 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: string;
   };
+  // ===== 网盘业务代理命令（十盘业务下沉 Rust）=====
+  cloud_proxy: {
+    payload: { reqJson: string };
+    response: string;
+  };
   // ===== QuickJS 插件引擎命令（插件脚本在 Rust 后端隔离执行）=====
   plugin_engine_load_musicfree: {
     payload: { pluginId: string; script: string; userVarsJson: string };

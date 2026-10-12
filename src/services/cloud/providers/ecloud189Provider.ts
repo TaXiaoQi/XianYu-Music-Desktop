@@ -1,28 +1,24 @@
 // 移植自移动端 lib/src/cloud/providers/ecloud189_provider.dart
 // 天翼云盘（189）provider（smsPassword：账密 + 短信二次验证）。
 //
-// logbox RSA 加密登录链；响应要求二次验证时自动发短信并暂存会话，
-// 带验证码重登走 submitForSecondAuth → portal 换会话。portal
-// loginUrl.action 换会话是 302 跳转链，桌面端代理 follow=0 时逐跳
-// 采 Cookie 的 GET 循环自实现（同移动端 appRequest 逐跳语义）。
+// logbox RSA 加密登录链留在 TS；业务（列目录/分享/转存/直链）经
+// cloudRemote 桥转发内嵌 Rust（src-tauri/src/cloud/ecloud189.rs）。
+// portal loginUrl.action 换会话是 302 跳转链，桌面端代理 follow=0 时
+// 逐跳采 Cookie 的 GET 循环自实现（同移动端 appRequest 逐跳语义）。
 
 import { pluginApi } from '../../tauri/pluginApi';
 import {
-  asArray,
   asInt,
   asRecord,
   asString,
   cloudGet,
   cloudPostForm,
   cookieHeader,
-  delay,
-  encodeQueryComponent,
   getHeader,
-  parseIntOr,
-  resolveFinalUrl,
   splitSetCookieValues,
 } from '../cloudHttp';
 import { CloudProvider } from '../cloudProvider';
+import { rustDirectLink, rustListDir, rustParseShare, rustTransferShare, rustValidate } from '../cloudRemote';
 import {
   CloudAccount,
   CloudDirectLink,
@@ -33,7 +29,6 @@ import {
   CloudLoginKind,
   CloudShareParse,
 } from '../cloudTypes';
-import { parseUrlToProvider } from '../shareLinkParser';
 import { HttpLoginGate, rsaPkcs1Hex } from './httpLoginSupport';
 
 const UA =
@@ -78,15 +73,6 @@ export class Ecloud189Provider extends CloudProvider {
       new CloudLoginField({ key: 'password', label: '密码', obscure: true }),
       new CloudLoginField({ key: 'smsCode', label: '短信验证码', isSmsCode: true }),
     ];
-  }
-
-  private _h(cookie: string): Record<string, string> {
-    const headers: Record<string, string> = {
-      'User-Agent': UA,
-      'Referer': 'https://cloud.189.cn/',
-    };
-    if (cookie !== '') headers['Cookie'] = cookie;
-    return headers;
   }
 
   // ── 登录 ──────────────────────────────────────────────
@@ -264,196 +250,32 @@ export class Ecloud189Provider extends CloudProvider {
     Object.assign(jar, resp.setCookiePairs);
   }
 
-  override async validate(cred: Record<string, string>): Promise<boolean> {
-    try {
-      const resp = await cloudGet(
-        'https://cloud.189.cn/api/open/file/listFiles.action?folderId=-11&pageNum=1&pageSize=1',
-        { headers: this._h(cred['cookie'] ?? '') },
-      );
-      return resp.isOk;
-    } catch {
-      return false;
-    }
-  }
+  // ── 业务（rust 桥转发）─────────────────────────────────
 
-  // ── 目录 ──────────────────────────────────────────────
+  override async validate(cred: Record<string, string>): Promise<boolean> {
+    return rustValidate(this.id, cred);
+  }
 
   override async listDir(
     cred: Record<string, string>,
     path: string,
     cursor?: string | null,
   ): Promise<CloudListResult> {
-    const page = parseIntOr(cursor, 1);
-    const resp = await cloudGet(
-      'https://cloud.189.cn/api/open/file/listFiles.action' +
-        '?folderId=' +
-        encodeQueryComponent(path) +
-        '&pageNum=' +
-        page +
-        '&pageSize=60',
-      { headers: this._h(cred['cookie'] ?? '') },
-    );
-    if (!resp.isOk) throw new CloudException('目录列表请求失败');
-    const data = asRecord(resp.json['data']);
-    const ao = data ? asRecord(data['fileListAO']) : null;
-    const list = asArray(ao?.['fileList']);
-    const files: CloudFile[] = [];
-    for (const item of list) {
-      const e = asRecord(item);
-      if (!e) continue;
-      files.push(
-        new CloudFile({
-          id: asString(e['id'] ?? ''),
-          name: asString(e['name'] ?? ''),
-          isDir: e['dir'] === true || e['isdir'] === true,
-          size: asInt(e['size']) ?? 0,
-          parentId: path,
-        }),
-      );
-    }
-    const hasNext = files.length >= 60;
-    return new CloudListResult({
-      files,
-      nextCursor: hasNext ? `${page + 1}` : null,
-    });
+    return rustListDir(this.id, cred, path, cursor);
   }
 
-  // ── 分享 ──────────────────────────────────────────────
-
   override async parseShareLink(url: string, pwd: string | null): Promise<CloudShareParse> {
-    const info = parseUrlToProvider(url);
-    const shareCode = info?.shareId ?? url;
-    const headers = { 'User-Agent': UA };
-    const infoResp = await cloudGet(
-      'https://cloud.189.cn/api/open/share/getShareInfoByCodeV2.action' +
-        '?shareCode=' +
-        encodeQueryComponent(shareCode),
-      { headers },
-    );
-    if (!infoResp.isOk) throw new CloudException('分享链接解析失败');
-    const data = asRecord(infoResp.json['data']);
-    if (!data) throw new CloudException('分享已失效');
-    const shareId = asString(data['shareId'] ?? '');
-    const fileId = asString(data['fileId'] ?? '-1');
-    const isDir = data['isDir'] === true || data['isDir'] === 1;
-    // 有提取码：checkAccessCode 校验。
-    if (pwd != null && pwd !== '') {
-      const chk = await cloudPostForm(
-        'https://cloud.189.cn/api/open/share/checkAccessCode.action',
-        {
-          'shareCode': shareCode,
-          'accessCode': pwd,
-        },
-        { headers },
-      );
-      if (!chk.isOk) throw new CloudException('提取码错误');
-    }
-    let files: CloudFile[] = [];
-    if (!isDir) {
-      files = [
-        new CloudFile({
-          id: fileId,
-          name: asString(data['fileName'] ?? ''),
-          size: asInt(data['fileSize']) ?? 0,
-        }),
-      ];
-    } else {
-      const listResp = await cloudGet(
-        'https://cloud.189.cn/api/open/share/listShareDir.action' +
-          '?shareId=' +
-          encodeQueryComponent(shareId) +
-          '&fileId=' +
-          encodeQueryComponent(fileId) +
-          '&pageNum=1&pageSize=60',
-        { headers },
-      );
-      if (!listResp.isOk) throw new CloudException('分享文件列表获取失败');
-      const ldata = asRecord(listResp.json['data']);
-      const entries = asArray(ldata?.['fileShareResponseInfos']);
-      for (const item of entries) {
-        const e = asRecord(item);
-        if (!e) continue;
-        files.push(
-          new CloudFile({
-            id: asString(e['fileId'] ?? ''),
-            name: asString(e['fileName'] ?? ''),
-            isDir: e['isDir'] === true || e['isDir'] === 1,
-            size: asInt(e['fileSize']) ?? 0,
-          }),
-        );
-      }
-    }
-    return new CloudShareParse({
-      providerId: this.id,
-      files,
-      shareId,
-      passcode: pwd,
-      directPlayable: false,
-    });
+    return rustParseShare(this.id, url, pwd);
   }
 
   override async transferShareFiles(
     cred: Record<string, string>,
     share: CloudShareParse,
   ): Promise<CloudFile[]> {
-    const headers = {
-      'User-Agent': UA,
-      'Cookie': cred['cookie'] ?? '',
-    };
-    const resp = await cloudPostForm(
-      'https://cloud.189.cn/api/open/share/createBatchTask.action',
-      {
-        'type': 'SHARE_SAVE',
-        'taskInfos': JSON.stringify(
-          share.files.map((f) => ({
-            'fileId': f.id,
-            'fileName': f.name,
-            'isDir': f.isDir,
-            'shareId': share.shareId,
-          })),
-        ),
-        'targetFolderId': '-11',
-      },
-      { headers },
-    );
-    if (!resp.isOk) throw new CloudException('转存失败');
-    const taskId = asString(asRecord(resp.json['data'])?.['taskId'] ?? '');
-    if (taskId === '') throw new CloudException('转存失败');
-    for (let i = 0; i < 20; i++) {
-      await delay(800);
-      const tResp = await cloudGet(
-        'https://cloud.189.cn/api/open/batch/checkBatchTask.action?taskId=' +
-          encodeQueryComponent(taskId),
-        { headers },
-      );
-      if (!tResp.isOk) continue;
-      const state = asString(asRecord(tResp.json['data'])?.['taskStatus']);
-      if (state === '2') {
-        return share.files;
-      }
-    }
-    throw new CloudException('转存失败');
+    return rustTransferShare(this.id, cred, share);
   }
 
-  // ── 直链 ──────────────────────────────────────────────
-
   override async getDirectLink(cred: Record<string, string>, file: CloudFile): Promise<CloudDirectLink> {
-    const resp = await cloudGet(
-      'https://cloud.189.cn/api/open/file/getFileDownloadUrl.action' +
-        '?fileId=' +
-        encodeQueryComponent(file.id),
-      { headers: this._h(cred['cookie'] ?? '') },
-    );
-    if (!resp.isOk) throw new CloudException('直链获取失败');
-    const url = asString(asRecord(resp.json['data'])?.['fileDownloadUrl'] ?? '');
-    if (url === '') throw new CloudException('直链获取失败');
-    const finalUrl = await resolveFinalUrl(url, { 'User-Agent': UA });
-    return new CloudDirectLink({
-      url: finalUrl,
-      headers: { 'User-Agent': UA },
-      fileName: file.name,
-      size: file.size,
-      expireAt: new Date(Date.now() + 30 * 60 * 1000),
-    });
+    return rustDirectLink(this.id, cred, file);
   }
 }

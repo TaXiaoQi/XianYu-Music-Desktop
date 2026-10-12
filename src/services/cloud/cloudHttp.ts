@@ -6,8 +6,11 @@
 // GET/POST-JSON/POST-FORM，附统一超时与 CloudException 错误转换。
 // 响应头由调用方自行取用。
 //
-// 另含少量移植辅助（Dart 类型强转的 TS 对应物：asRecord/asArray/asInt/
-// asString/strOrNull、Uri 解析辅助 urlHost、encodeQueryComponent、delay）。
+// 业务下沉后仅登录链（webview 捕获后的账号构造、httpPassword/smsPassword/
+// qrCode 登录）仍在使用本模块；十盘业务请求已改走 cloudRemote → Rust。
+//
+// 另含少量移植辅助（Dart 类型强转的 TS 对应物：asRecord/asInt/asString、
+// encodeQueryComponent 等）。
 
 import { pluginApi } from '../tauri/pluginApi';
 import { CloudException } from './cloudTypes';
@@ -162,17 +165,6 @@ export function encodeQueryComponent(s: string): string {
     .replace(/%20/g, '+');
 }
 
-/** 组合 query 参数（跳过 null/空值）。 */
-export function joinQuery(params: Record<string, string | null | undefined>): string {
-  const q: string[] = [];
-  for (const [k, v] of Object.entries(params)) {
-    if (v != null && v !== '') {
-      q.push(`${encodeQueryComponent(k)}=${encodeQueryComponent(v)}`);
-    }
-  }
-  return q.length === 0 ? '' : `?${q.join('&')}`;
-}
-
 /** 凭据 Cookie 键值拼请求头（各盘 cred 存 'cookie' 单键整串时用另一形态）。 */
 export function cookieHeader(pairs: Record<string, string>): string {
   return Object.entries(pairs)
@@ -189,16 +181,6 @@ export function getHeader(headers: Record<string, string>, name: string): string
   return null;
 }
 
-/** 跟随重定向归一到最终 URL（直链注册代理前用）。失败原样返回。 */
-export async function resolveFinalUrl(url: string, headers?: Record<string, string>): Promise<string> {
-  try {
-    const resp = await pluginApi.pluginHttpRequest('GET', url, headers, '', 15000, 10);
-    return resp.url || url;
-  } catch {
-    return url;
-  }
-}
-
 // ── 移植辅助（Dart 类型强转/解析的 TS 对应物）────────────────
 
 /** Dart `x as Map<String, dynamic>?` 对应物。 */
@@ -206,11 +188,6 @@ export function asRecord(v: unknown): Record<string, unknown> | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : null;
-}
-
-/** Dart `x as List?`（非列表归空数组）。 */
-export function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
 }
 
 /** Dart `(x as num?)?.toInt()` 对应物。 */
@@ -221,30 +198,4 @@ export function asInt(v: unknown): number | null {
 /** Dart `(x ?? '').toString()` 对应物。 */
 export function asString(v: unknown): string {
   return v == null ? '' : String(v);
-}
-
-/** Dart `x?.toString()` 对应物。 */
-export function strOrNull(v: unknown): string | null {
-  return v == null ? null : String(v);
-}
-
-/** Dart `int.tryParse(s) ?? fallback` 对应物。 */
-export function parseIntOr(s: string | null | undefined, fallback: number): number {
-  if (s == null || s === '') return fallback;
-  const n = Number.parseInt(s, 10);
-  return Number.isNaN(n) ? fallback : n;
-}
-
-/** Dart `Uri.tryParse(url)?.host ?? ''` 对应物。 */
-export function urlHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return '';
-  }
-}
-
-/** Dart `Future<void>.delayed(...)` 对应物。 */
-export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
