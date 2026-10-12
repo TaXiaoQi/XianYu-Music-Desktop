@@ -1,6 +1,7 @@
 // 移植自移动端 lib/src/cloud/providers/quark_provider.dart
-// 夸克网盘：继承 QuarkUcBase，仅声明品牌与扫码常量（业务经 cloudRemote
+// 夸克网盘：继承 QuarkUcBase，仅声明品牌常量（业务经 cloudRemote
 // 桥转发内嵌 Rust，免速兜底路由在 rust 侧 quark_uc.rs 内实现）。
+// 登录为 WebView 范式：桌面端不做网页登录，引导去手机端绑定（凭据云同步）。
 
 import { QuarkUcBase } from './quarkUcBase';
 
@@ -27,17 +28,5 @@ export class QuarkProvider extends QuarkUcBase {
 
   override get uaBrand(): string {
     return 'quark-cloud-drive';
-  }
-
-  override get casHost(): string {
-    return 'uop.quark.cn';
-  }
-
-  override get qrContentTemplate(): string {
-    return (
-      'https://su.quark.cn/4_eMHBJ?token={token}&client_id=532&ssb=weblogin' +
-      '&uc_param_str=&uc_biz_str=S:custom|OPT:SAREA@0|OPT:IMMERSIVE@1' +
-      '|OPT:BACK_BTN_STYLE@0'
-    );
   }
 }

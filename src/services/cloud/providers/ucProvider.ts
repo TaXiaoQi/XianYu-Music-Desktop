@@ -1,5 +1,6 @@
 // 移植自移动端 lib/src/cloud/providers/uc_provider.dart
-// UC 网盘：继承 QuarkUcBase，仅声明品牌与扫码常量（接口与夸克同构）。
+// UC 网盘：继承 QuarkUcBase，仅声明品牌常量（接口与夸克同构）。
+// 登录为 WebView 范式：桌面端不做网页登录，引导去手机端绑定（凭据云同步）。
 
 import { QuarkUcBase } from './quarkUcBase';
 
@@ -26,18 +27,5 @@ export class UcProvider extends QuarkUcBase {
 
   override get uaBrand(): string {
     return 'uc-cloud-drive';
-  }
-
-  override get casHost(): string {
-    return 'api.open.uc.cn';
-  }
-
-  override get qrContentTemplate(): string {
-    return (
-      'https://broccoli.uc.cn/apps/ZY5qIZiK/routes/1hbcQwLhH' +
-      '?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt' +
-      '&uc_biz_str=S%3Acustom%7CC%3Atitlebar_hover_2' +
-      '&token={token}&client_id=381&ssb=weblogin'
-    );
   }
 }
