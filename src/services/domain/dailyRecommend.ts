@@ -9,14 +9,19 @@ export type {
 export { DailyRecommendError } from './dailyRecommendTypes';
 
 export { clearDailyRecommendCache } from './dailyRecommendCache';
+export { anyBoundSearchableDrive } from './dailyRecommendCore';
 
 import { getStoredAuth } from '../auth/authService';
 import { executeDailyRecommend, fetchDailyRecommendAlgorithm } from './dailyRecommendCore';
 import { loadCache, saveCache, localDateKey, pickBatchItems } from './dailyRecommendCache';
 import { DailyRecommendError } from './dailyRecommendTypes';
 import type { DailyRecommendResult } from './dailyRecommendTypes';
+import type { LibrarySong } from '../../types';
 
-export async function getDailyRecommendation(refresh = false): Promise<DailyRecommendResult> {
+export async function getDailyRecommendation(
+  refresh = false,
+  localSongs: LibrarySong[] = [],
+): Promise<DailyRecommendResult> {
   const auth = getStoredAuth();
   const ciyuanxiId = auth?.user?.ciyuanxi_id?.trim();
   if (!ciyuanxiId) {
@@ -37,7 +42,7 @@ export async function getDailyRecommendation(refresh = false): Promise<DailyReco
   const nextBatch = cacheValid ? cached.batch + 1 : 0;
   const candidates = cacheValid
     ? cached.candidates
-    : await executeDailyRecommend(algorithm, nextBatch);
+    : await executeDailyRecommend(algorithm, nextBatch, localSongs);
 
   saveCache({
     ciyuanxiId,

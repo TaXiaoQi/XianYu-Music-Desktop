@@ -40,6 +40,8 @@ export interface DailyRecommendItem {
   lxItem?: LxSearchResultItem;
   /** 网盘载荷：存在时播放走 cloud:// 链路（与移动端对齐）；fileJson 为 CloudFile.toJson() 串，便于缓存序列化 */
   cloudCtx?: { providerId: string; accountId: string; providerName: string; fileJson: string };
+  /** 本地库载荷：存在时播放走本地文件链路；渲染时按路径从曲库查回完整 Song */
+  localPath?: string;
 }
 
 export interface DailyRecommendResult {

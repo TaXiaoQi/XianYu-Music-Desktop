@@ -5,7 +5,7 @@ import { lxSearch } from './lxMusicSdkSearch';
 import type { LxSearchResultItem } from './lxMusicSdkBase';
 import type { LxSourceId } from './lxMusicSdkTypes';
 import { signedRequest, getStoredAuth } from '../auth/authService';
-import type { PluginSearchResult, PluginSource } from '../../types';
+import type { LibrarySong, PluginSearchResult, PluginSource } from '../../types';
 import { cloudProviders } from '../cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../cloud/cloudCredentialsStore';
 import { parseCloudFileName } from '../cloud/cloudFilename';
@@ -18,6 +18,8 @@ const SEARCH_CONCURRENCY = 4;
 const MIN_DURATION_MS = 45_000;
 /** 网盘候选全局上限（收集时计数截断） */
 const CLOUD_MAX_CANDIDATES = 20;
+/** 本地库候选全局上限（与网盘同量级，避免海量本地库挤占候选池） */
+const LOCAL_MAX_CANDIDATES = 20;
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -229,9 +231,91 @@ async function collectCloudCandidates(
   return out;
 }
 
+/**
+ * 收集本地库候选（与网盘候选同构）：库内歌曲的歌手段或歌名命中推荐歌手才收；
+ * 分数与网盘候选同尺度（+0.05 偏置），同 key 竞争时同池优先级一致。
+ */
+function collectLocalCandidates(
+  algorithm: DailyRecommendAlgorithm,
+  exclusionSet: Set<string>,
+  localSongs: LibrarySong[],
+): Array<{ key: string; item: DailyRecommendItem; score: number }> {
+  const out: Array<{ key: string; item: DailyRecommendItem; score: number }> = [];
+  const keywords = (algorithm.profile?.top_artists || [])
+    .map(a => normalizeText(a.name))
+    .filter(Boolean)
+    .slice(0, 3);
+  if (keywords.length === 0 || localSongs.length === 0) return out;
+
+  const keywordSet = new Set(keywords);
+  const seen = new Set<string>();
+  const hits: Array<{ song: LibrarySong; key: string }> = [];
+  for (const song of localSongs) {
+    if (hits.length >= LOCAL_MAX_CANDIDATES) break;
+    if (!song?.path || !song.title) continue;
+    const normTitle = normalizeText(song.title);
+    if (!normTitle) continue;
+    // 与插件候选一致：短于 45s 的曲目不参与
+    if (song.duration > 0 && song.duration * 1000 < MIN_DURATION_MS) continue;
+    const artistSegs = (song.artist || '')
+      .split(/[、,/&]/)
+      .map(seg => normalizeText(seg))
+      .filter(Boolean);
+    if (!artistSegs.some(seg => keywordSet.has(seg)) && !keywordSet.has(normTitle)) {
+      continue;
+    }
+    const key = `${normTitle}|${normalizeText(firstArtist(song.artist || ''))}`;
+    if (exclusionSet.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    hits.push({ song, key });
+  }
+
+  hits.forEach(({ song, key }, rank) => {
+    out.push({
+      key,
+      score: (1 - rank / Math.max(hits.length, 1)) * 0.5 + 0.05,
+      item: {
+        song: {
+          id: song.path,
+          title: song.title || '',
+          name: song.title ?? '',
+          artist: song.artist || '未知歌手',
+          album: song.album || '',
+          coverUrl: song.cover_thumb_path || '',
+          duration: song.duration * 1000,
+          platform: 'local',
+          platformId: song.path,
+          pluginId: '',
+        },
+        reason: '来自本地音乐',
+        strategyId: 'local',
+        pluginName: '本地音乐',
+        localPath: song.path,
+      },
+    });
+  });
+  return out;
+}
+
+/** 是否存在「支持搜索且已绑定」的网盘（无插件时判断是否仍可生成日推）。 */
+export async function anyBoundSearchableDrive(): Promise<boolean> {
+  for (const provider of cloudProviders) {
+    if (!provider.supportsSearch) continue;
+    try {
+      if ((await CloudCredentialsStore.instance.accountsFor(provider.id)).length > 0) {
+        return true;
+      }
+    } catch {
+      /* 单盘失败不阻塞判断 */
+    }
+  }
+  return false;
+}
+
 export async function executeDailyRecommend(
   algorithm: DailyRecommendAlgorithm,
   batch = 0,
+  localSongs: LibrarySong[] = [],
 ): Promise<DailyRecommendItem[]> {
   const enabled = getStoredPlugins()
     .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'lx'))
@@ -289,6 +373,15 @@ export async function executeDailyRecommend(
   // 无可用插件时也可跑网盘收集，仅在两者皆空时提前返回
   const cloudEntries = await collectCloudCandidates(algorithm, exclusionSet);
   for (const entry of cloudEntries) {
+    const prev = best.get(entry.key);
+    if (!prev || entry.score > prev.score) {
+      best.set(entry.key, { score: entry.score, item: entry.item });
+    }
+  }
+
+  // 本地库候选并入候选池（同 key 按分数竞争）：无插件/网盘时本地兜底
+  const localEntries = collectLocalCandidates(algorithm, exclusionSet, localSongs);
+  for (const entry of localEntries) {
     const prev = best.get(entry.key);
     if (!prev || entry.score > prev.score) {
       best.set(entry.key, { score: entry.score, item: entry.item });

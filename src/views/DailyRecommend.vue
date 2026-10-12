@@ -78,8 +78,8 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-1 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
             </svg>
-            <p class="text-base font-medium">暂无可用音源插件</p>
-            <p class="text-sm">请先在「插件管理」中安装音源插件</p>
+            <p class="text-base font-medium">暂无可用音源</p>
+            <p class="text-sm">添加本地音乐、绑定网盘或安装音源插件后再试</p>
             <button
               type="button"
               class="mt-2 px-5 py-2 rounded-lg bg-[#EC4141] text-white text-sm font-medium hover:bg-[#d63a3a] transition-colors cursor-pointer active:scale-[0.97]"
@@ -156,6 +156,7 @@ import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDia
 import { useLibraryStore } from '../features/library/store';
 import {
   DailyRecommendError,
+  anyBoundSearchableDrive,
   getDailyRecommendation,
   type DailyRecommendAlgorithm,
   type DailyRecommendItem,
@@ -236,7 +237,8 @@ async function load(refresh: boolean) {
   notLoggedIn.value = false;
   loadError.value = '';
 
-  if (!hasPlugin()) {
+  // 无插件但有本地库/绑定网盘时仍可生成日推（本地与网盘候选兜底）
+  if (!hasPlugin() && libraryStore.librarySongs.length === 0 && !(await anyBoundSearchableDrive())) {
     noPlugin.value = true;
     loading.value = false;
     items.value = [];
@@ -254,13 +256,13 @@ async function load(refresh: boolean) {
   }
 
   try {
-    const result = await getDailyRecommendation(refresh);
+    const result = await getDailyRecommendation(refresh, libraryStore.librarySongs);
     if (token !== loadToken) return;
     algorithm.value = result.algorithm;
     items.value = result.items;
     batch.value = result.batch;
     if (result.items.length === 0) {
-      loadError.value = '推荐生成失败，请检查音源插件后重试';
+      loadError.value = '推荐生成失败，请检查音源后重试';
       items.value = [];
     }
     void backfillMissingCovers();
@@ -335,6 +337,35 @@ watch(items, () => {
 // ==================== 列表数据 ====================
 
 function recommendItemToSong(item: DailyRecommendItem): Song {
+  // 本地库条目：按路径查回库内完整 Song（本地歌播放/收藏/上下文菜单全兼容）
+  if (item.localPath) {
+    const stored = libraryStore.getSongByPath(item.localPath);
+    if (stored) return stored as Song;
+    // 歌曲可能已被移出曲库：构造最小 Song 壳保底展示
+    const s = item.song;
+    const artistNames = s.artist
+      ? s.artist.split(/[、,/&]/).filter(Boolean).map(t => t.trim())
+      : ['未知歌手'];
+    const album = s.album || '未知专辑';
+    return {
+      name: s.title,
+      title: s.title,
+      path: item.localPath,
+      artist: s.artist || '未知歌手',
+      artist_names: artistNames,
+      effective_artist_names: artistNames,
+      album,
+      album_artist: s.artist || '未知歌手',
+      album_key: `${album}-${s.artist || '未知歌手'}`,
+      is_various_artists_album: false,
+      collapse_artist_credits: false,
+      duration: Math.floor((s.duration || 0) / 1000),
+      cover_thumb_path: s.coverUrl || '',
+      source_type: 'local',
+      rawData: s,
+    } as any;
+  }
+
   // 网盘条目：解析 cloudCtx 载荷构造 cloud:// Song（与网盘浏览页 cloudFileToSong 同链路）
   const cloud = item.cloudCtx;
   if (cloud?.fileJson) {
