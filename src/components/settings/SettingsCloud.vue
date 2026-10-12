@@ -2,8 +2,8 @@
 /**
  * 网盘设置页：绑定管理 / 网盘浏览 / 分享链接导入 三个子视图。
  * 引擎在 services/cloud（与移动端/手表端同构）；本页只做交互编排与展示。
- * WebView 范式的盘（百度/夸克/UC/139/微云/阿里）在桌面端不做网页登录，
- * 提示去手机端绑定，凭据经账号同步自动下发。
+ * WebView 范式的盘（139/微云/阿里）在桌面端不做网页登录，
+ * 提示去手机端绑定，凭据经账号同步自动下发；百度/夸克/UC 走原生扫码。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import QRCode from 'qrcode';
@@ -61,6 +61,7 @@ const loginValues = ref<Record<string, string>>({});
 const loginBusy = ref(false);
 const smsCooldown = ref(0);
 const qrDataUrl = ref('');
+const qrImageUrl = ref('');
 const qrWaiting = ref(false);
 const qrError = ref('');
 const pendingRemoveKey = ref('');
@@ -104,10 +105,16 @@ const startQrLogin = async () => {
   if (!provider) return;
   qrError.value = '';
   qrDataUrl.value = '';
+  qrImageUrl.value = '';
   stopQrPoll();
   try {
     const session = await provider.createQrLogin();
-    qrDataUrl.value = await QRCode.toDataURL(session.qrContent);
+    // 服务方直接下发二维码图片（百度）：直接展示，无需本地渲染。
+    if (session.qrImageUrl != null && session.qrImageUrl !== '') {
+      qrImageUrl.value = session.qrImageUrl;
+    } else {
+      qrDataUrl.value = await QRCode.toDataURL(session.qrContent);
+    }
     qrWaiting.value = true;
     qrPollTimer = setInterval(() => {
       void pollQrLogin(session);
@@ -181,6 +188,7 @@ const openBind = (p: CloudProvider) => {
   loginValues.value = {};
   qrError.value = '';
   qrDataUrl.value = '';
+  qrImageUrl.value = '';
   stopQrPoll();
   if (p.loginKind === CloudLoginKind.QrCode) {
     void startQrLogin();
@@ -528,7 +536,13 @@ onBeforeUnmount(() => {
         <div v-else-if="selectedProvider.loginKind === CloudLoginKind.QrCode" class="mt-3 flex flex-col items-center gap-3">
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('cloud.qrHint') }}</p>
           <img
-            v-if="qrDataUrl"
+            v-if="qrImageUrl"
+            :src="qrImageUrl"
+            :alt="t('cloud.qrHint')"
+            class="h-40 w-40 rounded-xl bg-white p-2"
+          >
+          <img
+            v-else-if="qrDataUrl"
             :src="qrDataUrl"
             :alt="t('cloud.qrHint')"
             class="h-40 w-40 rounded-xl bg-white p-2"

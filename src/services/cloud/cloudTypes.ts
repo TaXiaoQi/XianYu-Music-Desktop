@@ -16,7 +16,7 @@ function toRecord(v: unknown): Record<string, unknown> | null {
 
 /** 登录范式：决定绑定页把用户路由到哪个登录页面。 */
 export enum CloudLoginKind {
-  /** WebView 内完成登录后捕获指定 Cookie（百度/夸克/UC/139/微云） */
+  /** WebView 内完成登录后捕获指定 Cookie（微云/139） */
   WebviewCookie = 'webviewCookie',
 
   /** WebView 内完成登录 + JS 注入轮询捕获 Token（阿里） */
@@ -28,7 +28,7 @@ export enum CloudLoginKind {
   /** 账密 + 短信验证码（天翼短信通道） */
   SmsPassword = 'smsPassword',
 
-  /** 扫码登录（123） */
+  /** 扫码登录（123/百度/夸克/UC） */
   QrCode = 'qrCode',
 }
 
@@ -122,11 +122,15 @@ export class CloudQrLoginSession {
   /** 渲染成二维码的内容。 */
   readonly qrContent: string;
 
-  /** 轮询句柄（qrToken / state）。 */
+  /** 服务方直接下发的二维码图片地址（优先于 qrContent 渲染）。 */
+  readonly qrImageUrl: string | null;
+
+  /** 轮询句柄（qrToken / state；百度为 gid/sign/cookie 的 JSON 串）。 */
   readonly state: string;
 
-  constructor(init: { qrContent: string; state: string }) {
+  constructor(init: { qrContent: string; state: string; qrImageUrl?: string | null }) {
     this.qrContent = init.qrContent;
+    this.qrImageUrl = init.qrImageUrl ?? null;
     this.state = init.state;
   }
 }

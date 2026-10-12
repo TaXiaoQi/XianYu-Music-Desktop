@@ -1,7 +1,6 @@
 // 移植自移动端 lib/src/cloud/providers/uc_provider.dart
-// UC 网盘：继承 QuarkUcBase，仅声明品牌常量（接口与夸克同构）。
+// UC 网盘：继承 QuarkUcBase，仅声明品牌与扫码常量（接口与夸克同构）。
 
-import { CloudCaptureRule } from '../cloudTypes';
 import { QuarkUcBase } from './quarkUcBase';
 
 export class UcProvider extends QuarkUcBase {
@@ -29,16 +28,16 @@ export class UcProvider extends QuarkUcBase {
     return 'uc-cloud-drive';
   }
 
-  override get webviewLoginUrl(): string {
-    // pc.uc.cn 是 UC 浏览器官网，登录入口在网盘站。
-    return 'https://drive.uc.cn/';
+  override get casHost(): string {
+    return 'api.open.uc.cn';
   }
 
-  override get captureRule(): CloudCaptureRule {
-    return new CloudCaptureRule({
-      cookieNames: ['kps', 'sign'],
-      cookieDomains: ['drive.uc.cn', 'pc.uc.cn'],
-      pollIntervalMs: 500,
-    });
+  override get qrContentTemplate(): string {
+    return (
+      'https://broccoli.uc.cn/apps/ZY5qIZiK/routes/1hbcQwLhH' +
+      '?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt' +
+      '&uc_biz_str=S%3Acustom%7CC%3Atitlebar_hover_2' +
+      '&token={token}&client_id=381&ssb=weblogin'
+    );
   }
 }
