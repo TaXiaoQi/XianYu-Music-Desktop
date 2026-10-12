@@ -207,6 +207,7 @@ commands.allow = [
   "run_sleep_action",
   "plugin_http_request", # 插件 HTTP
   "plugin_http_request_binary", # 插件二进制请求
+  "cloud_proxy", # 网盘业务代理（十盘业务下沉 Rust）
   "plugin_engine_load_musicfree",
   "plugin_engine_load_lx",
   "plugin_engine_call",

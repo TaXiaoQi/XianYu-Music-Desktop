@@ -1,5 +1,6 @@
 // 模块布局：按「运行时骨架 → 音频/媒体 → 窗口体系 → 工具与系统」的顺序登记。
 mod app_runtime; mod audio_convert; mod audio_trim; mod autostart;
+pub mod cloud; // 网盘业务（十盘，TS 经 cloud_proxy command 调用）
 pub(crate) mod control_channel; pub(crate) mod crash_log; mod custom_fonts; mod database; pub(crate) mod dlna;
 pub mod error; mod fallback_host; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
 mod host_crypto; mod install_language; mod music; mod netproxy;
@@ -236,6 +237,7 @@ use plugin_host::commands::{
     plugin_engine_store_import,
 };
 use plugins::{
+    cloud_proxy,
     download_audio_to_temp,
     download_video_to_cache,
     plugin_http_request,
@@ -616,6 +618,7 @@ pub fn run() { // run
             stop_topmost_guard, // 实现
             plugin_http_request,
             plugin_http_request_binary,
+            cloud_proxy,
             plugin_engine_load_musicfree,
             plugin_engine_load_lx,
             plugin_engine_call,

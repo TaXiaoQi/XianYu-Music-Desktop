@@ -1,4 +1,6 @@
 use std::error::Error;
+#[path = "plugin_commands/cloud.rs"]
+mod cloud;
 #[path = "plugin_commands/downloads.rs"]
 mod downloads;
 #[path = "plugin_commands/files.rs"]
@@ -8,6 +10,7 @@ mod http;
 #[path = "plugin_commands/images.rs"]
 mod images;
 
+pub(crate) use cloud::cloud_proxy;
 pub(crate) use downloads::{
     download_audio_to_temp, download_video_to_cache, remove_cached_background_video,
 };
