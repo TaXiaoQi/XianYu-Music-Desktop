@@ -22,8 +22,9 @@ export class QuarkProvider extends QuarkUcBase {
     return 'pan.quark.cn';
   }
 
+  // pr 同 UC 走 ucpro 网关通道（pr=quark 客户端通道风控拒 Web Cookie）。
   override get pr(): string {
-    return 'quark';
+    return 'ucpro';
   }
 
   override get uaBrand(): string {

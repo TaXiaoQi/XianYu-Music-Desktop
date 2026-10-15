@@ -29,7 +29,8 @@ export abstract class QuarkUcBase extends CloudProvider {
   /** Web 域（Referer 用）。 */
   abstract get webHost(): string;
 
-  /** 客户端品牌参数（pr=quark / ucpro）。 */
+  /** 客户端品牌参数（pr=ucpro：两家同为 UC 专业版网关，对 Web Cookie
+   * 宽容；pr=quark 客户端通道 2026-10 起风控拒绝 Web Cookie）。 */
   abstract get pr(): string;
 
   /** UA 品牌串（quark-cloud-drive / uc-cloud-drive）。 */
@@ -76,7 +77,9 @@ export abstract class QuarkUcBase extends CloudProvider {
 
   /** 登录 Cookie → 账号（member 接口拿昵称/用户 id，防御式兜底指纹）。 */
   async buildAccountFromCookies(cookies: Record<string, string>): Promise<CloudAccount> {
-    if (cookies['kps'] === undefined || cookies['kps'] === '') {
+    // 2026-10 Web 端凭据更名：__kps / __pus / __puus 任一在即有效
+    // （旧 kps/sign 名已不存在）。
+    if (['__kps', '__pus', '__puus'].every((n) => !cookies[n])) {
       throw new CloudException('登录凭据获取失败，请重试');
     }
     const cookieStr = cookieHeader(cookies);
