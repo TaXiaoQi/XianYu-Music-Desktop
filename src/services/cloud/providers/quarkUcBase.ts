@@ -94,7 +94,11 @@ export abstract class QuarkUcBase extends CloudProvider {
       if (resp.isOk) {
         const data = resp.json['data'];
         if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-          const member = (data as Record<string, unknown>)['member'];
+          // 2026-10 响应结构更名：member → member_info（与凭据 __kps
+          // 更名同一波变更，真机实测），旧名兜底兼容。
+          const member =
+            (data as Record<string, unknown>)['member'] ??
+            (data as Record<string, unknown>)['member_info'];
           if (typeof member === 'object' && member !== null && !Array.isArray(member)) {
             const m = member as Record<string, unknown>;
             const uid = m['user_id'] ?? (data as Record<string, unknown>)['user_id'];
