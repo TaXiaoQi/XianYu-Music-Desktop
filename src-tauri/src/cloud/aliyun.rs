@@ -24,10 +24,18 @@ fn now_ms() -> i64 {
 }
 
 fn auth_headers(at: &str) -> Vec<(String, String)> {
+    // origin/referer/X-Canary：2026-10 接口收紧后对齐官方 web 端请求头
+    // （同 OpenList 现役驱动，缺了部分端点会被拒）。
     vec![
         ("User-Agent".into(), ua().to_string()),
         ("Authorization".into(), format!("Bearer {at}")),
         ("Content-Type".into(), "application/json".into()),
+        ("Origin".into(), "https://www.alipan.com".into()),
+        ("Referer".into(), "https://www.alipan.com/".into()),
+        (
+            "X-Canary".into(),
+            "client=Android,app=adrive,version=v4.1.0".into(),
+        ),
     ]
 }
 
@@ -35,6 +43,20 @@ fn anon_headers() -> Vec<(String, String)> {
     vec![
         ("User-Agent".into(), ua().to_string()),
         ("Content-Type".into(), "application/json".into()),
+    ]
+}
+
+/// 分享域请求头：x-share-token 即鉴权（无登录态），Canary 用 share 应用
+/// 形态（OpenList 分享驱动同款）。
+fn share_headers(token: &str) -> Vec<(String, String)> {
+    vec![
+        ("User-Agent".into(), ua().to_string()),
+        ("Content-Type".into(), "application/json".into()),
+        (
+            "X-Canary".into(),
+            "client=web,app=share,version=v2.3.1".into(),
+        ),
+        ("x-share-token".into(), token.to_string()),
     ]
 }
 
@@ -105,8 +127,10 @@ async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, Str
 }
 
 async fn drive_id(cred: &Value, at: &str) -> Result<String, (i32, String)> {
+    // 2026-10 阿里下线 /adrive/v2/user/getInfo（404 NotFound），取 drive_id
+    // 改用 web 端现役的 /v2/user/get（响应字段顶层平铺）。
     let resp = http::post_json(
-        "https://api.alipan.com/adrive/v2/user/getInfo",
+        "https://api.alipan.com/v2/user/get",
         &auth_headers(at),
         &json!({}),
     )
@@ -128,15 +152,11 @@ async fn drive_id(cred: &Value, at: &str) -> Result<String, (i32, String)> {
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let (at, rotated) = access_token(&req.cred).await?;
-    let resp = http::post_json(
-        "https://api.alipan.com/adrive/v2/user/getInfo",
-        &auth_headers(&at),
-        &json!({}),
-    )
-    .await
-    .map_err(biz_err)?;
+    // 有效性以 drive_id 可取为准（token 可用 + 盘信息可读），防
+    // 「绑定成功但一用就挂」的假阳性。
+    let valid = drive_id(&req.cred, &at).await.is_ok();
     Ok(CloudOut {
-        result: json!({ "valid": resp.is_ok() }),
+        result: json!({ "valid": valid }),
         rotated_cred: rotated,
     })
 }
@@ -186,7 +206,7 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         req.param_str("path")
     };
     let resp = http::post_json(
-        "https://api.alipan.com/adrive/v3/file/list",
+        "https://api.alipan.com/v2/file/list",
         &auth_headers(&at),
         &json!({
             "drive_id": drive,
@@ -245,7 +265,7 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let drive = drive_id(&req.cred, &at).await?;
     let offset: i64 = req.param_str("cursor").parse().unwrap_or(0);
     let resp = http::post_json(
-        "https://openapi.alipan.com/adrive/v3/file/search",
+        "https://api.alipan.com/adrive/v3/file/search",
         &auth_headers(&at),
         &search_body(&drive, &keyword, offset),
     )
@@ -310,9 +330,12 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         }
     }
     // 匿名拿不到（目录分享/需提取码）→ share_token → 文件列表。
+    // 2026-10 share_link 旧域全下线：token 走 /v2/share_link/get_share_token，
+    // 列表复用 /adrive/v3/file/list（鉴权从 body 的 share_token 改为
+    // x-share-token 头，body 里 share_id 取代 drive_id）。
     if files.is_empty() {
         let tok_resp = http::post_json(
-            "https://api.alipan.com/adrive/v2/share_link/get_share_token",
+            "https://api.alipan.com/v2/share_link/get_share_token",
             &anon_headers(),
             &json!({ "share_id": share_id, "share_pwd": pwd }),
         )
@@ -324,6 +347,7 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         let tj = tok_resp.json().map_err(biz_err)?;
         let token = tj
             .pointer("/data/share_token")
+            .or_else(|| tj.get("share_token"))
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
@@ -331,13 +355,15 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             return Err(biz_err("提取码错误"));
         }
         let list_resp = http::post_json(
-            "https://api.alipan.com/adrive/v3/share_link/file/list",
-            &anon_headers(),
+            "https://api.alipan.com/adrive/v3/file/list",
+            &share_headers(&token),
             &json!({
                 "share_id": share_id,
-                "share_token": token,
                 "parent_file_id": "root",
                 "limit": 100,
+                "order_by": "name",
+                "order_direction": "ASC",
+                "fields": "*",
             }),
         )
         .await
@@ -379,37 +405,46 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let file_list: Vec<Value> = files_in
-        .iter()
-        .map(|f| {
-            json!({
-                "share_file_id": f.get("id").and_then(Value::as_str).unwrap_or(""),
-                "file_name": f.get("name").and_then(Value::as_str).unwrap_or(""),
-            })
-        })
-        .collect();
-    let resp = http::post_json(
-        "https://api.alipan.com/adrive/v2/share_link/save_created",
-        &auth_headers(&at),
-        &json!({
-            "share_id": share.get("shareId").and_then(Value::as_str).unwrap_or(""),
-            "share_token": token,
-            "auto_import": true,
-            "to_drive_id": drive,
-            "to_parent_file_id": "root",
-            "file_list": file_list,
-        }),
-    )
-    .await
-    .map_err(biz_err)?;
-    if !resp.is_ok() {
-        return Err(biz_err("转存失败"));
-    }
-    let j = resp.json().map_err(biz_err)?;
-    let mut out = files_from_items(j.get("file_list").unwrap_or(&Value::Null));
-    if out.is_empty() {
-        // 接口不回新 id 时回退原 files（阿里 file_id 转存后不变）。
-        out = files_in;
+    // 2026-10 share_link/save_created 全域下线，转存改为逐文件
+    // /v2/file/copy（登录态 + x-share-token 双鉴权）。
+    let mut headers = auth_headers(&at);
+    headers.push(("x-share-token".into(), token.clone()));
+    let mut out = Vec::new();
+    for f in &files_in {
+        let file_id = f.get("id").and_then(Value::as_str).unwrap_or("");
+        let resp = http::post_json(
+            "https://api.alipan.com/v2/file/copy",
+            &headers,
+            &json!({
+                "share_id": share.get("shareId").and_then(Value::as_str).unwrap_or(""),
+                "file_id": file_id,
+                "to_drive_id": drive,
+                "to_parent_file_id": "root",
+            }),
+        )
+        .await
+        .map_err(biz_err)?;
+        if !resp.is_ok() {
+            return Err(biz_err("转存失败"));
+        }
+        let j = resp.json().unwrap_or(Value::Null);
+        // 响应 {file_id, async_task_id}（可能包 data 层）：新 id 缺失时
+        // 回退原 id（复制后 file_id 不变的旧约定，兜底直链解析）。
+        let new_id = j
+            .get("file_id")
+            .or_else(|| j.pointer("/data/file_id"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(file_id);
+        out.push(super::types::file_json(
+            new_id,
+            f.get("name").and_then(Value::as_str).unwrap_or(""),
+            f.get("isDir").and_then(Value::as_bool).unwrap_or(false),
+            f.get("size").and_then(Value::as_i64).unwrap_or(0),
+            None,
+            None,
+            None,
+        ));
     }
     Ok(CloudOut {
         result: json!({ "files": out }),
@@ -424,9 +459,9 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let file = req.param_obj("file");
     let file_id = file.get("id").and_then(Value::as_str).unwrap_or("");
     let resp = http::post_json(
-        "https://api.alipan.com/adrive/v2/file/get_download_url",
+        "https://api.alipan.com/v2/file/get_download_url",
         &auth_headers(&at),
-        &json!({ "drive_id": drive, "file_id": file_id }),
+        &json!({ "drive_id": drive, "file_id": file_id, "expire_sec": 14400 }),
     )
     .await
     .map_err(biz_err)?;
