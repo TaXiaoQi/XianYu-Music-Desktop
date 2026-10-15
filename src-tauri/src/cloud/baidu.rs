@@ -59,6 +59,12 @@ fn coalesce_jstr(a: Option<&Value>, b: Option<&Value>) -> String {
     }
 }
 
+/// 凭据失效 errno：-6 身份验证失败（BDUSS 被拒/缺失），111 登录态过期。
+/// 统一映射为简短重绑提示。
+fn cred_expired(errno: i64) -> bool {
+    errno == -6 || errno == 111
+}
+
 fn cred_pairs(cred: &Value) -> Vec<(String, String)> {
     cred.as_object()
         .map(|m| {
@@ -135,7 +141,11 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("目录列表请求失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    if num_i64(j.get("errno")) != Some(0) {
+    let errno = num_i64(j.get("errno")).unwrap_or(-1);
+    if errno != 0 {
+        if cred_expired(errno) {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
         return Err(biz_err("目录列表请求失败"));
     }
     let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -495,9 +505,15 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
+        if resp.status == 401 {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
         return Err(biz_err("直链获取失败"));
     }
     let j = resp.json().map_err(biz_err)?;
+    if cred_expired(num_i64(j.get("errno")).unwrap_or(0)) {
+        return Err(biz_err("登录已过期，请重新绑定"));
+    }
     let list = j
         .get("list")
         .and_then(Value::as_array)
