@@ -14,7 +14,7 @@ export class UcProvider extends QuarkUcBase {
   }
 
   override get apiHost(): string {
-    return 'drive-pc.uc.cn';
+    return 'pc-api.uc.cn';
   }
 
   override get webHost(): string {

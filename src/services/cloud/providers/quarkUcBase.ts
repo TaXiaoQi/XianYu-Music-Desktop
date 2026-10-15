@@ -23,7 +23,7 @@ import {
 import { md5Hex } from './httpLoginSupport';
 
 export abstract class QuarkUcBase extends CloudProvider {
-  /** API 域（drive-pc.quark.cn / drive-pc.uc.cn）。 */
+  /** API 域（drive-pc.quark.cn / pc-api.uc.cn）。 */
   abstract get apiHost(): string;
 
   /** Web 域（Referer 用）。 */
