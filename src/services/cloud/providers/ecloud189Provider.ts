@@ -1,17 +1,26 @@
 // 移植自移动端 lib/src/cloud/providers/ecloud189_provider.dart
-// 天翼云盘（189）provider（smsPassword：账密 + 短信二次验证）。
+// 天翼云盘（189）provider（smsPassword：账密 + 设备短信二次校验）。
 //
-// logbox RSA 加密登录链留在 TS；业务（列目录/分享/转存/直链）经
-// cloudRemote 桥转发内嵌 Rust（src-tauri/src/cloud/ecloud189.rs）。
-// portal loginUrl.action 换会话是 302 跳转链，桌面端代理 follow=0 时
-// 逐跳采 Cookie 的 GET 循环自实现（同移动端 appRequest 逐跳语义）。
+// 现役登录链（2026-10 实测，对齐 web 前端 v5.0）留在 TS：
+//   1. GET cloud.189.cn/api/portal/loginUrl.action —— 302 跳链逐跳采
+//      Cookie，落点 open.e.189.cn 登录页 URL 携带 lt / reqId / appId；
+//   2. POST appConf.do（version 2.0 + appKey）→ pageKey/paramId/returnUrl
+//      等页面参数（initData）；
+//   3. POST encryptConf.do（appId）→ pre 前缀 + pubKey（base64 SPKI）；
+//   4. POST loginSubmit.do —— 账密 RSA-PKCS1（hex）+ pre 前缀，密码字段
+//      名为 epd，returnUrl 需 encodeURIComponent；result 0 直接过，
+//      result -133「设备ID不存在」为新客户端强制设备短信二次校验：
+//      用响应里的加密 mobile 调 sendSmsCodeForSecondAuth.do 发码，用户
+//      填码后 submitForSecondAuth.do（验证码放 epd 字段）→ toUrl 换会话。
+// 老协议（paramId 空 + password 字段 + ssKey）已全面失效（-20099/-149）。
+// 业务（列目录/分享/转存/直链）经 cloudRemote 桥转发内嵌 Rust
+// （src-tauri/src/cloud/ecloud189.rs）。
 
 import { pluginApi } from '../../tauri/pluginApi';
 import {
   asInt,
   asRecord,
   asString,
-  cloudGet,
   cloudPostForm,
   cookieHeader,
   getHeader,
@@ -28,27 +37,65 @@ import {
   CloudLoginField,
   CloudLoginKind,
   CloudShareParse,
+  CloudSmsRequiredException,
 } from '../cloudTypes';
-import { HttpLoginGate, rsaPkcs1Hex } from './httpLoginSupport';
+import { HttpLoginGate, parseSpki, rsaPkcs1Hex } from './httpLoginSupport';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-/** 登录响应要求二次验证的内部信号。 */
-class NeedSmsException extends Error {}
+/** loginUrl.action 跳链落点：cookie jar + 会话参数。 */
+interface LoginEntry {
+  cookies: Record<string, string>;
+  loginUrl: string;
+  lt: string;
+  reqId: string;
+  appId: string;
+}
 
-class SmsSession {
-  readonly cookies: Record<string, string>;
-  readonly ssKey: string;
+/** appConf.do 页面参数（initData，登录全程复用）。 */
+interface AppConf {
+  appKey: string;
+  pageKey: string;
+  accountType: string;
+  returnUrl: string;
+  mailSuffix: string;
+  clientType: string;
+  isOauth2: string;
+  state: string;
+  paramId: string;
+}
 
-  constructor(cookies: Record<string, string>, ssKey: string) {
-    this.cookies = cookies;
-    this.ssKey = ssKey;
-  }
+/** 设备二次校验暂存会话。 */
+interface SmsSession {
+  cookies: Record<string, string>;
+  loginUrl: string;
+  lt: string;
+  reqId: string;
+  mobileEnc: string;
+  conf: AppConf;
+  pre: string;
+  modHex: string;
+  expHex: string;
+  username: string;
+}
+
+function readConf(d: Record<string, unknown>): AppConf {
+  return {
+    appKey: asString(d['appKey'] ?? ''),
+    pageKey: asString(d['pageKey'] ?? ''),
+    accountType: asString(d['accountType'] ?? '01'),
+    returnUrl: asString(d['returnUrl'] ?? ''),
+    mailSuffix: asString(d['mailSuffix'] ?? '@189.cn'),
+    clientType: asString(d['clientType'] ?? 100),
+    isOauth2: asString(d['isOauth2'] ?? true).toLowerCase(),
+    state: asString(d['state'] ?? ''),
+    paramId: asString(d['paramId'] ?? ''),
+  };
 }
 
 export class Ecloud189Provider extends CloudProvider {
-  /** 二次验证暂存：username → 会话（cookies + ssKey）。 */
+  /** 设备二次校验暂存：username → 会话。 */
   private static readonly _pendingSms = new Map<string, SmsSession>();
 
   override get id(): string {
@@ -71,7 +118,6 @@ export class Ecloud189Provider extends CloudProvider {
     return [
       new CloudLoginField({ key: 'username', label: '手机号', isPhone: true }),
       new CloudLoginField({ key: 'password', label: '密码', obscure: true }),
-      new CloudLoginField({ key: 'smsCode', label: '短信验证码', isSmsCode: true }),
     ];
   }
 
@@ -80,17 +126,8 @@ export class Ecloud189Provider extends CloudProvider {
   override async loginWithFields(fields: Record<string, string>): Promise<CloudAccount> {
     const username = (fields['username'] ?? '').trim();
     const password = fields['password'] ?? '';
-    const smsCode = (fields['smsCode'] ?? '').trim();
     if (username === '' || password === '') {
       throw new CloudException('请填写手机号和密码');
-    }
-    // 带验证码的第二次尝试：走二次验证通道。
-    const pending = Ecloud189Provider._pendingSms.get(username);
-    if (pending) {
-      if (smsCode === '') {
-        throw new CloudException('请填写短信验证码');
-      }
-      return this._submitSmsSecondAuth(pending, smsCode);
     }
     HttpLoginGate.instance.ensureAllowed(this.id);
     HttpLoginGate.instance.recordAttempt(this.id);
@@ -99,9 +136,9 @@ export class Ecloud189Provider extends CloudProvider {
       HttpLoginGate.instance.recordSuccess(this.id);
       return account;
     } catch (e) {
-      if (e instanceof NeedSmsException) {
-        // 自动发短信验证码，等待用户填码重试（不计入失败退避）。
-        throw new CloudException('短信验证码已发送，请填写后重试');
+      if (e instanceof CloudSmsRequiredException) {
+        // 已自动发码并暂存会话；UI 弹窗收码后走 submitSmsCode。
+        throw e;
       }
       if (e instanceof CloudException) {
         HttpLoginGate.instance.recordFailure(this.id);
@@ -112,57 +149,122 @@ export class Ecloud189Provider extends CloudProvider {
     }
   }
 
+  /** 提交设备二次校验验证码（UI 收到 [CloudSmsRequiredException] 后调用）。 */
+  override async submitSmsCode(username: string, smsCode: string): Promise<CloudAccount> {
+    const pending = Ecloud189Provider._pendingSms.get(username);
+    if (!pending) {
+      throw new CloudException('登录会话已失效，请重新登录');
+    }
+    try {
+      const account = await this._submitDeviceAuth(pending, smsCode);
+      HttpLoginGate.instance.recordSuccess(this.id);
+      return account;
+    } catch (e) {
+      if (e instanceof CloudException) {
+        HttpLoginGate.instance.recordFailure(this.id);
+      }
+      throw e;
+    }
+  }
+
+  private _sessionHeaders(s: { loginUrl: string; lt: string; reqId: string }): Record<string, string> {
+    return {
+      'User-Agent': UA,
+      'lt': s.lt,
+      'reqid': s.reqId,
+      'Referer': s.loginUrl,
+      'Origin': 'https://open.e.189.cn',
+    };
+  }
+
+  /** 现役账密登录全链；要求设备短信二次校验时发码并暂存会话。 */
   private async _passwordLogin(username: string, password: string): Promise<CloudAccount> {
-    // 1. 取 RSA 公钥参数。
-    const confResp = await cloudGet('https://open.e.189.cn/api/logbox/config/encryptConf.do', {
-      headers: { 'User-Agent': UA },
-    });
+    // 1. loginUrl.action：302 跳链逐跳采 Cookie，落点取 lt/reqId/appId。
+    const entry = await this._openLoginPage();
+    const jar = entry.cookies;
+    const hdr = this._sessionHeaders(entry);
+    // 2. appConf → 页面参数（initData）。
+    const confResp = await cloudPostForm(
+      'https://open.e.189.cn/api/logbox/oauth2/appConf.do',
+      { 'version': '2.0', 'appKey': entry.appId },
+      { headers: { ...hdr, 'Cookie': cookieHeader(jar) } },
+    );
     if (!confResp.isOk) throw new CloudException('登录服务不可用');
-    const conf = asRecord(confResp.json['data']);
-    if (!conf) throw new CloudException('登录服务不可用');
-    const pubKey = asString(conf['pubKey'] ?? '');
-    const pre = asString(conf['pre'] ?? '');
+    const confData = asRecord(confResp.json['data']);
+    if (!confData) throw new CloudException('登录服务不可用');
+    const conf = readConf(confData);
+    this._mergeSetCookies(jar, confResp);
+    // 3. encryptConf → pre 前缀 + pubKey（base64 SPKI）。
+    const ecResp = await cloudPostForm(
+      'https://open.e.189.cn/api/logbox/config/encryptConf.do',
+      { 'appId': entry.appId },
+      { headers: { ...hdr, 'Cookie': cookieHeader(jar) } },
+    );
+    if (!ecResp.isOk) throw new CloudException('登录服务不可用');
+    const ecd = asRecord(ecResp.json['data']);
+    const pre = asString(ecd?.['pre'] ?? '{RSA}');
+    const pubKey = asString(ecd?.['pubKey'] ?? '');
     if (pubKey === '') throw new CloudException('登录服务不可用');
-    // 2. RSA 加密账密提交。
-    const jar: Record<string, string> = { ...confResp.setCookiePairs };
-    const loginResp = await cloudPostForm(
+    this._mergeSetCookies(jar, ecResp);
+    const [modHex, expHex] = parseSpki(pubKey);
+    // 4. loginSubmit（现役字段：密码字段名 epd，RSA hex，returnUrl 编码）。
+    const resp = await cloudPostForm(
       'https://open.e.189.cn/api/logbox/oauth2/loginSubmit.do',
       {
-        'version': '2.0',
-        'appKey': 'cloud',
-        'accountType': '01',
-        'userName': rsaPkcs1Hex(pre + username, pubKey, '10001'),
-        'password': rsaPkcs1Hex(pre + password, pubKey, '10001'),
-        'paramId': '',
-        'returnUrl': '',
-        'mailSuffix': '@189.cn',
+        'version': 'v2.0',
+        'apToken': '',
+        'appKey': conf.appKey !== '' ? conf.appKey : entry.appId,
+        'pageKey': conf.pageKey,
+        'accountType': conf.accountType,
+        'userName': pre + rsaPkcs1Hex(username, modHex, expHex),
+        'epd': pre + rsaPkcs1Hex(password, modHex, expHex),
+        'captchaType': '',
+        'validateCode': '',
+        'smsValidateCode': '',
+        'captchaToken': '',
+        'returnUrl': encodeURIComponent(conf.returnUrl),
+        'mailSuffix': conf.mailSuffix,
+        'dynamicCheck': 'FALSE',
+        'clientType': conf.clientType,
+        'cb_SaveName': '3',
+        'isOauth2': conf.isOauth2,
+        'state': conf.state,
+        'paramId': conf.paramId,
       },
-      {
-        headers: {
-          'User-Agent': UA,
-          'Referer': 'https://open.e.189.cn/',
-          'Cookie': cookieHeader(jar),
-        },
-      },
+      { headers: { ...hdr, 'Cookie': cookieHeader(jar) } },
     );
-    this._mergeSetCookies(jar, loginResp);
-    if (!loginResp.isOk) throw new CloudException('登录失败');
-    const body = loginResp.json;
+    this._mergeSetCookies(jar, resp);
+    if (!resp.isOk) throw new CloudException('登录失败');
+    const body = resp.json;
     const result = asInt(body['result']) ?? -1;
-    // 需要短信二次验证：自动发码并暂存会话。
-    const ssKey = asString(asRecord(body['data'])?.['setToken']);
-    if (result === 1001 || result === 1002) {
-      const session = new SmsSession(jar, ssKey);
+    const toUrl = asString(body['toUrl'] ?? '');
+    // 新客户端强制设备短信二次校验：用加密 mobile 发码并暂存会话。
+    if (result === -133) {
+      const mobileEnc = asString(body['mobile'] ?? '');
+      if (mobileEnc === '') {
+        throw new CloudException(asString(body['msg'] ?? '需要设备验证'));
+      }
+      const session: SmsSession = {
+        cookies: jar,
+        loginUrl: entry.loginUrl,
+        lt: entry.lt,
+        reqId: entry.reqId,
+        mobileEnc,
+        conf,
+        pre,
+        modHex,
+        expHex,
+        username,
+      };
       Ecloud189Provider._pendingSms.set(username, session);
-      await this._sendSms(session);
-      throw new NeedSmsException();
+      await this._sendDeviceSms(session);
+      throw new CloudSmsRequiredException(username);
     }
     if (result !== 0) {
       throw new CloudException(asString(body['msg'] ?? '账号或密码错误'));
     }
-    // 3. 换 PC 会话（302 跳转链，逐跳采 Cookie）。
-    const returnUrl = asString(body['toUrl'] ?? '');
-    const cookie = await this._exchangePortalSession(jar, returnUrl);
+    // 5. toUrl 换 PC 会话（302 跳转链，逐跳采 Cookie）。
+    const cookie = await this._exchangePortalSession(jar, toUrl);
     const userId = asString(body['userId'] ?? username);
     return new CloudAccount({
       provider: this.id,
@@ -173,31 +275,78 @@ export class Ecloud189Provider extends CloudProvider {
     });
   }
 
-  private async _sendSms(session: SmsSession): Promise<void> {
-    await cloudPostForm(
-      'https://open.e.189.cn/api/logbox/oauth2/sendSmsCodeForSecondAuth.do',
-      { 'ssKey': session.ssKey },
-      {
-        headers: {
-          'User-Agent': UA,
-          'Referer': 'https://open.e.189.cn/',
-          'Cookie': cookieHeader(session.cookies),
-        },
-      },
-    );
+  /** loginUrl.action 跳链：逐跳 GET 采 Cookie，落点 URL 带 lt/reqId/appId。 */
+  private async _openLoginPage(): Promise<LoginEntry> {
+    let url =
+      'https://cloud.189.cn/api/portal/loginUrl.action' +
+      '?redirectURL=https%3A%2F%2Fcloud.189.cn%2Fmain.action';
+    const jar: Record<string, string> = {};
+    let last = url;
+    for (let hop = 0; hop < 8; hop++) {
+      last = url;
+      const loc = await this._hopGet(url, jar, 'https://cloud.189.cn/');
+      if (loc == null || loc === '') break;
+      url = new URL(loc, url).toString();
+    }
+    const u = new URL(last);
+    const lt = u.searchParams.get('lt') ?? '';
+    const reqId = u.searchParams.get('reqId') ?? '';
+    const appId = u.searchParams.get('appId') ?? '';
+    if (lt === '' || reqId === '') {
+      throw new CloudException('登录服务不可用');
+    }
+    return { cookies: jar, loginUrl: last, lt, reqId, appId };
   }
 
-  private async _submitSmsSecondAuth(session: SmsSession, smsCode: string): Promise<CloudAccount> {
+  /** 逐跳 GET：只采 Set-Cookie 与 Location，不跟随（follow=0）。 */
+  private async _hopGet(url: string, jar: Record<string, string>, referer: string): Promise<string | null> {
+    const headers: Record<string, string> = { 'User-Agent': UA, 'Referer': referer };
+    const cookieStr = cookieHeader(jar);
+    if (cookieStr !== '') headers['Cookie'] = cookieStr;
+    const resp = await pluginApi.pluginHttpRequest('GET', url, headers, '', 15000, 0);
+    for (const [name, value] of Object.entries(resp.headers ?? {})) {
+      if (name.toLowerCase() !== 'set-cookie') continue;
+      for (const raw of splitSetCookieValues(String(value))) {
+        const head = raw.split(';')[0] ?? '';
+        const eq = head.indexOf('=');
+        if (eq <= 0) continue;
+        jar[head.slice(0, eq).trim()] = head.slice(eq + 1).trim();
+      }
+    }
+    return getHeader(resp.headers ?? {}, 'location');
+  }
+
+  /** 设备二次校验发码：mobile 用登录响应返回的加密串。 */
+  private async _sendDeviceSms(s: SmsSession): Promise<void> {
+    const resp = await cloudPostForm(
+      'https://open.e.189.cn/api/logbox/oauth2/sendSmsCodeForSecondAuth.do',
+      { 'mobile': s.mobileEnc, 'appKey': s.conf.appKey },
+      { headers: { ...this._sessionHeaders(s), 'Cookie': cookieHeader(s.cookies) } },
+    );
+    if (!resp.isOk) throw new CloudException('验证码发送失败');
+    const result = asInt(resp.json['result']) ?? -1;
+    if (result !== 0) {
+      throw new CloudException(asString(resp.json['msg'] ?? '验证码发送失败'));
+    }
+  }
+
+  /** 设备二次校验提交：验证码放 epd（RSA hex + pre 前缀）。 */
+  private async _submitDeviceAuth(s: SmsSession, smsCode: string): Promise<CloudAccount> {
     const resp = await cloudPostForm(
       'https://open.e.189.cn/api/logbox/oauth2/submitForSecondAuth.do',
-      { 'ssKey': session.ssKey, 'smsCode': smsCode },
       {
-        headers: {
-          'User-Agent': UA,
-          'Referer': 'https://open.e.189.cn/',
-          'Cookie': cookieHeader(session.cookies),
-        },
+        'mobile': s.mobileEnc,
+        'appKey': s.conf.appKey,
+        'userName': s.pre + rsaPkcs1Hex(s.username, s.modHex, s.expHex),
+        'epd': s.pre + rsaPkcs1Hex(smsCode, s.modHex, s.expHex),
+        'accountType': s.conf.accountType,
+        'returnUrl': encodeURIComponent(s.conf.returnUrl),
+        'isOauth2': s.conf.isOauth2,
+        'cb_SaveName': '3',
+        'state': s.conf.state,
+        'paramId': s.conf.paramId,
       },
+      { headers: { ...this._sessionHeaders(s), 'Cookie': cookieHeader(s.cookies) } },
     );
     if (!resp.isOk) throw new CloudException('验证码校验失败');
     const body = resp.json;
@@ -205,13 +354,13 @@ export class Ecloud189Provider extends CloudProvider {
     if (result !== 0) {
       throw new CloudException(asString(body['msg'] ?? '验证码错误'));
     }
-    this._mergeSetCookies(session.cookies, resp);
-    const returnUrl = asString(body['toUrl'] ?? '');
-    const cookie = await this._exchangePortalSession(session.cookies, returnUrl);
+    Ecloud189Provider._pendingSms.delete(s.username);
+    const toUrl = asString(body['toUrl'] ?? '');
+    const cookie = await this._exchangePortalSession(s.cookies, toUrl);
     return new CloudAccount({
       provider: this.id,
-      accountId: '189',
-      nickname: '天翼账号',
+      accountId: asString(body['userId'] ?? s.username),
+      nickname: s.username,
       cred: { 'cookie': cookie },
       boundAt: new Date(),
     });
@@ -223,23 +372,7 @@ export class Ecloud189Provider extends CloudProvider {
     if (returnUrl === '') return cookieHeader(jar);
     let url = returnUrl;
     for (let hop = 0; hop < 8; hop++) {
-      const headers: Record<string, string> = {
-        'User-Agent': UA,
-        'Referer': 'https://cloud.189.cn/',
-      };
-      const cookieStr = cookieHeader(jar);
-      if (cookieStr !== '') headers['Cookie'] = cookieStr;
-      const resp = await pluginApi.pluginHttpRequest('GET', url, headers, '', 15000, 0);
-      for (const [name, value] of Object.entries(resp.headers ?? {})) {
-        if (name.toLowerCase() !== 'set-cookie') continue;
-        for (const raw of splitSetCookieValues(String(value))) {
-          const head = raw.split(';')[0] ?? '';
-          const eq = head.indexOf('=');
-          if (eq <= 0) continue;
-          jar[head.slice(0, eq).trim()] = head.slice(eq + 1).trim();
-        }
-      }
-      const loc = getHeader(resp.headers ?? {}, 'location');
+      const loc = await this._hopGet(url, jar, 'https://cloud.189.cn/');
       if (loc == null || loc === '') break;
       url = new URL(loc, url).toString();
     }

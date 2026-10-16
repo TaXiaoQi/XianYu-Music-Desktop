@@ -347,3 +347,12 @@ export class CloudException extends Error {
     return this.message;
   }
 }
+
+/** 登录要求短信二次校验（如天翼 -133 设备校验）。provider 已自动发码并
+ *  暂存会话，UI 弹窗收码后调 [CloudProvider.submitSmsCode] 完成绑定。 */
+export class CloudSmsRequiredException extends CloudException {
+  constructor(public readonly username: string) {
+    super('需要短信验证');
+    this.name = 'CloudSmsRequiredException';
+  }
+}

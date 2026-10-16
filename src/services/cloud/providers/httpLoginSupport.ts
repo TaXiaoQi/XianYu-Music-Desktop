@@ -108,3 +108,38 @@ export function uuidV4(): string {
 export function rsaPkcs1Hex(plain: string, modulusHex: string, exponentHex: string): string {
   return rsaEncryptHex(modulusHex, exponentHex, plain);
 }
+
+/** 解析天翼 encryptConf 返回的 pubKey（base64 编码的 X.509
+ *  SubjectPublicKeyInfo），提取 [modulusHex, exponentHex]。 */
+export function parseSpki(b64Key: string): [string, string] {
+  const d = Uint8Array.from(atob(b64Key), (c) => c.charCodeAt(0));
+  let pos = 0;
+  const item = (): [number, number, number] => {
+    const tag = d[pos++]!;
+    let len = d[pos++]!;
+    if (len & 0x80) {
+      const nb = len & 0x7f;
+      len = 0;
+      for (let i = 0; i < nb; i++) len = (len << 8) | d[pos + i]!;
+      pos += nb;
+    }
+    const start = pos;
+    pos += len;
+    return [tag, start, pos];
+  };
+  const top = item(); // 外层 SEQUENCE
+  pos = top[1]!; // 子项从外层内容起点重新定位
+  item(); // AlgorithmIdentifier
+  const [, bitStart] = item(); // BIT STRING
+  // BIT STRING 内容首字节是未用位数（RSA 恒为 0），跳过。
+  pos = bitStart + 1;
+  const [, rsaStart] = item(); // 内层 SEQUENCE（rsaPublicKey）
+  pos = rsaStart;
+  const [, nStart, nEnd] = item();
+  const [, eStart, eEnd] = item();
+  const hexOf = (s: number, e: number): string =>
+    Array.from(d.slice(s, e))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  return [hexOf(nStart, nEnd), hexOf(eStart, eEnd)];
+}

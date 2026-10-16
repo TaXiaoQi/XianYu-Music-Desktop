@@ -22,6 +22,7 @@ import {
   CloudShareParse,
 } from '../../services/cloud/cloudTypes';
 import type { CloudProvider } from '../../services/cloud/cloudProvider';
+import { CloudSmsRequiredException } from '../../services/cloud/cloudTypes';
 import { parseUrlToProvider } from '../../services/cloud/shareLinkParser';
 import { CloudPlayContext, cloudSongFromContext } from '../../features/playback/cloudPlaybackResolver';
 import { downloadCloudFileToLocal } from '../../composables/useDownloadToLocal';
@@ -62,6 +63,8 @@ const selectedProviderId = ref('');
 const loginValues = ref<Record<string, string>>({});
 const loginBusy = ref(false);
 const smsCooldown = ref(0);
+const smsPromptFor = ref('');
+const smsPromptCode = ref('');
 const qrDataUrl = ref('');
 const qrImageUrl = ref('');
 const qrWaiting = ref(false);
@@ -175,6 +178,34 @@ const submitLogin = async () => {
     const account = await provider.loginWithFields(loginValues.value);
     await CloudCredentialsStore.instance.saveAccount(account);
     showToast(t('cloud.bindSuccess'), 'success');
+    selectedProviderId.value = '';
+    loginValues.value = {};
+    await refreshAccounts();
+  } catch (e) {
+    if (e instanceof CloudSmsRequiredException) {
+      // 风控要求设备短信二次校验：provider 已自动发码，弹窗收码续登。
+      smsPromptFor.value = e.username;
+      smsPromptCode.value = '';
+      return;
+    }
+    showToast(errorMessage(e), 'error');
+  } finally {
+    loginBusy.value = false;
+  }
+};
+
+/** 验证码弹窗确认：提交设备二次校验完成绑定。 */
+const confirmSmsCode = async () => {
+  const provider = selectedProvider.value;
+  const code = smsPromptCode.value.trim();
+  if (!provider || code === '' || loginBusy.value) return;
+  loginBusy.value = true;
+  try {
+    const account = await provider.submitSmsCode(smsPromptFor.value, code);
+    await CloudCredentialsStore.instance.saveAccount(account);
+    showToast(t('cloud.bindSuccess'), 'success');
+    smsPromptFor.value = '';
+    smsPromptCode.value = '';
     selectedProviderId.value = '';
     loginValues.value = {};
     await refreshAccounts();
@@ -752,5 +783,39 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </template>
+
+    <!-- 短信验证码弹窗（登录风控二次校验，如天翼 -133） -->
+    <div
+      v-if="smsPromptFor !== ''"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      @click.self="smsPromptFor = ''"
+    >
+      <div class="w-80 rounded-xl bg-white p-4 shadow-xl dark:bg-gray-800">
+        <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('cloud.smsPromptTitle') }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('cloud.smsPromptBody', { u: smsPromptFor }) }}</p>
+        <input
+          v-model="smsPromptCode"
+          type="text"
+          inputmode="numeric"
+          maxlength="6"
+          :placeholder="t('cloud.smsCode')"
+          class="mt-3 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-800 outline-none focus:border-blue-500 dark:border-gray-600 dark:text-gray-200"
+          @keyup.enter="confirmSmsCode"
+        />
+        <div class="mt-3 flex justify-end gap-2">
+          <button type="button" :class="selectChipClass(false)" :disabled="loginBusy" @click="smsPromptFor = ''">
+            {{ t('cloud.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            :disabled="loginBusy || smsPromptCode.trim() === ''"
+            @click="confirmSmsCode"
+          >
+            {{ t('cloud.confirm') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
