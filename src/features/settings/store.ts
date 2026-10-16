@@ -638,7 +638,7 @@ const resolveOnlineFailureBehavior = (
     return incoming as AudioSettings['onlineFailureBehavior'];
   }
   const legacyAutoSwitch = (current as unknown as Record<string, unknown>).autoSwitchSourceOnFailure;
-  return legacyAutoSwitch === true ? 'autoswitch' : current.onlineFailureBehavior ?? 'skip';
+  return legacyAutoSwitch === true ? 'autoswitch' : current.onlineFailureBehavior ?? 'stop';
 };
 
 export const mergeAudioSettings = (base: AudioSettings, patch: AudioSettingsPatch): AudioSettings => {

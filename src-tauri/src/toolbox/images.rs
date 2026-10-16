@@ -1,6 +1,7 @@
 use super::downloads::read_authorized_download_dir;
 use crate::music::tags::{
-    write_metadata_to_file, EmbedMetadataRequest,
+    extract_text_metadata, read_tagged_file_from_path_for_scan, write_metadata_to_file,
+    EmbedMetadataRequest,
 };
 use crate::security::{path_validator, ssrf};
 use serde::{Deserialize, Serialize};
@@ -144,6 +145,10 @@ pub struct FinalizeDownloadExtrasRequest {
     pub cover_path: Option<String>,
     pub metadata: Option<EmbedMetadataRequest>,
     pub embed_cover: bool,
+    /// 仅当文件无内嵌标题时才写入 metadata（网盘等自带标签的文件防覆盖：
+    /// 有标题视为元数据完整，用文件名解析值重写反而可能弄脏更准的原始标签）
+    #[serde(default)]
+    pub only_if_empty_title: bool,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -218,21 +223,32 @@ pub async fn finalize_download_extras(
     }
 
     if let Some(mut meta) = request.metadata {
-        if request.embed_cover && meta.cover_data.is_none() {
-            if let Some(data) = &result.cover_data {
-                meta.cover_data = Some(data.clone());
-                meta.cover_mime = Some(result.cover_mime.clone());
-            }
+        // only_if_empty_title：读现有 tag，已有标题则整体跳过嵌入
+        let mut skip_embed = false;
+        if request.only_if_empty_title {
+            skip_embed =
+                read_tagged_file_from_path_for_scan(Path::new(&meta.file_path))
+                    .ok()
+                    .map(|tf| extract_text_metadata(&tf).title.is_some())
+                    .unwrap_or(false);
         }
-        let meta = meta.clone();
-        match tokio::task::spawn_blocking(move || write_metadata_to_file(&meta)).await {
-            Ok(Ok(())) => result.metadata_embedded = true,
-            Ok(Err(e)) => {
-                result.metadata_error = Some(e);
+        if !skip_embed {
+            if request.embed_cover && meta.cover_data.is_none() {
+                if let Some(data) = &result.cover_data {
+                    meta.cover_data = Some(data.clone());
+                    meta.cover_mime = Some(result.cover_mime.clone());
+                }
             }
-            Err(e) => {
-                let msg = format!("元数据嵌入任务失败: {e}");
-                result.metadata_error = Some(msg);
+            let meta = meta.clone();
+            match tokio::task::spawn_blocking(move || write_metadata_to_file(&meta)).await {
+                Ok(Ok(())) => result.metadata_embedded = true,
+                Ok(Err(e)) => {
+                    result.metadata_error = Some(e);
+                }
+                Err(e) => {
+                    let msg = format!("元数据嵌入任务失败: {e}");
+                    result.metadata_error = Some(msg);
+                }
             }
         }
     }

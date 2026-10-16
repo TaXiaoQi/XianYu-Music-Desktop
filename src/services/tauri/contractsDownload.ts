@@ -27,6 +27,8 @@ export interface FinalizeDownloadExtrasRequestContract {
   coverPath?: string | null;
   metadata?: EmbedMetadataRequestContract | null;
   embedCover: boolean;
+  /** 仅当文件无内嵌标题时才写入 metadata（网盘等自带标签文件的防覆盖模式） */
+  onlyIfEmptyTitle?: boolean;
 }
 
 export interface FinalizeDownloadExtrasResultContract {

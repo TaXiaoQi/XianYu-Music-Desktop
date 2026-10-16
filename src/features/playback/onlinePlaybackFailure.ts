@@ -309,7 +309,7 @@ export function createOnlinePlaybackFailureController(
       if (requestId !== deps.getPlayRequestId() || deps.getCurrentSong()?.path !== song.path) return;
     }
 
-    const failureBehavior = deps.settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
+    const failureBehavior = deps.settingsStore.settings.audio.onlineFailureBehavior ?? 'stop'; // 与设置默认一致（settings store audio）
     const isPluginSong = song.path.startsWith('plugin://');
     const autoSwitchEnabled = failureBehavior === 'autoswitch';
     const allowAutoSwitch = (song.path.startsWith('lx://') || isPluginSong)

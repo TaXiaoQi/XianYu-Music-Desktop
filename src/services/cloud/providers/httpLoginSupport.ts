@@ -82,6 +82,12 @@ export async function md5Hex(input: string): Promise<string> {
   return CryptoJS.MD5(input).toString();
 }
 
+/** SHA1 hex（UTF-8 输入），与 Dart sha1.convert(utf8.encode(input)) 语义一致。 */
+export async function sha1Hex(input: string): Promise<string> {
+  const CryptoJS = await loadCryptoJs();
+  return CryptoJS.SHA1(input).toString();
+}
+
 /** 随机 UUID v4（小写，带连字符）。多盘设备指纹/请求 id 用。 */
 export function uuidV4(): string {
   const hex = (n: number): string => {

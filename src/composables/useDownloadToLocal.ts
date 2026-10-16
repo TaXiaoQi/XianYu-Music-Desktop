@@ -166,7 +166,8 @@ export async function downloadToLocal(
 /**
  * 网盘文件下载到本地音乐库（对齐移动端 downloadCloud）：与在线下载共用同一份
  * 下载记录，songPath = cloud:// 播放标识，播放层按精确键本地优先自动生效。
- * 网盘文件自带内嵌标签，无在线元数据，跳过歌词/封面/元数据收尾。
+ * 收尾按设置-下载的嵌入开关走，且仅文件缺内嵌标题时才补写 title；
+ * 已有标签（含封面/歌词）的原文件保持原样。
  */
 export async function downloadCloudFileToLocal(
   ctx: CloudPlayContext,
@@ -190,6 +191,8 @@ export async function downloadCloudFileToLocal(
       keepSourceFilename: settings.value.download.keepSourceFilename,
       fileNameStyle: settings.value.download.fileNameStyle,
       overwriteExisting: settings.value.download.overwriteExisting,
+      embedMetadata: settings.value.download.embedMetadata,
+      embedCover: settings.value.download.embedCover,
       onProgress: (percent: number) => downloadStore.setProgress(percent),
     });
 
@@ -203,7 +206,7 @@ export async function downloadCloudFileToLocal(
       artist: '',
       durationMs: 0,
     });
-    showToast('下载完成', 'success');
+    showToast(result.metadataEmbedded ? '下载完成（已补写内嵌标题）' : '下载完成', 'success');
 
     // 下载完成联运（对齐移动端 _switchCurrentToLocalAfterDownload）：
     // 刚下载的正是正在播放的网盘歌 → 保进度无缝切本地源；暂停态切换后维持暂停。

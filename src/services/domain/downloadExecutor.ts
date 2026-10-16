@@ -305,11 +305,16 @@ interface DownloadCloudSongOptions {
   keepSourceFilename: boolean;
   fileNameStyle?: DownloadFileNameStyle;
   overwriteExisting: boolean;
+  /** 嵌入开关（对齐设置-下载）；防覆盖：仅文件无内嵌标题时才补写 */
+  embedMetadata: boolean;
+  embedCover: boolean;
   onProgress?: (percent: number) => void;
 }
 
 interface DownloadCloudSongResult {
   filePath: string;
+  /** true = 原文件缺内嵌标题且已补写；false = 已有标签保持原样 */
+  metadataEmbedded: boolean;
 }
 
 /**
@@ -317,6 +322,8 @@ interface DownloadCloudSongResult {
  * → 文件名解析 → download_online_song（携直链请求头）。
  * 直链文件名多为 hash：伪 URL 仅用于 rust 侧扩展名推断（白名单扩展名），
  * 文件名主体取网盘文件名；quality 传 'source' 仅作无扩展名兜底。
+ * 收尾（对齐移动端 onlyIfMissing）：无在线歌词/封面来源，仅按开关在文件
+ * 缺内嵌标题时补写 title——已有标签（含封面/歌词）的原文件保持原样。
  */
 export async function downloadCloudSong(
   ctx: CloudPlayContext,
@@ -340,7 +347,37 @@ export async function downloadCloudSong(
   );
 
   const filePath = await downloadFromUrl(link.url, baseName(destPath), options.onProgress, null, link.headers);
-  return { filePath };
+
+  let metadataEmbedded = false;
+  if (options.embedMetadata || options.embedCover) {
+    try {
+      const result = await downloadApi.finalizeDownloadExtras({
+        lyricsText: null,
+        lyricsPath: null,
+        coverUrl: null,
+        coverPath: null,
+        metadata: options.embedMetadata
+          ? {
+              filePath,
+              title: title || undefined,
+              artist: undefined,
+              album: undefined,
+              coverData: undefined,
+              coverMime: undefined,
+            }
+          : null,
+        embedCover: options.embedCover,
+        onlyIfEmptyTitle: true,
+      });
+      metadataEmbedded = result.metadata_embedded;
+      if (!metadataEmbedded && result.metadata_error) {
+        console.warn('[Download][cloud] 元数据嵌入失败:', result.metadata_error);
+      }
+    } catch (e: any) {
+      console.warn('[Download][cloud] 收尾编排失败:', e?.message);
+    }
+  }
+  return { filePath, metadataEmbedded };
 }
 
 interface DownloadExtrasOptions {

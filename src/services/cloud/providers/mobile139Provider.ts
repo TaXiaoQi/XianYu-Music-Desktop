@@ -36,7 +36,8 @@ export class Mobile139Provider extends CloudProvider {
   }
 
   override get webviewLoginUrl(): string {
-    return 'https://yun.139.com/';
+    // 直达网页版登录页（/w/ SPA 的 / 路由即登录）；桌面端仅作提示值。
+    return 'https://yun.139.com/w/#/';
   }
 
   override get captureRule(): CloudCaptureRule {
