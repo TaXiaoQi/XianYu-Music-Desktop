@@ -21,8 +21,10 @@ export class UcProvider extends QuarkUcBase {
     return 'drive.uc.cn';
   }
 
+  // 2026-10-16 起 ucpro 通道收紧拒 Web Cookie（401 guest，PC 实测），
+  // UC 切 UCBrowser 通道（对 Web Cookie 宽容，OpenList 同款）。
   override get pr(): string {
-    return 'ucpro';
+    return 'UCBrowser';
   }
 
   override get uaBrand(): string {

@@ -29,8 +29,8 @@ export abstract class QuarkUcBase extends CloudProvider {
   /** Web 域（Referer 用）。 */
   abstract get webHost(): string;
 
-  /** 客户端品牌参数（pr=ucpro：两家同为 UC 专业版网关，对 Web Cookie
-   * 宽容；pr=quark 客户端通道 2026-10 起风控拒绝 Web Cookie）。 */
+  /** 客户端品牌参数（夸克 pr=ucpro；UC pr=UCBrowser——2026-10-16 起
+   * ucpro 通道对 UC 也收紧拒 Web Cookie，UCBrowser 通道仍宽容）。 */
   abstract get pr(): string;
 
   /** UA 品牌串（quark-cloud-drive / uc-cloud-drive）。 */

@@ -22,7 +22,8 @@ export class QuarkProvider extends QuarkUcBase {
     return 'pan.quark.cn';
   }
 
-  // pr 同 UC 走 ucpro 网关通道（pr=quark 客户端通道风控拒 Web Cookie）。
+  // pr=ucpro 网关通道（pr=quark 客户端通道风控拒 Web Cookie；UC 侧
+  // 2026-10-16 起也切 UCBrowser，与夸克通道不再相同）。
   override get pr(): string {
     return 'ucpro';
   }
