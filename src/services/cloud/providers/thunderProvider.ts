@@ -66,11 +66,23 @@ export class ThunderProvider extends CloudProvider {
     if (!rt) return "";
     var dev = '';
     try { dev = String(window.localStorage.getItem('deviceid') || ''); } catch (e2) {}
+    var nick = String(o.user_name || o.nick_name || '');
+    if (!nick) {
+      try {
+        var up = JSON.parse(window.localStorage.getItem('USER_PRIVILEGE_USER_SECURITY_TOKEN_expiration') || 'null');
+        var tok = up && up.user_security_token ? String(up.user_security_token) : '';
+        if (tok) {
+          var pl = window.atob(tok).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+          var u = JSON.parse(window.atob(pl)).username;
+          if (u) nick = String(u);
+        }
+      } catch (e3) {}
+    }
     return JSON.stringify({
       at: String(o.access_token || ''),
       rt: rt,
       uid: String(o.user_id || o.sub || ''),
-      nick: String(o.user_name || o.nick_name || ''),
+      nick: nick,
       dev: dev
     });
   } catch (e) { return ""; }

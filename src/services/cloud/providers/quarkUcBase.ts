@@ -108,6 +108,28 @@ export abstract class QuarkUcBase extends CloudProvider {
           }
         }
       }
+      // 现役网页昵称接口：web 域 account/info（昵称/头像/用户 id 在
+      // data 本层；member 已被 2026-10 拆改只剩容量字段，社区现役实现
+      // 均以此取昵称）。UA 用桌面浏览器串（与移动端 desktopWebviewUa
+      // 同源，捕获 Cookie 时的 WebView 也是该串）。
+      const resp2 = await cloudGet(`https://${this.webHost}/account/info?fr=pc&platform=pc`, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Referer: `https://${this.webHost}/`,
+          Cookie: cookieStr,
+        },
+      });
+      if (resp2.isOk) {
+        const data2 = resp2.json['data'];
+        if (typeof data2 === 'object' && data2 !== null && !Array.isArray(data2)) {
+          const d = data2 as Record<string, unknown>;
+          const uid2 = d['user_id'];
+          if (uid2 != null && String(uid2) !== '') accountId = String(uid2);
+          const nick2 = d['nick_name'] ?? d['nickname'] ?? d['user_name'];
+          if (nick2 != null && String(nick2) !== '') nickname = String(nick2);
+        }
+      }
     } catch {
       // 拿不到昵称就用指纹兜底。
     }
