@@ -69,12 +69,28 @@ export class ThunderProvider extends CloudProvider {
     var nick = String(o.user_name || o.nick_name || '');
     if (!nick) {
       try {
-        var up = JSON.parse(window.localStorage.getItem('USER_PRIVILEGE_USER_SECURITY_TOKEN_expiration') || 'null');
-        var tok = up && up.user_security_token ? String(up.user_security_token) : '';
-        if (tok) {
-          var pl = window.atob(tok).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-          var u = JSON.parse(window.atob(pl)).username;
-          if (u) nick = String(u);
+        var at = String(o.access_token || '');
+        var cap = '';
+        try {
+          var ck = JSON.parse(window.localStorage.getItem('captcha_${CLIENT_ID}') || 'null');
+          cap = ck && ck.token ? String(ck.token) : '';
+        } catch (e4) {}
+        if (at) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://xluser-ssl.xunlei.com/v1/user/me?client_id=${CLIENT_ID}', false);
+          xhr.setRequestHeader('Accept', 'application/json;charset=UTF-8');
+          xhr.setRequestHeader('x-client-id', '${CLIENT_ID}');
+          xhr.setRequestHeader('x-client-version', '1.93.10');
+          if (dev) { xhr.setRequestHeader('x-device-id', dev.substring(0, 32)); }
+          if (cap) { xhr.setRequestHeader('X-Captcha-Token', cap); }
+          xhr.setRequestHeader('Authorization', 'Bearer ' + at);
+          xhr.send(null);
+          if (xhr.status === 200) {
+            var u = JSON.parse(xhr.responseText);
+            var n = String(u.username || u.nick_name || u.nickname ||
+              (u.User && u.User.username) || '');
+            if (n) nick = n;
+          }
         }
       } catch (e3) {}
     }
