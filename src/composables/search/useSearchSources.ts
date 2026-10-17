@@ -89,10 +89,11 @@ export function useSearchSources() {
   }
 
   const allSourceList = computed<SourceItem[]>(() => {
-    // 无插件时兜底本地来源；网盘来源统一追加在尾部
-    const base: SourceItem[] = pluginSourceList.value.length === 0
-      ? [{ id: 'local', name: '本地', type: 'local' }]
-      : pluginSourceList.value;
+    // 本地来源恒在首位（与移动端一致）：有插件/网盘等网页来源时也保留本地搜索
+    const base: SourceItem[] = [
+      { id: 'local', name: '本地', type: 'local' },
+      ...pluginSourceList.value,
+    ];
     return [...base, ...cloudSourceList.value];
   });
   const selectedSourceId = ref<string>('');
