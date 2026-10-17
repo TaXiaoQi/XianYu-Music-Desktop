@@ -150,6 +150,7 @@ async fn post_form_follow(
 // ── HTML 正则提取（纯函数，便于单测） ────────────────────
 
 /// 文件夹行：f_id=(\d+) 与名称就近配对（HTML 脆弱，尽力而为）。
+#[cfg(test)]
 fn extract_folder_rows(body: &str) -> Vec<(String, String)> {
     let re = Regex::new(r"f_id='?(\d+)'?[^>]*>[\s\S]{0,400}?class='t'>([^<]+)").unwrap();
     re.captures_iter(body)
@@ -158,12 +159,14 @@ fn extract_folder_rows(body: &str) -> Vec<(String, String)> {
 }
 
 /// class='t' 锚点名称列表（文件夹/文件名混排，顺序即文档序）。
+#[cfg(test)]
 fn extract_names(body: &str) -> Vec<String> {
     let re = Regex::new(r"class='t'[^>]*>([^<]{1,120})</a>").unwrap();
     re.captures_iter(body).map(|c| c[1].to_string()).collect()
 }
 
 /// 文件页链接（去重保序）：mydisk/u.php 排除，/fn? 相对链接补 pc.woozooo.com。
+#[cfg(test)]
 fn extract_file_links(body: &str) -> Vec<String> {
     let re =
         Regex::new(r"(?i)(?:https?://[a-z0-9]+\.lanzou[a-z]?\.com/|/fn\?)[A-Za-z0-9_.-]+").unwrap();

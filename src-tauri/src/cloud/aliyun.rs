@@ -126,7 +126,7 @@ async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, Str
     Ok((access, Some(new_cred)))
 }
 
-async fn drive_id(cred: &Value, at: &str) -> Result<String, (i32, String)> {
+async fn drive_id(at: &str) -> Result<String, (i32, String)> {
     // 2026-10 阿里下线 /adrive/v2/user/getInfo（404 NotFound），取 drive_id
     // 改用 web 端现役的 /v2/user/get（响应字段顶层平铺）。
     let resp = http::post_json(
@@ -154,7 +154,7 @@ async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let (at, rotated) = access_token(&req.cred).await?;
     // 有效性以 drive_id 可取为准（token 可用 + 盘信息可读），防
     // 「绑定成功但一用就挂」的假阳性。
-    let valid = drive_id(&req.cred, &at).await.is_ok();
+    let valid = drive_id(&at).await.is_ok();
     Ok(CloudOut {
         result: json!({ "valid": valid }),
         rotated_cred: rotated,
@@ -199,7 +199,7 @@ fn files_from_items(items: &Value) -> Vec<Value> {
 async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let (at, rotated) = access_token(&req.cred).await?;
-    let drive = drive_id(&req.cred, &at).await?;
+    let drive = drive_id(&at).await?;
     let path = if req.param_str("path").is_empty() {
         "root".to_string()
     } else {
@@ -262,7 +262,7 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("缺少搜索关键词"));
     }
     let (at, rotated) = access_token(&req.cred).await?;
-    let drive = drive_id(&req.cred, &at).await?;
+    let drive = drive_id(&at).await?;
     let offset: i64 = req.param_str("cursor").parse().unwrap_or(0);
     let resp = http::post_json(
         "https://api.alipan.com/adrive/v3/file/search",
@@ -390,7 +390,7 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let (at, rotated) = access_token(&req.cred).await?;
-    let drive = drive_id(&req.cred, &at).await?;
+    let drive = drive_id(&at).await?;
     let share = req.param_obj("share");
     let token = share
         .get("shareToken")
@@ -455,7 +455,7 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let (at, rotated) = access_token(&req.cred).await?;
-    let drive = drive_id(&req.cred, &at).await?;
+    let drive = drive_id(&at).await?;
     let file = req.param_obj("file");
     let file_id = file.get("id").and_then(Value::as_str).unwrap_or("");
     let resp = http::post_json(

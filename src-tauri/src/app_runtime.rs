@@ -473,6 +473,8 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 
     Ok(())
 }
 
+// 仅 release 构建使用（debug 不挂单实例插件，见 lib.rs）。
+#[cfg(not(debug_assertions))]
 pub(crate) fn handle_single_instance<R: tauri::Runtime>( // 实现
     app: &tauri::AppHandle<R>, // 实现
     argv: Vec<String>, // 实现

@@ -16,13 +16,15 @@ use app_runtime::{
     consume_pending_deep_links,
     consume_pending_open_paths,
     exit_app,
-    handle_single_instance,
     open_devtools,
     restart_app,
     setup_app,
     update_native_tray_menu,
     was_launched_at_startup,
 };
+// 单实例回调仅 release 构建使用（debug 不挂单实例插件，见下方 run 注释）。
+#[cfg(not(debug_assertions))]
+use app_runtime::handle_single_instance;
 use autostart::{
     get_launch_on_startup,
     set_launch_on_startup,
