@@ -22,6 +22,9 @@ import type { PluginArtistResult, PluginAlbumResult } from '../../services/domai
 import { reportSearch, reportInputStats } from '../../services/domain/usageStats';
 import { cloudProviderById } from '../../services/cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
+import { CloudFolderSelectionStore } from '../../services/cloud/cloudFolderSelectionStore';
+import { scopedSearchAudio } from '../../services/cloud/cloudScopedQuery';
+import type { CloudFile } from '../../services/cloud/cloudTypes';
 import type { SearchSources } from './useSearchSources';
 import type { SearchResults } from './useSearchResults';
 
@@ -275,13 +278,26 @@ export function useSearchQuery(options: {
         const accounts = await CloudCredentialsStore.instance.accountsFor(source.cloudProviderId);
         const cred = accounts[0]?.cred ?? {};
         const provider = cloudProviderById(source.cloudProviderId)!;
-        const res = await provider.searchFiles(cred, query);
-        if (activeController.signal.aborted) return;
         const accountId = accounts[0]?.accountId ?? '_';
-        cloudSearchResults.value = res.files
+        // 有已选文件夹的账号只遍历选定范围，避免全盘搜索（与移动端语义一致）
+        const roots = await CloudFolderSelectionStore.instance.pathsFor(
+          source.cloudProviderId,
+          accountId,
+        );
+        let files: CloudFile[];
+        let nextCursor: string | null = null;
+        if (roots.length > 0) {
+          files = await scopedSearchAudio(provider, cred, roots, query);
+        } else {
+          const res = await provider.searchFiles(cred, query);
+          files = res.files;
+          nextCursor = res.nextCursor;
+        }
+        if (activeController.signal.aborted) return;
+        cloudSearchResults.value = files
           .filter(f => !f.isDir && f.isAudio)
           .map(f => cloudFileToSong(f, source.cloudProviderId!, source.name, accountId));
-        nextCloudCursor.value = res.nextCursor;
+        nextCloudCursor.value = nextCursor;
         hasMore.value = nextCloudCursor.value != null;
       }
     } catch (err) {

@@ -12,6 +12,7 @@
 // exportForSync/importFromSync 供跨设备同步接入。
 
 import { CloudAccount, CloudException } from './cloudTypes';
+import { CloudFolderSelectionStore } from './cloudFolderSelectionStore';
 
 type CryptoJsModule = typeof import('crypto-js');
 type WordArray = ReturnType<CryptoJsModule['lib']['WordArray']['create']>;
@@ -32,6 +33,10 @@ function loadCryptoJs(): Promise<CryptoJsModule> {
 const K_CREDS_KEY = 'xianyu_cloud_creds_v1';
 const K_DEVICE_KEY = 'xianyu_cloud_device_key_v1';
 const K_SEAL_PREFIX = 'xy1:';
+
+/** 同步串保留键：随凭据密封串携带的目录选择（`providerId|accountId → [path]`）。
+ * 旧版客户端导入时只认数组值会自动忽略该键，新旧双向兼容。 */
+const K_FOLDER_SEL_SYNC_KEY = '__fsel__';
 
 /** 遗留兜底账号 ID 形态：早期版本 accountId 取 md5(cookie/refreshToken) 前
  * 12 位 hex（每次登录都变，重复登录即产生重复账号）。现役账号 ID 均为
@@ -61,6 +66,8 @@ export class CloudCredentialsStore {
   /** 内存缓存；首读后有效。改动即回写落盘。 */
   private _cache: CredMap | null = null;
   private _key: WordArray | null = null;
+  /** UI 订阅（设置网盘面板、搜索来源列表）：凭据落盘后刷新。 */
+  private _uiListeners = new Set<() => void>();
 
   /** 凭据落盘后的变更通知（sync 层注册做云端自动上传；未注册时为 no-op）。
    * 绑定/解绑/凭据轮换都会触发，回调内自行处理登录态与防抖。 */
@@ -196,6 +203,16 @@ export class CloudCredentialsStore {
     }
     // 本地状态已变化，无论写盘成败都通知 sync 层（由其决定是否上传）
     CloudCredentialsStore.onPersisted?.();
+    // UI 订阅者通知（快照遍历，回调内可能退订；登录同步落盘后 UI 即时跟随）
+    for (const fn of [...this._uiListeners]) fn();
+  }
+
+  /** 订阅凭据变更（落盘即通知）；返回退订函数。 */
+  subscribe(fn: () => void): () => void {
+    this._uiListeners.add(fn);
+    return () => {
+      this._uiListeners.delete(fn);
+    };
   }
 
   async accountsFor(providerId: string): Promise<CloudAccount[]> {
@@ -280,18 +297,24 @@ export class CloudCredentialsStore {
 
   /** 跨设备同步：导出密封串。
    * 账号派生密钥（三端可互解，服务端无明文）重新密封本地凭据 JSON，
-   * 密文不出本类、本地落盘仍用设备密钥。未绑定任何盘返回 null。 */
+   * 密文不出本类、本地落盘仍用设备密钥。未绑定任何盘返回 null。
+   * 密封明文附带保留键 `__fsel__` 携带目录选择，跨设备一并同步。 */
   async exportForSync(ciyuanxiId: string): Promise<string | null> {
     const map = await this._ensureLoaded();
     if (Object.keys(map).length === 0) return null;
     const CryptoJS = await this._loadCryptoJs();
-    const json = JSON.stringify(
-      Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.map((a) => a.toJson())])),
+    const payload: Record<string, unknown> = Object.fromEntries(
+      Object.entries(map).map(([k, v]) => [k, v.map((a) => a.toJson())]),
     );
-    return this._sealWithKey(json, this._syncKey(CryptoJS, ciyuanxiId));
+    const folderSel = await CloudFolderSelectionStore.instance.allPaths();
+    if (Object.keys(folderSel).length > 0) {
+      payload[K_FOLDER_SEL_SYNC_KEY] = folderSel;
+    }
+    return this._sealWithKey(JSON.stringify(payload), this._syncKey(CryptoJS, ciyuanxiId));
   }
 
-  /** 跨设备同步：导入密封串（与导出格式一致，指纹去重合并）。 */
+  /** 跨设备同步：导入密封串（与导出格式一致，指纹去重合并）。
+   * 保留键 `__fsel__` 的目录选择合并进本地目录选择存储。 */
   async importFromSync(sealed: string, ciyuanxiId: string): Promise<void> {
     const CryptoJS = await this._loadCryptoJs();
     const plain = this._unsealWithKey(sealed, this._syncKey(CryptoJS, ciyuanxiId), CryptoJS);
@@ -299,7 +322,20 @@ export class CloudCredentialsStore {
     const raw: unknown = JSON.parse(plain);
     const merged = await this._ensureLoaded();
     if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
-      for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const obj = raw as Record<string, unknown>;
+      const folderSel = obj[K_FOLDER_SEL_SYNC_KEY];
+      if (typeof folderSel === 'object' && folderSel !== null && !Array.isArray(folderSel)) {
+        const sel: Record<string, string[]> = {};
+        for (const [k, v] of Object.entries(folderSel as Record<string, unknown>)) {
+          if (!k || !Array.isArray(v)) continue;
+          const paths = v.filter((p): p is string => typeof p === 'string' && p !== '');
+          if (paths.length > 0) sel[k] = paths;
+        }
+        if (Object.keys(sel).length > 0) {
+          await CloudFolderSelectionStore.instance.mergePaths(sel);
+        }
+      }
+      for (const [k, v] of Object.entries(obj)) {
         if (!Array.isArray(v)) continue;
         const incoming = v
           .filter((a) => typeof a === 'object' && a !== null)

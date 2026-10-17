@@ -8,6 +8,8 @@ import { signedRequest, getStoredAuth } from '../auth/authService';
 import type { LibrarySong, PluginSearchResult, PluginSource } from '../../types';
 import { cloudProviders } from '../cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../cloud/cloudCredentialsStore';
+import { CloudFolderSelectionStore } from '../cloud/cloudFolderSelectionStore';
+import { scopedSearchAudio } from '../cloud/cloudScopedQuery';
 import { parseCloudFileName } from '../cloud/cloudFilename';
 import { DailyRecommendError } from './dailyRecommendTypes';
 import type { DailyRecommendAlgorithm, DailyRecommendItem, DailyRecommendStrategy } from './dailyRecommendTypes';
@@ -143,12 +145,15 @@ type CloudSearchTask = {
   accountId: string;
   cred: Record<string, string>;
   keyword: string;
+  /** 已选文件夹范围；非空时只遍历这些文件夹（不调全盘 searchFiles）。 */
+  roots: string[];
 };
 
 /**
  * 收集网盘候选（与移动端 _collectCloudCandidates 同构）：
  * 推荐歌手名作关键词，对「支持搜索且已绑定」的网盘并发 searchFiles 首页，
  * 文件名解析出歌手/歌名，仅当某段命中关键词才收；异常逐盘捕获记日志，不阻塞整体。
+ * 有已选文件夹的账号只遍历选定范围；盘侧不支持搜索但选了文件夹的盘也借此参与。
  */
 async function collectCloudCandidates(
   algorithm: DailyRecommendAlgorithm,
@@ -165,12 +170,17 @@ async function collectCloudCandidates(
 
   const tasks: CloudSearchTask[] = [];
   for (const provider of cloudProviders) {
-    if (!provider.supportsSearch) continue;
     const accounts = await CloudCredentialsStore.instance.accountsFor(provider.id);
     if (accounts.length === 0) continue;
     const account = accounts[0];
+    // 已选文件夹范围：非空则只遍历这些文件夹（不支持搜索的盘也借此参与）
+    const roots = await CloudFolderSelectionStore.instance.pathsFor(
+      provider.id,
+      account.accountId,
+    );
+    if (!provider.supportsSearch && roots.length === 0) continue;
     for (const keyword of artists) {
-      tasks.push({ provider, accountId: account.accountId, cred: account.cred, keyword });
+      tasks.push({ provider, accountId: account.accountId, cred: account.cred, keyword, roots });
     }
   }
   if (tasks.length === 0) return out;
@@ -178,8 +188,10 @@ async function collectCloudCandidates(
   await mapWithLimit(tasks, SEARCH_CONCURRENCY, async (task) => {
     if (out.length >= CLOUD_MAX_CANDIDATES) return;
     try {
-      const result = await task.provider.searchFiles(task.cred, task.keyword);
-      const files = result?.files || [];
+      // 有已选文件夹 → 只遍历选定范围；否则走盘侧全盘搜索
+      const files = task.roots.length > 0
+        ? await scopedSearchAudio(task.provider, task.cred, task.roots, task.keyword)
+        : (await task.provider.searchFiles(task.cred, task.keyword))?.files || [];
       files.forEach((file, rank) => {
         if (out.length >= CLOUD_MAX_CANDIDATES) return;
         if (file.isDir || !file.isAudio) return;

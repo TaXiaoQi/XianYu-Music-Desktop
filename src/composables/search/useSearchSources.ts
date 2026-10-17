@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
 import {
   LX_SOURCE_NAMES,
   type LxSourceId,
@@ -120,6 +120,12 @@ export function useSearchSources() {
       selectedSourceId.value = allSourceList.value[0].id;
     }
   });
+
+  // 凭据落盘即刷新网盘来源（登录同步后台导入绑定后，已打开的搜索页跟随）
+  const unsubCreds = CloudCredentialsStore.instance.subscribe(() => {
+    void refreshCloudSourceList();
+  });
+  onScopeDispose(unsubCreds);
 
   return {
     pluginSourceList,

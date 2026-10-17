@@ -435,11 +435,18 @@ const transferAndPlay = async (clicked: CloudFile) => {
   }
 };
 
+let unsubCreds: (() => void) | null = null;
+
 onMounted(() => {
   void refreshAccounts();
+  // 凭据落盘即刷新：登录同步后台导入绑定后，面板无需重开即跟随
+  unsubCreds = CloudCredentialsStore.instance.subscribe(() => {
+    void refreshAccounts();
+  });
 });
 
 onBeforeUnmount(() => {
+  unsubCreds?.();
   if (smsTimer) clearInterval(smsTimer);
   stopQrPoll();
   if (unbindResetTimer) clearTimeout(unbindResetTimer);
