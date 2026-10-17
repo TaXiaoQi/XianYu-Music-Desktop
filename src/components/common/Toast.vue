@@ -6,16 +6,19 @@ const { toasts } = useToastCenter();
 </script>
 
 <template>
+    <!-- Teleport 到 body + 最高层级：不被应用内层叠上下文与
+         z-[10000] 全屏遮罩（更新/同步删除/听歌识别）盖住 -->
+    <Teleport to="body">
     <div
-        class="pointer-events-none fixed top-5 left-1/2 z-[9999] flex -translate-x-1/2 flex-col items-center gap-2"
+        class="pointer-events-none fixed bottom-24 left-1/2 z-[10001] flex -translate-x-1/2 flex-col items-center gap-2"
     >
         <TransitionGroup
             enter-active-class="duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] transition-all"
-            enter-from-class="-translate-y-5 scale-90 opacity-0"
+            enter-from-class="translate-y-5 scale-90 opacity-0"
             enter-to-class="translate-y-0 scale-100 opacity-100"
             leave-active-class="duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] transition-all"
             leave-from-class="translate-y-0 scale-100 opacity-100"
-            leave-to-class="-translate-y-5 scale-90 opacity-0"
+            leave-to-class="translate-y-5 scale-90 opacity-0"
         >
             <div
                 v-for="toast in toasts"
@@ -46,4 +49,5 @@ const { toasts } = useToastCenter();
             </div>
         </TransitionGroup>
     </div>
+    </Teleport>
 </template>
