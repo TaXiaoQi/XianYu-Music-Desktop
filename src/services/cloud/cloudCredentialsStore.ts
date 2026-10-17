@@ -33,6 +33,11 @@ const K_CREDS_KEY = 'xianyu_cloud_creds_v1';
 const K_DEVICE_KEY = 'xianyu_cloud_device_key_v1';
 const K_SEAL_PREFIX = 'xy1:';
 
+/** 遗留兜底账号 ID 形态：早期版本 accountId 取 md5(cookie/refreshToken) 前
+ * 12 位 hex（每次登录都变，重复登录即产生重复账号）。现役账号 ID 均为
+ * 服务端 uid 或昵称哈希（u_ 前缀）。 */
+const LEGACY_ID_RE = /^[0-9a-f]{12}$/;
+
 type CredMap = Record<string, CloudAccount[]>;
 
 function randomHex(byteLen: number): string {
@@ -157,7 +162,24 @@ export class CloudCredentialsStore {
     } catch (e) {
       console.warn('[cloud] 网盘凭据读取失败:', e);
     }
+    // 遗留兜底账号清理：同盘存在稳定 ID 账号时，清除遗留 12 位裸 hex 条目
+    //（旧版重复登录产生的重复账号）。只剩单条遗留时不清理（仍是有效绑定）。
+    let removed = 0;
+    for (const list of Object.values(map)) {
+      if (list.length <= 1) continue;
+      if (!list.some((a) => !LEGACY_ID_RE.test(a.accountId))) continue;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (LEGACY_ID_RE.test(list[i].accountId)) {
+          list.splice(i, 1);
+          removed++;
+        }
+      }
+    }
     this._cache = map;
+    if (removed > 0) {
+      console.info('[cloud] 清理遗留兜底账号 ' + removed + ' 条');
+      await this._persist();
+    }
     return map;
   }
 
@@ -197,7 +219,9 @@ export class CloudCredentialsStore {
     return list[0].cred;
   }
 
-  /** 新增/更新账号（按 provider+accountId upsert）。 */
+  /** 新增/更新账号（按 provider+accountId upsert）。
+   * 新账号为稳定 ID 时，顺带清除同盘遗留 12 位裸 hex 条目（旧版
+   * Cookie/refreshToken 哈希 ID，重复登录产生的重复账号）。 */
   async saveAccount(account: CloudAccount): Promise<void> {
     const map = await this._ensureLoaded();
     const list = [...(map[account.provider] ?? [])];
@@ -206,6 +230,17 @@ export class CloudCredentialsStore {
       list[idx] = account;
     } else {
       list.push(account);
+    }
+    if (!LEGACY_ID_RE.test(account.accountId)) {
+      const before = list.length;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].accountId !== account.accountId && LEGACY_ID_RE.test(list[i].accountId)) {
+          list.splice(i, 1);
+        }
+      }
+      if (list.length !== before) {
+        console.info('[cloud] 清理遗留兜底账号 ' + (before - list.length) + ' 条');
+      }
     }
     map[account.provider] = list;
     await this._persist();
