@@ -88,7 +88,7 @@ export class ThunderProvider extends CloudProvider {
           if (xhr.status === 200) {
             var u = JSON.parse(xhr.responseText);
             var n = String(u.username || u.nick_name || u.nickname ||
-              (u.User && u.User.username) || '');
+              u.name || (u.User && u.User.username) || '');
             if (n) nick = n;
           }
         }
