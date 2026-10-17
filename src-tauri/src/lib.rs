@@ -418,6 +418,11 @@ pub fn run() { // run
     maybe_disable_gpu_for_startup();
 
     // 各插件先在局部构造，再按原顺序挂到 Builder 上。
+    // 单实例互斥量按 identifier 派生：正式/商店同 identifier（同应用语义，
+    // 数据目录共享）；debug 构建（tauri dev）整体不启用单实例——避免
+    // dev 与正式版互相顶焦点（dev 配置覆盖只在 tauri:dev 脚本生效，
+    // 裸 `tauri dev` 仍会与正式版共用 identifier）。
+    #[cfg(not(debug_assertions))]
     let single_instance_plugin = tauri_plugin_single_instance::init(|relaunch_app, argv, _cwd| {
         handle_single_instance(relaunch_app, argv);
     });
@@ -429,8 +434,14 @@ pub fn run() { // run
     let opener_plugin = tauri_plugin_opener::init();
     let http_plugin = tauri_plugin_http::init();
 
-    let desktop = tauri::Builder::default()
-        .plugin(single_instance_plugin)
+    let desktop = {
+        // debug 构建不挂单实例插件（见上方注释）
+        #[cfg(not(debug_assertions))]
+        let builder = tauri::Builder::default().plugin(single_instance_plugin);
+        #[cfg(debug_assertions)]
+        let builder = tauri::Builder::default();
+        builder
+    }
         .on_window_event(|window, event| { // 实现
             let main_window_gone = window.label() == "main";
             if main_window_gone && matches!(event, tauri::WindowEvent::Destroyed) {
