@@ -30,7 +30,9 @@ export function parseAppBackup(jsonContent: string): AppBackup {
 }
 
 function getBackupSummary(backup: AppBackup): AppBackupSummary {
-  const { playlists, favorites, plugins, recentHistory, settings } = backup.data;
+  const { favorites, plugins, recentHistory, settings } = backup.data;
+  // 移动端导出按需开关，未勾选的键会整体省略（如 playlists/plugins 缺失）
+  const playlists = backup.data.playlists ?? [];
   let totalSongs = 0;
   let localSongs = 0;
   let onlineSongs = 0;
@@ -103,7 +105,7 @@ export async function importAppBackup(
   let settingsApplied = false;
   let importedRecent = 0;
 
-  if (includePlugins && backup.data.plugins.length > 0) {
+  if (includePlugins && (backup.data.plugins ?? []).length > 0) {
     const existingPlugins = getStoredPlugins();
     const existingIds = new Set(existingPlugins.map(p => p.id));
 
@@ -146,7 +148,7 @@ export async function importAppBackup(
   }
 
   if (includePlaylists) {
-    for (const pl of backup.data.playlists) {
+    for (const pl of backup.data.playlists ?? []) {
       if (pl.songs.length === 0) continue;
 
       libraryStore.setExtraSongs(pl.songs);
