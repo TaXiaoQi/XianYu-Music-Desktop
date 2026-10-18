@@ -57,14 +57,11 @@ export interface CloudNameParts {
 }
 
 /**
- * 文件名 → {artist, title}。分隔符优先级：' - ' > '–' > '-' > '_'；
- * 两段默认段1=歌手、段2=歌名；三段以上余段并回歌名。
- * opts.swapIfArtist(s2) 返回 true 时交换两段（段2 命中歌手名单的场景，日推用）。
+ * 网盘音频文件名拆歌名/歌手：主流命名是「歌名 - 歌手」（天天-陶喆、
+ * 7 Years-Lukas Graham），两段默认段1=歌名、段2=歌手；三段以上余段
+ * 并回歌手。单段整体作歌名。
  */
-export function parseCloudFileName(
-  raw: string,
-  opts?: { swapIfArtist?: (seg: string) => boolean },
-): CloudNameParts {
+export function parseCloudFileName(raw: string): CloudNameParts {
   const name = cleanCloudFileName(raw);
   if (!name) return { title: raw, artist: null };
   let segments: string[];
@@ -84,6 +81,5 @@ export function parseCloudFileName(
   const s2 = segments.slice(1).join(' - ').trim();
   if (!s1) return { title: s2, artist: null };
   if (!s2) return { title: s1, artist: null };
-  if (opts?.swapIfArtist?.(s2)) return { title: s1, artist: s2 };
-  return { title: s2, artist: s1 };
+  return { title: s1, artist: s2 };
 }
