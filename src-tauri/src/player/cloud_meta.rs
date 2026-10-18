@@ -467,11 +467,53 @@ fn extract_head_bytes(
         url.hash(&mut h);
         h.finish()
     };
-    let tmp = std::env::temp_dir().join(format!("xym-cloud-head-{nonce:016x}.bin"));
+    // lofty 的 Probe::guess_file_type 按扩展名识别容器，固定 ".bin" 会直接
+    // 解析失败（表现为 2MB 拉满却「解析无收获」），后缀必须还原真实类型
+    let ext = probe_file_ext(url, bytes);
+    let tmp = std::env::temp_dir().join(format!("xym-cloud-head-{nonce:016x}{ext}"));
     std::fs::write(&tmp, bytes).ok()?;
     let payload = extract_meta(app, &tmp, total_bytes, false, url, cloud_path, duration_hint);
     let _ = std::fs::remove_file(&tmp);
     payload
+}
+
+/// 探针临时文件的扩展名：依次取 URL 路径扩展名 → 头部魔数嗅探，兜底 ".mp3"。
+fn probe_file_ext(url: &str, bytes: &[u8]) -> String {
+    if let Some(rest) = url.split("://").nth(1) {
+        let path = rest.split('?').next().unwrap_or("");
+        let last = path.rsplit('/').next().unwrap_or("");
+        if let Some(dot) = last.rfind('.') {
+            let ext = &last[dot + 1..];
+            let ok = !ext.is_empty()
+                && ext.len() <= 5
+                && ext.chars().all(|c| c.is_ascii_alphanumeric());
+            if ok {
+                return format!(".{}", ext.to_ascii_lowercase());
+            }
+        }
+    }
+    if bytes.starts_with(b"fLaC") {
+        return ".flac".into();
+    }
+    if bytes.starts_with(b"ID3") {
+        return ".mp3".into();
+    }
+    if bytes.len() > 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 {
+        return ".mp3".into();
+    }
+    if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
+        return ".wav".into();
+    }
+    if bytes.starts_with(b"OggS") {
+        return ".ogg".into();
+    }
+    if bytes.len() > 12 && &bytes[4..8] == b"ftyp" {
+        return ".m4a".into();
+    }
+    if bytes.starts_with(b"MAC ") {
+        return ".ape".into();
+    }
+    ".mp3".into()
 }
 
 /// 事件名与负载的构造单测锚点（防字段漂移）。
