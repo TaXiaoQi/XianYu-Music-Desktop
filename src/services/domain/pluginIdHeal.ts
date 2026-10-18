@@ -1,5 +1,5 @@
 import type { PluginSource, Song } from '../../types';
-import { getStoredPlugins } from './pluginEngine';
+import { getStoredPlugins, readPluginIdAliases } from './pluginEngine';
 import { describePlatform, findMatchingPlugin } from './pluginBackupSong';
 import { useCollectionsStore } from '../../features/collections/store';
 
@@ -22,6 +22,18 @@ export const findHealedPluginForSong = (
 
   const plugins = installedPlugins ?? getStoredPlugins();
   if (plugins.some(p => p.id === searchResult.pluginId && p.enabled)) return null;
+
+  // 插件更新换 id（脚本哈希）后行内仍是旧 pluginId：先沿别名表换算精确
+  // 还原，免走平台标签启发式（后者是猜测式匹配，可能绑错插件）
+  const aliases = readPluginIdAliases();
+  let cur = searchResult.pluginId;
+  for (let i = 0; i < 8; i++) {
+    const next = aliases[cur];
+    if (!next || next === cur) break;
+    cur = next;
+    const hit = plugins.find(p => p.id === cur && p.enabled);
+    if (hit) return hit;
+  }
 
   const candidates = plugins.filter(p => (p.format === 'musicfree' || p.format === 'anime') && p.enabled);
   if (candidates.length === 0) return null;

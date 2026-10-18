@@ -1,5 +1,6 @@
 import type { PluginSource } from '../../types';
 import type { PluginUpdateCheckResult, PluginUpdateServiceDeps } from './pluginUpdateTypes';
+import { readPluginIdAliases, writePluginIdAliases } from './pluginEngineBase';
 
 export function createPluginUpdateExecutor(deps: PluginUpdateServiceDeps) {
   const {
@@ -34,6 +35,15 @@ export function createPluginUpdateExecutor(deps: PluginUpdateServiceDeps) {
 
       if (newSource.id !== source.id) {
         removePluginSource(source.id);
+        // id 变更入别名表：收藏/播放队列存的旧 pluginId 仍可换算到现行
+        // 插件（来源标签、播放 heal 都依赖 id 匹配）；链尾若也是旧键则
+        // 压缩成直达，防环限深
+        const aliases = { ...readPluginIdAliases() };
+        for (const [k, v] of Object.entries(aliases)) {
+          if (v === source.id) delete aliases[k];
+        }
+        aliases[source.id] = newSource.id;
+        writePluginIdAliases(aliases);
       }
 
       addPluginSource(newSource);

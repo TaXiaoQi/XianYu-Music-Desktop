@@ -1,9 +1,9 @@
 import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk';
-import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngine';
+import { getStoredPlugins, pluginsVersion, readPluginIdAliases } from '../services/domain/pluginEngine';
 import type { PluginSource } from '../types';
 
 export const isRemoteSong = (song: { path?: string; source_type?: string } | null | undefined) => // 实现
-  song?.source_type === 'remote' || song?.path?.startsWith('remote://') === true; 
+  song?.source_type === 'remote' || song?.path?.startsWith('remote://') === true;
 
 export const parseIntervalToSeconds = (interval?: string | null): number => {
   if (!interval) return 0;
@@ -23,7 +23,20 @@ function getStoredPluginById(pluginId: string): PluginSource | null {
       pluginCache.set(p.id, p);
     }
   }
-  return pluginCache.get(pluginId) ?? null;
+  const direct = pluginCache.get(pluginId);
+  if (direct) return direct;
+  // 插件更新即换 id（脚本哈希）并删旧条目，行内存的旧 pluginId 沿别名
+  // 链换算后再匹配，避免标签降级「在线」；限深防环
+  const aliases = readPluginIdAliases();
+  let cur = pluginId;
+  for (let i = 0; i < 8; i++) {
+    const next = aliases[cur];
+    if (!next || next === cur) break;
+    cur = next;
+    const hit = pluginCache.get(cur);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // —— 付费订阅来源品牌（聆澜/ikun 等）：订阅/插件安装 URL 的 query 带 source=，

@@ -630,3 +630,36 @@ export function getStoredPlugins(): PluginSource[] {
 export function setStoredPlugins(plugins: PluginSource[]): void {
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(plugins));
 }
+
+// ==================== 插件 id 别名表（旧 id → 现行 id） ====================
+
+// 插件 id 是脚本内容哈希：更新即换 id 并删除旧条目，收藏/播放队列里存的
+// 旧 pluginId 靠这张表换算，避免来源标签降级「在线」、播放解析走启发式
+// 修复（键名与移动端一致，便于排查）
+export const PLUGIN_ID_ALIASES_KEY = 'xianyu_plugin_id_aliases_v1';
+
+let _aliasCacheRaw: string | null = null;
+let _aliasCache: Record<string, string> = {};
+
+export function readPluginIdAliases(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(PLUGIN_ID_ALIASES_KEY);
+    if (raw === _aliasCacheRaw) return _aliasCache;
+    const parsed = raw ? JSON.parse(raw) : {};
+    _aliasCacheRaw = raw;
+    _aliasCache = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    _aliasCacheRaw = null;
+    _aliasCache = {};
+  }
+  return _aliasCache;
+}
+
+export function writePluginIdAliases(aliases: Record<string, string>): void {
+  try {
+    const json = JSON.stringify(aliases);
+    localStorage.setItem(PLUGIN_ID_ALIASES_KEY, json);
+    _aliasCacheRaw = json;
+    _aliasCache = aliases;
+  } catch { /* ignore */ }
+}
