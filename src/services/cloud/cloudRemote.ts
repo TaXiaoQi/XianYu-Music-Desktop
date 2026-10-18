@@ -157,6 +157,18 @@ export async function rustListDir(
   return _listResultFrom(_resultOf(data));
 }
 
+/** 按 id 查文件/目录名（仅支持该 op 的盘返回；失败返回 null）。 */
+export async function rustFileName(provider: string, cred: Cred, fileId: string): Promise<string | null> {
+  try {
+    const data = await _callRust(provider, 'file_get', cred, { file_id: fileId });
+    const result = toRecord(data['result']);
+    const name = result != null && result['name'] != null ? String(result['name']) : '';
+    return name === '' ? null : name;
+  } catch {
+    return null;
+  }
+}
+
 /** 全盘文件名搜索（仅 supportsSearch 的盘转发）。 */
 export async function rustSearchFiles(
   provider: string,

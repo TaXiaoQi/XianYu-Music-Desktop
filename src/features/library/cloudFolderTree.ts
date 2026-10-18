@@ -10,6 +10,7 @@
 import { ref } from 'vue';
 
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
+import { CloudFolderSelectionStore } from '../../services/cloud/cloudFolderSelectionStore';
 import { cloudProviderById, cloudProviders } from '../../services/cloud/cloudRegistry';
 import { CloudListResult, type CloudFile } from '../../services/cloud/cloudTypes';
 import { parseCloudFileName } from '../../services/cloud/cloudFilename';
@@ -33,9 +34,10 @@ const cloudFolderRegistry = new Map<string, { providerId: string; accountId: str
 /** 注册表版本号：新增节点时自增，驱动视图层监听刷新。 */
 export const cloudFolderRegistryVersion = ref(0);
 
-/** 登记网盘目录节点（仅登记带完整上下文的节点；重复登记不触发更新）。 */
+/** 登记网盘目录节点（仅登记带完整上下文的节点；重复登记不触发更新）。
+ * 空串 cloudDirPath 合法：id 型盘（迅雷/PikPak）根目录 id 为空串。 */
 export const registerCloudFolder = (node: FolderNode) => {
-  if (!node.cloudProviderId || !node.cloudAccountId || !node.cloudDirPath) {
+  if (!node.cloudProviderId || !node.cloudAccountId || node.cloudDirPath == null) {
     return;
   }
   if (cloudFolderRegistry.has(node.path)) {
@@ -53,7 +55,8 @@ export const registerCloudFolder = (node: FolderNode) => {
 export const resolveCloudFolder = (path: string) =>
   cloudFolderRegistry.get(path) ?? null;
 
-/** 构建目录树网盘子树：虚拟根「网盘」+ 已绑定账号的盘节点。 */
+/** 构建目录树网盘子树：虚拟根「网盘」→ 有已选文件夹的盘 → 已选目录（叶，
+ * 点击在主列表加载该目录歌曲）。只展示设置里勾选过的目录，未选的盘不出现在树中。 */
 export const buildCloudTreeNodes = async (): Promise<FolderNode[]> => {
   const providerNodes: FolderNode[] = [];
 
@@ -63,12 +66,39 @@ export const buildCloudTreeNodes = async (): Promise<FolderNode[]> => {
       continue;
     }
     const account = accounts[0]; // 同盘多账号暂取首个
+    const selected = await CloudFolderSelectionStore.instance.pathsFor(provider.id, account.accountId);
+    if (selected.length === 0) {
+      continue;
+    }
+
+    const dirNodes: FolderNode[] = [];
+    for (const dirPath of selected) {
+      // 根目录特判：勾选整个盘时直接用盘名（file_get 对 root 无名可查）
+      const name = dirPath === provider.rootPath
+        ? provider.displayName
+        : (await provider.describeDirName(account.cred, dirPath)) ?? '已选文件夹';
+      const node: FolderNode = {
+        name,
+        path: `cloud://${provider.id}/${account.accountId}/${slugSegment(dirPath)}`,
+        children: [],
+        child_count: 1, // 哨兵：已选目录保留子目录导航（点击列出直属歌曲）
+        children_loaded: false,
+        song_count: 0,
+        cover_song_path: null,
+        is_expanded: false,
+        cloudProviderId: provider.id,
+        cloudAccountId: account.accountId,
+        cloudDirPath: dirPath,
+      };
+      dirNodes.push(node);
+    }
+
     providerNodes.push({
       name: provider.displayName,
       path: `cloud://${provider.id}/${account.accountId}`,
-      children: [],
-      child_count: 1, // 哨兵：未列目录，保证节点可展开
-      children_loaded: false,
+      children: dirNodes,
+      child_count: dirNodes.length,
+      children_loaded: true,
       song_count: 0,
       cover_song_path: null,
       is_expanded: false,
@@ -76,6 +106,11 @@ export const buildCloudTreeNodes = async (): Promise<FolderNode[]> => {
       cloudAccountId: account.accountId,
       cloudDirPath: provider.rootPath,
     });
+  }
+
+  // 没有任何已选文件夹：不出「网盘」节点
+  if (providerNodes.length === 0) {
+    return [];
   }
 
   const rootNode: FolderNode = {
@@ -179,8 +214,18 @@ export function cloudFileToSong(item: CloudFile, providerId: string, providerNam
   } as Song;
 }
 
-/** 加载网盘目录下全部音频文件（翻页收集，最多 20 页防失控）。 */
+/** 加载网盘目录下全部音频文件（翻页收集，最多 20 页防失控）。
+ * 失败不抛（凭据过期/网络错误返回空列表并告警），由调用方按空目录展示。 */
 export const loadCloudFolderSongs = async (path: string): Promise<Song[]> => {
+  try {
+    return await loadCloudFolderSongsInner(path);
+  } catch (e) {
+    console.warn('[cloud-tree] 网盘歌曲加载失败:', e);
+    return [];
+  }
+};
+
+const loadCloudFolderSongsInner = async (path: string): Promise<Song[]> => {
   const ctx = resolveCloudFolder(path);
   if (!ctx) {
     return [];

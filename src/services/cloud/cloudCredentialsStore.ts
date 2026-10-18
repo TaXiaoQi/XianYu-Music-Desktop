@@ -38,6 +38,27 @@ const K_SEAL_PREFIX = 'xy1:';
  * 旧版客户端导入时只认数组值会自动忽略该键，新旧双向兼容。 */
 const K_FOLDER_SEL_SYNC_KEY = '__fsel__';
 
+/** 同步串保留键（协议 v2）：产生该串的本地变更时刻（epoch 毫秒，LWW 对比用）。
+ * 旧客户端导入只认数组值会自动忽略，双向兼容。 */
+const K_TIMESTAMP_SYNC_KEY = '__ts__';
+
+/** 同步元数据落盘键：LWW 时间戳（凭据与文件夹选择共用同一 changeAt，
+ * 因为两者装在同一个密封串里同步）。 */
+const K_SYNC_META_KEY = 'xianyu.cloud.creds.sync_meta.v1';
+
+/** 本地同步元数据：changeAt=最近本地变更时刻；syncedAt=最近成功上传的变更时刻。 */
+export interface CloudSyncMeta {
+  changeAt: number | null;
+  syncedAt: number | null;
+}
+
+/** 同步导入结果：applied=是否应用了下发数据（本地较新时为 false）；
+ * changed=本地内容是否实际变化。 */
+export interface CloudSyncImportResult {
+  applied: boolean;
+  changed: boolean;
+}
+
 /** 遗留兜底账号 ID 形态：早期版本 accountId 取 md5(cookie/refreshToken) 前
  * 12 位 hex（每次登录都变，重复登录即产生重复账号）。现役账号 ID 均为
  * 服务端 uid 或昵称哈希（u_ 前缀）。 */
@@ -45,12 +66,65 @@ const LEGACY_ID_RE = /^[0-9a-f]{12}$/;
 
 type CredMap = Record<string, CloudAccount[]>;
 
+/** 同盘同昵称去重（移动端同款语义：同名视为同一账号的重登，保留绑定较新的）。
+ * 背景：多家盘 accountId 兜底取 md5(cookie/token)，重登即变，按 ID upsert
+ * 会把同一账号堆叠成多条；昵称稳定，是可靠的同一性判据。 */
+function dedupeByNickname(list: CloudAccount[]): { list: CloudAccount[]; removed: number } {
+  const keptByNickname = new Map<string, number>();
+  const drop = new Set<number>();
+  for (let i = 0; i < list.length; i++) {
+    const nick = list[i].nickname.trim();
+    if (nick === '') continue;
+    const kept = keptByNickname.get(nick);
+    if (kept == null) {
+      keptByNickname.set(nick, i);
+      continue;
+    }
+    if (list[i].boundAt.getTime() > list[kept].boundAt.getTime()) {
+      drop.add(kept);
+      keptByNickname.set(nick, i);
+    } else {
+      drop.add(i);
+    }
+  }
+  if (drop.size === 0) return { list, removed: 0 };
+  return { list: list.filter((_, i) => !drop.has(i)), removed: drop.size };
+}
+
 function randomHex(byteLen: number): string {
   const buf = new Uint8Array(byteLen);
   crypto.getRandomValues(buf);
   return Array.from(buf)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+/** 账号表稳定序列化（provider 键排序后 JSON）：内容对比用，不依赖键序/引用。 */
+function stableCredJson(map: CredMap): string {
+  const entries: [string, unknown[]][] = Object.entries(map).map(([k, v]) => [
+    k,
+    v.map((a) => a.toJson()),
+  ]);
+  entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return JSON.stringify(Object.fromEntries(entries));
+}
+
+/** 解析 `__ts__` 保留键：非法/缺失返回 null（视为旧格式串）。 */
+function parseSyncTs(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/** 解析 `__fsel__` 保留键：`providerId|accountId → [path]`，剔除非法条目。
+ * 空串路径合法：id 型盘（迅雷/PikPak）根目录 id 为空串。 */
+function parseFolderSelMap(v: unknown): Record<string, string[]> {
+  const sel: Record<string, string[]> = {};
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return sel;
+  for (const [k, paths] of Object.entries(v as Record<string, unknown>)) {
+    if (!k || !Array.isArray(paths)) continue;
+    const list = paths.filter((p): p is string => typeof p === 'string');
+    if (list.length > 0) sel[k] = list;
+  }
+  return sel;
 }
 
 export class CloudCredentialsStore {
@@ -73,7 +147,68 @@ export class CloudCredentialsStore {
    * 绑定/解绑/凭据轮换都会触发，回调内自行处理登录态与防抖。 */
   static onPersisted: (() => void) | null = null;
 
-  private constructor() {}
+  /** 本地同步元数据内存缓存（`_loadMeta` 首读后有效）。 */
+  private _meta: CloudSyncMeta | null = null;
+
+  private constructor() {
+    // 文件夹选择与凭据同装一个密封串同步：其变更统一记到本 store 的 changeAt
+    CloudFolderSelectionStore.onPersisted = () => this._noteLocalChange();
+  }
+
+  /** 读取同步元数据（内存缓存优先，损坏按未变更处理）。 */
+  private _loadMeta(): CloudSyncMeta {
+    if (this._meta) return this._meta;
+    const meta: CloudSyncMeta = { changeAt: null, syncedAt: null };
+    try {
+      const stored = localStorage.getItem(K_SYNC_META_KEY);
+      if (stored) {
+        const raw: unknown = JSON.parse(stored);
+        if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+          const obj = raw as Record<string, unknown>;
+          if (typeof obj.changeAt === 'number' && Number.isFinite(obj.changeAt)) {
+            meta.changeAt = obj.changeAt;
+          }
+          if (typeof obj.syncedAt === 'number' && Number.isFinite(obj.syncedAt)) {
+            meta.syncedAt = obj.syncedAt;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[cloud] 同步元数据读取失败:', e);
+    }
+    this._meta = meta;
+    return meta;
+  }
+
+  private _saveMeta(meta: CloudSyncMeta): void {
+    this._meta = meta;
+    try {
+      localStorage.setItem(K_SYNC_META_KEY, JSON.stringify(meta));
+    } catch (e) {
+      console.warn('[cloud] 同步元数据写入失败:', e);
+    }
+  }
+
+  /** 本地变更统一记时（绑定/解绑/凭据轮换/文件夹勾选）：changeAt = now。
+   * syncedAt 置空，确保同毫秒内连续「上传完成→再变更」不会被误判为无变化。 */
+  private _noteLocalChange(): void {
+    this._saveMeta({ changeAt: Date.now(), syncedAt: null });
+    CloudCredentialsStore.onPersisted?.();
+  }
+
+  /** 当前同步元数据（sync 层上传门控判断用）。 */
+  async syncMeta(): Promise<CloudSyncMeta> {
+    const meta = this._loadMeta();
+    return { changeAt: meta.changeAt, syncedAt: meta.syncedAt };
+  }
+
+  /** 上传成功后对账：syncedAt = ts；若上传期间又有新变更（changeAt 已前移）
+   * 则不动，留给下一次防抖上传。 */
+  async markSynced(ts: number): Promise<void> {
+    const meta = this._loadMeta();
+    if (meta.changeAt !== ts) return;
+    this._saveMeta({ changeAt: meta.changeAt, syncedAt: ts });
+  }
 
   private async _loadCryptoJs(): Promise<CryptoJsModule> {
     return loadCryptoJs();
@@ -182,9 +317,23 @@ export class CloudCredentialsStore {
         }
       }
     }
+    // 同昵称重登去重：历史堆叠的重复账号（同盘同名）读入时即收敛
+    let nickRemoved = 0;
+    for (const [k, list] of Object.entries(map)) {
+      const { list: deduped, removed } = dedupeByNickname(list);
+      if (removed > 0) {
+        map[k] = deduped;
+        nickRemoved += removed;
+      }
+    }
     this._cache = map;
-    if (removed > 0) {
-      console.info('[cloud] 清理遗留兜底账号 ' + removed + ' 条');
+    if (removed > 0 || nickRemoved > 0) {
+      if (removed > 0) {
+        console.info('[cloud] 清理遗留兜底账号 ' + removed + ' 条');
+      }
+      if (nickRemoved > 0) {
+        console.info('[cloud] 清理同昵称重复账号 ' + nickRemoved + ' 条');
+      }
       await this._persist();
     }
     return map;
@@ -259,7 +408,14 @@ export class CloudCredentialsStore {
         console.info('[cloud] 清理遗留兜底账号 ' + (before - list.length) + ' 条');
       }
     }
+    // 同昵称重登去重：重登产生新 accountId（md5(cookie) 类兜底）时，
+    // 以昵称判同，保留本次绑定、清掉旧条目（移动端同款语义）。
+    const deduped = dedupeByNickname(list);
+    if (deduped.removed > 0) {
+      console.info('[cloud] 绑定去重：同昵称旧账号 ' + deduped.removed + ' 条');
+    }
     map[account.provider] = list;
+    this._noteLocalChange();
     await this._persist();
   }
 
@@ -271,6 +427,7 @@ export class CloudCredentialsStore {
     } else {
       map[providerId] = list;
     }
+    this._noteLocalChange();
     await this._persist();
   }
 
@@ -292,67 +449,129 @@ export class CloudCredentialsStore {
       boundAt: list[idx].boundAt,
     });
     map[providerId] = list;
+    this._noteLocalChange();
     await this._persist();
   }
 
-  /** 跨设备同步：导出密封串。
+  /** 跨设备同步：导出密封串（协议 v2）。
    * 账号派生密钥（三端可互解，服务端无明文）重新密封本地凭据 JSON，
-   * 密文不出本类、本地落盘仍用设备密钥。未绑定任何盘返回 null。
-   * 密封明文附带保留键 `__fsel__` 携带目录选择，跨设备一并同步。 */
+   * 密文不出本类、本地落盘仍用设备密钥。密封明文顶层带保留键 `__ts__`
+   * （本地变更时刻，LWW 对比用）与 `__fsel__`（目录选择），跨设备一并同步。
+   * 从未发生本地变更（changeAt 为空）返回 null，无需上传；账号已全部解绑
+   * 但发生过变更时，导出仅含 `__ts__` 的空包，上传后清掉云端旧数据让解绑传播。 */
   async exportForSync(ciyuanxiId: string): Promise<string | null> {
     const map = await this._ensureLoaded();
-    if (Object.keys(map).length === 0) return null;
+    const meta = this._loadMeta();
+    if (meta.changeAt == null) return null;
     const CryptoJS = await this._loadCryptoJs();
-    const payload: Record<string, unknown> = Object.fromEntries(
-      Object.entries(map).map(([k, v]) => [k, v.map((a) => a.toJson())]),
-    );
-    const folderSel = await CloudFolderSelectionStore.instance.allPaths();
-    if (Object.keys(folderSel).length > 0) {
-      payload[K_FOLDER_SEL_SYNC_KEY] = folderSel;
+    const payload: Record<string, unknown> = { [K_TIMESTAMP_SYNC_KEY]: meta.changeAt };
+    if (Object.keys(map).length > 0) {
+      for (const [k, v] of Object.entries(map)) {
+        payload[k] = v.map((a) => a.toJson());
+      }
+      const folderSel = await CloudFolderSelectionStore.instance.allPaths();
+      if (Object.keys(folderSel).length > 0) {
+        payload[K_FOLDER_SEL_SYNC_KEY] = folderSel;
+      }
     }
     return this._sealWithKey(JSON.stringify(payload), this._syncKey(CryptoJS, ciyuanxiId));
   }
 
-  /** 跨设备同步：导入密封串（与导出格式一致，指纹去重合并）。
-   * 保留键 `__fsel__` 的目录选择合并进本地目录选择存储。 */
-  async importFromSync(sealed: string, ciyuanxiId: string): Promise<void> {
+  /** 跨设备同步：导入密封串（协议 v2，LWW 对比流程）。
+   * - 串带 `__ts__` 且本地 changeAt 更新 → 本地较新，整体跳过不下发；
+   * - 串带 `__ts__` → 整体替换账号表与文件夹选择表（非并集，含删除传播），
+   *   内容无变化不落盘不通知；应用后 changeAt = syncedAt = cloudTs
+   *   （不推到 now，避免下发→上传同步风暴）；
+   * - 串无 `__ts__`（旧格式）→ 保持并集合并；有变化 changeAt = now 留给
+   *   上传推 v2 格式，无变化则双时间戳置 now（视为已对齐，不触发上传）。 */
+  async importFromSync(sealed: string, ciyuanxiId: string): Promise<CloudSyncImportResult> {
     const CryptoJS = await this._loadCryptoJs();
     const plain = this._unsealWithKey(sealed, this._syncKey(CryptoJS, ciyuanxiId), CryptoJS);
     if (plain == null) throw new CloudException('同步凭据解密失败');
     const raw: unknown = JSON.parse(plain);
-    const merged = await this._ensureLoaded();
-    if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
-      const obj = raw as Record<string, unknown>;
-      const folderSel = obj[K_FOLDER_SEL_SYNC_KEY];
-      if (typeof folderSel === 'object' && folderSel !== null && !Array.isArray(folderSel)) {
-        const sel: Record<string, string[]> = {};
-        for (const [k, v] of Object.entries(folderSel as Record<string, unknown>)) {
-          if (!k || !Array.isArray(v)) continue;
-          const paths = v.filter((p): p is string => typeof p === 'string' && p !== '');
-          if (paths.length > 0) sel[k] = paths;
-        }
-        if (Object.keys(sel).length > 0) {
-          await CloudFolderSelectionStore.instance.mergePaths(sel);
-        }
-      }
-      for (const [k, v] of Object.entries(obj)) {
-        if (!Array.isArray(v)) continue;
-        const incoming = v
-          .filter((a) => typeof a === 'object' && a !== null)
-          .map((a) => CloudAccount.fromJson(a));
-        const local = [...(merged[k] ?? [])];
-        for (const a of incoming) {
-          const idx = local.findIndex((x) => x.accountId === a.accountId);
-          if (idx >= 0) {
-            local[idx] = a;
-          } else {
-            local.push(a);
-          }
-        }
-        merged[k] = local;
-      }
+    const obj =
+      typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+        ? (raw as Record<string, unknown>)
+        : null;
+    const cloudTs = obj == null ? null : parseSyncTs(obj[K_TIMESTAMP_SYNC_KEY]);
+    const meta = this._loadMeta();
+    // LWW：云端明确较旧（本地存在更新的未同步变更）→ 跳过，不动本地
+    if (cloudTs != null && meta.changeAt != null && cloudTs < meta.changeAt) {
+      return { applied: false, changed: false };
     }
-    this._cache = merged;
-    await this._persist();
+    if (obj == null) return { applied: false, changed: false };
+    if (cloudTs != null) {
+      return this._applyReplace(obj, cloudTs);
+    }
+    return this._applyMergeLegacy(obj);
+  }
+
+  /** v2 应用：整体替换账号表与文件夹选择表（云端内容为准）。 */
+  private async _applyReplace(
+    obj: Record<string, unknown>,
+    cloudTs: number,
+  ): Promise<CloudSyncImportResult> {
+    const next: CredMap = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (!Array.isArray(v)) continue;
+      const accounts = v
+        .filter((a) => typeof a === 'object' && a !== null)
+        .map((a) => CloudAccount.fromJson(a));
+      if (accounts.length > 0) next[k] = accounts;
+    }
+    const local = await this._ensureLoaded();
+    const accountsChanged = stableCredJson(local) !== stableCredJson(next);
+    const folderChanged = await CloudFolderSelectionStore.instance.replacePaths(
+      parseFolderSelMap(obj[K_FOLDER_SEL_SYNC_KEY]),
+    );
+    if (accountsChanged) {
+      this._cache = next;
+      await this._persist();
+    }
+    // 双时间戳对齐为 cloudTs（避免同步风暴）；期间文件夹回调临时记的 now 被覆盖
+    this._saveMeta({ changeAt: cloudTs, syncedAt: cloudTs });
+    return { applied: true, changed: accountsChanged || folderChanged };
+  }
+
+  /** 旧格式串（无 `__ts__`）应用：保持并集合并行为（同昵称去重同现有导入）。 */
+  private async _applyMergeLegacy(obj: Record<string, unknown>): Promise<CloudSyncImportResult> {
+    const merged = await this._ensureLoaded();
+    const before = stableCredJson(merged);
+    for (const [k, v] of Object.entries(obj)) {
+      if (!Array.isArray(v)) continue;
+      const incoming = v
+        .filter((a) => typeof a === 'object' && a !== null)
+        .map((a) => CloudAccount.fromJson(a));
+      const local = [...(merged[k] ?? [])];
+      for (const a of incoming) {
+        const idx = local.findIndex((x) => x.accountId === a.accountId);
+        if (idx >= 0) {
+          local[idx] = a;
+        } else {
+          local.push(a);
+        }
+      }
+      // 同步导入后同昵称去重：移动端收敛过的账号列表再导入桌面端，
+      // 不应与桌面端历史重登条目叠加
+      const deduped = dedupeByNickname(local);
+      merged[k] = deduped.removed > 0 ? deduped.list : local;
+    }
+    const accountsChanged = stableCredJson(merged) !== before;
+    const folderChanged = await CloudFolderSelectionStore.instance.mergePaths(
+      parseFolderSelMap(obj[K_FOLDER_SEL_SYNC_KEY]),
+    );
+    const now = Date.now();
+    if (accountsChanged || folderChanged) {
+      if (accountsChanged) {
+        this._cache = merged;
+        await this._persist();
+      }
+      // changeAt = now 留给上传推 v2 格式（文件夹回调已临时记时，此处统一覆盖）
+      this._saveMeta({ changeAt: now, syncedAt: null });
+    } else {
+      // 无变化视为已对齐，不触发上传
+      this._saveMeta({ changeAt: now, syncedAt: now });
+    }
+    return { applied: true, changed: accountsChanged || folderChanged };
   }
 }

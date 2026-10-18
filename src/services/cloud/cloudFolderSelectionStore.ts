@@ -13,6 +13,13 @@ export const cloudFolderSelKey = (providerId: string, accountId: string): string
 
 type FolderSelMap = Record<string, string[]>;
 
+/** 稳定序列化（键排序后 JSON）：内容对比用，不依赖键插入顺序。 */
+function stableFolderSelJson(map: FolderSelMap): string {
+  const entries: [string, string[]][] = Object.entries(map).map(([k, v]) => [k, [...v]]);
+  entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return JSON.stringify(Object.fromEntries(entries));
+}
+
 export class CloudFolderSelectionStore {
   private static _instance: CloudFolderSelectionStore | null = null;
 
@@ -22,6 +29,10 @@ export class CloudFolderSelectionStore {
     }
     return CloudFolderSelectionStore._instance;
   }
+
+  /** 目录选择落盘后的变更回调（凭据 store 注册）：文件夹勾选与凭据共用同一
+   * 同步时间戳（同一密封串同时携带两者），由凭据 store 统一记 changeAt。 */
+  static onPersisted: (() => void) | null = null;
 
   /** 内存缓存；首读后有效。改动即回写落盘。 */
   private _cache: FolderSelMap | null = null;
@@ -38,7 +49,8 @@ export class CloudFolderSelectionStore {
         if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
           for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
             if (Array.isArray(v)) {
-              const paths = v.filter((p): p is string => typeof p === 'string' && p !== '');
+              // 空串路径合法：id 型盘（迅雷/PikPak）根目录 id 为空串
+              const paths = v.filter((p): p is string => typeof p === 'string');
               if (paths.length > 0) map[k] = paths;
             }
           }
@@ -59,6 +71,8 @@ export class CloudFolderSelectionStore {
     } catch (e) {
       console.warn('[cloud] 网盘已选文件夹写入失败:', e);
     }
+    // 变更回调（凭据 store 借此统一记同步时间戳并触发上传调度）
+    CloudFolderSelectionStore.onPersisted?.();
   }
 
   /** 某账号已选文件夹路径列表（未选过返回空）。 */
@@ -73,13 +87,13 @@ export class CloudFolderSelectionStore {
     return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v]]));
   }
 
-  /** 合并云端目录选择（并集去重，不动本地已有条目）。 */
-  async mergePaths(incoming: FolderSelMap): Promise<void> {
-    if (Object.keys(incoming).length === 0) return;
+  /** 合并云端目录选择（并集去重，不动本地已有条目）；返回是否有变化。 */
+  async mergePaths(incoming: FolderSelMap): Promise<boolean> {
+    if (Object.keys(incoming).length === 0) return false;
     const map = this._ensureLoaded();
     let changed = false;
     for (const [k, v] of Object.entries(incoming)) {
-      const paths = v.filter((p) => typeof p === 'string' && p !== '');
+      const paths = v.filter((p) => typeof p === 'string');
       if (paths.length === 0) continue;
       const merged = [...(map[k] ?? [])];
       for (const p of paths) {
@@ -90,7 +104,38 @@ export class CloudFolderSelectionStore {
         changed = true;
       }
     }
-    if (!changed) return;
+    if (!changed) return false;
+    this._persist();
+    return true;
+  }
+
+  /** 整体替换目录选择（同步 v2 下发语义：以云端内容为准，含清空传播）。
+   * 先做内容对比（键序稳定化序列化），无变化不落盘不通知；返回是否有变化。 */
+  async replacePaths(incoming: FolderSelMap): Promise<boolean> {
+    const map = this._ensureLoaded();
+    const next: FolderSelMap = {};
+    for (const [k, v] of Object.entries(incoming)) {
+      const paths = [...new Set(v.filter((p) => typeof p === 'string'))];
+      if (paths.length > 0) next[k] = paths;
+    }
+    if (stableFolderSelJson(map) === stableFolderSelJson(next)) return false;
+    this._cache = next;
+    this._persist();
+    return true;
+  }
+
+  /** 覆盖写入某账号已选文件夹（选择器保存语义，与移动端 setPaths 一致）。 */
+  async setPaths(providerId: string, accountId: string, paths: string[]): Promise<void> {
+    const map = this._ensureLoaded();
+    const key = cloudFolderSelKey(providerId, accountId);
+    // 空串路径合法（id 型盘根目录），仅空数组视为清空
+    const next = [...new Set(paths)];
+    if (next.length === 0) {
+      if (!(key in map)) return;
+      delete map[key];
+    } else {
+      map[key] = next;
+    }
     this._persist();
   }
 }

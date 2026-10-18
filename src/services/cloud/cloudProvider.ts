@@ -98,6 +98,13 @@ export abstract class CloudProvider {
     cursor?: string | null,
   ): Promise<CloudListResult>;
 
+  /** 已选目录展示名解析：path 型盘默认取路径尾段；id 型盘由 provider 覆写。
+   * 解析失败返回 null（调用方回退占位名）。 */
+  async describeDirName(_cred: Record<string, string>, dirPath: string): Promise<string | null> {
+    const idx = dirPath.lastIndexOf('/');
+    return idx >= 0 && idx < dirPath.length - 1 ? dirPath.slice(idx + 1) : null;
+  }
+
   /** 分享链接解析（解析分享列表不需要登录态；需要提取码时 pwd 非空）。 */
   abstract parseShareLink(url: string, pwd: string | null): Promise<CloudShareParse>;
 
