@@ -76,6 +76,11 @@ export abstract class CloudProvider {
     throw new Error('该盘不支持短信验证码');
   }
 
+  /** 重发设备校验验证码（收到 [CloudSmsRequiredException] 后由 UI 弹窗内的「发送验证码」按钮调用；弹窗打开时不自动发码）。 */
+  async resendDeviceSms(_username: string): Promise<void> {
+    throw new Error('该盘不支持短信验证码');
+  }
+
   /** 创建扫码会话（qrCode）。 */
   async createQrLogin(): Promise<CloudQrLoginSession> {
     throw new Error('该盘不支持扫码登录');

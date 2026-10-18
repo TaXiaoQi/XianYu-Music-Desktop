@@ -68,7 +68,8 @@ export class HttpLoginGate {
 
   private _waitDuration(providerId: string, last: number): number {
     const fails = this._failCount.get(providerId) ?? 0;
-    const shift = Math.min(fails, 4); // 30s * 2^n，封顶 10 分钟
+    // 首次失败不退避（手滑输错只等最小间隔）；从第二次失败开始翻倍，封顶 10 分钟
+    const shift = fails <= 1 ? 0 : Math.min(fails - 1, 4);
     let backoff = MIN_INTERVAL_MS * (1 << shift);
     if (backoff > MAX_BACKOFF_MS) backoff = MAX_BACKOFF_MS;
     const remain = backoff - (Date.now() - last);

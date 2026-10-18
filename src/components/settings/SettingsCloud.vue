@@ -115,6 +115,21 @@ const loginBusy = ref(false);
 const smsCooldown = ref(0);
 const smsPromptFor = ref('');
 const smsPromptCode = ref('');
+// 弹窗内「发送验证码」：打开时不自动发码，点击按钮手动触发，60 秒冷却。
+const smsResendCooldown = ref(0);
+const smsResendBusy = ref(false);
+let smsResendTimer: ReturnType<typeof setInterval> | null = null;
+
+const closeSmsPrompt = () => {
+  smsPromptFor.value = '';
+  smsPromptCode.value = '';
+  if (smsResendTimer) {
+    clearInterval(smsResendTimer);
+    smsResendTimer = null;
+  }
+  smsResendCooldown.value = 0;
+  smsResendBusy.value = false;
+};
 const qrDataUrl = ref('');
 const qrImageUrl = ref('');
 const qrWaiting = ref(false);
@@ -231,14 +246,40 @@ const submitLogin = async () => {
     await refreshAccounts();
   } catch (e) {
     if (e instanceof CloudSmsRequiredException) {
-      // 风控要求设备短信二次校验：provider 已自动发码，弹窗收码续登。
+      // 风控要求设备短信二次校验：暂存会话，弹窗收码续登；发码由弹窗内按钮手动触发。
       smsPromptFor.value = e.username;
       smsPromptCode.value = '';
+      smsResendCooldown.value = 0;
+      smsResendBusy.value = false;
       return;
     }
     showToast(errorMessage(e), 'error');
   } finally {
     loginBusy.value = false;
+  }
+};
+
+/** 验证码弹窗「发送验证码」：手动触发设备二次校验发码，60 秒冷却。 */
+const resendDeviceSmsCode = async () => {
+  const provider = selectedProvider.value;
+  if (!provider || smsResendBusy.value || smsResendCooldown.value > 0) return;
+  smsResendBusy.value = true;
+  try {
+    await provider.resendDeviceSms(smsPromptFor.value);
+    showToast(t('cloud.smsSent'), 'success');
+    smsResendCooldown.value = 60;
+    if (smsResendTimer) clearInterval(smsResendTimer);
+    smsResendTimer = setInterval(() => {
+      smsResendCooldown.value -= 1;
+      if (smsResendCooldown.value <= 0 && smsResendTimer) {
+        clearInterval(smsResendTimer);
+        smsResendTimer = null;
+      }
+    }, 1000);
+  } catch (e) {
+    showToast(errorMessage(e), 'error');
+  } finally {
+    smsResendBusy.value = false;
   }
 };
 
@@ -301,6 +342,35 @@ const cookieInput = ref('');
 const cookieLoginBusy = ref(false);
 
 const parseCookieHeader = (raw: string): Record<string, string> => {
+  // 浏览器导出插件的 JSON 形态：数组 [{name,value},…] / {cookies:[…]} /
+  // 平面对象 {name:value}；非法 JSON 落回 k=v 文本解析
+  const t = raw.trim();
+  if (t.startsWith('[') || t.startsWith('{')) {
+    try {
+      const dec = JSON.parse(t) as unknown;
+      const items = Array.isArray(dec)
+        ? dec
+        : Array.isArray((dec as { cookies?: unknown[] })?.cookies)
+          ? (dec as { cookies: unknown[] }).cookies
+          : null;
+      const out: Record<string, string> = {};
+      if (items) {
+        for (const e of items) {
+          const k = String((e as { name?: unknown; key?: unknown })?.name ??
+            (e as { key?: unknown })?.key ?? '');
+          const v = String((e as { value?: unknown })?.value ?? '');
+          if (k && v && v !== 'undefined') out[k] = v;
+        }
+        return out;
+      }
+      for (const [k, v] of Object.entries(dec as Record<string, unknown>)) {
+        if (typeof v === 'string') out[k] = v;
+      }
+      return out;
+    } catch {
+      // 落回文本解析
+    }
+  }
   const out: Record<string, string> = {};
   for (const part of raw.split(/;\s*/)) {
     const idx = part.indexOf('=');
@@ -665,7 +735,7 @@ onBeforeUnmount(() => {
     <DialogSurface
       :shown="smsPromptFor !== ''"
       :leaving="false"
-      @backdrop-click="smsPromptFor = ''"
+      @backdrop-click="closeSmsPrompt"
     >
       <div class="flex flex-col items-stretch">
         <div class="flex flex-col gap-2 px-6 pb-4 pt-5">
@@ -690,8 +760,20 @@ onBeforeUnmount(() => {
           >
             {{ t('cloud.confirm') }}
           </button>
-          <button type="button" :class="modalCancelBtnClass" :disabled="loginBusy" @click="smsPromptFor = ''">
+          <button type="button" :class="modalCancelBtnClass" :disabled="loginBusy" @click="closeSmsPrompt">
             {{ t('cloud.cancel') }}
+          </button>
+          <button
+            type="button"
+            :class="modalCancelBtnClass"
+            :disabled="smsResendBusy || smsResendCooldown > 0"
+            @click="resendDeviceSmsCode"
+          >
+            {{
+              smsResendCooldown > 0
+                ? t('cloud.smsResendIn', { s: smsResendCooldown })
+                : t('cloud.sendSms')
+            }}
           </button>
         </div>
       </div>

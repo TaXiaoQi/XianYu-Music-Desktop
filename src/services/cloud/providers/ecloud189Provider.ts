@@ -167,6 +167,15 @@ export class Ecloud189Provider extends CloudProvider {
     }
   }
 
+  /** 重发设备校验验证码（UI 弹窗「发送验证码」按钮调用）。 */
+  override async resendDeviceSms(username: string): Promise<void> {
+    const pending = Ecloud189Provider._pendingSms.get(username);
+    if (!pending) {
+      throw new CloudException('登录会话已失效，请重新登录');
+    }
+    await this._sendDeviceSms(pending);
+  }
+
   private _sessionHeaders(s: { loginUrl: string; lt: string; reqId: string }): Record<string, string> {
     return {
       'User-Agent': UA,
@@ -238,7 +247,7 @@ export class Ecloud189Provider extends CloudProvider {
     const body = resp.json;
     const result = asInt(body['result']) ?? -1;
     const toUrl = asString(body['toUrl'] ?? '');
-    // 新客户端强制设备短信二次校验：用加密 mobile 发码并暂存会话。
+    // 新客户端强制设备短信二次校验：暂存会话，发码由 UI 手动触发。
     if (result === -133) {
       const mobileEnc = asString(body['mobile'] ?? '');
       if (mobileEnc === '') {
@@ -257,7 +266,7 @@ export class Ecloud189Provider extends CloudProvider {
         username,
       };
       Ecloud189Provider._pendingSms.set(username, session);
-      await this._sendDeviceSms(session);
+      // 不自动发码：由 UI 弹窗内的「发送验证码」按钮手动触发 resendDeviceSms。
       throw new CloudSmsRequiredException(username);
     }
     if (result !== 0) {
