@@ -133,11 +133,23 @@ pub fn set_max_cache_size(bytes: u64) {
     mgr.evict_if_needed();
 }
 
+/// 获取当前缓存大小
+///
+/// 除已完成记账的条目外，还计入「下载中」条目的已写字节：update_size
+/// 只在下载完成/失败时入账，母带等大文件下载慢，期间设置页会一直
+/// 显示 0 B（磁盘上明明已有 .dat 分片）。与移动端同名函数对齐。
 pub fn current_cache_size() -> u64 {
-    cache()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .current_size
+    let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
+    let mut total = mgr.current_size;
+    for entry in mgr.entries.values() {
+        if entry.size == 0
+            && !entry.download_complete.load(Ordering::Relaxed)
+            && !entry.download_failed.load(Ordering::Relaxed)
+        {
+            total += entry.downloaded_bytes.load(Ordering::Relaxed);
+        }
+    }
+    total
 }
 
 pub fn max_cache_size() -> u64 {
