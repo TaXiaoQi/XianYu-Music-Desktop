@@ -65,7 +65,7 @@ export function useSearchSources() {
     pluginSourceList.value = items;
   }
 
-  // ==================== 网盘来源（已绑定账号且支持文件搜索的盘）====================
+  // ==================== 网盘来源（已绑定账号的盘，没选目录默认全部目录）====================
   const cloudSourceList = ref<SourceItem[]>([]);
   let cloudRefreshVersion = 0;
 
@@ -73,7 +73,6 @@ export function useSearchSources() {
     const version = ++cloudRefreshVersion;
     const items: SourceItem[] = [];
     for (const p of cloudProviders) {
-      if (p.supportsSearch !== true) continue;
       const accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
       if (version !== cloudRefreshVersion) return;
       // 未绑定账号的盘不展示；同盘多账号只显示一个来源（搜索时取第一个账号）

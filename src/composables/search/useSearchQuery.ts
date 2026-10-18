@@ -24,6 +24,7 @@ import { cloudProviderById } from '../../services/cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
 import { CloudFolderSelectionStore } from '../../services/cloud/cloudFolderSelectionStore';
 import { scopedSearchAudio } from '../../services/cloud/cloudScopedQuery';
+import { scheduleCloudHeadMetaBatch } from '../../features/playback/cloudHeadMeta';
 import type { CloudFile } from '../../services/cloud/cloudTypes';
 import type { SearchSources } from './useSearchSources';
 import type { SearchResults } from './useSearchResults';
@@ -289,14 +290,23 @@ export function useSearchQuery(options: {
         if (roots.length > 0) {
           files = await scopedSearchAudio(provider, cred, roots, query);
         } else {
-          const res = await provider.searchFiles(cred, query);
-          files = res.files;
-          nextCursor = res.nextCursor;
+          // 没选目录默认全部目录：先盘侧搜索（支持翻页），接口变更/限流
+          // （如迅雷「无效的文件过滤器」）回退根目录全盘遍历
+          try {
+            const res = await provider.searchFiles(cred, query);
+            files = res.files;
+            nextCursor = res.nextCursor;
+          } catch (e) {
+            console.warn(`[cloud] ${provider.id} 盘侧搜索失败，回退全盘遍历:`, e);
+            files = await scopedSearchAudio(provider, cred, [provider.rootPath], query);
+          }
         }
         if (activeController.signal.aborted) return;
         cloudSearchResults.value = files
           .filter(f => !f.isDir && f.isAudio)
           .map(f => cloudFileToSong(f, source.cloudProviderId!, source.name, accountId));
+        // 网盘列表接口不带内嵌封面/时长：装配后安排头部元数据预探（事件回填）
+        scheduleCloudHeadMetaBatch(cloudSearchResults.value);
         nextCloudCursor.value = nextCursor;
         hasMore.value = nextCloudCursor.value != null;
       }
@@ -375,6 +385,7 @@ export function useSearchQuery(options: {
           .filter(f => !f.isDir && f.isAudio)
           .map(f => cloudFileToSong(f, source.cloudProviderId!, source.name, accountId));
         cloudSearchResults.value = [...cloudSearchResults.value, ...songs];
+        scheduleCloudHeadMetaBatch(songs);
         nextCloudCursor.value = res.nextCursor;
         hasMore.value = nextCloudCursor.value != null;
       }

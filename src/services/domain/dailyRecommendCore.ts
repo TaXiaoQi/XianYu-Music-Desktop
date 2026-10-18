@@ -151,9 +151,10 @@ type CloudSearchTask = {
 
 /**
  * 收集网盘候选（与移动端 _collectCloudCandidates 同构）：
- * 推荐歌手名作关键词，对「支持搜索且已绑定」的网盘并发 searchFiles 首页，
- * 文件名解析出歌手/歌名，仅当某段命中关键词才收；异常逐盘捕获记日志，不阻塞整体。
- * 有已选文件夹的账号只遍历选定范围；盘侧不支持搜索但选了文件夹的盘也借此参与。
+ * 推荐歌手名作关键词，对「已绑定」的网盘并发搜索（没选目录默认全部
+ * 目录），文件名解析出歌手/歌名，仅当某段命中关键词才收；异常逐盘捕获
+ * 记日志，不阻塞整体。
+ * 有已选文件夹的账号只遍历选定范围；没选目录先盘侧搜索、失败回退全盘遍历。
  */
 async function collectCloudCandidates(
   algorithm: DailyRecommendAlgorithm,
@@ -173,12 +174,11 @@ async function collectCloudCandidates(
     const accounts = await CloudCredentialsStore.instance.accountsFor(provider.id);
     if (accounts.length === 0) continue;
     const account = accounts[0];
-    // 已选文件夹范围：非空则只遍历这些文件夹（不支持搜索的盘也借此参与）
+    // 已选文件夹范围：非空则只遍历这些文件夹；没选目录默认全部目录
     const roots = await CloudFolderSelectionStore.instance.pathsFor(
       provider.id,
       account.accountId,
     );
-    if (!provider.supportsSearch && roots.length === 0) continue;
     for (const keyword of artists) {
       tasks.push({ provider, accountId: account.accountId, cred: account.cred, keyword, roots });
     }
@@ -188,10 +188,18 @@ async function collectCloudCandidates(
   await mapWithLimit(tasks, SEARCH_CONCURRENCY, async (task) => {
     if (out.length >= CLOUD_MAX_CANDIDATES) return;
     try {
-      // 有已选文件夹 → 只遍历选定范围；否则走盘侧全盘搜索
+      // 已选范围只遍历选定文件夹；没选目录默认全部目录（盘侧搜索失败
+      // 回退根目录全盘遍历）
       const files = task.roots.length > 0
         ? await scopedSearchAudio(task.provider, task.cred, task.roots, task.keyword)
-        : (await task.provider.searchFiles(task.cred, task.keyword))?.files || [];
+        : await (async () => {
+            try {
+              return (await task.provider.searchFiles(task.cred, task.keyword))?.files || [];
+            } catch (e) {
+              console.warn(`[cloud] ${task.provider.id} 盘侧搜索失败，回退全盘遍历:`, e);
+              return scopedSearchAudio(task.provider, task.cred, [task.provider.rootPath], task.keyword);
+            }
+          })();
       files.forEach((file, rank) => {
         if (out.length >= CLOUD_MAX_CANDIDATES) return;
         if (file.isDir || !file.isAudio) return;
@@ -309,10 +317,10 @@ function collectLocalCandidates(
   return out;
 }
 
-/** 是否存在「支持搜索且已绑定」的网盘（无插件时判断是否仍可生成日推）。 */
+/** 是否存在已绑定的网盘（无插件时判断是否仍可生成日推；所有绑定盘都
+ * 参与候选——没选目录默认全部目录）。 */
 export async function anyBoundSearchableDrive(): Promise<boolean> {
   for (const provider of cloudProviders) {
-    if (!provider.supportsSearch) continue;
     try {
       if ((await CloudCredentialsStore.instance.accountsFor(provider.id)).length > 0) {
         return true;

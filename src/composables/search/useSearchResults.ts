@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, ref, shallowRef, type Ref } from 'vue';
+import { listen } from '@tauri-apps/api/event';
 import type { Song, ArtistCatalogItem, AlbumCatalogItem, Playlist } from '../../types';
 import type {
   LxSearchResultItem,
@@ -75,6 +76,24 @@ export function useSearchResults(options: {
   const cloudSearchResults = shallowRef<Song[]>([]);
   /** 网盘搜索翻页游标（null = 无更多/不支持翻页） */
   const nextCloudCursor = ref<string | null>(null);
+
+  // 网盘曲目内嵌元数据就绪：会话内回填搜索列表的时长/封面（网盘搜索接口不返回时长）
+  const unlistenCloudMeta = listen<{
+    cloudPath: string;
+    coverPath?: string | null;
+    durationSecs?: number | null;
+  }>('cloud-track-meta-ready', (event) => {
+    const meta = event.payload;
+    if (!meta?.cloudPath) return;
+    cloudSearchResults.value = cloudSearchResults.value.map((song) => {
+      if (song.path !== meta.cloudPath) return song;
+      const patched: Song = { ...song };
+      if (meta.coverPath) patched.cover_thumb_path = meta.coverPath;
+      if (meta.durationSecs && meta.durationSecs > 0) patched.duration = meta.durationSecs;
+      return patched;
+    });
+  });
+  onBeforeUnmount(() => { void unlistenCloudMeta.then(fn => fn()); });
   const localArtistResults = shallowRef<ArtistCatalogItem[]>([]);
   const localAlbumResults = shallowRef<AlbumCatalogItem[]>([]);
   const localPlaylistResults = shallowRef<Playlist[]>([]);
