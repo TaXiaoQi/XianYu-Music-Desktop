@@ -363,6 +363,31 @@ fn fabricate_thumbnail(path: &Path, cache_dir: &Path) -> ThumbnailOutcome {
   }
 }
 
+/// 从内嵌封面字节直接生成缩略图实体（云端流缓存元数据探针用）。
+/// 不做负缓存、不绑定源文件别名；命中既有实体直接复用。
+pub fn save_embedded_thumb_from_bytes(bytes: &[u8], app: &AppHandle) -> Option<String> {
+  let cache_dir = get_cover_cache_dir(app);
+  let body_key = digest_bytes(bytes);
+  let entity = cache_dir.join(thumb_entity_name(&body_key));
+
+  if usable_cache_file(&entity) {
+    return Some(entity.to_string_lossy().into_owned());
+  }
+  if entity.exists() {
+    let _ = fs::remove_file(&entity);
+  }
+
+  let Ok(decoded) = image::load_from_memory(bytes) else {
+    return None;
+  };
+  let shrunk = decoded.resize(
+    THUMB_SIDE_PIXELS,
+    THUMB_SIDE_PIXELS,
+    image::imageops::FilterType::Triangle,
+  );
+  persist_rendered_image(&shrunk, ImageFormat::Jpeg, &entity)
+}
+
 enum FullCoverOutcome {
   Ready(String),
   // 落盘失败：与既有行为一致，不写入负缓存。

@@ -8,7 +8,7 @@ mod paths;
 mod url;
 mod validate;
 
-pub use api::{clear_all, copy_cache_to, is_url_cached};
+pub use api::{cache_entry_snapshot, clear_all, copy_cache_to, is_url_cached};
 #[allow(unused_imports)]
 pub use buffer::{
     is_buffer_ready, ReadSeek, StreamingTempFileReader, StreamingTempFileState, MIN_BUFFER_BYTES,

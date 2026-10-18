@@ -187,6 +187,15 @@ export const playbackApi = { // 实现
         return tauriInvoke("prefetch_audio_head", options);
     },
 
+    /** 云端曲目内嵌元数据探针（结果经 cloud-track-meta-ready 事件回传）。 */
+    probeCloudTrackMeta(options: {
+        url: string;
+        cloudPath: string;
+        durationHint?: number;
+    }): Promise<void> {
+        return tauriInvoke("probe_cloud_track_meta", options);
+    },
+
     // —— 均衡器 ——
     getLastSyncedParams(): string | null {
         return lastSyncedParams;

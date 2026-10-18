@@ -213,6 +213,10 @@ use player::{ // 实现
     plugin_host_set_rack,
     plugin_host_take_process_error,
     prefetch_audio_head,
+    probe_cloud_head_meta,
+    load_cloud_meta_index,
+    probe_cloud_track_meta,
+    log_cloud_meta_diag,
     resume_audio,
     save_playback_session,
     seek_audio,
@@ -492,6 +496,10 @@ pub fn run() { // run
             show_in_folder, // 实现
             delete_music_file, // 实现
             play_audio,
+            probe_cloud_head_meta,
+    load_cloud_meta_index,
+            probe_cloud_track_meta,
+            log_cloud_meta_diag,
             update_playback_metadata, // 实现
             dlna_search_devices,
             dlna_cast_set_uri,

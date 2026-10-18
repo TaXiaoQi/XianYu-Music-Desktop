@@ -4,6 +4,30 @@ use std::time::SystemTime;
 use super::eviction::{cache, STREAM_CACHE};
 use super::url::url_hash;
 
+/// 缓存条目实时快照（云端元数据探针等外部模块读取部分文件用）。
+pub struct CacheEntrySnapshot {
+    pub path: String,
+    pub downloaded_bytes: u64,
+    /// Content-Length 实时槽位（0 = 未知）。
+    pub total_bytes: u64,
+    pub complete: bool,
+    pub failed: bool,
+}
+
+/// 按 URL 查缓存条目快照；key 与 start_streaming_download 同口径（清洗+hash）。
+pub fn cache_entry_snapshot(url: &str) -> Option<CacheEntrySnapshot> {
+    let hash = url_hash(&super::url::sanitize_stream_url(url));
+    let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
+    let entry = mgr.entries.get(&hash)?;
+    Some(CacheEntrySnapshot {
+        path: entry.path.to_string_lossy().into_owned(),
+        downloaded_bytes: entry.downloaded_bytes.load(Ordering::Relaxed),
+        total_bytes: entry.content_length_shared.load(Ordering::Relaxed),
+        complete: entry.download_complete.load(Ordering::Relaxed),
+        failed: entry.download_failed.load(Ordering::Relaxed),
+    })
+}
+
 pub fn is_url_cached(url: &str) -> bool {
     let hash = url_hash(url);
     let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());

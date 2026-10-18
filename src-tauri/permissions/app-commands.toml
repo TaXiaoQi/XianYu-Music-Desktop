@@ -270,6 +270,10 @@ commands.allow = [
   "dlna_disable_renderer",
   "dlna_renderer_status",
   "prefetch_audio_head",
+  "probe_cloud_track_meta",
+  "probe_cloud_head_meta",
+  "log_cloud_meta_diag",
+  "load_cloud_meta_index",
   "get_system_info",
   "get_machine_id",
 ]

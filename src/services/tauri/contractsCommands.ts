@@ -276,6 +276,10 @@ export interface TauriCommandMap {
   get_song_detail: { payload: { path: string }; response: SongDetail };
   play_audio: { payload: PlayAudioOptions; response: void };
   prefetch_audio_head: { payload: PrefetchAudioHeadOptions; response: boolean };
+  probe_cloud_track_meta: {
+    payload: { url: string; cloudPath: string; durationHint?: number };
+    response: void;
+  };
   update_playback_metadata: { payload: UpdatePlaybackMetadataOptions; response: void };
   // ===== DLNA 双向投屏 =====
   dlna_search_devices: { payload: { timeoutMs: number }; response: DlnaDevicePayload[] };

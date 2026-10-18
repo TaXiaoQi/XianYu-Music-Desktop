@@ -179,12 +179,50 @@ async fn wait_for_first_chunk(stream_state: &crate::player::stream_cache::Stream
     }
 }
 
-/// 在线流分支：SSRF 校验 → 启动流式缓存 → 等首块 → 失败即报错。
+/// 云端缓存起播的头部目标：先缓冲约 15 秒音频再开播。总字节×15/时长
+/// 估算（Content-Length 实时可得），未知时长退 630KB ≈ 320kbps×15s；
+/// 60 秒仍凑不齐则降级为边下边播（下载线程继续跑，不放弃缓冲）。
+const CLOUD_HEAD_SECONDS: u64 = 15;
+const CLOUD_HEAD_MIN_BYTES: u64 = 630 * 1024;
+const CLOUD_HEAD_WAIT_SECS: u64 = 60;
+
+/// 云端缓存起播：等 15 秒头部缓冲即开播，其余由流式下载边下边续，
+/// 兼顾快速起播与限速直链下的卡顿缓解。缓存命中条目 download 已完成，
+/// 此处不产生额外等待。
+async fn wait_for_cloud_head(
+    stream_state: &crate::player::stream_cache::StreamingTempFileState,
+    duration_secs: u32,
+) {
+    let started = std::time::Instant::now();
+    loop {
+        if stream_state.is_download_finished() {
+            return;
+        }
+        let total = stream_state.content_length_shared.load(Ordering::Relaxed);
+        let target = if total > 0 && duration_secs > 0 {
+            (total * CLOUD_HEAD_SECONDS / u64::from(duration_secs))
+                .clamp(CLOUD_HEAD_MIN_BYTES, total)
+        } else {
+            CLOUD_HEAD_MIN_BYTES
+        };
+        if stream_state.downloaded_bytes() >= target {
+            return;
+        }
+        if started.elapsed() > std::time::Duration::from_secs(CLOUD_HEAD_WAIT_SECS) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// 在线流分支：SSRF 校验 → 启动流式缓存 →（云端头部缓存或等首块）→ 失败即报错。
 async fn settle_streaming_source(
     path: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     ekey: Option<&str>,
     cek: Option<&str>,
+    full_buffer: bool,
+    duration_secs: u32,
     app: &tauri::AppHandle,
 ) -> Result<(AudioSource, AudioOutputMode), String> {
     crate::security::ssrf::validate_url_ip_literal(path)
@@ -199,7 +237,11 @@ async fn settle_streaming_source(
     )
     .map_err(|why| format!("在线音频缓存启动失败: {why}"))?;
 
-    wait_for_first_chunk(&stream_state).await;
+    if full_buffer {
+        wait_for_cloud_head(&stream_state, duration_secs).await;
+    } else {
+        wait_for_first_chunk(&stream_state).await;
+    }
     if stream_state.download_failed.load(Ordering::Relaxed) {
         let why = stream_state
             .download_error()
@@ -275,11 +317,12 @@ async fn settle_playback_source(
     playback_id: u64,
     duration: u32, // 实现
     requested_mode: AudioOutputMode,
+    full_buffer: bool,
 ) -> Result<(AudioSource, AudioOutputMode), String> {
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
 
     if is_http_stream {
-        return settle_streaming_source(path, headers, ekey, cek, app).await;
+        return settle_streaming_source(path, headers, ekey, cek, full_buffer, duration, app).await;
     }
 
     if is_remote_uri(path) {
@@ -309,6 +352,7 @@ pub async fn play_audio(
     headers: Option<std::collections::HashMap<String, String>>,
     ekey: Option<String>, cek: Option<String>,
     dsd_native_passthrough: Option<bool>, output_bit_perfect: Option<bool>,
+    full_buffer: Option<bool>,
     app: tauri::AppHandle, db_state: tauri::State<'_, DbState>, state: tauri::State<'_, PlayerState>,
 ) -> Result<(), String> { // 实现
     let session_seq = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
@@ -326,6 +370,7 @@ pub async fn play_audio(
         session_seq,
         duration,
         output_mode,
+        full_buffer.unwrap_or(false),
     )
     .await?;
 
@@ -435,6 +480,17 @@ pub fn prefetch_audio_head(
         headers,
         max_bytes.unwrap_or(0),
     ))
+}
+
+/// 云端曲目内嵌元数据探针：读流缓存头部，广播 cloud-track-meta-ready。
+#[tauri::command]
+pub fn probe_cloud_track_meta(
+    app: tauri::AppHandle,
+    url: String,
+    cloud_path: String,
+    duration_hint: Option<u32>,
+) {
+    crate::player::cloud_meta::spawn_probe(app, url, cloud_path, duration_hint.unwrap_or(0));
 }
 
 // ---------------------------------------------------------------------------

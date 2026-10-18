@@ -54,6 +54,8 @@ export interface PlayAudioOptions {
   cek?: string;
   dsdNativePassthrough?: boolean;
   outputBitPerfect?: boolean;
+  /** 云端缓存起播（网盘限速直链：先缓冲约 15 秒头部再开播，其余流式续传）。 */
+  fullBuffer?: boolean;
 }
 
 export interface PrefetchAudioHeadOptions {

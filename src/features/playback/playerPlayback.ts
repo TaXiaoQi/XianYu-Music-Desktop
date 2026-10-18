@@ -18,6 +18,7 @@ import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getLastPluginError} from '../../services/domain/pluginEngine';
 import {prepareOnlinePlayback} from './onlinePlaybackFacade';
 import {getLastCloudResolveError} from './cloudPlaybackResolver';
+import {lookupCloudMeta} from './cloudHeadMeta';
 import {scheduleOnlinePrecache} from './onlinePrecache';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
@@ -278,6 +279,7 @@ export const createPlayerPlayback = ({
     let pluginHeaders: Record<string, string> | null = null;
     let pluginEkey: string | undefined = undefined;
     let pluginCek: string | undefined = undefined;
+    let pluginFullBuffer = false;
 
     currentAvailableQualities.value = null;
     playbackStore.currentPlayingQuality = null;
@@ -380,6 +382,18 @@ export const createPlayerPlayback = ({
       currentCoverPath.value = coverLookupPath;
     }
     currentCoverFull.value = cachedFullCover || displayCover || immediateCover || '';
+    if (!immediateCover && coverLookupPath.startsWith('cloud://')) {
+      // 网盘曲目实例未带回填字段时，查持久化元数据索引兜底起播封面
+      void lookupCloudMeta(coverLookupPath).then((meta) => {
+        if (!meta?.coverPath) return;
+        if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
+        song.cover_thumb_path = meta.coverPath;
+        const cloudDisplay = getDisplayCoverUrl(meta.coverPath);
+        currentCover.value = cloudDisplay;
+        currentCoverFull.value = cloudDisplay;
+        currentCoverPath.value = coverLookupPath;
+      });
+    }
     preloadPriorityCovers(getLikelyThumbnailPaths(song));
     const currentThumbnailLoad = isLxSong
       ? Promise.resolve([immediateCover || '', cachedCoverPath] as [string, string])
@@ -507,6 +521,7 @@ export const createPlayerPlayback = ({
         pluginHeaders = resolvedOnlineAudio.pluginHeaders;
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;
+        pluginFullBuffer = resolvedOnlineAudio.fullBuffer === true;
         if (pluginHeaders) { // 实现
           song.remote_headers = pluginHeaders; // 实现
         }
@@ -660,6 +675,7 @@ export const createPlayerPlayback = ({
             cek: pluginCek,
             dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
             outputBitPerfect: settingsStore.settings.audio.outputBitPerfect,
+            fullBuffer: pluginFullBuffer || undefined,
           });
           onlineStreamFailureCtx = { url: finalAudioPath, song, options, requestId };
         } catch (error) {
@@ -741,6 +757,14 @@ export const createPlayerPlayback = ({
             setCurrentBackendVolume(playbackStore.volume / 100);
             try { await playbackApi.setVolume(getCurrentBackendVolume()); } catch {}
             finishRustPlaybackStart();
+          }
+          // 云端曲目：头部缓存起播后安排内嵌元数据探针（封面/歌词/时长回填）
+          if (pluginFullBuffer) {
+            void playbackApi.probeCloudTrackMeta({
+              url: audioFilePath,
+              cloudPath: song.path,
+              durationHint: Math.floor(song.duration),
+            }).catch(() => {});
           }
           scheduleOnlinePrecache(
             settingsStore.settings.audio.onlineDefaultQuality || '320k',
@@ -991,6 +1015,34 @@ export const createPlayerPlayback = ({
     onlineStreamFailureCtx = null;
     console.warn(`[Audio] 在线音频流播放中断，尝试自动换源: ${event.payload.reason || '未知原因'}`);
     await handleOnlinePlaybackFailure(ctx.song, ctx.options, ctx.requestId, false);
+  }).catch(() => {});
+
+  // 云端曲目内嵌元数据就绪（封面/歌词/时长）：回填曲库/播放队列，并刷新播放页。
+  listen<{
+    cloudPath: string;
+    lyricsRaw?: string | null;
+    coverPath?: string | null;
+    durationSecs?: number | null;
+  }>('cloud-track-meta-ready', (event) => {
+    const meta = event.payload;
+    if (!meta?.cloudPath) return;
+    const patch: Partial<Song> = {};
+    if (meta.coverPath) patch.cover_thumb_path = meta.coverPath;
+    if (meta.lyricsRaw) patch.lyrics_raw = meta.lyricsRaw;
+    if (meta.durationSecs && meta.durationSecs > 0) patch.duration = meta.durationSecs;
+    if (Object.keys(patch).length === 0) return;
+    libraryStore.patchSongMeta(meta.cloudPath, patch);
+    playbackStore.patchQueueSongMeta(meta.cloudPath, patch);
+    if (currentSong.value?.path !== meta.cloudPath) return;
+    if (meta.coverPath) {
+      const display = getDisplayCoverUrl(meta.coverPath);
+      currentCover.value = display;
+      currentCoverFull.value = display;
+      currentCoverPath.value = meta.cloudPath;
+    }
+    if (meta.lyricsRaw) {
+      void loadLyrics();
+    }
   }).catch(() => {});
 
   const pauseSong = async () => {

@@ -204,6 +204,7 @@ export const resolveCloudOnlineAudio = async (
       pluginHeaders: normalizeMediaRequestHeaders(link.url, link.headers),
       currentPlayingQuality: null,
       currentPlayingAudioUrl: link.url,
+      fullBuffer: true,
     };
   } catch (e) {
     lastResolveError = e instanceof Error ? e.message : String(e);

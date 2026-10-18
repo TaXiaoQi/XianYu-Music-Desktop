@@ -36,6 +36,8 @@ export interface ResolveOnlineAudioResult {
   coverThumbPath?: string;
   ekey?: string;
   cek?: string;
+  /** 云端缓存起播：限速直链先缓冲约 15 秒头部再开播，其余流式续传。 */
+  fullBuffer?: boolean;
   errorMessage?: string;
 }
 
