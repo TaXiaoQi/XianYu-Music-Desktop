@@ -105,10 +105,19 @@ pub async fn request(
         req = req.header(k.as_str(), v.as_str());
     }
     if let Some(b) = body {
+        // 调用方已显式带 Content-Type 时不再注入——reqwest 对同名头
+        // 逗号合并（application/json,application/json），阿里等严格
+        // 校验 mime 的接口直接 400 InvalidContentType。
+        let has_ct = headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
         req = match b {
-            Body::Json(v) => req
-                .header("content-type", "application/json")
-                .body(v.to_string()),
+            Body::Json(v) => {
+                if !has_ct {
+                    req = req.header("content-type", "application/json");
+                }
+                req.body(v.to_string())
+            }
             Body::Form(pairs) => {
                 let encoded: Vec<String> = pairs
                     .iter()
@@ -120,8 +129,11 @@ pub async fn request(
                         )
                     })
                     .collect();
-                req.header("content-type", "application/x-www-form-urlencoded")
-                    .body(encoded.join("&"))
+                if !has_ct {
+                    req = req
+                        .header("content-type", "application/x-www-form-urlencoded");
+                }
+                req.body(encoded.join("&"))
             }
             Body::Raw(s) => req.body(s.clone()),
         };
@@ -155,6 +167,44 @@ pub async fn request(
 
 pub async fn get(url: &str, headers: &[(String, String)]) -> Result<Outbound, String> {
     request("GET", url, headers, None).await
+}
+
+/// 用调用方提供的 Client 发 GET（连接池独立于全局共享池）。
+/// ecloud189 会话绑出口 IP 的换连接重试专用。
+pub async fn request_with_client(
+    client: &reqwest::Client,
+    url: &str,
+    headers: &[(String, String)],
+) -> Result<Outbound, String> {
+    let mut req = client.get(url);
+    for (k, v) in headers {
+        req = req.header(k.as_str(), v.as_str());
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("网络请求失败: {e}"))?;
+    let status = resp.status().as_u16();
+    let mut headers_out: Vec<(String, String)> = Vec::new();
+    let mut set_cookies: Vec<String> = Vec::new();
+    for (name, value) in resp.headers() {
+        let k = name.as_str().to_string();
+        if k.eq_ignore_ascii_case("set-cookie") {
+            if let Ok(v) = value.to_str() {
+                set_cookies.push(v.to_string());
+            }
+        } else if let Ok(v) = value.to_str() {
+            headers_out.push((k, v.to_string()));
+        }
+    }
+    let body = resp.text().await.map_err(|e| format!("读取响应失败: {e}"))?;
+    Ok(Outbound {
+        status,
+        headers: headers_out,
+        body,
+        set_cookies,
+        url: url.to_string(),
+    })
 }
 
 pub async fn post_json(

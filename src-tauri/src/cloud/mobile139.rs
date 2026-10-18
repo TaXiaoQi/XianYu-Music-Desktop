@@ -333,20 +333,18 @@ async fn post_json_follow(
 }
 
 /// hcy 带签 POST：body 字符串参与签名，Content-Type 由 post_json 注入；
-/// 响应 success==false 时透出服务端 message。
-async fn hcy_post(
-    basic: &str,
-    url: &str,
-    body: &Value,
-) -> Result<Value, (i32, String)> {
+/// 非 200 / 非 JSON / success==false 均透出中文错误（message 来自服务端）。
+async fn hcy_post(basic: &str, url: &str, body: &Value) -> Result<Value, (i32, String)> {
     let body_str = body.to_string();
-    let resp = post_json_follow(url, &hcy_headers(basic, &body_str), body)
+    let headers = hcy_headers(basic, &body_str);
+    let resp = post_json_follow(url, &headers, body)
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
         return Err(biz_err("移动云盘接口请求失败"));
     }
-    let j = resp.json().map_err(biz_err)?;
+    let j: Value = serde_json::from_str(&resp.body)
+        .map_err(|_| biz_err("移动云盘接口返回格式异常"))?;
     if j.get("success") != Some(&json!(true)) {
         let msg = jstr(j.get("message"));
         return Err(biz_err(if msg.is_empty() {
