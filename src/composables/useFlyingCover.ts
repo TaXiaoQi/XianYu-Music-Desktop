@@ -59,59 +59,26 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
       || coverUrl
       || '';
 
-    const resolvedCoverUrl = resolveCoverUrl();
-
-    if (!resolvedCoverUrl) {
-      let elapsed = 0;
-      const POLL_MS = 50;
-      const MAX_WAIT_MS = 300;
-      const pollCover = setInterval(() => {
-        if (flyId !== currentFlyId) {
-          clearInterval(pollCover);
-          resolve();
-          return;
-        }
-        elapsed += POLL_MS;
-        const url = resolveCoverUrl();
-        if (url) {
-          clearInterval(pollCover);
-          beginFlight(url);
-        } else if (elapsed >= MAX_WAIT_MS) {
-          clearInterval(pollCover);
-          resolve();
-        }
-      }, POLL_MS);
-      return;
-    }
-
-    beginFlight(resolvedCoverUrl);
-
-    function beginFlight(url: string) {
+    /** 动画执行段：el 已按起点矩形定位，飞向播放条封面并停靠淡出。 */
+    const animateFlight = (flyEl: HTMLElement) => {
       if (flyId !== currentFlyId) { resolve(); return; }
 
       isFlyingCover.value = true;
-
-      const img = document.createElement('img');
-      img.src = url;
-      img.alt = '';
-      img.decoding = 'async';
-      img.referrerPolicy = 'no-referrer';
-      img.setAttribute('aria-hidden', 'true');
-      img.style.cssText =
+      flyEl.style.cssText +=
         `position:fixed;left:0;top:0;width:${fromRect.width}px;height:${fromRect.height}px;` +
-        `border-radius:8px;object-fit:cover;pointer-events:none;will-change:transform,opacity;` +
+        `border-radius:8px;pointer-events:none;will-change:transform,opacity;` +
         `box-shadow:0 6px 20px rgba(0,0,0,0.25);z-index:9999;` +
         `transform:translate(${fromRect.left}px, ${fromRect.top}px);opacity:1;`;
-      document.body.appendChild(img);
+      document.body.appendChild(flyEl);
 
       const remove = () => {
-        if (flyId === currentFlyId) img.remove();
+        if (flyId === currentFlyId) flyEl.remove();
         if (flyId === currentFlyId) isFlyingCover.value = false;
       };
 
       const startFlight = () => {
         if (flyId !== currentFlyId) {
-          img.remove();
+          flyEl.remove();
           resolve();
           return;
         }
@@ -125,7 +92,7 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
         const midY = dy * 0.5 - Math.min(60, Math.abs(dy) * 0.25 + 24);
         const midScale = 1.12;
 
-        const flight = img.animate(
+        const flight = flyEl.animate(
           [
             {
               transform: `translate(${fromRect.left}px, ${fromRect.top}px) scale(1, 1)`,
@@ -158,7 +125,7 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
 
       const parkAtTarget = () => {
         if (flyId !== currentFlyId) {
-          img.remove();
+          flyEl.remove();
           return;
         }
 
@@ -171,7 +138,7 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
           resolved = true;
           clearInterval(poll);
           clearTimeout(timer);
-          const fade = img.animate(
+          const fade = flyEl.animate(
             [{ opacity: 0.92, offset: 0 }, { opacity: 0, offset: 1 }],
             { duration: FADE_DURATION, fill: 'forwards' },
           );
@@ -192,29 +159,89 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
 
         const timer = setTimeout(finish, PARK_TIMEOUT);
 
-        if (store.currentCover && store.currentCover === url) {
+        if (store.currentCover && store.currentCover === url0) {
           setTimeout(finish, 80);
         }
       };
 
+      startFlight();
+    };
+
+    /** 起飞图 URL（供停靠淡出判定），闭包内可读。 */
+    let url0 = '';
+
+    function beginFlight(url: string) {
+      if (flyId !== currentFlyId) { resolve(); return; }
+      url0 = url;
+
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      img.decoding = 'async';
+      img.referrerPolicy = 'no-referrer';
+      img.setAttribute('aria-hidden', 'true');
+      img.style.cssText =
+        `object-fit:cover;`;
+
+      let started = false;
+      const start = () => {
+        if (started || flyId !== currentFlyId) return;
+        started = true;
+        animateFlight(img);
+      };
       if (img.complete && img.naturalWidth > 0) {
-        startFlight();
+        start();
       } else {
-        img.onload = startFlight;
+        img.onload = start;
         img.onerror = () => {
-          remove();
+          if (!started) { started = true; resolve(); return; }
+          img.remove();
+          isFlyingCover.value = false;
           resolve();
         };
-        setTimeout(() => {
-          if (flyId === currentFlyId && img.isConnected) {
-            startFlight();
-          } else if (flyId === currentFlyId) {
-            isFlyingCover.value = false;
-            resolve();
-          }
-        }, 60);
+        setTimeout(() => start(), 60);
       }
     }
+
+    /** 无封面可飞：克隆行内封面占位（灰底+音符），同样飞一遍。 */
+    const flyGhost = () => {
+      if (flyId !== currentFlyId) { resolve(); return; }
+      const ghost = document.createElement('div');
+      ghost.style.cssText =
+        `background-color:${getComputedStyle(sourceEl).backgroundColor};` +
+        `display:flex;align-items:center;justify-content:center;overflow:hidden;`;
+      const svg = sourceEl.querySelector('svg');
+      if (svg) ghost.appendChild(svg.cloneNode(true));
+      animateFlight(ghost);
+    };
+
+    const resolvedCoverUrl = resolveCoverUrl();
+
+    if (!resolvedCoverUrl) {
+      let elapsed = 0;
+      const POLL_MS = 50;
+      const MAX_WAIT_MS = 300;
+      const pollCover = setInterval(() => {
+        if (flyId !== currentFlyId) {
+          clearInterval(pollCover);
+          resolve();
+          return;
+        }
+        elapsed += POLL_MS;
+        const url = resolveCoverUrl();
+        if (url) {
+          clearInterval(pollCover);
+          beginFlight(url);
+        } else if (elapsed >= MAX_WAIT_MS) {
+          clearInterval(pollCover);
+          // 网盘等无封面曲目：飞占位封面，保证飞行动效不缺席
+          flyGhost();
+        }
+      }, POLL_MS);
+      return;
+    }
+
+    beginFlight(resolvedCoverUrl);
   });
 
   currentFlyPromise = flyPromise;

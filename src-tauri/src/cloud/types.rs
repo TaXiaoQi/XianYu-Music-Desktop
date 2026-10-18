@@ -39,6 +39,7 @@ pub const OPS: &[&str] = &[
     "transfer_share",
     "direct_link",
     "share_direct_link",
+    "file_get",
 ];
 
 pub struct CloudReq {

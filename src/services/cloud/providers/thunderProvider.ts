@@ -1,13 +1,14 @@
-// 移植自移动端 lib/src/cloud/providers/thunder_provider.dart
+// 迁移自移动端 lib/src/cloud/providers/thunder_provider.dart
 // 迅雷云盘 provider（webviewToken：pan.xunlei.com 网页登录捕获）。
 //
 // 2026-10-16 迁移：X App 账密通道（thunderx 参数 + BuildCustomUserAgent
 // 定制串）与网页版用户表按 client 维度隔离（X 参数报 not_found(5)），且
 // API 直调 auth/signin 有 IP/账号维度风控（review 4002，6h 不冷却）。
 //
-// 桌面端无 WebView 登录：completeLogin 引导去手机端绑定，凭据走云同步。
-// 关键点：refresh_token 单次有效，rust 刷新后的轮换凭据经响应
-// rotated_cred 带回、由 cloudRemote 统一回写本地凭据存储。
+// 登录凭据 → 账号构建与移动端同构（completeLogin）；桌面端没有 WebView
+// 捕获通道，由设置页 Token 粘贴弹窗提供 captured.token（pollScript 打包的
+// {rt, uid, nick, dev, at} JSON）。关键点：refresh_token 单次有效，rust
+// 刷新后的轮换凭据经响应 rotated_cred 带回、由 cloudRemote 统一回写本地凭据存储。
 //
 // 业务经 cloudRemote 桥转发内嵌 Rust
 //（src-tauri/src/cloud/thunder.rs，XCloud 架构与 PikPak 同构）。
@@ -19,14 +20,21 @@ import {
   CloudCaptureResult,
   CloudCaptureRule,
   CloudDirectLink,
+  CloudException,
   CloudFile,
   CloudListResult,
   CloudLoginKind,
   CloudShareParse,
 } from '../cloudTypes';
+import { md5Hex } from './httpLoginSupport';
 
 // 网页版 client（pan.xunlei.com）：用户表按 client 维度隔离。
 const CLIENT_ID = 'Xqp0kJBXWhwaTpB6';
+
+// 桌面 WebView 登录 UA（对齐移动端 CloudProvider.desktopWebviewUa）。
+const DESKTOP_WEBVIEW_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 export class ThunderProvider extends CloudProvider {
   override get id(): string {
@@ -109,8 +117,59 @@ export class ThunderProvider extends CloudProvider {
 
   // ── 登录 ──────────────────────────────────────────────
 
-  override async completeLogin(_captured: CloudCaptureResult): Promise<CloudAccount> {
-    throw new Error('该盘需在手机端网页登录');
+  override async completeLogin(captured: CloudCaptureResult): Promise<CloudAccount> {
+    const raw = captured.token ?? '';
+    if (raw === '') {
+      throw new CloudException('未捕获到登录凭据，请重新登录');
+    }
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      // 平台通道偶发返回转义形态（{\"rt\":...}）：包回引号整体解码还原。
+      let retry: Record<string, unknown> | null = null;
+      if (raw.includes('\\"')) {
+        try {
+          const dec: unknown = JSON.parse(`"${raw}"`);
+          if (typeof dec === 'string') {
+            retry = JSON.parse(dec) as Record<string, unknown>;
+          }
+        } catch {
+          /* 放弃 */
+        }
+      }
+      if (retry === null) {
+        throw new CloudException('登录凭据解析失败，请重新登录');
+      }
+      parsed = retry;
+    }
+    const refreshToken = String(parsed['rt'] ?? '');
+    if (refreshToken === '') {
+      throw new CloudException('未捕获到登录凭据，请重新登录');
+    }
+    const uid = String(parsed['uid'] ?? '');
+    const nick = String(parsed['nick'] ?? '');
+    // deviceid（wdi10.<64hex>）取前 32 位 hex；缺失回退 md5(refresh_token)。
+    let dev = String(parsed['dev'] ?? '');
+    if (dev.startsWith('wdi10.')) dev = dev.substring(6);
+    if (dev.length >= 32) dev = dev.substring(0, 32);
+    if (dev.length !== 32 || !/^[0-9a-f]{32}$/.test(dev)) {
+      dev = await md5Hex(refreshToken);
+    }
+    const accountId = uid !== '' ? uid : (await md5Hex(refreshToken)).substring(0, 12);
+    return new CloudAccount({
+      provider: this.id,
+      accountId,
+      nickname: nick !== '' ? nick : '迅雷云盘',
+      cred: {
+        'accessToken': String(parsed['at'] ?? ''),
+        'refreshToken': refreshToken,
+        'userId': uid,
+        'deviceId': dev,
+        'ua': DESKTOP_WEBVIEW_UA,
+      },
+      boundAt: new Date(),
+    });
   }
 
   // ── 业务（rust 桥转发）─────────────────────────────────

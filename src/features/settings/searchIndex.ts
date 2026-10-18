@@ -14,7 +14,6 @@ export type SettingsTabId = // 实现
   | 'plugins'
   | 'shortcuts' // 实现
   | 'account'
-  | 'cloud'
   | 'network'
   | 'advanced' // 实现
   | 'linkage'
@@ -40,7 +39,6 @@ type SearchItemInput = string | { // 实现
 
 const TAB_NAMES: Record<SettingsTabId, string> = { // 实现
   account: '账号', // 实现
-  cloud: '网盘',
   general: '常规', // 实现
   plugins: '音源',
   theme: '外观', // 实现
@@ -291,8 +289,9 @@ const staticItems: SettingsSearchItem[] = [ // 实现
     { label: '退出登录', keywords: '注销 账号' }, // 实现
   ]),
 
-  ...makeItems('cloud', '网盘音乐', [
-    { label: '绑定管理', keywords: '网盘 绑定 解绑 账号 云盘 百度 阿里 夸克 UC 天翼 139 迅雷 123 PikPak 蓝奏 微云' },
+  // 网盘绑定已并入账号页：搜索项挂在 account tab 下，分类头仍叫「网盘」
+  ...makeItems('account', '网盘', [
+    { label: '网盘账号绑定', keywords: '网盘 绑定 解绑 账号 云盘 百度 阿里 夸克 UC 天翼 139 迅雷 123 PikPak 蓝奏 微云' },
     { label: '网盘浏览', keywords: '网盘 云盘 浏览 播放 文件 目录' },
     { label: '分享链接导入', keywords: '分享 链接 提取码 转存 直链 解析 导入' },
   ]),

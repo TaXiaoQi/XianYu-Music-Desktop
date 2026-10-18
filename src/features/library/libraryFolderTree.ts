@@ -108,6 +108,9 @@ export const createLibraryFolderTree = ({
       try {
         targetNode.children = await listCloudFolderChildren(targetNode);
         targetNode.children_loaded = true;
+      } catch (e) {
+        // 凭据过期/网络失败：不冒泡到全局错误弹窗，节点保持未加载可重试
+        console.warn('[cloud-tree] 目录加载失败:', e);
       } finally {
         targetNode.is_loading = false;
       }

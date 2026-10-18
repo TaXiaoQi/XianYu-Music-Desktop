@@ -5,6 +5,7 @@ import { dragSession } from '../../composables/dragState'; // 实现
 import type { Song } from '../../types'; // 实现
 import { listScrollCache, songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
+import { scheduleCloudHeadMetaBatch } from '../../features/playback/cloudHeadMeta';
 import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
 import { useSettings } from '../../features/settings/useSettings'; // 实现
 import { useRoute, useRouter } from 'vue-router'; // 实现
@@ -147,6 +148,14 @@ const emit = defineEmits<{ // 实现
   (e: 'drag-start', payload: { event: PointerEvent; song: Song; index: number }): void; // 实现
   (e: 'load-more'): void;
 }>();
+
+// 网盘曲目（cloud://）进入任意列表即安排头部元数据预探：
+// 内嵌封面/歌词/时长在播放前就回填（cloud-track-meta-ready 事件）
+watch(
+  () => props.songs,
+  (list) => scheduleCloudHeadMetaBatch(list),
+  { immediate: true },
+);
 
 const {
   currentViewMode, localSortMode, folderSortMode, activeRootPath, currentFolderFilter,

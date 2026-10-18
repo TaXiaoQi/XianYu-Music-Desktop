@@ -45,23 +45,6 @@
                 </div>
             </button>
 
-            <div class="network-share-row">
-                <div class="network-share-copy">
-                    <div class="network-share-title">局域网共享文件夹</div>
-                    <div class="network-share-desc">
-                        支持 NAS、SMB 共享和映射网络驱动器，例如 \\NAS\Music。
-                    </div>
-                </div>
-                <button
-                    class="network-share-button"
-                    type="button"
-                    :disabled="scanBusy"
-                    @click="shareDialogVisible = true"
-                >
-                    输入共享路径
-                </button>
-            </div>
-
             <div class="short-audio-filter">
                 <div class="short-audio-copy">
                     <div class="short-audio-title">排除短音频</div>
@@ -170,6 +153,45 @@
             </div>
         </div>
 
+        <!-- 局域网共享：独立分组标题 -->
+        <div class="setting-item-group">
+            <h2
+                class="mb-3 flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"
+            >
+                <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+                局域网共享文件夹
+            </h2>
+            <div class="network-share-row">
+                <div class="network-share-copy">
+                    <div class="network-share-desc">
+                        支持 NAS、SMB 共享和映射网络驱动器，例如 \\NAS\Music。
+                    </div>
+                </div>
+                <button
+                    class="network-share-button"
+                    type="button"
+                    :disabled="scanBusy"
+                    @click="shareDialogVisible = true"
+                >
+                    输入共享路径
+                </button>
+            </div>
+        </div>
+
+        <!-- 网盘文件夹：独立分组标题 -->
+        <div class="setting-item-group">
+            <h2
+                class="mb-3 flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"
+            >
+                <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+                网盘文件夹
+            </h2>
+            <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                浏览已绑定网盘的目录，可直接试听或下载到音乐库。
+            </p>
+            <CloudFolderBrowser />
+        </div>
+
         <SettingsRemoteLibrary />
 
         <ConfirmModal
@@ -196,6 +218,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import ConfirmModal from "../overlays/ConfirmModal.vue";
 import ModernInputModal from "../common/ModernInputModal.vue";
 import SettingsRemoteLibrary from "./SettingsRemoteLibrary.vue";
+import CloudFolderBrowser from "./CloudFolderBrowser.vue";
 import { useLibraryStore } from "../../features/library/store";
 import {
     normalizeLibraryMinDurationSeconds,
@@ -372,6 +395,11 @@ const finalizeRemove = async () => {
 
 .setting-item-group {
     border-radius: 12px;
+}
+
+/* 分组标题拆分后：相邻分组之间留出纵向间距 */
+.setting-item-group + .setting-item-group {
+    margin-top: 20px;
 }
 
 .drop-zone { /* 样式 */

@@ -231,7 +231,12 @@ const onTreeNodeSelect = (node: FolderNode) => {
 
 const onTreeNodeToggle = async (node: FolderNode) => {
     alignActiveRoot(node.path);
-    await toggleFolderNode(node);
+    try {
+        await toggleFolderNode(node);
+    } catch (error) {
+        // 网盘凭据失效等：展开失败只告警，不冒泡到全局错误弹窗
+        console.warn("[folder-tree] 节点展开失败:", error);
+    }
 };
 
 const onTreeNodeMenu = ({

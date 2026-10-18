@@ -4,6 +4,7 @@ import { Eye, EyeOff } from 'lucide-vue-next';
 
 import { useAuthStore } from '../../features/auth/store'; // 实现
 import { useSettingsStore } from '../../features/settings/store'; // 实现
+import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast'; // 实现
 import { usePlaylistSync } from '../../composables/usePlaylistSync'; // 实现
 import { showChangePasswordDialog } from '../../composables/useChangePasswordDialog';
@@ -17,9 +18,11 @@ import {
   setAuthBaseUrl, // 实现
 } from '../../services/auth/authService'; // 实现
 import SettingHint from './SettingHint.vue';
+import SettingsCloud from './SettingsCloud.vue';
 
 const authStore = useAuthStore(); // 实现
 const settingsStore = useSettingsStore(); // 实现
+const { t } = useI18n();
 const { showToast } = useToast(); // 实现
 const playlistSync = usePlaylistSync(); // 实现
 
@@ -317,7 +320,17 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
       </div>
     </section>
 
-    <section class="space-y-3"> 
+    <!-- 网盘绑定：从独立设置分类并入账号页（对齐移动端账号页布局） -->
+    <section class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        {{ t('cloud.sectionTitle') }}
+      </h2>
+      <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('cloud.sectionDesc') }}</p>
+      <SettingsCloud />
+    </section>
+
+    <section class="space-y-3">
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>

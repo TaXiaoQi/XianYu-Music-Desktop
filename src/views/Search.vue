@@ -99,6 +99,7 @@ import type {
 import type { LxSearchResultItem } from '../services/domain/lxMusicSdk';
 import type { PluginArtistResult, PluginAlbumResult } from '../services/domain/pluginEngine';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
+import { scheduleCloudHeadMetaBatch } from '../features/playback/cloudHeadMeta';
 import { useUiStore } from '../shared/stores/ui';
 import { usePlaybackStore } from '../features/playback/store';
 import { useOnlineDetailStore, type SearchResultsSnapshot } from '../features/onlineDetail/store';
@@ -255,6 +256,7 @@ function restoreResultsSnapshot(snapshot: SearchResultsSnapshot) {
   pluginSearchResults.value = snapshot.lists.pluginSearchResults as PluginSearchResult[];
   localSearchResults.value = snapshot.lists.localSearchResults as Song[];
   cloudSearchResults.value = snapshot.lists.cloudSearchResults as Song[];
+  scheduleCloudHeadMetaBatch(cloudSearchResults.value);
   localArtistResults.value = snapshot.lists.localArtistResults as ArtistCatalogItem[];
   localAlbumResults.value = snapshot.lists.localAlbumResults as AlbumCatalogItem[];
   localPlaylistResults.value = snapshot.lists.localPlaylistResults as Playlist[];

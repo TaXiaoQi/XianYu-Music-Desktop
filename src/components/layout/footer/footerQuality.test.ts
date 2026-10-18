@@ -76,6 +76,17 @@ describe("localFormatLabel", () => {
   it("falls back to the file extension", () => {
     expect(localFormatLabel(asSong({ path: "/music/a.WAV" }))).toBe("WAV");
   });
+
+  it("ignores query strings on remote direct-link paths instead of echoing them", () => {
+    expect(
+      localFormatLabel(
+        asSong({ path: "http://127.0.0.1:1/proxy?u=https%3A%2F%2Fcdn.x%2F7%2520Years.flac%2522%252C%2522PARENT%2522%253A%2522abc%2522" }),
+      ),
+    ).toBe("");
+    expect(
+      localFormatLabel(asSong({ path: "https://host/d/file.json?sig=dead.beef" })),
+    ).toBe("JSON");
+  });
 });
 
 describe("localQualityLabel", () => {

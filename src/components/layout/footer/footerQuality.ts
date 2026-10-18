@@ -58,8 +58,10 @@ export const localFormatLabel = (song: Song | null): string => {
   if (!song) return '';
   const raw = song.format || song.codec || song.container;
   if (raw) return raw.toUpperCase();
-  const ext = song.path.split('.').pop();
-  return ext ? ext.toUpperCase() : '';
+  // path 可能是带 query 的远程直链（如网盘签名 URL），扩展名只认 ?/# 之前
+  // 的路径尾部，且必须是纯字母数字短串，避免把 URL 参数串当格式显示成乱码。
+  const ext = song.path.split(/[?#]/)[0].split('.').pop() ?? '';
+  return /^[A-Za-z0-9]{1,5}$/.test(ext) ? ext.toUpperCase() : '';
 };
 
 const LOSSLESS_FORMATS = ['flac', 'ape', 'wav', 'alac', 'aiff', 'dsd', 'dff', 'dsf', 'wv', 'wavpack'];

@@ -44,17 +44,11 @@ export class WeiyunProvider extends CloudProvider {
 
   override get captureRule(): CloudCaptureRule {
     return new CloudCaptureRule({
+      // 纯 Cookie 范式对齐移动端：原 pollScript 读 localStorage 的
+      // weiyun_qq_openid/weiyun_wx_openid 键——该键名系设计稿拍脑袋，
+      // 微云前端从不写入（恒空），Token 范式永不判定完成（2026-10-17
+      // 移动端实测）。桌面端本就不做网页登录（引导去手机端）。
       doneUrlPattern: /weiyun\.com/,
-      pollScript: `(() => {
-  var qq = null, wx = null;
-  try { qq = localStorage.getItem('weiyun_qq_openid'); } catch (e) {}
-  try { wx = localStorage.getItem('weiyun_wx_openid'); } catch (e) {}
-  if ((qq && qq.length) || (wx && wx.length)) {
-    return JSON.stringify({qq: qq, wx: wx});
-  }
-  return "";
-})()`,
-      pollIntervalMs: 500,
     });
   }
 

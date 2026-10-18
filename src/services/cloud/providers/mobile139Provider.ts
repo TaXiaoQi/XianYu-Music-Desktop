@@ -1,10 +1,11 @@
 // 移植自移动端 lib/src/cloud/providers/mobile139_provider.dart
 // 移动云盘（139）provider（webviewCookie：登录页 Cookie 全收）。
 //
-// 桌面端无 WebView 登录：completeLogin 引导去手机端绑定，凭据走云同步。
-// 业务（列目录/分享/转存/直链）经 cloudRemote 桥转发内嵌 Rust
-//（src-tauri/src/cloud/mobile139.rs）。
+// 登录凭据 → 账号构建与移动端同构（completeLogin）；桌面端没有 WebView
+// 捕获通道，由设置页 Cookie 粘贴弹窗提供 captured.cookies。业务（列目录/
+// 分享/转存/直链）经 cloudRemote 桥转发内嵌 Rust（src-tauri/src/cloud/mobile139.rs）。
 
+import { cookieHeader } from '../cloudHttp';
 import { CloudProvider } from '../cloudProvider';
 import { rustDirectLink, rustListDir, rustParseShare, rustSearchFiles, rustShareDirectLink, rustTransferShare, rustValidate } from '../cloudRemote';
 import {
@@ -12,11 +13,64 @@ import {
   CloudCaptureResult,
   CloudCaptureRule,
   CloudDirectLink,
+  CloudException,
   CloudFile,
   CloudListResult,
   CloudLoginKind,
   CloudShareParse,
 } from '../cloudTypes';
+import { md5Hex } from './httpLoginSupport';
+
+/** URI 解码容错（Cookie 值可能含非法 % 序列）。 */
+function safeDecode(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
+/** pollScript 产出解析；平台通道偶发返回转义形态（{\"auth\":...}）：
+ * 包回引号整体解码还原（对齐移动端 _parseAuthJson）。 */
+function parseAuthJson(raw: string): Record<string, unknown> | null {
+  try {
+    const j: unknown = JSON.parse(raw);
+    if (typeof j === 'object' && j !== null && !Array.isArray(j)) {
+      return j as Record<string, unknown>;
+    }
+  } catch {
+    /* 继续转义重试 */
+  }
+  if (raw.includes('\\"')) {
+    try {
+      const dec: unknown = JSON.parse(`"${raw}"`);
+      if (typeof dec === 'string') {
+        const j: unknown = JSON.parse(dec);
+        if (typeof j === 'object' && j !== null && !Array.isArray(j)) {
+          return j as Record<string, unknown>;
+        }
+      }
+    } catch {
+      /* 放弃 */
+    }
+  }
+  return null;
+}
+
+/** "Basic " + base64("pc:账号:token") 且 token ≥4 段 '|'（与 pollScript
+ * 校验同口径，对齐移动端 _validBasic）。 */
+function validBasic(v: string): boolean {
+  if (!v.startsWith('Basic ')) return false;
+  try {
+    const bin = atob(v.substring(6));
+    const dec = new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+    if (!dec.startsWith('pc:')) return false;
+    const seg = dec.split(':');
+    return seg.length >= 3 && (seg[2] ?? '').split('|').length >= 4;
+  } catch {
+    return false;
+  }
+}
 
 export class Mobile139Provider extends CloudProvider {
   override get id(): string {
@@ -50,8 +104,49 @@ export class Mobile139Provider extends CloudProvider {
 
   // ── 登录 ──────────────────────────────────────────────
 
-  override async completeLogin(_captured: CloudCaptureResult): Promise<CloudAccount> {
-    throw new Error('该盘需在手机端网页登录');
+  override async completeLogin(captured: CloudCaptureResult): Promise<CloudAccount> {
+    let auth = '';
+    const raw = captured.token ?? '';
+    if (raw !== '') {
+      const parsed = parseAuthJson(raw);
+      auth = String(parsed?.['auth'] ?? '');
+    }
+    // 兜底：pollScript 未命中的平台差异下，原生 Cookie 通道可能已拿到
+    // authorization（值可能经 escape/encodeURIComponent 转义）。
+    if (!validBasic(auth)) {
+      const c = captured.cookies['authorization'] ?? '';
+      const dec = c === '' ? '' : safeDecode(c);
+      auth = validBasic(c) ? c : validBasic(dec) ? dec : '';
+    }
+    if (!validBasic(auth)) {
+      throw new CloudException('未捕获到登录凭据，请重新登录');
+    }
+    const authorization = auth.substring(6);
+    const cookie = cookieHeader(captured.cookies);
+    // 139 账号即手机号（凭据形态 pc:<手机号>:<sig>）；官方 web 端个人
+    // 标识同样使用脱敏手机号（未提供面向网页的昵称接口），据此显示。
+    let nick = '移动云盘';
+    try {
+      const bin = atob(authorization);
+      const dec = new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+      const seg = dec.split(':');
+      if (seg.length >= 2 && (seg[1] ?? '').length >= 7) {
+        const p = seg[1]!;
+        nick = `${p.substring(0, 3)}****${p.substring(p.length - 4)}`;
+      }
+    } catch {
+      /* 昵称兜底 */
+    }
+    return new CloudAccount({
+      provider: this.id,
+      accountId: (await md5Hex(authorization)).substring(0, 12),
+      nickname: nick,
+      cred: {
+        'authorization': authorization,
+        ...(cookie !== '' ? { 'cookie': cookie } : {}),
+      },
+      boundAt: new Date(),
+    });
   }
 
   // ── 业务（rust 桥转发）─────────────────────────────────

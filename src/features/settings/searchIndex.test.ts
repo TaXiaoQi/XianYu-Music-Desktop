@@ -16,7 +16,6 @@ describe('settings search index', () => { // 实现
       'library',
       'linkage',
       'plugins',
-      'cloud', // 实现
       'shortcuts', // 实现
       'account',
       'network',
