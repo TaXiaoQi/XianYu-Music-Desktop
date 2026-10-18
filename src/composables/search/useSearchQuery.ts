@@ -285,13 +285,14 @@ export function useSearchQuery(options: {
           source.cloudProviderId,
           accountId,
         );
-        let files: CloudFile[];
+        let files: CloudFile[] = [];
         let nextCursor: string | null = null;
         if (roots.length > 0) {
           files = await scopedSearchAudio(provider, cred, roots, query);
-        } else {
-          // 没选目录默认全部目录：先盘侧搜索（支持翻页），接口变更/限流
-          // （如迅雷「无效的文件过滤器」）回退根目录全盘遍历
+        }
+        // 范围内无命中则自动扩大到全盘（搜索是全局动作，勾选范围只是
+        // 加速——勾选的文件夹未必包含目标文件）；未选目录走同一链路
+        if (roots.length === 0 || !files || files.length === 0) {
           try {
             const res = await provider.searchFiles(cred, query);
             files = res.files;
