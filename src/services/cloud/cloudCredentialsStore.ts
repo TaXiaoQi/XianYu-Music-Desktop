@@ -12,7 +12,7 @@
 // exportForSync/importFromSync 供跨设备同步接入。
 
 import { CloudAccount, CloudException } from './cloudTypes';
-import { CloudFolderSelectionStore } from './cloudFolderSelectionStore';
+import { CloudFolderNameCache, CloudFolderSelectionStore } from './cloudFolderSelectionStore';
 
 type CryptoJsModule = typeof import('crypto-js');
 type WordArray = ReturnType<CryptoJsModule['lib']['WordArray']['create']>;
@@ -37,6 +37,12 @@ const K_SEAL_PREFIX = 'xy1:';
 /** 同步串保留键：随凭据密封串携带的目录选择（`providerId|accountId → [path]`）。
  * 旧版客户端导入时只认数组值会自动忽略该键，新旧双向兼容。 */
 const K_FOLDER_SEL_SYNC_KEY = '__fsel__';
+
+/** 同步串保留键：随密封串携带的已选目录名称缓存
+ * （`providerId|accountId → {存储键: 目录名}`），id 型盘展示可读名用。
+ * 纯展示数据不参与 LWW 时钟，仅随勾选变更的载荷顺带上传；旧版客户端
+ * 导入时只认数组值会自动忽略该键，双向兼容。 */
+const K_FOLDER_NAMES_SYNC_KEY = '__fnames__';
 
 /** 同步串保留键（协议 v2）：产生该串的本地变更时刻（epoch 毫秒，LWW 对比用）。
  * 旧客户端导入只认数组值会自动忽略，双向兼容。 */
@@ -125,6 +131,22 @@ function parseFolderSelMap(v: unknown): Record<string, string[]> {
     if (list.length > 0) sel[k] = list;
   }
   return sel;
+}
+
+/** 解析 `__fnames__` 保留键：`providerId|accountId → {存储键: 目录名}`，
+ * 剔除非法条目（空键/空名/非字符串值）。 */
+function parseFolderNamesMap(v: unknown): Record<string, Record<string, string>> {
+  const names: Record<string, Record<string, string>> = {};
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return names;
+  for (const [k, bucket] of Object.entries(v as Record<string, unknown>)) {
+    if (!k || typeof bucket !== 'object' || bucket === null || Array.isArray(bucket)) continue;
+    const mapped: Record<string, string> = {};
+    for (const [kk, vv] of Object.entries(bucket as Record<string, unknown>)) {
+      if (kk && typeof vv === 'string' && vv !== '') mapped[kk] = vv;
+    }
+    if (Object.keys(mapped).length > 0) names[k] = mapped;
+  }
+  return names;
 }
 
 export class CloudCredentialsStore {
@@ -456,7 +478,8 @@ export class CloudCredentialsStore {
   /** 跨设备同步：导出密封串（协议 v2）。
    * 账号派生密钥（三端可互解，服务端无明文）重新密封本地凭据 JSON，
    * 密文不出本类、本地落盘仍用设备密钥。密封明文顶层带保留键 `__ts__`
-   * （本地变更时刻，LWW 对比用）与 `__fsel__`（目录选择），跨设备一并同步。
+   * （本地变更时刻，LWW 对比用）、`__fsel__`（目录选择）与 `__fnames__`
+   * （已选目录名称缓存，纯展示不参与时钟），跨设备一并同步。
    * 从未发生本地变更（changeAt 为空）返回 null，无需上传；账号已全部解绑
    * 但发生过变更时，导出仅含 `__ts__` 的空包，上传后清掉云端旧数据让解绑传播。 */
   async exportForSync(ciyuanxiId: string): Promise<string | null> {
@@ -472,6 +495,10 @@ export class CloudCredentialsStore {
       const folderSel = await CloudFolderSelectionStore.instance.allPaths();
       if (Object.keys(folderSel).length > 0) {
         payload[K_FOLDER_SEL_SYNC_KEY] = folderSel;
+      }
+      const folderNames = await CloudFolderNameCache.instance.allNames();
+      if (Object.keys(folderNames).length > 0) {
+        payload[K_FOLDER_NAMES_SYNC_KEY] = folderNames;
       }
     }
     return this._sealWithKey(JSON.stringify(payload), this._syncKey(CryptoJS, ciyuanxiId));
@@ -524,13 +551,16 @@ export class CloudCredentialsStore {
     const folderChanged = await CloudFolderSelectionStore.instance.replacePaths(
       parseFolderSelMap(obj[K_FOLDER_SEL_SYNC_KEY]),
     );
+    const namesChanged = await CloudFolderNameCache.instance.replaceAllNames(
+      parseFolderNamesMap(obj[K_FOLDER_NAMES_SYNC_KEY]),
+    );
     if (accountsChanged) {
       this._cache = next;
       await this._persist();
     }
     // 双时间戳对齐为 cloudTs（避免同步风暴）；期间文件夹回调临时记的 now 被覆盖
     this._saveMeta({ changeAt: cloudTs, syncedAt: cloudTs });
-    return { applied: true, changed: accountsChanged || folderChanged };
+    return { applied: true, changed: accountsChanged || folderChanged || namesChanged };
   }
 
   /** 旧格式串（无 `__ts__`）应用：保持并集合并行为（同昵称去重同现有导入）。 */
@@ -560,8 +590,11 @@ export class CloudCredentialsStore {
     const folderChanged = await CloudFolderSelectionStore.instance.mergePaths(
       parseFolderSelMap(obj[K_FOLDER_SEL_SYNC_KEY]),
     );
+    const namesChanged = await CloudFolderNameCache.instance.mergeNames(
+      parseFolderNamesMap(obj[K_FOLDER_NAMES_SYNC_KEY]),
+    );
     const now = Date.now();
-    if (accountsChanged || folderChanged) {
+    if (accountsChanged || folderChanged || namesChanged) {
       if (accountsChanged) {
         this._cache = merged;
         await this._persist();
@@ -572,6 +605,6 @@ export class CloudCredentialsStore {
       // 无变化视为已对齐，不触发上传
       this._saveMeta({ changeAt: now, syncedAt: now });
     }
-    return { applied: true, changed: accountsChanged || folderChanged };
+    return { applied: true, changed: accountsChanged || folderChanged || namesChanged };
   }
 }

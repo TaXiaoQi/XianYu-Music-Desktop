@@ -12,7 +12,7 @@ import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import { cloudProviders } from '../../services/cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
-import { CloudFolderSelectionStore } from '../../services/cloud/cloudFolderSelectionStore';
+import { CloudFolderNameCache, CloudFolderSelectionStore } from '../../services/cloud/cloudFolderSelectionStore';
 import { CloudAccount, CloudFile } from '../../services/cloud/cloudTypes';
 import type { CloudProvider } from '../../services/cloud/cloudProvider';
 
@@ -78,18 +78,38 @@ const browseError = ref('');
 
 /** 勾选集合：跨目录累积，保存时整体覆盖写入。 */
 const selectedPaths = ref<Set<string>>(new Set());
+/** 已选目录名称缓存（纯展示）：id 型盘的存储键是 id 串，键不在面包屑/
+ * 当前列表时 chip 显示可读名全靠它；勾选与浏览命中时回写落盘。 */
+const folderNames = ref<Record<string, string>>({});
 const saving = ref(false);
 
 const browseSel = computed(() => boundAccountsFlat.value[browseIndex.value] ?? null);
 const currentDirPath = computed(() => browseCrumbs.value[browseCrumbs.value.length - 1]?.path ?? '');
 const currentDirSelected = computed(() => selectedPaths.value.has(currentDirPath.value));
 
+/** 列表条目的存储键（path 优先，回退 id），与勾选写入同口径。 */
+const entryKey = (dir: CloudFile): string => {
+  const cur = currentDirPath.value;
+  return dir.path != null && dir.path !== '' && dir.path !== cur ? dir.path : dir.id;
+};
+
+/** 名称缓存回写（同步本地 ref 与落盘；纯展示数据不推同步时钟）。 */
+const rememberNames = (entries: Record<string, string>) => {
+  const sel = browseSel.value;
+  if (!sel) return;
+  if (Object.keys(entries).length === 0) return;
+  folderNames.value = { ...folderNames.value, ...entries };
+  void CloudFolderNameCache.instance.remember(sel.provider.id, sel.account.accountId, entries);
+};
+
 /** 恢复已保存选择（换账号时跟随）。 */
 const restoreSelection = async () => {
   const sel = browseSel.value;
   if (!sel) return;
   const saved = await CloudFolderSelectionStore.instance.pathsFor(sel.provider.id, sel.account.accountId);
+  const names = await CloudFolderNameCache.instance.namesFor(sel.provider.id, sel.account.accountId);
   selectedPaths.value = new Set(saved);
+  folderNames.value = { ...names };
 };
 
 const openBrowse = () => {
@@ -117,6 +137,15 @@ const loadDir = async (reset: boolean) => {
     const res = await sel.provider.listDir(sel.account.cred, path, reset ? null : browseCursor.value);
     browseFiles.value = reset ? sortedFiles(res.files) : sortedFiles([...browseFiles.value, ...res.files]);
     browseCursor.value = res.nextCursor;
+    // 名称 heal：当前列表命中的已选键回填缓存——跨设备同步来的选择
+    //（本地无名称记录）首次浏览到其父目录即可显示可读名
+    const heal: Record<string, string> = {};
+    for (const f of browseFiles.value) {
+      if (!f.isDir) continue;
+      const k = entryKey(f);
+      if (selectedPaths.value.has(k)) heal[k] = f.name;
+    }
+    rememberNames(heal);
   } catch (e) {
     browseError.value = errorMessage(e);
   } finally {
@@ -149,6 +178,11 @@ const dirNameOf = (path: string): string => {
   for (const c of browseCrumbs.value) {
     if (c.path === path) return c.name;
   }
+  for (const f of browseFiles.value) {
+    if (f.isDir && entryKey(f) === path) return f.name;
+  }
+  const cached = folderNames.value[path];
+  if (cached) return cached;
   const idx = path.lastIndexOf('/');
   return idx >= 0 && idx < path.length - 1 ? path.slice(idx + 1) : path;
 };
@@ -157,17 +191,23 @@ const toggleCurrentDir = () => {
   // 空串是合法目录标识：id 型盘（迅雷/PikPak）根目录 id 为空串
   const path = currentDirPath.value;
   const next = new Set(selectedPaths.value);
-  if (!next.delete(path)) next.add(path);
+  if (!next.delete(path)) {
+    next.add(path);
+    const name = browseCrumbs.value[browseCrumbs.value.length - 1]?.name;
+    if (path !== '' && name) rememberNames({ [path]: name });
+  }
   selectedPaths.value = next;
 };
 
 const toggleEntry = (dir: CloudFile) => {
   const sel = browseSel.value;
   if (!sel) return;
-  const cur = browseCrumbs.value[browseCrumbs.value.length - 1]?.path ?? sel.provider.rootPath;
-  const key = dir.path != null && dir.path !== '' && dir.path !== cur ? dir.path : dir.id;
+  const key = entryKey(dir);
   const next = new Set(selectedPaths.value);
-  if (!next.delete(key)) next.add(key);
+  if (!next.delete(key)) {
+    next.add(key);
+    rememberNames({ [key]: dir.name });
+  }
   selectedPaths.value = next;
 };
 
