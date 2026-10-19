@@ -240,7 +240,12 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       return; // 提前返回
     } // 校验结束
     const lyricsPath = song.cue_source_path || song.path; // 实现
-    const isOnlineSong = lyricsPath.startsWith('lx://') || lyricsPath.startsWith('plugin://');
+    // cloud:// 网盘曲目同样走在线取词分支：内嵌歌词优先（预探结果），
+    // 否则网盘曲目永远落本地 DB 分支拿不到歌词
+    const isOnlineSong =
+      lyricsPath.startsWith('lx://') ||
+      lyricsPath.startsWith('plugin://') ||
+      lyricsPath.startsWith('cloud://');
 
     if (isOnlineSong) {
       if (unavailableOnlineLyricsPaths.has(song.path)) {
