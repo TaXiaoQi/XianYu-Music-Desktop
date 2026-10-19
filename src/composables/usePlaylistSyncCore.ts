@@ -14,6 +14,7 @@ import { createPluginSyncFlow } from '../services/domain/sync/pluginSyncService'
 import { createSettingsSyncFlow } from '../services/domain/sync/settingsSyncService';
 import { createFavoritesSyncFlow } from '../services/domain/sync/favoritesSyncService';
 import { createAutoSyncFlow } from '../services/domain/sync/autoSyncService';
+import { downloadCloudCredsOnLogin } from '../services/domain/cloudCredsSync';
 import {
   autoSyncStatus,
   autoSyncDelayed,
@@ -147,6 +148,7 @@ export function usePlaylistSync() {
       syncPlugins: pluginFlow.syncPlugins,
       syncFavorites: favoritesFlow.syncFavorites,
       syncSettings: settingsFlow.syncSettings,
+      syncCloudCreds: () => downloadCloudCredsOnLogin(),
     },
     statistics: statisticsStore,
     isLoginSyncCompleted: () => loginSyncCompleted.value,

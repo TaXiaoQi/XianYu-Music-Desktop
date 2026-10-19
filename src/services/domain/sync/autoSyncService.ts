@@ -12,6 +12,7 @@ export interface AutoSyncTaskSet {
   syncPlugins(): Promise<unknown>;
   syncFavorites(): Promise<unknown>;
   syncSettings(): Promise<unknown>;
+  syncCloudCreds(): Promise<unknown>;
 }
 
 export interface AutoSyncFlowDeps {
@@ -38,11 +39,14 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
     }
     syncOperationInProgress = true;
     try {
-      deps.log('performAutoSync: 开始自动同步（客户端为主，只上传）');
+      deps.log('performAutoSync: 开始自动同步（客户端为主，上传 + 凭据拉取）');
       const upload = deps.getUploadConfig();
       let hasError = false;
 
       const parallelTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
+      // 网盘凭据周期拉取：其他端绑定/轮换的变更及时到达本端；
+      // LWW 门控在 syncCloudCreds 内部（本地较新跳过下发，无变化不落盘）
+      parallelTasks.push({ label: '同步网盘账号', run: deps.tasks.syncCloudCreds });
       if (upload.playlists) {
         parallelTasks.push({ label: '上传歌单', run: deps.tasks.uploadPlaylists });
       }
