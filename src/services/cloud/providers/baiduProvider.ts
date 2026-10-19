@@ -11,6 +11,7 @@ import { CloudProvider } from '../cloudProvider';
 import { rustDirectLink, rustListDir, rustParseShare, rustSearchFiles, rustTransferShare, rustValidate } from '../cloudRemote';
 import {
   CloudAccount,
+  CloudCaptureResult,
   CloudDirectLink,
   CloudException,
   CloudFile,
@@ -81,6 +82,50 @@ export class BaiduProvider extends CloudProvider {
       qrContent: '',
       qrImageUrl: imgurl.startsWith('http') ? imgurl : `https://${imgurl}`,
       state,
+    });
+  }
+
+  // 手填 Cookie：含 BDUSS 的网页 Cookie 直接落库为 Cookie 轨凭据
+  // （对齐移动端 completeLogin）。昵称/uid 尽力取（网页 getinfo），
+  // 失败则显示名 + BDUSS 哈希兜底。
+  override async completeLogin(captured: CloudCaptureResult): Promise<CloudAccount> {
+    const pairs = captured.cookies;
+    const bduss = pairs['BDUSS'] ?? '';
+    if (bduss === '') {
+      throw new CloudException('Cookie 中未找到 BDUSS，请重新复制');
+    }
+    let nickname = this.displayName;
+    let accountId = (await md5Hex(bduss)).substring(0, 12);
+    try {
+      const resp = await cloudGet(
+        'https://pan.baidu.com/api/user/getinfo?ref=client&clienttype=0&web=1',
+        {
+          headers: {
+            ...this._webHeaders,
+            Referer: 'https://pan.baidu.com/disk/main',
+            Cookie: cookieHeader(pairs),
+          },
+        },
+      );
+      if (resp.isOk && resp.json != null) {
+        const info = (resp.json['user_info'] ?? resp.json['data']) as Record<string, unknown> | null;
+        if (info != null && typeof info === 'object') {
+          const name = String(info['username'] ?? info['user_name'] ?? '');
+          if (name !== '') nickname = name;
+          const uidRaw = info['id'] ?? info['user_id'] ?? info['baidu_id'];
+          const uid = uidRaw == null ? '' : String(uidRaw);
+          if (uid !== '' && uid !== '0') accountId = uid;
+        }
+      }
+    } catch {
+      // 昵称/uid 拿不到不影响绑定。
+    }
+    return new CloudAccount({
+      provider: this.id,
+      accountId,
+      nickname,
+      cred: pairs,
+      boundAt: new Date(),
     });
   }
 
