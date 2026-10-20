@@ -425,6 +425,9 @@ export async function downloadPlugins(
         result.errors.push("未登录或未获取到弦予号");
         return result;
     }
+    // 覆盖下载的收尾清理（移除「本地有、云端没有」的插件/订阅）：
+    // 仅在恢复循环完整跑完（未取消）后执行
+    let overwriteCleanup: (() => Promise<void>) | null = null;
     logSync("downloadPlugins: 开始从云端下载插件");
     try {
         const downloadData = await signedRequest<PluginSyncDownloadData>(
@@ -450,29 +453,48 @@ export async function downloadPlugins(
         }
 
         if (overwrite) {
-            // 覆盖下载：先清空本地用户插件与订阅（不记墓碑），随后按云端重装
+            // 覆盖下载：先快照本地用户插件与订阅（不立即清空），恢复循环完成后
+            // 才清理「本地有、云端没有」的差集——取消中断时本地保持原有全集 +
+            // 已恢复的云端插件，不丢任何已保存内容（重跑一次即收敛到云端快照）
             await loadPlugins();
             const localUserPlugins = getStoredPlugins().filter(
                 (p) => !p.isBuiltin,
             );
-            for (const p of localUserPlugins) {
-                try {
-                    removePluginSource(p.id);
-                } catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e);
-                    logSyncError(
-                        `downloadPlugins(overwrite): 移除本地插件 "${p.name}" 失败:`,
-                        msg,
-                    );
-                }
-            }
             const localSubs = getSubscriptions();
-            if (localSubs.length > 0) {
-                removeSubscriptionsByUrls(localSubs.map((s) => s.url));
-            }
             logSync(
-                `downloadPlugins(overwrite): 已清空本地插件 ${localUserPlugins.length} 个, 订阅 ${localSubs.length} 个`,
+                `downloadPlugins(overwrite): 已快照本地插件 ${localUserPlugins.length} 个, 订阅 ${localSubs.length} 个，恢复完成后清理差集`,
             );
+            overwriteCleanup = async () => {
+                const keepIds = new Set(cloudPlugins.map((c) => c.id));
+                let removed = 0;
+                for (const p of localUserPlugins) {
+                    if (keepIds.has(p.id)) continue;
+                    try {
+                        removePluginSource(p.id);
+                        removed++;
+                    } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        logSyncError(
+                            `downloadPlugins(overwrite): 移除本地插件 "${p.name}" 失败:`,
+                            msg,
+                        );
+                    }
+                }
+                const keepUrls = new Set(
+                    (Array.isArray(cloudSubs) ? cloudSubs : []).map(
+                        (s: { url?: string }) => s.url || "",
+                    ),
+                );
+                const staleUrls = localSubs
+                    .map((s) => s.url)
+                    .filter((u) => !keepUrls.has(u));
+                if (staleUrls.length > 0) {
+                    removeSubscriptionsByUrls(staleUrls);
+                }
+                logSync(
+                    `downloadPlugins(overwrite): 差集清理完成, 移除插件 ${removed} 个, 订阅 ${staleUrls.length} 个`,
+                );
+            };
         }
 
         const cloudSubs = downloadData?.subscriptions;
@@ -548,13 +570,24 @@ export async function downloadPlugins(
                 result.errors.push(`插件 "${item.name}" 恢复失败: ${msg}`);
             }
         }
-        if (overwrite) {
-            // 覆盖下载后本机与云端一致：同步账本重置为云端快照，并清掉这些插件
-            // 的「仅保留本地/仅删本地」墓碑残留，避免阻断后续同步
-            setSyncedPluginIds(restoredIds);
-            clearPluginSyncTombstones(restoredIds);
+        if (overwrite && signal?.aborted) {
+            // 取消中断：本地 = 原有全集 + 已恢复的云端插件（超集，无丢失），
+            // 跳过差集清理与墓碑重置（同步账本保持原状），重跑一次「更新至本地」即收敛
+            logSync(
+                "downloadPlugins(overwrite): 收到取消信号，保留本地原有插件，跳过差集清理",
+            );
         } else {
-            addSyncedPluginIds(restoredIds);
+            if (overwrite) {
+                // 覆盖下载后本机与云端一致：同步账本重置为云端快照，并清掉这些插件
+                // 的「仅保留本地/仅删本地」墓碑残留，避免阻断后续同步
+                setSyncedPluginIds(restoredIds);
+                clearPluginSyncTombstones(restoredIds);
+            } else {
+                addSyncedPluginIds(restoredIds);
+            }
+            if (overwriteCleanup) {
+                await overwriteCleanup();
+            }
         }
         logSync(
             `downloadPlugins ← 完成: 恢复 ${result.downloadedPlugins} 个插件, ${result.errors.length} 个错误`,
