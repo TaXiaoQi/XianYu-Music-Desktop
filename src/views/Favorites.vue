@@ -3,7 +3,7 @@
         <FavoritesHeader
             v-model:isBatchMode="isBatchMode"
             :selectedCount="selectedPaths.size"
-            :totalSongCount="localSongList.length"
+            :totalSongCount="favoriteUniquePaths.length"
             @playAll="handlePlayAll"
             @batchPlay="handleBatchPlay"
             @addToPlaylist="openAddToPlaylistSelection"
@@ -168,6 +168,11 @@ const { showToast } = useToast();
 const { favoritePaths, clearFavorites } = useLibraryCollections();
 
 const localSongList = computed(() => displaySongList.value);
+// 收藏列表可能含重复 path（同一首被收藏多次）：全选/计数一律按唯一 path 计算，
+// 否则 selectedPaths.size（唯一）永远小于行数（含重复），全选状态判定卡死
+const favoriteUniquePaths = computed(() =>
+    Array.from(new Set(localSongList.value.map((s) => s.path).filter(Boolean))),
+);
 
 const filterEntriesBySearch = (
     entries: FavoriteCollectionEntry[],
@@ -359,11 +364,13 @@ const handleBatchDownload = async () => {
 };
 
 const handleSelectAll = () => {
-    const allPaths = localSongList.value.map((s) => s.path);
-    if (allPaths.length > 0 && selectedPaths.value.size === allPaths.length) {
+    if (
+        favoriteUniquePaths.value.length > 0 &&
+        favoriteUniquePaths.value.every((p) => selectedPaths.value.has(p))
+    ) {
         selectedPaths.value = new Set();
     } else {
-        selectedPaths.value = new Set(allPaths);
+        selectedPaths.value = new Set(favoriteUniquePaths.value);
     }
 };
 

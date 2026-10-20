@@ -884,8 +884,9 @@ function handleAddToPlaylist() {
 }
 
 function handleSelectAll() {
-  const allPaths = currentSongs.value.map(s => s.path);
-  if (allPaths.length > 0 && selectedPaths.value.size === allPaths.length) {
+  // 去重后判定：列表含重复 path 时 size（唯一）永不等于行数，全选会卡死
+  const allPaths = Array.from(new Set(currentSongs.value.map(s => s.path).filter(Boolean)));
+  if (allPaths.length > 0 && allPaths.every(p => selectedPaths.value.has(p))) {
     selectedPaths.value = new Set();
   } else {
     selectedPaths.value = new Set(allPaths);
