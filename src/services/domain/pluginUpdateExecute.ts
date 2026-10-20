@@ -48,6 +48,13 @@ export function createPluginUpdateExecutor(deps: PluginUpdateServiceDeps) {
 
       addPluginSource(newSource);
 
+      if (newSource.format !== 'lx') {
+        // MusicFree 插件：实例/沙箱可能已按旧脚本懒加载，更新后必须重建，
+        // 否则本次会话内继续用旧脚本（如酷狗旧版歌单详情 30 首截断）
+        deps.reloadPluginInstance?.(source.id);
+        if (newSource.id !== source.id) deps.reloadPluginInstance?.(newSource.id);
+      }
+
       if (newSource.id !== source.id && Object.keys(oldUserVars).length > 0) {
         setPluginUserVariableValues(newSource.id, oldUserVars);
         log(`[performPluginUpdate] 已迁移用户变量: ${source.id.substring(0, 16)}... → ${newSource.id.substring(0, 16)}... keys=[${Object.keys(oldUserVars).join(',')}]`);

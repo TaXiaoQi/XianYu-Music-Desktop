@@ -22,6 +22,8 @@ export interface PluginUpdateServiceDeps {
   parseLxScriptInfo: (script: string) => { version: string; homepage?: string };
   initLxPlugin: (source: PluginSource) => Promise<boolean>;
   destroyLxPlugin: (id: string) => void;
+  /** MusicFree 插件更新后重建实例：沙箱可能仍按旧脚本运行（中途订阅更新场景） */
+  reloadPluginInstance?: (pluginId: string) => void;
   pluginApi: Pick<typeof pluginApi, 'fetchPluginUrl' | 'readPluginFile'>;
   log: (msg: string) => void;
 }

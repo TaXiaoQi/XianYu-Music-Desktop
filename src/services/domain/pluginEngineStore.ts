@@ -11,7 +11,7 @@ import {
   setStoredPlugins,
   userVarDefsCache,
 } from './pluginEngineBase';
-import { ensurePluginInstance, loadPluginFromScript } from './pluginEngineInstance';
+import { ensurePluginInstance, loadPluginFromScript, reloadPluginInstance } from './pluginEngineInstance';
 import { removePluginUserVariableValues, setPluginUserVariableValues } from './pluginEngineUserVars';
 import { destroySandbox } from './pluginSandboxManager';
 import {
@@ -233,6 +233,7 @@ const pluginUpdateService = createPluginUpdateService({
   parseLxScriptInfo,
   initLxPlugin,
   destroyLxPlugin,
+  reloadPluginInstance,
   pluginApi,
   log,
 });
