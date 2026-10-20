@@ -1,5 +1,5 @@
-/** @type {import('tailwindcss').Config} */ // 实现
-export default { // 实现
+/** @type {import('tailwindcss').Config} */
+export default {
     darkMode: "class",
     content: [
         "./index.html",

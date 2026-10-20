@@ -1,12 +1,12 @@
-import { defineConfig, type Plugin } from "vite"; // 实现
-import vue from "@vitejs/plugin-vue"; // 实现
-import wasm from "vite-plugin-wasm"; // 实现
-import topLevelAwait from "vite-plugin-top-level-await"; // 实现
+import { defineConfig, type Plugin } from "vite";
+import vue from "@vitejs/plugin-vue";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 import { fileURLToPath, URL } from "node:url";
 
-const host = process.env.TAURI_DEV_HOST; // 实现
+const host = process.env.TAURI_DEV_HOST;
 
-const preserveRuntimeThemeAlpha = (): Plugin => ({ // 实现
+const preserveRuntimeThemeAlpha = (): Plugin => ({
     name: "xianyu-preserve-runtime-theme-alpha",
     enforce: "post" as const,
     generateBundle(_options, bundle) {

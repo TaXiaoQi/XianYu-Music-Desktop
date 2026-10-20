@@ -1,6 +1,6 @@
-import { defineConfig } from "vitest/config"; // 实现
+import { defineConfig } from "vitest/config";
 
-export default defineConfig({ // 实现
+export default defineConfig({
     test: {
         clearMocks: true,
         environment: "node",

@@ -29,7 +29,7 @@ const replaceLegacyThemeColor = (value) =>
                 `rgb(var(--theme-color-rgb) / ${Number(percentage) / 100})`,
         );
 
-const runtimeThemeColor = { // 实现
+const runtimeThemeColor = {
     postcssPlugin: "xianyu-runtime-theme-color",
     OnceExit(root) {
         root.walkDecls((declaration) => {
@@ -38,6 +38,6 @@ const runtimeThemeColor = { // 实现
     },
 };
 
-export default { // 实现
+export default {
     plugins: [tailwindcss(), runtimeThemeColor, autoprefixer()],
 };
