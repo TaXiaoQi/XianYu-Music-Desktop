@@ -66,11 +66,26 @@ function emitSyncProgress(msg: string, pct?: number) {
   syncToastBridge.value?.(msg, pct);
 }
 
+/** 任一域的同步在途（手动/自动共用 service 层 syncing 状态）：
+ * 同步全局互斥——并发会互踩行内状态，且自动同步的进度消息会灌进手动进度 toast（消息串门） */
+function anyDomainSyncing(): boolean {
+  return (
+    syncing.value ||
+    pluginSyncing.value ||
+    settingsSyncing.value ||
+    favoritesSyncing.value
+  );
+}
+
 function withSyncToast<TArgs extends unknown[], R>(
   fn: (...args: TArgs) => Promise<R>,
   initialText: string,
 ): (...args: TArgs) => Promise<R> {
   return async (...args: TArgs) => {
+    if (anyDomainSyncing()) {
+      useToast().showToast('已有同步任务进行中，请稍候', 'info');
+      return undefined as R;
+    }
     const controller = new AbortController();
     const toast = useToast().showProgressToast(initialText, {
       cancellable: true,
@@ -101,6 +116,8 @@ export function usePlaylistSync() {
   const { showToast } = useToast();
 
   function canSync(): boolean {
+    // 同步全局互斥：任一域在途时拒绝发起新同步（自动周期同步 tick 同样被挡）
+    if (anyDomainSyncing()) return false;
     return authStore.isLoggedIn && !!authStore.user?.ciyuanxi_id;
   }
 
