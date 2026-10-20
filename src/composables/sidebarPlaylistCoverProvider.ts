@@ -1,6 +1,7 @@
 import { onUnmounted, ref, watch, type Ref } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { sidebarPlaylistCoverCache } from '../caches/imageCaches';
+import { getDisplayCoverUrl } from '../utils/coverProxy';
 
 import type { Playlist } from '../types';
 
@@ -37,6 +38,16 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
     coverVersion.value += 1;
   };
 
+  /**
+   * 远程封面（含导入备份里记录的 http:// 直链）不得直接进 <img>：
+   * CSP 不放行外部 http 且部分 CDN 有热链防护，统一走原生代理取回
+   * dataUrl（就绪后 bump 版本号驱动模板重取），本地/协议地址原样返回。
+   */
+  const proxiedRemoteCover = (url: string): string => {
+    if (!/^https?:\/\//i.test(url)) return url;
+    return getDisplayCoverUrl(url, () => bumpCoverVersion());
+  };
+
   /** 用歌单内首曲的缩略图直接预热封面缓存 */
   const primeFromPlaylistTracks = (playlistId: string, firstSongPath: string): string => {
     const playlist = playlists.value.find((item) => item.id === playlistId);
@@ -59,14 +70,14 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
 
     const primedUrl = primeFromPlaylistTracks(playlistId, firstSongPath);
     if (primedUrl) {
-      sidebarPlaylistCoverCache.set(playlistId, primedUrl);
+      sidebarPlaylistCoverCache.set(playlistId, proxiedRemoteCover(primedUrl));
       return true;
     }
 
     try {
       const assetUrl = await loadCover(firstSongPath);
       if (assetUrl) {
-        sidebarPlaylistCoverCache.set(playlistId, assetUrl);
+        sidebarPlaylistCoverCache.set(playlistId, proxiedRemoteCover(assetUrl));
         return true;
       }
       return sidebarPlaylistCoverCache.delete(playlistId);
@@ -89,7 +100,10 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
       return true;
     }
 
-    sidebarPlaylistCoverCache.set(playlistId, looksLikeSelfContainedUrl(coverPath) ? coverPath : convertFileSrc(coverPath));
+    sidebarPlaylistCoverCache.set(
+      playlistId,
+      looksLikeSelfContainedUrl(coverPath) ? proxiedRemoteCover(coverPath) : convertFileSrc(coverPath),
+    );
     return true;
   };
 
@@ -100,7 +114,7 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
       return false;
     }
     activeCustomCoverByPlaylist.set(playlistId, cloudCoverUrl);
-    sidebarPlaylistCoverCache.set(playlistId, cloudCoverUrl);
+    sidebarPlaylistCoverCache.set(playlistId, proxiedRemoteCover(cloudCoverUrl));
     return true;
   };
 
@@ -161,7 +175,9 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
     const playlist = playlists.value.find((item) => item.id === playlistId);
 
     if (playlist?.coverPath) {
-      const url = looksLikeSelfContainedUrl(playlist.coverPath) ? playlist.coverPath : convertFileSrc(playlist.coverPath);
+      const url = looksLikeSelfContainedUrl(playlist.coverPath)
+        ? proxiedRemoteCover(playlist.coverPath)
+        : convertFileSrc(playlist.coverPath);
       sidebarPlaylistCoverCache.set(playlistId, url);
       activeCustomCoverByPlaylist.set(playlistId, playlist.coverPath);
       bumpCoverVersion();
@@ -169,17 +185,19 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
     }
 
     if (playlist?.cloudCoverUrl && looksLikeRemoteHttp(playlist.cloudCoverUrl)) {
-      sidebarPlaylistCoverCache.set(playlistId, playlist.cloudCoverUrl);
+      const url = proxiedRemoteCover(playlist.cloudCoverUrl);
+      sidebarPlaylistCoverCache.set(playlistId, url);
       bumpCoverVersion();
-      return playlist.cloudCoverUrl;
+      return url;
     }
 
     const firstSongPath = playlist?.songPaths[0];
     if (firstSongPath) {
       const primedUrl = primeFromPlaylistTracks(playlistId, firstSongPath);
       if (primedUrl) {
-        sidebarPlaylistCoverCache.set(playlistId, primedUrl);
-        return primedUrl;
+        const url = proxiedRemoteCover(primedUrl);
+        sidebarPlaylistCoverCache.set(playlistId, url);
+        return url;
       }
       void requestCoverLoad(playlistId, firstSongPath);
     }

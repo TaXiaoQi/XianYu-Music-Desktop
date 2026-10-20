@@ -273,12 +273,26 @@ const getLocalArtistCover = (artist: ArtistCatalogItem): string => {
   }
 };
 
+// 远程封面统一经原生代理取回 dataUrl（CSP 不放行外部 http、部分 CDN 有热链防护）；
+// 代理就绪后 bump 版本号驱动模板重取
+const proxyCoverVersion = ref(0);
+const proxiedCover = (url: string): string => {
+  if (!/^https?:\/\//i.test(url)) return url;
+  void proxyCoverVersion.value;
+  return getDisplayCoverUrl(url, () => {
+    proxyCoverVersion.value += 1;
+  });
+};
+
 const getLocalAlbumCover = (album: AlbumCatalogItem): string => {
   if (!album.firstSongPath) return '';
   const song = libraryStore.getSongByPath(album.firstSongPath);
   if (song?.cover_thumb_path) {
-    if (song.cover_thumb_path.startsWith('http') || song.cover_thumb_path.startsWith('asset:') || song.cover_thumb_path.startsWith('data:')) {
+    if (song.cover_thumb_path.startsWith('asset:') || song.cover_thumb_path.startsWith('data:')) {
       return song.cover_thumb_path;
+    }
+    if (/^https?:\/\//i.test(song.cover_thumb_path)) {
+      return proxiedCover(song.cover_thumb_path);
     }
     try {
       return convertFileSrc(song.cover_thumb_path);
@@ -291,8 +305,11 @@ const getLocalAlbumCover = (album: AlbumCatalogItem): string => {
 
 const getPlaylistCover = (playlist: Playlist): string => {
   if (playlist.coverPath) {
-    if (playlist.coverPath.startsWith('http') || playlist.coverPath.startsWith('asset:') || playlist.coverPath.startsWith('data:')) {
+    if (playlist.coverPath.startsWith('asset:') || playlist.coverPath.startsWith('data:')) {
       return playlist.coverPath;
+    }
+    if (/^https?:\/\//i.test(playlist.coverPath)) {
+      return proxiedCover(playlist.coverPath);
     }
     try {
       return convertFileSrc(playlist.coverPath);
@@ -303,8 +320,11 @@ const getPlaylistCover = (playlist: Playlist): string => {
   if (playlist.songPaths.length > 0) {
     const song = libraryStore.getSongByPath(playlist.songPaths[0]);
     if (song?.cover_thumb_path) {
-      if (song.cover_thumb_path.startsWith('http') || song.cover_thumb_path.startsWith('asset:') || song.cover_thumb_path.startsWith('data:')) {
+      if (song.cover_thumb_path.startsWith('asset:') || song.cover_thumb_path.startsWith('data:')) {
         return song.cover_thumb_path;
+      }
+      if (/^https?:\/\//i.test(song.cover_thumb_path)) {
+        return proxiedCover(song.cover_thumb_path);
       }
       try {
         return convertFileSrc(song.cover_thumb_path);
