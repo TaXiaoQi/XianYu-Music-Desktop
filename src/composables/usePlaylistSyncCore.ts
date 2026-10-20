@@ -141,7 +141,9 @@ export function usePlaylistSync() {
     getUploadConfig: () => settingsStore.settings.upload,
     tasks: {
       uploadPlaylists,
+      downloadPlaylistsOnly: downloadPlaylists,
       uploadPluginsOnly: pluginFlow.uploadPluginsOnly,
+      downloadPluginsOnly: pluginFlow.downloadPluginsOnly,
       uploadFavoritesOnly: favoritesFlow.uploadFavoritesOnly,
       uploadSettingsOnly: settingsFlow.uploadSettingsOnly,
       syncPlaylists: () => syncPlaylists(),
@@ -368,6 +370,13 @@ export function usePlaylistSync() {
     if (canSync()) {
       scheduler.start();
     }
+
+    // 变更驱动同步（对齐移动端 SyncTrigger.markDirty + 8s 防抖）：收藏/
+    // 歌单/最近播放任一本地变更都在 8s 后触发一次同步，跨端收敛从「等下
+    // 个周期」提前到秒级。下载落盘也会短暂触发，空同步无变化即收敛无循环
+    collectionsStore.$subscribe(() => {
+      getAutoSyncScheduler().triggerSync();
+    });
   }
 
   function checkAutoSync() {

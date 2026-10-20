@@ -43,6 +43,7 @@ export function calculateNextSyncTime(
 export class AutoSyncScheduler { // 实现
     private timerId: ReturnType<typeof setInterval> | null = null;
     private delayedTimerId: ReturnType<typeof setTimeout> | null = null;
+    private triggerTimerId: ReturnType<typeof setTimeout> | null = null;
     private onSync: (() => Promise<void>) | null = null;
     private onDelayed:
         ((delaySeconds: number, attempt: number) => void) | null = null;
@@ -111,7 +112,32 @@ export class AutoSyncScheduler { // 实现
             clearTimeout(this.delayedTimerId);
             this.delayedTimerId = null;
         }
+        if (this.triggerTimerId !== null) {
+            clearTimeout(this.triggerTimerId);
+            this.triggerTimerId = null;
+        }
         log("stop: 调度器已停止");
+    } // 实现
+    /**
+     * 数据变更驱动触发（对齐移动端 SyncTrigger.markDirty + 8s 防抖）：
+     * 业务数据变更后 8s 内合并多次变更只同步一次，不受 nextSyncAt 周期
+     * 限制。下载落盘也会短暂触发，但空同步无变化即收敛，无循环风险。
+     */
+    triggerSync() {
+        if (!this.getConfig || !this.canSync) {
+            return;
+        }
+        if (this.triggerTimerId !== null) {
+            return; // 已有待触发的防抖
+        }
+        this.triggerTimerId = setTimeout(() => {
+            this.triggerTimerId = null;
+            const config = this.getConfig?.();
+            if (!config?.enabled || !this.canSync?.()) {
+                return;
+            }
+            void this.attemptSync();
+        }, 8000);
     } // 实现
     restart() {
         if (this.getConfig) {

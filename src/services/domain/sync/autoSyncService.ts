@@ -5,7 +5,9 @@ import { fetchServerListenSummary } from '../leaderboardReport';
 
 export interface AutoSyncTaskSet {
   uploadPlaylists(): Promise<unknown>;
+  downloadPlaylistsOnly(): Promise<unknown>;
   uploadPluginsOnly(): Promise<unknown>;
+  downloadPluginsOnly(): Promise<unknown>;
   uploadFavoritesOnly(): Promise<unknown>;
   uploadSettingsOnly(): Promise<unknown>;
   syncPlaylists(): Promise<unknown>;
@@ -39,7 +41,7 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
     }
     syncOperationInProgress = true;
     try {
-      deps.log('performAutoSync: 开始自动同步（客户端为主，上传 + 凭据拉取）');
+      deps.log('performAutoSync: 开始自动同步（先拉后推，对齐移动端）');
       const upload = deps.getUploadConfig();
       let hasError = false;
 
@@ -47,14 +49,32 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
       // 网盘凭据周期拉取：其他端绑定/轮换的变更及时到达本端；
       // LWW 门控在 syncCloudCreds 内部（本地较新跳过下发，无变化不落盘）
       parallelTasks.push({ label: '同步网盘账号', run: deps.tasks.syncCloudCreds });
+      // 统一「先拉后推」（对齐移动端 _syncAll）：其他设备推上云的变更在本
+      // 周期内即可到达，不再只靠登录时的一次性全量同步；各域 download 内部
+      // 有内容对比，无变化不落盘，成本可控。设置域维持仅上传（两端口径一致）
       if (upload.playlists) {
-        parallelTasks.push({ label: '上传歌单', run: deps.tasks.uploadPlaylists });
+        parallelTasks.push({
+          label: '同步歌单',
+          run: async () => {
+            await deps.tasks.downloadPlaylistsOnly();
+            await deps.tasks.uploadPlaylists();
+          },
+        });
       }
       if (upload.plugins) {
-        parallelTasks.push({ label: '上传插件', run: deps.tasks.uploadPluginsOnly });
+        parallelTasks.push({
+          label: '同步插件',
+          run: async () => {
+            await deps.tasks.downloadPluginsOnly();
+            await deps.tasks.uploadPluginsOnly();
+          },
+        });
       }
       if (upload.favorites) {
-        parallelTasks.push({ label: '上传收藏', run: deps.tasks.uploadFavoritesOnly });
+        parallelTasks.push({
+          label: '同步收藏',
+          run: deps.tasks.syncFavorites,
+        });
       }
       if (upload.settings) {
         parallelTasks.push({ label: '上传设置', run: deps.tasks.uploadSettingsOnly });
