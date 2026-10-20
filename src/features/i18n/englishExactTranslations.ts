@@ -2823,4 +2823,8 @@ export const exactEnglishTranslations: Record<string, string> = {
   // 歌单导入预览里的插值后缀片段（「共 {{ n }}」由「共」条目单独翻译），
   // 参照「首源端已移除的歌曲，并添加新歌曲」的片段写法，译文以空格开头。
   "首歌曲 · 确认无误后点击「确认导入」": " songs · click \"Confirm Import\" once everything looks right",
+  // 网盘文件夹浏览（src/components/settings/SettingsLibrary.vue、src/components/settings/CloudFolderBrowser.vue）
+  "浏览已绑定网盘的目录，可直接试听或下载到音乐库。": "Browse directories of the linked cloud drive; play directly or download to your library.",
+  "网盘文件夹": "Cloud drive folders",
+  "选择当前文件夹": "Use this folder",
 };
