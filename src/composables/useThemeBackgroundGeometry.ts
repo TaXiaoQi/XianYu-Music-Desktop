@@ -2,7 +2,7 @@
  * 自定义皮肤与全局背景共用的封面几何推算
  */
 
-export interface BackgroundGeometry { // 实现
+export interface BackgroundGeometry {
     width: number;
     height: number;
 }

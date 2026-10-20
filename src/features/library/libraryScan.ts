@@ -28,7 +28,7 @@ export const resolveScanLibraryOptions = (
   sourcePath: options.sourcePath ?? '',
 });
 
-export const isLibraryScanActive = () => {
+const isLibraryScanActive = () => {
   const libraryStore = getLibraryStore();
   return !!libraryStore.libraryScanProgress
     && !libraryStore.libraryScanProgress.done

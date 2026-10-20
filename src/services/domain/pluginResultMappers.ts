@@ -13,7 +13,7 @@ const extractCoverFromNode = (node: any): string => {
   const raw = node.rawData || node.raw || node;
   let url =
     node.artwork || node.cover || node.coverImg || node.coverUrl || node.cover_url || node.pic || node.picurl || node.img || node.imgurl || node.imgUrl || node.albumPic || node.picture ||
-    raw.artwork || raw.cover || raw.coverImg || raw.coverUrl || raw.cover_url || raw.pic || raw.picurl || raw.img || raw.imgurl || raw.imgUrl || raw.albumPic || raw.picture || ''; // 实现
+    raw.artwork || raw.cover || raw.coverImg || raw.coverUrl || raw.cover_url || raw.pic || raw.picurl || raw.img || raw.imgurl || raw.imgUrl || raw.albumPic || raw.picture || '';
 
   if (url && typeof url !== 'string') url = '';
 
@@ -205,8 +205,6 @@ export const extractDurationMs = (item: any): number => {
 
   return 0;
 };
-
-export const extractDuration = extractDurationMs;
 
 export const extractArtistAvatarUrl = async (item: any): Promise<string> => {
   if (!item || typeof item !== 'object') return '';

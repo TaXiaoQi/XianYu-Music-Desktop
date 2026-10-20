@@ -12,7 +12,7 @@ const K_FOLDER_SEL_KEY = 'xianyu_cloud_folder_sel_v1';
 const K_FOLDER_NAMES_KEY = 'xianyu_cloud_folder_names_v1';
 
 /** 目录标识：`providerId|accountId`。 */
-export const cloudFolderSelKey = (providerId: string, accountId: string): string =>
+const cloudFolderSelKey = (providerId: string, accountId: string): string =>
   `${providerId}|${accountId}`;
 
 type FolderSelMap = Record<string, string[]>;

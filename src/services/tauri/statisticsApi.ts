@@ -1,4 +1,4 @@
-import type { // 实现
+import type {
     BehaviorStats,
     FormatDistribution,
     LibraryStats,
@@ -13,7 +13,7 @@ import { tauriInvoke } from "./invoke";
 
 export type StatisticsImportMode = "overwrite" | "merge";
 
-export const statisticsApi = { // 实现
+export const statisticsApi = {
     exportStatisticsFile: (
         defaultFileName: string,
         includeRecentPlays: boolean,

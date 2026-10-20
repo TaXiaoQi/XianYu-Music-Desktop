@@ -9,13 +9,13 @@ import type {
 
 // ============ API 接口 ============ 
 
-export async function pluginHttpRequest( // 实现
-  method: string, // 实现
-  url: string, // 实现
-  headers?: Record<string, string>, // 实现
-  body?: string, // 实现
-  timeout?: number, // 实现
-  follow?: number, // 实现
+export async function pluginHttpRequest(
+  method: string,
+  url: string,
+  headers?: Record<string, string>,
+  body?: string,
+  timeout?: number,
+  follow?: number,
 ): Promise<PluginHttpResponseContract> {
   return tauriInvoke('plugin_http_request', {
     method,
@@ -25,11 +25,11 @@ export async function pluginHttpRequest( // 实现
     timeout: timeout ?? null,
     follow: follow ?? null,
   });
-} // 实现
-export async function readPluginFile(path: string): Promise<string> { // 实现
+}
+export async function readPluginFile(path: string): Promise<string> {
   return tauriInvoke('read_plugin_file', { path });
-} // 实现
-export async function savePluginScript(id: string, script: string): Promise<string> {
+}
+async function savePluginScript(id: string, script: string): Promise<string> {
   return tauriInvoke('save_plugin_script', { id, script });
 }
 
@@ -62,24 +62,24 @@ async function fetchPluginUrl(url: string): Promise<string> {
     url,
     headers: userAgent ? { 'User-Agent': userAgent } : null,
   });
-  if (resp.status < 200 || resp.status >= 300) { // 实现
+  if (resp.status < 200 || resp.status >= 300) {
     // 带上响应体片段：站点的 403/4xx 往往在 body 里说明原因（如 User-Agent 校验、
     // 限流、key 失效），只报状态码会让这类失败无从排查。
     const detail = String(resp.body ?? '').trim().slice(0, 200);
     throw new Error(`HTTP ${resp.status}${detail ? ` ${detail}` : ''}`);
-  } // 实现
-  return resp.body; // 实现
-} // 实现
+  }
+  return resp.body;
+}
 async function proxyImage(url: string, referer?: string): Promise<string> {
   return tauriInvoke('proxy_image', { url, referer: referer ?? null });
-} // 实现
+}
 async function pluginHttpRequestBinary(
-  method: string, // 实现
-  url: string, // 实现
-  headers?: Record<string, string>, // 实现
-  body?: string, // 实现
-  timeout?: number, // 实现
-  follow?: number, // 实现
+  method: string,
+  url: string,
+  headers?: Record<string, string>,
+  body?: string,
+  timeout?: number,
+  follow?: number,
 ): Promise<PluginHttpBinaryResponseContract> {
   return tauriInvoke('plugin_http_request_binary', {
     method,
@@ -92,20 +92,20 @@ async function pluginHttpRequestBinary(
 }
 
 async function downloadAudioToTemp(
-  url: string, // 实现
-  headers?: Record<string, string>, // 实现
-): Promise<string> { // 实现
+  url: string,
+  headers?: Record<string, string>,
+): Promise<string> {
   return tauriInvoke('download_audio_to_temp', { url, headers: headers ?? null });
-} // 实现
-async function downloadVideoToCache( // 实现
-  url: string, // 实现
-  headers?: Record<string, string>, // 实现
-): Promise<string> { // 实现
-  return tauriInvoke('download_video_to_cache', { url, headers: headers ?? null }); // 实现
+}
+async function downloadVideoToCache(
+  url: string,
+  headers?: Record<string, string>,
+): Promise<string> {
+  return tauriInvoke('download_video_to_cache', { url, headers: headers ?? null });
 }
 
-async function removeCachedBackgroundVideo(path: string): Promise<void> { // 实现
-  return tauriInvoke('remove_cached_background_video', { path }); // 实现
+async function removeCachedBackgroundVideo(path: string): Promise<void> {
+  return tauriInvoke('remove_cached_background_video', { path });
 }
 
 // MV 流式代理 URL：数据进歌曲的在线播放流缓存池（同 LRU 上限/清理），
@@ -132,17 +132,17 @@ async function findAlternativeLxSource(
   });
 }
 
-export const pluginApi = { // 实现
-  pluginHttpRequest, // 实现
-  pluginHttpRequestBinary, // 实现
-  readPluginFile, // 实现
+export const pluginApi = {
+  pluginHttpRequest,
+  pluginHttpRequestBinary,
+  readPluginFile,
   savePluginScript,
   readFileBytes,
-  fetchPluginUrl, // 实现
-  proxyImage, // 实现
+  fetchPluginUrl,
+  proxyImage,
   downloadAudioToTemp,
-  downloadVideoToCache, // 实现
-  removeCachedBackgroundVideo, // 实现
+  downloadVideoToCache,
+  removeCachedBackgroundVideo,
   mvProxyUrl,
   getLxCover,
   findAlternativeLxSource,

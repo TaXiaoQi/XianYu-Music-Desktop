@@ -11,7 +11,7 @@ export function getCiyuanxiId(): string | null {
   return auth?.user?.ciyuanxi_id ?? null;
 }
 
-export function isOnlineSong(song: Song): boolean {
+function isOnlineSong(song: Song): boolean {
   return (
     isRemoteSong(song)
     || isPluginSong(song)
@@ -22,7 +22,7 @@ export function isOnlineSong(song: Song): boolean {
   );
 }
 
-export function classifySyncSong(song: Song): SyncSongType {
+function classifySyncSong(song: Song): SyncSongType {
   if (song.source_type === 'local') return 'local';
   if (song.source_type === 'remote' || song.source_type === 'plugin') return 'online';
   return isOnlineSong(song) ? 'online' : 'local';

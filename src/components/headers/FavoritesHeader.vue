@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 收藏页头部：单曲/歌单/专辑三个页签 + 批量工具条 + 歌曲页签操作区
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
@@ -6,8 +6,8 @@ import { useSearchTitleSuffix } from '../../composables/useSearchAwareTitle';
 import SortModeButton from '../common/SortModeButton.vue';
 
 const props = defineProps<{
-  isBatchMode: boolean; // 实现
-  selectedCount?: number; // 实现
+  isBatchMode: boolean;
+  selectedCount?: number;
   totalSongCount?: number;
 }>();
 

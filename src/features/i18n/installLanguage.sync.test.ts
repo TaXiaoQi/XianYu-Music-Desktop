@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ // 实现
+const mocks = vi.hoisted(() => ({
     setInstallLanguage: vi.fn(),
     setString: vi.fn(),
 }));

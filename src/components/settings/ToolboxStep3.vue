@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useToast as makeToast } from '../../composables/toast';
 import SettingHint from './SettingHint.vue';

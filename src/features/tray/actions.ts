@@ -16,11 +16,11 @@ export const TRAY_MENU_WINDOW_LABEL = "tray-menu";
 export const TRAY_MENU_STATE_EVENT = TRAY_EVENT_NAMES.state;
 export const TRAY_MENU_READY_EVENT = TRAY_EVENT_NAMES.ready;
 
-export const TRAY_MENU_PANEL_WIDTH = 210;
+const TRAY_MENU_PANEL_WIDTH = 210;
 export const TRAY_MENU_WINDOW_WIDTH = TRAY_MENU_PANEL_WIDTH;
 export const TRAY_MENU_WINDOW_HEIGHT = 268;
 
-export type TrayMenuAction = // 实现
+export type TrayMenuAction =
     | "prev-song"
     | "toggle-play"
     | "next-song"
@@ -31,7 +31,7 @@ export type TrayMenuAction = // 实现
     | "quit"
     | "toggle-favorite";
 
-export interface TrayMenuStatePayload { // 实现
+export interface TrayMenuStatePayload {
     currentSong: Song | null;
     isPlaying: boolean;
     isDarkTheme: boolean;
@@ -44,7 +44,7 @@ export interface TrayMenuStatePayload { // 实现
     windowBlurTint: number;
 }
 
-export interface TrayMenuActionDeps { // 实现
+export interface TrayMenuActionDeps {
     prevSong: () => void;
     nextSong: () => void;
     cyclePlayMode: () => void;

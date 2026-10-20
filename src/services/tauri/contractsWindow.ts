@@ -26,7 +26,7 @@ export interface TaskbarTrayGeometry {
   scale_factor: number;
 }
 
-export interface RectPhysical {
+interface RectPhysical {
   left: number;
   top: number;
   right: number;
@@ -34,7 +34,7 @@ export interface RectPhysical {
 }
 
 export type OwnerBindingState = 'bound' | 'failed' | 'unsupported' | 'already_bound';
-export type GeometrySource = 'tray' | 'taskbar_fallback';
+type GeometrySource = 'tray' | 'taskbar_fallback';
 
 export interface NativeTrayMenuState {
   currentSong?: NativeTrayMenuSong | null;
@@ -46,7 +46,7 @@ export interface NativeTrayMenuState {
   useCustomTrayMenu: boolean;
 }
 
-export interface NativeTrayMenuSong {
+interface NativeTrayMenuSong {
   title?: string | null;
   name?: string | null;
   artist?: string | null;

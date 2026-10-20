@@ -37,7 +37,7 @@ const BLUR_TINT_RGB: Record<'dark' | 'light', [number, number, number]> = {
 };
 
 /** 把用户侧 0~100 的模糊着色强度夹取到合法区间并取整 */
-export function clampTintPercentage(rawTint = 50): number {
+function clampTintPercentage(rawTint = 50): number {
   return Math.min(100, Math.max(0, Math.round(rawTint)));
 }
 

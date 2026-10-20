@@ -4,13 +4,13 @@ import { log } from './pluginEngineBase';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const MF_EMPTY_SEARCH_RETRY_DELAY_MS = 450;
+const MF_EMPTY_SEARCH_RETRY_DELAY_MS = 450;
 
 export const catalogLog = (msg: string) => {
   log(msg);
 };
 
-export const describeResult = (r: any): string => {
+const describeResult = (r: any): string => {
   if (!r || typeof r !== 'object') return `type=${typeof r}`;
   const keys = Object.keys(r).filter(k => k !== 'isEnd').join(',') || '空对象';
   let len = 0;
@@ -73,7 +73,7 @@ export function extractArtistDescription(raw: any): string {
 
 // ==================== 类型 ====================
 
-export type PluginMusicSearchStatus =
+type PluginMusicSearchStatus =
   | 'success'
   | 'empty'
   | 'init_failed'

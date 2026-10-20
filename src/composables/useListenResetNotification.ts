@@ -16,12 +16,6 @@ function formatDate(value: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export function resetListenResetNotificationState(): void {
-  listenResetVisible.value = false;
-  currentListenResetNotification.value = null;
-  isCheckingListenReset.value = false;
-}
-
 export function useListenResetNotification() {
   const checkListenResetNotification = async (announcementVisible = false) => {
     if (isCheckingListenReset.value || listenResetVisible.value) return;

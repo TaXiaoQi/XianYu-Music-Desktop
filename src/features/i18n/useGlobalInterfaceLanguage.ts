@@ -1,11 +1,11 @@
-import { watch } from 'vue'; // 实现
+import { watch } from 'vue';
 
-import { useI18n } from './index'; // 实现
-import { toEnglish } from './english'; // 实现
+import { useI18n } from './index';
+import { toEnglish } from './english';
 import { toTraditional } from './traditional';
-import type { AppLanguage } from '../../types'; // 实现
+import type { AppLanguage } from '../../types';
 
-const SKIP_TAGS = new Set([ // 实现
+const SKIP_TAGS = new Set([
   'SCRIPT',
   'STYLE',
   'NOSCRIPT',
@@ -15,35 +15,35 @@ const SKIP_TAGS = new Set([ // 实现
   'INPUT',
 ]);
 
-const TRANSLATED_ATTRIBUTES = ['title', 'placeholder', 'aria-label'] as const; // 实现
-const originalText = new WeakMap<Text, string>(); // 实现
-const appliedText = new WeakMap<Text, string>(); // 实现
-const originalAttributes = new WeakMap<Element, Map<string, string>>(); // 实现
-const appliedAttributes = new WeakMap<Element, Map<string, string>>(); // 实现
+const TRANSLATED_ATTRIBUTES = ['title', 'placeholder', 'aria-label'] as const;
+const originalText = new WeakMap<Text, string>();
+const appliedText = new WeakMap<Text, string>();
+const originalAttributes = new WeakMap<Element, Map<string, string>>();
+const appliedAttributes = new WeakMap<Element, Map<string, string>>();
 
-const hasHan = (value: string) => /[\u3400-\u9fff\uf900-\ufaff]/.test(value); // 实现
+const hasHan = (value: string) => /[\u3400-\u9fff\uf900-\ufaff]/.test(value);
 
-function shouldSkipElement(element: Element): boolean { // 实现
-  if (SKIP_TAGS.has(element.tagName)) return true; // 实现
-  if (element.hasAttribute('data-no-translate')) return true; // 实现
-  if ((element as HTMLElement).isContentEditable) return true; // 实现
-  return false; // 实现
+function shouldSkipElement(element: Element): boolean {
+  if (SKIP_TAGS.has(element.tagName)) return true;
+  if (element.hasAttribute('data-no-translate')) return true;
+  if ((element as HTMLElement).isContentEditable) return true;
+  return false;
 }
 
-function isInsideSkippedSubtree(node: Node): boolean { // 实现
-  let current: Node | null = node.parentNode; // 实现
-  while (current) { // 实现
-    if (current.nodeType === Node.ELEMENT_NODE && shouldSkipElement(current as Element)) { // 实现
-      return true; // 实现
+function isInsideSkippedSubtree(node: Node): boolean {
+  let current: Node | null = node.parentNode;
+  while (current) {
+    if (current.nodeType === Node.ELEMENT_NODE && shouldSkipElement(current as Element)) {
+      return true;
     }
-    current = current.parentNode; // 实现
+    current = current.parentNode;
   }
-  return false; // 实现
+  return false;
 }
 
-function translateSource(source: string, language: AppLanguage): string { // 实现
-  if (language === 'zh-TW') return toTraditional(source); // 实现
-  if (language === 'en-US') return toEnglish(source); // 实现
+function translateSource(source: string, language: AppLanguage): string {
+  if (language === 'zh-TW') return toTraditional(source);
+  if (language === 'en-US') return toEnglish(source);
   // zh-CN 是源码基准语言，文本本身已是大陆简体，原样返回即可。
   // 这里不能再过 toSimplified()：它走的是 OpenCC「台湾用语 → 大陆用语」反查表，
   // 做的是词汇替换而非单纯字形转换，会把已经正确的简体词改坏——
@@ -52,166 +52,166 @@ function translateSource(source: string, language: AppLanguage): string { // 实
   return source;
 }
 
-function translateTextNode(node: Text, language: AppLanguage, force = false): void { // 实现
-  const current = node.nodeValue ?? ''; // 实现
-  if (!current.trim() || isInsideSkippedSubtree(node)) return; // 实现
+function translateTextNode(node: Text, language: AppLanguage, force = false): void {
+  const current = node.nodeValue ?? '';
+  if (!current.trim() || isInsideSkippedSubtree(node)) return;
 
-  const previouslyApplied = appliedText.get(node); // 实现
-  if (!force && previouslyApplied === current) return; // 实现
+  const previouslyApplied = appliedText.get(node);
+  if (!force && previouslyApplied === current) return;
 
-  if (!force) { // 实现
-    if (hasHan(current)) { // 实现
-      originalText.set(node, current); // 实现
+  if (!force) {
+    if (hasHan(current)) {
+      originalText.set(node, current);
     } else {
-      originalText.delete(node); // 实现
-      appliedText.delete(node); // 实现
+      originalText.delete(node);
+      appliedText.delete(node);
       return;
     }
   }
 
-  const source = originalText.get(node); // 实现
-  if (!source) return; // 实现
-  const translated = translateSource(source, language); // 实现
-  if (translated === current) { // 实现
-    appliedText.delete(node); // 实现
+  const source = originalText.get(node);
+  if (!source) return;
+  const translated = translateSource(source, language);
+  if (translated === current) {
+    appliedText.delete(node);
     return;
   }
 
-  appliedText.set(node, translated); // 实现
-  node.nodeValue = translated; // 实现
+  appliedText.set(node, translated);
+  node.nodeValue = translated;
 }
 
-function translateElementAttributes( // 实现
-  element: Element, // 实现
-  language: AppLanguage, // 实现
-  force = false, // 实现
+function translateElementAttributes(
+  element: Element,
+  language: AppLanguage,
+  force = false,
 ): void {
-  if (element.hasAttribute('data-no-translate')) return; // 实现
+  if (element.hasAttribute('data-no-translate')) return;
 
-  let originals = originalAttributes.get(element); // 实现
-  let applied = appliedAttributes.get(element); // 实现
-  if (!originals) { // 实现
-    originals = new Map<string, string>(); // 实现
-    originalAttributes.set(element, originals); // 实现
+  let originals = originalAttributes.get(element);
+  let applied = appliedAttributes.get(element);
+  if (!originals) {
+    originals = new Map<string, string>();
+    originalAttributes.set(element, originals);
   }
-  if (!applied) { // 实现
-    applied = new Map<string, string>(); // 实现
-    appliedAttributes.set(element, applied); // 实现
+  if (!applied) {
+    applied = new Map<string, string>();
+    appliedAttributes.set(element, applied);
   }
 
-  for (const attribute of TRANSLATED_ATTRIBUTES) { // 实现
-    const current = element.getAttribute(attribute); // 实现
-    if (!current) continue; // 实现
-    if (!force && applied.get(attribute) === current) continue; // 实现
+  for (const attribute of TRANSLATED_ATTRIBUTES) {
+    const current = element.getAttribute(attribute);
+    if (!current) continue;
+    if (!force && applied.get(attribute) === current) continue;
 
-    if (!force) { // 实现
-      if (hasHan(current)) { // 实现
-        originals.set(attribute, current); // 实现
+    if (!force) {
+      if (hasHan(current)) {
+        originals.set(attribute, current);
       } else {
-        originals.delete(attribute); // 实现
-        applied.delete(attribute); // 实现
+        originals.delete(attribute);
+        applied.delete(attribute);
         continue;
       }
     }
 
-    const source = originals.get(attribute); // 实现
-    if (!source) continue; // 实现
-    const translated = translateSource(source, language); // 实现
-    if (translated === current) { // 实现
-      applied.delete(attribute); // 实现
+    const source = originals.get(attribute);
+    if (!source) continue;
+    const translated = translateSource(source, language);
+    if (translated === current) {
+      applied.delete(attribute);
       continue;
     }
 
-    applied.set(attribute, translated); // 实现
-    element.setAttribute(attribute, translated); // 实现
+    applied.set(attribute, translated);
+    element.setAttribute(attribute, translated);
   }
 }
 
-function translateSubtree(root: Node, language: AppLanguage, force = false): void { // 实现
-  if (root.nodeType === Node.TEXT_NODE) { // 实现
-    translateTextNode(root as Text, language, force); // 实现
+function translateSubtree(root: Node, language: AppLanguage, force = false): void {
+  if (root.nodeType === Node.TEXT_NODE) {
+    translateTextNode(root as Text, language, force);
     return;
   }
-  if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) { // 实现
+  if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
     return;
   }
-  if (root.nodeType === Node.ELEMENT_NODE) { // 实现
-    const rootElement = root as Element; // 实现
-    translateElementAttributes(rootElement, language, force); // 实现
-    if (shouldSkipElement(rootElement)) return; // 实现
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    const rootElement = root as Element;
+    translateElementAttributes(rootElement, language, force);
+    if (shouldSkipElement(rootElement)) return;
 
     rootElement
-      .querySelectorAll('[title], [placeholder], [aria-label]') // 实现
-      .forEach(element => translateElementAttributes(element, language, force)); // 实现
+      .querySelectorAll('[title], [placeholder], [aria-label]')
+      .forEach(element => translateElementAttributes(element, language, force));
   }
 
-  const walker = document.createTreeWalker( // 实现
+  const walker = document.createTreeWalker(
     root,
-    NodeFilter.SHOW_TEXT, // 实现
+    NodeFilter.SHOW_TEXT,
     {
-      acceptNode(node) { // 实现
-        const value = node.nodeValue; // 实现
-        if (!value?.trim() || isInsideSkippedSubtree(node)) { // 实现
-          return NodeFilter.FILTER_REJECT; // 实现
+      acceptNode(node) {
+        const value = node.nodeValue;
+        if (!value?.trim() || isInsideSkippedSubtree(node)) {
+          return NodeFilter.FILTER_REJECT;
         }
-        return NodeFilter.FILTER_ACCEPT; // 实现
+        return NodeFilter.FILTER_ACCEPT;
       },
     },
   );
 
-  let current = walker.nextNode(); // 实现
-  while (current) { // 实现
-    translateTextNode(current as Text, language, force); // 实现
-    current = walker.nextNode(); // 实现
+  let current = walker.nextNode();
+  while (current) {
+    translateTextNode(current as Text, language, force);
+    current = walker.nextNode();
   }
 }
 
-export function useGlobalInterfaceLanguage(): void { // 实现
-  const { language } = useI18n(); // 实现
-  let observer: MutationObserver | null = null; // 实现
-  let hasScannedDocument = false; // 实现
+export function useGlobalInterfaceLanguage(): void {
+  const { language } = useI18n();
+  let observer: MutationObserver | null = null;
+  let hasScannedDocument = false;
 
-  const stopObserver = () => { // 实现
-    observer?.disconnect(); // 实现
-    observer = null; // 实现
+  const stopObserver = () => {
+    observer?.disconnect();
+    observer = null;
   };
 
-  const startObserver = (activeLanguage: AppLanguage) => { // 实现
-    stopObserver(); // 实现
-    translateSubtree(document.body, activeLanguage, hasScannedDocument); // 实现
-    hasScannedDocument = true; // 实现
+  const startObserver = (activeLanguage: AppLanguage) => {
+    stopObserver();
+    translateSubtree(document.body, activeLanguage, hasScannedDocument);
+    hasScannedDocument = true;
 
-    observer = new MutationObserver((mutations) => { // 实现
-      for (const mutation of mutations) { // 实现
-        if (mutation.type === 'characterData') { // 实现
-          translateTextNode(mutation.target as Text, activeLanguage); // 实现
+    observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'characterData') {
+          translateTextNode(mutation.target as Text, activeLanguage);
           continue;
         }
-        if (mutation.type === 'attributes') { // 实现
-          translateElementAttributes(mutation.target as Element, activeLanguage); // 实现
+        if (mutation.type === 'attributes') {
+          translateElementAttributes(mutation.target as Element, activeLanguage);
           continue;
         }
-        for (const added of mutation.addedNodes) { // 实现
-          translateSubtree(added, activeLanguage); // 实现
+        for (const added of mutation.addedNodes) {
+          translateSubtree(added, activeLanguage);
         }
       }
     });
 
-    observer.observe(document.body, { // 实现
-      attributes: true, // 实现
-      attributeFilter: [...TRANSLATED_ATTRIBUTES], // 实现
-      characterData: true, // 实现
-      childList: true, // 实现
-      subtree: true, // 实现
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: [...TRANSLATED_ATTRIBUTES],
+      characterData: true,
+      childList: true,
+      subtree: true,
     });
   };
 
   watch(
     language,
-    (value) => { // 实现
-      if (typeof document === 'undefined') return; // 实现
-      startObserver(value); // 实现
+    (value) => {
+      if (typeof document === 'undefined') return;
+      startObserver(value);
     },
-    { immediate: true }, // 实现
+    { immediate: true },
   );
 }

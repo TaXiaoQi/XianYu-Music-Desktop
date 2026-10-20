@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { UploadCloud } from 'lucide-vue-next';
 
-export type ExportCategory = 'settings' | 'playlists' | 'plugins' | 'favorites' | 'recent';
+type ExportCategory = 'settings' | 'playlists' | 'plugins' | 'favorites' | 'recent';
 
 export interface ExportSelection {
   settings: boolean;

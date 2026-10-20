@@ -65,7 +65,7 @@ export function hasPlaylistSource(playlist: Playlist | null | undefined): boolea
  * 平台导入：用记录的 sourceUrl 重走 importPlaylist；
  * 插件导入：优先用 sourceRaw 分页拉取歌单详情，失败时用 sourceUrl 走 importMusicSheet 兜底。
  */
-export async function fetchSourceSongs(playlist: Playlist): Promise<Song[]> {
+async function fetchSourceSongs(playlist: Playlist): Promise<Song[]> {
   const sourcePluginId = playlist.sourcePluginId ?? '';
   const sourceUrl = playlist.sourceUrl ?? '';
 

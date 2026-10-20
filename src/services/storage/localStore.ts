@@ -22,7 +22,7 @@ const DISPOSABLE_DERIVED_KEYS = [
     "player_recent_online_history",
 ] as const;
 
-export const localStore = { // 实现
+export const localStore = {
     getString(key: string) {
         if (typeof localStorage === "undefined") {
             return null;

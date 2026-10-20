@@ -42,7 +42,7 @@ const applyView = (view: {
  * 读取一次配置（进程内只读一次，之后走缓存）。失败则下次调用重试。
  * 插件安装等「先判断要不要优先走 Rust」的场景应在动作前 await 它。
  */
-export function ensureNetworkProxyLoaded(): Promise<void> {
+function ensureNetworkProxyLoaded(): Promise<void> {
   if (!loadPromise) {
     loadPromise = networkApi
       .getNetworkProxy()
@@ -53,11 +53,6 @@ export function ensureNetworkProxyLoaded(): Promise<void> {
       });
   }
   return loadPromise;
-}
-
-/** 同步取用：未加载完成时按「未启用代理」处理（即不改变默认行为）。 */
-export function isNetworkProxyEnabled(): boolean {
-  return state.enabled;
 }
 
 export function useNetworkProxy() {

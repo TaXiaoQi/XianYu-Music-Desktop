@@ -4,7 +4,7 @@ import { ref, computed, onMounted } from 'vue';
 
 import { useUiStore } from '../shared/stores/ui';
 import type { ThemeSettings, VinylPlatterStyle, VinylPlinthMaterial } from '../types';
-import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../utils/themeColor'; // 实现
+import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../utils/themeColor';
 import {
   createThemeFieldBinding,
   submitPercentThemeField,
@@ -19,7 +19,7 @@ type PickableMaterialMode = Exclude<WindowMaterialMode, 'none'>;
 /** 材质控件不可用的原因标签；null 表示当前可用 */
 type MaterialBlockerKind = 'windows' | 'windows11' | 'transparency' | 'theme-conflict' | null;
 
-export function useSettingsThemeControls() { // 实现
+export function useSettingsThemeControls() {
   const themeControls = withThemeSettingsStore();
   const {
     theme,
@@ -42,7 +42,7 @@ export function useSettingsThemeControls() { // 实现
     get: () => uiStore.showCustomSkinModal,
     set: (visible: boolean) => { uiStore.showCustomSkinModal = visible; },
   });
-  const showFlowTuning = ref(false); // 实现
+  const showFlowTuning = ref(false);
   const blurTuningPanelVisible = ref(false);
 
   // —— theme 单字段绑定：读快照、写单键补丁 ——
@@ -219,7 +219,7 @@ export function useSettingsThemeControls() { // 实现
 
   return {
     theme,
-    showCustomModal, // 实现
+    showCustomModal,
     colorScheme, materialMode,
     keepWindowMaterialOnBlur, useCustomTrayMenu, useGlassSwitch,
     showLeaderboard,
@@ -228,7 +228,7 @@ export function useSettingsThemeControls() { // 实现
     isWindows11, hasWindowMaterialSelected,
     isWindowMaterialDisabled, isWindowMaterialButtonDisabled,
     getWindowMaterialModeDisabledReason, windowMaterialDisabledReason,
-    isDynamicBgDisabled, // 实现
+    isDynamicBgDisabled,
     showFlowTuning, showBlurTuning: blurTuningPanelVisible,
     setColorScheme, setAccentColor, resetAccentColor, setDynamicType, setUseGlassSwitch,
     toggleWindowMaterial, openCustomModal, toggleFlowTuning, toggleBlurTuning: toggleBlurPanel,

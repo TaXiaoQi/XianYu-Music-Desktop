@@ -5,10 +5,10 @@ export type ArtistTabId = "songs" | "albums" | "details";
 export type ArtistTabItem = { id: ArtistTabId; name: string };
 
 /** 标签顺序在 localStorage 中的存储键 */
-export const ARTIST_TABS_STORAGE_KEY = "xianyu_artist_tabs_order";
+const ARTIST_TABS_STORAGE_KEY = "xianyu_artist_tabs_order";
 
 /** 默认顺序：歌曲 → 专辑 → 歌手详情 */
-export const DEFAULT_ARTIST_TABS: ArtistTabId[] = [
+const DEFAULT_ARTIST_TABS: ArtistTabId[] = [
     "songs",
     "albums",
     "details",
@@ -24,12 +24,12 @@ const TAB_LABELS: Record<ArtistTabId, string> = {
 // 默认顺序的全新副本
 const defaultTabs = (): ArtistTabId[] => Array.from(DEFAULT_ARTIST_TABS);
 
-export function isArtistTabId(candidate: unknown): candidate is ArtistTabId {
+function isArtistTabId(candidate: unknown): candidate is ArtistTabId {
     return DEFAULT_ARTIST_TABS.includes(candidate as ArtistTabId);
 }
 
 /** 清洗持久化顺序：剔除非法项与重复项，缺失的标签按默认次序补到末尾 */
-export function sanitizeTabsOrder(rawSavedOrder: unknown): ArtistTabId[] {
+function sanitizeTabsOrder(rawSavedOrder: unknown): ArtistTabId[] {
     if (!Array.isArray(rawSavedOrder)) {
         return defaultTabs();
     }
@@ -39,7 +39,7 @@ export function sanitizeTabsOrder(rawSavedOrder: unknown): ArtistTabId[] {
 }
 
 /** 读取本地保存的顺序；为空或解析失败时回退默认顺序 */
-export function getSavedTabsOrder(): ArtistTabId[] { // 实现
+function getSavedTabsOrder(): ArtistTabId[] {
     try {
         const storedValue = localStorage.getItem(ARTIST_TABS_STORAGE_KEY);
         if (!storedValue) {
@@ -52,13 +52,13 @@ export function getSavedTabsOrder(): ArtistTabId[] { // 实现
 }
 
 /** 当前顺序下的首个标签（即默认展示的标签） */
-export function getDefaultArtistTab(): ArtistTabId { // 实现
+export function getDefaultArtistTab(): ArtistTabId {
     const [firstTab] = getSavedTabsOrder();
     return firstTab ?? "songs";
 }
 
 /** 生成带显示名的有序标签列表 */
-export function getOrderedArtistTabs(): ArtistTabItem[] { // 实现
+export function getOrderedArtistTabs(): ArtistTabItem[] {
     return getSavedTabsOrder().map((id) => ({
         id,
         name: TAB_LABELS[id],

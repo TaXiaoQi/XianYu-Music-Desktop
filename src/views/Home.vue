@@ -8,13 +8,13 @@
   </div>
 </template>
 
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 defineOptions({ name: 'Home' });
 
 import { computed, defineAsyncComponent } from 'vue';
 import type { Song } from '../types';
-import { useHomePageModel } from '../composables/useHomePageModel'; // 实现
-import { useI18n } from '../features/i18n'; // 实现
+import { useHomePageModel } from '../composables/useHomePageModel';
+import { useI18n } from '../features/i18n';
 import { default as HomeViewPane } from '../components/home/HomeViewPane.vue';
 import HomeDialogStack from '../components/home/dialogs/HomeDialogStack.vue';
 
@@ -93,7 +93,7 @@ const {
   renameInitialCoverPath: renameSeedCover,
   editingPlaylistId: renameTargetId,
   confirmRename: applyRename,
-} = useHomePageModel(); // 实现
+} = useHomePageModel();
 
 const tableScrollContainer = computed(() => tableHandle.value?.containerRef ?? null);
 

@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-export interface ChangePasswordDialogState {
+interface ChangePasswordDialogState {
   visible: boolean;
   resolver: ((confirmed: boolean) => void) | null;
 }
@@ -19,7 +19,7 @@ export function showChangePasswordDialog(): Promise<boolean> {
   });
 }
 
-export function resolveChangePasswordDialog(confirmed: boolean): void {
+function resolveChangePasswordDialog(confirmed: boolean): void {
   const state = changePasswordDialogState.value;
   state.resolver?.(confirmed);
   changePasswordDialogState.value = {

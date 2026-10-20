@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 文件夹右键菜单：常规形态展示播放/歌单/目录等操作，管理模式追加建目录与本地删除；
 // 批量选中多文件夹时切换为统计行 + 批量移除。外壳定位与动效由 MenuSurface 承担，
 // 行渲染复用 CtxRow，图标以 GlyphShape 数据经 GlyphIcon 输出。
@@ -23,7 +23,7 @@ import { GLASS_SHEET } from "./contextMenu/sheetChrome";
 import { rowLag } from "./contextMenu/motion";
 import { watchPointerAway } from "./contextMenu/onPointerAway";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     folderPath: string;
     visible: boolean;
     x: number;

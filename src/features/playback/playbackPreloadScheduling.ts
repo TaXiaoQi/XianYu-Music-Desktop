@@ -20,7 +20,7 @@ const getIdleCallback = (): ((cb: () => void, opts?: {timeout: number}) => unkno
     : undefined;
 
 /** 仅在线音源（lx:// / plugin://）需要预热歌词播放器，本地歌不预热。 */
-export const isOnlineLyricPath = (song: Song): boolean => {
+const isOnlineLyricPath = (song: Song): boolean => {
   const songPath = song.cue_source_path || song.path;
   return songPath.startsWith('lx://') || songPath.startsWith('plugin://');
 };

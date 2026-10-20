@@ -5,8 +5,6 @@ import type {
 } from './contracts';
 
 export type {
-  ControlChannelClientEntry,
-  ControlChannelDeviceEntry,
   ControlChannelStatus,
   ControlPairingCodeInfo,
 } from './contracts';

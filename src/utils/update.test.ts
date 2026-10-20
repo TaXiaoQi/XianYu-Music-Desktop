@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"; // 实现
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { compareVersions, extractVersion, fetchLatestRelease } from "./update";
 

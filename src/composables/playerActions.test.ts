@@ -10,7 +10,7 @@ import { useWindowActions } from "./useWindowActions";
 // —— 测试夹具 ——
 
 // 示例歌曲：字段取值属于行为规格，保持原样
-const demoSong = { // 实现
+const demoSong = {
     path: "/music/demo.flac",
     name: "demo.flac",
     title: "Demo",
@@ -23,7 +23,7 @@ const demoSong = { // 实现
     is_various_artists_album: false,
     collapse_artist_credits: false,
     duration: 120,
-} satisfies Song; // 实现
+} satisfies Song;
 
 // 每次调用生成全新的空 spy，避免用例之间互相污染
 const freshMock = () => vi.fn();

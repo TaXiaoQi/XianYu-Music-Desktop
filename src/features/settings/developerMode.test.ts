@@ -1,20 +1,20 @@
-import { describe, expect, it } from 'vitest'; // 实现
+import { describe, expect, it } from 'vitest';
 
-import aboutSource from '../../components/settings/SettingsAbout.vue?raw'; // 实现
-import advancedSource from '../../components/settings/SettingsAdvanced.vue?raw'; // 实现
-import debugSource from '../../components/settings/SettingsDebug.vue?raw'; // 实现
-import logExportSource from '../../components/settings/LogExportActions.vue?raw'; // 实现
-import settingsSource from '../../views/Settings.vue?raw'; // 实现
+import aboutSource from '../../components/settings/SettingsAbout.vue?raw';
+import advancedSource from '../../components/settings/SettingsAdvanced.vue?raw';
+import debugSource from '../../components/settings/SettingsDebug.vue?raw';
+import logExportSource from '../../components/settings/LogExportActions.vue?raw';
+import settingsSource from '../../views/Settings.vue?raw';
 import { expectSourceContains, expectSourceNotContains } from '../../testing/sourceText';
-import { disableDeveloperMode, enableDeveloperMode, useDeveloperMode } from './developerMode'; // 实现
+import { disableDeveloperMode, enableDeveloperMode, useDeveloperMode } from './developerMode';
 
-describe('developer mode settings entry', () => { // 实现
-  it('persists a shared developer mode state', () => { // 实现
-    disableDeveloperMode(); // 实现
-    expect(useDeveloperMode().isDeveloperMode.value).toBe(false); // 实现
-    enableDeveloperMode(); // 实现
-    expect(useDeveloperMode().isDeveloperMode.value).toBe(true); // 实现
-    disableDeveloperMode(); // 实现
+describe('developer mode settings entry', () => {
+  it('persists a shared developer mode state', () => {
+    disableDeveloperMode();
+    expect(useDeveloperMode().isDeveloperMode.value).toBe(false);
+    enableDeveloperMode();
+    expect(useDeveloperMode().isDeveloperMode.value).toBe(true);
+    disableDeveloperMode();
   });
 
   it('requires five consecutive clicks on the about-page version number', () => {
@@ -29,7 +29,7 @@ describe('developer mode settings entry', () => { // 实现
     expectSourceContains(aboutSource, '再点击 ${remaining} 次即可进入开发者模式');
   });
 
-  it('shows Debug only in developer mode and allows exiting it', () => { // 实现
+  it('shows Debug only in developer mode and allows exiting it', () => {
     expectSourceContains(settingsSource, "{ id: 'debug' as const, name: t('settings.debug') }");
     expectSourceContains(settingsSource, "activeTab === 'debug'");
     expectSourceContains(settingsSource, 'if (!isDeveloperMode.value) return baseTabs.value;');
@@ -44,7 +44,7 @@ describe('developer mode settings entry', () => { // 实现
     expectSourceNotContains(advancedSource, '{ deep: true }');
   });
 
-  it('shows advanced settings to regular users and keeps log export there', () => { // 实现
+  it('shows advanced settings to regular users and keeps log export there', () => {
     expectSourceContains(settingsSource, "{ id: 'advanced', name: t('settings.advanced') }");
     expectSourceContains(settingsSource, "activeTab === 'advanced'");
     expectSourceContains(advancedSource, '<LogExportActions />');

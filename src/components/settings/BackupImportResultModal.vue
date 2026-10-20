@@ -1,30 +1,30 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed } from "vue";
 import { AlertTriangle, CheckCircle2, PlugZap, X } from "lucide-vue-next";
 
-import type { // 实现
+import type {
     PluginBackupFailedSong,
     PreparedPluginBackupImport,
 } from "../../services/domain/pluginBackupImport";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     visible: boolean;
     result: PreparedPluginBackupImport | null;
     createdPlaylistCount: number;
 }>();
 
-const emit = defineEmits<{ // 实现
+const emit = defineEmits<{
     (event: "close"): void;
 }>();
 
-interface FailureGroup { // 实现
+interface FailureGroup {
     key: string;
     platform: string;
     reason: string;
     songs: PluginBackupFailedSong[];
 }
 
-const failureGroups = computed<FailureGroup[]>(() => { // 实现
+const failureGroups = computed<FailureGroup[]>(() => {
     const groups = new Map<string, FailureGroup>();
     for (const failure of props.result?.failures ?? []) {
         const key = `${failure.platform}\u0000${failure.reason}`;

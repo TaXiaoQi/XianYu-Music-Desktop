@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
 import AlertGlyph from "./modal/AlertGlyph.vue";

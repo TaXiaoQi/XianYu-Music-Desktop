@@ -1,8 +1,8 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import type { DesktopLyricsAction } from "../../features/desktopLyrics/shared";
 
 // 组件入参：播放态 / 锁定态 / 锁按钮悬浮态 / 收藏态
-const props = withDefaults( // 实现
+const props = withDefaults(
     defineProps<{
         isPlaying: boolean;
         isLocked?: boolean;
@@ -17,7 +17,7 @@ const props = withDefaults( // 实现
 );
 
 // 对外仅暴露 action 事件，由宿主窗口统一分发指令
-const emit = defineEmits<{ // 实现
+const emit = defineEmits<{
     (e: "action", action: DesktopLyricsAction): void;
 }>();
 

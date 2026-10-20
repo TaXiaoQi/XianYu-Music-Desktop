@@ -1,43 +1,43 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 专辑详情头部：封面解析缓存、滚动收缩、批量工具条与专辑内排序菜单
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'; // 实现
-import { albumHeaderCache } from '../../caches/imageCaches'; // 实现
-import { useCoverCache } from '../../composables/useCoverCache'; // 实现
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { albumHeaderCache } from '../../caches/imageCaches';
+import { useCoverCache } from '../../composables/useCoverCache';
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
-import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
+import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
-import SortModeIcon from '../common/SortModeIcon.vue'; // 实现
+import SortModeIcon from '../common/SortModeIcon.vue';
 import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
 import SortOptionPopover from './sortPopover/SortOptionPopover.vue';
 
-const props = defineProps<{ // 实现
-  albumName: string; // 实现
-  albumArtist: string; // 实现
-  isBatchMode: boolean; // 实现
-  selectedCount?: number; // 实现
+const props = defineProps<{
+  albumName: string;
+  albumArtist: string;
+  isBatchMode: boolean;
+  selectedCount?: number;
   totalSongCount?: number;
-  songs?: Array<{ path: string }>; // 实现
+  songs?: Array<{ path: string }>;
   readOnly?: boolean;
   coverUrlOverride?: string;
   favoriteEntry?: FavoriteCollectionEntry | null;
   scrollContainerRef?: HTMLElement | null;
 }>();
 
-const emit = defineEmits([ // 实现
-  'update:isBatchMode', // 实现
+const emit = defineEmits([
+  'update:isBatchMode',
   'playAll',
-  'batchPlay', // 实现
-  'addToPlaylist', // 实现
-  'batchDelete', // 实现
+  'batchPlay',
+  'addToPlaylist',
+  'batchDelete',
   'batchMove',
   'selectAll',
 ]);
 
 const {
-  albumDetailSortMode, // 实现
-  setAlbumDetailSortMode, // 实现
-} = usePlayerViewState(); // 实现
+  albumDetailSortMode,
+  setAlbumDetailSortMode,
+} = usePlayerViewState();
 
 const trackAmount = computed(() => props.totalSongCount ?? props.songs?.length ?? 0);
 const isAllSelected = computed(() => trackAmount.value > 0 && (props.selectedCount ?? 0) === trackAmount.value);
@@ -141,7 +141,7 @@ watch(
 );
 
 watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([cacheKey, tracks, coverOverride]) => {
-  const requestId = ++coverRequestId; // 实现
+  const requestId = ++coverRequestId;
 
   if (props.readOnly && coverOverride) {
     applyCoverState(coverOverride);
@@ -167,7 +167,7 @@ watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([
     return;
   }
 
-  isLoading.value = true; // 实现
+  isLoading.value = true;
   try {
     const resolved = await loadCover(leadTrackPath);
     if (isStale(requestId)) return;
@@ -176,28 +176,28 @@ watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([
       albumHeaderCache.set(cacheKey, resolved);
       coverUrl.value = resolved;
     } else {
-      coverUrl.value = ''; // 实现
+      coverUrl.value = '';
     }
   } catch {
     if (isStale(requestId)) return;
-    coverUrl.value = ''; // 实现
+    coverUrl.value = '';
   } finally {
     if (!isStale(requestId)) {
-      isLoading.value = false; // 实现
+      isLoading.value = false;
     }
   }
-}, { immediate: true }); // 实现
+}, { immediate: true });
 
 // 按专辑名稳定散列到一组渐变底色（无封面时的占位）
 const GRADIENT_PALETTE = [
-  'from-blue-500 to-cyan-500', // 实现
-  'from-purple-500 to-pink-500', // 实现
-  'from-emerald-400 to-teal-500', // 实现
-  'from-orange-400 to-rose-400', // 实现
-  'from-indigo-500 to-purple-500', // 实现
-  'from-rose-400 to-red-500', // 实现
-  'from-fuchsia-500 to-pink-500', // 实现
-  'from-amber-400 to-orange-500', // 实现
+  'from-blue-500 to-cyan-500',
+  'from-purple-500 to-pink-500',
+  'from-emerald-400 to-teal-500',
+  'from-orange-400 to-rose-400',
+  'from-indigo-500 to-purple-500',
+  'from-rose-400 to-red-500',
+  'from-fuchsia-500 to-pink-500',
+  'from-amber-400 to-orange-500',
 ];
 
 const gradientForAlbum = (albumTitle: string) => {

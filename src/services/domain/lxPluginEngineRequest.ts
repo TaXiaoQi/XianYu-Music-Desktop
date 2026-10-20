@@ -26,7 +26,7 @@ function isActionNotSupported(errMsg: string): boolean {
   return /action\s+not\s+support|not\s+support/i.test(errMsg);
 }
 
-export async function lxPluginRequest(
+async function lxPluginRequest(
   source: PluginSource,
   action: 'musicUrl' | 'lyric' | 'pic',
   data: { source: string; type?: string; musicInfo: any },

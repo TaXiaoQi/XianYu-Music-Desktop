@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { signedRequestMock, getCiyuanxiIdMock } = vi.hoisted(() => ({ // 实现
+const { signedRequestMock, getCiyuanxiIdMock } = vi.hoisted(() => ({
     signedRequestMock: vi.fn(),
     getCiyuanxiIdMock: vi.fn(),
 }));

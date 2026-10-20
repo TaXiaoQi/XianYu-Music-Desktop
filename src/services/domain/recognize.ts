@@ -2,12 +2,12 @@ import { recognizeApi } from "../tauri/recognizeApi";
 import type { RecognizeResponseContract } from "../tauri/contracts";
 import type { LxSearchResultItem } from "./lxMusicSdk";
 import type { Song } from "../../types";
-export interface RecognizeMatch { // 实现
+export interface RecognizeMatch {
     song: LxSearchResultItem;
     confidence: number;
     raw: RecognizeRawItem;
-} // 实现
-export interface RecognizeRawItem { // 实现
+}
+interface RecognizeRawItem {
     songname?: string;
     filename?: string;
     name?: string;
@@ -51,25 +51,25 @@ export interface RecognizeRawItem { // 实现
     duration?: number;
     dist?: number | string;
     [key: string]: unknown;
-} // 实现
-interface RecognizeResponseBody { // 实现
+}
+interface RecognizeResponseBody {
     status?: number;
     data?: RecognizeRawItem[] | null;
     err_code?: number;
     error_code?: number;
     msg?: string;
     [key: string]: unknown;
-} // 实现
-export const RECOGNIZE_MAX_SECONDS = 10; // 实现
+}
+export const RECOGNIZE_MAX_SECONDS = 10;
 export const RECOGNIZE_CANCELLED = "识别已取消";
 
 export async function recognizeSystemAudio(): Promise<RecognizeMatch[]> {
     const response = await recognizeApi.recognizeSystemAudio();
     return parseRecognizeResponse(response);
-} // 实现
+}
 export async function cancelRecognizeSystemAudio(): Promise<void> {
     await recognizeApi.cancelRecognizeSystemAudio();
-} // 实现
+}
 function parseRecognizeResponse(
     response: RecognizeResponseContract,
 ): Promise<RecognizeMatch[]> {
@@ -77,18 +77,18 @@ function parseRecognizeResponse(
         return Promise.reject(
             new Error(`识别请求失败 (HTTP ${response.status})`),
         );
-    } // 实现
+    }
     let body: RecognizeResponseBody;
     try {
         body = JSON.parse(response.body);
     } catch {
         return Promise.reject(new Error("识别响应解析失败"));
-    } // 实现
+    }
     if (body.status !== 1) {
         return Promise.resolve([]);
-    } // 实现
+    }
     return Promise.resolve(mapRecognizeMatches(body.data));
-} // 实现
+}
 function mapRecognizeMatches(
     list: RecognizeRawItem[] | null | undefined,
 ): RecognizeMatch[] {
@@ -107,16 +107,16 @@ function mapRecognizeMatches(
             };
         })
         .sort((a, b) => b.confidence - a.confidence);
-} // 实现
-function pickString(...values: unknown[]): string { // 实现
+}
+function pickString(...values: unknown[]): string {
     for (const v of values) {
         if (v !== undefined && v !== null && String(v) !== "") {
             return String(v);
         }
-    } // 实现
+    }
     return "";
-} // 实现
-function formatCoverUrl(...values: unknown[]): string { // 实现
+}
+function formatCoverUrl(...values: unknown[]): string {
     for (const v of values) {
         if (v !== undefined && v !== null && String(v) !== "") {
             let url = String(v).trim();
@@ -129,25 +129,25 @@ function formatCoverUrl(...values: unknown[]): string { // 实现
             url = url.replace("c1.kgimg.com", "imge.kugou.com");
             return url;
         }
-    } // 实现
+    }
     return "";
-} // 实现
-function pickInt(...values: unknown[]): number { // 实现
+}
+function pickInt(...values: unknown[]): number {
     for (const v of values) {
         if (v !== undefined && v !== null && v !== "") {
             const n = parseInt(String(v), 10);
             if (!Number.isNaN(n)) return n;
         }
-    } // 实现
+    }
     return 0;
-} // 实现
-function formatPlayTime(seconds: number): string { // 实现
+}
+function formatPlayTime(seconds: number): string {
     if (!seconds || Number.isNaN(seconds)) return "00:00";
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-} // 实现
-function mapRecognizeToLxSong(item: RecognizeRawItem): LxSearchResultItem { // 实现
+}
+function mapRecognizeToLxSong(item: RecognizeRawItem): LxSearchResultItem {
     const name = pickString(
         item.songname,
         item.filename,
@@ -210,15 +210,15 @@ function mapRecognizeToLxSong(item: RecognizeRawItem): LxSearchResultItem { // �
     if (hash) {
         types.push({ type: "128k", size: "", hash });
         _types["128k"] = { size: "", hash };
-    } // 实现
+    }
     if (item.hash_320) {
         types.push({ type: "320k", size: "", hash: item.hash_320 });
         _types["320k"] = { size: "", hash: item.hash_320 };
-    } // 实现
+    }
     if (item.hash_flac) {
         types.push({ type: "flac", size: "", hash: item.hash_flac });
         _types.flac = { size: "", hash: item.hash_flac };
-    } // 实现
+    }
     return {
         name,
         singer,
@@ -232,8 +232,8 @@ function mapRecognizeToLxSong(item: RecognizeRawItem): LxSearchResultItem { // �
         types,
         _types,
     };
-} // 实现
-export function buildRecognizeSong(match: RecognizeMatch): Song { // 实现
+}
+export function buildRecognizeSong(match: RecognizeMatch): Song {
     const item = match.song;
     const artistNames = item.singer
         ? item.singer
@@ -263,4 +263,4 @@ export function buildRecognizeSong(match: RecognizeMatch): Song { // 实现
     (song as any)._songmid = item.songmid;
     (song as any)._source = item.source;
     return song;
-} // 实现
+}

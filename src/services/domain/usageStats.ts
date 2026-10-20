@@ -1,6 +1,5 @@
 
 export { getDeviceId, getDeviceInfo } from './usageStatsDevice';
-export type { DeviceInfo } from './usageStatsDevice';
 
 export {
   reportAppOpen,
@@ -15,6 +14,5 @@ export {
 } from './usageStatsReport';
 export type {
   HotSearchItem,
-  UserBehaviorReport,
   MyFeedbackItem,
 } from './usageStatsReport';

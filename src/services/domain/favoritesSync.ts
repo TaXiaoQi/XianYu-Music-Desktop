@@ -13,7 +13,7 @@ export interface FavoritesUploadResult {
   song_count: number;
 }
 
-export interface FavoritesDownloadData {
+interface FavoritesDownloadData {
   version: number;
   uploaded_at: string;
   timestamp: number;

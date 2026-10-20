@@ -43,7 +43,7 @@ async function getDesktopLocation(): Promise<string> {
 }
 
 
-export type QrLoginStatus = 'pending' | 'scanned' | 'logged_in' | 'invalid' | 'expired';
+type QrLoginStatus = 'pending' | 'scanned' | 'logged_in' | 'invalid' | 'expired';
 
 export type QrCodeInfo = {
   code: string;

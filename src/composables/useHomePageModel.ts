@@ -17,7 +17,7 @@ import { createHomePagePlaybackActions } from "./homePageModelPlayback";
  * 外部依赖统一经 collectHomePageModelSources 聚合，播放/批量动作经
  * createHomePagePlaybackActions 构建，此处只做状态编排与分组导出。
  */
-export function useHomePageModel() { // 实现
+export function useHomePageModel() {
     const sources = collectHomePageModelSources();
     const { route } = sources;
     const {

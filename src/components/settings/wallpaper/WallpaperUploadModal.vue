@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 上传壁纸弹层：表单、文件选择与预览；状态由 useWallpaperUpload 提供。
 defineProps<{
     closing: boolean;
@@ -7,12 +7,12 @@ defineProps<{
     videoUrl: string;
     error: string;
     uploading: boolean;
-}>(); // 实现
+}>();
 const emit = defineEmits<{
     (e: "close"): void;
     (e: "file-change", event: Event): void;
     (e: "submit"): void;
-}>(); // 实现
+}>();
 </script>
 <template>
     <div

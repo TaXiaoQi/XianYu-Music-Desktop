@@ -1,7 +1,7 @@
 import type { PluginSource } from "../../types";
 import { signedRequest } from "../auth/authService";
 import { getCiyuanxiId } from "./playlistSync";
-import { // 实现
+import {
     getStoredPlugins,
     getPluginScript,
     restorePluginFromSync,
@@ -24,10 +24,10 @@ import {
 } from "./pluginSyncState";
 const LOG = "[PluginSync]";
 function logSync(_msg: string, ..._args: unknown[]) {}
-function logSyncError(msg: string, ...args: unknown[]) { // 实现
+function logSyncError(msg: string, ...args: unknown[]) {
     console.error(`${LOG} ${msg}`, ...args);
-} // 实现
-function encodeBase64(str: string): string { // 实现
+}
+function encodeBase64(str: string): string {
     try {
         const bytes = new TextEncoder().encode(str);
         let binary = "";
@@ -40,9 +40,9 @@ function encodeBase64(str: string): string { // 实现
             .split("")
             .reverse()
             .join("");
-    } // 实现
-} // 实现
-function decodeBase64(b64: string): string { // 实现
+    }
+}
+function decodeBase64(b64: string): string {
     try {
         const reversed = b64.split("").reverse().join("");
         const binary = atob(reversed);
@@ -55,26 +55,26 @@ function decodeBase64(b64: string): string { // 实现
         return decodeURIComponent(
             escape(atob(b64.split("").reverse().join(""))),
         );
-    } // 实现
-} // 实现
+    }
+}
 // ==================== 用户变量 AES 加密 ====================
-export interface EncryptedUserVars {
+interface EncryptedUserVars {
     iv: string;
     data: string;
-} // 实现
+}
 function b64FromBytes(bytes: Uint8Array): string {
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) { // 实现
+    for (let i = 0; i < bytes.length; i++) {
         binary += String.fromCharCode(bytes[i]);
-    } // 实现
+    }
     return btoa(binary);
-} // 实现
+}
 function bytesFromB64(b64: string): Uint8Array {
     const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length); // 实现
-    for (let i = 0; i < binary.length; i++) { // 实现
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
-    } // 实现
+    }
     return bytes;
 }
 
@@ -106,12 +106,12 @@ async function encryptUserVars(
         ),
     );
     return { iv: b64FromBytes(iv), data: b64FromBytes(ct) };
-} // 实现
+}
 async function decryptUserVars(
     ciyuanxiId: string,
     enc: EncryptedUserVars,
 ): Promise<Record<string, string> | undefined> {
-    try { // 实现
+    try {
         const key = await userVarKeyFor(ciyuanxiId);
         const pt = await globalThis.crypto.subtle.decrypt(
             { name: "AES-CBC", iv: bytesFromB64(enc.iv) },
@@ -124,15 +124,15 @@ async function decryptUserVars(
             : undefined;
     } catch {
         return undefined;
-    } // 实现
-} // 实现
-// ==================== 类型定义 ==================== // 实现
-export interface PluginSyncItem extends PluginSource { // 实现
+    }
+}
+// ==================== 类型定义 ====================
+interface PluginSyncItem extends PluginSource {
     script: string;
     scriptEncoded?: boolean;
     userVariablesEncrypted?: EncryptedUserVars;
-} // 实现
-export interface PluginSyncDownloadData { // 实现
+}
+interface PluginSyncDownloadData {
     version: number;
     uploaded_at: string;
     timestamp: number;
@@ -145,21 +145,21 @@ export interface PluginSyncDownloadData { // 实现
     /** 删除广播账本：其他端「删除全部/删除云端」的插件 id / 订阅 url（旧服务端缺省为空） */
     deleted_plugin_ids?: string[];
     deleted_subscription_urls?: string[];
-} // 实现
-export interface CloudSubscriptionItem {
+}
+interface CloudSubscriptionItem {
     id?: string;
     name?: string;
     url: string;
     addedAt?: number;
     [key: string]: unknown;
-} // 实现
-export interface PluginSyncResult { // 实现
+}
+export interface PluginSyncResult {
     uploadedPlugins: number;
     downloadedPlugins: number;
     syncedSubscriptions: number;
     errors: string[];
-} // 实现
-// ==================== 上传 ==================== // 实现
+}
+// ==================== 上传 ====================
 export async function uploadPlugins(
     options?: { overwrite?: boolean },
 ): Promise<PluginSyncResult> {
@@ -178,8 +178,8 @@ export async function uploadPlugins(
         logSyncError("uploadPlugins: 未获取到弦予号");
         result.errors.push("未登录或未获取到弦予号");
         return result;
-    } // 实现
-    await loadPlugins(); // 实现
+    }
+    await loadPlugins();
     const plugins = getStoredPlugins();
     const userPlugins = plugins.filter((p) => !p.isBuiltin);
     // 覆盖上传：忽略「仅保留本地」墓碑，全部用户插件参与上传
@@ -272,12 +272,12 @@ export async function uploadPlugins(
                 logSyncError("uploadPlugins: 订阅上传失败:", msg);
                 result.errors.push(`订阅链接上传失败: ${msg}`);
             }
-        } else { // 实现
+        } else {
             logSync("uploadPlugins: 无用户插件需要上传");
-        } // 实现
+        }
         setSyncedPluginIds([]);
         return result;
-    } // 实现
+    }
     const uploadedIds: string[] = [];
     for (let i = 0; i < toUpload.length; i++) {
         const plugin = toUpload[i];
@@ -341,14 +341,14 @@ export async function uploadPlugins(
             logSyncError(`uploadPlugins: 上传插件 "${plugin.name}" 失败:`, msg);
             result.errors.push(`插件 "${plugin.name}" 上传失败: ${msg}`);
         }
-    } // 实现
+    }
     setSyncedPluginIds(uploadedIds);
     logSync(
         `uploadPlugins ← 完成: 成功 ${result.uploadedPlugins}/${toUpload.length} 个, ${result.errors.length} 个错误`,
     );
-    return result; // 实现
-} // 实现
-// ==================== 下载 ==================== // 实现
+    return result;
+}
+// ==================== 下载 ====================
 
 /** 云端删除广播裁剪：按 id 卸载插件、按 url 移除订阅。
  * 本机「仅保留本地」(uploadSkip) 或已删 (downloadSkip) 墓碑中的插件跳过；
@@ -383,11 +383,11 @@ function trimCloudDeletedPlugins(
     if (subUrls.length > 0) {
         removeSubscriptionsByUrls(subUrls);
     }
-} // 实现
+}
 
 export async function downloadPlugins(
     options?: { overwrite?: boolean },
-): Promise<PluginSyncResult> { // 实现
+): Promise<PluginSyncResult> {
     // 覆盖下载（手动「更新至本地」）：清空本地用户插件与订阅后按云端快照重装，
     // 不应用墓碑/删除账本；云端为空时结果即本地清空
     const overwrite = options?.overwrite === true;
@@ -403,7 +403,7 @@ export async function downloadPlugins(
         logSyncError("downloadPlugins: 未获取到弦予号");
         result.errors.push("未登录或未获取到弦予号");
         return result;
-    } // 实现
+    }
     logSync("downloadPlugins: 开始从云端下载插件");
     try {
         const downloadData = await signedRequest<PluginSyncDownloadData>(
@@ -461,7 +461,7 @@ export async function downloadPlugins(
             logSync(
                 `downloadPlugins: 订阅${overwrite ? "替换" : "合并"}完成, 新增 ${added} 个`,
             );
-        } // 实现
+        }
         if (
             !overwrite &&
             (!downloadData ||
@@ -524,7 +524,7 @@ export async function downloadPlugins(
                 );
                 result.errors.push(`插件 "${item.name}" 恢复失败: ${msg}`);
             }
-        } // 实现
+        }
         if (overwrite) {
             // 覆盖下载后本机与云端一致：同步账本重置为云端快照，并清掉这些插件
             // 的「仅保留本地/仅删本地」墓碑残留，避免阻断后续同步
@@ -537,12 +537,12 @@ export async function downloadPlugins(
             `downloadPlugins ← 完成: 恢复 ${result.downloadedPlugins} 个插件, ${result.errors.length} 个错误`,
         );
     } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e); // 实现
+        const msg = e instanceof Error ? e.message : String(e);
         logSyncError(`downloadPlugins: 下载失败:`, e);
         result.errors.push(`下载失败: ${msg}`);
-    } // 实现
-    return result; // 实现
-} // 实现
+    }
+    return result;
+}
 // ==================== 云端删除 ====================
 
 export async function deleteCloudPlugins(
@@ -553,7 +553,7 @@ export async function deleteCloudPlugins(
     if (!ciyuanxiId) {
         logSyncError("deleteCloudPlugins: 未获取到弦予号");
         return false;
-    } // 实现
+    }
     try {
         await signedRequest<{ deleted: number; plugin_count: number }>(
             "plugin_sync_delete",
@@ -571,10 +571,10 @@ export async function deleteCloudPlugins(
         removeDownloadSkipIds(pluginIds);
         return true;
     } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e); // 实现
+        const msg = e instanceof Error ? e.message : String(e);
         logSyncError(`deleteCloudPlugins: 云端删除失败:`, msg);
         return false;
-    } // 实现
+    }
 }
 
 /** 云端订阅链接显式删除（url 维度）。云端订阅为各端并集，本地移除时须调用否则会被其他端重新合并回来。 */
@@ -586,7 +586,7 @@ export async function deleteCloudSubscriptions(
     if (!ciyuanxiId) {
         logSyncError("deleteCloudSubscriptions: 未获取到弦予号");
         return false;
-    } // 实现
+    }
     try {
         await signedRequest<{ deleted_subscriptions: number }>(
             "plugin_sync_delete",
@@ -602,8 +602,8 @@ export async function deleteCloudSubscriptions(
         logSync(`deleteCloudSubscriptions: 云端删除 ${urls.length} 个订阅成功`);
         return true;
     } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e); // 实现
+        const msg = e instanceof Error ? e.message : String(e);
         logSyncError(`deleteCloudSubscriptions: 云端删除失败:`, msg);
         return false;
-    } // 实现
+    }
 }

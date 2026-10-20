@@ -1,6 +1,6 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import { // 实现
+import {
     Mic,
     X,
     Music2,
@@ -14,7 +14,7 @@ import { usePlaybackController } from "../../features/playback/usePlaybackContro
 import { useCollectionsStore } from "../../features/collections/store";
 import { useAddToPlaylistDialog } from "../../features/collections/addToPlaylistDialog";
 import { cacheLxSong } from "../../services/domain/lxSongCache";
-import { // 实现
+import {
     recognizeSystemAudio,
     cancelRecognizeSystemAudio,
     buildRecognizeSong,
@@ -23,25 +23,25 @@ import { // 实现
     type RecognizeMatch,
 } from "../../services/domain/recognize";
 const emit = defineEmits<{ (e: "close"): void }>();
-const { playSong } = usePlaybackController(); // 实现
-const collectionsStore = useCollectionsStore(); // 实现
-const { openAddToPlaylistDialog } = useAddToPlaylistDialog(); // 实现
-// ==================== 状态 ==================== // 实现
+const { playSong } = usePlaybackController();
+const collectionsStore = useCollectionsStore();
+const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
+// ==================== 状态 ====================
 type RecStatus = "idle" | "recording" | "recognizing" | "success" | "failed";
 const status = ref<RecStatus>("idle");
-const matches = ref<RecognizeMatch[]>([]); // 实现
+const matches = ref<RecognizeMatch[]>([]);
 const errorMsg = ref("");
-const recordingSeconds = ref(0); // 实现
+const recordingSeconds = ref(0);
 // ==================== 动画状态 ====================
 const isEntering = ref(true);
 const isClosing = ref(false);
 const ANIM_DURATION = 200;
 
-let recordingTimer: ReturnType<typeof setInterval> | null = null; // 实现
+let recordingTimer: ReturnType<typeof setInterval> | null = null;
 const isActive = computed(
     () => status.value === "recording" || status.value === "recognizing",
 );
-const statusText = computed(() => { // 实现
+const statusText = computed(() => {
     switch (status.value) {
         case "recording":
             return `正在聆听… ${recordingSeconds.value}/${RECOGNIZE_MAX_SECONDS}s`;
@@ -54,7 +54,7 @@ const statusText = computed(() => { // 实现
         default:
             return "点击麦克风开始识别";
     }
-}); // 实现
+});
 // ==================== 关闭逻辑（带退出动画） ====================
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -71,14 +71,14 @@ function handleClose() {
 function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
         handleClose();
-    } // 实现
-} // 实现
-// ==================== 系统音频识别（WASAPI Loopback） ==================== // 实现
-async function startRecognition() { // 实现
+    }
+}
+// ==================== 系统音频识别（WASAPI Loopback） ====================
+async function startRecognition() {
     if (isActive.value) return;
     matches.value = [];
     errorMsg.value = "";
-    recordingSeconds.value = 0; // 实现
+    recordingSeconds.value = 0;
     status.value = "recording";
 
     recordingTimer = setInterval(() => {
@@ -115,80 +115,80 @@ async function startRecognition() { // 实现
             clearInterval(recordingTimer);
             recordingTimer = null;
         }
-    } // 实现
-} // 实现
-function stopRecording() { // 实现
+    }
+}
+function stopRecording() {
     if (recordingTimer) { // 有进行中的录音
-        clearInterval(recordingTimer); // 实现
-        recordingTimer = null; // 实现
-    } // 实现
+        clearInterval(recordingTimer);
+        recordingTimer = null;
+    }
     void cancelRecognizeSystemAudio().catch(() => {
         /* 忽略取消命令失败 */
     });
     if (status.value === "recording") {
         status.value = "idle";
         recordingSeconds.value = 0;
-    } // 实现
-} // 实现
-function toggleListening() { // 实现
+    }
+}
+function toggleListening() {
     if (status.value === "recording") {
         stopRecording();
     } else if (status.value !== "recognizing") {
         void startRecognition();
-    } // 实现
-} // 实现
-function resetAndRestart() { // 实现
-    stopRecording(); // 实现
+    }
+}
+function resetAndRestart() {
+    stopRecording();
     status.value = "idle";
     matches.value = [];
     errorMsg.value = "";
-    recordingSeconds.value = 0; // 实现
-} // 实现
-// ==================== 结果操作 ==================== // 实现
-function distPercent(confidence: number): string { // 实现
+    recordingSeconds.value = 0;
+}
+// ==================== 结果操作 ====================
+function distPercent(confidence: number): string {
     return `${Math.round(confidence * 100)}%`;
-} // 实现
-function handlePlay(match: RecognizeMatch) { // 实现
+}
+function handlePlay(match: RecognizeMatch) {
     cacheLxSong(match.song);
     const song = buildRecognizeSong(match);
     void playSong(song, { insertAfterCurrent: true });
     emit("close");
-} // 实现
-function isFavorite(match: RecognizeMatch): boolean { // 实现
+}
+function isFavorite(match: RecognizeMatch): boolean {
     const song = buildRecognizeSong(match);
     return collectionsStore.isFavoritePath(song.path);
-} // 实现
-function handleFavorite(match: RecognizeMatch) { // 实现
+}
+function handleFavorite(match: RecognizeMatch) {
     const song = buildRecognizeSong(match);
     const isFav = collectionsStore.toggleFavoritePath(song.path);
     if (isFav) {
         collectionsStore.setFavoriteSongMeta(song.path, song);
-    } else { // 实现
+    } else {
         collectionsStore.removeFavoriteSongMeta(song.path);
-    } // 实现
-} // 实现
-function handleAddToPlaylist(match: RecognizeMatch) { // 实现
+    }
+}
+function handleAddToPlaylist(match: RecognizeMatch) {
     const song = buildRecognizeSong(match);
     cacheLxSong(match.song);
     openAddToPlaylistDialog([song.path], { songs: [song] });
     emit("close");
-} // 实现
-onMounted(() => { // 实现
+}
+onMounted(() => {
     document.addEventListener("keydown", handleKeydown);
     requestAnimationFrame(() => {
         isEntering.value = false;
     });
-}); // 实现
+});
 
-onUnmounted(() => { // 实现
-    stopRecording(); // 实现
+onUnmounted(() => {
+    stopRecording();
     document.removeEventListener("keydown", handleKeydown);
     if (closeTimer) {
         clearTimeout(closeTimer);
         closeTimer = null;
     } // 计时器清理
-}); // 实现
-</script> // 实现
+});
+</script>
 <template> 
     <Teleport to="body">
         <div

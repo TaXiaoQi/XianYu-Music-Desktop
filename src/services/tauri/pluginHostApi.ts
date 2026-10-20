@@ -15,10 +15,6 @@ export async function scanPlugins(extraDirs: string[], disabledPaths?: string[])
   return tauriInvoke('plugin_host_scan_plugins', { dirs: extraDirs, disabledPaths: disabledPaths ?? [] });
 }
 
-export async function getRack(): Promise<PluginHostRackConfig> {
-  return tauriInvoke('plugin_host_get_rack');
-}
-
 export async function setRack(config: PluginHostRackConfig): Promise<void> {
   return tauriInvoke('plugin_host_set_rack', { config });
 }

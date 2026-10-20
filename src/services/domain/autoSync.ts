@@ -5,14 +5,14 @@ import { getCiyuanxiId } from "./playlistSync";
 const LOG = "[AutoSync]";
 const MIN_INTERVAL_MS = 60_000;
 function log(_msg: string, ..._args: unknown[]) {}
-function logWarn(msg: string, ...args: unknown[]) { // 实现
+function logWarn(msg: string, ...args: unknown[]) {
     console.warn(`${LOG} ${msg}`, ...args);
-} // 实现
-export async function getServerLoad(): Promise<ServerLoadStatus | null> { // 实现
+}
+async function getServerLoad(): Promise<ServerLoadStatus | null> {
     const ciyuanxiId = getCiyuanxiId();
     if (!ciyuanxiId) {
         return null;
-    } // 实现
+    }
     try {
         const data = await signedRequest<ServerLoadStatus>("get_server_load", {
             user_id: ciyuanxiId,
@@ -28,19 +28,19 @@ export async function getServerLoad(): Promise<ServerLoadStatus | null> { // 实
         logWarn("getServerLoad 失败，假设服务器空闲", e);
         return null;
     }
-} // 实现
-export function getSyncIntervalMs(config: AutoSyncConfig): number { // 实现
+}
+function getSyncIntervalMs(config: AutoSyncConfig): number {
     const raw = config.syncIntervalSeconds * 1000;
     return raw > 0 ? raw : MIN_INTERVAL_MS;
-} // 实现
-export function calculateNextSyncTime(
+}
+function calculateNextSyncTime(
     config: AutoSyncConfig,
     now: number = Date.now(),
 ): number {
     const intervalMs = getSyncIntervalMs(config);
     return now + intervalMs;
-} // 实现
-export class AutoSyncScheduler { // 实现
+}
+export class AutoSyncScheduler {
     private timerId: ReturnType<typeof setInterval> | null = null;
     private delayedTimerId: ReturnType<typeof setTimeout> | null = null;
     private triggerTimerId: ReturnType<typeof setTimeout> | null = null;
@@ -71,7 +71,7 @@ export class AutoSyncScheduler { // 实现
         this.onSyncStart = callbacks.onSyncStart ?? null;
         this.onSyncComplete = callbacks.onSyncComplete ?? null;
         this.onDelayed = callbacks.onDelayed ?? null;
-    } // 实现
+    }
     start() {
         this.stop();
         if (!this.getConfig || !this.canSync) {
@@ -102,7 +102,7 @@ export class AutoSyncScheduler { // 实现
             void this.tick();
         }, 60_000);
         void this.tick();
-    } // 实现
+    }
     stop() {
         if (this.timerId !== null) {
             clearInterval(this.timerId);
@@ -117,7 +117,7 @@ export class AutoSyncScheduler { // 实现
             this.triggerTimerId = null;
         }
         log("stop: 调度器已停止");
-    } // 实现
+    }
     /**
      * 数据变更驱动触发（对齐移动端 SyncTrigger.markDirty + 8s 防抖）：
      * 业务数据变更后 8s 内合并多次变更只同步一次，不受 nextSyncAt 周期
@@ -138,7 +138,7 @@ export class AutoSyncScheduler { // 实现
             }
             void this.attemptSync();
         }, 8000);
-    } // 实现
+    }
     restart() {
         if (this.getConfig) {
             const config = this.getConfig();
@@ -146,7 +146,7 @@ export class AutoSyncScheduler { // 实现
             this.updateConfig?.({ nextSyncAt, delayedCount: 0 });
         }
         this.start();
-    } // 实现
+    }
     private async tick() {
         if (this.isSyncing) {
             return;
@@ -169,7 +169,7 @@ export class AutoSyncScheduler { // 实现
             return;
         }
         await this.attemptSync();
-    } // 实现
+    }
     private async attemptSync() {
         if (this.isSyncing) {
             return;
@@ -267,12 +267,12 @@ export class AutoSyncScheduler { // 实现
         } finally {
             this.isSyncing = false;
         }
-    } // 实现
-} // 实现
-let globalScheduler: AutoSyncScheduler | null = null; // 实现
-export function getAutoSyncScheduler(): AutoSyncScheduler { // 实现
+    }
+}
+let globalScheduler: AutoSyncScheduler | null = null;
+export function getAutoSyncScheduler(): AutoSyncScheduler {
     if (!globalScheduler) {
         globalScheduler = new AutoSyncScheduler();
-    } // 实现
+    }
     return globalScheduler;
-} // 实现
+}

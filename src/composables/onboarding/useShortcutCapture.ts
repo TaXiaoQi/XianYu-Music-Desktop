@@ -2,116 +2,116 @@
 // 自 OnboardingModal.vue 纯搬移，行为保持不变。
 import { computed, ref } from 'vue';
 
-import { useToast } from '../toast'; // 实现
+import { useToast } from '../toast';
 import {
-  areShortcutBindingsEqual, // 实现
-  createDefaultShortcutSettings, // 实现
-  formatShortcutBinding, // 实现
-  getShortcutBindingFromEvent, // 实现
-  isSystemReservedShortcutEvent, // 实现
-  shortcutActionLabels, // 实现
-  shortcutActionOrder, // 实现
+  areShortcutBindingsEqual,
+  createDefaultShortcutSettings,
+  formatShortcutBinding,
+  getShortcutBindingFromEvent,
+  isSystemReservedShortcutEvent,
+  shortcutActionLabels,
+  shortcutActionOrder,
 } from '../../features/settings/shortcuts';
 import type { ShortcutActionId } from '../../types';
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useSettings } from '../../features/settings/useSettings';
 
-type ShortcutScope = 'local' | 'global'; // 实现
-interface CapturingTarget { // 实现
-  actionId: ShortcutActionId; // 实现
-  scope: ShortcutScope; // 实现
+type ShortcutScope = 'local' | 'global';
+interface CapturingTarget {
+  actionId: ShortcutActionId;
+  scope: ShortcutScope;
 }
 
 export function useShortcutCapture() {
-  const { settings, patchSettings } = useSettings(); // 实现
-  const { showToast } = useToast(); // 实现
+  const { settings, patchSettings } = useSettings();
+  const { showToast } = useToast();
 
   // --- 快捷键录入 ---
-  const capturingTarget = ref<CapturingTarget | null>(null); // 实现
+  const capturingTarget = ref<CapturingTarget | null>(null);
 
-  const shortcutRows = computed(() => // 实现
-    shortcutActionOrder.map(actionId => ({ // 实现
+  const shortcutRows = computed(() =>
+    shortcutActionOrder.map(actionId => ({
       actionId,
-      label: shortcutActionLabels[actionId], // 实现
-      localBinding: settings.value.shortcuts.local[actionId], // 实现
-      globalBinding: settings.value.shortcuts.global[actionId], // 实现
+      label: shortcutActionLabels[actionId],
+      localBinding: settings.value.shortcuts.local[actionId],
+      globalBinding: settings.value.shortcuts.global[actionId],
     })),
   );
 
-  const isCapturing = (scope: ShortcutScope, actionId: ShortcutActionId) => // 实现
-    capturingTarget.value?.scope === scope && capturingTarget.value.actionId === actionId; // 实现
+  const isCapturing = (scope: ShortcutScope, actionId: ShortcutActionId) =>
+    capturingTarget.value?.scope === scope && capturingTarget.value.actionId === actionId;
 
-  const startCapture = (scope: ShortcutScope, actionId: ShortcutActionId) => { // 实现
-    capturingTarget.value = { scope, actionId }; // 实现
+  const startCapture = (scope: ShortcutScope, actionId: ShortcutActionId) => {
+    capturingTarget.value = { scope, actionId };
   };
 
-  const stopCapture = () => { // 实现
-    capturingTarget.value = null; // 实现
+  const stopCapture = () => {
+    capturingTarget.value = null;
   };
 
-  const restoreDefaultShortcuts = () => { // 实现
-    patchSettings({ shortcuts: createDefaultShortcutSettings() }); // 实现
-    stopCapture(); // 实现
-    showToast('已恢复默认快捷键', 'success'); // 实现
+  const restoreDefaultShortcuts = () => {
+    patchSettings({ shortcuts: createDefaultShortcutSettings() });
+    stopCapture();
+    showToast('已恢复默认快捷键', 'success');
   };
 
-  const updateShortcut = ( // 实现
-    scope: ShortcutScope, // 实现
-    actionId: ShortcutActionId, // 实现
-    nextBinding: ReturnType<typeof getShortcutBindingFromEvent>, // 实现
+  const updateShortcut = (
+    scope: ShortcutScope,
+    actionId: ShortcutActionId,
+    nextBinding: ReturnType<typeof getShortcutBindingFromEvent>,
   ) => {
-    patchSettings({ // 实现
-      shortcuts: { // 实现
-        ...settings.value.shortcuts, // 实现
+    patchSettings({
+      shortcuts: {
+        ...settings.value.shortcuts,
         [scope]: {
-          ...settings.value.shortcuts[scope], // 实现
+          ...settings.value.shortcuts[scope],
           [actionId]: nextBinding,
         },
       },
     });
   };
 
-  const handleShortcutCapture = ( // 实现
-    scope: ShortcutScope, // 实现
-    actionId: ShortcutActionId, // 实现
-    event: KeyboardEvent, // 实现
+  const handleShortcutCapture = (
+    scope: ShortcutScope,
+    actionId: ShortcutActionId,
+    event: KeyboardEvent,
   ) => {
-    if (!isCapturing(scope, actionId)) return; // 实现
-    event.preventDefault(); // 实现
-    event.stopPropagation(); // 实现
+    if (!isCapturing(scope, actionId)) return;
+    event.preventDefault();
+    event.stopPropagation();
 
-    if (event.key === 'Escape') { // 实现
-      stopCapture(); // 实现
+    if (event.key === 'Escape') {
+      stopCapture();
       return;
     }
-    if (event.key === 'Backspace' || event.key === 'Delete') { // 实现
-      updateShortcut(scope, actionId, null); // 实现
-      stopCapture(); // 实现
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      updateShortcut(scope, actionId, null);
+      stopCapture();
       return;
     }
-    if (isSystemReservedShortcutEvent(event)) { // 实现
-      showToast('Win 组合键由系统保留，不能作为快捷键', 'error'); // 实现
+    if (isSystemReservedShortcutEvent(event)) {
+      showToast('Win 组合键由系统保留，不能作为快捷键', 'error');
       return;
     }
 
-    const nextBinding = getShortcutBindingFromEvent(event); // 实现
-    if (!nextBinding) return; // 实现
+    const nextBinding = getShortcutBindingFromEvent(event);
+    if (!nextBinding) return;
 
-    const conflictActionId = shortcutActionOrder.find( // 实现
-      candidate => // 实现
-        candidate !== actionId && // 实现
-        areShortcutBindingsEqual(settings.value.shortcuts[scope][candidate], nextBinding), // 实现
+    const conflictActionId = shortcutActionOrder.find(
+      candidate =>
+        candidate !== actionId &&
+        areShortcutBindingsEqual(settings.value.shortcuts[scope][candidate], nextBinding),
     );
 
-    if (conflictActionId) { // 实现
+    if (conflictActionId) {
       showToast(
-        `${shortcutActionLabels[conflictActionId]} 已使用 ${formatShortcutBinding(nextBinding)}`, // 实现
+        `${shortcutActionLabels[conflictActionId]} 已使用 ${formatShortcutBinding(nextBinding)}`,
         'error',
       );
       return;
     }
 
-    updateShortcut(scope, actionId, nextBinding); // 实现
-    stopCapture(); // 实现
+    updateShortcut(scope, actionId, nextBinding);
+    stopCapture();
   };
 
   return {

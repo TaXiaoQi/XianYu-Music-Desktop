@@ -8,7 +8,6 @@ import type {
 import {
   ALL_QUALITY_KEYS,
   ALL_QUALITY_KEYS_DESC,
-  QUALITY_META,
 } from '../../types';
 import {
   extFromUrl as extFromUrlShared,
@@ -74,10 +73,6 @@ export function sanitizeFileName(name: string): string {
 
 export const extFromUrl = extFromUrlShared;
 
-export function extFromQuality(quality: LxQuality): string {
-  return QUALITY_META[quality]?.isLossless ? '.flac' : '.mp3';
-}
-
 export function buildFileNameBase(song: Song, style: DownloadFileNameStyle): string {
   const title = song.title || song.name || '未知歌曲';
   const artist = song.artist || '';
@@ -99,28 +94,4 @@ export function buildFileNameBase(song: Song, style: DownloadFileNameStyle): str
 
   const joined = parts.map((p) => p.trim()).filter(Boolean).join(' - ');
   return joined || title;
-}
-
-export function buildDownloadFileName(
-  song: Song,
-  url: string,
-  hitQuality: LxQuality,
-  keepSourceFilename: boolean,
-  style: DownloadFileNameStyle = 'artist-title',
-): string {
-  const ext = extFromUrl(url) || extFromQuality(hitQuality);
-
-  if (keepSourceFilename) {
-    try {
-      const u = new URL(url);
-      const base = u.pathname.split('/').pop() || '';
-      if (base && base.includes('.')) {
-        return sanitizeFileName(decodeURIComponent(base.slice(0, base.lastIndexOf('.')))) + ext;
-      }
-    } catch {
-      // fallthrough
-    }
-  }
-
-  return sanitizeFileName(buildFileNameBase(song, style)) + ext;
 }

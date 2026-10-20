@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { useDeveloperMode } from "../../features/settings/developerMode";
 import { useOnboarding } from "../../composables/useOnboarding";
 import { showSettingsConflict } from "../../composables/useSettingsConflict";
@@ -255,8 +255,8 @@ async function verifyCurrentSongQuality() {
     }
 }
 
-const { disableDeveloperMode } = useDeveloperMode(); // 实现
-const { triggerOnboarding } = useOnboarding(); // 实现
+const { disableDeveloperMode } = useDeveloperMode();
+const { triggerOnboarding } = useOnboarding();
 const { simulateAnnouncement } = useAnnouncement();
 const { simulateUpdate } = useUpdateCheck();
 

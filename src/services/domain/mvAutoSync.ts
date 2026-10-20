@@ -185,12 +185,12 @@ export function estimateEnvelopeLagLocal(
 }
 
 /** 局部匹配是否可信：置信度达标即可，不限制偏移大小——片头造成的偏移可远超全局 ±15s。 */
-export function isTrustworthyEstimateLocal(estimate: MvSyncEstimate | null): estimate is MvSyncEstimate {
+function isTrustworthyEstimateLocal(estimate: MvSyncEstimate | null): estimate is MvSyncEstimate {
   if (!estimate) return false;
   return Number.isFinite(estimate.offsetSec) && estimate.confidence >= LOCAL_MIN_CONFIDENCE;
 }
 
-export async function decodeAnalysisSamples(bytes: ArrayBuffer): Promise<Float32Array | null> {
+async function decodeAnalysisSamples(bytes: ArrayBuffer): Promise<Float32Array | null> {
   const AudioCtx: typeof OfflineAudioContext | undefined =
     (globalThis as any).OfflineAudioContext ?? (globalThis as any).webkitOfflineAudioContext;
   if (!AudioCtx) return null;

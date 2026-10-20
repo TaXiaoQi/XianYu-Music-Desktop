@@ -1,16 +1,16 @@
-<script setup lang="ts"> // 实现
-import { computed, ref } from 'vue'; // 实现
+<script setup lang="ts">
+import { computed, ref } from 'vue';
 
-import { useGlobalShortcutStatus } from '../../composables/useKeyboardShortcuts'; // 实现
-import { useToast } from '../../composables/toast'; // 实现
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useGlobalShortcutStatus } from '../../composables/useKeyboardShortcuts';
+import { useToast } from '../../composables/toast';
+import { useSettings } from '../../features/settings/useSettings';
 import SettingHint from './SettingHint.vue';
 import ShortcutCaptureButton from './shortcutsPanel/ShortcutCaptureButton.vue';
 import {
   areShortcutBindingsEqual, createDefaultShortcutSettings, formatShortcutBinding, getShortcutBindingFromEvent,
   isSystemReservedShortcutEvent, shortcutActionLabels, shortcutActionOrder,
-} from '../../features/settings/shortcuts'; // 实现
-import type { ShortcutActionId } from '../../types'; // 实现
+} from '../../features/settings/shortcuts';
+import type { ShortcutActionId } from '../../types';
 
 const settingsStore = useSettings();
 const settings = settingsStore.settings;
@@ -42,7 +42,7 @@ const writeBinding = (scope: BindingScope, actionId: ShortcutActionId, nextBindi
   slotTable[actionId] = nextBinding;
 };
 
-const restoreDefaults = () => { // 实现
+const restoreDefaults = () => {
   settings.value.shortcuts = createDefaultShortcutSettings(); endCapture();
 };
 

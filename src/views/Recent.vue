@@ -54,7 +54,7 @@
     </div>
 </template>
 
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { defineAsyncComponent, ref } from "vue";
 import type { Song as MusicTrack } from "../types";
 import { useAddToPlaylistDialog } from "../features/collections/addToPlaylistDialog";

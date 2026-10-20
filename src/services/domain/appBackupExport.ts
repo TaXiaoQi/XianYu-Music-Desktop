@@ -239,7 +239,7 @@ export function isEncryptedBackupJson(raw: unknown): boolean {
 }
 
 /** 将已序列化的备份 JSON 加密为加密备份外壳 */
-export async function encryptBackupJson(json: string, password: string): Promise<string> {
+async function encryptBackupJson(json: string, password: string): Promise<string> {
   const key = await aesKeyFor(password);
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(16));
   const ct = new Uint8Array(

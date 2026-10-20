@@ -1,10 +1,10 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { ChevronUp } from 'lucide-vue-next';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'; // 实现
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
-import { useLyrics } from '../../composables/lyrics'; // 实现
-import { usePlaybackController } from '../../features/playback/usePlaybackController'; // 实现
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import { useLyrics } from '../../composables/lyrics';
+import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { useSettings } from '../../features/settings/useSettings';
 
 import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useRenderingPower } from '../../composables/renderingPower';
@@ -15,8 +15,8 @@ import FooterControlItem from './FooterControlItem.vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import type { QualityKey, RemoteDownloadProgress } from '../../types';
 import {
-  FOOTER_PROGRESS_HIDDEN_KEY, // 实现
-  readStoredProgressHidden // 实现
+  FOOTER_PROGRESS_HIDDEN_KEY,
+  readStoredProgressHidden
 } from './footer/playerFooterProgress';
 import {
   ALL_QUALITY_OPTIONS,
@@ -44,7 +44,7 @@ const DlnaCastDialog = defineAsyncComponent(() => import('../overlays/DlnaCastDi
 const ShareSongDialog = defineAsyncComponent(() => import('../overlays/ShareSongDialog.vue'));
 
 const {
-  currentSong, // 实现
+  currentSong,
   currentPlayingQuality,
   sessionQualityOverride,
   setSessionQualityOverride,
@@ -52,11 +52,11 @@ const {
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute,
   toggleMode, togglePlaylist, toggleComment,
   togglePlayerDetail, seekTo, formatDuration, playSong,
-} = usePlaybackController(); // 实现
-const { isFavorite, toggleFavorite } = useLibraryCollections(); // 实现
+} = usePlaybackController();
+const { isFavorite, toggleFavorite } = useLibraryCollections();
 
-const handleOpenDetail = () => { // 实现
-  togglePlayerDetail(); // 实现
+const handleOpenDetail = () => {
+  togglePlayerDetail();
 };
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
@@ -75,10 +75,10 @@ const normalizedLayout = computed(() => normalizeFooterLayout(footerLayout.value
 const isFooterItemVisible = (key: FooterItemKey) => showPlayerDetail.value || key !== 'mv';
 const leftItems = computed(() => normalizedLayout.value.left.filter(key => !normalizedLayout.value.hidden.includes(key) && isFooterItemVisible(key)));
 const middleLeftItem = computed(() => normalizedLayout.value.middleLeft && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleLeft) && isFooterItemVisible(normalizedLayout.value.middleLeft)
-  ? normalizedLayout.value.middleLeft // 实现
+  ? normalizedLayout.value.middleLeft
   : null);
 const middleRightItem = computed(() => normalizedLayout.value.middleRight && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleRight) && isFooterItemVisible(normalizedLayout.value.middleRight)
-  ? normalizedLayout.value.middleRight // 实现
+  ? normalizedLayout.value.middleRight
   : null);
 const rightItems = computed(() => normalizedLayout.value.right.filter(key => !normalizedLayout.value.hidden.includes(key) && isFooterItemVisible(key)));
 const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value).filter(isFooterItemVisible));
@@ -134,9 +134,9 @@ const {
   showToast,
 });
 // --- Context Menu State --- 
-const showContextMenu = ref(false); // 实现
-const contextMenuX = ref(0); // 实现
-const contextMenuY = ref(0); // 实现
+const showContextMenu = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
 const lyricsReplacementVisible = ref(false);
 
 // --- Comment State (复用全局 UI store，弹窗挂在 MainShell 上) ---
@@ -149,7 +149,7 @@ const isPluginSong = computed(() => {
 const wrapToggleComment = () => {
   if (!isPluginSong.value) return;
   if (!showComment.value) {
-    showFooterTools.value = false; // 实现
+    showFooterTools.value = false;
   }
   toggleComment();
 };
@@ -188,25 +188,25 @@ const {
   closeFooterTools: () => { showFooterTools.value = false; },
 });
 
-const handleContextMenu = (e: MouseEvent) => { // 实现
-  if (!currentSong.value) return; // 实现
-  e.preventDefault(); // 实现
-  contextMenuX.value = e.clientX; // 实现
-  contextMenuY.value = e.clientY; // 实现
-  showContextMenu.value = true; // 实现
+const handleContextMenu = (e: MouseEvent) => {
+  if (!currentSong.value) return;
+  e.preventDefault();
+  contextMenuX.value = e.clientX;
+  contextMenuY.value = e.clientY;
+  showContextMenu.value = true;
 };
 
-const toggleLyrics = () => { showDesktopLyrics.value = !showDesktopLyrics.value; }; // 实现
-const toggleLyricsPlayerSettings = () => { // 实现
-  showLyricsPlayerSettingsPanel.value = !showLyricsPlayerSettingsPanel.value; // 实现
-  if (showLyricsPlayerSettingsPanel.value) { // 实现
-    showFooterTools.value = false; // 实现
+const toggleLyrics = () => { showDesktopLyrics.value = !showDesktopLyrics.value; };
+const toggleLyricsPlayerSettings = () => {
+  showLyricsPlayerSettingsPanel.value = !showLyricsPlayerSettingsPanel.value;
+  if (showLyricsPlayerSettingsPanel.value) {
+    showFooterTools.value = false;
   }
 };
-const isVisualizerEnabled = ref(localStorage.getItem('footer_visualizer_enabled') !== 'false'); // 实现
-const isProgressHidden = ref(readStoredProgressHidden(localStorage)); // 实现
-const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null); // 实现
-let unlistenRemoteDownload: UnlistenFn | null = null; // 实现
+const isVisualizerEnabled = ref(localStorage.getItem('footer_visualizer_enabled') !== 'false');
+const isProgressHidden = ref(readStoredProgressHidden(localStorage));
+const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
+let unlistenRemoteDownload: UnlistenFn | null = null;
 
 
 const QUALITY_OPTIONS = computed<Array<{ label: string; value: string; description: string }>>(() => {
@@ -310,23 +310,23 @@ const selectQuality = async (qualityKey: string) => {
   showQualityMenu.value = false;
 
   if (qualityKey !== prev && isQualitySelectableSong.value && currentSong.value) {
-    await playSong(currentSong.value, { // 实现
-      startTime: currentTime.value, // 实现
-      preserveQueue: true, // 实现
-      continueStatisticsSession: true, // 实现
+    await playSong(currentSong.value, {
+      startTime: currentTime.value,
+      preserveQueue: true,
+      continueStatisticsSession: true,
     });
   }
 };
 
-const toggleVisualizer = () => { // 实现
+const toggleVisualizer = () => {
   showFooterTools.value = false;
-  isVisualizerEnabled.value = !isVisualizerEnabled.value; // 实现
-  localStorage.setItem('footer_visualizer_enabled', isVisualizerEnabled.value.toString()); // 实现
+  isVisualizerEnabled.value = !isVisualizerEnabled.value;
+  localStorage.setItem('footer_visualizer_enabled', isVisualizerEnabled.value.toString());
 };
 
-const toggleProgressVisibility = () => { // 实现
-  isProgressHidden.value = !isProgressHidden.value; // 实现
-  localStorage.setItem(FOOTER_PROGRESS_HIDDEN_KEY, isProgressHidden.value.toString()); // 实现
+const toggleProgressVisibility = () => {
+  isProgressHidden.value = !isProgressHidden.value;
+  localStorage.setItem(FOOTER_PROGRESS_HIDDEN_KEY, isProgressHidden.value.toString());
 };
 
 // --- 进度条拖拽逻辑 --- 
@@ -352,17 +352,17 @@ const {
   isShowingDetail: showPlayerDetail,
 });
 
-const isCurrentRemoteDownloadActive = computed(() => { // 实现
-  const progress = remoteDownloadProgress.value; // 实现
-  return !!progress // 实现
-    && !progress.done // 实现
-    && !!currentSong.value // 实现
-    && progress.uri === currentSong.value.path; // 实现
+const isCurrentRemoteDownloadActive = computed(() => {
+  const progress = remoteDownloadProgress.value;
+  return !!progress
+    && !progress.done
+    && !!currentSong.value
+    && progress.uri === currentSong.value.path;
 });
-const remoteDownloadText = computed(() => { // 实现
-  const progress = remoteDownloadProgress.value; // 实现
-  if (!progress || progress.percent === null) return '正在加载远程歌曲'; // 实现
-  return `正在加载远程歌曲 ${Math.round(progress.percent)}%`; // 实现
+const remoteDownloadText = computed(() => {
+  const progress = remoteDownloadProgress.value;
+  if (!progress || progress.percent === null) return '正在加载远程歌曲';
+  return `正在加载远程歌曲 ${Math.round(progress.percent)}%`;
 });
 
 // --- 歌名滚动（marquee）---
@@ -398,25 +398,25 @@ const {
   onResumeIdle: () => startIdleTimer(),
 });
 
-const onGlobalPointerMove = (e: PointerEvent) => { // 实现
-  if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); } // 实现
-  if (isDraggingProgress.value) { e.preventDefault(); updateProgressFromEvent(e); } // 实现
+const onGlobalPointerMove = (e: PointerEvent) => {
+  if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); }
+  if (isDraggingProgress.value) { e.preventDefault(); updateProgressFromEvent(e); }
   if (showPlayerDetail.value && mvVideoActive.value && !isPointerOverFooter.value) {
     if (isIdle.value) clearIdle();
     startIdleTimer();
   }
 };
 
-const onGlobalPointerEnd = (commitProgress = true) => { // 实现
+const onGlobalPointerEnd = (commitProgress = true) => {
   endDrag();
-  stopProgressDrag(commitProgress); // 实现
+  stopProgressDrag(commitProgress);
 };
 
-const onGlobalPointerUp = () => onGlobalPointerEnd(true); // 实现
-const onGlobalPointerCancel = () => onGlobalPointerEnd(false); // 实现
+const onGlobalPointerUp = () => onGlobalPointerEnd(true);
+const onGlobalPointerCancel = () => onGlobalPointerEnd(false);
 
 // --- EQ Panel State --- 
-const showEqPanel = ref(false); // 实现
+const showEqPanel = ref(false);
 
 // --- Bit-perfect / DSD 直通时禁用底栏音量与音质 UI ---
 const isBitPerfectActive = computed(() =>
@@ -454,31 +454,31 @@ const toggleFooterTools = () => {
 };
 
 watch(
-  () => settings.value.audio.showEqualizerInFooter, // 实现
+  () => settings.value.audio.showEqualizerInFooter,
   (show) => {
-    if (show === false) { // 实现
-      showEqPanel.value = false; // 实现
+    if (show === false) {
+      showEqPanel.value = false;
     }
   }
 );
 
-const toggleEqPanel = (e: MouseEvent) => { // 实现
-  e.stopPropagation(); // 实现
+const toggleEqPanel = (e: MouseEvent) => {
+  e.stopPropagation();
   if (isEffectLocked.value) return;
-  showEqPanel.value = !showEqPanel.value; // 实现
+  showEqPanel.value = !showEqPanel.value;
 };
 
 watch(isEffectLocked, (locked) => {
   if (locked) showEqPanel.value = false;
 });
 
-const handleWindowClick = (e: MouseEvent) => { // 实现
+const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
   if (showContextMenu.value && !target.closest('.ctx-sheet')) {
     showContextMenu.value = false;
   }
   if (showFooterTools.value && footerToolsRef.value && !footerToolsRef.value.contains(target)) {
-    showFooterTools.value = false; // 实现
+    showFooterTools.value = false;
   }
   if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
     if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
@@ -517,7 +517,7 @@ const {
 
 // --- 向 FooterControlItem 共享上下文 ---
 provide('footerContext', {
-  currentSong, // 实现
+  currentSong,
   showPlayerDetail,
   footerQualityExtraText,
   isFooterQualityInfoProbing,
@@ -596,8 +596,8 @@ onMounted(async () => {
   await nextTick();
   setupMarqueeObserver();
   startIdleTimer();
-  unlistenRemoteDownload = await listen<RemoteDownloadProgress>('remote-download-progress', event => { // 实现
-    remoteDownloadProgress.value = event.payload; // 实现
+  unlistenRemoteDownload = await listen<RemoteDownloadProgress>('remote-download-progress', event => {
+    remoteDownloadProgress.value = event.payload;
   });
 });
 onUnmounted(() => {
@@ -609,8 +609,8 @@ onUnmounted(() => {
   disposeMarquee();
   disposeIdle();
   abortFooterQualityInfoProbe();
-  unlistenRemoteDownload?.(); // 实现
-  unlistenRemoteDownload = null; // 实现
+  unlistenRemoteDownload?.();
+  unlistenRemoteDownload = null;
 });
 </script>
 

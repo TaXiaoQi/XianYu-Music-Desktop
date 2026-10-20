@@ -1,10 +1,10 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { Check, ChevronDown, FileUp, Loader2 } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
-import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls'; // 实现
+import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
-import { useI18n } from '../../features/i18n'; // 实现
+import { useI18n } from '../../features/i18n';
 import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import {
@@ -27,26 +27,26 @@ const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue
 const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
 const SettingsTopBarLayout = defineAsyncComponent(() => import('./SettingsTopBarLayout.vue'));
 
-const TEXT = computed(() => isEnglish.value ? { // 实现
-  paletteTitle: 'Color Scheme', // 实现
-  darkScheme: 'Dark', // 实现
-  lightScheme: 'Light', // 实现
-  systemScheme: 'Use System Setting', // 实现
-  customEmoji: '🎨', // 实现
-  customTitle: 'Custom Skin', // 实现
-  customHint: 'Use an image, overlay, and foreground styles', // 实现
-  customShort: 'Custom', // 实现
-  accentTitle: 'Accent Color', // 实现
-  accentHint: 'Used for buttons, selections, and interface accents', // 实现
-  accentCustom: 'Custom Color', // 实现
-  accentHex: 'HEX Value', // 实现
-  accentReset: 'Reset to Default', // 实现
-  playerDetailCoverTitle: 'Lyrics Page Cover', // 实现
-  playerDetailCoverHint: 'Choose what to show whenever the Now Playing page opens', // 实现
-  playerDetailCoverLabel: 'When opening the Now Playing page', // 实现
-  playerDetailCoverShow: 'Always Show Cover', // 实现
-  playerDetailCoverHide: 'Always Hide Cover', // 实现
-  playerDetailCoverRemember: 'Remember Last Choice', // 实现
+const TEXT = computed(() => isEnglish.value ? {
+  paletteTitle: 'Color Scheme',
+  darkScheme: 'Dark',
+  lightScheme: 'Light',
+  systemScheme: 'Use System Setting',
+  customEmoji: '🎨',
+  customTitle: 'Custom Skin',
+  customHint: 'Use an image, overlay, and foreground styles',
+  customShort: 'Custom',
+  accentTitle: 'Accent Color',
+  accentHint: 'Used for buttons, selections, and interface accents',
+  accentCustom: 'Custom Color',
+  accentHex: 'HEX Value',
+  accentReset: 'Reset to Default',
+  playerDetailCoverTitle: 'Lyrics Page Cover',
+  playerDetailCoverHint: 'Choose what to show whenever the Now Playing page opens',
+  playerDetailCoverLabel: 'When opening the Now Playing page',
+  playerDetailCoverShow: 'Always Show Cover',
+  playerDetailCoverHide: 'Always Hide Cover',
+  playerDetailCoverRemember: 'Remember Last Choice',
   playerDetailStyleTitle: 'Now Playing Page Style',
   playerDetailStyleHint: 'Choose the layout skin of the Now Playing page',
   playerDetailStyleLabel: 'Page style',
@@ -67,28 +67,28 @@ const TEXT = computed(() => isEnglish.value ? { // 实现
   playerDetailMeshBackgroundLabel: 'Use polygon flow background',
   playerDetailMeshAntiAliasLabel: 'Smooth polygon edges',
   playerDetailMeshAntiAliasHint: 'Anti-alias polygon edges and render at a higher resolution: smoother, crisper edges at a higher GPU cost',
-  dynamicTitle: 'Dynamic Background', // 实现
-  dynamicHint: 'Changes with the album cover', // 实现
-  dynamicOff: 'Off', // 实现
-  dynamicFlow: 'Flowing Light', // 实现
-  dynamicBlur: 'Static Blur', // 实现
-  dynamicDisabledHint: 'Dynamic backgrounds are disabled while a custom skin or window material is active.', // 实现
-  windowMaterialTitle: 'Window Material', // 实现
-  windowMaterialBlur: 'Acrylic Blur', // 实现
-  windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.', // 实现
-  windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.', // 实现
-  windowMaterialConflictHint: 'Available after turning off the dynamic background or custom skin.', // 实现
-  windowMaterialWin11Only: 'Windows 11 only', // 实现
-  keepWindowMaterialOnBlur: 'Keep Material When Unfocused', // 实现
-  keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.', // 实现
-  trayMenuTitle: 'Tray Menu', // 实现
-  customTrayMenu: 'Use Custom Tray Menu', // 实现
+  dynamicTitle: 'Dynamic Background',
+  dynamicHint: 'Changes with the album cover',
+  dynamicOff: 'Off',
+  dynamicFlow: 'Flowing Light',
+  dynamicBlur: 'Static Blur',
+  dynamicDisabledHint: 'Dynamic backgrounds are disabled while a custom skin or window material is active.',
+  windowMaterialTitle: 'Window Material',
+  windowMaterialBlur: 'Acrylic Blur',
+  windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.',
+  windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.',
+  windowMaterialConflictHint: 'Available after turning off the dynamic background or custom skin.',
+  windowMaterialWin11Only: 'Windows 11 only',
+  keepWindowMaterialOnBlur: 'Keep Material When Unfocused',
+  keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.',
+  trayMenuTitle: 'Tray Menu',
+  customTrayMenu: 'Use Custom Tray Menu',
   customTrayMenuHint: 'Use the tray menu drawn by XianYu Music. Turn this off to use the native system menu.',
-  customTrayMenuOn: 'Custom', // 实现
-  customTrayMenuOff: 'System', // 实现
-  leaderboardTitle: 'Home Leaderboard', // 实现
-  leaderboardEnable: 'Show the listening leaderboard on Home', // 实现
-  leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.', // 实现
+  customTrayMenuOn: 'Custom',
+  customTrayMenuOff: 'System',
+  leaderboardTitle: 'Home Leaderboard',
+  leaderboardEnable: 'Show the listening leaderboard on Home',
+  leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.',
   switchStyleTitle: 'Component Style',
   useGlassSwitch: 'Liquid Glass Switches',
   useGlassSwitchHint: 'Enable translucent glassmorphic refraction and sheen sweep for switches. Turn this off to use classic flat style.',
@@ -161,106 +161,106 @@ const TEXT = computed(() => isEnglish.value ? { // 实现
   squareEntry: '主题中心',
 });
 
-const FLOW_TEXT = computed(() => isEnglish.value ? { // 实现
-  panelTitle: 'Flowing Light Tuning', // 实现
-  colorBoost: 'Color Intensity', // 实现
-  depth: 'Light and Dark Depth', // 实现
-  speed: 'Flow Speed', // 实现
-  texture: 'Texture Intensity', // 实现
-  subtle: 'Subtle', // 实现
-  vivid: 'Vivid', // 实现
-  airy: 'Airy', // 实现
-  deep: 'Deep', // 实现
-  calm: 'Calm', // 实现
-  brisk: 'Lively', // 实现
-  clean: 'Clean', // 实现
-  textured: 'Textured', // 实现
-  toggleLabel: 'Expand or collapse Flowing Light tuning', // 实现
+const FLOW_TEXT = computed(() => isEnglish.value ? {
+  panelTitle: 'Flowing Light Tuning',
+  colorBoost: 'Color Intensity',
+  depth: 'Light and Dark Depth',
+  speed: 'Flow Speed',
+  texture: 'Texture Intensity',
+  subtle: 'Subtle',
+  vivid: 'Vivid',
+  airy: 'Airy',
+  deep: 'Deep',
+  calm: 'Calm',
+  brisk: 'Lively',
+  clean: 'Clean',
+  textured: 'Textured',
+  toggleLabel: 'Expand or collapse Flowing Light tuning',
 } : {
-  panelTitle: '\u6d41\u5149\u5fae\u8c03', // 实现
-  colorBoost: '\u8272\u5f69\u5f3a\u5ea6', // 实现
-  depth: '\u660e\u6697\u6df1\u5ea6', // 实现
-  speed: '\u6d41\u52a8\u901f\u5ea6', // 实现
-  texture: '\u7eb9\u7406\u5f3a\u5ea6', // 实现
-  subtle: '\u67d4\u548c', // 实现
-  vivid: '\u9c9c\u8273', // 实现
-  airy: '\u901a\u900f', // 实现
-  deep: '\u6df1\u9083', // 实现
-  calm: '\u8212\u7f13', // 实现
-  brisk: '\u7075\u52a8', // 实现
-  clean: '\u5e72\u51c0', // 实现
-  textured: '\u7ec6\u817b', // 实现
-  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6d41\u5149\u5fae\u8c03', // 实现
+  panelTitle: '\u6d41\u5149\u5fae\u8c03',
+  colorBoost: '\u8272\u5f69\u5f3a\u5ea6',
+  depth: '\u660e\u6697\u6df1\u5ea6',
+  speed: '\u6d41\u52a8\u901f\u5ea6',
+  texture: '\u7eb9\u7406\u5f3a\u5ea6',
+  subtle: '\u67d4\u548c',
+  vivid: '\u9c9c\u8273',
+  airy: '\u901a\u900f',
+  deep: '\u6df1\u9083',
+  calm: '\u8212\u7f13',
+  brisk: '\u7075\u52a8',
+  clean: '\u5e72\u51c0',
+  textured: '\u7ec6\u817b',
+  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6d41\u5149\u5fae\u8c03',
 });
 
-const BLUR_TEXT = computed(() => isEnglish.value ? { // 实现
-  panelTitle: 'Overlay Intensity', // 实现
-  tint: 'Overlay Opacity', // 实现
-  clear: 'Clear', // 实现
-  solid: 'Solid', // 实现
-  toggleLabel: 'Expand or collapse Static Blur tuning', // 实现
+const BLUR_TEXT = computed(() => isEnglish.value ? {
+  panelTitle: 'Overlay Intensity',
+  tint: 'Overlay Opacity',
+  clear: 'Clear',
+  solid: 'Solid',
+  toggleLabel: 'Expand or collapse Static Blur tuning',
 } : {
-  panelTitle: '\u906e\u7f69\u6d53\u5ea6', // 实现
-  tint: '\u906e\u7f69\u6d53\u6de1', // 实现
-  clear: '\u901a\u900f', // 实现
-  solid: '\u5b9e\u8272', // 实现
-  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6bdb\u73bb\u7483\u5fae\u8c03', // 实现
+  panelTitle: '\u906e\u7f69\u6d53\u5ea6',
+  tint: '\u906e\u7f69\u6d53\u6de1',
+  clear: '\u901a\u900f',
+  solid: '\u5b9e\u8272',
+  toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6bdb\u73bb\u7483\u5fae\u8c03',
 });
 
-const ACCENT_COLOR_PRESETS = computed(() => isEnglish.value ? [ // 实现
-  { label: 'Classic Red', value: '#EC4141' }, // 实现
-  { label: 'Coral', value: '#F9735B' }, // 实现
-  { label: 'Amber', value: '#F59E0B' }, // 实现
-  { label: 'Emerald', value: '#22C55E' }, // 实现
-  { label: 'Cyan', value: '#06B6D4' }, // 实现
-  { label: 'Lake Blue', value: '#3B82F6' }, // 实现
-  { label: 'Iris', value: '#8B5CF6' }, // 实现
-  { label: 'Rose', value: '#EC4899' }, // 实现
+const ACCENT_COLOR_PRESETS = computed(() => isEnglish.value ? [
+  { label: 'Classic Red', value: '#EC4141' },
+  { label: 'Coral', value: '#F9735B' },
+  { label: 'Amber', value: '#F59E0B' },
+  { label: 'Emerald', value: '#22C55E' },
+  { label: 'Cyan', value: '#06B6D4' },
+  { label: 'Lake Blue', value: '#3B82F6' },
+  { label: 'Iris', value: '#8B5CF6' },
+  { label: 'Rose', value: '#EC4899' },
 ] : [
-  { label: '\u7ecf\u5178\u7ea2', value: '#EC4141' }, // 实现
-  { label: '\u73ca\u745a', value: '#F9735B' }, // 实现
-  { label: '\u7425\u73c0', value: '#F59E0B' }, // 实现
-  { label: '\u7fe1\u7fe0', value: '#22C55E' }, // 实现
-  { label: '\u9752\u7eff', value: '#06B6D4' }, // 实现
-  { label: '\u6e56\u84dd', value: '#3B82F6' }, // 实现
-  { label: '\u9e22\u5c3e\u7d2b', value: '#8B5CF6' }, // 实现
-  { label: '\u8537\u8587', value: '#EC4899' }, // 实现
+  { label: '\u7ecf\u5178\u7ea2', value: '#EC4141' },
+  { label: '\u73ca\u745a', value: '#F9735B' },
+  { label: '\u7425\u73c0', value: '#F59E0B' },
+  { label: '\u7fe1\u7fe0', value: '#22C55E' },
+  { label: '\u9752\u7eff', value: '#06B6D4' },
+  { label: '\u6e56\u84dd', value: '#3B82F6' },
+  { label: '\u9e22\u5c3e\u7d2b', value: '#8B5CF6' },
+  { label: '\u8537\u8587', value: '#EC4899' },
 ]);
 
 const {
   theme,
-  colorScheme, // 实现
-  materialMode, // 实现
+  colorScheme,
+  materialMode,
   keepWindowMaterialOnBlur,
   useCustomTrayMenu,
   showLeaderboard,
-  playerDetailCoverBehavior, // 实现
-  isWindowMaterialDisabled, // 实现
-  isWindowMaterialButtonDisabled, // 实现
-  getWindowMaterialModeDisabledReason, // 实现
-  windowMaterialDisabledReason, // 实现
-  isDynamicBgDisabled, // 实现
-  showFlowTuning, // 实现
-  showBlurTuning, // 实现
-  setColorScheme, // 实现
-  setAccentColor, // 实现
-  resetAccentColor, // 实现
-  setDynamicType, // 实现
-  toggleWindowMaterial, // 实现
-  openCustomModal, // 实现
-  toggleFlowTuning, // 实现
-  toggleBlurTuning, // 实现
-  setFlowColorBoost, // 实现
-  setFlowDepth, // 实现
-  setFlowSpeed, // 实现
-  setFlowTexture, // 实现
-  setWindowBlurTint, // 实现
+  playerDetailCoverBehavior,
+  isWindowMaterialDisabled,
+  isWindowMaterialButtonDisabled,
+  getWindowMaterialModeDisabledReason,
+  windowMaterialDisabledReason,
+  isDynamicBgDisabled,
+  showFlowTuning,
+  showBlurTuning,
+  setColorScheme,
+  setAccentColor,
+  resetAccentColor,
+  setDynamicType,
+  toggleWindowMaterial,
+  openCustomModal,
+  toggleFlowTuning,
+  toggleBlurTuning,
+  setFlowColorBoost,
+  setFlowDepth,
+  setFlowSpeed,
+  setFlowTexture,
+  setWindowBlurTint,
   setKeepWindowMaterialOnBlur,
   setUseCustomTrayMenu,
   useGlassSwitch,
   setUseGlassSwitch,
   setShowLeaderboard,
-  setPlayerDetailCoverBehavior, // 实现
+  setPlayerDetailCoverBehavior,
   playerDetailStyle,
   setPlayerDetailStyle,
   playerDetailMeshBackground,
@@ -271,12 +271,12 @@ const {
   setPlayerDetailVinylMaterial,
   setPlayerDetailVinylPlatterStyle,
   setPlayerDetailMeshBackground,
-} = useSettingsThemeControls(); // 实现
+} = useSettingsThemeControls();
 
-const commitAccentColor = (event: Event) => { // 实现
-  const input = event.target as HTMLInputElement; // 实现
-  setAccentColor(input.value); // 实现
-  input.value = theme.value.accentColor; // 实现
+const commitAccentColor = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  setAccentColor(input.value);
+  input.value = theme.value.accentColor;
 };
 
 const isImportingTheme = ref(false);

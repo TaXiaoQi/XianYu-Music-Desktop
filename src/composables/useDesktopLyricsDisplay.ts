@@ -76,19 +76,6 @@ const INK_RGB_FALLBACK = "0 0 0";
 const LATIN_TOKEN_CHAR = /[\p{Script=Latin}\p{Number}'’_-]/u;
 const BLANK_CHAR = /\s/u;
 
-// 桌面歌词对齐档位（供设置面板下拉使用）
-type AlignmentOption = {
-    value: DesktopLyricsWindowSettings["playerAlignment"];
-    label: string;
-};
-const ALIGNMENT_LABELS = { left: "左", center: "中", right: "右" } as const;
-export const DESKTOP_LYRICS_ALIGNMENT_OPTIONS: AlignmentOption[] = (
-    ["left", "center", "right"] as const
-).map((alignment) => ({
-    value: alignment,
-    label: ALIGNMENT_LABELS[alignment],
-}));
-
 type SubLineKind = "romaji" | "translation";
 type SubLine = { kind: SubLineKind; text: string };
 
@@ -102,7 +89,7 @@ interface DisplayLine {
     secondaryLines: SubLine[];
 }
 
-export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) { // 实现
+export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
     const playClock = ref(0);
     const playing = ref(false);
     const latencySeconds = ref(0);

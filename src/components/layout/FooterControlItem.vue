@@ -3,8 +3,8 @@ import { computed, inject, nextTick, ref, watch, type Ref } from 'vue';
 import { usePlaybackController } from '../../features/playback';
 import { useToast } from '../../composables/toast';
 import { reportDailyDislikeSignal } from '../../services/domain/dailyRecommendFeedback';
-import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue'; // 实现
-import FooterControlIcon from './FooterControlIcon.vue'; // 实现
+import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
+import FooterControlIcon from './FooterControlIcon.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
 import type { DownloadRecord } from '../../services/domain/downloadHistory';
 

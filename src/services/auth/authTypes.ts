@@ -24,7 +24,7 @@ export type HumanCaptcha = {
   expire_seconds?: number;
 };
 
-export type HumanCaptchaProvider = 'turnstile' | 'hcaptcha' | 'off' | string;
+type HumanCaptchaProvider = 'turnstile' | 'hcaptcha' | 'off' | string;
 
 export type HumanCaptchaConfig = {
   enabled: boolean;

@@ -48,7 +48,7 @@ const makeStorageMock = () => {
 type StorageMock = ReturnType<typeof makeStorageMock>;
 
 const bootStore = () => {
-    setActivePinia(createPinia()); // 实现
+    setActivePinia(createPinia());
     return useSettingsStore();
 };
 
@@ -296,7 +296,7 @@ describe("mergeAudioSettings — boundary value combinations", () => {
             gainOffsetDb: 0,
             preventClipping: true,
         },
-        equalizer: { // 实现
+        equalizer: {
             enabled: false,
             preamp: 0,
             gains: gainSlot(0),

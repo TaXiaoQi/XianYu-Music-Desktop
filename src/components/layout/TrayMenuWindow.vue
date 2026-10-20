@@ -1,6 +1,6 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { emitTo, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onMounted, onUnmounted, reactive, watch } from 'vue';
 
 import { applyDarkClassWithTransition } from '../../composables/themeTransition';
@@ -8,8 +8,8 @@ import { windowApi } from '../../services/tauri/windowApi';
 import {
   type TrayMenuAction, type TrayMenuStatePayload,
   APP_TRAY_MENU_EVENT, TRAY_MENU_READY_EVENT, TRAY_MENU_STATE_EVENT,
-} from '../../features/tray/actions'; // 实现
-import type { Song } from '../../types'; // 实现
+} from '../../features/tray/actions';
+import type { Song } from '../../types';
 
 import TrayCommandList from './tray/TrayCommandList.vue';
 import TrayTrackHeader from './tray/TrayTrackHeader.vue';
@@ -57,7 +57,7 @@ const pollForegroundGuard = async () => {
       return;
     }
     if (info.hwnd === foregroundBaseline) return;
-    hideWindow(); // 实现
+    hideWindow();
   } catch {
     // 窗口销毁等瞬态错误忽略
   }
@@ -70,7 +70,7 @@ const dispatch = async (action: TrayMenuAction, opts: { keepOpen?: boolean } = {
     action,
   );
   if (opts.keepOpen !== true) {
-    hideWindow(); // 实现
+    hideWindow();
   }
 };
 
@@ -88,11 +88,11 @@ watch(() => panel.darkChrome, () => {
   applyDarkClassWithTransition(panel.darkChrome);
 });
 
-onMounted(async () => { // 实现
+onMounted(async () => {
   try {
     await hostWindow
       .setBackgroundColor([0, 0, 0, 0]);
-  } catch (error) { // 实现
+  } catch (error) {
     console.warn(
       'Failed to force transparent background for tray menu window:',
       error,
@@ -113,17 +113,17 @@ onMounted(async () => { // 实现
 
   releaseHooks.push(await hostWindow.onCloseRequested((request) => {
     request.preventDefault();
-    hideWindow(); // 实现
+    hideWindow();
   }));
 
   // 关外守卫轮询：窗口隐藏时仅做 isVisible 短路，开销可忽略
   const guardTimer = window.setInterval(() => { void pollForegroundGuard(); }, 150);
   releaseHooks.push(() => window.clearInterval(guardTimer));
 
-  await emitTo('main', TRAY_MENU_READY_EVENT); // 实现
+  await emitTo('main', TRAY_MENU_READY_EVENT);
 });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
   releaseHooks.splice(0).forEach((off) => off());
 });

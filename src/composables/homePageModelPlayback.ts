@@ -23,7 +23,7 @@ const INSERT_AFTER_CURRENT_VIEWS = new Set(['all', 'artist', 'album', 'folder'])
 const EMPTY_FOLDER_PLAYLIST_TOAST = '该文件夹下没有可用于创建歌单的歌曲';
 const FOLDER_PLAYLIST_CREATED_TOAST = '已根据文件夹创建歌单';
 
-export const shouldInsertAfterCurrentSong = (searchTerm: string, viewMode: string): boolean =>
+const shouldInsertAfterCurrentSong = (searchTerm: string, viewMode: string): boolean =>
   searchTerm.trim().length > 0 && INSERT_AFTER_CURRENT_VIEWS.has(viewMode);
 
 /**

@@ -1,8 +1,8 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { ref } from 'vue';
 import { Download } from 'lucide-vue-next';
 
-import type { Playlist } from '../../types'; // 实现
+import type { Playlist } from '../../types';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import FavoriteCollectionPanel from './sidebar/FavoriteCollectionPanel.vue';
 

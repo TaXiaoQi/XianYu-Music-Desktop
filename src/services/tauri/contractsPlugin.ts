@@ -38,7 +38,7 @@ export interface PluginHttpBinaryResponseContract {
 
 // ===== 兜底模块宿主类型契约（与 Rust fallback_host 对应）=====
 
-export interface FallbackLogContract {
+interface FallbackLogContract {
   level: string;
   message: string;
   callId: number;
@@ -58,7 +58,7 @@ export interface FallbackCallResultContract {
   logs: FallbackLogContract[];
 }
 
-export interface FallbackCallItemContract {
+interface FallbackCallItemContract {
   ok: boolean;
   error: string | null;
   data: any;

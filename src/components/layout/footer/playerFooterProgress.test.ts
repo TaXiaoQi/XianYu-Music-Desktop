@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"; // 实现
+import { describe, expect, it } from "vitest";
 
 import {
     FOOTER_PROGRESS_HIDDEN_KEY,
@@ -6,7 +6,7 @@ import {
     readStoredProgressHidden,
 } from "./playerFooterProgress";
 
-describe("readStoredProgressHidden", () => { // 实现
+describe("readStoredProgressHidden", () => {
     it("maps only the literal stored true string to hidden", () => {
         const storageStub = (stored: string | null) => ({
             getItem: () => stored,
@@ -25,7 +25,7 @@ describe("readStoredProgressHidden", () => { // 实现
     });
 });
 
-describe("getProgressVisualState", () => { // 实现
+describe("getProgressVisualState", () => {
     it.each([
         {
             hidden: false,

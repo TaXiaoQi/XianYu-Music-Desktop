@@ -2,83 +2,83 @@
 // 自 OnboardingModal.vue 纯搬移，行为保持不变。
 import { computed, ref } from 'vue';
 
-export type Step = 'splash' | 'theme' | 'material' | 'shortcuts' | 'plugins' | 'account'; // 实现
+export type Step = 'splash' | 'theme' | 'material' | 'shortcuts' | 'plugins' | 'account';
 
-export const onboardingSteps: { key: Step; label: string }[] = [ // 实现
-  { key: 'theme', label: '主题' }, // 实现
-  { key: 'material', label: '材质' }, // 实现
+const onboardingSteps: { key: Step; label: string }[] = [
+  { key: 'theme', label: '主题' },
+  { key: 'material', label: '材质' },
   { key: 'shortcuts', label: '快捷按键' },
-  { key: 'plugins', label: '插件' }, // 实现
-  { key: 'account', label: '账号' }, // 实现
+  { key: 'plugins', label: '插件' },
+  { key: 'account', label: '账号' },
 ];
 
-const SPLASH_HINT_DELAY = 800; // 实现
-const SPLASH_AUTO_ADVANCE_DELAY = 5000; // 实现
+const SPLASH_HINT_DELAY = 800;
+const SPLASH_AUTO_ADVANCE_DELAY = 5000;
 
 export function useOnboardingState(options: {
   /** 步骤走到最后（account）再前进时的完成回调，对应主组件的 handleComplete */
   onComplete: () => void;
 }) {
-  const step = ref<Step>('splash'); // 实现
-  const splashVisible = ref(true); // 实现
-  const splashHintVisible = ref(false); // 实现
-  let splashHintTimer: ReturnType<typeof setTimeout> | null = null; // 实现
-  let splashAutoAdvanceTimer: ReturnType<typeof setTimeout> | null = null; // 实现
+  const step = ref<Step>('splash');
+  const splashVisible = ref(true);
+  const splashHintVisible = ref(false);
+  let splashHintTimer: ReturnType<typeof setTimeout> | null = null;
+  let splashAutoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const steps = onboardingSteps;
 
-  const currentStepIndex = computed(() => // 实现
-    step.value === 'splash' ? 0 : steps.findIndex(s => s.key === step.value) + 1, // 实现
+  const currentStepIndex = computed(() =>
+    step.value === 'splash' ? 0 : steps.findIndex(s => s.key === step.value) + 1,
   );
 
-  const totalSteps = steps.length; // 实现
+  const totalSteps = steps.length;
 
   // --- 步骤切换 ---
-  const goToStep = (next: Step) => { // 实现
-    if (next === step.value) return; // 实现
-    step.value = next; // 实现
+  const goToStep = (next: Step) => {
+    if (next === step.value) return;
+    step.value = next;
   };
 
-  const nextStep = () => { // 实现
-    const order: Step[] = ['splash', 'theme', 'material', 'shortcuts', 'plugins', 'account']; // 实现
-    const idx = order.indexOf(step.value); // 实现
-    if (idx < order.length - 1) { // 实现
-      goToStep(order[idx + 1]); // 实现
+  const nextStep = () => {
+    const order: Step[] = ['splash', 'theme', 'material', 'shortcuts', 'plugins', 'account'];
+    const idx = order.indexOf(step.value);
+    if (idx < order.length - 1) {
+      goToStep(order[idx + 1]);
     } else {
       options.onComplete();
     }
   };
 
-  const prevStep = () => { // 实现
-    const order: Step[] = ['theme', 'material', 'shortcuts', 'plugins', 'account']; // 实现
-    const idx = order.indexOf(step.value); // 实现
-    if (idx > 0) goToStep(order[idx - 1]); // 实现
+  const prevStep = () => {
+    const order: Step[] = ['theme', 'material', 'shortcuts', 'plugins', 'account'];
+    const idx = order.indexOf(step.value);
+    if (idx > 0) goToStep(order[idx - 1]);
   };
 
-  const clearSplashTimers = () => { // 实现
-    if (splashHintTimer) { // 实现
-      clearTimeout(splashHintTimer); // 实现
-      splashHintTimer = null; // 实现
+  const clearSplashTimers = () => {
+    if (splashHintTimer) {
+      clearTimeout(splashHintTimer);
+      splashHintTimer = null;
     }
-    if (splashAutoAdvanceTimer) { // 实现
-      clearTimeout(splashAutoAdvanceTimer); // 实现
-      splashAutoAdvanceTimer = null; // 实现
+    if (splashAutoAdvanceTimer) {
+      clearTimeout(splashAutoAdvanceTimer);
+      splashAutoAdvanceTimer = null;
     }
   };
 
-  const continueFromSplash = () => { // 实现
-    if (step.value !== 'splash') return; // 实现
-    clearSplashTimers(); // 实现
+  const continueFromSplash = () => {
+    if (step.value !== 'splash') return;
+    clearSplashTimers();
     nextStep();
   };
 
   // --- 启动画面计时 ---
-  const startSplashTimers = () => { // 实现
-    clearSplashTimers(); // 实现
-    splashHintTimer = setTimeout(() => { // 实现
-      splashHintVisible.value = true; // 实现
-    }, SPLASH_HINT_DELAY); // 实现
-    splashAutoAdvanceTimer = setTimeout(continueFromSplash, SPLASH_AUTO_ADVANCE_DELAY); // 实现
+  const startSplashTimers = () => {
+    clearSplashTimers();
+    splashHintTimer = setTimeout(() => {
+      splashHintVisible.value = true;
+    }, SPLASH_HINT_DELAY);
+    splashAutoAdvanceTimer = setTimeout(continueFromSplash, SPLASH_AUTO_ADVANCE_DELAY);
   };
 
   return {

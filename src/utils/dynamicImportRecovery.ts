@@ -1,4 +1,4 @@
-export const DYNAMIC_IMPORT_RELOAD_COOLDOWN_MS = 10_000;
+const DYNAMIC_IMPORT_RELOAD_COOLDOWN_MS = 10_000;
 
 export const isDynamicImportFetchError = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error ?? '');

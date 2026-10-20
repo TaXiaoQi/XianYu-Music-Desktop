@@ -49,28 +49,28 @@ describe('extractCoverUrl netease picId fallback', () => {
   });
 });
 
-describe('extractCoverUrl Baka plugin cover fields', () => { // 实现
-  it('extracts coverImg (Baka top list / playlist cover)', async () => { // 实现
+describe('extractCoverUrl Baka plugin cover fields', () => {
+  it('extracts coverImg (Baka top list / playlist cover)', async () => {
     expect(await extractCoverUrl({ coverImg: 'https://d.musicapp.migu.cn/cover.png' }))
       .toBe('https://d.musicapp.migu.cn/cover.png');
   });
 
-  it('extracts imgUrl (camelCase variant)', async () => { // 实现
+  it('extracts imgUrl (camelCase variant)', async () => {
     expect(await extractCoverUrl({ imgUrl: 'https://example.com/img.jpg' }))
       .toBe('https://example.com/img.jpg');
   });
 
-  it('extracts imgurl (lowercase variant)', async () => { // 实现
+  it('extracts imgurl (lowercase variant)', async () => {
     expect(await extractCoverUrl({ imgurl: 'https://example.com/img.jpg' }))
       .toBe('https://example.com/img.jpg');
   });
 
-  it('extracts picurl (lowercase variant)', async () => { // 实现
+  it('extracts picurl (lowercase variant)', async () => {
     expect(await extractCoverUrl({ picurl: 'https://example.com/pic.jpg' }))
       .toBe('https://example.com/pic.jpg');
   });
 
-  it('extracts coverImg from rawData nested object', async () => { // 实现
+  it('extracts coverImg from rawData nested object', async () => {
     expect(await extractCoverUrl({ rawData: { coverImg: 'https://example.com/cover.png' } }))
       .toBe('https://example.com/cover.png');
   });

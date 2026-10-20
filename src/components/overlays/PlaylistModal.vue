@@ -1,9 +1,9 @@
-<script setup lang="ts"> // 实现
-import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'; // 实现
-import { open } from '@tauri-apps/plugin-dialog'; // 实现
+<script setup lang="ts">
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
+import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
-import type { Playlist, Song } from '../../types'; // 实现
+import type { Playlist, Song } from '../../types';
 import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin, importPlaylistFromFavorites } from '../../services/domain/playlistImport';
 import type { PlaylistImportResult, PlaylistSource } from '../../services/domain/playlistImport';
 import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/domain/backupImport';
@@ -13,32 +13,32 @@ import {
   preparePluginBackupFileContent,
   type PreparedPluginBackupImport,
 } from '../../services/domain/pluginBackupImport';
-import { fileApi } from '../../services/tauri/fileApi'; // 实现
-import { useToast } from '../../composables/toast'; // 实现
+import { fileApi } from '../../services/tauri/fileApi';
+import { useToast } from '../../composables/toast';
 import { modalDragInterceptActive } from '../../composables/dragState';
 import { pluginsVersion, getStoredPlugins } from '../../services/domain/pluginEngine';
 
 type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 
-const props = defineProps<{ // 实现
-  visible: boolean; // 实现
-  playlists: Playlist[]; // 实现
+const props = defineProps<{
+  visible: boolean;
+  playlists: Playlist[];
   mode?: 'create' | 'import' | 'all';
 }>();
 
-const emit = defineEmits<{ // 实现
-  (event: 'update:visible', value: boolean): void; // 实现
-  (event: 'create', name: string): void; // 实现
-  ( // 实现
-    event: 'import', // 实现
-    payload: { result: PlaylistImportResult; rename?: string }, // 实现
-  ): void; // 实现
-  (event: 'import-local', payload: { name: string; songs: Song[] }): void; // 实现
+const emit = defineEmits<{
+  (event: 'update:visible', value: boolean): void;
+  (event: 'create', name: string): void;
+  (
+    event: 'import',
+    payload: { result: PlaylistImportResult; rename?: string },
+  ): void;
+  (event: 'import-local', payload: { name: string; songs: Song[] }): void;
   (event: 'import-backup', payload: ImportedPlaylist[]): void;
   (event: 'import-backup-online', payload: PreparedPluginBackupImport): void;
 }>();
 
-const { showToast } = useToast(); // 实现
+const { showToast } = useToast();
 
 const getDefaultTab = (): TabType => {
   const mode = props.mode ?? 'all';
@@ -46,28 +46,28 @@ const getDefaultTab = (): TabType => {
 };
 
 const activeTab = ref<TabType>(getDefaultTab());
-const isClosing = ref(false); // 实现
+const isClosing = ref(false);
 const isOpening = ref(true);
 
-const createName = ref(''); // 实现
-const createInputRef = ref<HTMLInputElement | null>(null); // 实现
+const createName = ref('');
+const createInputRef = ref<HTMLInputElement | null>(null);
 
-const importInput = ref(''); // 实现
-const importInputRef = ref<HTMLInputElement | null>(null); // 实现
+const importInput = ref('');
+const importInputRef = ref<HTMLInputElement | null>(null);
 const importSources = ref<PlaylistSource[]>(getImportSourcesFromPlugins());
-const selectedSource = ref<string>('auto'); // 实现
-const sourceDropdownOpen = ref(false); // 实现
-const importRename = ref(''); // 实现
-const importRenameRef = ref<HTMLInputElement | null>(null); // 实现
-const importing = ref(false); // 实现
-const importError = ref(''); // 实现
+const selectedSource = ref<string>('auto');
+const sourceDropdownOpen = ref(false);
+const importRename = ref('');
+const importRenameRef = ref<HTMLInputElement | null>(null);
+const importing = ref(false);
+const importError = ref('');
 // 云端导入两步式：先搜索解析出预览（不落库），用户确认后才真正导入
 const importPreview = ref<PlaylistImportResult | null>(null);
 
-const localPlaylistName = ref(''); // 实现
-const localPlaylistNameRef = ref<HTMLInputElement | null>(null); // 实现
-const localFolderPath = ref(''); // 实现
-const localImportError = ref(''); // 实现
+const localPlaylistName = ref('');
+const localPlaylistNameRef = ref<HTMLInputElement | null>(null);
+const localFolderPath = ref('');
+const localImportError = ref('');
 
 const backupFilePath = ref('');
 const backupFileName = ref('');
@@ -88,7 +88,7 @@ let unlistenDragOver: (() => void) | null = null;
 let unlistenDragLeave: (() => void) | null = null;
 
 const allTabs: { type: TabType; label: string }[] = [
-  { type: 'create', label: '新建歌单' }, // 实现
+  { type: 'create', label: '新建歌单' },
   { type: 'backupImport', label: '备份导入' },
   { type: 'localFolderImport', label: '本地导入' },
   { type: 'networkImport', label: '云端导入' },
@@ -148,7 +148,7 @@ async function handleDropPaths(paths: string[]) {
     } else {
       backupImportError.value = `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
     }
-  } else if (activeTab.value === 'localFolderImport') { // 实现
+  } else if (activeTab.value === 'localFolderImport') {
     for (const p of paths) {
       try {
         const isDir = await fileApi.isDirectory(p);
@@ -169,39 +169,39 @@ async function handleDropPaths(paths: string[]) {
 
 // ==================== 弹窗生命周期 ====================
 
-watch( // 实现
+watch(
   () => [props.visible, props.mode] as const,
-  async (val) => { // 实现
+  async (val) => {
     const [visible] = val;
     if (visible) {
       activeTab.value = getDefaultTab();
-      createName.value = ''; // 实现
-      importInput.value = ''; // 实现
-      importRename.value = ''; // 实现
-      importError.value = ''; // 实现
+      createName.value = '';
+      importInput.value = '';
+      importRename.value = '';
+      importError.value = '';
       importPreview.value = null;
-      localPlaylistName.value = ''; // 实现
-      localFolderPath.value = ''; // 实现
-      localImportError.value = ''; // 实现
+      localPlaylistName.value = '';
+      localFolderPath.value = '';
+      localImportError.value = '';
       backupFilePath.value = '';
       backupFileName.value = '';
       backupDetectedFormat.value = '';
       backupPreviewPlaylists.value = [];
       backupImportError.value = '';
       backupPluginResult.value = null;
-      importing.value = false; // 实现
-      selectedSource.value = 'auto'; // 实现
-      sourceDropdownOpen.value = false; // 实现
+      importing.value = false;
+      selectedSource.value = 'auto';
+      sourceDropdownOpen.value = false;
       await setupDragListeners();
-      await nextTick(); // 实现
-      focusCurrentTab(); // 实现
-    } else { // 实现
-      isClosing.value = false; // 实现
+      await nextTick();
+      focusCurrentTab();
+    } else {
+      isClosing.value = false;
       teardownDragListeners();
-    } // 实现
-  }, // 实现
+    }
+  },
   { immediate: true },
-); // 实现
+);
 
 onUnmounted(() => {
   teardownDragListeners();
@@ -216,25 +216,25 @@ watch(pluginsVersion, () => {
   }
 });
 
-watch(activeTab, async () => { // 实现
-  await nextTick(); // 实现
-  focusCurrentTab(); // 实现
+watch(activeTab, async () => {
+  await nextTick();
+  focusCurrentTab();
 });
 
-const focusCurrentTab = () => { // 实现
-  if (activeTab.value === 'create' && createInputRef.value) { // 实现
-    createInputRef.value.focus(); // 实现
-  } else if (activeTab.value === 'networkImport' && importInputRef.value) { // 实现
-    importInputRef.value.focus(); // 实现
-  } else if (activeTab.value === 'localFolderImport' && localPlaylistNameRef.value) { // 实现
-    localPlaylistNameRef.value.focus(); // 实现
+const focusCurrentTab = () => {
+  if (activeTab.value === 'create' && createInputRef.value) {
+    createInputRef.value.focus();
+  } else if (activeTab.value === 'networkImport' && importInputRef.value) {
+    importInputRef.value.focus();
+  } else if (activeTab.value === 'localFolderImport' && localPlaylistNameRef.value) {
+    localPlaylistNameRef.value.focus();
   }
 };
 
-const handleSelectSource = (key: string) => { // 实现
-  selectedSource.value = key; // 实现
-  sourceDropdownOpen.value = false; // 实现
-  importError.value = ''; // 实现
+const handleSelectSource = (key: string) => {
+  selectedSource.value = key;
+  sourceDropdownOpen.value = false;
+  importError.value = '';
   importPreview.value = null;
 };
 
@@ -256,41 +256,41 @@ const closeSourceDropdown = () => {
   sourceDropdownOpen.value = false;
 };
 
-const handleClose = () => { // 实现
-  if (importing.value) return; // 实现
-  isClosing.value = true; // 实现
-  setTimeout(() => { // 实现
-    emit('update:visible', false); // 实现
-    isClosing.value = false; // 实现
+const handleClose = () => {
+  if (importing.value) return;
+  isClosing.value = true;
+  setTimeout(() => {
+    emit('update:visible', false);
+    isClosing.value = false;
   }, 200);
 };
 
 // ==================== 文件/文件夹选择 ====================
 
-const handleChooseLocalFolder = async () => { // 实现
-  if (importing.value) return; // 实现
+const handleChooseLocalFolder = async () => {
+  if (importing.value) return;
 
   try {
-    const selected = await open({ // 实现
-      directory: true, // 实现
-      multiple: false, // 实现
-      title: '选择包含音乐的文件夹', // 实现
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: '选择包含音乐的文件夹',
     });
-    if (typeof selected === 'string') { // 实现
-      localFolderPath.value = selected; // 实现
-      localImportError.value = ''; // 实现
+    if (typeof selected === 'string') {
+      localFolderPath.value = selected;
+      localImportError.value = '';
     }
-  } catch (e: any) { // 实现
-    localImportError.value = `选择文件夹失败: ${e?.message || e}`; // 实现
+  } catch (e: any) {
+    localImportError.value = `选择文件夹失败: ${e?.message || e}`;
   }
 };
 
 const handleChooseBackupFile = async () => {
-  if (importing.value) return; // 实现
+  if (importing.value) return;
 
   try {
-    const selected = await open({ // 实现
-      multiple: false, // 实现
+    const selected = await open({
+      multiple: false,
       title: '选择备份/播放列表文件',
       filters: [
         { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
@@ -300,10 +300,10 @@ const handleChooseBackupFile = async () => {
         { name: '椒盐音乐导出', extensions: ['txt'] },
       ],
     });
-    if (typeof selected === 'string') { // 实现
+    if (typeof selected === 'string') {
       await loadBackupFile(selected);
     }
-  } catch (e: any) { // 实现
+  } catch (e: any) {
     backupImportError.value = `选择文件失败: ${e?.message || e}`;
   }
 };
@@ -334,7 +334,7 @@ async function loadBackupFile(filePath: string) {
       const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
       backupDetectedFormat.value = `${playlists.length} 个歌单 · ${totalSongs} 首歌曲`;
     }
-  } catch (e: any) { // 实现
+  } catch (e: any) {
     backupImportError.value = `解析失败: ${e?.message || e}`;
     backupFilePath.value = '';
     backupFileName.value = '';
@@ -346,18 +346,18 @@ async function loadBackupFile(filePath: string) {
 
 // ==================== 确认操作 ====================
 
-const handleConfirm = async () => { // 实现
-  if (activeTab.value === 'create') { // 实现
-    if (!createName.value.trim()) return; // 实现
-    isClosing.value = true; // 实现
-    setTimeout(() => { // 实现
-      emit('create', createName.value.trim()); // 实现
-      emit('update:visible', false); // 实现
-      isClosing.value = false; // 实现
+const handleConfirm = async () => {
+  if (activeTab.value === 'create') {
+    if (!createName.value.trim()) return;
+    isClosing.value = true;
+    setTimeout(() => {
+      emit('create', createName.value.trim());
+      emit('update:visible', false);
+      isClosing.value = false;
     }, 200);
-  } else if (activeTab.value === 'networkImport') { // 实现
+  } else if (activeTab.value === 'networkImport') {
     if (importing.value) return;
-    importError.value = ''; // 实现
+    importError.value = '';
     // 第一步：搜索解析 → 预览（不落库，等用户确认）
     if (!importPreview.value) {
       if (!importInput.value.trim()) return;
@@ -390,47 +390,47 @@ const handleConfirm = async () => { // 实现
         importError.value = `解析失败: ${e?.message || e}`;
       } finally {
         importing.value = false;
-      } // 实现
+      }
       return;
-    } // 实现
+    }
 
     // 第二步：确认导入
     const rename = importRename.value.trim();
-    isClosing.value = true; // 实现
-    setTimeout(() => { // 实现
+    isClosing.value = true;
+    setTimeout(() => {
       emit('import', {
         result: importPreview.value!,
         rename: rename.length > 0 ? rename : undefined,
       });
-      emit('update:visible', false); // 实现
-      isClosing.value = false; // 实现
+      emit('update:visible', false);
+      isClosing.value = false;
     }, 200);
-  } else if (activeTab.value === 'localFolderImport') { // 实现
-    const name = localPlaylistName.value.trim(); // 实现
-    if (!name || !localFolderPath.value || importing.value) return; // 实现
+  } else if (activeTab.value === 'localFolderImport') {
+    const name = localPlaylistName.value.trim();
+    if (!name || !localFolderPath.value || importing.value) return;
 
-    localImportError.value = ''; // 实现
-    importing.value = true; // 实现
+    localImportError.value = '';
+    importing.value = true;
     try {
-      const songs = await fileApi.parseMusicFolder(localFolderPath.value); // 实现
-      if (songs.length === 0) { // 实现
-        localImportError.value = '所选文件夹中未读取到支持的音乐文件'; // 实现
-        showToast('所选文件夹中未读取到支持的音乐文件', 'error'); // 实现
+      const songs = await fileApi.parseMusicFolder(localFolderPath.value);
+      if (songs.length === 0) {
+        localImportError.value = '所选文件夹中未读取到支持的音乐文件';
+        showToast('所选文件夹中未读取到支持的音乐文件', 'error');
         return;
       }
 
-      showToast(`成功读取 ${songs.length} 首歌曲`, 'success'); // 实现
-      isClosing.value = true; // 实现
-      setTimeout(() => { // 实现
-        emit('import-local', { name, songs }); // 实现
-        emit('update:visible', false); // 实现
-        isClosing.value = false; // 实现
+      showToast(`成功读取 ${songs.length} 首歌曲`, 'success');
+      isClosing.value = true;
+      setTimeout(() => {
+        emit('import-local', { name, songs });
+        emit('update:visible', false);
+        isClosing.value = false;
       }, 200);
-    } catch (e: any) { // 实现
-      localImportError.value = `读取文件夹失败: ${e?.message || e}`; // 实现
-      showToast(`读取文件夹失败: ${e?.message || e}`, 'error'); // 实现
+    } catch (e: any) {
+      localImportError.value = `读取文件夹失败: ${e?.message || e}`;
+      showToast(`读取文件夹失败: ${e?.message || e}`, 'error');
     } finally {
-      importing.value = false; // 实现
+      importing.value = false;
     }
   } else if (activeTab.value === 'backupImport') {
     if (importing.value) return;
@@ -442,11 +442,11 @@ const handleConfirm = async () => { // 实现
       }
       const result = backupPluginResult.value;
       showToast(`已导入 ${result.importedSongCount} 首歌曲，${result.failures.length} 首未导入`, 'success');
-      isClosing.value = true; // 实现
-      setTimeout(() => { // 实现
+      isClosing.value = true;
+      setTimeout(() => {
         emit('import-backup-online', result);
-        emit('update:visible', false); // 实现
-        isClosing.value = false; // 实现
+        emit('update:visible', false);
+        isClosing.value = false;
       }, 200);
     } else {
       if (backupPreviewPlaylists.value.length === 0) return;
@@ -457,26 +457,26 @@ const handleConfirm = async () => { // 实现
         `成功导入 ${backupPreviewPlaylists.value.length} 个歌单，共 ${totalSongs} 首歌曲`,
         'success',
       );
-      isClosing.value = true; // 实现
-      setTimeout(() => { // 实现
+      isClosing.value = true;
+      setTimeout(() => {
         emit('import-backup', backupPreviewPlaylists.value);
-        emit('update:visible', false); // 实现
-        isClosing.value = false; // 实现
+        emit('update:visible', false);
+        isClosing.value = false;
       }, 200);
     }
   }
 };
 
-const canConfirm = computed(() => { // 实现
-  if (activeTab.value === 'create') return createName.value.trim().length > 0; // 实现
-  if (activeTab.value === 'networkImport') { // 实现
+const canConfirm = computed(() => {
+  if (activeTab.value === 'create') return createName.value.trim().length > 0;
+  if (activeTab.value === 'networkImport') {
     if (importing.value) return false;
     return importPreview.value ? true : importInput.value.trim().length > 0;
   }
-  if (activeTab.value === 'localFolderImport') { // 实现
-    return localPlaylistName.value.trim().length > 0 // 实现
-      && localFolderPath.value.length > 0 // 实现
-      && !importing.value; // 实现
+  if (activeTab.value === 'localFolderImport') {
+    return localPlaylistName.value.trim().length > 0
+      && localFolderPath.value.length > 0
+      && !importing.value;
   }
   if (activeTab.value === 'backupImport') {
     if (importing.value) return false;
@@ -485,31 +485,31 @@ const canConfirm = computed(() => { // 实现
     }
     return backupPreviewPlaylists.value.length > 0;
   }
-  return false; // 实现
+  return false;
 });
 
-const confirmText = computed(() => { // 实现
-  if (activeTab.value === 'create') return '创建'; // 实现
-  if (activeTab.value === 'networkImport') { // 实现
+const confirmText = computed(() => {
+  if (activeTab.value === 'create') return '创建';
+  if (activeTab.value === 'networkImport') {
     if (importing.value) return '搜索中…';
     return importPreview.value ? '确认导入' : '搜索';
   }
-  if (activeTab.value === 'localFolderImport') { // 实现
-    return importing.value ? '读取中…' : '读取并创建'; // 实现
+  if (activeTab.value === 'localFolderImport') {
+    return importing.value ? '读取中…' : '读取并创建';
   }
   if (activeTab.value === 'backupImport') {
     return importing.value ? '解析中…' : '导入歌单';
   }
-  if (importing.value) return '导入中…'; // 实现
-  return '导入'; // 实现
+  if (importing.value) return '导入中…';
+  return '导入';
 });
 
-const handleKeydown = (e: KeyboardEvent) => { // 实现
-  if (!props.visible) return; // 实现
-  if (e.key === 'Escape' && !importing.value) { // 实现
-    handleClose(); // 实现
-  } else if (e.key === 'Enter' && !sourceDropdownOpen.value && !importing.value) { // 实现
-    handleConfirm(); // 实现
+const handleKeydown = (e: KeyboardEvent) => {
+  if (!props.visible) return;
+  if (e.key === 'Escape' && !importing.value) {
+    handleClose();
+  } else if (e.key === 'Enter' && !sourceDropdownOpen.value && !importing.value) {
+    handleConfirm();
   }
 };
 
@@ -521,7 +521,7 @@ onMounted(() => {
     });
   });
 });
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown)); // 实现
+onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 </script>
 
 <template>

@@ -1,19 +1,19 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { FileDown, FileUp, Loader2, Trash2, UploadCloud, X } from 'lucide-vue-next';
 
-import { useToast } from '../../composables/toast'; // 实现
-import { useCollectionsStore } from '../../features/collections/store'; // 实现
-import { useLibraryStore } from '../../features/library/store'; // 实现
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useToast } from '../../composables/toast';
+import { useCollectionsStore } from '../../features/collections/store';
+import { useLibraryStore } from '../../features/library/store';
+import { useSettings } from '../../features/settings/useSettings';
 import { useApplicationLogs } from '../../services/applicationLogger';
 import { getStoredPlugins } from '../../services/domain/pluginEngine';
 import {
   describeBackupVersion,
   preparePluginBackupImport,
-  type PreparedPluginBackupImport, // 实现
+  type PreparedPluginBackupImport,
 } from '../../services/domain/pluginBackupImport';
 import {
   exportAppBackup,
@@ -28,20 +28,20 @@ import { extractJsonFromZip } from '../../services/zipReader';
 import { gunzipSync } from '../../services/pureInflate';
 import { debugApi } from '../../services/tauri/debugApi';
 import { modalDragInterceptActive } from '../../composables/dragState';
-import ConfirmModal from '../overlays/ConfirmModal.vue'; // 实现
-import BackupImportResultModal from './BackupImportResultModal.vue'; // 实现
+import ConfirmModal from '../overlays/ConfirmModal.vue';
+import BackupImportResultModal from './BackupImportResultModal.vue';
 import AppBackupResultModal from './AppBackupResultModal.vue';
-import LogExportActions from './LogExportActions.vue'; // 实现
+import LogExportActions from './LogExportActions.vue';
 import ExportBackupDialog, {
   type ExportSelection,
 } from './ExportBackupDialog.vue';
 
-const { showToast } = useToast(); // 实现
+const { showToast } = useToast();
 const { patchSettings, replaceSettings } = useSettings();
-const { entries, clearLogs } = useApplicationLogs(); // 实现
-const collectionsStore = useCollectionsStore(); // 实现
-const libraryStore = useLibraryStore(); // 实现
-const showDeleteConfirmation = ref(false); // 实现
+const { entries, clearLogs } = useApplicationLogs();
+const collectionsStore = useCollectionsStore();
+const libraryStore = useLibraryStore();
+const showDeleteConfirmation = ref(false);
 
 const entryCount = ref(entries.value.length);
 watch(
@@ -49,10 +49,10 @@ watch(
   () => { entryCount.value = entries.value.length; },
   { flush: 'post' },
 );
-const importingBackup = ref(false); // 实现
-const backupImportResult = ref<PreparedPluginBackupImport | null>(null); // 实现
-const createdPlaylistCount = ref(0); // 实现
-const showBackupImportResult = ref(false); // 实现
+const importingBackup = ref(false);
+const backupImportResult = ref<PreparedPluginBackupImport | null>(null);
+const createdPlaylistCount = ref(0);
+const showBackupImportResult = ref(false);
 
 const exportingAppBackup = ref(false);
 const importingAppBackup = ref(false);
@@ -71,10 +71,10 @@ let unlistenDragDrop: UnlistenFn | null = null;
 let unlistenDragOver: UnlistenFn | null = null;
 let unlistenDragLeave: UnlistenFn | null = null;
 
-const confirmDeleteLogs = () => { // 实现
-  clearLogs(); // 实现
-  showDeleteConfirmation.value = false; // 实现
-  showToast('日志已全部删除', 'success'); // 实现
+const confirmDeleteLogs = () => {
+  clearLogs();
+  showDeleteConfirmation.value = false;
+  showToast('日志已全部删除', 'success');
 };
 
 // ==================== 应用备份导出 ====================

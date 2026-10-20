@@ -2,7 +2,7 @@ import type { DesktopThemeMode, DesktopThemeSurface, DesktopThemeVisuals, PerPag
 import { createDefaultThemeSettings, mergeThemeSettings, type ThemeSettingsPatch } from './store';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 
-export const DESKTOP_THEME_ICON_SLOTS = [
+const DESKTOP_THEME_ICON_SLOTS = [
   'desktop.logo', 'nav.home', 'nav.settings',
   'player.prev', 'player.play', 'player.next', 'player.queue', 'player.mode', 'player.lyric',
   'player.comment', 'player.volume', 'player.sound', 'player.mv', 'player.visualizer', 'player.progress',
@@ -11,8 +11,8 @@ export const DESKTOP_THEME_ICON_SLOTS = [
   'action.share', 'action.more', 'action.new_playlist',
 ] as const;
 
-export const DESKTOP_THEME_STICKER_SLOTS = ['player.corner', 'sidebar.bottom'] as const;
-export const DESKTOP_THEME_SURFACE_SLOTS = [
+const DESKTOP_THEME_STICKER_SLOTS = ['player.corner', 'sidebar.bottom'] as const;
+const DESKTOP_THEME_SURFACE_SLOTS = [
   'nav.bar', 'mini.bar', 'search.box', 'home.stat', 'home.song', 'mine.user', 'mine.stats', 'mine.grid',
   'mine.sheet', 'recognize.hint', 'recognize.btn', 'search.panel', 'search.item', 'sr.chips', 'sr.pill',
   'sr.item', 'ls-home.daily', 'ls-home.most', 'ls-lib.row', 'ls-sheets.card', 'settings.topbar',
@@ -20,9 +20,9 @@ export const DESKTOP_THEME_SURFACE_SLOTS = [
 ] as const;
 
 /** 主题包 v3 桌面页面清单（与服务端编辑器 SLOTS_JSON pages 对齐） */
-export const DESKTOP_THEME_PAGE_IDS = ['main', 'playlist', 'player', 'local', 'fav', 'settings'] as const;
+const DESKTOP_THEME_PAGE_IDS = ['main', 'playlist', 'player', 'local', 'fav', 'settings'] as const;
 
-export interface DesktopThemePayload {
+interface DesktopThemePayload {
   accentColor: string;
   themeMode: DesktopThemeMode;
   quickEntryShape: DesktopThemeVisuals['quickEntryShape'];
@@ -33,7 +33,7 @@ export interface DesktopThemePayload {
   wallpapers: Record<string, Record<string, unknown>>;
 }
 
-export interface DesktopThemePackage {
+interface DesktopThemePackage {
   version: 2 | 3;
   platform: 'desktop';
   name?: string;
@@ -136,7 +136,7 @@ const wallpapersToPerPageBackgrounds = (
   return output;
 };
 
-export function parseDesktopThemePackage(input: unknown): DesktopThemePackage {
+function parseDesktopThemePackage(input: unknown): DesktopThemePackage {
   if (!input || typeof input !== 'object') throw new Error('主题 JSON 必须是对象');
   const source = input as Record<string, unknown>;
   if ((source.version !== 2 && source.version !== 3) || source.platform !== 'desktop') throw new Error('主题必须是 Desktop v2/v3 主题包');
@@ -167,7 +167,7 @@ export function parseDesktopThemePackage(input: unknown): DesktopThemePackage {
   };
 }
 
-export function desktopThemeToPatch(themePackage: DesktopThemePackage): ThemeSettingsPatch {
+function desktopThemeToPatch(themePackage: DesktopThemePackage): ThemeSettingsPatch {
   const payload = themePackage.payload;
   return {
     mode: payload.themeMode,

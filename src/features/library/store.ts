@@ -1,26 +1,26 @@
 import { ref, shallowRef } from 'vue';
-import { defineStore } from 'pinia'; // 实现
+import { defineStore } from 'pinia';
 
 import { createLibrarySongVault } from './songVault';
-import type { // 实现
-  AlbumSortMode, // 实现
-  AlbumDetailSortMode, // 实现
-  ArtistSortMode, // 实现
-  FolderSortMode, // 实现
-  LocalSortMode, // 实现
-} from '../../services/storage/playerStorage'; // 实现
-import type { // 实现
-  AlbumCatalogItem, // 实现
-  ArtistCatalogItem, // 实现
+import type {
+  AlbumSortMode,
+  AlbumDetailSortMode,
+  ArtistSortMode,
+  FolderSortMode,
+  LocalSortMode,
+} from '../../services/storage/playerStorage';
+import type {
+  AlbumCatalogItem,
+  ArtistCatalogItem,
   FolderNode,
-  LibraryFolder, // 实现
-  LibrarySong, // 实现
-  LibraryScanProgress, // 实现
-  LibraryScanSession, // 实现
+  LibraryFolder,
+  LibrarySong,
+  LibraryScanProgress,
+  LibraryScanSession,
   Song,
-} from '../../types'; // 实现
+} from '../../types';
 
-export const useLibraryStore = defineStore('library', () => { // 实现
+export const useLibraryStore = defineStore('library', () => {
   const vault = createLibrarySongVault();
 
   const folderListing = ref<LibraryFolder[]>([]);
@@ -119,9 +119,9 @@ export const useLibraryStore = defineStore('library', () => { // 实现
     sourceSongs: vault.sourceView,
     sourceSongPaths: vault.sourceTrail,
     songLookup: vault.songIndex,
-    getSongByPath, // 实现
-    resolveSongsByPaths, // 实现
-    setSongRecord, // 实现
+    getSongByPath,
+    resolveSongsByPaths,
+    setSongRecord,
     setExtraSong,
     setExtraSongs,
     setExtraSongsBatch,
@@ -147,21 +147,21 @@ export const useLibraryStore = defineStore('library', () => { // 实现
     folderCustomOrder: folderPinnedOrder,
     localSortMode: localViewOrder,
     localCustomOrder: localPinnedOrder,
-    setSourceSongs, // 实现
-    setCanonicalSongs, // 实现
+    setSourceSongs,
+    setCanonicalSongs,
     setLibraryFolders: saveFolderListing,
     setLibraryHierarchy: saveHierarchyTree,
     setArtistCatalog: saveArtistTabIndex,
     setAlbumCatalog: saveAlbumTabIndex,
-    setSongList: setSourceSongs, // 实现
-    setLibrarySongs: setCanonicalSongs, // 实现
+    setSongList: setSourceSongs,
+    setLibrarySongs: setCanonicalSongs,
     setFolderTree: saveHierarchyTree,
     setLibraryScanProgress: saveScanStatus,
     setLibraryScanSession: saveScanJournal,
     setLastLibraryScanError: saveScanFailure,
     setWatchedFolders: saveMonitoredFolders,
     reorderWatchedFolders: moveMonitoredFolder,
-    patchLibrarySongs, // 实现
-    setCanonicalSongOrder, // 实现
+    patchLibrarySongs,
+    setCanonicalSongOrder,
   };
 });

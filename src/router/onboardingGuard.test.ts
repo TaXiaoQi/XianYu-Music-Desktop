@@ -8,7 +8,7 @@ import {
 } from "../composables/onboardingState";
 import { installOnboardingRouteGate } from "./onboardingRouteGate";
 
-const EmptyView = defineComponent({ // 实现
+const EmptyView = defineComponent({
     name: "EmptyView",
     render: () => null,
 });

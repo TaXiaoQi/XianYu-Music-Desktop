@@ -1,37 +1,37 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 引导流程账号步：登录/注册 UI（搬自 Auth.vue）、人机验证与用户协议弹窗。
 // 登录/注册成功后发出 authorized 事件，由主组件延迟结算完成逻辑。
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
 
-import { useToast } from '../../../composables/toast'; // 实现
-import { useAuthStore } from '../../../features/auth/store'; // 实现
+import { useToast } from '../../../composables/toast';
+import { useAuthStore } from '../../../features/auth/store';
 import HumanCaptchaModal from '../../common/HumanCaptchaModal.vue';
 import {
   login,
   register,
-  sendEmailCode, // 实现
+  sendEmailCode,
   getUserAgreement,
-  type AuthMode, // 实现
+  type AuthMode,
   type HumanCaptchaPayload,
-  type VerifyCodeType, // 实现
-} from '../../../services/auth/authService'; // 实现
+  type VerifyCodeType,
+} from '../../../services/auth/authService';
 
 const emit = defineEmits<{
   (event: 'authorized'): void;
 }>();
 
-const { showToast } = useToast(); // 实现
-const authStore = useAuthStore(); // 实现
+const { showToast } = useToast();
+const authStore = useAuthStore();
 
 // --- 账号步骤：登录/注册 UI（搬自 Auth.vue）---
-const authMode = ref<AuthMode>('login'); // 实现
+const authMode = ref<AuthMode>('login');
 const authForm = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
 const pwdVisible = reactive<Record<string, boolean>>({});
 
 const pwdFocused = reactive<Record<string, boolean>>({});
-const authLoading = ref(false); // 实现
-const codeLoading = ref(false); // 实现
+const authLoading = ref(false);
+const codeLoading = ref(false);
 const codeCountdown = ref(0);
 let codeCountdownTimer: ReturnType<typeof setInterval> | null = null;
 function startCodeCountdown() {
@@ -49,31 +49,31 @@ const captchaModalOpen = ref(false);
 const captchaModalTitle = ref('人机验证');
 const captchaModalDescription = ref('请先完成验证，验证通过后将继续当前操作。');
 let captchaResolver: ((payload: HumanCaptchaPayload | null) => void) | null = null;
-const authMessage = ref(''); // 实现
-const authMessageTone = ref<'error' | 'success'>('error'); // 实现
+const authMessage = ref('');
+const authMessageTone = ref<'error' | 'success'>('error');
 
-const authTitle = computed(() => // 实现
-  authMode.value === 'login' ? '欢迎回来' : '创建你的账号', // 实现
+const authTitle = computed(() =>
+  authMode.value === 'login' ? '欢迎回来' : '创建你的账号',
 );
-const authSubtitle = computed(() => // 实现
-  authMode.value === 'login' // 实现
-    ? '登录后可同步个人资料到云端服务器。' // 实现
-    : '注册需要邮箱验证码，之后即可登录使用。', // 实现
+const authSubtitle = computed(() =>
+  authMode.value === 'login'
+    ? '登录后可同步个人资料到云端服务器。'
+    : '注册需要邮箱验证码，之后即可登录使用。',
 );
-const authHeaderLabel = computed(() => // 实现
+const authHeaderLabel = computed(() =>
   authMode.value === 'login' ? '账号' : '注册账号',
 );
 
-const switchAuthMode = (m: AuthMode) => { // 实现
-  authMode.value = m; // 实现
-  authMessage.value = ''; // 实现
+const switchAuthMode = (m: AuthMode) => {
+  authMode.value = m;
+  authMessage.value = '';
   authForm.value.password = '';
   authForm.value.confirmPassword = '';
 };
 
-const showAuthMessage = (text: string, tone: 'error' | 'success' = 'error') => { // 实现
-  authMessageTone.value = tone; // 实现
-  authMessage.value = text; // 实现
+const showAuthMessage = (text: string, tone: 'error' | 'success' = 'error') => {
+  authMessageTone.value = tone;
+  authMessage.value = text;
 };
 
 const requestHumanCaptcha = (title: string, description: string): Promise<HumanCaptchaPayload | null> => {
@@ -99,35 +99,35 @@ const handleCaptchaCancel = () => {
   resolveHumanCaptcha(null);
 };
 
-const handleSendCode = async () => { // 实现
-  const email = authForm.value.email; // 实现
-  if (!email) { // 实现
-    showAuthMessage('请先填写邮箱'); // 实现
+const handleSendCode = async () => {
+  const email = authForm.value.email;
+  if (!email) {
+    showAuthMessage('请先填写邮箱');
     return;
   }
-  const type: VerifyCodeType = 'register'; // 实现
+  const type: VerifyCodeType = 'register';
   const captchaPayload = await requestHumanCaptcha(
     '发送验证码前验证',
     '完成验证后将向邮箱发送验证码。',
   );
   if (!captchaPayload) return;
-  codeLoading.value = true; // 实现
-  authMessage.value = ''; // 实现
+  codeLoading.value = true;
+  authMessage.value = '';
   try {
     const result = await sendEmailCode(email, type, captchaPayload, authForm.value.account.trim() || undefined);
-    showAuthMessage(result.message || '验证码已发送到邮箱', 'success'); // 实现
-    showToast(result.message || '验证码已发送到邮箱', 'success'); // 实现
+    showAuthMessage(result.message || '验证码已发送到邮箱', 'success');
+    showToast(result.message || '验证码已发送到邮箱', 'success');
     startCodeCountdown();
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '验证码发送失败'; // 实现
-    showAuthMessage(tip); // 实现
-    showToast(tip, 'error'); // 实现
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '验证码发送失败';
+    showAuthMessage(tip);
+    showToast(tip, 'error');
   } finally {
-    codeLoading.value = false; // 实现
+    codeLoading.value = false;
   }
 };
 
-const handleAuthSubmit = async () => { // 实现
+const handleAuthSubmit = async () => {
   if (!agreementAccepted.value) {
     showAuthMessage('请先阅读并同意用户协议');
     return;
@@ -158,33 +158,33 @@ const handleAuthSubmit = async () => { // 实现
       : '完成验证后将继续创建账号。',
   );
   if (!captchaPayload) return;
-  authLoading.value = true; // 实现
-  authMessage.value = ''; // 实现
+  authLoading.value = true;
+  authMessage.value = '';
   try {
-    const result = // 实现
-      authMode.value === 'login' // 实现
+    const result =
+      authMode.value === 'login'
         ? await login(authForm.value.account, authForm.value.password, captchaPayload)
-        : await register( // 实现
+        : await register(
             authForm.value.account.trim(),
             authForm.value.nickname.trim(),
-            authForm.value.password, // 实现
+            authForm.value.password,
             authForm.value.email,
             authForm.value.code,
             captchaPayload,
           );
 
-    authStore.setAuth(result); // 实现
+    authStore.setAuth(result);
     authForm.value = { account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' };
-    showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success'); // 实现
-    showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success'); // 实现
+    showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
+    showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     // 登录/注册成功：延迟结算由主组件的 authorized 处理器完成
     emit('authorized');
-  } catch (error) { // 实现
-    const tip = error instanceof Error ? error.message : '登录/注册失败，请检查后端接口'; // 实现
-    showAuthMessage(tip); // 实现
-    showToast(tip, 'error'); // 实现
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '登录/注册失败，请检查后端接口';
+    showAuthMessage(tip);
+    showToast(tip, 'error');
   } finally {
-    authLoading.value = false; // 实现
+    authLoading.value = false;
   }
 };
 

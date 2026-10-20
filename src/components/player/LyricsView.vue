@@ -1,6 +1,6 @@
-<script setup lang="ts"> // 实现
-import { computed, defineAsyncComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'; // 实现
-import { storeToRefs } from 'pinia'; // 实现
+<script setup lang="ts">
+import { computed, defineAsyncComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import {
   convertLyricsToAmlLines, getLyricsFontFamily, loadSystemLyricsFonts, normalizeLyricsFontPreset, systemLyricsFontOptions,
   LYRICS_FONT_OPTIONS, DEFAULT_PLAYER_ALIGNMENT, DEFAULT_PLAYER_FONT_PRESET, DEFAULT_PLAYER_FONT_SCALE,
@@ -9,27 +9,27 @@ import {
   MAX_PLAYER_FONT_SCALE, MIN_PLAYER_LINE_GAP, MAX_PLAYER_LINE_GAP, MIN_PLAYER_OFFSET_X, MAX_PLAYER_OFFSET_X,
   MIN_PLAYER_OFFSET_Y, MAX_PLAYER_OFFSET_Y,
   type AmlPlayerLine, type LyricsFontPreset, type LyricsPlayerAlignment, useLyrics,
-} from '../../composables/lyrics'; // 实现
+} from '../../composables/lyrics';
 import { usePlayer } from '../../features/playback';
-import { useSettingsStore } from '../../features/settings/store'; // 实现
+import { useSettingsStore } from '../../features/settings/store';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 const WordLyricPlayer = defineAsyncComponent({
   loader: () => import('./WordLyricPlayer.vue'),
   loadingComponent: () => h('div', { class: 'word-lyric-loading-placeholder' }),
-  errorComponent: () => // 实现
+  errorComponent: () =>
     h('div', { class: 'word-lyric-load-error' }, '歌词组件加载失败，请刷新'),
-  delay: 0, // 实现
-  timeout: 10000, // 实现
+  delay: 0,
+  timeout: 10000,
 });
 import { getPlaybackSeekSecondsForLyricLine } from './seekLayout';
 import type { WordLyricLineClickEvent } from './WordLyricPlayer';
 import RangeSlider from '../common/RangeSlider.vue';
 import { useThemeSettings } from '../../composables/useThemeSettings';
-import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition'; // 实现
+import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
-const props = defineProps<{ // 实现
-  coverHidden?: boolean; // 实现
+const props = defineProps<{
+  coverHidden?: boolean;
   disabled?: boolean;
   /** 电影模式（背景视频接管外观）：由 PlayerDetail 透传，避免子组件重复计算同一份状态 */
   movieMode?: boolean;
@@ -42,7 +42,7 @@ const {
   lyricsStatus: loadState,
   showLyricsPlayerSettingsPanel: stylePanelOpen,
   rawLyrics: sourceText,
-} = useLyrics(); // 实现
+} = useLyrics();
 const { seekTo: performSeek, currentTime: clockSeconds, isPlaying: nowPlaying, currentSongPath: activeSongPath, togglePlay: flipPlayState } = usePlayer();
 const { audioDelay: latency } = storeToRefs(useSettingsStore());
 const { showToast: notify } = useToast();
@@ -51,9 +51,9 @@ const FONT_SIZE_STEP = 0.05;
 const ROW_GAP_STEP = 0.05;
 const SHIFT_STEP = 1;
 const ALIGNMENT_CHOICES: Array<{ value: LyricsPlayerAlignment; label: string }> = [
-  { value: 'left', label: '靠左' }, // 实现
-  { value: 'center', label: '居中' }, // 实现
-  { value: 'right', label: '靠右' }, // 实现
+  { value: 'left', label: '靠左' },
+  { value: 'center', label: '居中' },
+  { value: 'right', label: '靠右' },
 ];
 
 // 面板与字体菜单的锚点/容器引用
@@ -61,8 +61,8 @@ const panelAnchorRef = ref<HTMLElement | null>(null);
 const menuAnchorRef = ref<HTMLElement | null>(null);
 const menuPanelRef = ref<HTMLElement | null>(null);
 interface WordPlayerHandle {
-  syncSeekLayout: (timeMs: number, lineIndex?: number) => void; // 实现
-} // 实现
+  syncSeekLayout: (timeMs: number, lineIndex?: number) => void;
+}
 const wordPlayerRef = ref<WordPlayerHandle | null>(null);
 const isFontMenuVisible = ref(false);
 const fontMenuPositionStyle = ref<Record<string, string>>({});
@@ -105,7 +105,7 @@ const mountWordPlayer = computed(() => amlLines.value.length > 0 && !props.disab
 const idleStateText = computed(() => {
   if (loadState.value === 'loading') return 'Loading lyrics...';
   if (loadState.value === 'error') return 'Lyrics unavailable';
-  return 'No synchronized lyrics'; // 实现
+  return 'No synchronized lyrics';
 });
 
 // 无时间轴的纯文本歌词：逐行 trim 后丢弃空行
@@ -127,8 +127,8 @@ const rowGapPercent = computed(() => `${Math.round(stylePrefs.playerLineGap * 10
 const shiftXPercent = computed(() => describeSignedPercent(stylePrefs.playerOffsetX));
 const shiftYPercent = computed(() => describeSignedPercent(stylePrefs.playerOffsetY));
 const fontOptions = computed(() => [
-  ...LYRICS_FONT_OPTIONS, // 实现
-  ...systemLyricsFontOptions.value, // 实现
+  ...LYRICS_FONT_OPTIONS,
+  ...systemLyricsFontOptions.value,
 ]);
 const activeFontLabel = computed(() => (
   fontOptions.value.find((option) => option.value === stylePrefs.playerFontPreset)?.label
@@ -305,11 +305,11 @@ const blurDisabledHint = computed(() => (
 ));
 
 const pickBackgroundImage = async () => {
-  const { open } = await import('@tauri-apps/plugin-dialog'); // 实现
+  const { open } = await import('@tauri-apps/plugin-dialog');
   const picked = await open({
-    multiple: false, // 实现
-    title: '选择背景图片', // 实现
-    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }], // 实现
+    multiple: false,
+    title: '选择背景图片',
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }],
   });
   if (picked && typeof picked === 'string') {
     stylePrefs.customBackgroundImage = picked;
@@ -363,7 +363,7 @@ function flipRomaji() {
 
 function flipWordEffect() {
   stylePrefs.enableWordEffect = !stylePrefs.enableWordEffect;
-} // 实现
+}
 const activeSubtitleCount = computed(() => Number(stylePrefs.showTranslation) + Number(stylePrefs.showRomaji));
 
 // 滑杆轨道的渐变填充样式（进度值决定分界位置）
@@ -416,7 +416,7 @@ function placeFontMenu() {
   if (!hostPanel) return;
 
   const hostRect = hostPanel.getBoundingClientRect();
-  const menuWidth = 280; // 实现
+  const menuWidth = 280;
   const spacing = 0;
 
   let left = hostRect.right + spacing;
@@ -425,17 +425,17 @@ function placeFontMenu() {
   }
 
   fontMenuPositionStyle.value = {
-    position: 'fixed', // 实现
-    left: `${Math.round(left)}px`, // 实现
+    position: 'fixed',
+    left: `${Math.round(left)}px`,
     bottom: `${Math.round(window.innerHeight - hostRect.bottom)}px`,
-    width: `${menuWidth}px`, // 实现
+    width: `${menuWidth}px`,
     maxHeight: `${Math.round(Math.min(420, hostRect.bottom - 16))}px`,
   };
 }
 
 function onGlobalPointerDown(event: MouseEvent) {
-  const target = event.target as Node | null; // 实现
-  if (!target) return; // 实现
+  const target = event.target as Node | null;
+  if (!target) return;
   if (panelAnchorRef.value?.contains(target)) return;
   if (menuPanelRef.value?.contains(target)) return;
   isFontMenuVisible.value = false;
@@ -481,14 +481,14 @@ async function onLyricLineClick(event: WordLyricLineClickEvent) {
   }
 }
 
-onMounted(() => { // 实现
+onMounted(() => {
   if (!props.disabled) {
     bindGlobalListeners();
   }
-  void loadSystemLyricsFonts(); // 实现
+  void loadSystemLyricsFonts();
 });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
   unbindGlobalListeners();
   resetTransientUi();
 });
@@ -511,9 +511,9 @@ watch(stylePanelOpen, async (visible) => {
   }
 });
 
-watch(() => props.coverHidden, async () => { // 实现
+watch(() => props.coverHidden, async () => {
   if (!stylePanelOpen.value) return;
-  await nextTick(); // 实现
+  await nextTick();
   syncPanelPosition();
 });
 </script>

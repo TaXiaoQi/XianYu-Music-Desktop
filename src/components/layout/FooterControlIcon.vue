@@ -1,29 +1,29 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { AudioLines, CircleCheck, Clapperboard, Download, Eye, EyeOff, MessageCircle, Palette, Share2, SlidersHorizontal } from 'lucide-vue-next';
-import type { FooterItemKey } from '../../types'; // 实现
+import type { FooterItemKey } from '../../types';
 import { useDownloadStore } from '../../features/download/store';
 import { computed } from 'vue';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 
-defineOptions({ inheritAttrs: false }); // 实现
+defineOptions({ inheritAttrs: false });
 
 const downloadStore = useDownloadStore();
 
 const props = withDefaults(defineProps<{
-  itemKey: FooterItemKey; // 实现
-  active?: boolean; // 实现
-  loading?: boolean; // 实现
-  completed?: boolean; // 实现
-  playMode?: number; // 实现
-  volume?: number; // 实现
-  qualityLabel?: string; // 实现
+  itemKey: FooterItemKey;
+  active?: boolean;
+  loading?: boolean;
+  completed?: boolean;
+  playMode?: number;
+  volume?: number;
+  qualityLabel?: string;
 }>(), {
-  active: false, // 实现
-  loading: false, // 实现
-  completed: false, // 实现
-  playMode: 0, // 实现
-  volume: 100, // 实现
-  qualityLabel: 'SQ', // 实现
+  active: false,
+  loading: false,
+  completed: false,
+  playMode: 0,
+  volume: 100,
+  qualityLabel: 'SQ',
 });
 const { icon } = useDesktopTheme();
 const footerIconSlots: Partial<Record<FooterItemKey, string>> = {

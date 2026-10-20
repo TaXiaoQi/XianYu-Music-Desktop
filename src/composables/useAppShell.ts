@@ -28,7 +28,7 @@ import { useTrayMenuEvents } from "./useTrayMenuEvents";
  * 外壳装配根：把播放器、主题材质、启动揭示、外部路径、
  * 全局弹窗等横切关注点编排成一个供 MainShell 消费的视图模型。
  */
-export function useAppShell() { // 实现
+export function useAppShell() {
     const route = useRoute();
     const router = useRouter();
 

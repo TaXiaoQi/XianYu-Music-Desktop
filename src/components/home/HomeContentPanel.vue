@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, defineAsyncComponent, shallowRef } from "vue";
 import { useRouter } from "vue-router";
 

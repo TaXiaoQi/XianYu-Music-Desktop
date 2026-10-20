@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 「收藏到歌单」弹窗对外入口：声明冻结的 props/emits 契约，
 // 具体渲染与交互全部下沉到 addToPlaylist/ 子目录内的实现组件。
 import AddToPlaylistDialogBody from "./addToPlaylist/AddToPlaylistDialogBody.vue";

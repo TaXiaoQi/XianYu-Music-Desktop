@@ -12,7 +12,7 @@ type EqConfig = AppSettings["audio"]["equalizer"];
 
 // 建库并在其上执行一次恢复，返回 store 供断言
 const restoreOntoStore = (readPersisted: () => AppSettings | null) => {
-    const settingsStore = useSettingsStore(); // 实现
+    const settingsStore = useSettingsStore();
     restorePersistedAppSettings(
         settingsStore.settings,
         settingsStore.replaceSettings,

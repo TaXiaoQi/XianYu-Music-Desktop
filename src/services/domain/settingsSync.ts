@@ -13,9 +13,9 @@ function stableStringify(obj: unknown): string {
             return sorted;
         }
         return value;
-    }); // 实现
-} // 实现
-export function normalizeSettingsForComparison(
+    });
+}
+function normalizeSettingsForComparison(
     settings: AppSettings,
 ): Record<string, unknown> {
     const cloned = JSON.parse(JSON.stringify(settings)) as Record<
@@ -24,7 +24,7 @@ export function normalizeSettingsForComparison(
     >;
     if (cloned.download && typeof cloned.download === "object") {
         (cloned.download as Record<string, unknown>).downloadPath = "";
-    } // 实现
+    }
     (cloned as Record<string, unknown>).organizeRoot = "";
     delete (cloned as Record<string, unknown>).upload;
     if (cloned.autoSync && typeof cloned.autoSync === "object") {
@@ -35,7 +35,7 @@ export function normalizeSettingsForComparison(
         delete autoSync.nextSyncAt;
     }
     return cloned;
-} // 实现
+}
 export function areSettingsEqual(
     local: AppSettings,
     cloud: AppSettings,
@@ -45,24 +45,24 @@ export function areSettingsEqual(
     return (
         stableStringify(normalizedLocal) === stableStringify(normalizedCloud)
     );
-} // 实现
+}
 const LOG = "[SettingsSync]";
 function logSync(_msg: string, ..._args: unknown[]) {}
-function logSyncError(msg: string, ...args: unknown[]) { // 实现
+function logSyncError(msg: string, ...args: unknown[]) {
     console.error(`${LOG} ${msg}`, ...args);
-} // 实现
-export interface SettingsSyncDownloadData { // 实现
+}
+interface SettingsSyncDownloadData {
     version: number;
     uploaded_at: string;
     timestamp: number;
     settings: AppSettings;
-} // 实现
-export interface SettingsSyncResult { // 实现
+}
+export interface SettingsSyncResult {
     uploaded: boolean;
     downloaded: boolean;
     errors: string[];
-} // 实现
-// ==================== 上传 ==================== // 实现
+}
+// ==================== 上传 ====================
 export async function uploadSettings(
     settings: AppSettings,
 ): Promise<SettingsSyncResult> {
@@ -70,13 +70,13 @@ export async function uploadSettings(
         uploaded: false,
         downloaded: false,
         errors: [],
-    }; // 实现
+    };
     const ciyuanxiId = getCiyuanxiId();
     if (!ciyuanxiId) {
         logSyncError("uploadSettings: 未获取到弦予号");
         result.errors.push("未登录或未获取到弦予号");
         return result;
-    } // 实现
+    }
     logSync("uploadSettings: 开始上传本地设置");
 
     try {
@@ -108,9 +108,9 @@ export async function uploadSettings(
         logSyncError(`uploadSettings: 上传失败: ${msg}`);
         result.errors.push(`上传失败: ${msg}`);
     } // 错误归集
-    return result; // 实现
-} // 实现
-// ==================== 下载 ==================== // 实现
+    return result;
+}
+// ==================== 下载 ====================
 export async function downloadSettings(): Promise<{
     settings: AppSettings | null;
     uploadedAt: string | null;
@@ -120,13 +120,13 @@ export async function downloadSettings(): Promise<{
         uploaded: false,
         downloaded: false,
         errors: [],
-    }; // 实现
+    };
     const ciyuanxiId = getCiyuanxiId();
     if (!ciyuanxiId) {
         logSyncError("downloadSettings: 未获取到弦予号");
         result.errors.push("未登录或未获取到弦予号");
         return { settings: null, uploadedAt: null, result };
-    } // 实现
+    }
     logSync("downloadSettings: 开始从云端下载设置");
 
     try {
@@ -157,5 +157,5 @@ export async function downloadSettings(): Promise<{
         logSyncError(`downloadSettings: 下载失败: ${msg}`);
         result.errors.push(`下载失败: ${msg}`);
         return { settings: null, uploadedAt: null, result };
-    } // 实现
-} // 实现
+    }
+}

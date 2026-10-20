@@ -44,8 +44,6 @@ import {
   favoritesSyncing,
 } from './playlistSyncState';
 
-export type SyncDirection = 'upload' | 'download' | 'sync';
-
 const LOG = '[usePlaylistSync]';
 
 let autoSyncInitialized = false;
@@ -57,7 +55,6 @@ function logSync(_msg: string, ..._args: unknown[]) {
 function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
-
 
 export function usePlaylistSync() {
   const collectionsStore = useCollectionsStore();

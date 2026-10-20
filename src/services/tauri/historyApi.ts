@@ -7,7 +7,7 @@ import type {
     RecentHistoryImportRecord,
 } from "./contracts";
 
-export const historyApi = { // 实现
+export const historyApi = {
     /** 追加一条播放记录。 */
     addToHistory(songPath: string) {
         return callTauri("add_to_history", { songPath });

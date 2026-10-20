@@ -1,13 +1,13 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 引导流程主题选择步：外观主题四选一。
 // "自定义"暂不支持，通过 custom-select 事件交由主组件弹提示。
-import { useSettingsThemeControls } from '../../../composables/useSettingsThemeControls'; // 实现
+import { useSettingsThemeControls } from '../../../composables/useSettingsThemeControls';
 
 const emit = defineEmits<{
   (event: 'custom-select'): void;
 }>();
 
-const { colorScheme, setColorScheme } = useSettingsThemeControls(); // 实现
+const { colorScheme, setColorScheme } = useSettingsThemeControls();
 
 // --- 点击"自定义"主题：暂不支持，通知主组件弹提示 ---
 const handleCustomThemeClick = () => {

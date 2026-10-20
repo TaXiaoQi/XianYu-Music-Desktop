@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { getStoredAuth } from "../../services/auth/authService";
 import {
@@ -21,11 +21,11 @@ import WallpaperUploadModal from "./wallpaper/WallpaperUploadModal.vue";
 
 const props = defineProps<{
     currentPath?: string;
-}>(); // 实现
-const emit = defineEmits<{ // 实现
+}>();
+const emit = defineEmits<{
     (e: "close"): void;
     (e: "select", localPath: string, mediaType: MediaType): void;
-}>(); // 实现
+}>();
 
 // --- 淡出动画 ---
 const isClosing = ref(false);
@@ -41,9 +41,9 @@ const handleClose = () => {
 };
 
 const activeTab = ref<WallpaperTab>("browse");
-const auth = getStoredAuth(); // 实现
-const isLoggedIn = computed(() => !!auth && !!auth.user?.ciyuanxi_id); // 实现
-const currentUser = computed(() => auth?.user); // 实现
+const auth = getStoredAuth();
+const isLoggedIn = computed(() => !!auth && !!auth.user?.ciyuanxi_id);
+const currentUser = computed(() => auth?.user);
 
 const {
     wallpapers,
@@ -114,12 +114,12 @@ const switchTab = (tab: WallpaperTab) => {
     if (tab === "downloads") {
         selectedDownloadIds.value = [];
     }
-}; // 实现
+};
 
-onMounted(() => { // 实现
+onMounted(() => {
     loadDownloadedWallpapers();
     fetchWallpapers();
-}); // 实现
+});
 
 onBeforeUnmount(() => {
     if (closeTimer) {
@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
         closeTimer = null;
     }
 });
-</script> // 实现
+</script>
 <template>
     <Teleport to="body">
         <div

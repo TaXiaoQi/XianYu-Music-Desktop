@@ -1,13 +1,13 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { Check, ChevronDown, Minus, Plus, RotateCcw } from 'lucide-vue-next';
 import { ref } from 'vue';
 
 import type { LyricsColorScheme } from '../../composables/lyrics';
 import {
-  LYRICS_SYNC_OFFSET_MAX_MS, // 实现
-  LYRICS_SYNC_OFFSET_MIN_MS, // 实现
-  LYRICS_SYNC_OFFSET_STEP_MS, // 实现
-} from '../../features/settings/lyricsSyncOffset'; // 实现
+  LYRICS_SYNC_OFFSET_MAX_MS,
+  LYRICS_SYNC_OFFSET_MIN_MS,
+  LYRICS_SYNC_OFFSET_STEP_MS,
+} from '../../features/settings/lyricsSyncOffset';
 import RangeSlider from '../common/RangeSlider.vue';
 import DesktopLyricsAlignmentCell from './desktopLyrics/DesktopLyricsAlignmentCell.vue';
 import DesktopLyricsColorOverlay from './desktopLyrics/DesktopLyricsColorOverlay.vue';

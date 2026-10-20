@@ -1,7 +1,7 @@
 import type { Song } from '../../types';
 
 
-export function decodeFileUrl(url: string): string {
+function decodeFileUrl(url: string): string {
   try {
     let path = url;
     if (path.startsWith('file:///')) {
@@ -17,7 +17,7 @@ export function decodeFileUrl(url: string): string {
   }
 }
 
-export function resolveLocalPath(rawSong: any): string {
+function resolveLocalPath(rawSong: any): string {
   if (rawSong.localPath && typeof rawSong.localPath === 'string') {
     return rawSong.localPath;
   }

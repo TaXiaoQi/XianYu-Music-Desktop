@@ -49,7 +49,7 @@ function normalizeWords(line: LineTiming): NormalizedWord[] {
 }
 
 /** 无逐词时间时的兜底：整行（或整段词区间）线性推进。 */
-export function resolveSubLineProgressRange(line: LineTiming): [number, number] {
+function resolveSubLineProgressRange(line: LineTiming): [number, number] {
   const words = normalizeWords(line);
   if (words.length > 0) {
     return [words[0].start, words[words.length - 1].end];

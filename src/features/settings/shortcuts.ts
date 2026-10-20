@@ -76,7 +76,7 @@ const LOCAL_BINDING_SPECS: Record<ShortcutActionId, BindingSpec> = {
     toggleDesktopLyricsLock: ["KeyD", { ctrl: true, shift: true }],
 };
 
-export const defaultLocalShortcutBindings: ShortcutBindingMap =
+const defaultLocalShortcutBindings: ShortcutBindingMap =
     Object.fromEntries(
         Object.entries(LOCAL_BINDING_SPECS).map(
             ([rawId, spec]): [ShortcutActionId, ShortcutBinding | null] => [
@@ -98,7 +98,7 @@ const GLOBAL_BINDING_CODES: Record<ShortcutActionId, string | null> = {
     toggleDesktopLyricsLock: null,
 };
 
-export const defaultGlobalShortcutBindings: ShortcutBindingMap =
+const defaultGlobalShortcutBindings: ShortcutBindingMap =
     Object.fromEntries(
         Object.entries(GLOBAL_BINDING_CODES).map(
             ([rawId, code]): [ShortcutActionId, ShortcutBinding | null] => [
@@ -110,7 +110,7 @@ export const defaultGlobalShortcutBindings: ShortcutBindingMap =
         ),
     ) as ShortcutBindingMap;
 
-export const createDefaultShortcutSettings = (): ShortcutSettings => ({ // 实现
+export const createDefaultShortcutSettings = (): ShortcutSettings => ({
     enabled: true,
     globalEnabled: false,
     useSystemMediaKeys: true,
@@ -161,7 +161,7 @@ const coerceBindingMap = (
     return merged;
 };
 
-export const normalizeShortcutSettings = (value: unknown): ShortcutSettings => { // 实现
+const normalizeShortcutSettings = (value: unknown): ShortcutSettings => {
     const fallback = createDefaultShortcutSettings();
 
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -194,10 +194,10 @@ export type ShortcutSettingsPatch = Partial<
     global?: Partial<ShortcutBindingMap>;
 };
 
-export const mergeShortcutSettings = ( // 实现
+export const mergeShortcutSettings = (
     base: ShortcutSettings,
     patch: ShortcutSettingsPatch = {},
-): ShortcutSettings => { // 实现
+): ShortcutSettings => {
     const normalized = normalizeShortcutSettings(base);
     const next = createDefaultShortcutSettings();
 
@@ -249,7 +249,7 @@ const MODIFIER_CODES = new Set<string>([
 export const isSystemReservedShortcutEvent = (event: KeyboardEvent): boolean =>
     Boolean(event.metaKey);
 
-export const formatShortcutCode = (code: string): string => {
+const formatShortcutCode = (code: string): string => {
     const labelled = shortcutCodeLabels[code];
     if (labelled !== undefined) {
         return labelled;
@@ -314,7 +314,7 @@ export const toGlobalShortcutAccelerator = (
 
 // ## comparison & capture #####################################################
 
-export const areShortcutBindingsEqual = ( // 实现
+export const areShortcutBindingsEqual = (
     left: ShortcutBinding | null,
     right: ShortcutBinding | null,
 ): boolean => {

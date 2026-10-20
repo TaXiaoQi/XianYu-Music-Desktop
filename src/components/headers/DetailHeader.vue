@@ -1,29 +1,29 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 歌单/列表详情页头部：滚动收缩封面、批量工具条、排序弹出菜单
 import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue';
 import { convertFileSrc as toAssetProtocolUrl } from '@tauri-apps/api/core';
 import { ListChecks, ListPlus, PencilLine, RefreshCw } from 'lucide-vue-next';
-import type { Song } from '../../types'; // 实现
-import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
-import { useCoverCache } from '../../composables/useCoverCache'; // 实现
+import type { Song } from '../../types';
+import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import { useCoverCache } from '../../composables/useCoverCache';
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useLibraryStore } from '../../features/library/store';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
-import SortModeIcon from '../common/SortModeIcon.vue'; // 实现
+import SortModeIcon from '../common/SortModeIcon.vue';
 import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
 import SortOptionPopover from './sortPopover/SortOptionPopover.vue';
 import HeaderOverflowMenu from './HeaderOverflowMenu.vue';
 
-const props = defineProps<{ // 实现
-  title: string; // 实现
-  subtitle?: string; // 实现
-  songs: Song[]; // 实现
-  isBatchMode: boolean; // 实现
-  selectedCount: number; // 实现
+const props = defineProps<{
+  title: string;
+  subtitle?: string;
+  songs: Song[];
+  isBatchMode: boolean;
+  selectedCount: number;
   totalSongCount?: number;
-  showRename?: boolean; // 实现
+  showRename?: boolean;
   readOnly?: boolean;
   showAddToPlaylist?: boolean;
   showHeaderAddToPlaylist?: boolean;
@@ -33,12 +33,12 @@ const props = defineProps<{ // 实现
   scrollContainerRef?: HTMLElement | null;
 }>();
 
-const emit = defineEmits([ // 实现
-  'update:isBatchMode', // 实现
+const emit = defineEmits([
+  'update:isBatchMode',
   'playAll',
-  'batchPlay', // 实现
-  'batchDelete', // 实现
-  'openAddToPlaylist', // 实现
+  'batchPlay',
+  'batchDelete',
+  'openAddToPlaylist',
   'batchAddToFavorites',
   'batchDownload',
   'rename',
@@ -160,9 +160,9 @@ const batchActions = computed(() => {
 });
 
 // ===== 头图封面解析 =====
-const headerCover = ref(''); // 实现
+const headerCover = ref('');
 const displayedHeaderCover = ref('');
-let coverRequestId = 0; // 实现
+let coverRequestId = 0;
 const { loadCover, loadFullCover, primeCoverPath } = useCoverCache(); // 封面缓存
 
 watch(

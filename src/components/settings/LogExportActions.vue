@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue";
 import { Upload } from "lucide-vue-next";
 
@@ -10,8 +10,8 @@ import {
 } from "../../services/applicationLogger";
 import { debugApi } from "../../services/tauri/debugApi";
 
-const { showToast } = useToast(); // 实现
-const { entries } = useApplicationLogs(); // 实现
+const { showToast } = useToast();
+const { entries } = useApplicationLogs();
 const exporting = ref(false);
 
 const entryCount = ref(entries.value.length);

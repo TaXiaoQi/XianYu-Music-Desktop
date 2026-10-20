@@ -31,7 +31,7 @@ export interface PluginBackupAssociation {
   songCount: number;
 }
 
-export interface MissingBackupPlugin {
+interface MissingBackupPlugin {
   platform: string;
   songCount: number;
 }
@@ -50,7 +50,7 @@ export interface PreparedPluginBackupImport {
   migratedTrackIdCount: number;
 }
 
-export type LxSourceKey = LxSearchResultItem['source'];
+type LxSourceKey = LxSearchResultItem['source'];
 
 export interface PlatformDescriptor {
   displayName: string;

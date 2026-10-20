@@ -25,14 +25,14 @@ export interface GlyphShape {
   strokes: GlyphStroke[];
 }
 
-export interface SongMenuCommandRow {
+interface SongMenuCommandRow {
   kind: 'command';
   id: SongMenuCommand;
   caption: string;
   alert?: boolean;
 }
 
-export interface SongMenuBreakRow {
+interface SongMenuBreakRow {
   kind: 'break';
   id: string;
 }

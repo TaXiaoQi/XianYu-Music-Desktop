@@ -25,15 +25,15 @@ const isOnlineSong = (song: Song | null | undefined): boolean => {
     );
 };
 
-interface UseSongContextActionsOptions { // 实现
+interface UseSongContextActionsOptions {
     isBatchMode: Ref<boolean>;
     deleteFromDisk?: (song: Song) => Promise<unknown>;
 }
 
-export function useSongContextActions({ // 实现
+export function useSongContextActions({
     isBatchMode,
     deleteFromDisk,
-}: UseSongContextActionsOptions) { // 实现
+}: UseSongContextActionsOptions) {
     const { showToast } = useToast();
 
     const showContextMenu = ref(false);

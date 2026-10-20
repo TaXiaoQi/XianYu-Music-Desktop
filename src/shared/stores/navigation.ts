@@ -2,7 +2,7 @@ import { ref, watch } from "vue";
 import { defineStore } from "pinia";
 
 /** 应用内可导航的主视图集合。 */
-export type NavigationViewMode = // 实现
+type NavigationViewMode =
     | "all"
     | "folder"
     | "artist"

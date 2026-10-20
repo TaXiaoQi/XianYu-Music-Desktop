@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 歌单右键菜单：批量选中多歌单时标题切换为统计文案并隐藏播放项，删除文案随之变化。
 // 外壳定位与动效由 MenuSurface 承担，行渲染复用 CtxRow。
 import { computed, ref } from "vue";
@@ -15,7 +15,7 @@ import { GLASS_SHEET } from "./contextMenu/sheetChrome";
 import { rowLag } from "./contextMenu/motion";
 import { watchPointerAway } from "./contextMenu/onPointerAway";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     visible: boolean;
     x: number;
     y: number;

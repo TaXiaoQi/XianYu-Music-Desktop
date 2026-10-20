@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 「移动歌曲到文件夹」选择弹窗：目录选项收集、封面懒加载与延迟清理
 import { computed, onUnmounted, ref, watch } from "vue";
 
@@ -7,7 +7,7 @@ import { usePlayerViewState } from "../../composables/usePlayerViewState";
 import { useCoverCache } from "../../composables/useCoverCache";
 import type { FolderNode } from "../../types";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     selectedCount: number;
     visible: boolean;
 }>();
@@ -116,7 +116,7 @@ watch(
     },
 );
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
     stopPurgeTimer();
     dropCoverEntries();
 });

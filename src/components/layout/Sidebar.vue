@@ -1,32 +1,32 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router'; // 实现
+import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 
 import { useI18n } from '../../features/i18n';
-import { useCoverCache } from '../../composables/useCoverCache'; // 实现
-import { useHomeNavigation } from '../../composables/useHomeNavigation'; // 实现
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
-import { usePlaybackController } from '../../features/playback/usePlaybackController'; // 实现
-import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView'; // 实现
-import { dragSession } from '../../composables/dragState'; // 实现
-import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
+import { useCoverCache } from '../../composables/useCoverCache';
+import { useHomeNavigation } from '../../composables/useHomeNavigation';
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView';
+import { dragSession } from '../../composables/dragState';
+import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { usePlaylistSync } from '../../composables/usePlaylistSync';
-import { useSettings } from '../../features/settings/useSettings'; // 实现
-import { useSidebarPlaylistContextMenu } from '../../composables/useSidebarPlaylistContextMenu'; // 实现
-import { useSidebarPlaylistCovers } from '../../composables/useSidebarPlaylistCovers'; // 实现
+import { useSettings } from '../../features/settings/useSettings';
+import { useSidebarPlaylistContextMenu } from '../../composables/useSidebarPlaylistContextMenu';
+import { useSidebarPlaylistCovers } from '../../composables/useSidebarPlaylistCovers';
 import { useSidebarImportConfirmers } from '../../composables/useSidebarImportConfirmers';
-import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop'; // 实现
-import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection'; // 实现
+import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop';
+import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection';
 import { useSidebarWidthResizer } from '../../composables/useSidebarWidthResizer';
 import { useToast } from '../../composables/toast'; // 轻提示
 import type { SidebarItemKey } from '../../types';
 import { useCollectionsStore, type FavoriteCollectionEntry } from '../../features/collections/store';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
-import SidebarBrand from './SidebarBrand.vue'; // 实现
-import SidebarNavigation from './SidebarNavigation.vue'; // 实现
-import SidebarPlaylists from './SidebarPlaylists.vue'; // 实现
+import SidebarBrand from './SidebarBrand.vue';
+import SidebarNavigation from './SidebarNavigation.vue';
+import SidebarPlaylists from './SidebarPlaylists.vue';
 
 const { sticker } = useDesktopTheme();
 
@@ -134,7 +134,7 @@ const contextMenuApi = useSidebarPlaylistContextMenu({
   getPlaylistCloudId: (id) =>
     playlists.value?.find?.((item) => item.id === id)?.cloudId || '',
   deleteCloudPlaylist: async (id) => deleteCloudPlaylistLocal(id),
-  clearSelection: clearPlaylistSelection, // 实现
+  clearSelection: clearPlaylistSelection,
 });
 const contextMenuShown = contextMenuApi.showContextMenu;
 const contextMenuPosX = contextMenuApi.contextMenuX;
@@ -194,18 +194,18 @@ const viewOpeners: Record<SidebarItemKey, () => void> = {
   account: () => { void openAuth(); },
 };
 
-const handleOpenHomeView = () => { // 实现
-  setSearch(''); // 实现
+const handleOpenHomeView = () => {
+  setSearch('');
   return openHomeStatistics();
 };
 
 const handleSidebarSelect = (key: SidebarItemKey) => {
-  setSearch(''); // 实现
+  setSearch('');
   viewOpeners[key]?.();
 };
 
-const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => { // 实现
-  setSearch(''); // 实现
+const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
+  setSearch('');
   onPlaylistClicked(event, id);
 };
 

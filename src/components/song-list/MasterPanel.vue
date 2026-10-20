@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import {
     computed,
     nextTick,
@@ -66,11 +66,11 @@ const {
     createFolder,
 } = playerCtx;
 
-const toast = useToast(); // 实现
+const toast = useToast();
 // 统一的轻提示出口，便于集中管理文案与级别
 const notify = (text: string, kind: "success" | "error" | "info") =>
     toast.showToast(text, kind);
-const { loadFolderViewSongPaths } = useLibraryFolderSongPathCache(); // 实现
+const { loadFolderViewSongPaths } = useLibraryFolderSongPathCache();
 
 // ---- 侧栏宽度拖拽状态 ----
 const panelWidth = ref(240);
@@ -688,16 +688,16 @@ const endDragResize = () => {
     document.body.style.userSelect = "";
 };
 
-onMounted(async () => { // 实现
+onMounted(async () => {
     window.addEventListener("custom-drop-trigger", onCustomDrop);
     await resumeFolderView();
 });
 
-onActivated(async () => { // 实现
+onActivated(async () => {
     await resumeFolderView();
 });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
     window.removeEventListener("custom-drop-trigger", onCustomDrop);
     endDragResize();
 });

@@ -62,7 +62,7 @@ const resolvesToDarkSurface = (themeSnapshot: ThemeSettings): boolean => {
     );
 };
 
-export function useThemeSettings() { // 实现
+export function useThemeSettings() {
     const store = useSettingsStore();
     const { theme, settings } = storeToRefs(store);
 

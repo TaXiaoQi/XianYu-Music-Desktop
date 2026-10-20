@@ -1,28 +1,28 @@
-<script setup lang="ts"> // 实现
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'; // 实现
-import { storeToRefs } from 'pinia'; // 实现
-import { dragSession } from '../../composables/dragState'; // 实现
-import type { Song } from '../../types'; // 实现
+<script setup lang="ts">
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
+import { dragSession } from '../../composables/dragState';
+import type { Song } from '../../types';
 import { listScrollCache, songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
-import { useLibraryCollections } from '../../features/collections/useLibraryCollections'; // 实现
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { scheduleCloudHeadMetaBatch } from '../../features/playback/cloudHeadMeta';
 import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
-import { useSettings } from '../../features/settings/useSettings'; // 实现
-import { useRoute, useRouter } from 'vue-router'; // 实现
-import { INDEX_KEYS } from '../../utils/alphabetIndex'; // 实现
-import { useCoverCache } from '../../composables/useCoverCache'; // 实现
+import { useSettings } from '../../features/settings/useSettings';
+import { useRoute, useRouter } from 'vue-router';
+import { INDEX_KEYS } from '../../utils/alphabetIndex';
+import { useCoverCache } from '../../composables/useCoverCache';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
-import { useHomeNavigation } from '../../composables/useHomeNavigation'; // 实现
-import { useLibraryRuntimeActions } from '../../features/library/useLibraryRuntimeActions'; // 实现
-import { usePlaybackController } from '../../features/playback/usePlaybackController'; // 实现
-import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView'; // 实现
-import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
-import { useListScrollMemory } from '../../composables/useListScrollMemory'; // 实现
-import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabetIndex'; // 实现
-import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState'; // 实现
-import { useLibraryStore } from '../../features/library/store'; // 实现
-import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity'; // 实现
-import { useSongDetailCache } from '../../composables/useSongDetailCache'; // 实现
+import { useHomeNavigation } from '../../composables/useHomeNavigation';
+import { useLibraryRuntimeActions } from '../../features/library/useLibraryRuntimeActions';
+import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView';
+import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useListScrollMemory } from '../../composables/useListScrollMemory';
+import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabetIndex';
+import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState';
+import { useLibraryStore } from '../../features/library/store';
+import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity';
+import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { getDownloadRecord, loadDownloadHistory } from '../../services/domain/downloadHistory';
 import { CircleCheck, Download } from 'lucide-vue-next';
 import { useDownloadStore } from '../../features/download/store';
@@ -117,7 +117,7 @@ const extLabelOf = (song: Song) => {
 // ==================== 全局 store / 组合式依赖 ====================
 const { settings: appPrefs } = useSettings();
 const clickToPlayMode = computed(() => appPrefs.value.songClickAction || 'double');
-const libraryStore = useLibraryStore(); // 实现
+const libraryStore = useLibraryStore();
 const {
   libraryScanProgress: scanProgress, lastLibraryScanError: lastScanError,
 } = storeToRefs(libraryStore);
@@ -125,13 +125,13 @@ const {
   currentSong, isPlaying, formatDuration,
 } = usePlaybackController();
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
   selectedPaths: Set<string>;
-  songs: Song[]; // 实现
+  songs: Song[];
   songPaths?: string[];
   resolveSongByPath?: (path: string) => Song | null;
-  isBatchMode: boolean; // 实现
-  memoryScopeKey: string; // 实现
+  isBatchMode: boolean;
+  memoryScopeKey: string;
   pageScrollMode?: boolean;
   scrollContainerRef?: HTMLElement | null;
   disableScrollMemory?: boolean;
@@ -141,11 +141,11 @@ const props = defineProps<{ // 实现
   staggerEnter?: boolean;
 }>();
 
-const emit = defineEmits<{ // 实现
-  (e: 'play', song: Song): void; // 实现
-  (e: 'contextmenu', event: MouseEvent, song: Song): void; // 实现
-  (e: 'update:selectedPaths', newSet: Set<string>): void; // 实现
-  (e: 'drag-start', payload: { event: PointerEvent; song: Song; index: number }): void; // 实现
+const emit = defineEmits<{
+  (e: 'play', song: Song): void;
+  (e: 'contextmenu', event: MouseEvent, song: Song): void;
+  (e: 'update:selectedPaths', newSet: Set<string>): void;
+  (e: 'drag-start', payload: { event: PointerEvent; song: Song; index: number }): void;
   (e: 'load-more'): void;
 }>();
 
@@ -159,19 +159,19 @@ watch(
 
 const {
   currentViewMode, localSortMode, folderSortMode, activeRootPath, currentFolderFilter,
-} = usePlayerViewState(); // 实现
+} = usePlayerViewState();
 const {
   folderTree, searchQuery: libSearchText, librarySongs: libSongs,
-} = usePlayerLibraryView(); // 实现
+} = usePlayerLibraryView();
 const { addLibraryFolder, scanLibrary, refreshFolder, expandFolderPath } = useLibraryRuntimeActions();
-const { isFavorite, toggleFavorite } = useLibraryCollections(); // 实现
-const router = useRouter(); // 实现
-const route = useRoute(); // 实现
-const { openHomeArtist } = useHomeNavigation(router); // 实现
+const { isFavorite, toggleFavorite } = useLibraryCollections();
+const router = useRouter();
+const route = useRoute();
+const { openHomeArtist } = useHomeNavigation(router);
 const {
   coverCache, loadCover, touchCoverPaths, preloadPriorityCovers, primeCoverPath,
 } = useCoverCache();
-const { loadSongDetail } = useSongDetailCache(); // 实现
+const { loadSongDetail } = useSongDetailCache();
 
 const dlStore = useDownloadStore();
 const isFetchingSong = (song: Song) =>
@@ -205,18 +205,18 @@ const scrollHost = computed(() =>
 
 // 仅记忆三类路由的滚动位置
 const normalizeMemoryRoute = (path: string) =>
-  ['/', '/favorites', '/recent'].includes(path) ? path : '/'; // 实现
+  ['/', '/favorites', '/recent'].includes(path) ? path : '/';
 const memoryRoute = ref(normalizeMemoryRoute(route.path));
 
 watch(
-  () => route.path, // 实现
+  () => route.path,
   (path) => {
-    if (!['/', '/favorites', '/recent'].includes(path)) { // 实现
+    if (!['/', '/favorites', '/recent'].includes(path)) {
       return;
     }
     memoryRoute.value = path;
   },
-  { immediate: true }, // 实现
+  { immediate: true },
 );
 
 // 视口容量 → 分段批量
@@ -322,7 +322,7 @@ watch(() => props.songPaths ?? props.songs, (rows) => {
 
 // ==================== 封面 / 评论 / 推荐理由 ====================
 const coverUrlFor = (path: string | undefined) => {
-  if (!path) { // 实现
+  if (!path) {
     return '';
   }
   const raw = coverUrlMap.get(path) ?? coverCache.get(path) ?? '';
@@ -369,13 +369,13 @@ const prefetchComments = (rows: Song[]) => {
     }
     pendingCommentPaths.add(p);
     void loadSongDetail(p)
-      .then((detail) => { // 实现
+      .then((detail) => {
         commentMemo.set(p, detail?.comment?.trim() ?? '');
       })
-      .catch(() => { // 实现
+      .catch(() => {
         commentMemo.set(p, '');
       })
-      .finally(() => { // 实现
+      .finally(() => {
         pendingCommentPaths.delete(p);
       });
   });
@@ -462,13 +462,13 @@ const warmViewportCovers = () => {
 // 恢复滚动位置后重放封面与量高（含一帧后的二次校准）
 const resumeViewportState = async () => {
   await regainScrollPos();
-  await nextTick(); // 实现
+  await nextTick();
   readScrollTop();
   measureViewport();
   replayCoverSnapshot();
   warmViewportCovers();
 
-  requestAnimationFrame(() => { // 实现
+  requestAnimationFrame(() => {
     readScrollTop();
     measureViewport();
     replayCoverSnapshot();
@@ -512,7 +512,7 @@ const stashCoverSnapshot = (key = scrollMemoryKey.value) => {
     songTableViewportCoverSnapshotCache.set(key, picked);
     return;
   }
-  songTableViewportCoverSnapshotCache.delete(key); // 实现
+  songTableViewportCoverSnapshotCache.delete(key);
 };
 
 // 滚动位置记忆
@@ -619,21 +619,21 @@ const {
   showIndexBar: wakeRail,
   scrollToCurrentSong: jumpToNowPlaying,
   scrollToTop: jumpToTop,
-} = useSongTableAlphabetIndex({ // 实现
+} = useSongTableAlphabetIndex({
   songs: segSongs,
   scrollTop: scrollPos,
   containerHeight: viewportH,
   containerRef: scrollHost,
   rootRef: tableRootEl,
-  routePath: computed(() => route.path), // 实现
-  currentViewMode, // 实现
-  localSortMode, // 实现
-  folderSortMode, // 实现
-  activeRootPath, // 实现
-  currentFolderFilter, // 实现
+  routePath: computed(() => route.path),
+  currentViewMode,
+  localSortMode,
+  folderSortMode,
+  activeRootPath,
+  currentFolderFilter,
   folderTree,
-  refreshFolder, // 实现
-  expandFolderPath, // 实现
+  refreshFolder,
+  expandFolderPath,
   listOffsetTop: hostOffset,
 });
 
@@ -663,7 +663,7 @@ watch(
       trackHostOffset();
     }
   },
-  { immediate: true }, // 实现
+  { immediate: true },
 );
 
 // 视口行变化 → 同步封面 / 预取 / 预热 / 下载标记
@@ -675,7 +675,7 @@ watch(
     prefetchComments(items);
     void refreshSavedDownloads(items);
   },
-  { immediate: true }, // 实现
+  { immediate: true },
 );
 
 // 打开评论展示开关时补拉一次
@@ -691,13 +691,13 @@ watch(
 // 记忆键切换：存旧快照、取新快照
 watch(
   scrollMemoryKey,
-  (newKey, oldKey) => { // 实现
-    if (oldKey && oldKey !== newKey) { // 实现
+  (newKey, oldKey) => {
+    if (oldKey && oldKey !== newKey) {
       stashCoverSnapshot(oldKey);
     }
     replayCoverSnapshot(newKey);
   },
-  { immediate: true }, // 实现
+  { immediate: true },
 );
 
 // ==================== 行为处理 ====================
@@ -726,10 +726,10 @@ const onRowContext = (event: MouseEvent, song: Song) => {
 };
 
 const onRowPointerDown = (event: PointerEvent, song: Song, index: number) => {
-  if (event.pointerType === 'mouse' && event.button !== 0) { // 实现
+  if (event.pointerType === 'mouse' && event.button !== 0) {
     return;
   }
-  emit('drag-start', { event, song, index }); // 实现
+  emit('drag-start', { event, song, index });
 };
 
 // 仅部分视图允许拖拽排序
@@ -751,12 +751,12 @@ const {
   heroScanStatus: scanStatus,
   emptyStateMessage: emptyStateText,
   retryHeroLibraryScan: redoScan,
-} = useSongTableLibraryState({ // 实现
-  currentViewMode, // 实现
+} = useSongTableLibraryState({
+  currentViewMode,
   searchQuery: libSearchText,
   librarySongs: libSongs,
-  addLibraryFolder, // 实现
-  scanLibrary, // 实现
+  addLibraryFolder,
+  scanLibrary,
 });
 
 // 英雄卡文案与百分比
@@ -781,8 +781,8 @@ const heroPercentLabel = computed(() => `${heroPercent.value}%`);
 
 const heroNote = computed(() => {
   const progress = scanProgress.value;
-  if (progress && progress.total > 0) { // 实现
-    return `${progress.current} / ${progress.total}`; // 实现
+  if (progress && progress.total > 0) {
+    return `${progress.current} / ${progress.total}`;
   }
   if (scanStatus.value === 'success') {
     return libSongs.value.length > 0 ? `${libSongs.value.length} ${LIB_COUNT_SUFFIX}` : HERO_NOTE_NO_SONGS;
@@ -795,8 +795,8 @@ const heroNote = computed(() => {
 
 const heroDetail = computed(() => {
   const progress = scanProgress.value;
-  if (progress && progress.total > 0) { // 实现
-    const folderPath = progress.folder_path?.trim(); // 实现
+  if (progress && progress.total > 0) {
+    const folderPath = progress.folder_path?.trim();
     return folderPath || heroPhaseLabel.value;
   }
   if (scanStatus.value === 'success') {
@@ -820,10 +820,10 @@ const emptyScanDesc = computed(() =>
 
 // 歌手名集合：优先使用拆分后的多歌手字段
 const artistChips = (song: Song) =>
-  (Array.isArray(song.artist_names) && song.artist_names.length > 0 ? song.artist_names : [song.artist]).filter(Boolean); // 实现
+  (Array.isArray(song.artist_names) && song.artist_names.length > 0 ? song.artist_names : [song.artist]).filter(Boolean);
 
 const gotoArtist = (artistName: string) => {
-  void openHomeArtist(artistName); // 实现
+  void openHomeArtist(artistName);
 };
 
 // 行内格式列文案：已下载为本地时显示真实容器格式
@@ -846,7 +846,7 @@ const titleTextOf = (song: Song) => song.title || song.name.replace(/\.[^/.]+$/,
 const padRowIndex = (idx: number) => (idx + 1 < 10 ? `0${idx + 1}` : idx + 1);
 
 // ==================== 生命周期 ====================
-onMounted(() => { // 实现
+onMounted(() => {
   window.addEventListener('resize', measureViewport);
   measureViewport();
   fillSegmentFloor();
@@ -854,18 +854,18 @@ onMounted(() => { // 实现
   playRowEnterAnimation();
 });
 
-onActivated(() => { // 实现
+onActivated(() => {
   fillSegmentFloor();
   void resumeViewportState();
   playRowEnterAnimation();
 });
 
-onDeactivated(() => { // 实现
+onDeactivated(() => {
   stashScrollPos();
   stashCoverSnapshot();
 });
 
-onBeforeUnmount(() => { // 实现
+onBeforeUnmount(() => {
   const host = scrollHost.value;
   // 页面滚动模式下宿主已回到顶部时无需重复记忆
   if (!(props.pageScrollMode && host && host.scrollTop === 0)) {
@@ -879,7 +879,7 @@ onBeforeUnmount(() => { // 实现
   activeCoverPaths = new Set<string>();
 });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
   clearTimeout(enterTimer);
   window.removeEventListener('resize', measureViewport);
 });
@@ -928,7 +928,7 @@ const rowEnterStyle = (rowOffset: number): Record<string, string | number> | und
 const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string | number> => {
   const base: Record<string, string | number> = { height: `${ROW_PX}px` };
 
-  if (!dragSession.active || dragSession.insertIndex === -1) { // 实现
+  if (!dragSession.active || dragSession.insertIndex === -1) {
     return base;
   }
 

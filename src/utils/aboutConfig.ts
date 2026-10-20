@@ -15,7 +15,7 @@ export interface AboutConfig {
   acknowledgements: AcknowledgementsItem[];
 }
 
-export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
+const DEFAULT_ABOUT_CONFIG: AboutConfig = {
   officialSiteUrl: 'https://xianyumusic.cn/',
   updateEnabled: true,
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
@@ -55,7 +55,7 @@ function asAcknowledgements(value: unknown, fallback: AcknowledgementsItem[]): A
   return items;
 }
 
-export async function fetchAboutConfig(): Promise<AboutConfig> {
+async function fetchAboutConfig(): Promise<AboutConfig> {
   try {
     const data = await signedRequest<Record<string, unknown>>(
       'get_about_config',
@@ -82,7 +82,7 @@ export async function fetchAboutConfig(): Promise<AboutConfig> {
 const POLL_INTERVAL_MS = 30_000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-export async function refreshAboutConfig(): Promise<void> {
+async function refreshAboutConfig(): Promise<void> {
   aboutConfig.value = await fetchAboutConfig();
 }
 

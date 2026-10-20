@@ -1,1 +1,1 @@
-export { usePlaylistSync, type SyncDirection } from './usePlaylistSyncCore';
+export { usePlaylistSync } from './usePlaylistSyncCore';

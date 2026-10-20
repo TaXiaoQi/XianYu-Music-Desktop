@@ -18,7 +18,7 @@ import { CloudPlayContext, cloudSongFromContext } from '../playback/cloudPlaybac
 import type { FolderNode, Song } from '../../types';
 
 /** 目录树中网盘虚拟根节点的 path。 */
-export const CLOUD_TREE_ROOT_PATH = '__cloud_root__';
+const CLOUD_TREE_ROOT_PATH = '__cloud_root__';
 
 /** 是否为网盘目录节点（虚拟根或 cloud:// 盘内目录）。 */
 export const isCloudFolderPath = (p: string): boolean =>
@@ -36,7 +36,7 @@ export const cloudFolderRegistryVersion = ref(0);
 
 /** 登记网盘目录节点（仅登记带完整上下文的节点；重复登记不触发更新）。
  * 空串 cloudDirPath 合法：id 型盘（迅雷/PikPak）根目录 id 为空串。 */
-export const registerCloudFolder = (node: FolderNode) => {
+const registerCloudFolder = (node: FolderNode) => {
   if (!node.cloudProviderId || !node.cloudAccountId || node.cloudDirPath == null) {
     return;
   }
@@ -52,7 +52,7 @@ export const registerCloudFolder = (node: FolderNode) => {
 };
 
 /** 按树节点 path 反查网盘目录上下文；非网盘目录返回 null。 */
-export const resolveCloudFolder = (path: string) =>
+const resolveCloudFolder = (path: string) =>
   cloudFolderRegistry.get(path) ?? null;
 
 /** 构建目录树网盘子树：虚拟根「网盘」→ 有已选文件夹的盘 → 已选目录（叶，
@@ -138,7 +138,7 @@ export const buildCloudTreeNodes = async (): Promise<FolderNode[]> => {
 };
 
 /** 列网盘目录单页：优先精确账号，退回该盘首个账号。 */
-export const listCloudDirPage = async (
+const listCloudDirPage = async (
   providerId: string,
   accountId: string,
   dirPath: string,

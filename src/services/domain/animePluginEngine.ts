@@ -157,7 +157,7 @@ function normalizeAnimeComment(c: any): any {
   return out;
 }
 
-export function createAnimeInstance(pluginId: string, metadata: any) {
+function createAnimeInstance(pluginId: string, metadata: any) {
   const pluginLabel = metadata.pluginName || pluginId;
   const singlePlatform: string | null = metadata.platform && metadata.platform !== 'all'
     ? String(metadata.platform)

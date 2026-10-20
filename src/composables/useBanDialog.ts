@@ -2,14 +2,14 @@ import { ref } from 'vue';
 
 export type BanType = 'account' | 'device';
 
-export type BanDialogMode = 'ban' | 'session' | 'login' | 'beta' | 'betaPending' | 'betaUnverified';
+type BanDialogMode = 'ban' | 'session' | 'login' | 'beta' | 'betaPending' | 'betaUnverified';
 
 export interface BanDialogMeta {
   ciyuanxiId: string;
   nickname: string;
 }
 
-export interface BanDialogState {
+interface BanDialogState {
   visible: boolean;
   mode: BanDialogMode;
   banType: BanType;
@@ -116,7 +116,7 @@ export function showBetaUnverifiedDialog(): Promise<boolean> {
   });
 }
 
-export function resolveBanDialog(confirmed: boolean): void {
+function resolveBanDialog(confirmed: boolean): void {
   const state = banDialogState.value;
   state.resolver?.(confirmed);
   banDialogState.value = {

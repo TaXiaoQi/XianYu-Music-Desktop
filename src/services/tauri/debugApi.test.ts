@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { tauriInvoke } = vi.hoisted(() => ({ // 实现
+const { tauriInvoke } = vi.hoisted(() => ({
     tauriInvoke: vi.fn(),
 }));
 

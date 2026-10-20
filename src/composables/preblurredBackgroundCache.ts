@@ -1,4 +1,4 @@
-interface PreblurOptions { // 实现
+interface PreblurOptions {
     blur: number;
     brightness: number;
 }
@@ -259,7 +259,7 @@ export async function getPreblurredBackgroundUrl(
     return task;
 }
 
-export function clearPreblurredBackgroundCache() { // 实现
+export function clearPreblurredBackgroundCache() {
     storeGeneration += 1;
     urlStore.dropEverything();
     runningRenders.clear();

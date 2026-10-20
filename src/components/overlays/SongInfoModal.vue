@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 歌曲信息窗口：详情/歌词双栏，支持元数据编辑、歌词编辑与外置 MusicTag 修正
 import {
     computed,
@@ -30,7 +30,7 @@ import InfoHero from "./songInfo/InfoHero.vue";
 import MetaSection from "./songInfo/MetaSection.vue";
 import LyricsColumnHeader from "./songInfo/LyricsColumnHeader.vue";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     song: Song | null;
     visible: boolean;
     initialAction?: SongInfoDialogAction;
@@ -60,7 +60,7 @@ const lyricsOriginFile = ref<string | null>(null);
 const lyricsLoading = ref(false);
 const lyricsSaving = ref(false);
 const lyricsIssue = ref("");
-const lyricsTextareaRef = ref<HTMLTextAreaElement | null>(null); // 实现
+const lyricsTextareaRef = ref<HTMLTextAreaElement | null>(null);
 let latestFetchId = 0;
 
 // 双栏互斥展开：pending 驱动过渡类名，360ms 后落定写入 active
@@ -285,7 +285,7 @@ const onGlobalKey = (event: KeyboardEvent) => {
 };
 
 onMounted(() => window.addEventListener("keydown", onGlobalKey));
-onUnmounted(() => { // 实现
+onUnmounted(() => {
     window.removeEventListener("keydown", onGlobalKey);
     infoPaneStretch.cancel();
     lyricsPaneStretch.cancel();
@@ -412,7 +412,7 @@ const abortHeadlineEdit = () => {
 
 const trimToNull = (value: string) => value.trim() || null;
 
-const handleChooseCover = async () => { // 实现
+const handleChooseCover = async () => {
     if (!headEditing.value) return;
 
     const picked = await pickLocalFile({

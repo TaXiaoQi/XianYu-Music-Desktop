@@ -6,7 +6,7 @@ import router from '../../router';
 
 export type OnlineDetailType = 'artist' | 'album' | 'playlist' | 'user';
 
-export type SourceSearchType = 'track' | 'artist' | 'album' | 'playlist';
+type SourceSearchType = 'track' | 'artist' | 'album' | 'playlist';
 
 export interface SearchResultsSnapshot {
   hasMore: boolean;

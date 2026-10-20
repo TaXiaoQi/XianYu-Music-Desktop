@@ -2,7 +2,7 @@ import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk'
 import { getStoredPlugins, pluginsVersion, readPluginIdAliases } from '../services/domain/pluginEngine';
 import type { PluginSource } from '../types';
 
-export const isRemoteSong = (song: { path?: string; source_type?: string } | null | undefined) => // 实现
+export const isRemoteSong = (song: { path?: string; source_type?: string } | null | undefined) =>
   song?.source_type === 'remote' || song?.path?.startsWith('remote://') === true;
 
 export const parseIntervalToSeconds = (interval?: string | null): number => {
@@ -169,7 +169,3 @@ export const getSongSourceTag = (
 
   return { label: '远程', brand: false };
 };
-
-export const getSongSourceLabel = (
-  song: { path?: string; source_type?: string; plugin_id?: string; rawData?: any } | null | undefined,
-): string => getSongSourceTag(song).label;

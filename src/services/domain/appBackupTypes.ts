@@ -37,7 +37,7 @@ export interface BackupRecentHistoryEntry {
 }
 
 /** 设置按端分槽存储，各端只写/只读自己的槽位，避免跨端互相覆盖 */
-export interface AppBackupSettingsSlots {
+interface AppBackupSettingsSlots {
   mobile?: AppSettings | null;
   desktop?: AppSettings | null;
   watch?: AppSettings | null;

@@ -31,7 +31,7 @@ const ARTIST_NAME_FIELDS = ["effective_artist_names", "artist_names"] as const;
  * 取歌曲的艺人名列表：合成字段非空则直接采用，
  * 其次退回原始拆分字段，两者皆空时以主艺人占位。
  */
-export function getSongArtistNames(song: Song): string[] {
+function getSongArtistNames(song: Song): string[] {
     for (const field of ARTIST_NAME_FIELDS) {
         const candidates = song[field];
         if (Array.isArray(candidates) && candidates.length > 0) {
@@ -49,7 +49,7 @@ export function isMeaningfulMetadataValue(value: string | undefined): boolean {
 }
 
 /** 艺人选项归一：去空白、剔除无效名、按首次出现顺序去重 */
-export function normalizeArtistOptions(artists: string[] = []): string[] {
+function normalizeArtistOptions(artists: string[] = []): string[] {
     const cleaned = artists
         .map((name) => name.trim())
         .filter(isMeaningfulMetadataValue);
@@ -144,7 +144,7 @@ export function getSongFileNameLabel(song: Song): string {
  * 从 “3”、“1/10” 这类字符串里提出首个整数用于排序；
  * 无法解析时返回 null（排序时视为排在末尾）。
  */
-export function parseSortIndexValue(value?: string): number | null {
+function parseSortIndexValue(value?: string): number | null {
     const digits = value?.trim().match(/\d+/);
     if (!digits) {
         return null;

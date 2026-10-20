@@ -7,7 +7,7 @@ import {
     resolveOnboardingRouteRedirect,
 } from "../composables/onboardingState";
 
-export function installOnboardingRouteGate( // 实现
+export function installOnboardingRouteGate(
     router: Router,
     onboardingVisible: Ref<boolean>,
 ) {

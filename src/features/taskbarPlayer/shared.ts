@@ -28,7 +28,7 @@ export const TASKBAR_PLAYER_WINDOW_WIDTH = 320,
     TASKBAR_PLAYER_WINDOW_HEIGHT = 40;
 
 /** 主窗口推送给任务栏窗口的播放状态 */
-export interface TaskbarPlayerStatePayload { // 实现
+export interface TaskbarPlayerStatePayload {
     currentSong: Song | null;
     coverUrl: string;
     isPlaying: boolean;

@@ -1,9 +1,9 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 引导流程启动画面（欢迎页）：纯展示组件。
 // 点击继续与自动推进的计时逻辑由主组件（useOnboardingState）持有。
 defineProps<{
-  splashVisible: boolean; // 实现
-  splashHintVisible: boolean; // 实现
+  splashVisible: boolean;
+  splashHintVisible: boolean;
 }>();
 
 const emit = defineEmits<{

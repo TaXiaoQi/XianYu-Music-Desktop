@@ -87,7 +87,7 @@ export function shouldIgnoreCursorEvents(input: {
     return !input.surfaceVisible && !input.cursorOverLyricsText;
 }
 
-export function useDesktopLyricsWindowController(options: { // 实现
+export function useDesktopLyricsWindowController(options: {
     showDragShadow: Ref<boolean>;
     settings: Ref<DesktopLyricsWindowSettings>;
     playbackTime: Ref<number>;

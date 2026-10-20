@@ -8,7 +8,7 @@ import { useNavigationStore } from "../shared/stores/navigation";
 import { usePlayerLibraryView } from "../features/library/usePlayerLibraryView";
 import { compareSongPathsByTrackNumber } from "../features/library/playerLibraryViewShared";
 
-const tauriInvokeMock = vi.fn(); // 实现
+const tauriInvokeMock = vi.fn();
 
 vi.mock("../services/tauri/invoke", () => ({
     tauriInvoke: (...args: unknown[]) => tauriInvokeMock(...args),

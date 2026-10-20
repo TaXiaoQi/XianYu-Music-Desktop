@@ -1,14 +1,14 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 通用确认框：遮罩点击等同取消，底部并排两个操作按钮
 type ConfirmChoice = 'confirm' | 'cancel';
 
-defineProps<{ // 实现
-  visible: boolean; // 实现
-  title: string; // 实现
+defineProps<{
+  visible: boolean;
+  title: string;
   content?: string;
 }>();
 
-const emit = defineEmits(['confirm', 'cancel']); // 实现
+const emit = defineEmits(['confirm', 'cancel']);
 
 interface ConfirmActionSpec {
   choice: ConfirmChoice;

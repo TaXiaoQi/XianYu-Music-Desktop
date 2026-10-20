@@ -19,7 +19,7 @@ export interface LogicalBox {
 }
 
 /** 主屏工作区（逻辑像素）：原点 + 尺寸 */
-export interface WorkAreaBox {
+interface WorkAreaBox {
   x: number;
   y: number;
   width: number;

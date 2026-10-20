@@ -2,12 +2,12 @@ import { shallowReadonly, shallowRef } from "vue";
 
 import type { LogLevel, LogSettings } from "../types";
 
-export const APPLICATION_LOG_STORAGE_KEY = "xianyu_application_logs_v1";
-export const LOG_LEVELS: LogLevel[] = ["debug", "info", "warn", "error"];
+const APPLICATION_LOG_STORAGE_KEY = "xianyu_application_logs_v1";
+const LOG_LEVELS: LogLevel[] = ["debug", "info", "warn", "error"];
 const MAX_LOG_ENTRIES = 300;
 const MAX_ERROR_LOG_ENTRIES = 10;
 
-export interface ApplicationLogEntry { // 实现
+export interface ApplicationLogEntry {
     id: string;
     timestamp: number;
     level: LogLevel;
@@ -16,7 +16,7 @@ export interface ApplicationLogEntry { // 实现
     message: string;
 }
 
-export interface ApplicationLogAnalysis { // 实现
+export interface ApplicationLogAnalysis {
     status: "healthy" | "warning" | "critical";
     headline: string;
     counts: Record<LogLevel, number>;
@@ -26,18 +26,18 @@ export interface ApplicationLogAnalysis { // 实现
     latestErrorAt: number | null;
 }
 
-const defaultConfig: LogSettings = { // 实现
+const defaultConfig: LogSettings = {
     minimumLevel: "info",
     retentionDays: 1,
     autoAnalyze: true,
 };
 
-let activeConfig: LogSettings = { ...defaultConfig }; // 实现
+let activeConfig: LogSettings = { ...defaultConfig };
 
 const isLogLevel = (value: unknown): value is LogLevel =>
     typeof value === "string" && LOG_LEVELS.includes(value as LogLevel);
 
-const normalizeStoredEntry = (value: unknown): ApplicationLogEntry | null => { // 实现
+const normalizeStoredEntry = (value: unknown): ApplicationLogEntry | null => {
     if (!value || typeof value !== "object" || Array.isArray(value))
         return null;
     const entry = value as Partial<ApplicationLogEntry>;
@@ -55,7 +55,7 @@ const normalizeStoredEntry = (value: unknown): ApplicationLogEntry | null => { /
     return entry as ApplicationLogEntry;
 };
 
-const readStoredEntries = (): ApplicationLogEntry[] => { // 实现
+const readStoredEntries = (): ApplicationLogEntry[] => {
     if (typeof localStorage === "undefined") return [];
     try {
         const parsed = JSON.parse(
@@ -70,7 +70,7 @@ const readStoredEntries = (): ApplicationLogEntry[] => { // 实现
     }
 };
 
-export const filterLogEntriesForRetention = ( // 实现
+export const filterLogEntriesForRetention = (
     source: readonly ApplicationLogEntry[],
     _retentionDays: number,
     _now = Date.now(),
@@ -95,7 +95,7 @@ const logEntries = shallowRef<ApplicationLogEntry[]>(
     ),
 );
 
-const persistEntries = () => { // 实现
+const persistEntries = () => {
     if (typeof localStorage === "undefined") return;
     try {
         localStorage.setItem(
@@ -122,7 +122,7 @@ export function installApplicationLogger(_scope = "main") {
     // 保留空函数签名以兼容 main.ts 调用点。
 }
 
-export function configureApplicationLogger(config: LogSettings) { // 实现
+export function configureApplicationLogger(config: LogSettings) {
     activeConfig = {
         minimumLevel: isLogLevel(config.minimumLevel)
             ? config.minimumLevel
@@ -137,7 +137,7 @@ export function configureApplicationLogger(config: LogSettings) { // 实现
     persistEntries();
 }
 
-export function clearApplicationLogs() { // 实现
+export function clearApplicationLogs() {
     logEntries.value = [];
     persistEntries();
 }
@@ -171,9 +171,9 @@ export function logApplicationEvent(
     persistEntries();
 }
 
-export function analyzeApplicationLogs( // 实现
+export function analyzeApplicationLogs(
     source: readonly ApplicationLogEntry[],
-): ApplicationLogAnalysis { // 实现
+): ApplicationLogAnalysis {
     const counts: Record<LogLevel, number> = {
         debug: 0,
         info: 0,
@@ -239,7 +239,7 @@ export function analyzeApplicationLogs( // 实现
     };
 }
 
-export function formatApplicationLogExport( // 实现
+export function formatApplicationLogExport(
     source: readonly ApplicationLogEntry[],
     mode: "all" | "error",
     analysis = analyzeApplicationLogs(source),
@@ -264,7 +264,7 @@ export function formatApplicationLogExport( // 实现
     return [...header, ...lines, ""].join("\n");
 }
 
-export function useApplicationLogs() { // 实现
+export function useApplicationLogs() {
     return {
         entries: shallowReadonly(logEntries),
         clearLogs: clearApplicationLogs,

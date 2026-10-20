@@ -1,6 +1,6 @@
 import { ref } from "vue";
 
-export interface ToastMessage { // 实现
+interface ToastMessage {
     id: number;
     text: string;
     type?: "success" | "error" | "info";
@@ -14,10 +14,10 @@ export interface ToastHandle {
     close: () => void;
 }
 
-const toasts = ref<ToastMessage[]>([]); // 实现
-let nextId = 0; // 实现
+const toasts = ref<ToastMessage[]>([]);
+let nextId = 0;
 
-export function useToast() { // 实现
+export function useToast() {
     const showToast = (
         text: string,
         type: "success" | "error" | "info" = "info",

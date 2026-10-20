@@ -9,7 +9,7 @@ import {
 import searchQuerySource from "../../composables/search/useSearchQuery.ts?raw";
 import { expectSourceContains, expectSourceNotContains } from "../../testing/sourceText";
 
-function song(overrides: Partial<LxSearchResultItem>): LxSearchResultItem { // 实现
+function song(overrides: Partial<LxSearchResultItem>): LxSearchResultItem {
     return {
         name: "Song",
         singer: "Artist",

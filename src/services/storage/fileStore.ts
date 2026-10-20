@@ -1,5 +1,5 @@
 import { stateApi } from "../tauri/stateApi";
-export const fileStore = { // 实现
+export const fileStore = {
     async getJson<T>(key: string): Promise<T | null> {
         try {
             const raw = await stateApi.readStateJson(key);
@@ -19,4 +19,4 @@ export const fileStore = { // 实现
             throw e;
         }
     },
-}; // 实现
+};

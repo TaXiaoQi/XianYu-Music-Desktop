@@ -1,16 +1,16 @@
-import { listen } from '@tauri-apps/api/event'; // 实现
-import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
-import { onMounted, onUnmounted, ref } from 'vue'; // 实现
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { onMounted, onUnmounted, ref } from 'vue';
 
-import { appApi } from '../services/tauri/appApi'; // 实现
+import { appApi } from '../services/tauri/appApi';
 import { importPluginScriptsFromPaths } from '../services/domain/pluginImport';
-import { usePlaybackStore } from '../features/playback/store'; // 实现
+import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
 import { useUiStore } from '../shared/stores/ui';
 
 import { modalDragInterceptActive } from './dragState';
 
-type ExternalPathSource = 'drop' | 'open'; // 实现
+type ExternalPathSource = 'drop' | 'open';
 
 /** 仅识别带 URL scheme 的远程样式地址（如 https://、asset://），其余视为本地文件。 */
 const REMOTE_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
@@ -19,19 +19,19 @@ const REMOTE_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 const PLUGIN_SUFFIX_PATTERN = /\.(js|json)$/i;
 
 interface ExternalPathBridgeContract {
-  handleExternalPaths: (paths: string[], options?: { source?: ExternalPathSource }) => Promise<void>; // 实现
-  beforeWindowShow?: () => Promise<unknown>; // 实现
-  afterWindowShow?: () => Promise<unknown> | void; // 实现
+  handleExternalPaths: (paths: string[], options?: { source?: ExternalPathSource }) => Promise<void>;
+  beforeWindowShow?: () => Promise<unknown>;
+  afterWindowShow?: () => Promise<unknown> | void;
 }
 
 interface RevealWindowHandle {
-  show: () => Promise<unknown>; // 实现
-  setFocus: () => Promise<unknown>; // 实现
+  show: () => Promise<unknown>;
+  setFocus: () => Promise<unknown>;
 }
 
 interface RevealWindowHooks {
-  beforeShow?: () => Promise<unknown>; // 实现
-  afterShow?: () => Promise<unknown> | void; // 实现
+  beforeShow?: () => Promise<unknown>;
+  afterShow?: () => Promise<unknown> | void;
 }
 
 const trimValue = (value: string) => (value || '').trim();
@@ -56,20 +56,20 @@ function splitLocalEntries(paths: string[]) {
  * 启动揭示的标准动作序列：先跑 beforeShow（铺底），
  * 再显示并聚焦窗口，最后执行 afterShow（收遮罩）。
  */
-export async function showMainWindowAfterStartup( // 实现
+export async function showMainWindowAfterStartup(
   appWindow: RevealWindowHandle,
   hooks: RevealWindowHooks = {},
 ) {
-  await hooks.beforeShow?.(); // 实现
-  await appWindow.show(); // 实现
-  await appWindow.setFocus(); // 实现
-  await hooks.afterShow?.(); // 实现
+  await hooks.beforeShow?.();
+  await appWindow.show();
+  await appWindow.setFocus();
+  await hooks.afterShow?.();
 }
 
 export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract) {
   const { handleExternalPaths, beforeWindowShow, afterWindowShow } = bridgeOptions;
 
-  const playbackStore = usePlaybackStore(); // 实现
+  const playbackStore = usePlaybackStore();
   const settingsStore = useSettingsStore();
   const uiStore = useUiStore();
 
@@ -81,9 +81,9 @@ export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract)
   /** 外部路径处理必须串行，后到的批次排在前一批完成之后。 */
   const queueExternalPaths = (paths: string[], source: ExternalPathSource) => {
     pathTaskChain = pathTaskChain
-      .then(() => handleExternalPaths(paths, { source })) // 实现
-      .catch((error) => { // 实现
-        console.error('Failed to process external paths:', error); // 实现
+      .then(() => handleExternalPaths(paths, { source }))
+      .catch((error) => {
+        console.error('Failed to process external paths:', error);
       });
     return pathTaskChain;
   };
@@ -105,11 +105,11 @@ export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract)
           await queueExternalPaths(audioPaths, 'open');
         }
       }
-    } catch (error) { // 实现
-      console.error('Failed to consume pending open paths:', error); // 实现
+    } catch (error) {
+      console.error('Failed to consume pending open paths:', error);
     } finally {
       if (run.startup) {
-        playbackStore.markStartupPathsResolved(); // 实现
+        playbackStore.markStartupPathsResolved();
       }
     }
   };
@@ -169,15 +169,15 @@ export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract)
 
     try {
       await showMainWindowAfterStartup(getCurrentWindow(), {
-        beforeShow: beforeWindowShow, // 实现
-        afterShow: afterWindowShow, // 实现
+        beforeShow: beforeWindowShow,
+        afterShow: afterWindowShow,
       });
-    } catch (error) { // 实现
-      console.error('Failed to show window on startup:', error); // 实现
+    } catch (error) {
+      console.error('Failed to show window on startup:', error);
     }
   });
 
-  onUnmounted(() => { // 实现
+  onUnmounted(() => {
     detachFns.forEach(detach => detach());
   });
 

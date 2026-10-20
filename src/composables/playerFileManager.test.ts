@@ -30,7 +30,7 @@ vi.mock("../services/tauri/fileApi", () => ({
 }));
 
 // 歌曲夹具：默认字段值属于行为规格，保持不变
-const makeSong = (overrides: Partial<Song> = {}): Song => ({ // 实现
+const makeSong = (overrides: Partial<Song> = {}): Song => ({
     path: "C:\\Music\\A\\demo.flac",
     name: "demo.flac",
     title: "Demo",

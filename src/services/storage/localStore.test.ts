@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { localStore } from "./localStore"; // 实现
+import { localStore } from "./localStore";
 
 // 基于 Map 构造一份 localStorage 替身（行为对齐真实存储语义）。
 function buildStorageStub() {

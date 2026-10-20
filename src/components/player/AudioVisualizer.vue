@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { onBeforeUnmount, onMounted, nextTick, ref, watch } from "vue";
 import { playbackApi as backend } from "../../services/tauri/playbackApi";
 import { useRenderingPower as powerSensor } from "../../composables/renderingPower";

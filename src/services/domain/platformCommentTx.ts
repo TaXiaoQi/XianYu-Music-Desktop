@@ -20,7 +20,7 @@ function mapTxComment(raw: any): PlatformComment {
   };
 }
 
-export async function resolveTxSongId(mediaItem: any): Promise<string | null> {
+async function resolveTxSongId(mediaItem: any): Promise<string | null> {
   const rawId = mediaItem?.id;
   const idStr = rawId != null ? String(rawId) : '';
   if (/^\d+$/.test(idStr) && Number(idStr) > 0) return idStr;

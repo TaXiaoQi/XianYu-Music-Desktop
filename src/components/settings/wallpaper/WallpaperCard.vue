@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import type { Wallpaper } from "../../../composables/settings/wallpaperTypes";
 import { isVideo, uploaderLabel } from "../../../composables/settings/wallpaperTypes";
 // 壁纸中心「广场」网格卡片：状态徽标、视频角标与下载/使用按钮。
@@ -8,10 +8,10 @@ defineProps<{
     downloaded: boolean;
     downloading: boolean;
     anyDownloading: boolean;
-}>(); // 实现
+}>();
 const emit = defineEmits<{
     (e: "use", wallpaper: Wallpaper): void;
-}>(); // 实现
+}>();
 </script>
 <template>
     <div

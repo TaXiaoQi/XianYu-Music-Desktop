@@ -2,7 +2,7 @@ import { ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { APP_VERSION } from "../../version";
-import { // 实现
+import {
     fetchServerUpdate,
     compareVersions,
     type ServerUpdateInfo,
@@ -11,26 +11,26 @@ import { useToast } from "./toast";
 import { updateApi } from "../services/tauri/updateApi";
 import { appApi } from "../services/tauri/appApi";
 import { aboutConfig } from "../utils/aboutConfig";
-const updateVisible = ref(false); // 实现
-const latestUpdate = ref<ServerUpdateInfo | null>(null); // 实现
-const isCheckingUpdate = ref(false); // 实现
+const updateVisible = ref(false);
+const latestUpdate = ref<ServerUpdateInfo | null>(null);
+const isCheckingUpdate = ref(false);
 function installerMatchesPlatform(url: string): boolean {
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
     if (/Macintosh|Mac OS X/.test(ua)) {
         return /\.(dmg|app)(?:[?#]|$)/i.test(url);
-    } // 实现
+    }
     if (/Linux/.test(ua)) {
         return /\.(deb|rpm|appimage)(?:[?#]|$)/i.test(url);
-    } // 实现
+    }
     return /\.(msi|exe)(?:[?#]|$)/i.test(url);
-} // 实现
-export interface DownloadProgressData { // 实现
+}
+export interface DownloadProgressData {
     progress: number;
     downloaded: number;
     total: number;
     speed: number;
-} // 实现
-const isDownloading = ref(false); // 实现
+}
+const isDownloading = ref(false);
 const downloadProgress = ref<DownloadProgressData>({
     progress: 0,
     downloaded: 0,
@@ -39,7 +39,7 @@ const downloadProgress = ref<DownloadProgressData>({
 });
 const isSimulatedUpdate = ref(false);
 let simulateTimer: ReturnType<typeof setInterval> | null = null;
-export function useUpdateCheck() { // 实现
+export function useUpdateCheck() {
     const { showToast } = useToast();
     const checkUpdateOnStartup = async () => {
         if (import.meta.env.DEV) return;
@@ -110,7 +110,7 @@ export function useUpdateCheck() { // 实现
                 "【调试模拟】此更新提示由调试模式模拟生成，用于测试更新弹窗的显示效果。\n\n模拟版本号：99.9.9\n\n您可以在此查看更新弹窗的排版、样式和交互行为，而无需连接服务器。\n\n点击「立即更新」将模拟下载进度动画。",
             updatedAt: new Date().toISOString(),
         };
-        updateVisible.value = true; // 实现
+        updateVisible.value = true;
     };
     const openDownload = async () => {
         if (latestUpdate.value?.downloadUrl) {
@@ -247,4 +247,4 @@ export function useUpdateCheck() { // 实现
         downloadAndInstall,
         simulateUpdate,
     };
-} // 实现
+}

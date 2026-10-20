@@ -21,7 +21,7 @@ function waitForRoutePaint(): Promise<void> {
     });
 }
 
-export interface StartupRouteRepaintOptions { // 实现
+export interface StartupRouteRepaintOptions {
     router: Router;
     hasWindowMaterial: Ref<boolean>;
     skipNextPageTransition: Ref<boolean>;

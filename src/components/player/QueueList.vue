@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, nextTick, watch } from 'vue';
 import { storeToRefs as toRefsOf } from 'pinia';
 

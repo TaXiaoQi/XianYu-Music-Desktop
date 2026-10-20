@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 专辑视图：按首字母分组的虚拟滚动网格，负责封面按需加载、视口快照缓存与拖拽排序。
 defineOptions({
   name: 'Albums',
@@ -99,7 +99,7 @@ function syncLayoutMetrics() {
 }
 
 async function remeasureCardHeight() {
-  await nextTick(); // 实现
+  await nextTick();
   const firstCard = scrollBoxRef.value?.querySelector<HTMLElement>('[data-album-card]');
   if (!firstCard) return;
   const measured = firstCard.offsetHeight;
@@ -137,10 +137,10 @@ function persistSnapshotCovers() {
   for (const element of Array.from(box.querySelectorAll<HTMLElement>('[data-cover-path]'))) {
     if (picked.length >= SNAPSHOT_MAX_COUNT) break;
 
-    const path = element.dataset.coverPath; // 实现
+    const path = element.dataset.coverPath;
     if (!path || seen.has(path)) continue;
 
-    const rect = element.getBoundingClientRect(); // 实现
+    const rect = element.getBoundingClientRect();
     if (rect.bottom < upperEdge || rect.top > lowerEdge) continue;
     if (!resolveCoverSrc(path)) continue;
 
@@ -218,7 +218,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     for (let offset = 0; offset < group.entries.length; offset += cols) {
       const groupTail = offset + cols >= group.entries.length;
       rows.push({
-        type: 'items', // 实现
+        type: 'items',
         key: ['items', group.key, String(offset)].join('::'),
         items: group.entries.slice(offset, offset + cols),
         bottomGap: groupTail ? GROUP_GAP_Y : GRID_GAP_Y,
@@ -226,7 +226,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     }
   }
 
-  return rows; // 实现
+  return rows;
 });
 
 // 为每行累计 top / height，得到可直接用于布局的测量结果。
@@ -234,7 +234,7 @@ const measuredSectionRows = computed<MeasuredGroupRow[]>(() => {
   let cursor = 0;
 
   return sectionRows.value.map((row) => {
-    const height = row.type === 'header' // 实现
+    const height = row.type === 'header'
       ? GROUP_TITLE_HEIGHT
       : cardMeasuredHeight.value > 0
         ? cardMeasuredHeight.value + row.bottomGap
@@ -286,7 +286,7 @@ const floatingGroupTitle = computed(() => {
   if (titleRows.length === 0) return null;
 
   const scrollTop = currentScrollTop.value;
-  let activeIndex = 0; // 实现
+  let activeIndex = 0;
   for (let i = 0; i < titleRows.length; i += 1) {
     if (titleRows[i].top > scrollTop) break;
     activeIndex = i;
@@ -342,7 +342,7 @@ const coverPathsInView = computed(() => {
 });
 
 async function setupCoverObserver() {
-  await nextTick(); // 实现
+  await nextTick();
   const box = scrollBoxRef.value;
   if (!box) return;
 
@@ -521,11 +521,11 @@ function onCardPointerMove(_event: PointerEvent, albumKey: string) {
 }
 
 function onDocClick(event: MouseEvent) {
-  const target = event.target as HTMLElement; // 实现
+  const target = event.target as HTMLElement;
   if (!target.closest('.relative.z-50')) sortMenuOpen.value = false;
 }
 
-onMounted(() => { // 实现
+onMounted(() => {
   syncLayoutMetrics();
   playGridEnterAnimation();
   window.addEventListener('pointermove', onWindowPointerMove);
@@ -543,7 +543,7 @@ onMounted(() => { // 实现
     layoutResizeObserver.observe(box);
   }
 
-  requestAnimationFrame(() => { // 实现
+  requestAnimationFrame(() => {
     void remeasureCardHeight();
     queueObserverRefresh();
   });
@@ -551,7 +551,7 @@ onMounted(() => { // 实现
 
 onBeforeUnmount(() => { persistSnapshotCovers(); });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
   clearTimeout(gridEnterTimer);
   window.removeEventListener('pointermove', onWindowPointerMove);
   window.removeEventListener('pointerup', onWindowPointerUp);

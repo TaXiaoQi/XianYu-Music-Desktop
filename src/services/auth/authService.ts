@@ -5,13 +5,10 @@ export type {
   AuthMode,
   VerifyCodeType,
   HumanCaptcha,
-  HumanCaptchaProvider,
   HumanCaptchaConfig,
-  UserAgreement,
   HumanCaptchaPayload,
   ProfileStats,
   ProfileAuditStatus,
-  ProfileChangeLimitStatus,
   SignedRequestOptions,
 } from './authTypes';
 export { DEFAULT_AUTH_BASE_URL } from './authTypes';
@@ -23,7 +20,6 @@ export {
   setAuthApiSecret,
   initAuthFromKeyring,
   getStoredAuth,
-  getAuthToken,
   saveAuth,
   clearAuth,
   onAccountExpired,

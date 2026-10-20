@@ -83,9 +83,6 @@ export const DEFAULT_SIDEBAR_ORDER: SidebarItemKey[] = [
 
 const SIDEBAR_ITEM_KEY_SET = new Set<SidebarItemKey>(DEFAULT_SIDEBAR_ORDER);
 
-export const getSidebarItemMeta = (key: SidebarItemKey): SidebarItemMeta | undefined =>
-  SIDEBAR_ITEMS.find(item => item.key === key);
-
 export const normalizeSidebarOrder = (value: unknown): SidebarItemKey[] => {
   if (!Array.isArray(value)) {
     return [...DEFAULT_SIDEBAR_ORDER];

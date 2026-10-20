@@ -1,9 +1,9 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls'; // 实现
+import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useOnboardingState } from '../../composables/onboarding/useOnboardingState';
-import { useAuthStore } from '../../features/auth/store'; // 实现
+import { useAuthStore } from '../../features/auth/store';
 import OnboardingAccountStep from './steps/OnboardingAccountStep.vue';
 import OnboardingMaterialStep from './steps/OnboardingMaterialStep.vue';
 import OnboardingPluginsStep from './steps/OnboardingPluginsStep.vue';
@@ -11,23 +11,23 @@ import OnboardingShortcutsStep from './steps/OnboardingShortcutsStep.vue';
 import OnboardingSplashStep from './steps/OnboardingSplashStep.vue';
 import OnboardingThemeStep from './steps/OnboardingThemeStep.vue';
 
-const SettingsPlugins = defineAsyncComponent( // 实现
-  () => import('../settings/SettingsPlugins.vue'), // 实现
+const SettingsPlugins = defineAsyncComponent(
+  () => import('../settings/SettingsPlugins.vue'),
 );
 
-const props = defineProps<{ // 实现
-  visible: boolean; // 实现
+const props = defineProps<{
+  visible: boolean;
 }>();
 
-const emit = defineEmits<{ // 实现
-  (event: 'update:visible', value: boolean): void; // 实现
-  (event: 'complete'): void; // 实现
+const emit = defineEmits<{
+  (event: 'update:visible', value: boolean): void;
+  (event: 'complete'): void;
 }>();
 
-const authStore = useAuthStore(); // 实现
+const authStore = useAuthStore();
 const {
-  materialMode, // 实现
-} = useSettingsThemeControls(); // 实现
+  materialMode,
+} = useSettingsThemeControls();
 
 // --- 步骤状态机与启动画面计时（组合函数） ---
 const {
@@ -47,57 +47,57 @@ const {
 });
 
 // --- 插件管理器遮罩 ---
-const showPluginManager = ref(false); // 实现
-const pluginManagerVisited = ref(false); // 实现
+const showPluginManager = ref(false);
+const pluginManagerVisited = ref(false);
 const stepContentHidden = ref(false);
 
-const openPluginManager = () => { // 实现
-  pluginManagerVisited.value = true; // 实现
+const openPluginManager = () => {
+  pluginManagerVisited.value = true;
   stepContentHidden.value = true;
-  showPluginManager.value = true; // 实现
+  showPluginManager.value = true;
 };
 
-const closePluginManager = () => { // 实现
-  showPluginManager.value = false; // 实现
+const closePluginManager = () => {
+  showPluginManager.value = false;
 };
 
 const onPluginManagerClosed = () => {
   stepContentHidden.value = false;
 };
 
-const onboardingSurfaceClass = computed(() => { // 实现
-  if (materialMode.value === 'none') { // 实现
+const onboardingSurfaceClass = computed(() => {
+  if (materialMode.value === 'none') {
     return 'bg-white dark:bg-[#262626]';
   }
 
-  return materialMode.value === 'mica' // 实现
+  return materialMode.value === 'mica'
     ? 'bg-white/62 dark:bg-[#262626]/58'
     : 'bg-white/50 dark:bg-[#262626]/48';
 });
 
 // --- 完成时的未登录二次确认 ---
-const showLoginConfirm = ref(false); // 实现
+const showLoginConfirm = ref(false);
 
-const handleComplete = () => { // 实现
-  if (step.value === 'account' && !authStore.isLoggedIn) { // 实现
-    showLoginConfirm.value = true; // 实现
+const handleComplete = () => {
+  if (step.value === 'account' && !authStore.isLoggedIn) {
+    showLoginConfirm.value = true;
     return;
   }
-  emit('complete'); // 实现
-  emit('update:visible', false); // 实现
+  emit('complete');
+  emit('update:visible', false);
 };
 
-const confirmSkipLogin = () => { // 实现
-  showLoginConfirm.value = false; // 实现
-  emit('complete'); // 实现
-  emit('update:visible', false); // 实现
+const confirmSkipLogin = () => {
+  showLoginConfirm.value = false;
+  emit('complete');
+  emit('update:visible', false);
 };
 
-const cancelSkipLogin = () => { // 实现
-  showLoginConfirm.value = false; // 实现
+const cancelSkipLogin = () => {
+  showLoginConfirm.value = false;
 };
 
-const skipRest = () => handleComplete(); // 实现
+const skipRest = () => handleComplete();
 
 // --- 账号步骤登录/注册成功后的延迟完成（计时器留在主组件，保证行为与拆分前一致） ---
 let authCompleteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -115,36 +115,36 @@ const handleAuthorized = () => {
   }
   authCompleteTimer = setTimeout(() => {
     authCompleteTimer = null;
-    handleComplete(); // 实现
+    handleComplete();
   }, 600);
 };
 
 // --- 点击"自定义"主题：暂不支持，弹提示 ---
-const showCustomUnsupported = ref(false); // 实现
+const showCustomUnsupported = ref(false);
 
 watch(
-  () => props.visible, // 实现
+  () => props.visible,
   val => {
     if (val) {
-      step.value = 'splash'; // 实现
-      showPluginManager.value = false; // 实现
-      pluginManagerVisited.value = false; // 实现
+      step.value = 'splash';
+      showPluginManager.value = false;
+      pluginManagerVisited.value = false;
       stepContentHidden.value = false;
-      splashVisible.value = true; // 实现
-      splashHintVisible.value = false; // 实现
-      startSplashTimers(); // 实现
+      splashVisible.value = true;
+      splashHintVisible.value = false;
+      startSplashTimers();
     } else {
-      clearSplashTimers(); // 实现
+      clearSplashTimers();
     }
   },
 );
 
-onMounted(() => { // 实现
-  if (props.visible) startSplashTimers(); // 实现
+onMounted(() => {
+  if (props.visible) startSplashTimers();
 });
 
-onUnmounted(() => { // 实现
-  clearSplashTimers(); // 实现
+onUnmounted(() => {
+  clearSplashTimers();
   clearAuthCompleteTimer();
 });
 </script>

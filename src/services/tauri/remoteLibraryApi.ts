@@ -10,7 +10,7 @@ import type {
 } from "../../types";
 import { tauriInvoke as callTauri } from "./invoke";
 
-export const remoteLibraryApi = { // 实现
+export const remoteLibraryApi = {
     /** 列出全部已配置的远程音源。 */
     getRemoteSources(): Promise<RemoteSource[]> {
         return callTauri("get_remote_sources");

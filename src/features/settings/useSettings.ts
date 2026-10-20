@@ -51,7 +51,7 @@ function migrateLegacySettings(
     }
 }
 
-export function useSettings() { // 实现
+export function useSettings() {
     const store = useSettingsStore();
     const { settings, audioDelay, theme, sidebar, footerLayout, topBarLayout } =
         storeToRefs(store);

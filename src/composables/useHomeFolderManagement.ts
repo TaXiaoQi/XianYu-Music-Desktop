@@ -23,7 +23,7 @@ type ConfirmRequest = {
     action: () => void | Promise<void>;
 };
 
-interface UseHomeFolderManagementOptions { // 实现
+interface UseHomeFolderManagementOptions {
     isManagementMode: Ref<boolean>;
     activeRootPath: Ref<string | null>;
     currentFolderFilter: Ref<string>;
@@ -54,7 +54,7 @@ interface PostRemovalPlan {
     landingPath: string | null;
 }
 
-export function useHomeFolderManagement({ // 实现
+export function useHomeFolderManagement({
     isManagementMode,
     activeRootPath,
     currentFolderFilter,
@@ -69,7 +69,7 @@ export function useHomeFolderManagement({ // 实现
     removeLibraryFolderLinked,
     showToast,
     openConfirm,
-}: UseHomeFolderManagementOptions) { // 实现
+}: UseHomeFolderManagementOptions) {
     // 新建文件夹对话框三件套
     const creationDialog = {
         visible: ref(false),

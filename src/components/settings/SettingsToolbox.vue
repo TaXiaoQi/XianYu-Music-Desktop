@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { ref } from 'vue';
 import ToolboxHome from './toolbox/ToolboxHome.vue';
 import ToolboxBatchFlow from './toolbox/ToolboxBatchFlow.vue';

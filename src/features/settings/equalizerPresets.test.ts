@@ -31,7 +31,7 @@ const BAND_COUNT = 10;
 const flatGains = (): number[] => Array<number>(BAND_COUNT).fill(0);
 
 const bootStore = () => {
-    setActivePinia(createPinia()); // 实现
+    setActivePinia(createPinia());
     return useSettingsStore();
 };
 

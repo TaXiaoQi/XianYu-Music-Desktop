@@ -1,4 +1,3 @@
-export { toUrlSongInfo } from "./lxMusicSdkBase";
 export type { LxSearchResult, LxSearchResultItem } from "./lxMusicSdkBase";
 
 export { LX_SOURCE_NAMES } from "./lxMusicSdkTypes";

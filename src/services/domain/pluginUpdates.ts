@@ -5,8 +5,6 @@ export type {
 } from './pluginUpdateTypes';
 export {
   compareVersions,
-  extractMusicFreeVersion,
-  extractMusicFreeSrcUrl,
 } from './pluginUpdateVersion';
 
 import type { PluginUpdateServiceDeps } from './pluginUpdateTypes';

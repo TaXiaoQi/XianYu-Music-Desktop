@@ -6,7 +6,7 @@ const LOG_EXPORT_FILTER: SaveDialogFilterContract = {
     extensions: ["log", "txt"],
 };
 
-export const debugApi = { // 实现
+export const debugApi = {
     writeLogExport: (defaultFileName: string, content: string) =>
         tauriInvoke("save_text_via_dialog", {
             defaultFileName,

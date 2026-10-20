@@ -5,9 +5,9 @@ import { getAuthBaseUrl, signedRequest } from "../services/auth/authService";
 import { getDeviceId } from "../services/domain/usageStats";
 import { assertSafeOutboundUrl } from "./urlGuard";
 
-const VERSION_PATTERN = /\d+(?:\.\d+)+/; // 实现
+const VERSION_PATTERN = /\d+(?:\.\d+)+/;
 
-export interface ReleaseInfo { // 实现
+export interface ReleaseInfo {
     version: string;
     url: string;
     downloadUrl?: string;
@@ -17,7 +17,7 @@ export interface ReleaseInfo { // 实现
     source?: "github";
 }
 
-export function extractVersion(value: string): string { // 实现
+export function extractVersion(value: string): string {
     const trimmed = value.trim();
     const match = trimmed.match(VERSION_PATTERN);
     return match ? match[0] : trimmed.replace(/^[vV]/, "");
@@ -37,7 +37,7 @@ function parseVersion(value: string): ParsedVersion {
     return { fields, pre };
 }
 
-export function compareVersions(left: string, right: string): number { // 实现
+export function compareVersions(left: string, right: string): number {
     const a = parseVersion(left);
     const b = parseVersion(right);
     const length = Math.max(a.fields.length, b.fields.length);
@@ -60,7 +60,7 @@ export function compareVersions(left: string, right: string): number { // 实现
         if (a.pre !== b.pre) return a.pre > b.pre ? 1 : -1;
     }
     return 0;
-} // 实现
+}
 export async function fetchLatestRelease(
     owner: string,
     repo: string,
@@ -87,7 +87,7 @@ export async function fetchLatestRelease(
             throw new Error(`[Browser Fetch] HTTP status ${response.status}`);
         }
         payload = await response.json();
-    } // 实现
+    }
     const versionSource =
         typeof payload.tag_name === "string" ? payload.tag_name : payload.name;
     const version =
@@ -97,7 +97,6 @@ export async function fetchLatestRelease(
         throw new Error("Latest release version is missing");
     }
     return {
-        // 实现
         version,
         url:
             typeof payload.html_url === "string"
@@ -109,17 +108,15 @@ export async function fetchLatestRelease(
                 : undefined,
         notes: typeof payload.body === "string" ? payload.body : undefined,
         source: "github",
-    }; // 实现
-} // 实现
+    };
+}
 export interface ServerUpdateInfo {
-    // 实现
     version: string;
     downloadUrl: string;
     updateContent: string;
     updatedAt?: string;
-} // 实现
+}
 export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
-    // 实现
     try {
         const data = await signedRequest<Record<string, unknown>>(
             "get_latest_version",
@@ -141,11 +138,11 @@ export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
             updatedAt:
                 typeof data.updatedAt === "string" ? data.updatedAt : undefined,
         };
-    } catch (error) { // 实现
+    } catch (error) {
         console.error("[Update] 获取版本信息失败:", error);
         return null;
-    } // 实现
-} // 实现
+    }
+}
 
 /** 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。 */
 const BETA_ACCESS_CACHE_KEY = "xy.beta_access_signed_payload_v1";

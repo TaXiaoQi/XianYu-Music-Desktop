@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
-import { useI18n } from '../../features/i18n'; // 实现
+import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import { useSettings } from '../../features/settings/useSettings';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior, MvQualityKey } from '../../types';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import RangeSlider from '../common/RangeSlider.vue';
-import { computed, ref } from 'vue'; // 实现
+import { computed, ref } from 'vue';
 
 const { settings, patchSettings } = useSettings();
-const { isEnglish } = useI18n(); // 实现
+const { isEnglish } = useI18n();
 const { showToast } = useToast();
 
 const showDownloadQualityModal = ref(false);
@@ -21,55 +21,55 @@ const showLyricsFormatModal = ref(false);
 const showLyricsStyleModal = ref(false);
 const showMvQualityModal = ref(false);
 
-const FILE_NAME_STYLE_OPTIONS = computed<{ value: DownloadFileNameStyle; label: string; description: string }[]>(() => isEnglish.value ? [ // 实现
-  { value: 'artist-title', label: 'Artist - Title', description: 'Artist first, followed by the song title' }, // 实现
-  { value: 'title-artist', label: 'Title - Artist', description: 'Song title first, followed by the artist' }, // 实现
-  { value: 'title-artist-album', label: 'Title - Artist - Album', description: 'Includes the album name' }, // 实现
+const FILE_NAME_STYLE_OPTIONS = computed<{ value: DownloadFileNameStyle; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'artist-title', label: 'Artist - Title', description: 'Artist first, followed by the song title' },
+  { value: 'title-artist', label: 'Title - Artist', description: 'Song title first, followed by the artist' },
+  { value: 'title-artist-album', label: 'Title - Artist - Album', description: 'Includes the album name' },
 ] : [
   { value: 'artist-title', label: '歌手 - 歌名', description: '歌手在前，歌名在后' },
   { value: 'title-artist', label: '歌名 - 歌手', description: '歌名在前，歌手在后' },
   { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑', description: '附加专辑信息' },
 ]);
 
-const DOWNLOAD_BEHAVIOR_OPTIONS = computed<{ value: DownloadBehavior; label: string; description: string }[]>(() => isEnglish.value ? [ // 实现
-  { value: 'default', label: 'Use Defaults', description: 'Choose only the quality in the bottom bar; use the location and content settings on this page' }, // 实现
-  { value: 'ask', label: 'Ask Every Time', description: 'Open the detailed dialog for every download so the location and content can be changed' }, // 实现
+const DOWNLOAD_BEHAVIOR_OPTIONS = computed<{ value: DownloadBehavior; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'default', label: 'Use Defaults', description: 'Choose only the quality in the bottom bar; use the location and content settings on this page' },
+  { value: 'ask', label: 'Ask Every Time', description: 'Open the detailed dialog for every download so the location and content can be changed' },
 ] : [
   { value: 'default', label: '默认安装', description: '底部下载栏只选择音质，下载位置和内容应用本页设置' },
   { value: 'ask', label: '每次询问我', description: '每次下载都打开详细弹窗，可临时自定义位置和下载内容' },
 ]);
 
-const QUALITY_FALLBACK_OPTIONS = computed<{ value: DownloadQualityFallbackBehavior; label: string; description: string }[]>(() => isEnglish.value ? [ // 实现
-  { value: 'lower', label: 'Download Lower Quality', description: 'Automatically use the nearest lower available quality' }, // 实现
-  { value: 'higher', label: 'Download Higher Quality', description: 'Automatically use the nearest higher available quality' }, // 实现
+const QUALITY_FALLBACK_OPTIONS = computed<{ value: DownloadQualityFallbackBehavior; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'lower', label: 'Download Lower Quality', description: 'Automatically use the nearest lower available quality' },
+  { value: 'higher', label: 'Download Higher Quality', description: 'Automatically use the nearest higher available quality' },
 ] : [
   { value: 'lower', label: '下载更低音质', description: '自动降级到可用的更低音质' },
   { value: 'higher', label: '下载更高音质', description: '自动升级到可用的更高音质' },
 ]);
 
-const LYRICS_FORMAT_OPTIONS = computed(() => isEnglish.value ? [ // 实现
-  { value: 'lrc' as const, label: 'LRC', description: 'Time-synced lyrics with timestamps' }, // 实现
-  { value: 'txt' as const, label: 'TXT', description: 'Plain-text lyrics without timestamps' }, // 实现
+const LYRICS_FORMAT_OPTIONS = computed(() => isEnglish.value ? [
+  { value: 'lrc' as const, label: 'LRC', description: 'Time-synced lyrics with timestamps' },
+  { value: 'txt' as const, label: 'TXT', description: 'Plain-text lyrics without timestamps' },
 ] : [
   { value: 'lrc', label: 'LRC', description: '带时间标签的歌词文件，支持同步显示' },
   { value: 'txt', label: 'TXT', description: '纯文本歌词，不带时间标签' },
-] as const); // 实现
+] as const);
 
-const LYRICS_STYLE_OPTIONS = computed<{ value: DownloadLyricsStyle; label: string; description: string }[]>(() => isEnglish.value ? [ // 实现
-  { value: 'word-by-word', label: 'Word by Word', description: 'Prefer word-synced lyrics and fall back to line-synced lyrics' }, // 实现
-  { value: 'line-by-line', label: 'Line by Line', description: 'Download standard line-synced lyrics only' }, // 实现
+const LYRICS_STYLE_OPTIONS = computed<{ value: DownloadLyricsStyle; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'word-by-word', label: 'Word by Word', description: 'Prefer word-synced lyrics and fall back to line-synced lyrics' },
+  { value: 'line-by-line', label: 'Line by Line', description: 'Download standard line-synced lyrics only' },
 ] : [
   { value: 'word-by-word', label: '内置逐字', description: '优先下载逐字歌词（无逐字时回退到逐行）' },
   { value: 'line-by-line', label: '逐行', description: '仅下载标准逐行歌词' },
 ]);
 
-const ENGLISH_QUALITY_LABELS: Partial<Record<DownloadQuality, string>> = { // 实现
-  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ', // 实现
-  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos', // 实现
-  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master', // 实现
+const ENGLISH_QUALITY_LABELS: Partial<Record<DownloadQuality, string>> = {
+  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ',
+  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos',
+  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master',
 };
-const qualityLabel = (key: DownloadQuality) => ( // 实现
-  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label // 实现
+const qualityLabel = (key: DownloadQuality) => (
+  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label
 );
 
 const patchDownloadQuality = (value: DownloadQuality) => {
@@ -132,7 +132,7 @@ const chooseDir = async () => {
   }
 };
 
-const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Choose to select a download folder.' : '未设置，点击右侧按钮选择下载目录'); // 实现
+const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Choose to select a download folder.' : '未设置，点击右侧按钮选择下载目录');
 </script>
 
 <template>

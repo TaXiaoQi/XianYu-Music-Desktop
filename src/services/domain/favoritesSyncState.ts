@@ -68,9 +68,3 @@ export function removeLocalOnlyPaths(paths: Iterable<string>) {
   }
   if (changed) persistSet(LOCAL_ONLY_KEY, s);
 }
-
-export function clearFavoriteTombstones(paths: string[]) {
-  if (paths.length === 0) return;
-  removeCloudKeepPaths(paths);
-  removeLocalOnlyPaths(paths);
-}

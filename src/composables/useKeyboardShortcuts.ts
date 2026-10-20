@@ -42,7 +42,7 @@ const isGlobalShortcutOccupiedError = (error: unknown): boolean => {
     );
 };
 
-export function useGlobalShortcutStatus() { // 实现
+export function useGlobalShortcutStatus() {
     const occupiedActionIdSet = computed<Set<ShortcutActionId>>(
         () => new Set(occupiedGlobalShortcutActionIds.value),
     );
@@ -51,7 +51,7 @@ export function useGlobalShortcutStatus() { // 实现
 }
 
 /** 生成全局快捷键配置的指纹：开关状态 + 各动作加速键依次拼接 */
-export function createGlobalShortcutSyncKey(shortcuts: ShortcutSettings) { // 实现
+export function createGlobalShortcutSyncKey(shortcuts: ShortcutSettings) {
     const fragments: string[] = [
         shortcuts.globalEnabled ? "enabled" : "disabled",
     ];
@@ -66,7 +66,7 @@ export function createGlobalShortcutSyncKey(shortcuts: ShortcutSettings) { // �
     return fragments.join("\u001F");
 }
 
-export function useKeyboardShortcuts() { // 实现
+export function useKeyboardShortcuts() {
     const settingsStore = useSettings();
     const { settings } = settingsStore;
     const playback = usePlaybackController();

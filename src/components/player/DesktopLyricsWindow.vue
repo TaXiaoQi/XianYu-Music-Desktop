@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, ref } from "vue";
 
 import DesktopLyricsToolbar from "./DesktopLyricsToolbar.vue";

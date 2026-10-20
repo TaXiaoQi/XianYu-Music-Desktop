@@ -29,7 +29,7 @@ const collectUniquePaths = (input: string | string[]): string[] => {
     return unique;
 };
 
-export function useAddToPlaylistDialog() { // 实现
+export function useAddToPlaylistDialog() {
     const collectionsStore = useCollectionsStore();
     const { showToast } = useToast();
 

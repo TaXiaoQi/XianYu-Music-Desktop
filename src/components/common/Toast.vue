@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { useToast as useToastCenter } from "../../composables/toast";
 import ToastStatusIcon from "./toast/ToastStatusIcon.vue";
 

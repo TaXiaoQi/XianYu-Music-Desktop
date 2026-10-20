@@ -8,7 +8,6 @@ import { useLibraryCatalogSelectors } from "./useLibraryCatalogSelectors";
 import { useLibraryCollectionSelectors } from "./useLibraryCollectionSelectors";
 import { useLibraryCurrentViewSongs } from "./useLibraryCurrentViewSongs";
 import { useLibraryFolderSelectors } from "./useLibraryFolderSelectors";
-export type { AlbumListItem, ArtistListItem } from "./playerLibraryViewShared";
 
 // 这些视图模式都属于本地曲库范畴。
 const LOCAL_MUSIC_MODES: readonly string[] = ["all", "artist", "album"];

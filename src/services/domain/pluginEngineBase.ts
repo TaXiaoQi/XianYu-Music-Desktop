@@ -13,8 +13,8 @@ import { pluginApi } from '../tauri/pluginApi';
 
 // ==================== 常量 ====================
 
-export const PLUGIN_SOURCES_KEY = 'xianyu_plugin_sources_v4';
-export const PLUGIN_SOURCES_KEY_LEGACY = 'xianyu_plugin_sources_v3';
+const PLUGIN_SOURCES_KEY = 'xianyu_plugin_sources_v4';
+const PLUGIN_SOURCES_KEY_LEGACY = 'xianyu_plugin_sources_v3';
 export const MAX_PLUGIN_SIZE = 2 * 1024 * 1024;
 
 export const BUILTIN_PLUGINS: Record<string, string> = {};
@@ -46,7 +46,7 @@ export const _sandboxedPlugins = new Set<string>();
 
 // ==================== Cookie 管理（模拟 Electron session.cookies）====================
 
-export function getCookiesForUrl(url: string): string {
+function getCookiesForUrl(url: string): string {
   try {
     const urlObj = new URL(url);
     const domain = urlObj.hostname;
@@ -64,7 +64,7 @@ export function getCookiesForUrl(url: string): string {
   }
 }
 
-export function captureCookiesFromResponse(url: string, responseHeaders: Record<string, string>) {
+function captureCookiesFromResponse(url: string, responseHeaders: Record<string, string>) {
   try {
     const urlObj = new URL(url);
     const domain = urlObj.hostname;
@@ -178,7 +178,7 @@ async function tauriAdapter(config: any): Promise<any> {
 
 // ==================== MusicFree 包注入（与 plugin.ts 第15~46行完全一致）====================
 
-export const proxyAxios = axios.create({
+const proxyAxios = axios.create({
   adapter: tauriAdapter as any,
 });
 
@@ -194,8 +194,6 @@ proxyAxios.create = (config?: any) => {
 };
 
 // ==================== 通用小工具 ====================
-
-export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export function inferActualQualityFromPluginResult(
   result: any,
@@ -377,19 +375,19 @@ export function normalizePluginUserVariables(raw: unknown): PluginUserVariable[]
     .filter((item): item is PluginUserVariable => Boolean(item));
 }
 
-export function extractStringProperty(source: string, prop: string): string | undefined {
+function extractStringProperty(source: string, prop: string): string | undefined {
   const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`(?:^|[,\\s])${escaped}\\s*:\\s*(['"\`])([\\s\\S]*?)\\1`));
   return match?.[2]?.trim() || undefined;
 }
 
-export function extractBooleanProperty(source: string, prop: string): boolean | undefined {
+function extractBooleanProperty(source: string, prop: string): boolean | undefined {
   const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = source.match(new RegExp(`(?:^|[,\\s])${escaped}\\s*:\\s*(true|false)`));
   return match ? match[1] === 'true' : undefined;
 }
 
-export function extractBalancedArray(script: string, key: string): string | null {
+function extractBalancedArray(script: string, key: string): string | null {
   const keyIndex = script.indexOf(key);
   if (keyIndex < 0) return null;
   const colonIndex = script.indexOf(':', keyIndex + key.length);
@@ -636,7 +634,7 @@ export function setStoredPlugins(plugins: PluginSource[]): void {
 // 插件 id 是脚本内容哈希：更新即换 id 并删除旧条目，收藏/播放队列里存的
 // 旧 pluginId 靠这张表换算，避免来源标签降级「在线」、播放解析走启发式
 // 修复（键名与移动端一致，便于排查）
-export const PLUGIN_ID_ALIASES_KEY = 'xianyu_plugin_id_aliases_v1';
+const PLUGIN_ID_ALIASES_KEY = 'xianyu_plugin_id_aliases_v1';
 
 let _aliasCacheRaw: string | null = null;
 let _aliasCache: Record<string, string> = {};

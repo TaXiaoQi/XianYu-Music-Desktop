@@ -15,14 +15,14 @@ import { buildLibraryMatchIndex, resolveLocalPath } from './libraryMatch';
 
 // ==================== 端口（由 UI 层注入 store 实例与状态） ====================
 
-export interface FavoritesSyncCollectionsPort {
+interface FavoritesSyncCollectionsPort {
   favoritePaths: string[];
   favoriteSongMeta: Record<string, Song>;
   setFavoritePaths(paths: string[]): void;
   setFavoriteSongMetaMap(map: Record<string, Song>): void;
 }
 
-export interface FavoritesSyncLibraryPort {
+interface FavoritesSyncLibraryPort {
   songList: Song[];
   songLookup: Map<string, Song>;
   setExtraSongs(songs: Song[]): void;

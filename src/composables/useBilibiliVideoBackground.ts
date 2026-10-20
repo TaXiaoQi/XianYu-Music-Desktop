@@ -19,7 +19,7 @@ import type { PluginSearchResult, Song } from "../types";
 
 const videoUrl = ref("");
 const sourceSongPath = ref("");
-const loading = ref(false); // 实现
+const loading = ref(false);
 // 加载阶段：'resolve'=解析地址，'stream'=流式缓冲中（video 可播时置 ''，与移动端 phase 对齐）。
 const phase = ref<"" | "resolve" | "stream">("");
 // 流式缓冲进度（video 元素 buffered 相对当前播放位置的秒数）；-1 = 未知。
@@ -31,7 +31,7 @@ const syncOffsetSec = ref(0);
 const syncOffsetCache = new Map<string, number>();
 // 音频是否已交给 MV 自带音轨（true 时组件会取消视频静音并把歌曲音量淡出）。
 const audioTakenOver = ref(false);
-let requestVersion = 0; // 实现
+let requestVersion = 0;
 let activeSong: Song | null = null;
 
 const lastResolvedSource = ref<Pick<
@@ -45,9 +45,9 @@ const lastResolvedSource = ref<Pick<
     | "width"
 > | null>(null);
 
-const BILIBILI_IDENTITY_PATTERN = /bilibili|哔哩哔哩|哔哩|b站/i; // 实现
+const BILIBILI_IDENTITY_PATTERN = /bilibili|哔哩哔哩|哔哩|b站/i;
 const DEFAULT_MV_QUALITY = "720P";
-const BILIBILI_720P_QUALITY_ID = 64; // 实现
+const BILIBILI_720P_QUALITY_ID = 64;
 
 const MV_QUALITY_LADDER = ["4K", "1080P", "720P", "480P", "360P"];
 function mvQualityLadder(quality: string): string[] {
@@ -127,7 +127,7 @@ function hasMvIdentityHint(song: Song): boolean {
 }
 
 /// 把初始化/下载异常压成一句短原因（与移动端 _shortMvError 一致）。
-export function shortMvError(raw: string): string {
+function shortMvError(raw: string): string {
     const s = raw.toLowerCase();
     if (s.includes("timeout") || raw.includes("超时")) return "网络超时";
     if (s.includes("403") || s.includes("forbidden"))
@@ -173,7 +173,7 @@ function mvProbeKey(song: Song): string {
 /// 「确认无 MV」错误：整条解析链路（插件三档 + 兜底）都干净地返回了无结果，
 /// 没有发生任何插件异常。探测/显式开启据此缓存 false；普通解析异常
 /// （鉴权/网络等，被插件引擎吞成 null）属于存疑结果，不缓存。
-export class MvConfirmedNoResultError extends Error {
+class MvConfirmedNoResultError extends Error {
     constructor(message: string) {
         super(message);
         this.name = "MvConfirmedNoResultError";
@@ -243,7 +243,7 @@ export function mvProbeVerdict(
     return hasMvIdentityHint(song!) ? undefined : false;
 }
 
-function nestedValue(value: unknown, key: string): unknown { // 实现
+function nestedValue(value: unknown, key: string): unknown {
     if (!value || typeof value !== "object") return undefined;
     const record = value as Record<string, unknown>;
     return (
@@ -254,7 +254,7 @@ function nestedValue(value: unknown, key: string): unknown { // 实现
     );
 }
 
-function firstString(...values: unknown[]): string { // 实现
+function firstString(...values: unknown[]): string {
     return (
         values
             .find((value) => typeof value === "string" && value.trim())
@@ -403,7 +403,7 @@ async function resolveBilibiliVideoSource(
     };
 }
 
-export function isBilibiliPluginSong(song: Song | null | undefined): boolean { // 实现
+export function isBilibiliPluginSong(song: Song | null | undefined): boolean {
     if (!song || !song.path.startsWith("plugin://")) return false;
     const raw = song.rawData;
     if (nestedValue(raw, "bvid") || nestedValue(raw, "aid")) return true;
@@ -572,7 +572,7 @@ async function resolveKugouMvSource(
     };
 }
 
-function toPluginSearchResult(song: Song): PluginSearchResult { // 实现
+function toPluginSearchResult(song: Song): PluginSearchResult {
     const raw = song.rawData;
     if (
         raw &&
@@ -602,10 +602,10 @@ function toPluginSearchResult(song: Song): PluginSearchResult { // 实现
     };
 }
 
-function withBilibiliHeaders( // 实现
+function withBilibiliHeaders(
     headers: Record<string, string> | undefined,
     userAgent: string | undefined,
-): Record<string, string> { // 实现
+): Record<string, string> {
     const merged = { ...(headers || {}) };
     const lowerKeys = new Set(
         Object.keys(merged).map((key) => key.toLowerCase()),
@@ -722,7 +722,7 @@ async function runSyncAnalysis(
     }
 }
 
-export function useBilibiliVideoBackground() { // 实现
+export function useBilibiliVideoBackground() {
     const active = computed(() =>
         Boolean(videoUrl.value && sourceSongPath.value),
     );
@@ -732,7 +732,7 @@ export function useBilibiliVideoBackground() { // 实现
         requestVersion += 1;
         videoUrl.value = "";
         sourceSongPath.value = "";
-        loading.value = false; // 实现
+        loading.value = false;
         error.value = "";
         phase.value = "";
         bufferedSec.value = -1;
@@ -852,7 +852,7 @@ export function useBilibiliVideoBackground() { // 实现
     // video 元素可播：缓冲阶段结束，解除 loading。
     const notifyPlayable = () => {
         if (phase.value !== "stream") return;
-        loading.value = false; // 实现
+        loading.value = false;
         phase.value = "";
         bufferedSec.value = 0;
     };
@@ -860,7 +860,7 @@ export function useBilibiliVideoBackground() { // 实现
     // video 元素 error：解除 loading，避免 title 卡在「缓冲中」。
     const notifyVideoError = () => {
         if (!phase.value) return;
-        loading.value = false; // 实现
+        loading.value = false;
         phase.value = "";
         bufferedSec.value = -1;
     };

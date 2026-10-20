@@ -35,7 +35,7 @@ function buildSongFromRustResult(
     (song as any)._songmid = result.songmid;
     (song as any)._source = result.source;
     return song;
-} // 实现
+}
 function cacheLxItemFromRustResult(
     result: AlternativeSourceResultContract,
 ): void {
@@ -77,11 +77,11 @@ function cacheLxItemFromRustResult(
         copyrightId: result.copyrightId || undefined,
         source: result.source,
     });
-} // 实现
-export async function findAlternativeLxSource( // 实现
+}
+export async function findAlternativeLxSource(
     song: Song,
     failedSources: Set<string>,
-): Promise<Song | null> { // 实现
+): Promise<Song | null> {
     const artistStr = song.effective_artist_names?.length
         ? song.effective_artist_names.join("、")
         : song.artist || "";
@@ -99,7 +99,7 @@ export async function findAlternativeLxSource( // 实现
         console.warn(`[lxSourceFallback] Rust 换源失败: ${e?.message || e}`);
         return null;
     }
-} // 实现
-export function getLxSourceDisplayName(source: string): string { // 实现
+}
+export function getLxSourceDisplayName(source: string): string {
     return LX_SOURCE_NAMES[source as LxSourceId] ?? "在线";
-} // 实现
+}

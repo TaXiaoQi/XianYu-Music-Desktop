@@ -9,7 +9,7 @@ export type {
   SettingsConflictChoice,
 } from '../services/domain/sync/settingsSyncService';
 
-export interface SettingsConflictState {
+interface SettingsConflictState {
   visible: boolean;
   localTimestamp: number;
   cloudTimestamp: number;
@@ -36,7 +36,7 @@ export function showSettingsConflict(
   });
 }
 
-export function resolveSettingsConflict(choice: SettingsConflictChoice): void {
+function resolveSettingsConflict(choice: SettingsConflictChoice): void {
   const state = conflictState.value;
   if (state.resolver) {
     state.resolver(choice);

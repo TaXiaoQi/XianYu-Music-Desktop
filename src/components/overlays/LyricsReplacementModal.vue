@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { LoaderCircle, X } from "lucide-vue-next";
@@ -16,26 +16,26 @@ import {
     type LyricsSearchSourceStatus,
 } from "../../services/domain/lyricsReplacement";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     visible: boolean;
     song: Song | null;
 }>();
 
-const emit = defineEmits<{ // 实现
+const emit = defineEmits<{
     (event: "close"): void;
 }>();
 
-const { showToast } = useToast(); // 实现
+const { showToast } = useToast();
 const activeMethod = ref<"local" | "plugin">("local");
 const searchQuery = ref("");
-const pluginGroups = ref<LyricsPluginGroup[]>([]); // 实现
+const pluginGroups = ref<LyricsPluginGroup[]>([]);
 const activePluginId = ref("");
-const isSearching = ref(false); // 实现
-const searchAttempted = ref(false); // 实现
+const isSearching = ref(false);
+const searchAttempted = ref(false);
 const applyingCandidateId = ref("");
-const isUploading = ref(false); // 实现
+const isUploading = ref(false);
 const operationError = ref("");
-let searchRequestId = 0; // 实现
+let searchRequestId = 0;
 
 const activePlugin = computed(
     () =>
@@ -46,7 +46,7 @@ const activePlugin = computed(
         null,
 );
 
-const resultCount = computed(() => // 实现
+const resultCount = computed(() =>
     pluginGroups.value.reduce(
         (total, plugin) =>
             total +
@@ -74,14 +74,14 @@ const sourceStatusLabel = (status: LyricsSearchSourceStatus) =>
         unsupported: "不支持",
     })[status];
 
-const formatDuration = (seconds: number) => { // 实现
+const formatDuration = (seconds: number) => {
     if (!seconds || !Number.isFinite(seconds)) return "--:--";
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 };
 
-const resetModal = () => { // 实现
+const resetModal = () => {
     searchRequestId += 1;
     activeMethod.value = "plugin";
     searchQuery.value = props.song
@@ -92,7 +92,7 @@ const resetModal = () => { // 实现
     isSearching.value = false;
     searchAttempted.value = false;
     applyingCandidateId.value = "";
-    isUploading.value = false; // 实现
+    isUploading.value = false;
     operationError.value = "";
 };
 
@@ -110,16 +110,16 @@ watch(
     },
 );
 
-const close = () => { // 实现
+const close = () => {
     if (isUploading.value || applyingCandidateId.value) return;
     emit("close");
 };
 
-const handleKeydown = (event: KeyboardEvent) => { // 实现
+const handleKeydown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && props.visible) close();
 };
 
-onMounted(() => { // 实现
+onMounted(() => {
     window.addEventListener("keydown", handleKeydown);
     if (props.visible) {
         resetModal();
@@ -130,7 +130,7 @@ onMounted(() => { // 实现
 });
 onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
 
-const handleUpload = async () => { // 实现
+const handleUpload = async () => {
     if (!props.song || isUploading.value) return;
     operationError.value = "";
 
@@ -155,7 +155,7 @@ const handleUpload = async () => { // 实现
     }
 };
 
-const handleSearch = async () => { // 实现
+const handleSearch = async () => {
     const query = searchQuery.value.trim();
     if (!query || isSearching.value) return;
 
@@ -178,7 +178,7 @@ const handleSearch = async () => { // 实现
     }
 };
 
-const handleApplyCandidate = async (candidate: LyricsSearchCandidate) => { // 实现
+const handleApplyCandidate = async (candidate: LyricsSearchCandidate) => {
     if (!props.song || applyingCandidateId.value) return;
     applyingCandidateId.value = candidate.id;
     operationError.value = "";

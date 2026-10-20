@@ -4,7 +4,7 @@
  * 清理时先剔除过期项，再按插入序逐出最老的条目直至容量达标。
  */
 
-type MemoryCacheOptions = { // 实现
+type MemoryCacheOptions = {
     maxEntries: number;
     ttlMs: number;
 };
@@ -14,7 +14,7 @@ type CacheCell<V> = {
     expiresAt: number;
 };
 
-type MemoryCacheStats = { // 实现
+type MemoryCacheStats = {
     size: number;
     hits: number;
     misses: number;

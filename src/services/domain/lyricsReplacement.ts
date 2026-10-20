@@ -30,7 +30,7 @@ const VALID_LX_SOURCES: ReadonlySet<string> = new Set([
 ]);
 const ONLINE_PATH_RE = /^[a-z][a-z\d+.-]*:\/\//i; 
 
-export type LyricsSearchCandidate = // 实现
+export type LyricsSearchCandidate =
     | {
           id: string;
           kind: "musicfree";
@@ -60,7 +60,7 @@ export type LyricsSearchCandidate = // 实现
 export type LyricsSearchSourceStatus =
     "success" | "empty" | "error" | "unsupported";
 
-export interface LyricsSearchSourceGroup { // 实现
+interface LyricsSearchSourceGroup {
     id: string;
     sourceName: string;
     candidates: LyricsSearchCandidate[];
@@ -69,7 +69,7 @@ export interface LyricsSearchSourceGroup { // 实现
     searchProvider: "plugin" | "app-catalog";
 }
 
-export interface LyricsPluginGroup { // 实现
+export interface LyricsPluginGroup {
     pluginId: string;
     pluginName: string;
     pluginFormat: PluginSource["format"];
@@ -88,17 +88,17 @@ const sortedEnabledPlugins = () =>
         })
         .map(({ plugin }) => plugin);
 
-const parseLxDuration = (interval: string): number => { // 实现
+const parseLxDuration = (interval: string): number => {
     const parts = interval.split(":").map(Number);
     if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part)))
         return 0;
     return parts[0] * 60 + parts[1];
 };
 
-const createMusicFreeGroup = async ( // 实现
+const createMusicFreeGroup = async (
     plugin: PluginSource,
     query: string,
-): Promise<LyricsPluginGroup> => { // 实现
+): Promise<LyricsPluginGroup> => {
     const diagnostics = await pluginMusicSearchWithDiagnostics(
         plugin,
         query,
@@ -118,8 +118,8 @@ const createMusicFreeGroup = async ( // 实现
                 : "error";
 
     return {
-        pluginId: plugin.id, // 实现
-        pluginName: plugin.name, // 实现
+        pluginId: plugin.id,
+        pluginName: plugin.name,
         pluginFormat: plugin.format,
         formatLabel: plugin.format === "anime" ? "anime" : "MusicFree",
         sources: [
@@ -149,12 +149,12 @@ const createMusicFreeGroup = async ( // 实现
     };
 };
 
-const createLxSourceGroup = async ( // 实现
+const createLxSourceGroup = async (
     plugin: PluginSource,
     sourceId: LxSourceId,
     query: string,
     state: LxPluginState,
-): Promise<LyricsSearchSourceGroup> => { // 实现
+): Promise<LyricsSearchSourceGroup> => {
     const groupId = `${plugin.id}:${sourceId}`;
     const sourceName = LX_SOURCE_NAMES[sourceId] || sourceId.toUpperCase();
     const sourceInfo = state.initInfo?.sources[sourceId];
@@ -218,10 +218,10 @@ const createLxSourceGroup = async ( // 实现
     }
 };
 
-const createLxPluginGroup = async ( // 实现
+const createLxPluginGroup = async (
     plugin: PluginSource,
     query: string,
-): Promise<LyricsPluginGroup> => { // 实现
+): Promise<LyricsPluginGroup> => {
     const sourceIds = [
         ...new Set(
             plugin.sources.filter((source) => VALID_LX_SOURCES.has(source)),
@@ -281,8 +281,8 @@ const createLxPluginGroup = async ( // 实现
     }
 
     return {
-        pluginId: plugin.id, // 实现
-        pluginName: plugin.name, // 实现
+        pluginId: plugin.id,
+        pluginName: plugin.name,
         pluginFormat: plugin.format,
         formatLabel: "LX",
         sources: await Promise.all(
@@ -293,7 +293,7 @@ const createLxPluginGroup = async ( // 实现
     };
 };
 
-export const createDefaultLyricsSearchQuery = (song: Song) => // 实现
+export const createDefaultLyricsSearchQuery = (song: Song) =>
     [song.title || song.name, song.artist]
         .map((value) => value?.trim())
         .filter(Boolean)
@@ -366,10 +366,10 @@ export async function getLyricsForCandidate(
     );
     const lyrics = result ? buildLxLyricsRaw(result) : "";
     if (!lyrics.trim()) throw new Error("该搜索结果没有返回歌词");
-    return lyrics; // 实现
+    return lyrics;
 }
 
-export const isRuntimeOnlyLyricsSong = (song: Song) => // 实现
+const isRuntimeOnlyLyricsSong = (song: Song) =>
     song.source_type === "remote" || ONLINE_PATH_RE.test(song.path);
 
 export async function applyLyricsReplacement(
@@ -406,6 +406,6 @@ export async function applyLyricsReplacement(
         ...playbackStore.currentSong,
         lyrics_raw: normalizedLyrics,
     };
-    await loadLyrics(normalizedLyrics); // 实现
+    await loadLyrics(normalizedLyrics);
     return "runtime";
 }

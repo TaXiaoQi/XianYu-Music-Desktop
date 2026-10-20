@@ -8,9 +8,9 @@ import {
 const getStorage = () =>
     typeof localStorage === "undefined" ? null : localStorage;
 
-const showOnboarding = ref(resolveInitialOnboardingVisibility(getStorage())); // 实现
+const showOnboarding = ref(resolveInitialOnboardingVisibility(getStorage()));
 
-export function useOnboarding() { // 实现
+export function useOnboarding() {
     const triggerOnboarding = () => {
         const storage = getStorage();
         storage?.removeItem(ONBOARDING_STORAGE_KEY);

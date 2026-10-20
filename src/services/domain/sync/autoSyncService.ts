@@ -3,7 +3,7 @@ import { fetchServerListenSummary } from '../leaderboardReport';
 
 // ==================== 端口（由 UI 层注入各域流程与登录同步状态） ====================
 
-export interface AutoSyncTaskSet {
+interface AutoSyncTaskSet {
   uploadPlaylists(): Promise<unknown>;
   downloadPlaylistsOnly(): Promise<unknown>;
   uploadPluginsOnly(): Promise<unknown>;

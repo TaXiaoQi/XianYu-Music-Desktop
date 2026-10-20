@@ -211,7 +211,7 @@
     </div>
 </template>
 
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { ref, computed } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";

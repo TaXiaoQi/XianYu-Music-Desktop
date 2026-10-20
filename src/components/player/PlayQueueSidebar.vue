@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { usePlayer } from '../../features/playback';

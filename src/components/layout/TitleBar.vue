@@ -1,18 +1,18 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { X, Clock, Trash2, Flame } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router'; // 实现
+import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
-import { usePlayerViewState } from '../../composables/usePlayerViewState'; // 实现
-import { useThemeSettings } from '../../composables/useThemeSettings'; // 实现
+import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import { useAnnouncement } from '../../composables/useAnnouncement';
-import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { windowApi } from '../../services/tauri/windowApi';
-import { useAuthStore } from '../../features/auth/store'; // 实现
+import { useAuthStore } from '../../features/auth/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { useSettings } from '../../features/settings/useSettings';
-import { useI18n } from '../../features/i18n'; // 实现
+import { useI18n } from '../../features/i18n';
 import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
@@ -21,36 +21,36 @@ import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue'; // 识�
 import TopBarControlItem from './TopBarControlItem.vue';
 import TopBarControlIcon from './TopBarControlIcon.vue';
 
-const router = useRouter(); // 实现
-const route = useRoute(); // 实现
+const router = useRouter();
+const route = useRoute();
 const showRecognition = ref(false); // 面板显隐
 const toggleRecognition = () => { // 切换显隐
   showRecognition.value = !showRecognition.value; // 取反状态
 }; // 切换结束
-const { searchQuery, setSearch, isMiniMode } = usePlayerViewState(); // 实现
-const appWindow = getCurrentWindow(); // 实现
+const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
+const appWindow = getCurrentWindow();
 const { settings, topBarLayout } = useSettings();
-const { t } = useI18n(); // 实现
+const { t } = useI18n();
 const { theme, isDarkTheme, toggleThemeMode, setThemeMode } = useThemeSettings();
 const { surfaceStyle } = useDesktopTheme();
 const uiStore = useUiStore();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
-const authStore = useAuthStore(); // 实现
+const authStore = useAuthStore();
 const navigationStore = useNavigationStore();
 const rotation = ref(0);
-const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath); // 实现
+const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath);
 const lastNonAuthRoute = ref(route.path === '/auth' ? '/' : route.fullPath);
-const isSettingsRoute = computed(() => route.path === '/settings'); // 实现
-const isAuthRoute = computed(() => route.path === '/auth'); // 实现
-const hasCustomBackground = computed(() => ( // 实现
-  theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath) // 实现
+const isSettingsRoute = computed(() => route.path === '/settings');
+const isAuthRoute = computed(() => route.path === '/auth');
+const hasCustomBackground = computed(() => (
+  theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath)
 ));
-const themeToggleTitle = computed(() => { // 实现
-  if (hasCustomBackground.value) { // 实现
-    return isDarkTheme.value ? t('topbar.darkText') : t('topbar.lightText'); // 实现
+const themeToggleTitle = computed(() => {
+  if (hasCustomBackground.value) {
+    return isDarkTheme.value ? t('topbar.darkText') : t('topbar.lightText');
   }
 
-  return isDarkTheme.value ? t('topbar.lightTheme') : t('topbar.darkTheme'); // 实现
+  return isDarkTheme.value ? t('topbar.lightTheme') : t('topbar.darkTheme');
 });
 
 // --- 顶部栏容器化布局 ---
@@ -60,8 +60,8 @@ const rightControls = computed(() => layout.value.right);
 
 const accountTitle = computed(() =>
   authStore.isLoggedIn
-    ? (authStore.user?.nickname || authStore.user?.username || t('topbar.profile')) // 实现
-    : t('topbar.login'), // 实现
+    ? (authStore.user?.nickname || authStore.user?.username || t('topbar.profile'))
+    : t('topbar.login'),
 );
 const accountAvatar = computed(() => (authStore.isLoggedIn ? authStore.user?.avatar ?? null : null));
 const accountInitial = computed(() =>
@@ -247,9 +247,9 @@ const closeWindow = async () => {
   }
 };
 
-onMounted(() => { // 实现
-  if (!authStore.initialized) { // 实现
-    void authStore.restoreSession(); // 实现
+onMounted(() => {
+  if (!authStore.initialized) {
+    void authStore.restoreSession();
   }
 });
 

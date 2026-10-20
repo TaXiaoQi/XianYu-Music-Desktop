@@ -21,7 +21,7 @@ const TX_TOPLIST_IDS = [26, 4, 27, 62, 60, 63, 58, 65, 66, 6, 3, 17];
 
 const WY_UA = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36';
 
-export interface LxToplistEntry {
+interface LxToplistEntry {
   id: string;
   title: string;
   coverImg: string;
@@ -34,7 +34,7 @@ export interface LxToplistGroup {
   data: LxToplistEntry[];
 }
 
-export interface LxToplistSongItem {
+interface LxToplistSongItem {
   name: string;
   singer: string;
   album_name: string;
@@ -410,7 +410,7 @@ const TOPLIST_DETAIL_FETCHERS: Record<string, (id: string, page: number, limit: 
   tx: txToplistDetail,
 };
 
-export async function lxToplistGetTopLists(sources: string[]): Promise<LxToplistGroup[]> {
+async function lxToplistGetTopLists(sources: string[]): Promise<LxToplistGroup[]> {
   const buckets = await Promise.all((sources ?? []).map(async (s) => {
     const fn = TOPLIST_FETCHERS[s];
     if (!fn) return [];
@@ -425,7 +425,7 @@ export async function lxToplistGetTopLists(sources: string[]): Promise<LxToplist
   return entries.length > 0 ? [{ title: '音源榜单', data: entries }] : [];
 }
 
-export async function lxToplistGetTopListDetail(
+async function lxToplistGetTopListDetail(
   source: string,
   id: string,
   page = 1,

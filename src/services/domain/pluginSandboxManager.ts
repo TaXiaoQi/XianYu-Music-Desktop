@@ -214,7 +214,7 @@ function isAuthError(msg: string): boolean {
   return /API密钥|API\s*key|api[_\s-]?secret|卡密|\b40[13]\b|鉴权失效已临时熔断/i.test(msg);
 }
 
-export function isPluginAuthBanned(pluginId: string): boolean {
+function isPluginAuthBanned(pluginId: string): boolean {
   const until = _authBannedUntil.get(pluginId);
   if (until === undefined) return false;
   if (Date.now() > until) {

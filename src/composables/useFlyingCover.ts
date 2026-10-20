@@ -1,7 +1,6 @@
 import { ref } from 'vue';
 import { usePlaybackStore } from '../features/playback/store';
 
-
 const FLY_DURATION = 520;
 const FADE_DURATION = 220;
 const FLY_EASING = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
@@ -12,10 +11,6 @@ let currentFlyId = 0;
 export const isFlyingCover = ref(false);
 
 let currentFlyPromise: Promise<void> | null = null;
-
-export function getFlyCoverPromise(): Promise<void> | null {
-  return currentFlyPromise;
-}
 
 export function consumeFlyCoverPromise(): Promise<void> | null {
   const promise = currentFlyPromise;
@@ -246,9 +241,4 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
 
   currentFlyPromise = flyPromise;
   return flyPromise;
-}
-
-export function cancelFlyingCover(): void {
-  currentFlyId++;
-  isFlyingCover.value = false;
 }

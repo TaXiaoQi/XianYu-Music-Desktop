@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent, provide, ref, watch, onMounted, onUnmounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, FileCode2 } from 'lucide-vue-next';
 import { useToast } from '../../composables/toast';
-import type { PluginSource } from '../../types'; // 实现
+import type { PluginSource } from '../../types';
 import { getStoredPlugins, loadPlugins, removePluginSource, togglePlugin, log, pluginsVersion } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
@@ -72,9 +72,9 @@ async function fetchRemoteScript(url: string, cancelled?: () => boolean): Promis
   return '';
 }
 const props = withDefaults(defineProps<{
-  overlayZClass?: string; // 实现
+  overlayZClass?: string;
 }>(), {
-  overlayZClass: 'z-[200]', // 实现
+  overlayZClass: 'z-[200]',
 });
 
 const overlayZMatch = props.overlayZClass.match(/z-\[(\d+)\]/);
@@ -169,9 +169,9 @@ const {
   handleCheckAllUpdates,
 } = usePluginUpdates({ refreshPluginList });
 
-onMounted(async () => { // 实现
+onMounted(async () => {
   await loadPlugins(pluginSettings.value.lazyLoad);
-  plugins.value = getStoredPlugins(); // 实现
+  plugins.value = getStoredPlugins();
   void refreshUserVarBadges();
   void refreshBakaBadges();
   setupDragDropListeners();
@@ -184,7 +184,7 @@ watch(pluginsVersion, () => {
 
 onUnmounted(() => {
   stopDragging();
-}); // 实现
+});
 
 function toggleSubscriptionPanel() {
   const willOpen = !showSubscriptionPanel.value;
@@ -215,7 +215,7 @@ function toggleInstallFromFilePanel() {
 }
 
 // ==================== 插件管理 ====================
-const showUninstallAllConfirm = ref(false); // 实现
+const showUninstallAllConfirm = ref(false);
 
 const showPluginDeleteScope = ref(false);
 const pluginDeleteScopeIds = ref<string[]>([]);
@@ -223,26 +223,26 @@ const pluginScopeCanDeleteCloud = computed(() =>
   pluginDeleteScopeIds.value.some(id => getSyncedPluginIds().has(id)),
 );
 
-function handleUninstallAll() { // 实现
-  if (plugins.value.length === 0) return; // 实现
+function handleUninstallAll() {
+  if (plugins.value.length === 0) return;
   if (getCiyuanxiId() && plugins.value.some(p => isPluginSynced(p.id))) {
     pluginDeleteScopeIds.value = plugins.value.map(p => p.id);
     showPluginDeleteScope.value = true;
     return;
   }
-  showUninstallAllConfirm.value = true; // 实现
+  showUninstallAllConfirm.value = true;
 }
 
-function confirmUninstallAll() { // 实现
-  for (const p of [...plugins.value]) { // 实现
-    removePluginSource(p.id); // 实现
-  } // 实现
-  refreshPluginList(); // 实现
-  showUninstallAllConfirm.value = false; // 实现
-  showToast('已卸载全部插件', 'success'); // 实现
+function confirmUninstallAll() {
+  for (const p of [...plugins.value]) {
+    removePluginSource(p.id);
+  }
+  refreshPluginList();
+  showUninstallAllConfirm.value = false;
+  showToast('已卸载全部插件', 'success');
 }
 
-function handleUninstallPlugin(plugin: PluginSource) { // 实现
+function handleUninstallPlugin(plugin: PluginSource) {
   pluginDeleteScopeIds.value = [plugin.id];
   showPluginDeleteScope.value = true;
 }
@@ -288,25 +288,25 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
   if (syncedIds.length > 0) {
     addDownloadSkipIds(syncedIds);
   }
-  refreshPluginList(); // 实现
+  refreshPluginList();
   showToast(`已从本机删除 ${ids.length} 个插件（云端保留）`, 'success');
 }
 
-async function handleTogglePlugin(plugin: PluginSource) { // 实现
-  const result = await togglePlugin(plugin.id); // 实现
-  if (result.success) { // 实现
-    refreshPluginList(); // 实现
-    showToast(`${result.enabled ? '已启用' : '已禁用'} ${plugin.name}`, 'success'); // 实现
-  } else { // 实现
-    showToast(result.message || '操作失败', 'error'); // 实现
-  } // 实现
+async function handleTogglePlugin(plugin: PluginSource) {
+  const result = await togglePlugin(plugin.id);
+  if (result.success) {
+    refreshPluginList();
+    showToast(`${result.enabled ? '已启用' : '已禁用'} ${plugin.name}`, 'success');
+  } else {
+    showToast(result.message || '操作失败', 'error');
+  }
 }
 
 // ==================== 插件详情弹窗 ====================
-const detailPlugin = ref<PluginSource | null>(null); // 实现
+const detailPlugin = ref<PluginSource | null>(null);
 
-function openPluginDetail(plugin: PluginSource) { // 实现
-  detailPlugin.value = plugin; // 实现
+function openPluginDetail(plugin: PluginSource) {
+  detailPlugin.value = plugin;
 }
 </script>
 

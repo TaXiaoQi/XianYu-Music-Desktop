@@ -55,7 +55,7 @@ const isMainWindowLowPower = computed(() =>
 );
 
 /** 读取渲染快照与低功耗状态的共享入口 */
-export function useRenderingPower() { // 实现
+export function useRenderingPower() {
     return {
         mainWindowRenderingSnapshot: snapshotRef,
         isMainWindowLowPower,
@@ -63,7 +63,7 @@ export function useRenderingPower() { // 实现
 }
 
 /** 在主窗口挂载：监听焦点 / 尺寸 / 页面可见性变化并维护快照 */
-export function useMainWindowRenderingPower() { // 实现
+export function useMainWindowRenderingPower() {
     const appWindow = getCurrentWindow();
     const { isMiniMode } = storeToRefs(useUiStore());
     const disposers: Array<() => void> = [];

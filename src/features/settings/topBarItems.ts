@@ -1,27 +1,17 @@
 import type {
-  TopBarContainerKey,
   TopBarItemKey,
   TopBarLayoutSettings,
 } from '../../types';
 
-export const TOPBAR_MAX_VISIBLE_CONTROLS = 5;
+const TOPBAR_MAX_VISIBLE_CONTROLS = 5;
 
-export const TOPBAR_CONTAINERS: TopBarContainerKey[] = ['left', 'right'];
-
-export const TOPBAR_FIXED_ITEMS: TopBarItemKey[] = ['search', 'settings'];
+const TOPBAR_FIXED_ITEMS: TopBarItemKey[] = ['search', 'settings'];
 
 export const DEFAULT_TOPBAR_LAYOUT: TopBarLayoutSettings = {
   left: ['back'],
   right: ['theme', 'colorScheme', 'settings', 'account'],
   hidden: ['announcement'],
 };
-
-export const TOPBAR_CONTAINER_LABELS: Record<TopBarContainerKey, { label: string; hint: string }> = {
-  left: { label: '左侧容器', hint: '紧邻窗口左边缘' },
-  right: { label: '右侧容器', hint: '紧邻设置与窗口控制' },
-};
-
-export type TopBarMoveTarget = TopBarContainerKey | 'collapsed';
 
 export interface TopBarItemMeta {
   key: TopBarItemKey;
@@ -41,11 +31,9 @@ export const TOPBAR_ITEMS: TopBarItemMeta[] = [
   { key: 'colorScheme',    label: '配色方案', description: '外观配色方案快速入口', icon: 'palette', fixed: false },
 ];
 
-export const TOPBAR_CONTROL_KEYS: TopBarItemKey[] = TOPBAR_ITEMS
+const TOPBAR_CONTROL_KEYS: TopBarItemKey[] = TOPBAR_ITEMS
   .filter(item => item.key !== 'search')
   .map(item => item.key);
-
-export const TOPBAR_DISPLAY_KEYS: TopBarItemKey[] = TOPBAR_ITEMS.map(item => item.key);
 
 export const getTopBarItemMeta = (key: TopBarItemKey): TopBarItemMeta | undefined =>
   TOPBAR_ITEMS.find(item => item.key === key);
@@ -131,45 +119,11 @@ export const computeTopBarCollapsedItems = (layout: TopBarLayoutSettings): TopBa
   return TOPBAR_CONTROL_KEYS.filter(key => key !== 'settings' && (hidden.has(key) || !assigned.has(key)));
 };
 
-export const findTopBarItemContainer = (
-  layout: TopBarLayoutSettings,
-  key: TopBarItemKey,
-): TopBarMoveTarget => {
-  if (layout.left.includes(key)) return 'left';
-  if (layout.right.includes(key)) return 'right';
-  return 'collapsed';
-};
-
-export const moveTopBarItemTo = (
-  layout: TopBarLayoutSettings,
-  key: TopBarItemKey,
-  target: TopBarMoveTarget,
-): TopBarLayoutSettings | null => {
-  if (key === 'search') return normalizeTopBarLayout(layout);
-  if (key === 'settings' && target === 'collapsed') return normalizeTopBarLayout(layout);
-
-  const next: TopBarLayoutSettings = {
-    left: layout.left.filter(k => k !== key),
-    right: layout.right.filter(k => k !== key),
-    hidden: layout.hidden.filter(k => k !== key),
-  };
-
-  if (target === 'collapsed') {
-    return normalizeTopBarLayout({ ...next, hidden: [...next.hidden, key] });
-  }
-
-  if (next.left.length + next.right.length >= TOPBAR_MAX_VISIBLE_CONTROLS) {
-    return null;
-  }
-  next[target].push(key);
-  return normalizeTopBarLayout(next);
-};
-
 export type TopBarPreviewSlot =
   | 'left-0' | 'left-1' | 'left-2' | 'left-3' | 'left-4'
   | 'right-0' | 'right-1' | 'right-2' | 'right-3' | 'right-4';
 
-export const TOPBAR_PREVIEW_SLOTS: TopBarPreviewSlot[] = [
+const TOPBAR_PREVIEW_SLOTS: TopBarPreviewSlot[] = [
   'left-0', 'left-1', 'left-2', 'left-3', 'left-4',
   'right-0', 'right-1', 'right-2', 'right-3', 'right-4',
 ];

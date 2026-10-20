@@ -1,10 +1,10 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { Check, ChevronDown, CircleHelp, Minus, Plus } from 'lucide-vue-next';
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
 import { usePluginHostStore } from '../../features/pluginHost/store';
-import { useI18n } from '../../features/i18n'; // 实现
+import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import SettingsPluginHost from './SettingsPluginHost.vue';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
@@ -21,13 +21,13 @@ import {
 import RangeSlider from '../common/RangeSlider.vue';
 import SettingHint from './SettingHint.vue';
 import {
-  LYRICS_SYNC_OFFSET_MAX_MS, // 实现
-  LYRICS_SYNC_OFFSET_MIN_MS, // 实现
-  LYRICS_SYNC_OFFSET_STEP_MS, // 实现
-  normalizeLyricsSyncOffsetMs, // 实现
-} from '../../features/settings/lyricsSyncOffset'; // 实现
+  LYRICS_SYNC_OFFSET_MAX_MS,
+  LYRICS_SYNC_OFFSET_MIN_MS,
+  LYRICS_SYNC_OFFSET_STEP_MS,
+  normalizeLyricsSyncOffsetMs,
+} from '../../features/settings/lyricsSyncOffset';
 
-const { settings, patchSettings } = useSettings(); // 实现
+const { settings, patchSettings } = useSettings();
 const playbackStore = usePlaybackStore();
 const soundEffectStore = useSoundEffectStore();
 const pluginHostStore = usePluginHostStore();
@@ -97,7 +97,7 @@ function handleRackSupportPopoverOutsideClick(event: MouseEvent) {
   }
 }
 
-const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。'; // 实现
+const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
 const showVolumeBalancePopover = ref(false);
 const volumeBalancePopoverRef = ref<HTMLElement | null>(null);
 const volumeBalanceTriggerRef = ref<HTMLElement | null>(null);
@@ -173,9 +173,9 @@ const showFallbackBehaviorModal = ref(false);
 const showMvQualityModal = ref(false);
 const showShareFailureBehaviorModal = ref(false);
 
-const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [ // 实现
-  { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' }, // 实现
-  { label: 'Stop Playback', description: 'Stop playback and wait for manual action', value: 'stop' }, // 实现
+const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
+  { label: 'Stop Playback', description: 'Stop playback and wait for manual action', value: 'stop' },
   { label: 'Auto Switch Source', description: 'Retry via sibling plugins / alternative sources for the same song; falls back to stop when exhausted', value: 'autoswitch' },
 ] : [
   { label: '跳到下一首', description: '自动播放队列中的下一首歌曲', value: 'skip' },
@@ -183,10 +183,10 @@ const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; 
   { label: '自动换源',   description: '同平台插件重试 + 跨平台换源重播同一首歌，全部无果后停止', value: 'autoswitch' },
 ]);
 
-const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [ // 实现
-  { label: 'Pause', description: 'Do not try another quality; pause and wait for manual action', value: 'pause' }, // 实现
-  { label: 'Play Lower Quality', description: 'Automatically use the nearest lower available quality', value: 'lower' }, // 实现
-  { label: 'Play Higher Quality', description: 'Automatically use the nearest higher available quality', value: 'higher' }, // 实现
+const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Pause', description: 'Do not try another quality; pause and wait for manual action', value: 'pause' },
+  { label: 'Play Lower Quality', description: 'Automatically use the nearest lower available quality', value: 'lower' },
+  { label: 'Play Higher Quality', description: 'Automatically use the nearest higher available quality', value: 'higher' },
 ] : [
   { label: '暂停',         description: '不尝试其他音质，暂停等待用户操作', value: 'pause' },
   { label: '播放更低音质', description: '自动降级到可用的更低音质',         value: 'lower' },
@@ -217,13 +217,13 @@ const handleValidityChange = (value: number) => {
   patchSettings({ shareLinkValidityMinutes: Math.max(5, Math.min(1440, num)) });
 };
 
-const ENGLISH_QUALITY_LABELS: Partial<Record<OnlineDefaultQuality, string>> = { // 实现
-  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ', // 实现
-  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos', // 实现
-  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master', // 实现
+const ENGLISH_QUALITY_LABELS: Partial<Record<OnlineDefaultQuality, string>> = {
+  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ',
+  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos',
+  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master',
 };
-const qualityLabel = (key: OnlineDefaultQuality) => ( // 实现
-  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label // 实现
+const qualityLabel = (key: OnlineDefaultQuality) => (
+  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label
 );
 
 const isPlayingOnlineSong = () => {
@@ -240,11 +240,11 @@ const patchOnlineQuality = (value: OnlineDefaultQuality) => {
   if (isPlayingOnlineSong()) {
     const available = playbackStore.currentAvailableQualities;
     if (available && !available.includes(value)) {
-      showToast(isEnglish.value // 实现
-        ? `This track does not support ${qualityLabel(value)}. The new setting will apply to the next track.` // 实现
-        : `当前歌曲不支持 ${QUALITY_META[value].label}，新设置将在下一首生效`, 'info'); // 实现
+      showToast(isEnglish.value
+        ? `This track does not support ${qualityLabel(value)}. The new setting will apply to the next track.`
+        : `当前歌曲不支持 ${QUALITY_META[value].label}，新设置将在下一首生效`, 'info');
     } else {
-      showToast(isEnglish.value ? 'The quality setting will apply to the next track' : '音质设置将在下一首歌曲生效', 'info'); // 实现
+      showToast(isEnglish.value ? 'The quality setting will apply to the next track' : '音质设置将在下一首歌曲生效', 'info');
     }
   }
 };
@@ -277,7 +277,7 @@ const handleFallbackBehaviorSelect = (value: OnlineQualityFallbackBehavior) => {
 const patchQualityFallback = (value: OnlineQualityFallbackBehavior) => {
   patchSettings({ audio: { ...settings.value.audio, onlineQualityFallbackBehavior: value } });
   if (isPlayingOnlineSong()) {
-    showToast(isEnglish.value ? 'The fallback behavior will apply to the next track' : '回退行为将在下一首歌曲生效', 'info'); // 实现
+    showToast(isEnglish.value ? 'The fallback behavior will apply to the next track' : '回退行为将在下一首歌曲生效', 'info');
   }
 };
 
@@ -297,10 +297,10 @@ const wasapiExclusiveSideEffectTip = '开启后会独占播放设备：其他软
 let unlistenAudioOutput: UnlistenFn | null = null;
 
 const lyricsSyncOffsetMs = computed({
-  get: () => normalizeLyricsSyncOffsetMs(settings.value.lyricsSyncOffset * 1000), // 实现
+  get: () => normalizeLyricsSyncOffsetMs(settings.value.lyricsSyncOffset * 1000),
   set: (value: number | string) => {
     const numericValue = typeof value === 'string' ? parseFloat(value) : value;
-    const next = normalizeLyricsSyncOffsetMs(numericValue); // 实现
+    const next = normalizeLyricsSyncOffsetMs(numericValue);
     settings.value.lyricsSyncOffset = next / 1000;
   }
 });
@@ -308,7 +308,7 @@ const lyricsSyncOffsetMs = computed({
 const handleLyricsSyncOffsetChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const numericValue = parseFloat(target.value);
-  const next = normalizeLyricsSyncOffsetMs(numericValue); // 实现
+  const next = normalizeLyricsSyncOffsetMs(numericValue);
   target.value = String(next);
   lyricsSyncOffsetMs.value = next;
 };
@@ -325,10 +325,10 @@ const isWasapiExclusiveEnabled = computed(
 
 let suppressModeReplay = false;
 
-const defaultOutputDeviceName = computed(() => isEnglish.value ? 'System Default' : '系统默认'); // 实现
-const outputDeviceOptions = computed(() => buildAudioOutputDeviceOptions( // 实现
-  audioOutputDevices.value, // 实现
-  defaultOutputDeviceName.value, // 实现
+const defaultOutputDeviceName = computed(() => isEnglish.value ? 'System Default' : '系统默认');
+const outputDeviceOptions = computed(() => buildAudioOutputDeviceOptions(
+  audioOutputDevices.value,
+  defaultOutputDeviceName.value,
 ));
 
 const selectedOutputDeviceLabel = computed(() => (
@@ -336,7 +336,7 @@ const selectedOutputDeviceLabel = computed(() => (
     outputDeviceOptions.value,
     selectedOutputDeviceId.value,
     audioOutputStatus.value,
-    defaultOutputDeviceName.value, // 实现
+    defaultOutputDeviceName.value,
   )
 ));
 
@@ -389,7 +389,7 @@ const handleOutputDeviceSelect = async (deviceId: string) => {
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
   } catch (error) {
     console.error('Failed to update audio output device:', error);
-    showToast(isEnglish.value ? 'Could not switch the playback device' : '切换播放设备失败', 'error'); // 实现
+    showToast(isEnglish.value ? 'Could not switch the playback device' : '切换播放设备失败', 'error');
     selectedOutputDeviceId.value = audioOutputStatus.value?.selected_device_id ?? '';
   } finally {
     isChangingOutputDevice.value = false;
@@ -415,7 +415,7 @@ const toggleWasapiExclusive = async () => {
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice(), { skipModeSync: true });
   } catch (error) {
     console.error('Failed to update audio output mode:', error);
-    showToast(isEnglish.value ? 'Could not switch the audio output mode' : '切换音频输出模式失败', 'error'); // 实现
+    showToast(isEnglish.value ? 'Could not switch the audio output mode' : '切换音频输出模式失败', 'error');
   } finally {
     suppressModeReplay = false;
   }
@@ -528,8 +528,8 @@ const resetLyricsSyncOffset = () => {
   lyricsSyncOffsetMs.value = 0;
 };
 
-const adjustLyricsSyncOffset = (delta: number) => { // 实现
-  lyricsSyncOffsetMs.value = lyricsSyncOffsetMs.value + delta; // 实现
+const adjustLyricsSyncOffset = (delta: number) => {
+  lyricsSyncOffsetMs.value = lyricsSyncOffsetMs.value + delta;
 };
 
 onMounted(async () => {

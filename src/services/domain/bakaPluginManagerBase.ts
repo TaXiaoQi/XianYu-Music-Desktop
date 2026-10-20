@@ -29,7 +29,7 @@ export const catalogLog = (msg: string) => {
   log(msg);
 };
 
-export const describeResultWrapper = (r: any): string => {
+const describeResultWrapper = (r: any): string => {
   if (!r || typeof r !== 'object') return `type=${typeof r}`;
   const keys = Object.keys(r).filter(k => k !== 'isEnd').join(',') || '空对象';
   let len = 0;
@@ -52,7 +52,7 @@ export const firstStringField = (source: any, keys: string[]): string => {
   return '';
 };
 
-export const normalizeHeaderMap = (headers: any): Record<string, string> => {
+const normalizeHeaderMap = (headers: any): Record<string, string> => {
   if (!headers || typeof headers !== 'object' || Array.isArray(headers)) {
     return {};
   }
@@ -298,10 +298,6 @@ export function isNeteaseLikeSource(source: PluginSource, mediaItem: any): boole
   return text.includes('网易') || text.includes('netease') || /\bwy\b/.test(text);
 }
 
-export function isNeteaseMusicPluginSource(source: PluginSource): boolean {
-  return isNeteaseLikeSource(source, null);
-}
-
 export function isNeteaseOuterUrl(urlLike: string): boolean {
   try {
     const url = new URL(urlLike);
@@ -358,7 +354,7 @@ export function cleanKugouPluginUrl(raw: unknown): string {
   return url;
 }
 
-export function getHeaderValue(headers: Record<string, string> | undefined, name: string): string {
+function getHeaderValue(headers: Record<string, string> | undefined, name: string): string {
   if (!headers) return '';
   const target = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
@@ -549,7 +545,7 @@ export async function probeNeteaseOuterUrl(
   }
 }
 
-export function readQualityHash(mediaItem: any, qualityKey: QualityKey): string {
+function readQualityHash(mediaItem: any, qualityKey: QualityKey): string {
   const qualities = mediaItem?.qualities;
   const fromQuality = qualities?.[qualityKey]?.hash;
   if (typeof fromQuality === 'string' && fromQuality.trim()) return fromQuality.trim();
@@ -578,7 +574,7 @@ export function readQualityHash(mediaItem: any, qualityKey: QualityKey): string 
   }
 }
 
-export function adaptKugouMediaItemForQuality(mediaItem: any, qualityKey: QualityKey): any {
+function adaptKugouMediaItemForQuality(mediaItem: any, qualityKey: QualityKey): any {
   const selectedHash = readQualityHash(mediaItem, qualityKey);
   if (!selectedHash) {
     return mediaItem;

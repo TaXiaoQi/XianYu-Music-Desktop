@@ -320,15 +320,6 @@ export function applyServerFallbackModules(modules: ServerFallbackModule[]): {
   return { added, removed };
 }
 
-export function getCachedFallbackModuleVersions(): Partial<Record<FallbackModuleKey, number>> {
-  const modules = readCacheModules();
-  const result: Partial<Record<FallbackModuleKey, number>> = {};
-  for (const key of Object.keys(modules) as FallbackModuleKey[]) {
-    result[key] = modules[key]?.version;
-  }
-  return result;
-}
-
 export function clearFallbackModules(): void {
   localStore.remove(STORAGE_KEY);
   _loaded.clear();

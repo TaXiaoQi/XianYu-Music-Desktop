@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 歌手视图：首字母分组 + 固定行高的虚拟滚动，头像按需加载并缓存分组标题用图。
 defineOptions({
   name: 'Artists',
@@ -132,10 +132,10 @@ function persistSnapshotCovers() {
   for (const element of Array.from(box.querySelectorAll<HTMLElement>('[data-cover-path]'))) {
     if (picked.length >= SNAPSHOT_MAX_COUNT) break;
 
-    const path = element.dataset.coverPath; // 实现
+    const path = element.dataset.coverPath;
     if (!path || seen.has(path)) continue;
 
-    const rect = element.getBoundingClientRect(); // 实现
+    const rect = element.getBoundingClientRect();
     if (rect.bottom < upperEdge || rect.top > lowerEdge) continue;
 
     const url = resolveCoverSrc(path);
@@ -212,7 +212,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     for (let offset = 0; offset < group.entries.length; offset += cols) {
       const groupTail = offset + cols >= group.entries.length;
       rows.push({
-        type: 'items', // 实现
+        type: 'items',
         key: ['items', group.key, String(offset)].join('::'),
         items: group.entries.slice(offset, offset + cols),
         bottomGap: groupTail ? GROUP_GAP_Y : ROW_GAP_Y,
@@ -220,7 +220,7 @@ const sectionRows = computed<GroupRow[]>(() => {
     }
   }
 
-  return rows; // 实现
+  return rows;
 });
 
 // 行高固定：标题行为 GROUP_TITLE_HEIGHT，内容行为头像块 + 行距。
@@ -276,7 +276,7 @@ const floatingGroupTitle = computed(() => {
   if (titleRows.length === 0) return null;
 
   const scrollTop = currentScrollTop.value;
-  let activeIndex = 0; // 实现
+  let activeIndex = 0;
   for (let i = 0; i < titleRows.length; i += 1) {
     if (titleRows[i].top > scrollTop) break;
     activeIndex = i;
@@ -339,7 +339,7 @@ const coverPathsInView = computed(() => {
 
 // 每次刷新都重建观察器：先断开旧的，再观察当前所有封面元素。
 async function setupCoverObserver() {
-  await nextTick(); // 实现
+  await nextTick();
   if (coverWatcher) coverWatcher.disconnect();
   const box = scrollBoxRef.value;
   if (!box) return;
@@ -381,7 +381,7 @@ const artistGradients = [
 
 // 按名字哈希稳定地挑一种渐变。
 function gradientFor(name: string): string {
-  let hash = 0; // 实现
+  let hash = 0;
   for (let i = 0; i < name.length; i += 1) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
@@ -510,11 +510,11 @@ function onCardPointerMove(_event: PointerEvent, artistName: string) {
 }
 
 function onDocClick(event: MouseEvent) {
-  const target = event.target as HTMLElement; // 实现
+  const target = event.target as HTMLElement;
   if (!target.closest('.relative.z-50')) sortMenuOpen.value = false;
 }
 
-onMounted(() => { // 实现
+onMounted(() => {
   syncLayoutMetrics();
   playGridEnterAnimation();
   window.addEventListener('pointermove', onWindowPointerMove);
@@ -534,7 +534,7 @@ onMounted(() => { // 实现
 
 onBeforeUnmount(() => { persistSnapshotCovers(); });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
   clearTimeout(gridEnterTimer);
   window.removeEventListener('pointermove', onWindowPointerMove);
   window.removeEventListener('pointerup', onWindowPointerUp);

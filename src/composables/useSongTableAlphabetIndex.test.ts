@@ -14,7 +14,7 @@ vi.mock("vue", async (importOriginal) => {
     };
 });
 
-const makeSong = (path: string): Song => ({ // 实现
+const makeSong = (path: string): Song => ({
     path,
     name: path.split("/").pop() || "demo.flac",
     title: "Demo",

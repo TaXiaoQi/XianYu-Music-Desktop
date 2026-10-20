@@ -4,14 +4,14 @@
 //   3) 原生窗口材质（mica / acrylic / blur）与其激活态。
 // 首轮同步通过 whenInitialThemeSynced 暴露为 Promise，供启动期透明合成
 // 流程等待；焦点恢复与启动显示前的重建逻辑都复用同一套代际守卫防串扰。
-import { getCurrentWindow } from '@tauri-apps/api/window'; // 实现
-import type { UnlistenFn } from '@tauri-apps/api/event'; // 实现
-import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'; // 实现
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { UnlistenFn } from '@tauri-apps/api/event';
+import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
 
-import { useWindowMaterial } from './windowMaterial'; // 实现
-import { useThemeSettings } from './useThemeSettings'; // 实现
+import { useWindowMaterial } from './windowMaterial';
+import { useThemeSettings } from './useThemeSettings';
 import { windowApi } from '../services/tauri/windowApi';
-import { applyThemeColorToDocument } from '../utils/themeColor'; // 实现
+import { applyThemeColorToDocument } from '../utils/themeColor';
 import { applyDarkClassWithTransition } from './themeTransition';
 
 /** 焦点恢复后的追加补同步延迟：DWM 恢复模糊透明窗口比焦点事件慢一拍 */
@@ -19,14 +19,14 @@ const FOCUS_RESYNC_DELAY_MS = 120;
 /** 启动期材质重建延迟：等待首帧布局稳定后再重建合成器材质 */
 const STARTUP_REBUILD_DELAY_MS = 180;
 
-export function useAppThemeSync() { // 实现
+export function useAppThemeSync() {
   const {
     activeWindowMaterial: currentMaterial,
     applyWindowMaterial: pushWindowMaterial,
     rebuildWindowMaterialForCompositor: rebuildCompositorMaterial,
     loadWindowMaterialCapabilities: queryMaterialCapabilities,
-  } = useWindowMaterial(); // 实现
-  const { theme, isDarkTheme } = useThemeSettings(); // 实现
+  } = useWindowMaterial();
+  const { theme, isDarkTheme } = useThemeSettings();
   const hostWindow = getCurrentWindow();
 
   const materialPresent = computed(() => currentMaterial.value !== 'none');
@@ -85,8 +85,8 @@ export function useAppThemeSync() { // 实现
     const nativeThemeValue = theme.value.mode === 'system' ? null : isDarkTheme.value ? 'dark' : 'light';
     try {
       await hostWindow.setTheme(nativeThemeValue);
-    } catch (error) { // 实现
-      console.warn('Failed to set window theme:', error); // 实现
+    } catch (error) {
+      console.warn('Failed to set window theme:', error);
     }
   };
 
@@ -96,7 +96,7 @@ export function useAppThemeSync() { // 实现
 
     try {
       await windowApi.refreshWindowMaterialActiveState(theme.value.keepWindowMaterialOnBlur);
-    } catch (error) { // 实现
+    } catch (error) {
       console.warn('Failed to refresh window material active state:', error);
     }
   };
@@ -175,7 +175,7 @@ export function useAppThemeSync() { // 实现
     if (theme.value.windowMaterial === 'none') return;
 
     cancelDeferredResync();
-    await rebuildMaterialComposition(); // 实现
+    await rebuildMaterialComposition();
     suppressNextFocusResync = true;
   };
 
@@ -201,16 +201,16 @@ export function useAppThemeSync() { // 实现
     () => {
       void resyncThemeAndMaterial();
     },
-    { immediate: true }, // 实现
+    { immediate: true },
   );
 
   watch(
-    () => theme.value.accentColor, // 实现
+    () => theme.value.accentColor,
     (accentColor) => applyThemeColorToDocument(accentColor),
-    { immediate: true }, // 实现
+    { immediate: true },
   );
 
-  onMounted(() => { // 实现
+  onMounted(() => {
     void hostWindow
       .onFocusChanged(({ payload: focused }) => {
         if (!focused && !theme.value.keepWindowMaterialOnBlur) return;
@@ -221,7 +221,7 @@ export function useAppThemeSync() { // 实现
       });
   });
 
-  onBeforeUnmount(() => { // 实现
+  onBeforeUnmount(() => {
     cancelDeferredResync();
 
     if (detachFocusWatcher) {

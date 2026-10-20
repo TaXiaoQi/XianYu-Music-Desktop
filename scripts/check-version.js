@@ -1,4 +1,4 @@
-#!/usr/bin/env node // 实现
+#!/usr/bin/env node
 
 /**
  * 版本号一致性检查脚本
@@ -11,8 +11,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __filename = fileURLToPath(import.meta.url); // 实现
-const __dirname = path.dirname(__filename); // 实现
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 
 const versionTsPath = path.join(rootDir, "version.ts");
@@ -22,11 +22,11 @@ const tauriConfigPath = path.join(rootDir, "src-tauri", "tauri.conf.json");
 const cargoTomlPath = path.join(rootDir, "src-tauri", "Cargo.toml");
 const cargoLockPath = path.join(rootDir, "src-tauri", "Cargo.lock");
 
-function readJson(filePath) { // 实现
+function readJson(filePath) {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
-function readCargoVersion(filePath) { // 实现
+function readCargoVersion(filePath) {
     const content = fs.readFileSync(filePath, "utf8");
     const match = content.match(/^version\s*=\s*"([^"]+)"$/m);
 
@@ -37,7 +37,7 @@ function readCargoVersion(filePath) { // 实现
     return match[1];
 }
 
-function readCargoLockVersion(filePath, packageName) { // 实现
+function readCargoLockVersion(filePath, packageName) {
     const content = fs.readFileSync(filePath, "utf8");
     const match = content.match(
         new RegExp(
@@ -63,17 +63,17 @@ function readVersionFromTs(filePath) {
 }
 
 const cargoTomlContent = fs.readFileSync(cargoTomlPath, "utf8");
-const cargoPackageNameMatch = cargoTomlContent.match(/^name\s*=\s*"([^"]+)"$/m); // 实现
+const cargoPackageNameMatch = cargoTomlContent.match(/^name\s*=\s*"([^"]+)"$/m);
 
-if (!cargoPackageNameMatch) { // 实现
+if (!cargoPackageNameMatch) {
     console.error("Could not find package name in src-tauri/Cargo.toml");
     process.exit(1);
 }
 
-const cargoPackageName = cargoPackageNameMatch[1]; // 实现
+const cargoPackageName = cargoPackageNameMatch[1];
 const sourceVersion = readVersionFromTs(versionTsPath);
 
-const versions = { // 实现
+const versions = {
     "version.ts": sourceVersion,
     "package.json": readJson(packageJsonPath).version,
     "package-lock.json": readJson(packageLockPath).version,
@@ -86,7 +86,7 @@ const versions = { // 实现
 };
 
 console.log("Current versions:");
-for (const [file, version] of Object.entries(versions)) { // 实现
+for (const [file, version] of Object.entries(versions)) {
     console.log(`- ${file}: ${version}`);
 }
 

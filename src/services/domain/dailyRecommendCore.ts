@@ -435,7 +435,7 @@ function withProbeTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-export async function probePluginAlive(source: PluginSource, keyword: string): Promise<boolean> {
+async function probePluginAlive(source: PluginSource, keyword: string): Promise<boolean> {
   const cached = _aliveProbes.get(source.id);
   if (cached && Date.now() - cached.at < ALIVE_PROBE_TTL_MS) return cached.alive;
   let alive = false;

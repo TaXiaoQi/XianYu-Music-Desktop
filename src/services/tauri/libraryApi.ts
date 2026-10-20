@@ -23,7 +23,7 @@ type LibrarySortMode =
 type FolderViewSortMode =
     "title" | "name" | "artist" | "added_at" | "added_at_asc" | "track_number";
 
-export const libraryApi = { // 实现
+export const libraryApi = {
     getLibraryFolders: (): Promise<LibraryFolder[]> =>
         tauriInvoke("get_library_folders"),
     getLibraryHierarchy: (): Promise<FolderNode[]> =>

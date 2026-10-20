@@ -17,7 +17,7 @@ const PROXY_COVER_DOMAINS = [
   'toutiao.com',
 ];
 
-export function needsCoverProxy(url: string): boolean {
+function needsCoverProxy(url: string): boolean {
   if (!url) return false;
   if (url.startsWith('data:') || url.startsWith('asset:')) return false;
   try {
@@ -84,10 +84,4 @@ export async function tryProxyImage(url: string): Promise<string | null> {
   } finally {
     proxyPending.delete(url);
   }
-}
-
-export function clearCoverProxyCache(): void {
-  coverProxyCache.clear();
-  coverProxyAttempted.clear();
-  proxyPending.clear();
 }

@@ -9,7 +9,7 @@ import { fetchWithTimeout } from '../services/domain/pluginFetch';
 import { pluginApi } from '../services/tauri/pluginApi';
 
 /** 与 Rust 侧 PLUGIN_LX_UPDATE_ALERT_EVENT 对应 */
-export const LX_UPDATE_ALERT_EVENT = 'plugin-lx-update-alert';
+const LX_UPDATE_ALERT_EVENT = 'plugin-lx-update-alert';
 
 export interface LxUpdateAlert {
   pluginId: string;
@@ -53,7 +53,7 @@ function handleLxUpdateAlertPayload(raw: unknown): void {
 }
 
 /** 监听 Rust 插件引擎转发来的 LX 插件自报更新事件 */
-export async function startLxUpdateAlertListener(): Promise<void> {
+async function startLxUpdateAlertListener(): Promise<void> {
   if (started) return;
   started = true;
   try {
@@ -67,7 +67,7 @@ export async function startLxUpdateAlertListener(): Promise<void> {
 }
 
 /** 「稍后」：仅关闭当前弹窗，同内容本会话不再重复弹出 */
-export function dismissLxUpdateAlert(): void {
+function dismissLxUpdateAlert(): void {
   queue.value.shift();
 }
 
@@ -75,7 +75,7 @@ export function dismissLxUpdateAlert(): void {
  * 「立即更新」：拉取 updateUrl 脚本并原位替换插件（对齐 LX 原生行为）。
  * 内容不是脚本或插件已被移除时，回退为打开更新页。
  */
-export async function confirmLxUpdateAlert(): Promise<void> {
+async function confirmLxUpdateAlert(): Promise<void> {
   const alert = currentLxUpdateAlert.value;
   if (!alert || isApplyingUpdate.value) return;
   if (!alert.updateUrl) {

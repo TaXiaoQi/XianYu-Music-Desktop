@@ -1,14 +1,11 @@
 
 export type {
-  RecommendStrategyType,
-  DailyRecommendStrategy,
   DailyRecommendAlgorithm,
   DailyRecommendItem,
   DailyRecommendResult,
 } from './dailyRecommendTypes';
 export { DailyRecommendError } from './dailyRecommendTypes';
 
-export { clearDailyRecommendCache } from './dailyRecommendCache';
 export { anyBoundSearchableDrive } from './dailyRecommendCore';
 
 import { getStoredAuth } from '../auth/authService';

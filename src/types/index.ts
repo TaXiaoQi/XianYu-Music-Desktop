@@ -1,43 +1,43 @@
-export interface SongCore { // 实现
+interface SongCore {
   id?: number;
-  name: string; // 实现
-  title?: string; // 实现
-  path: string; // 实现
-  artist: string; // 实现
-  artist_names: string[]; // 实现
-  effective_artist_names: string[]; // 实现
-  album: string; // 实现
-  album_artist: string; // 实现
-  album_key: string; // 实现
-  is_various_artists_album: boolean; // 实现
-  collapse_artist_credits: boolean; // 实现
-  duration: number; // 实现
-  cover_thumb_path?: string; // 实现
-  genre?: string; // 实现
-  year?: string; // 实现
-  bitrate?: number; // 实现
-  sample_rate?: number; // 实现
-  bit_depth?: number; // 实现
-  format?: string; // 实现
-  container?: string; // 实现
-  codec?: string; // 实现
-  file_size?: number; // 实现
-  track_number?: string; // 实现
-  disc_number?: string; // 实现
-  added_at?: number; // 实现
-  file_modified_at?: number; // 实现
-  source_type?: 'local' | 'remote' | 'plugin'; // 实现
+  name: string;
+  title?: string;
+  path: string;
+  artist: string;
+  artist_names: string[];
+  effective_artist_names: string[];
+  album: string;
+  album_artist: string;
+  album_key: string;
+  is_various_artists_album: boolean;
+  collapse_artist_credits: boolean;
+  duration: number;
+  cover_thumb_path?: string;
+  genre?: string;
+  year?: string;
+  bitrate?: number;
+  sample_rate?: number;
+  bit_depth?: number;
+  format?: string;
+  container?: string;
+  codec?: string;
+  file_size?: number;
+  track_number?: string;
+  disc_number?: string;
+  added_at?: number;
+  file_modified_at?: number;
+  source_type?: 'local' | 'remote' | 'plugin';
   /** 本软件内手动添加（导入歌单从源端更新时跳过删除） */
   addedInApp?: boolean;
-  remote_source_id?: string; // 实现
+  remote_source_id?: string;
   remote_requested_quality?: QualityKey;
   remote_fallback_behavior?: OnlineQualityFallbackBehavior;
   remote_actual_quality?: QualityKey;
-  plugin_id?: string; // 实现
-  cue_source_path?: string; // 实现
-  cue_start_offset?: number; // 实现
-  cue_end_offset?: number; // 实现
-  comment?: string; // 实现
+  plugin_id?: string;
+  cue_source_path?: string;
+  cue_start_offset?: number;
+  cue_end_offset?: number;
+  comment?: string;
   lyrics_raw?: string;
   rawData?: any;
   remote_headers?: Record<string, string>;
@@ -45,70 +45,70 @@ export interface SongCore { // 实现
   remote_cek?: string;
 }
 
-export interface Song extends SongCore {} // 实现
+export interface Song extends SongCore {}
 
-export type LibrarySong = Omit<Song, 'container' | 'codec' | 'file_size' | 'genre' | 'year'>; // 实现
+export type LibrarySong = Omit<Song, 'container' | 'codec' | 'file_size' | 'genre' | 'year'>;
 
-export interface SongDetail { // 实现
-  path: string; // 实现
-  genre?: string; // 实现
-  year?: string; // 实现
-  track_number?: string; // 实现
-  disc_number?: string; // 实现
-  comment?: string; // 实现
-  container?: string; // 实现
-  codec?: string; // 实现
-  file_size?: number; // 实现
+export interface SongDetail {
+  path: string;
+  genre?: string;
+  year?: string;
+  track_number?: string;
+  disc_number?: string;
+  comment?: string;
+  container?: string;
+  codec?: string;
+  file_size?: number;
 }
 
-export interface ArtistCatalogItem { // 实现
+export interface ArtistCatalogItem {
   id: number;
-  name: string; // 实现
-  count: number; // 实现
-  firstSongPath: string; // 实现
-  avatarPath: string | null; // 实现
+  name: string;
+  count: number;
+  firstSongPath: string;
+  avatarPath: string | null;
 }
 
-export interface AlbumCatalogItem { // 实现
-  key: string; // 实现
-  name: string; // 实现
-  count: number; // 实现
-  artist: string; // 实现
-  firstSongPath: string; // 实现
+export interface AlbumCatalogItem {
+  key: string;
+  name: string;
+  count: number;
+  artist: string;
+  firstSongPath: string;
 }
 
-export interface RecentAlbumCatalogItem { // 实现
-  key: string; // 实现
-  name: string; // 实现
-  artist: string; // 实现
-  playedAt: number; // 实现
-  firstSongPath: string; // 实现
+export interface RecentAlbumCatalogItem {
+  key: string;
+  name: string;
+  artist: string;
+  playedAt: number;
+  firstSongPath: string;
 }
 
-export interface RecentPlaylistCatalogItem { // 实现
+export interface RecentPlaylistCatalogItem {
   id: string;
-  name: string; // 实现
-  count: number; // 实现
-  playedAt: number; // 实现
-  firstSongPath: string; // 实现
+  name: string;
+  count: number;
+  playedAt: number;
+  firstSongPath: string;
 }
 
-export interface HistoryItem { // 实现
-  path: string; // 实现
-  playedAt: number; // 实现
+export interface HistoryItem {
+  path: string;
+  playedAt: number;
 }
 
-export interface Playlist { // 实现
+export interface Playlist {
   id: string;
-  name: string; // 实现
-  songPaths: string[]; // 实现
-  createdAt?: string; // 实现
-  coverPath?: string; // 实现
-  songs?: Song[]; // 实现
+  name: string;
+  songPaths: string[];
+  createdAt?: string;
+  coverPath?: string;
+  songs?: Song[];
   cloudId?: string;
   isCloud?: boolean;
-  cloudCoverUrl?: string; // 实现
-  isFavorite?: boolean; // 实现
+  cloudCoverUrl?: string;
+  isFavorite?: boolean;
   /** 来源插件 id（MusicFree 插件 id 或 wy|tx|kw|kg 平台），用于从源端更新 */
   sourcePluginId?: string;
   /** 来源链接或 ID（平台歌单链接/ID、收藏夹链接或 ID） */
@@ -117,124 +117,124 @@ export interface Playlist { // 实现
   sourceRaw?: any;
 }
 
-export interface LibraryFolder { // 实现
-  path: string; // 实现
-  song_count: number; // 实现
+export interface LibraryFolder {
+  path: string;
+  song_count: number;
 }
 
-export type RemoteSourceProvider = 'webdav'; // 实现
+type RemoteSourceProvider = 'webdav';
 
-export interface RemoteSource { // 实现
+export interface RemoteSource {
   id: string;
-  name: string; // 实现
-  provider: RemoteSourceProvider; // 实现
-  baseUrl: string; // 实现
-  username: string | null; // 实现
-  rootPath: string; // 实现
-  enabled: boolean; // 实现
-  lastSyncAt: number | null; // 实现
-  lastSyncError: string | null; // 实现
-  createdAt: number; // 实现
-  updatedAt: number; // 实现
+  name: string;
+  provider: RemoteSourceProvider;
+  baseUrl: string;
+  username: string | null;
+  rootPath: string;
+  enabled: boolean;
+  lastSyncAt: number | null;
+  lastSyncError: string | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
-export interface RemoteSourceInput { // 实现
-  id?: string; // 实现
-  name: string; // 实现
-  provider: RemoteSourceProvider; // 实现
-  baseUrl: string; // 实现
-  username?: string | null; // 实现
-  password?: string | null; // 实现
-  rootPath?: string | null; // 实现
+export interface RemoteSourceInput {
+  id?: string;
+  name: string;
+  provider: RemoteSourceProvider;
+  baseUrl: string;
+  username?: string | null;
+  password?: string | null;
+  rootPath?: string | null;
 }
 
-export interface RemoteConnectionResult { // 实现
-  ok: boolean; // 实现
-  message: string; // 实现
+export interface RemoteConnectionResult {
+  ok: boolean;
+  message: string;
 }
 
-export interface RemoteSyncResult { // 实现
-  sourceId: string; // 实现
-  indexedFiles: number; // 实现
-  audioFiles: number; // 实现
-  parsedSongs: number; // 实现
+export interface RemoteSyncResult {
+  sourceId: string;
+  indexedFiles: number;
+  audioFiles: number;
+  parsedSongs: number;
 }
 
-export interface RemoteFileEntry { // 实现
-  remotePath: string; // 实现
-  name: string; // 实现
-  size: number; // 实现
-  etag: string | null; // 实现
-  modifiedAt: string | null; // 实现
-  isDir: boolean; // 实现
+export interface RemoteFileEntry {
+  remotePath: string;
+  name: string;
+  size: number;
+  etag: string | null;
+  modifiedAt: string | null;
+  isDir: boolean;
 }
 
-export interface RemoteCacheUsage { // 实现
-  bytes: number; // 实现
-  files: number; // 实现
-  limitBytes: number; // 实现
+export interface RemoteCacheUsage {
+  bytes: number;
+  files: number;
+  limitBytes: number;
 }
 
-export type RemoteSyncPhase = 'scanning' | 'parsing' | 'writing' | 'complete' | 'error'; // 实现
+type RemoteSyncPhase = 'scanning' | 'parsing' | 'writing' | 'complete' | 'error';
 
-export interface RemoteSyncProgress { // 实现
-  sourceId: string; // 实现
-  phase: RemoteSyncPhase; // 实现
-  current: number; // 实现
-  total: number; // 实现
-  message: string; // 实现
-  done: boolean; // 实现
-  failed: boolean; // 实现
+export interface RemoteSyncProgress {
+  sourceId: string;
+  phase: RemoteSyncPhase;
+  current: number;
+  total: number;
+  message: string;
+  done: boolean;
+  failed: boolean;
 }
 
-export interface RemoteDownloadProgress { // 实现
-  uri: string; // 实现
-  downloaded: number; // 实现
-  total: number | null; // 实现
-  percent: number | null; // 实现
-  done: boolean; // 实现
-  failed: boolean; // 实现
-  message: string | null; // 实现
+export interface RemoteDownloadProgress {
+  uri: string;
+  downloaded: number;
+  total: number | null;
+  percent: number | null;
+  done: boolean;
+  failed: boolean;
+  message: string | null;
 }
 
-export interface FolderNode { // 实现
-  name: string; // 实现
-  path: string; // 实现
-  children: FolderNode[]; // 实现
-  child_count: number; // 实现
-  children_loaded: boolean; // 实现
-  song_count: number; // 实现
-  cover_song_path: string | null; // 实现
-  is_expanded: boolean; // 实现
-  is_loading?: boolean; // 实现
+export interface FolderNode {
+  name: string;
+  path: string;
+  children: FolderNode[];
+  child_count: number;
+  children_loaded: boolean;
+  song_count: number;
+  cover_song_path: string | null;
+  is_expanded: boolean;
+  is_loading?: boolean;
   cloudProviderId?: string; // 网盘节点：provider id
   cloudAccountId?: string; // 网盘节点：账号 id
   cloudDirPath?: string; // 网盘节点：盘内目录路径（'/'=根；id 型盘为目录 id）
 }
 
-export type LibraryScanPhase = 'collecting' | 'parsing' | 'writing' | 'complete' | 'error'; // 实现
-export type LibraryScanTrigger = 'bootstrap' | 'first-import' | 'manual-rescan' | 'folder-add'; // 实现
-export type LibraryScanVisibility = 'silent' | 'hero' | 'inline'; // 实现
+type LibraryScanPhase = 'collecting' | 'parsing' | 'writing' | 'complete' | 'error';
+export type LibraryScanTrigger = 'bootstrap' | 'first-import' | 'manual-rescan' | 'folder-add';
+export type LibraryScanVisibility = 'silent' | 'hero' | 'inline';
 
-export interface LibraryScanProgress { // 实现
-  phase: LibraryScanPhase; // 实现
-  current: number; // 实现
-  total: number; // 实现
-  folder_path: string; // 实现
-  folder_index: number; // 实现
-  folder_total: number; // 实现
-  message: string | null; // 实现
-  done: boolean; // 实现
-  failed: boolean; // 实现
+export interface LibraryScanProgress {
+  phase: LibraryScanPhase;
+  current: number;
+  total: number;
+  folder_path: string;
+  folder_index: number;
+  folder_total: number;
+  message: string | null;
+  done: boolean;
+  failed: boolean;
 }
 
-export interface LibraryScanSession { // 实现
-  trigger: LibraryScanTrigger; // 实现
-  visibility: LibraryScanVisibility; // 实现
-  startedAt: number; // 实现
-  hadLibraryFoldersAtStart: boolean; // 实现
-  hadSongsAtStart: boolean; // 实现
-  sourcePath?: string; // 实现
+export interface LibraryScanSession {
+  trigger: LibraryScanTrigger;
+  visibility: LibraryScanVisibility;
+  startedAt: number;
+  hadLibraryFoldersAtStart: boolean;
+  hadSongsAtStart: boolean;
+  sourcePath?: string;
 }
 
 /** 写实唱机底座材质：浅灰（默认）/ 哑光深灰 / 橡木 / 大理石 */
@@ -254,7 +254,7 @@ export interface SleepTimerSnapshot {
 }
 
 export type DesktopThemeMode = 'light' | 'dark';
-export type DesktopQuickEntryShape = 'circle' | 'rounded' | 'square';
+type DesktopQuickEntryShape = 'circle' | 'rounded' | 'square';
 
 export interface DesktopThemeSurface {
   color: string;
@@ -281,12 +281,12 @@ export interface PerPageBackground {
   foregroundStyle: 'light' | 'dark';
 }
 
-export interface ThemeSettings { // 实现
+export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
-  accentColor: string; // 实现
+  accentColor: string;
   desktopTheme: DesktopThemeVisuals;
-  playerDetailCoverBehavior: 'show' | 'hide' | 'remember'; // 实现
-  lastPlayerDetailCoverVisible: boolean; // 实现
+  playerDetailCoverBehavior: 'show' | 'hide' | 'remember';
+  lastPlayerDetailCoverVisible: boolean;
   /** 播放详情页皮肤：classic=经典方形封面，vinyl=黑胶唱片（UI 移植自 mozarta-nexus/music-web-player） */
   playerDetailStyle: 'classic' | 'vinyl';
   /** 播放详情页多边形流光背景（Voronoi 网格：随机边数多边形缓慢漂移） */
@@ -299,33 +299,33 @@ export interface ThemeSettings { // 实现
   playerDetailVinylMaterial: VinylPlinthMaterial;
   /** 黑胶模式外圈转盘样式（金属光泽 / 经典黑胶） */
   playerDetailVinylPlatterStyle: VinylPlatterStyle;
-  dynamicBgType: 'none' | 'flow' | 'blur'; // 实现
-  windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur'; // 实现
+  dynamicBgType: 'none' | 'flow' | 'blur';
+  windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;
   useCustomTrayMenu: boolean;
   useGlassSwitch: boolean;
   showLeaderboard: boolean;
-  flowColorBoost: number; // 实现
-  flowDepth: number; // 实现
-  flowSpeed: number; // 实现
-  flowTexture: number; // 实现
-  windowBlurTint: number; // 实现
+  flowColorBoost: number;
+  flowDepth: number;
+  flowSpeed: number;
+  flowTexture: number;
+  windowBlurTint: number;
   customBgPath: string;
   opacity: number;
   blur: number;
-  customBackground: { // 实现
-    imagePath: string; // 实现
+  customBackground: {
+    imagePath: string;
     mediaType?: 'image' | 'video';
-    blur: number; // 实现
-    opacity: number; // 实现
-    maskColor: string; // 实现
-    maskAlpha: number; // 实现
-    scale: number; // 实现
-    foregroundStyle: 'light' | 'dark'; // 实现
-    translateX?: number; // 实现
-    translateY?: number; // 实现
-    imageWidth?: number; // 实现
-    imageHeight?: number; // 实现
+    blur: number;
+    opacity: number;
+    maskColor: string;
+    maskAlpha: number;
+    scale: number;
+    foregroundStyle: 'light' | 'dark';
+    translateX?: number;
+    translateY?: number;
+    imageWidth?: number;
+    imageHeight?: number;
   };
   /** 每页独立壁纸（主题包 v3 随包分发；pageId: main/playlist/player/local/fav/settings） */
   perPageBackgrounds: Record<string, PerPageBackground>;
@@ -341,16 +341,16 @@ export type SidebarItemKey =
   | 'plugins'
   | 'account';
 
-export interface SidebarSettings { // 实现
-  showLocalMusic: boolean; // 实现
-  showArtists: boolean; // 实现
-  showAlbums: boolean; // 实现
-  showFavorites: boolean; // 实现
-  showRecent: boolean; // 实现
-  showFolders: boolean; // 实现
-  showStatistics: boolean; // 实现
-  showPlugins: boolean; // 实现
-  showAccount: boolean; // 实现
+export interface SidebarSettings {
+  showLocalMusic: boolean;
+  showArtists: boolean;
+  showAlbums: boolean;
+  showFavorites: boolean;
+  showRecent: boolean;
+  showFolders: boolean;
+  showStatistics: boolean;
+  showPlugins: boolean;
+  showAccount: boolean;
   order: SidebarItemKey[];
 }
 
@@ -378,7 +378,7 @@ export interface FooterLayoutSettings {
   middleLeft: FooterItemKey | null;
   middleRight: FooterItemKey | null;
   right: FooterItemKey[];
-  hidden: FooterItemKey[]; // 实现
+  hidden: FooterItemKey[];
   collapsed?: FooterItemKey[];
 }
 
@@ -400,96 +400,96 @@ export interface TopBarLayoutSettings {
   hidden: TopBarItemKey[];
 }
 
-export type LyricsPlayerAlignment = 'left' | 'center' | 'right'; // 实现
-export type DesktopLyricsPlayerAlignment = LyricsPlayerAlignment | 'split-corners'; // 实现
-export type LyricsColorScheme = 'auto' | 'default' | 'pink' | 'blue' | 'green' | 'white' | 'custom'; // 实现
-export type LyricsFontPreset = string; // 实现
-export type LyricsPlayerRenderMode = 'amll' | 'light'; // 实现
+export type LyricsPlayerAlignment = 'left' | 'center' | 'right';
+export type DesktopLyricsPlayerAlignment = LyricsPlayerAlignment | 'split-corners';
+export type LyricsColorScheme = 'auto' | 'default' | 'pink' | 'blue' | 'green' | 'white' | 'custom';
+export type LyricsFontPreset = string;
+export type LyricsPlayerRenderMode = 'amll' | 'light';
 
-export interface ImportedLyricsFont { // 实现
+export interface ImportedLyricsFont {
   id: string;
-  name: string; // 实现
-  family: string; // 实现
-  filePath: string; // 实现
-  importedAt: number; // 实现
-  format: 'truetype' | 'opentype'; // 实现
+  name: string;
+  family: string;
+  filePath: string;
+  importedAt: number;
+  format: 'truetype' | 'opentype';
 }
 
-export interface LyricsSettings { // 实现
-  showTranslation: boolean; // 实现
-  showRomaji: boolean; // 实现
-  enableWordEffect: boolean; // 实现
-  playerRenderMode: LyricsPlayerRenderMode; // 实现
-  playerFontScale: number; // 实现
-  playerLineGap: number; // 实现
-  playerOffsetX: number; // 实现
-  playerOffsetY: number; // 实现
-  playerAlignment: LyricsPlayerAlignment; // 实现
-  playerFontPreset: LyricsFontPreset; // 实现
+export interface LyricsSettings {
+  showTranslation: boolean;
+  showRomaji: boolean;
+  enableWordEffect: boolean;
+  playerRenderMode: LyricsPlayerRenderMode;
+  playerFontScale: number;
+  playerLineGap: number;
+  playerOffsetX: number;
+  playerOffsetY: number;
+  playerAlignment: LyricsPlayerAlignment;
+  playerFontPreset: LyricsFontPreset;
   playerFontSplitEnabled?: boolean;
   playerFontPresetCJK?: LyricsFontPreset;
   playerFontPresetLatin?: LyricsFontPreset;
-  backgroundBlur: number; // 实现
-  customBackgroundImage: string; // 实现
+  backgroundBlur: number;
+  customBackgroundImage: string;
 }
 
-export interface DesktopLyricsSettings { // 实现
-  isAlwaysOnTop: boolean; // 实现
-  alwaysShowShadowBackground: boolean; // 实现
-  autoHideWhenFullscreen: boolean; // 实现
-  autoHideWhenPaused: boolean; // 实现
-  showDoubleLine: boolean; // 实现
-  enableWordEffect: boolean; // 实现
+export interface DesktopLyricsSettings {
+  isAlwaysOnTop: boolean;
+  alwaysShowShadowBackground: boolean;
+  autoHideWhenFullscreen: boolean;
+  autoHideWhenPaused: boolean;
+  showDoubleLine: boolean;
+  enableWordEffect: boolean;
   enableTextOutline: boolean;
   textOutlineWidth: number;
   textOutlineColor: string;
-  isLocked: boolean; // 实现
-  persistLock: boolean; // 实现
-  centerHorizontally: boolean; // 实现
-  colorScheme: LyricsColorScheme; // 实现
-  customPlayedColor: string; // 实现
-  customUnplayedColor: string; // 实现
-  customRomajiPlayedColor: string; // 实现
-  customRomajiUnplayedColor: string; // 实现
-  customRomajiColor: string; // 实现
-  customTranslationColor: string; // 实现
-  textOpacity: number; // 实现
-  textShadowColor: string; // 实现
-  firstLineTextShadowStrength: number; // 实现
-  secondLineTextShadowStrength: number; // 实现
-  playerFontScale: number; // 实现
+  isLocked: boolean;
+  persistLock: boolean;
+  centerHorizontally: boolean;
+  colorScheme: LyricsColorScheme;
+  customPlayedColor: string;
+  customUnplayedColor: string;
+  customRomajiPlayedColor: string;
+  customRomajiUnplayedColor: string;
+  customRomajiColor: string;
+  customTranslationColor: string;
+  textOpacity: number;
+  textShadowColor: string;
+  firstLineTextShadowStrength: number;
+  secondLineTextShadowStrength: number;
+  playerFontScale: number;
   subFontScale: number;
-  playerLineGap: number; // 实现
-  playerOffsetX: number; // 实现
-  playerOffsetY: number; // 实现
-  playerAlignment: DesktopLyricsPlayerAlignment; // 实现
-  playerFontPreset: LyricsFontPreset; // 实现
+  playerLineGap: number;
+  playerOffsetX: number;
+  playerOffsetY: number;
+  playerAlignment: DesktopLyricsPlayerAlignment;
+  playerFontPreset: LyricsFontPreset;
 }
 
-export type AudioOutputMode = 'shared' | 'wasapiExclusive'; // 实现
+export type AudioOutputMode = 'shared' | 'wasapiExclusive';
 
 // ==================== 音质类型系统 ==================== 
-export type QualityKey = // 实现
-  | 'mgg' // 实现
-  | '128k' // 实现
-  | '192k' // 实现
-  | '320k' // 实现
-  | 'flac' // 实现
-  | 'flac24bit' // 实现
-  | 'hires' // 实现
-  | 'vinyl' // 实现
-  | 'dolby' // 实现
-  | 'atmos' // 实现
-  | 'atmos_plus' // 实现
-  | 'master'; // 实现
-export interface QualityMeta { // 实现
-  key: QualityKey; // 实现
+export type QualityKey =
+  | 'mgg'
+  | '128k'
+  | '192k'
+  | '320k'
+  | 'flac'
+  | 'flac24bit'
+  | 'hires'
+  | 'vinyl'
+  | 'dolby'
+  | 'atmos'
+  | 'atmos_plus'
+  | 'master';
+export interface QualityMeta {
+  key: QualityKey;
   label: string;
   description: string;
-  isLossless: boolean; // 实现
-  rank: number; // 实现
-} // 实现
-export const QUALITY_META: Record<QualityKey, QualityMeta> = { // 实现
+  isLossless: boolean;
+  rank: number;
+}
+export const QUALITY_META: Record<QualityKey, QualityMeta> = {
   mgg:         { key: 'mgg',         label: '低清',   description: '96k',         isLossless: false, rank: 1  },
   '128k':      { key: '128k',      label: '普通',   description: '128k',        isLossless: false, rank: 2  },
   '192k':      { key: '192k',      label: '中等',   description: '192k',        isLossless: false, rank: 3  },
@@ -502,11 +502,11 @@ export const QUALITY_META: Record<QualityKey, QualityMeta> = { // 实现
   atmos:        { key: 'atmos',        label: '臻品音质', description: 'atmos',       isLossless: false, rank: 10 },
   atmos_plus: { key: 'atmos_plus', label: '臻品全景声', description: 'atmos_plus',  isLossless: false, rank: 11 },
   master:       { key: 'master',       label: '臻品母带', description: 'master',      isLossless: true,  rank: 12 },
-}; // 实现
-export const ALL_QUALITY_KEYS: QualityKey[] = // 实现
-  (Object.keys(QUALITY_META) as QualityKey[]) // 实现
-    .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank); // 实现
-export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse(); // 实现
+};
+export const ALL_QUALITY_KEYS: QualityKey[] =
+  (Object.keys(QUALITY_META) as QualityKey[])
+    .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse();
 export const BAKA_PLUGIN_QUALITY_KEYS: string[] = ALL_QUALITY_KEYS.map(q => q === 'mgg' ? '96k' : q);
 
 export const BAKA_TO_LEGACY_QUALITY_MAP: Record<QualityKey, 'low' | 'standard' | 'high' | 'super'> = {
@@ -583,7 +583,7 @@ export function qualityKeyToLxQuality(q: QualityKey): string {
   return '320k';
 }
 
-export type OnlineDefaultQuality = QualityKey; // 实现
+export type OnlineDefaultQuality = QualityKey;
 export type OnlineFailureBehavior = 'skip' | 'stop' | 'autoswitch';
 export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
 export function resolveOnlinePlayQuality(
@@ -634,39 +634,39 @@ export function qualityKeyToMfQuality(q: QualityKey): 'low' | 'standard' | 'high
   if (rank >= 5) return 'high';
   if (rank >= 4) return 'standard';
   return 'low';
-} // 实现
-export interface EqualizerPreset { // 实现
+}
+export interface EqualizerPreset {
   id: string;
-  name: string; // 实现
-  preamp: number; // 实现
-  gains: number[]; // 实现
-  isBuiltin: boolean; // 实现
-  createdAt: number; // 实现
-  updatedAt: number; // 实现
+  name: string;
+  preamp: number;
+  gains: number[];
+  isBuiltin: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
-export interface EqualizerSettings { // 实现
-  enabled: boolean; // 实现
-  preamp: number; // 实现
-  gains: number[]; // 实现
-  currentPresetId?: string | null; // 实现
+export interface EqualizerSettings {
+  enabled: boolean;
+  preamp: number;
+  gains: number[];
+  currentPresetId?: string | null;
 }
 
-export interface AudioSettings { // 实现
-  outputMode: AudioOutputMode; // 实现
+export interface AudioSettings {
+  outputMode: AudioOutputMode;
   outputBitPerfect?: boolean;
   dsdNativePassthrough?: boolean;
-  volumeBalance: { // 实现
-    enabled: boolean; // 实现
-    gainOffsetDb: number; // 实现
-    preventClipping: boolean; // 实现
+  volumeBalance: {
+    enabled: boolean;
+    gainOffsetDb: number;
+    preventClipping: boolean;
   };
-  equalizer: EqualizerSettings; // 实现
+  equalizer: EqualizerSettings;
   showEqualizerInFooter: boolean;
-  onlineDefaultQuality: OnlineDefaultQuality; // 实现
+  onlineDefaultQuality: OnlineDefaultQuality;
   /** 音质菜单真实体积探测+全档位预解析开关（默认关，避免每首歌对音源多发 5~8 次请求） */
   showRealQualitySizes: boolean;
-  onlineFailureBehavior: OnlineFailureBehavior; // 实现
+  onlineFailureBehavior: OnlineFailureBehavior;
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
   streamCacheSizeMB: number;
   streamCacheDir?: string;
@@ -688,33 +688,33 @@ export const MV_QUALITY_META: Record<MvQualityKey, { label: string; description:
 
 export const MV_QUALITY_KEYS: MvQualityKey[] = ['360P', '480P', '720P', '1080P', '4K'];
 
-export type ShortcutActionId = // 实现
-  | 'togglePlay' // 实现
-  | 'prevSong' // 实现
-  | 'nextSong' // 实现
-  | 'volumeUp' // 实现
-  | 'volumeDown' // 实现
-  | 'toggleMiniMode' // 实现
-  | 'toggleFavorite' // 实现
-  | 'toggleDesktopLyrics' // 实现
-  | 'toggleDesktopLyricsLock'; // 实现
+export type ShortcutActionId =
+  | 'togglePlay'
+  | 'prevSong'
+  | 'nextSong'
+  | 'volumeUp'
+  | 'volumeDown'
+  | 'toggleMiniMode'
+  | 'toggleFavorite'
+  | 'toggleDesktopLyrics'
+  | 'toggleDesktopLyricsLock';
 
-export interface ShortcutBinding { // 实现
-  code: string; // 实现
-  ctrl: boolean; // 实现
-  alt: boolean; // 实现
-  shift: boolean; // 实现
-  meta: boolean; // 实现
+export interface ShortcutBinding {
+  code: string;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  meta: boolean;
 }
 
-export type ShortcutBindingMap = Record<ShortcutActionId, ShortcutBinding | null>; // 实现
+export type ShortcutBindingMap = Record<ShortcutActionId, ShortcutBinding | null>;
 
-export interface ShortcutSettings { // 实现
-  enabled: boolean; // 实现
-  globalEnabled: boolean; // 实现
-  useSystemMediaKeys: boolean; // 实现
-  local: ShortcutBindingMap; // 实现
-  global: ShortcutBindingMap; // 实现
+export interface ShortcutSettings {
+  enabled: boolean;
+  globalEnabled: boolean;
+  useSystemMediaKeys: boolean;
+  local: ShortcutBindingMap;
+  global: ShortcutBindingMap;
 }
 
 export interface PluginSettings {
@@ -723,57 +723,57 @@ export interface PluginSettings {
   skipVersionCheck: boolean;
 }
 
-export type SongClickAction = 'double' | 'single';
+type SongClickAction = 'double' | 'single';
 export type AppLanguage = 'system' | 'zh-CN' | 'zh-TW' | 'en-US';
 export type PerformanceMode = 'auto' | 'full' | 'performance';
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error'; // 实现
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-export interface LogSettings { // 实现
-  minimumLevel: LogLevel; // 实现
-  retentionDays: number; // 实现
-  autoAnalyze: boolean; // 实现
+export interface LogSettings {
+  minimumLevel: LogLevel;
+  retentionDays: number;
+  autoAnalyze: boolean;
 }
 
-export interface AppSettings { // 实现
-  language: AppLanguage; // 实现
-  closeToTray: boolean; // 实现
+export interface AppSettings {
+  language: AppLanguage;
+  closeToTray: boolean;
   launchOnStartup: boolean;
   launchOnStartupMinimized: boolean;
   /** 已勾选「用弦予音乐打开」的音频扩展名（仅 Windows 生效）。 */
   audioFileAssociations: string[];
-  preventSleepWhilePlaying: boolean; // 实现
-  showDesktopLyrics: boolean; // 实现
-  showQualityBadges: boolean; // 实现
-  showSongComments: boolean; // 实现
-  enableScrollToTopButton: boolean; // 实现
-  libraryMinDurationSeconds: number; // 实现
-  linkFoldersToLibrary: boolean; // 实现
-  lyricsSyncOffset: number; // 实现
-  organizeRoot: string; // 实现
-  enableAutoOrganize: boolean; // 实现
-  organizeRule: string; // 实现
-  audio: AudioSettings; // 实现
-  customLyricsFonts: ImportedLyricsFont[]; // 实现
-  lyrics: LyricsSettings; // 实现
-  desktopLyrics: DesktopLyricsSettings; // 实现
-  theme: ThemeSettings; // 实现
-  sidebar: SidebarSettings; // 实现
+  preventSleepWhilePlaying: boolean;
+  showDesktopLyrics: boolean;
+  showQualityBadges: boolean;
+  showSongComments: boolean;
+  enableScrollToTopButton: boolean;
+  libraryMinDurationSeconds: number;
+  linkFoldersToLibrary: boolean;
+  lyricsSyncOffset: number;
+  organizeRoot: string;
+  enableAutoOrganize: boolean;
+  organizeRule: string;
+  audio: AudioSettings;
+  customLyricsFonts: ImportedLyricsFont[];
+  lyrics: LyricsSettings;
+  desktopLyrics: DesktopLyricsSettings;
+  theme: ThemeSettings;
+  sidebar: SidebarSettings;
   footerLayout: FooterLayoutSettings;
   topBarLayout: TopBarLayoutSettings;
-  shortcuts: ShortcutSettings; // 实现
-  showTaskbarPlayer: boolean; // 实现
-  taskbarPlayerCanDrag: boolean; // 实现
-  gpuAcceleration: boolean; // 实现
+  shortcuts: ShortcutSettings;
+  showTaskbarPlayer: boolean;
+  taskbarPlayerCanDrag: boolean;
+  gpuAcceleration: boolean;
   performanceMode: PerformanceMode;
   checkUpdateOnStartup: boolean;
   showWelcomeToastOnStartup: boolean;
-  writeArtistAvatarToTags: boolean; // 实现
-  download: DownloadSettings; // 实现
-  upload: UploadSettings; // 实现
+  writeArtistAvatarToTags: boolean;
+  download: DownloadSettings;
+  upload: UploadSettings;
   plugins: PluginSettings;
-  autoSync: AutoSyncConfig; // 实现
-  logging: LogSettings; // 实现
+  autoSync: AutoSyncConfig;
+  logging: LogSettings;
   songClickAction: SongClickAction;
   shareLinkValidityMinutes: number;
   sharePlaybackFailureBehavior: 'pause' | 'replace';
@@ -781,26 +781,26 @@ export interface AppSettings { // 实现
   dlnaRendererName: string;
 }
 
-export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac'; // 实现
-export type DownloadQuality = QualityKey; // 实现
-export type DownloadFileNameStyle = 'artist-title' | 'title-artist' | 'title-artist-album'; // 实现
+type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
+export type DownloadQuality = QualityKey;
+export type DownloadFileNameStyle = 'artist-title' | 'title-artist' | 'title-artist-album';
 
 export type DownloadLyricsStyle = 'word-by-word' | 'line-by-line';
 
 export type DownloadBehavior = 'default' | 'ask';
 
-export interface DownloadSettings { // 实现
-  downloadPath: string; // 实现
+export interface DownloadSettings {
+  downloadPath: string;
   behavior: DownloadBehavior;
   batchDownloadLimit: number;
-  format: DownloadFormat; // 实现
-  quality: DownloadQuality; // 实现
-  downloadLyrics: boolean; // 实现
-  lyricsFormat: 'lrc' | 'txt'; // 实现
+  format: DownloadFormat;
+  quality: DownloadQuality;
+  downloadLyrics: boolean;
+  lyricsFormat: 'lrc' | 'txt';
   lyricsStyle: DownloadLyricsStyle;
-  overwriteExisting: boolean; // 实现
-  keepSourceFilename: boolean; // 实现
-  fileNameStyle: DownloadFileNameStyle; // 实现
+  overwriteExisting: boolean;
+  keepSourceFilename: boolean;
+  fileNameStyle: DownloadFileNameStyle;
   rememberDownloadPath: boolean;
   qualityFallbackBehavior: DownloadQualityFallbackBehavior;
   embedMetadata: boolean;
@@ -811,107 +811,101 @@ export interface DownloadSettings { // 实现
 
 export type DownloadQualityFallbackBehavior = 'lower' | 'higher';
 
-export interface UploadSettings { // 实现
-  playlists: boolean; // 实现
-  history: boolean; // 实现
-  favorites: boolean; // 实现
-  plugins: boolean; // 实现
-  settings: boolean; // 实现
+export interface UploadSettings {
+  playlists: boolean;
+  history: boolean;
+  favorites: boolean;
+  plugins: boolean;
+  settings: boolean;
 }
 
-export interface AutoSyncConfig { // 实现
-  enabled: boolean; // 实现
-  syncIntervalSeconds: number; // 实现
-  maxDelayMinutes: number; // 实现
-  delayedCount: number; // 实现
-  lastSyncAttemptAt: number; // 实现
-  lastSyncSuccessAt: number; // 实现
-  nextSyncAt: number; // 实现
-} // 实现
-export interface ServerLoadStatus { // 实现
-  rateLimited: boolean; // 实现
-  activeSyncCount: number; // 实现
-  busy: boolean; // 实现
-  suggestedDelaySeconds: number; // 实现
-  bandwidthUsagePercent: number; // 实现
-} // 实现
-export interface SaveArtistAvatarResponse { // 实现
-  artistId: number; // 实现
-  avatarPath: string; // 实现
-  taskId?: string; // 实现
+export interface AutoSyncConfig {
+  enabled: boolean;
+  syncIntervalSeconds: number;
+  maxDelayMinutes: number;
+  delayedCount: number;
+  lastSyncAttemptAt: number;
+  lastSyncSuccessAt: number;
+  nextSyncAt: number;
+}
+export interface ServerLoadStatus {
+  rateLimited: boolean;
+  activeSyncCount: number;
+  busy: boolean;
+  suggestedDelaySeconds: number;
+  bandwidthUsagePercent: number;
+}
+export interface SaveArtistAvatarResponse {
+  artistId: number;
+  avatarPath: string;
+  taskId?: string;
 }
 
 // ==================== 插件系统类型 ==================== 
-export type PluginFormat = 'lx' | 'musicfree' | 'anime' | 'unknown';
-export interface PluginSource { // 实现
-  id: string; // 实现
-  name: string; // 实现
-  format: PluginFormat; // 实现
-  version: string; // 实现
-  author: string; // 实现
-  description: string; // 实现
-  filePath: string; // 实现
-  importedAt: number; // 实现
-  enabled: boolean; // 实现
-  sources: string[]; // 实现
-  isBuiltin?: boolean; // 实现
+type PluginFormat = 'lx' | 'musicfree' | 'anime' | 'unknown';
+export interface PluginSource {
+  id: string;
+  name: string;
+  format: PluginFormat;
+  version: string;
+  author: string;
+  description: string;
+  filePath: string;
+  importedAt: number;
+  enabled: boolean;
+  sources: string[];
+  isBuiltin?: boolean;
   updateAvailable?: boolean;
-  sortOrder?: number; // 实现
-} // 实现
-export interface PluginSubscription { // 实现
-  id: string; // 实现
-  name: string; // 实现
-  url: string; // 实现
-  addedAt: number; // 实现
-  lastSyncAt?: number; // 实现
-  lastSyncStatus?: 'success' | 'failed' | 'partial'; // 实现
-  lastSyncMessage?: string; // 实现
-  lastSyncCount?: number; // 实现
-} // 实现
-export interface PluginHttpResponse { // 实现
-  status: number; // 实现
-  url: string; // 实现
-  headers: Record<string, string>; // 实现
-  body: string; // 实现
-} // 实现
-export interface PluginSearchResult { // 实现
-  id: string; // 实现
-  title: string; // 实现
-  name?: string; // 实现
-  artist: string; // 实现
-  album: string; // 实现
-  coverUrl: string; // 实现
-  duration: number; // 实现
-  platform: string; // 实现
-  platformId: string; // 实现
-  pluginId: string; // 实现
-  rawData?: any; // 实现
-} // 实现
-export interface PluginMusicInfo { // 实现
-  url: string; // 实现
-  lyric?: string; // 实现
-  tlyric?: string; // 实现
+  sortOrder?: number;
+}
+export interface PluginSubscription {
+  id: string;
+  name: string;
+  url: string;
+  addedAt: number;
+  lastSyncAt?: number;
+  lastSyncStatus?: 'success' | 'failed' | 'partial';
+  lastSyncMessage?: string;
+  lastSyncCount?: number;
+}
+export interface PluginSearchResult {
+  id: string;
+  title: string;
+  name?: string;
+  artist: string;
+  album: string;
+  coverUrl: string;
+  duration: number;
+  platform: string;
+  platformId: string;
+  pluginId: string;
+  rawData?: any;
+}
+export interface PluginMusicInfo {
+  url: string;
+  lyric?: string;
+  tlyric?: string;
   lxlyric?: string;
   yrc?: string;
   qrc?: string;
   eslrc?: string;
   ttml?: string;
   lyricsRaw?: string;
-  coverUrl?: string; // 实现
-  headers?: Record<string, string>; // 实现
+  coverUrl?: string;
+  headers?: Record<string, string>;
   actualQuality?: QualityKey;
   ekey?: string;
   cek?: string;
-} // 实现
-export interface PluginPlaylistSearchResult { // 实现
-  id: string; // 实现
-  title: string; // 实现
-  coverUrl: string; // 实现
-  playCount?: number; // 实现
-  trackCount?: number; // 实现
-  artist?: string; // 实现
-  platform: string; // 实现
-  platformId: string; // 实现
-  pluginId: string; // 实现
-  rawData?: any; // 实现
-} // 实现
+}
+export interface PluginPlaylistSearchResult {
+  id: string;
+  title: string;
+  coverUrl: string;
+  playCount?: number;
+  trackCount?: number;
+  artist?: string;
+  platform: string;
+  platformId: string;
+  pluginId: string;
+  rawData?: any;
+}

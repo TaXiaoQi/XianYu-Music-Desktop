@@ -1,7 +1,7 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 引导流程快捷按键步：快捷键录入/捕获/冲突检测/保存统一由 useShortcutCapture 提供。
 import { useShortcutCapture } from '../../../composables/onboarding/useShortcutCapture';
-import { formatShortcutBinding } from '../../../features/settings/shortcuts'; // 实现
+import { formatShortcutBinding } from '../../../features/settings/shortcuts';
 
 const {
   shortcutRows,

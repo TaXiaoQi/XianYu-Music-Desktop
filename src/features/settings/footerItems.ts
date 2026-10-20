@@ -4,22 +4,15 @@ import type {
     FooterLayoutSettings,
 } from "../../types";
 
-export const FOOTER_CONTAINER_LIMITS: Record<FooterContainerKey, number> = {
+const FOOTER_CONTAINER_LIMITS: Record<FooterContainerKey, number> = {
     left: 2,
     middleLeft: 1,
     middleRight: 1,
     right: 5,
 };
 
-export const LYRIC_FOOTER_ITEMS: ReadonlySet<FooterItemKey> =
+const LYRIC_FOOTER_ITEMS: ReadonlySet<FooterItemKey> =
     new Set<FooterItemKey>(["visualizer", "progress", "pageStyle", "pin"]);
-
-export const FOOTER_CONTAINERS: FooterContainerKey[] = [
-    "left",
-    "middleLeft",
-    "middleRight",
-    "right",
-];
 
 export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
     left: ["favorite", "download"],
@@ -29,18 +22,6 @@ export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
     hidden: ["mv", "share"],
     collapsed: [],
 };
-
-export const FOOTER_CONTAINER_LABELS: Record<
-    FooterContainerKey,
-    { label: string; hint: string }
-> = {
-    left: { label: "左侧容器", hint: "紧邻封面与歌曲信息" },
-    middleLeft: { label: "中间左侧", hint: "紧邻上一首按钮" },
-    middleRight: { label: "中间右侧", hint: "紧邻下一首按钮" },
-    right: { label: "右侧容器", hint: "紧邻窗口右边缘" },
-};
-
-export type FooterMoveTarget = FooterContainerKey | "collapsed";
 
 export interface FooterItemMeta {
     key: FooterItemKey;
@@ -160,7 +141,7 @@ export const FOOTER_ITEMS: FooterItemMeta[] = [
     },
 ];
 
-export const FOOTER_ITEM_KEYS: FooterItemKey[] = FOOTER_ITEMS.map(
+const FOOTER_ITEM_KEYS: FooterItemKey[] = FOOTER_ITEMS.map(
     (item) => item.key,
 );
 
@@ -336,55 +317,7 @@ export const computeCollapsedItems = (
     return result;
 };
 
-export const findItemContainer = (
-    layout: FooterLayoutSettings,
-    key: FooterItemKey,
-): FooterMoveTarget => {
-    if (layout.left.includes(key)) return "left";
-    if (layout.middleLeft === key) return "middleLeft";
-    if (layout.middleRight === key) return "middleRight";
-    if (layout.right.includes(key)) return "right";
-    return "collapsed";
-};
-
-export const moveFooterItemTo = (
-    layout: FooterLayoutSettings,
-    key: FooterItemKey,
-    target: FooterMoveTarget,
-): FooterLayoutSettings | null => {
-    const next: FooterLayoutSettings = {
-        left: layout.left.filter((k) => k !== key),
-        middleLeft: layout.middleLeft === key ? null : layout.middleLeft,
-        middleRight: layout.middleRight === key ? null : layout.middleRight,
-        right: layout.right.filter((k) => k !== key),
-        hidden: layout.hidden.filter((k) => k !== key),
-        collapsed: (layout.collapsed ?? []).filter((k) => k !== key),
-    };
-
-    if (target === "collapsed") {
-        next.collapsed = [...(next.collapsed ?? []), key];
-        return normalizeFooterLayout(next);
-    }
-
-    const limit = FOOTER_CONTAINER_LIMITS[target];
-
-    if (target === "middleLeft") {
-        if (next.middleLeft !== null) return null;
-        next.middleLeft = key;
-        return normalizeFooterLayout(next);
-    }
-    if (target === "middleRight") {
-        if (next.middleRight !== null) return null;
-        next.middleRight = key;
-        return normalizeFooterLayout(next);
-    }
-    const list = target === "left" ? next.left : next.right;
-    if (list.length >= limit) return null;
-    list.push(key);
-    return normalizeFooterLayout(next);
-};
-
-export type FooterPreviewSlot = // 实现
+export type FooterPreviewSlot =
     | "left-0"
     | "left-1"
     | "middle-left"
@@ -395,7 +328,7 @@ export type FooterPreviewSlot = // 实现
     | "right-3"
     | "right-4";
 
-export const FOOTER_PREVIEW_SLOTS: FooterPreviewSlot[] = [ // 实现
+const FOOTER_PREVIEW_SLOTS: FooterPreviewSlot[] = [
     "left-0",
     "left-1",
     "middle-left",
@@ -451,7 +384,7 @@ const getRawFooterPreviewSlotItems = (
     };
 };
 
-const layoutFromPreviewSlots = ( // 实现
+const layoutFromPreviewSlots = (
     slots: FooterPreviewSlotItems,
     hidden: FooterItemKey[],
     collapsed?: FooterItemKey[],
@@ -473,11 +406,11 @@ const layoutFromPreviewSlots = ( // 实现
         collapsed,
     });
 
-export const moveFooterItemToPreviewSlot = ( // 实现
+export const moveFooterItemToPreviewSlot = (
     value: FooterLayoutSettings,
     key: FooterItemKey,
     targetSlot: FooterPreviewSlot,
-): FooterLayoutSettings => { // 实现
+): FooterLayoutSettings => {
     const layout = normalizeFooterLayout(value);
     const slots = getRawFooterPreviewSlotItems(layout);
     const sourceSlot = FOOTER_PREVIEW_SLOTS.find((slot) => slots[slot] === key);
@@ -493,20 +426,20 @@ export const moveFooterItemToPreviewSlot = ( // 实现
     );
 };
 
-const DEFAULT_SLOT_BY_ITEM = Object.fromEntries( // 实现
+const DEFAULT_SLOT_BY_ITEM = Object.fromEntries(
     Object.entries(getFooterPreviewSlotItems(DEFAULT_FOOTER_LAYOUT))
         .filter(
             (entry): entry is [FooterPreviewSlot, FooterItemKey] =>
                 entry[1] !== null,
         )
         .map(([slot, key]) => [key, slot]),
-) as Partial<Record<FooterItemKey, FooterPreviewSlot>>; // 实现
+) as Partial<Record<FooterItemKey, FooterPreviewSlot>>;
 
-export const setFooterItemVisibility = ( // 实现
+export const setFooterItemVisibility = (
     value: FooterLayoutSettings,
     key: FooterItemKey,
     visible: boolean,
-): FooterLayoutSettings => { // 实现
+): FooterLayoutSettings => {
     const layout = normalizeFooterLayout(value);
     const slots = getRawFooterPreviewSlotItems(layout);
     const currentSlot = FOOTER_PREVIEW_SLOTS.find(
@@ -583,10 +516,10 @@ export const setFooterItemVisibility = ( // 实现
     return layoutFromPreviewSlots(slots, hidden, layout.collapsed);
 };
 
-export const reorderCollapsedItems = (
+const reorderCollapsedItems = (
     value: FooterLayoutSettings,
     ordered: FooterItemKey[],
-): FooterLayoutSettings => { // 实现
+): FooterLayoutSettings => {
     const layout = normalizeFooterLayout(value);
     const assigned = new Set<FooterItemKey>([
         ...layout.left,
@@ -617,7 +550,7 @@ export const dropFooterItemToSlot = (
     value: FooterLayoutSettings,
     key: FooterItemKey,
     targetSlot: FooterPreviewSlot,
-): FooterLayoutSettings => { // 实现
+): FooterLayoutSettings => {
     const layout = normalizeFooterLayout(value);
     const base = omitFromContainers(layout, key);
     const slots = getRawFooterPreviewSlotItems(base);
@@ -629,7 +562,7 @@ export const dropFooterItemToPalette = (
     value: FooterLayoutSettings,
     key: FooterItemKey,
     targetIndex: number,
-): FooterLayoutSettings => { // 实现
+): FooterLayoutSettings => {
     const layout = normalizeFooterLayout(value);
     const base = omitFromContainers(layout, key);
     let list = computeCollapsedItems(base);

@@ -38,15 +38,17 @@ export const DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH = 900,
     DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT = 280,
     DESKTOP_LYRICS_WINDOW_MIN_WIDTH = 520,
     DESKTOP_LYRICS_WINDOW_MIN_HEIGHT = 160,
-    DESKTOP_LYRICS_WINDOW_MAX_WIDTH = 1440,
-    /** 与工作区边缘距离小于该阈值时触发吸附 */
-    DESKTOP_LYRICS_WINDOW_EDGE_SNAP_THRESHOLD = 24,
-    DESKTOP_LYRICS_WINDOW_SCREEN_MARGIN = 12;
+    DESKTOP_LYRICS_WINDOW_MAX_WIDTH = 1440;
+
+// 文件内使用，不对外导出
+/** 与工作区边缘距离小于该阈值时触发吸附 */
+const DESKTOP_LYRICS_WINDOW_EDGE_SNAP_THRESHOLD = 24;
+const DESKTOP_LYRICS_WINDOW_SCREEN_MARGIN = 12;
 
 // —— 载荷类型 ——
 
 /** 桌面歌词内容层面的展示开关（翻译 / 罗马音） */
-export type DesktopLyricsContentSettings = {
+type DesktopLyricsContentSettings = {
     showTranslation: boolean;
     showRomaji: boolean;
 };
@@ -88,7 +90,7 @@ export type DesktopLyricsWindowSizeLimits = {
 };
 
 /** 主窗口推送给歌词窗口的全量状态 */
-export interface DesktopLyricsStatePayload { // 实现
+export interface DesktopLyricsStatePayload {
     song: DesktopLyricsSongSnapshot | null;
     parsedLyrics: LyricLine[];
     lyricsStatus: LyricsStatus;
@@ -104,7 +106,7 @@ export interface DesktopLyricsStatePayload { // 实现
 }
 
 /** 播放进度增量推送 */
-export interface DesktopLyricsPlaybackPayload { // 实现
+export interface DesktopLyricsPlaybackPayload {
     playbackTime: number;
     syncedAt: number;
     isPlaying: boolean;
@@ -117,7 +119,7 @@ export type DesktopLyricsSettingsPatch = {
 };
 
 /** 歌词窗口用户可触发的全部动作 */
-export type DesktopLyricsAction = // 实现
+export type DesktopLyricsAction =
     | {
           type:
               | "toggle-play"
@@ -199,10 +201,10 @@ export function getDesktopLyricsWindowSizeLimits(
  * 挑选与目标窗口关系最紧密的工作区：
  * 先比较可见重叠面积，面积并列时取中心点距离更近者。
  */
-export function resolveDesktopLyricsWorkArea( // 实现
+export function resolveDesktopLyricsWorkArea(
     workAreas: DesktopLyricsWorkArea[],
     bounds: DesktopLyricsWindowBounds,
-): DesktopLyricsWorkArea | null { // 实现
+): DesktopLyricsWorkArea | null {
     if (!workAreas.length) {
         return null;
     }
@@ -229,10 +231,10 @@ export function resolveDesktopLyricsWorkArea( // 实现
 }
 
 /** 把窗口尺寸约束到合法区间，并把位置夹回所属工作区内 */
-export function normalizeDesktopLyricsBounds( // 实现
+export function normalizeDesktopLyricsBounds(
     bounds: DesktopLyricsWindowBounds,
     workAreas: DesktopLyricsWorkArea[],
-): DesktopLyricsWindowBounds | null { // 实现
+): DesktopLyricsWindowBounds | null {
     const host = resolveDesktopLyricsWorkArea(workAreas, bounds);
     if (!host) {
         return null;
@@ -255,10 +257,10 @@ export function normalizeDesktopLyricsBounds( // 实现
  * 从持久化数据恢复窗口位置：
  * 恢复结果与任一屏幕仍有可见重叠时原样采用，否则夹回最近工作区。
  */
-export function restoreDesktopLyricsBounds( // 实现
+export function restoreDesktopLyricsBounds(
     bounds: DesktopLyricsWindowBounds,
     workAreas: DesktopLyricsWorkArea[],
-): DesktopLyricsWindowBounds | null { // 实现
+): DesktopLyricsWindowBounds | null {
     const host = resolveDesktopLyricsWorkArea(workAreas, bounds);
     if (!host) {
         return null;
@@ -298,11 +300,11 @@ const nearEndEdge = (
 ) => Math.abs(position + span - edge) <= tolerance;
 
 /** 在归一化基础上做屏幕边缘吸附：四边任一落入阈值即钉到边缘 */
-export function snapDesktopLyricsBounds( // 实现
+export function snapDesktopLyricsBounds(
     bounds: DesktopLyricsWindowBounds,
     workAreas: DesktopLyricsWorkArea[],
     threshold = DESKTOP_LYRICS_WINDOW_EDGE_SNAP_THRESHOLD,
-): DesktopLyricsWindowBounds | null { // 实现
+): DesktopLyricsWindowBounds | null {
     const normalized = normalizeDesktopLyricsBounds(bounds, workAreas);
     if (!normalized) {
         return null;

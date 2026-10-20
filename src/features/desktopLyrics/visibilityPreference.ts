@@ -14,7 +14,7 @@ export function applyDesktopLyricsVisibilityPreference(
 }
 
 /** 运行时可见性变化后回写设置；值未变时跳过，避免产生无谓补丁 */
-export function persistDesktopLyricsVisibilityPreference( // 实现
+export function persistDesktopLyricsVisibilityPreference(
     settings: VisibilityCarrier,
     patchSettings: (patch: VisibilityCarrier) => void,
     visible: boolean,

@@ -1,17 +1,17 @@
 import { defineStore } from "pinia";
 import { ref, reactive, watch, watchEffect, computed } from "vue";
-import { // 实现
+import {
     playerStorage,
     playerStorageKeys,
 } from "../../services/storage/playerStorage";
 import { localStore } from "../../services/storage/localStore";
 import { playbackApi } from "../../services/tauri/playbackApi";
-import type { // 实现
+import type {
     SoundEffectSettings,
     ReverbKind,
     SpatialMode,
 } from "../../services/tauri/contracts";
-import { // 实现
+import {
     freqsPreset,
     convolutions,
     advancedEqPresets,
@@ -19,7 +19,6 @@ import { // 实现
 } from "../../utils/audio/soundEffectEngine";
 export const eqPresetNames = freqsPreset.map((p) => p.name);
 export const advancedEqPresetNames = advancedEqPresets.map((p) => p.name);
-export const algorithmicReverbNames = algorithmicReverbs.map((p) => p.name);
 export const useSoundEffectStore = defineStore("soundEffect", () => {
     const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
     // ===== 均衡器 =====
@@ -286,7 +285,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         if (current !== "36d" && enable36D.value) enable36D.value = false;
         if (current !== "virtual" && enableVirtualSurround.value)
             enableVirtualSurround.value = false;
-    } // 实现
+    }
     // ===== 高级音效: 消人声 =====
     const vocalRemoval = ref(false);
     // ===== 高级音效: 颤音 =====
@@ -1185,7 +1184,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
             fullEffectPresets.value = s.fullEffectPresets;
     };
     // ===== [音效持久化] 启动恢复 =====
-    try { // 实现
+    try {
         const savedEffect = playerStorage.readObject<
             ReturnType<typeof buildEffectSnapshot>
         >(playerStorageKeys.soundEffectState);
@@ -1194,7 +1193,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         }
     } catch (err) {
         console.warn("[soundEffectStore] 恢复音效状态失败（使用默认值）:", err);
-    } // 实现
+    }
     // ===== [音效持久化] 变更时保存（防抖，避免拖动滑块时频繁写入）=====
     let effectPersistTimer: ReturnType<typeof setTimeout> | null = null;
     const persistEffectState = () => {
@@ -1327,7 +1326,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         persistEffectState,
         { deep: true },
     );
-    return { // 实现
+    return {
         eqBands,
         applyPreset,
         resetEq,

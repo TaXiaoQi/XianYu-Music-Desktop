@@ -1,13 +1,13 @@
-export interface LyricsStylePanelContainerRect { // 实现
+export interface LyricsStylePanelContainerRect {
     left: number;
     right: number;
     width: number;
 }
 
-export function getLyricsStylePanelPosition( // 实现
+export function getLyricsStylePanelPosition(
     containerRect: LyricsStylePanelContainerRect,
     viewportWidth: number,
-): Record<string, string> { // 实现
+): Record<string, string> {
     const safeMargin = 16;
     const naturalWidth = Math.min(320, viewportWidth * 0.34 - 24);
     const panelWidth = Math.max(260, naturalWidth);

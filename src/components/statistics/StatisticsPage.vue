@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 /**
  * 首页「统计」页：卡片化个人听歌数据看板。
  * 玻璃档（useGlassSwitch=true）：时间范围切换 → 概览卡 → 近 7 天趋势 → 24 小时分布 → Top 榜 → 曲库构成；
@@ -6,13 +6,13 @@
  * 经典扁平档（useGlassSwitch=false）：八项指标 + 内联排行榜，逐字还原 04cacc5c^（排行榜拆分前）的统计页。
  */
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue';
-import { storeToRefs } from 'pinia'; // 实现
+import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { Calendar, Clock, Database, Disc3, Headphones, Music, Play, TrendingUp } from 'lucide-vue-next';
 
 import { useStatisticsStore, type TimeRangeType } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
-import { useLibraryBrowse } from '../../features/library/useLibraryBrowse'; // 实现
+import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n, type I18nKey } from '../../features/i18n';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSettingsStore } from '../../features/settings/store';
@@ -139,23 +139,23 @@ const refreshListenDisplay = async () => {
   }
 };
 
-function formatStatisticsDuration(seconds: number): string { // 实现
-  if (!Number.isFinite(seconds) || seconds <= 0) return isEnglish.value ? '0 min' : '0分钟'; // 实现
-  const hours = Math.floor(seconds / 3600); // 实现
-  const minutes = Math.floor((seconds % 3600) / 60); // 实现
-  if (isEnglish.value) return hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`; // 实现
-  return hours > 0 ? `${hours}小时 ${minutes}分钟` : `${minutes}分钟`; // 实现
+function formatStatisticsDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return isEnglish.value ? '0 min' : '0分钟';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (isEnglish.value) return hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
+  return hours > 0 ? `${hours}小时 ${minutes}分钟` : `${minutes}分钟`;
 }
 
-const statisticsStore = useStatisticsStore(); // 实现
+const statisticsStore = useStatisticsStore();
 const {
   stats,
-  behaviorStats, // 实现
+  behaviorStats,
   loading,
   error,
-} = storeToRefs(statisticsStore); // 实现
+} = storeToRefs(statisticsStore);
 
-const { canonicalSongs } = useLibraryBrowse(); // 实现
+const { canonicalSongs } = useLibraryBrowse();
 
 // 时间范围：页面挂载时重置为「全部」，且不持久化
 const selectedRange = ref<TimeRangeType>('All');
@@ -205,8 +205,8 @@ const stopStatsTimer = () => {
     statsRefreshTimer = null;
   }
 };
-onMounted(async () => { // 实现
-  statisticsStore.cancelHeavyDataRelease(); // 实现
+onMounted(async () => {
+  statisticsStore.cancelHeavyDataRelease();
   selectedRange.value = 'All';
   await statisticsStore.refreshBehaviorOnly('All'); // 刷新行为统计
   if (!statisticsStore.stats) { // 未加载时
@@ -238,12 +238,12 @@ onDeactivated(() => {
   stopStatsTimer();
 });
 
-onUnmounted(() => { // 实现
-  statisticsStore.scheduleHeavyDataRelease(); // 实现
+onUnmounted(() => {
+  statisticsStore.scheduleHeavyDataRelease();
   stopStatsTimer();
 });
 
-async function handleRefresh() { // 实现
+async function handleRefresh() {
   try {
     await statisticsStore.refreshAll(selectedRange.value);
   } catch {

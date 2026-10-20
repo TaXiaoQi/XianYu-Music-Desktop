@@ -28,30 +28,8 @@ import { usePlayer } from "../features/playback";
 import { useSettings as usePreferenceStore } from "../features/settings/useSettings";
 import { windowApi } from "../services/tauri/windowApi";
 
-// —— 历史公开类型导出面，保持原样以兼容潜在引用 ——
-
-export type OwnerBindingState =
-    "bound" | "failed" | "unsupported" | "already_bound";
-export type GeometrySource = "tray" | "taskbar_fallback";
-
-export interface RectPhysical { // 实现
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-}
-
-export interface TaskbarTrayGeometry { // 实现
-    taskbar_rect_physical: RectPhysical;
-    tray_rect_physical: RectPhysical | null;
-    taskbar_hwnd_changed: boolean;
-    owner_binding: OwnerBindingState;
-    source: GeometrySource;
-    scale_factor: number;
-}
-
 /** 持久化任务栏窗口被用户拖动后的横向位置（整数逻辑像素） */
-export function writeSavedPositionX(x: number) { // 实现
+export function writeSavedPositionX(x: number) {
     if (typeof localStorage === "undefined") return;
     localStorage.setItem(
         taskbarContracts.TASKBAR_PLAYER_POSITION_X_KEY,

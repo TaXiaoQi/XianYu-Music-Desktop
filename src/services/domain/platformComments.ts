@@ -1,10 +1,8 @@
 
 export type {
-  CommentPlatform,
-  PlatformComment,
   PlatformCommentResult,
 } from './platformCommentShared';
-export { detectCommentPlatform, extractMediaItem, httpJson, PAGE_SIZE } from './platformCommentShared';
+export { detectCommentPlatform } from './platformCommentShared';
 
 import type { PluginSearchResult, PluginSource } from '../../types';
 import { detectCommentPlatform, extractMediaItem } from './platformCommentShared';

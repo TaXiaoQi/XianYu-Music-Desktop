@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import {
     nextTick,
     onMounted,
@@ -38,13 +38,13 @@ type DetailMenuAction =
     | "toggleVideoBackground"
     | "addToPlaylist";
 
-interface MenuEntry { // 实现
+interface MenuEntry {
     key: DetailMenuAction;
     label: string;
     icon: { viewBox: string; fill: boolean; paths: { d: string }[] };
 }
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     visible: boolean;
     x: number;
     y: number;
@@ -53,7 +53,7 @@ const props = defineProps<{ // 实现
     videoBackgroundLoading?: boolean;
 }>();
 
-const emit = defineEmits<{ // 实现
+const emit = defineEmits<{
     (e: "close"): void;
     (e: "change-lyrics"): void;
     (e: "toggle-video-background"): void;
@@ -66,8 +66,8 @@ const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
 const { closePlayerDetail } = usePlaybackController();
 
-const menuRef = ref<HTMLElement | null>(null); // 实现
-const menuSize = ref({ width: 0, height: 0 }); // 实现
+const menuRef = ref<HTMLElement | null>(null);
+const menuSize = ref({ width: 0, height: 0 });
 
 const isOnlineSong = computed(() => {
     const path = props.song?.path ?? "";
@@ -179,7 +179,7 @@ const menuEntries = computed<MenuEntry[]>(() => {
         });
     }
 
-    entries.push({ // 实现
+    entries.push({
         key: "changeLyrics",
         label: "更改歌词 (LRC)",
         icon: menuIcons.changeLyrics,
@@ -195,7 +195,7 @@ const menuEntries = computed<MenuEntry[]>(() => {
         });
     }
 
-    entries.push({ // 实现
+    entries.push({
         key: "addToPlaylist",
         label: "添加到歌单",
         icon: menuIcons.addToPlaylist,
@@ -226,7 +226,7 @@ watch(
     { immediate: true },
 );
 
-const menuStyle = computed<CSSProperties>(() => { // 实现
+const menuStyle = computed<CSSProperties>(() => {
     if (!props.visible) return {};
 
     let top = props.y;
@@ -252,7 +252,7 @@ const menuStyle = computed<CSSProperties>(() => { // 实现
     };
 });
 
-const handleGlobalClick = (event: MouseEvent) => { // 实现
+const handleGlobalClick = (event: MouseEvent) => {
     const target = event.target as Node;
     if (props.visible && !menuRef.value?.contains(target)) {
         emit("close");

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PluginSource, Song } from "../../types";
 
-const mocks = vi.hoisted(() => ({ // 实现
+const mocks = vi.hoisted(() => ({
     getStoredPlugins: vi.fn(),
     pluginMusicSearchWithDiagnostics: vi.fn(),
     pluginGetLyric: vi.fn(),
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({ // 实现
     loadLyrics: vi.fn(),
     tauriInvoke: vi.fn(),
     patchSongMeta: vi.fn(),
-    patchQueueSongMeta: vi.fn(), // 实现
+    patchQueueSongMeta: vi.fn(),
     playbackStore: {
         currentSong: null as Song | null,
         patchQueueSongMeta: vi.fn(),
@@ -79,7 +79,7 @@ const createSong = (path = "plugin://source/song"): Song => ({
     duration: 180,
 });
 
-const musicFreePlugin: PluginSource = { // 实现
+const musicFreePlugin: PluginSource = {
     id: "mf-plugin",
     name: "MF 插件",
     format: "musicfree",
@@ -93,7 +93,7 @@ const musicFreePlugin: PluginSource = { // 实现
     sortOrder: 1,
 };
 
-const lxPlugin: PluginSource = { // 实现
+const lxPlugin: PluginSource = {
     ...musicFreePlugin,
     id: "lx-plugin",
     name: "LX 插件",

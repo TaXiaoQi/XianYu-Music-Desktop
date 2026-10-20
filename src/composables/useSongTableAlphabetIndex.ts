@@ -38,7 +38,7 @@ const SCROLL_NAV_ROUTES = new Set([
     "/online-detail",
 ]);
 
-interface UseSongTableAlphabetIndexOptions { // 实现
+interface UseSongTableAlphabetIndexOptions {
     songs: Ref<Song[]>;
     scrollTop: Ref<number>;
     containerHeight: Ref<number>;

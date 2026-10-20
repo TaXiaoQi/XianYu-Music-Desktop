@@ -1,13 +1,8 @@
 import {pluginApi} from '../../services/tauri/pluginApi';
 
-
 export interface PreviewClipInfo {
   start: number;
   duration: number;
-}
-
-export function isPluginPath(path: string): boolean {
-  return path.startsWith('plugin://');
 }
 
 export function isQishuiPluginPath(path: string): boolean {
@@ -83,11 +78,4 @@ export function formatPreviewClock(seconds: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-export function isPreviewLikeStream(actualDuration: number, songDuration: number): boolean {
-  return actualDuration > 0
-    && songDuration >= 100
-    && actualDuration <= 120
-    && actualDuration + 30 <= songDuration;
 }

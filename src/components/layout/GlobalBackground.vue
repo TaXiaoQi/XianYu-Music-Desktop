@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import {
     computed,
     nextTick,
@@ -38,13 +38,13 @@ const {
     showPlayerDetail,
     isMiniMode,
 } = usePlayer();
-const { theme, isDarkTheme, patchTheme } = useThemeSettings(); // 实现
-const { activeWindowMaterial } = useWindowMaterial(); // 实现
-const { loadFullCover } = useCoverCache(); // 实现
-const { isMainWindowLowPower } = useRenderingPower(); // 实现
+const { theme, isDarkTheme, patchTheme } = useThemeSettings();
+const { activeWindowMaterial } = useWindowMaterial();
+const { loadFullCover } = useCoverCache();
+const { isMainWindowLowPower } = useRenderingPower();
 const { isLowPerformance } = usePerformanceMode();
-const playbackStore = usePlaybackStore(); // 实现
-const { currentSongPath } = storeToRefs(playbackStore); // 实现
+const playbackStore = usePlaybackStore();
+const { currentSongPath } = storeToRefs(playbackStore);
 const route = useRoute(); // 主题包每页壁纸按当前路由解析 pageId
 
 const materialActive = computed(() => activeWindowMaterial.value !== "none");
@@ -333,7 +333,7 @@ const absorbVideoFrame = (frame: FrameSize) => {
     videoFrame.value = frame;
     if (!(frame.width && frame.height)) return;
     patchTheme({
-        customBackground: { // 实现
+        customBackground: {
             ...theme.value.customBackground,
             imageWidth: frame.width,
             imageHeight: frame.height,

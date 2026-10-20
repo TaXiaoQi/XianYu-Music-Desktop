@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -78,7 +78,7 @@ let detachSessionStream: (() => void) | null = null;
 let detachQueueMetaStream: (() => void) | null = null;
 let queueMetaByPath: Record<string, Song> = {};
 
-onMounted(async () => { // 实现
+onMounted(async () => {
     try {
         await shellWindow.setBackgroundColor([0, 0, 0, 0]);
     } catch (error) {
@@ -152,7 +152,7 @@ onMounted(async () => { // 实现
     void emitTo("main", TASKBAR_PLAYER_REQUEST_STATE_EVENT);
 });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
     detachStateStream?.();
     detachVisibilityStream?.();
     detachMoveStream?.();

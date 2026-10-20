@@ -4,7 +4,7 @@ export type ProfileLimitDialogTarget = 'nickname' | 'avatar' | 'ban';
 
 export type BanType = 'account' | 'device';
 
-export interface ProfileLimitDialogState {
+interface ProfileLimitDialogState {
   visible: boolean;
   target: ProfileLimitDialogTarget;
   blocked: boolean;
@@ -38,11 +38,7 @@ export function showProfileLimitDialog(
   });
 }
 
-export function showBanDialog(banType: BanType, reason: string): Promise<boolean> {
-  return showProfileLimitDialog('ban', { blocked: true, message: reason, banType });
-}
-
-export function resolveProfileLimitDialog(confirmed: boolean): void {
+function resolveProfileLimitDialog(confirmed: boolean): void {
   const state = profileLimitDialogState.value;
   state.resolver?.(confirmed);
   profileLimitDialogState.value = {

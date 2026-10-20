@@ -83,11 +83,11 @@ function raceAgainstDeadline<T>(
     });
 }
 
-export async function extractDominantColors( // 实现
+export async function extractDominantColors(
     source: string,
     count: number = PALETTE_SIZE_DEFAULT,
     options: ExtractColorOptions = {},
-): Promise<string[]> { // 实现
+): Promise<string[]> {
     const query = normalizePaletteQuery(source, count, options);
     const queryKey = JSON.stringify(query);
     const stored = readStoredPalette(queryKey);

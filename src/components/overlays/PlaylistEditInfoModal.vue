@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -8,14 +8,14 @@ import { useCollectionsStore } from "../../features/collections/store";
 import { useLibraryStore } from "../../features/library/store";
 import { useCoverCache } from "../../composables/useCoverCache";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     visible: boolean;
     playlistId: string;
     initialName: string;
     initialCoverPath?: string;
 }>();
 
-const emit = defineEmits<{ // 实现
+const emit = defineEmits<{
     (event: "update:visible", value: boolean): void;
     (
         event: "confirm",
@@ -24,20 +24,20 @@ const emit = defineEmits<{ // 实现
     (event: "cancel"): void;
 }>();
 
-const collectionsStore = useCollectionsStore(); // 实现
-const libraryStore = useLibraryStore(); // 实现
-const { loadCover, loadCoverPath } = useCoverCache(); // 实现
+const collectionsStore = useCollectionsStore();
+const libraryStore = useLibraryStore();
+const { loadCover, loadCoverPath } = useCoverCache();
 
-const isClosing = ref(false); // 实现
+const isClosing = ref(false);
 const nameInput = ref("");
-const nameInputRef = ref<HTMLInputElement | null>(null); // 实现
-const coverPath = ref<string | null>(null); // 实现
+const nameInputRef = ref<HTMLInputElement | null>(null);
+const coverPath = ref<string | null>(null);
 const coverPreviewUrl = ref<string>("");
 
 type CoverPanel = "main" | "source-menu" | "song-picker";
 const coverPanel = ref<CoverPanel>("main");
 
-const playlistSongs = computed<Song[]>(() => { // 实现
+const playlistSongs = computed<Song[]>(() => {
     const playlist = collectionsStore.playlists.find(
         (p) => p.id === props.playlistId,
     );
@@ -64,11 +64,11 @@ const playlistSongs = computed<Song[]>(() => { // 实现
     });
 });
 
-const songCoverUrls = ref<Record<string, string>>({}); // 实现
-const pickingSongIndex = ref<number | null>(null); // 实现
+const songCoverUrls = ref<Record<string, string>>({});
+const pickingSongIndex = ref<number | null>(null);
 const songSearchQuery = ref("");
 
-const filteredPlaylistSongs = computed(() => { // 实现
+const filteredPlaylistSongs = computed(() => {
     const keyword = songSearchQuery.value.trim().toLowerCase();
     if (!keyword) return playlistSongs.value;
     return playlistSongs.value.filter(
@@ -129,7 +129,7 @@ watch(
 );
 
 // ===== 本地选择封面 ===== 
-const handleSelectCoverFromLocal = async () => { // 实现
+const handleSelectCoverFromLocal = async () => {
     coverPanel.value = "main";
     const selected = await openDialog({
         multiple: false,
@@ -152,12 +152,12 @@ const handleSelectCoverFromLocal = async () => { // 实现
 };
 
 // ===== 从歌单歌曲中选择封面 ===== 
-const handleSelectCoverFromPlaylist = () => { // 实现
+const handleSelectCoverFromPlaylist = () => {
     coverPanel.value = "song-picker";
     songSearchQuery.value = "";
 };
 
-const handlePickSongCover = async (song: Song, index: number) => { // 实现
+const handlePickSongCover = async (song: Song, index: number) => {
     pickingSongIndex.value = index;
     try {
         const rawPath = await loadCoverPath(song.path);
@@ -193,18 +193,18 @@ const handlePickSongCover = async (song: Song, index: number) => { // 实现
     }
 };
 
-const handleBackToMain = () => { // 实现
+const handleBackToMain = () => {
     coverPanel.value = "main";
 };
 
-const handleRemoveCover = () => { // 实现
+const handleRemoveCover = () => {
     coverPath.value = null;
     coverPreviewUrl.value = "";
 };
 
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
-const handleClose = () => { // 实现
+const handleClose = () => {
     isClosing.value = true;
     closeTimer = setTimeout(() => {
         emit("cancel");
@@ -226,7 +226,7 @@ const canConfirm = computed(
         (hasNameChanged.value || hasCoverChanged.value),
 );
 
-const handleConfirm = () => { // 实现
+const handleConfirm = () => {
     if (!nameInput.value.trim() || !canConfirm.value) return;
     isClosing.value = true;
     closeTimer = setTimeout(() => {
@@ -240,7 +240,7 @@ const handleConfirm = () => { // 实现
     }, 200);
 };
 
-const handleKeydown = (e: KeyboardEvent) => { // 实现
+const handleKeydown = (e: KeyboardEvent) => {
     if (!props.visible) return;
     if (e.key === "Escape") {
         if (coverPanel.value !== "main") {

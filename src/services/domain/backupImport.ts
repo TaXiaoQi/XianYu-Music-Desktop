@@ -10,12 +10,11 @@ import type { ImportedPlaylist } from './backupImportTypes';
 
 
 export type { ImportedPlaylist } from './backupImportTypes';
-export type { BackupFormat } from './backupImportTypes';
 export { matchSongsToLocalLibrary } from './backupImportMatch';
 
 export const SUPPORTED_IMPORT_EXTENSIONS = ['json', 'm3u', 'm3u8', 'txt', 'zip', 'lxmc'];
 
-export async function readBackupFileContent(filePath: string): Promise<string> {
+async function readBackupFileContent(filePath: string): Promise<string> {
   const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
   if (ext === 'zip') {
     const bytes = await readFileBytes(filePath);

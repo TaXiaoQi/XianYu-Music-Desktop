@@ -2,7 +2,7 @@
 import type { PluginSearchResult } from '../../types';
 import type { LxSearchResultItem } from './lxMusicSdkBase';
 
-export type RecommendStrategyType = 'artist_search' | 'song_search' | 'keyword_search';
+type RecommendStrategyType = 'artist_search' | 'song_search' | 'keyword_search';
 
 export interface DailyRecommendStrategy {
   id: string;

@@ -2,8 +2,8 @@ import type {Song} from '../../types';
 import {clearOnlineLyricsUnavailable, markOnlineLyricsUnavailable} from '../../composables/lyrics/state';
 import {fetchOnlineLyricsRaw} from './onlineLyrics';
 
-export const wordTimestampPattern = /<\d{1,3}:\d{2}/;
-export const qrcXmlPattern = /<(?:QrcInfos|src=")/;
+const wordTimestampPattern = /<\d{1,3}:\d{2}/;
+const qrcXmlPattern = /<(?:QrcInfos|src=")/;
 
 export const looksWordLevel = (text: string): boolean =>
   wordTimestampPattern.test(text) || qrcXmlPattern.test(text);

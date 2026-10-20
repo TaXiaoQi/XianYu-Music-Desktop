@@ -17,13 +17,13 @@ export function useWallpaperList({
     isLoggedIn,
     currentUser,
 }: UseWallpaperListOptions) {
-    const wallpapers = ref<Wallpaper[]>([]); // 实现
-    const isLoading = ref(true); // 实现
+    const wallpapers = ref<Wallpaper[]>([]);
+    const isLoading = ref(true);
     const loadError = ref("");
-    const myWallpapers = ref<MyWallpaper[]>([]); // 实现
-    const myLoading = ref(false); // 实现
+    const myWallpapers = ref<MyWallpaper[]>([]);
+    const myLoading = ref(false);
     const myError = ref("");
-    const fetchWallpapers = async () => { // 实现
+    const fetchWallpapers = async () => {
         isLoading.value = true;
         loadError.value = "";
         try {
@@ -70,8 +70,8 @@ export function useWallpaperList({
         } finally {
             isLoading.value = false;
         }
-    }; // 实现
-    const fetchMyWallpapers = async () => { // 实现
+    };
+    const fetchMyWallpapers = async () => {
         if (!isLoggedIn.value || !currentUser.value?.ciyuanxi_id) return;
         myLoading.value = true;
         myError.value = "";
@@ -127,7 +127,7 @@ export function useWallpaperList({
         } finally {
             myLoading.value = false;
         }
-    }; // 实现
+    };
 
     return {
         wallpapers,

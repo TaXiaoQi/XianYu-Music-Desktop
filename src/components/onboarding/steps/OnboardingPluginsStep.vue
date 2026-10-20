@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 引导流程插件步：安装渠道介绍。
 // 插件管理器的挂载与遮罩切换逻辑由主组件持有，这里只发事件。
 const emit = defineEmits<{

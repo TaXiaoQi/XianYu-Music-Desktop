@@ -1,7 +1,7 @@
 import { pinyin } from "pinyin-pro";
 
 // 字母索引分组的固定次序：数字组在最前，“#” 兜底组在最后。
-export const ALPHABET_INDEX_KEYS = [ // 实现
+const ALPHABET_INDEX_KEYS = [
     "0",
     "A",
     "B",
@@ -38,7 +38,7 @@ export type AlphabetIndexKey = (typeof ALPHABET_INDEX_KEYS)[number];
 export const INDEX_KEYS: AlphabetIndexKey[] = Array.from(ALPHABET_INDEX_KEYS);
 
 /** 索引键 → 排序序号的查找表 */
-export const INDEX_ORDER: Map<AlphabetIndexKey, number> = (() => {
+const INDEX_ORDER: Map<AlphabetIndexKey, number> = (() => {
     const orderMap = new Map<AlphabetIndexKey, number>();
     ALPHABET_INDEX_KEYS.forEach((key, order) => orderMap.set(key, order));
     return orderMap;
@@ -80,7 +80,7 @@ function toHalfWidth(text: string): string {
 }
 
 /** 索引归一化：全角转半角，并剥掉标题开头的包裹符号 */
-export function normalizeTitleForIndex(
+function normalizeTitleForIndex(
     title: string | null | undefined,
 ): string {
     let clean = toHalfWidth(String(title ?? "").trim());
@@ -91,7 +91,7 @@ export function normalizeTitleForIndex(
 }
 
 /** 排序归一化：在索引归一化基础上整体剥除成对包裹符号，再清理残余符号与空白 */
-export function normalizeTitleForSort(
+function normalizeTitleForSort(
     title: string | null | undefined,
 ): string {
     let clean = normalizeTitleForIndex(title);
@@ -150,7 +150,7 @@ export function getAlphabetIndexKey(
 }
 
 /** 生成用于字典序比较的拼音排序键 */
-export function getAlphabetSortKey(title: string | null | undefined): string {
+function getAlphabetSortKey(title: string | null | undefined): string {
     const normalizedTitle = normalizeTitleForSort(title);
     try {
         const converted = pinyin(normalizedTitle, {

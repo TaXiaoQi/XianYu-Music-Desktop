@@ -3,13 +3,11 @@ import type { QualityKey, Song } from '../../types';
 import {
   normalizeQualityKey,
   qualityKeyToLxQuality,
-  resolveOnlinePlayQuality,
 } from '../../types';
 import type { PluginSource } from '../../types';
 import { getCachedLxSong } from './lxSongCache';
 import type { LxSearchResultItem } from './lxMusicSdk';
-import { ensureLxPluginInstance, lxPluginGetMusicUrl } from './lxPluginEngine';
-import { isSongLevelError } from './lxPluginEngine';
+import { lxPluginGetMusicUrl } from './lxPluginEngine';
 import { getStoredPlugins } from './pluginEngine';
 
 // ==================== 协议解析 ====================
@@ -28,15 +26,11 @@ export function parseLxPath(path: string): LxPathInfo | null {
   return { source, songmid };
 }
 
-export function isLxPath(path: string): boolean {
-  return !!path && path.startsWith('lx://');
-}
-
 // ==================== 插件定位 ====================
 
 // 声明支持该音源的插件优先，逐个尝试直到命中，
 // 避免单个插件的第三方接口故障导致整体解析失败
-export function listLxPluginsForSource(lxSource: string): PluginSource[] {
+function listLxPluginsForSource(lxSource: string): PluginSource[] {
   const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
   if (lxPlugins.length === 0) return [];
   const matched = lxPlugins.filter(p => p.sources.includes(lxSource));
@@ -124,14 +118,6 @@ function normalizeLxTypes(
   return result;
 }
 
-// ==================== URL 解析 ====================
-
-export interface LxUrlResolveResult {
-  url: string;
-  quality: QualityKey;
-  source: 'plugin';
-}
-
 // ==================== 直链缓存（对齐移动端 plugin_engine.resolveLxUrl） ====================
 
 const LX_URL_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -179,49 +165,6 @@ function setLxUrlCache(key: string, url: string, quality: QualityKey): void {
     quality,
     expiresAt: Date.now() + LX_URL_CACHE_TTL_MS,
   });
-}
-
-export async function resolveLxUrlViaPlugin(
-  plugin: PluginSource,
-  lxSource: string,
-  songInfo: Record<string, unknown>,
-  qualities: QualityKey[],
-): Promise<LxUrlResolveResult | null> {
-  await ensureLxPluginInstance(plugin);
-
-  for (const quality of qualities) {
-    const cacheKey = buildLxUrlCacheKey(lxSource, songInfo, quality);
-    const cached = getLxUrlCacheHit(cacheKey);
-    if (cached) {
-      return { url: cached.url, quality: cached.quality, source: 'plugin' };
-    }
-    try {
-      const pluginQuality = qualityKeyToLxQuality(quality);
-      const urlResult = await lxPluginGetMusicUrl(
-        plugin,
-        lxSource,
-        songInfo,
-        pluginQuality,
-      );
-      const musicUrl = urlResult?.url;
-      if (musicUrl && /^https?:/.test(musicUrl)) {
-        const reported = normalizeQualityKey(urlResult?.type);
-        const hitQuality = reported ?? quality;
-        setLxUrlCache(cacheKey, musicUrl, hitQuality);
-        return { url: musicUrl, quality: hitQuality, source: 'plugin' };
-      }
-    } catch (urlErr) {
-      const isSongLevel =
-        (urlErr instanceof Error && urlErr.name === 'LxSongLevelError') ||
-        isSongLevelError(urlErr instanceof Error ? urlErr.message : String(urlErr));
-      if (isSongLevel) {
-        const errMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
-        console.warn(`[LXUrlResolver] 歌曲级别错误，跳过剩余音质: ${errMsg}`);
-        break;
-      }
-    }
-  }
-  return null;
 }
 
 export interface LxSingleQualityResolveResult {
@@ -299,30 +242,4 @@ async function runResolveLxUrlForSingleQuality(
   const hitQuality = reported ?? quality;
   setLxUrlCache(cacheKey, url, hitQuality);
   return { url, quality: hitQuality };
-}
-
-export async function resolveLxUrl(
-  song: Song,
-  lxSource: string,
-  songmid: string,
-  requestedQuality: QualityKey,
-  fallbackBehavior: 'lower' | 'higher' | 'pause',
-  availableQualities: QualityKey[] | null,
-): Promise<LxUrlResolveResult | null> {
-  const tryQualities = resolveOnlinePlayQuality(
-    requestedQuality,
-    availableQualities,
-    fallbackBehavior,
-  );
-  if (tryQualities.length === 0) return null;
-
-  const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
-  if (!cachedInfo) return null;
-
-  const songInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
-  for (const plugin of listLxPluginsForSource(lxSource)) {
-    const result = await resolveLxUrlViaPlugin(plugin, lxSource, songInfo, tryQualities);
-    if (result) return result;
-  }
-  return null;
 }

@@ -4,7 +4,7 @@ export type ShareLinkDialogAction = 'play' | 'playNext' | 'cancel' | 'import';
 
 export type ShareLinkDialogMode = 'local' | 'online' | 'import';
 
-export interface ShareLinkDialogState {
+interface ShareLinkDialogState {
   visible: boolean;
   name: string;
   artist: string;
@@ -48,7 +48,7 @@ export function showShareLinkDialog(params: {
   });
 }
 
-export function resolveShareLinkDialog(action: ShareLinkDialogAction): void {
+function resolveShareLinkDialog(action: ShareLinkDialogAction): void {
   const state = shareLinkDialogState.value;
   if (action === 'play') {
     shareLinkDialogState.value = { ...state, resolver: null };

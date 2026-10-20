@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-export interface DeleteAccountDialogState {
+interface DeleteAccountDialogState {
   visible: boolean;
   resolver: ((confirmed: boolean) => void) | null;
 }
@@ -19,7 +19,7 @@ export function showDeleteAccountDialog(): Promise<boolean> {
   });
 }
 
-export function resolveDeleteAccountDialog(confirmed: boolean): void {
+function resolveDeleteAccountDialog(confirmed: boolean): void {
   const state = deleteAccountDialogState.value;
   state.resolver?.(confirmed);
   deleteAccountDialogState.value = {

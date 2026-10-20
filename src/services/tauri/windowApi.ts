@@ -16,7 +16,7 @@ export type {
     WindowMaterialCapabilities,
 } from "./contracts";
 
-export const windowApi = { // 实现
+export const windowApi = {
     setMiniBoundaryEnabled: (enabled: boolean) =>
         tauriInvoke("set_mini_boundary_enabled", { enabled }),
     setDarkModeForWindow: (dark: boolean) =>

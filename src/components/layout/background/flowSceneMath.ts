@@ -3,7 +3,7 @@
 import type { CSSProperties } from 'vue';
 
 /** 流光层生命周期：进场 → 在场 → 退场 */
-export type FlowLayerPhase = 'entering' | 'current' | 'previous';
+type FlowLayerPhase = 'entering' | 'current' | 'previous';
 
 /** 单个流光层在某一时刻的完整呈现快照 */
 export interface FlowLayerSnapshot {
@@ -24,7 +24,7 @@ export interface FlowLayerSnapshot {
 export const SCENE_HANDOFF_MS = 1180;
 
 /** 主色不足时启用的兜底四色 */
-export const RESERVED_PALETTE = [
+const RESERVED_PALETTE = [
   'hsl(220, 28%, 34%)',
   'hsl(196, 58%, 56%)',
   'hsl(340, 52%, 58%)',

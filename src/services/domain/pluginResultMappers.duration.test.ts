@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractDuration, extractDurationMs, extractResultList, parseDuration, toPluginSearchResult, toPluginSearchResults } from './pluginResultMappers';
+import { extractDurationMs, extractResultList, parseDuration, toPluginSearchResult, toPluginSearchResults } from './pluginResultMappers';
 import type { PluginSource } from '../../types';
 
 function makePlugin(): PluginSource {
@@ -61,80 +61,80 @@ describe('parseDuration', () => {
   });
 });
 
-describe('extractDuration', () => {
+describe('extractDurationMs', () => {
   it('extracts duration from item dt property (Netease format)', () => {
     const item = { id: '1', title: '歌', dt: 215000 };
-    expect(extractDuration(item)).toBe(215000);
+    expect(extractDurationMs(item)).toBe(215000);
   });
 
   it('extracts duration from rawData nested dt property', () => {
     const item = { id: '1', title: '歌', rawData: { dt: 215000 } };
-    expect(extractDuration(item)).toBe(215000);
+    expect(extractDurationMs(item)).toBe(215000);
   });
 
   it('extracts duration from interval string property', () => {
     const item = { id: '1', title: '歌', interval: '04:15' };
-    expect(extractDuration(item)).toBe(255000);
+    expect(extractDurationMs(item)).toBe(255000);
   });
 
   it('prefers top-level valid duration over zero fallback', () => {
     const item = { id: '1', title: '歌', duration: 0, dt: 180000 };
-    expect(extractDuration(item)).toBe(180000);
+    expect(extractDurationMs(item)).toBe(180000);
   });
 
   it('extracts duration from duration field in seconds (Baka QQ/网易云/酷我 format)', () => {
     const item = { id: '1', title: '歌', duration: 215 };
-    expect(extractDuration(item)).toBe(215000);
+    expect(extractDurationMs(item)).toBe(215000);
   });
 
   it('extracts duration from durationSeconds field', () => {
     const item = { id: '1', title: '歌', durationSeconds: 255 };
-    expect(extractDuration(item)).toBe(255000);
+    expect(extractDurationMs(item)).toBe(255000);
   });
 
   it('extracts duration from intervalSeconds field', () => {
     const item = { id: '1', title: '歌', intervalSeconds: 180 };
-    expect(extractDuration(item)).toBe(180000);
+    expect(extractDurationMs(item)).toBe(180000);
   });
 
   it('extracts duration from nested al.dt field (Netease album node)', () => {
     const item = { id: '1', title: '歌', al: { dt: 240000 } };
-    expect(extractDuration(item)).toBe(240000);
+    expect(extractDurationMs(item)).toBe(240000);
   });
 
   it('extracts duration from durationMs field', () => {
     const item = { id: '1', title: '歌', durationMs: 215000 };
-    expect(extractDuration(item)).toBe(215000);
+    expect(extractDurationMs(item)).toBe(215000);
   });
 
   it('extracts duration from dur field', () => {
     const item = { id: '1', title: '歌', dur: 215 };
-    expect(extractDuration(item)).toBe(215000);
+    expect(extractDurationMs(item)).toBe(215000);
   });
 
   it('extracts duration from len field', () => {
     const item = { id: '1', title: '歌', len: 240000 };
-    expect(extractDuration(item)).toBe(240000);
+    expect(extractDurationMs(item)).toBe(240000);
   });
 
   it('extracts duration from nested song.duration inside rawData', () => {
     const item = { id: '1', title: '歌', rawData: { song: { duration: 215 } } };
-    expect(extractDuration(item)).toBe(215000);
+    expect(extractDurationMs(item)).toBe(215000);
   });
 
   it('extracts duration from nested music.duration inside rawData', () => {
     const item = { id: '1', title: '歌', rawData: { music: { duration: 223 } } };
-    expect(extractDuration(item)).toBe(223000);
+    expect(extractDurationMs(item)).toBe(223000);
   });
 
   it('extracts duration from nested data.duration inside rawData', () => {
     const item = { id: '1', title: '歌', rawData: { data: { duration: 300 } } };
-    expect(extractDuration(item)).toBe(300000);
+    expect(extractDurationMs(item)).toBe(300000);
   });
 
   it('extracts duration from nested detail.duration inside rawData', () => {
     const item = { id: '1', title: '歌', rawData: { detail: { duration: 269 } } };
-    expect(extractDuration(item)).toBe(269000);
+    expect(extractDurationMs(item)).toBe(269000);
   });
 });
 

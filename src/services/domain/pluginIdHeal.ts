@@ -13,7 +13,7 @@ const platformLabelFromPath = (path: string): string => {
   }
 };
 
-export const findHealedPluginForSong = (
+const findHealedPluginForSong = (
   song: Song,
   installedPlugins?: PluginSource[],
 ): PluginSource | null => {

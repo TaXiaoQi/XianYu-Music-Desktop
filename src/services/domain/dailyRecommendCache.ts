@@ -54,11 +54,3 @@ export function pickBatchItems(
   }
   return pool.slice(0, Math.max(1, algorithm.target_count || 30));
 }
-
-export function clearDailyRecommendCache(): void {
-  try {
-    localStorage.removeItem(CACHE_KEY);
-  } catch {
-    /* 静默 */
-  }
-}

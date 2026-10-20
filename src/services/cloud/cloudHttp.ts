@@ -77,7 +77,7 @@ export class CloudHttpResponse {
   }
 }
 
-export interface CloudRequestOptions {
+interface CloudRequestOptions {
   headers?: Record<string, string>;
   jsonBody?: unknown;
   form?: Record<string, string>;
@@ -87,7 +87,7 @@ export interface CloudRequestOptions {
 }
 
 /** 统一请求入口。body 优先级：json > form > raw。 */
-export async function cloudRequest(
+async function cloudRequest(
   method: string,
   url: string,
   opts: CloudRequestOptions = {},

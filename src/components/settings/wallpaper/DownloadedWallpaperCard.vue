@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import type { DownloadedWallpaper } from "../../../composables/settings/wallpaperTypes";
 import { isVideo, uploaderLabel } from "../../../composables/settings/wallpaperTypes";
 // 壁纸中心「我的下载」网格卡片：批量选择勾选与直接使用按钮。
@@ -7,11 +7,11 @@ defineProps<{
     selected: boolean;
     inUse: boolean;
     showBatchOps: boolean;
-}>(); // 实现
+}>();
 const emit = defineEmits<{
     (e: "toggle"): void;
     (e: "use"): void;
-}>(); // 实现
+}>();
 </script>
 <template>
     <div

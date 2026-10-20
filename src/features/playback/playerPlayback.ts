@@ -406,14 +406,14 @@ export const createPlayerPlayback = ({
 
         const normalizedCover = cover || '';
         if (normalizedCover) {
-          currentCover.value = getDisplayCoverUrl(normalizedCover); // 实现
+          currentCover.value = getDisplayCoverUrl(normalizedCover);
           currentCoverPath.value = song.path;
         } else if (!immediateCover) {
           currentCover.value = '';
           currentCoverPath.value = '';
         }
         if (!currentCoverFull.value) {
-          currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || ''; // 实现
+          currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
         }
       })
       .catch(() => {
@@ -522,8 +522,8 @@ export const createPlayerPlayback = ({
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;
         pluginFullBuffer = resolvedOnlineAudio.fullBuffer === true;
-        if (pluginHeaders) { // 实现
-          song.remote_headers = pluginHeaders; // 实现
+        if (pluginHeaders) {
+          song.remote_headers = pluginHeaders;
         }
         if (resolvedOnlineAudio.currentPlayingQuality) {
           playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
@@ -607,13 +607,13 @@ export const createPlayerPlayback = ({
 
             const normalizedCover = cover || '';
             const normalizedCoverPath = coverPath || '';
-            if (normalizedCover) { // 实现
-              currentCover.value = getDisplayCoverUrl(normalizedCover); // 实现
+            if (normalizedCover) {
+              currentCover.value = getDisplayCoverUrl(normalizedCover);
             } else if (!immediateCover) {
               currentCover.value = '';
             }
             if (!currentCoverFull.value) {
-              currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || ''; // 实现
+              currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
             }
 
             await playbackApi.updatePlaybackMetadata({
@@ -898,13 +898,13 @@ export const createPlayerPlayback = ({
 
             const normalizedCover = cover || '';
             const normalizedCoverPath = coverPath || '';
-            if (normalizedCover) { // 实现
-              currentCover.value = getDisplayCoverUrl(normalizedCover); // 实现
+            if (normalizedCover) {
+              currentCover.value = getDisplayCoverUrl(normalizedCover);
             } else if (!immediateCover) {
               currentCover.value = '';
             }
             if (!currentCoverFull.value) {
-              currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || ''; // 实现
+              currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
             }
 
             await playbackApi.updatePlaybackMetadata({

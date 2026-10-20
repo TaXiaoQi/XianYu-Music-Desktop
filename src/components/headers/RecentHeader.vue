@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { useSearchAwareTitle } from '../../composables/useSearchAwareTitle';
 import SortModeButton from '../common/SortModeButton.vue';
 

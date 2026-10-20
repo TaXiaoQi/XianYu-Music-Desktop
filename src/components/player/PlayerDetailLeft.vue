@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, ref } from 'vue';
 import { usePlaybackController as useStageControl } from '../../features/playback/usePlaybackController';
 import { useDetailCover } from '../../composables/useDetailCover';
@@ -71,8 +71,8 @@ const exposedRefs = { detailCoverRef };
 defineExpose(exposedRefs);
 
 const onCoverActivate = (event: MouseEvent) => {
-  event.stopPropagation(); // 实现
-  emit('toggle-cover'); // 实现
+  event.stopPropagation();
+  emit('toggle-cover');
 };
 </script>
 

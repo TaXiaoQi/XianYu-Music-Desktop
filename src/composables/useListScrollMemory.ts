@@ -28,7 +28,7 @@ const frameOnce = () =>
         requestAnimationFrame(() => resolve());
     });
 
-export function useListScrollMemory( // 实现
+export function useListScrollMemory(
     keySource: ScrollKeySource,
     containerRef: Ref<HTMLElement | null>,
     options?: ListScrollMemoryOptions,

@@ -9,7 +9,7 @@ const {
     analyzeMvAudioSyncMock,
     analyzeMvAudioSyncLocalMock,
     wasLastMvSourceCallFailedMock,
-} = vi.hoisted(() => ({ // 实现
+} = vi.hoisted(() => ({
     mvProxyUrlMock: vi.fn(),
     getStoredPluginsMock: vi.fn(),
     pluginHttpRequestMock: vi.fn(),
@@ -56,7 +56,7 @@ import {
     useBilibiliVideoBackground,
 } from "./useBilibiliVideoBackground";
 
-const makeSong = (overrides: Partial<Song> = {}): Song => ({ // 实现
+const makeSong = (overrides: Partial<Song> = {}): Song => ({
     path: "plugin://bilibili/BV1j3411D7pu",
     name: "测试视频",
     title: "测试视频",

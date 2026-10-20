@@ -32,7 +32,7 @@ const LEGACY_KEYS = [
   'listen_stats_last_reset_at_legacy',
 ] as const;
 
-export interface ListenServerSnapshot {
+interface ListenServerSnapshot {
   total: number;
   daily: number;
   weekly: number;
@@ -112,7 +112,7 @@ function snapshotForMe(): ListenServerSnapshot | null {
   return snap && snap.uid === uid ? snap : null;
 }
 
-export async function getLocalListenDurations(): Promise<ListenDurations> {
+async function getLocalListenDurations(): Promise<ListenDurations> {
   try {
     return await statisticsApi.getListenDurations();
   } catch {
@@ -171,7 +171,7 @@ function ensureSamplerStarted(): void {
 
 let flushBusy = false;
 
-export async function flushListenEvents(): Promise<{ resetApplied: boolean; snapshotFresh: boolean }> {
+async function flushListenEvents(): Promise<{ resetApplied: boolean; snapshotFresh: boolean }> {
   const ciyuanxiId = getCiyuanxiId();
   if (!ciyuanxiId || flushBusy) return { resetApplied: false, snapshotFresh: false };
   flushBusy = true;
@@ -337,10 +337,4 @@ export async function reportAndHandleReset(): Promise<{ resetApplied: boolean }>
   lastReportAt = now;
   ensureSamplerStarted();
   return flushListenEvents();
-}
-
-export async function checkForResetSignal(_localDuration = 0): Promise<boolean> {
-  const ciyuanxiId = getCiyuanxiId();
-  if (!ciyuanxiId) return false;
-  return (await reportAndHandleReset()).resetApplied;
 }

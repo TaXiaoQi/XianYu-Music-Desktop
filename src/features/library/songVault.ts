@@ -539,5 +539,3 @@ export function createLibrarySongVault() {
     applyDelta,
   };
 }
-
-export type LibrarySongVault = ReturnType<typeof createLibrarySongVault>;

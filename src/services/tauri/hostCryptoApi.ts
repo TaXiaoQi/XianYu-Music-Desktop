@@ -17,10 +17,6 @@ export function hostMiguSign(text: string, time: string): Promise<{ sign: string
   return tauriInvoke('host_migu_sign', { text, time });
 }
 
-export function hostLinuxapiEncrypt(payload: string): Promise<string> {
-  return tauriInvoke('host_linuxapi_encrypt', { payload });
-}
-
 export function hostWeapiEncrypt(payload: string): Promise<{ params: string; encSecKey: string }> {
   return tauriInvoke('host_weapi_encrypt', { payload });
 }

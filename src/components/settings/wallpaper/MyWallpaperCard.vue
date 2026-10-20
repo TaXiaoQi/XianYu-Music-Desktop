@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import type { MyWallpaper } from "../../../composables/settings/wallpaperTypes";
 import { statusMeta } from "../../../composables/settings/wallpaperTypes";
 // 壁纸中心「我的上传」网格卡片：审核状态徽标与状态文案展示。
@@ -8,10 +8,10 @@ defineProps<{
     downloaded: boolean;
     downloading: boolean;
     anyDownloading: boolean;
-}>(); // 实现
+}>();
 const emit = defineEmits<{
     (e: "use", wp: MyWallpaper): void;
-}>(); // 实现
+}>();
 </script>
 <template>
     <div

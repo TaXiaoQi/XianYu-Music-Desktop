@@ -3,7 +3,7 @@ import { useLibraryStore } from "./store";
 import { usePlaybackStore } from "../playback/store";
 import type { Song } from "../../types";
 
-interface CleanupRemovedLibrarySongPathsOptions { // 实现
+interface CleanupRemovedLibrarySongPathsOptions {
     removedPaths: string[];
     removedFolderPath?: string;
     stopPlayback?: () => Promise<void> | void;
@@ -12,12 +12,12 @@ interface CleanupRemovedLibrarySongPathsOptions { // 实现
     clearCaches?: (songPaths: string[]) => Promise<void> | void;
 }
 
-export const normalizePathForScope = (path: string | null | undefined) => // 实现
+const normalizePathForScope = (path: string | null | undefined) =>
     (path ?? "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
-export const isPathInFolderScope = (folderPath: string, path: string) => { // 实现
+export const isPathInFolderScope = (folderPath: string, path: string) => {
     const normalizedFolder = normalizePathForScope(folderPath);
-    const normalizedPath = normalizePathForScope(path); // 实现
+    const normalizedPath = normalizePathForScope(path);
 
     return (
         !!normalizedFolder &&
@@ -51,7 +51,7 @@ export const collectSongPathsInFolderScope = (
     return paths;
 };
 
-const dedupePaths = (paths: string[]) => { // 实现
+const dedupePaths = (paths: string[]) => {
     const seen = new Set<string>();
     const deduped: string[] = [];
 
@@ -104,14 +104,14 @@ export const syncRemovedLibrarySongPreferences = (removedPaths: string[]) => {
     );
 };
 
-export const cleanupRemovedLibrarySongPaths = async ({ // 实现
+export const cleanupRemovedLibrarySongPaths = async ({
     removedPaths,
     removedFolderPath = "",
     stopPlayback,
     removeFromHistory,
     removeSongStatistics,
     clearCaches,
-}: CleanupRemovedLibrarySongPathsOptions) => { // 实现
+}: CleanupRemovedLibrarySongPathsOptions) => {
     const uniqueRemovedPaths = dedupePaths(removedPaths);
     if (uniqueRemovedPaths.length === 0) {
         return;

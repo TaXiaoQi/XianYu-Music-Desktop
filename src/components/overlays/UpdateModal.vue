@@ -1,14 +1,14 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { ref, onUnmounted } from "vue";
 import type { ServerUpdateInfo } from "../../utils/update";
 import type { DownloadProgressData } from "../../composables/useUpdateCheck";
 import { APP_VERSION } from "../../../version";
-defineProps<{ // 实现
+defineProps<{
     visible: boolean;
     update: ServerUpdateInfo | null;
     isDownloading?: boolean;
     progress?: DownloadProgressData;
-}>(); // 实现
+}>();
 const emit = defineEmits(["close", "download"]);
 // --- 淡出动画 ---
 const isClosing = ref(false);
@@ -30,17 +30,17 @@ onUnmounted(() => {
     }
 });
 
-const formatBytes = (bytes: number) => { // 实现
+const formatBytes = (bytes: number) => {
     if (!bytes || bytes <= 0) return "0 MB";
     const mb = bytes / (1024 * 1024);
     return mb >= 100 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
-}; // 实现
-const formatSpeed = (speed: number) => { // 实现
+};
+const formatSpeed = (speed: number) => {
     if (!speed || speed <= 0) return "0 MB/s";
     const mb = speed / (1024 * 1024);
     return mb >= 100 ? `${Math.round(mb)} MB/s` : `${mb.toFixed(1)} MB/s`;
-}; // 实现
-</script> // 实现
+};
+</script>
 <template> 
     <Teleport to="body">
         <transition name="update-modal" appear>

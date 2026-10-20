@@ -20,15 +20,15 @@ export function useWallpaperUpload({
     currentUser,
     onUploadSuccess,
 }: UseWallpaperUploadOptions) {
-    const showUploadModal = ref(false); // 实现
+    const showUploadModal = ref(false);
     const isUploadClosing = ref(false);
     const uploadForm = ref({ title: "", description: "", category: "" });
-    const uploadFile = ref<File | null>(null); // 实现
+    const uploadFile = ref<File | null>(null);
     const uploadPreview = ref("");
     const uploadVideoUrl = ref("");
     const uploadIsVideo = ref(false);
     const uploadVideoDuration = ref(0);
-    const uploading = ref(false); // 实现
+    const uploading = ref(false);
     const uploadError = ref("");
     let uploadCloseTimer: ReturnType<typeof setTimeout> | null = null;
     const clearUploadPreview = () => {
@@ -42,19 +42,19 @@ export function useWallpaperUpload({
         }
         uploadIsVideo.value = false;
         uploadVideoDuration.value = 0;
-    }; // 实现
-    const openUploadModal = () => { // 实现
+    };
+    const openUploadModal = () => {
         if (!isLoggedIn.value) {
             uploadError.value = "请先登录账号后再上传壁纸";
             return;
         }
         clearUploadPreview();
         uploadForm.value = { title: "", description: "", category: "" };
-        uploadFile.value = null; // 实现
+        uploadFile.value = null;
         uploadError.value = "";
         showUploadModal.value = true;
-    }; // 实现
-    const closeUploadModal = () => { // 实现
+    };
+    const closeUploadModal = () => {
         if (uploading.value || isUploadClosing.value) return;
         isUploadClosing.value = true;
         uploadCloseTimer = setTimeout(() => {
@@ -64,8 +64,8 @@ export function useWallpaperUpload({
             clearUploadPreview();
             uploadCloseTimer = null;
         }, 150);
-    }; // 实现
-    const onFileChange = (e: Event) => { // 实现
+    };
+    const onFileChange = (e: Event) => {
         const input = e.target as HTMLInputElement;
         uploadError.value = "";
         if (!input.files || !input.files[0]) {
@@ -122,7 +122,7 @@ export function useWallpaperUpload({
         clearUploadPreview();
         uploadFile.value = file;
         uploadPreview.value = URL.createObjectURL(file);
-    }; // 实现
+    };
     const compressImageToDataUrl = (
         file: File,
         maxWidth = 1920,
@@ -162,7 +162,7 @@ export function useWallpaperUpload({
             reader.onerror = () => reject(new Error("文件读取失败"));
             reader.readAsDataURL(file);
         });
-    }; // 实现
+    };
     const fileToDataUrl = (file: File): Promise<string> =>
         new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -226,7 +226,7 @@ export function useWallpaperUpload({
             video.src = url;
         });
 
-    const doUpload = async () => { // 实现
+    const doUpload = async () => {
         if (!isLoggedIn.value || !currentUser.value?.ciyuanxi_id) {
             uploadError.value = "请先登录";
             return;
@@ -301,7 +301,7 @@ export function useWallpaperUpload({
         } finally {
             uploading.value = false;
         }
-    }; // 实现
+    };
 
     onBeforeUnmount(() => {
         clearUploadPreview();

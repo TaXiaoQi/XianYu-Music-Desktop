@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-export interface CiyuanxiDialogState {
+interface CiyuanxiDialogState {
   visible: boolean;
   oldId: string;
   debug: boolean;
@@ -28,7 +28,7 @@ export function showCiyuanxiDialog(
   });
 }
 
-export function resolveCiyuanxiDialog(confirmed: boolean): void {
+function resolveCiyuanxiDialog(confirmed: boolean): void {
   const state = ciyuanxiDialogState.value;
   state.resolver?.(confirmed);
   ciyuanxiDialogState.value = {

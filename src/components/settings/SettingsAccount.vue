@@ -1,35 +1,35 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
 
-import { useAuthStore } from '../../features/auth/store'; // 实现
-import { useSettingsStore } from '../../features/settings/store'; // 实现
+import { useAuthStore } from '../../features/auth/store';
+import { useSettingsStore } from '../../features/settings/store';
 import { useI18n } from '../../features/i18n';
-import { useToast } from '../../composables/toast'; // 实现
-import { usePlaylistSync } from '../../composables/usePlaylistSync'; // 实现
+import { useToast } from '../../composables/toast';
+import { usePlaylistSync } from '../../composables/usePlaylistSync';
 import { showChangePasswordDialog } from '../../composables/useChangePasswordDialog';
 import { showDeleteAccountDialog } from '../../composables/useDeleteAccountDialog';
 import { logout } from '../../services/auth/authService';
 import {
-  DEFAULT_AUTH_BASE_URL, // 实现
+  DEFAULT_AUTH_BASE_URL,
   getAuthApiSecret,
-  getAuthBaseUrl, // 实现
+  getAuthBaseUrl,
   setAuthApiSecret,
-  setAuthBaseUrl, // 实现
-} from '../../services/auth/authService'; // 实现
+  setAuthBaseUrl,
+} from '../../services/auth/authService';
 import SettingHint from './SettingHint.vue';
 import SettingsCloud from './SettingsCloud.vue';
 import PluginConfirmDialog from './plugins/PluginConfirmDialog.vue';
 
-const authStore = useAuthStore(); // 实现
-const settingsStore = useSettingsStore(); // 实现
+const authStore = useAuthStore();
+const settingsStore = useSettingsStore();
 const { t } = useI18n();
-const { showToast } = useToast(); // 实现
-const playlistSync = usePlaylistSync(); // 实现
+const { showToast } = useToast();
+const playlistSync = usePlaylistSync();
 
 const pad = (n: number) => n.toString().padStart(2, '0');
 
-const draftBaseUrl = ref(getAuthBaseUrl()); // 实现
+const draftBaseUrl = ref(getAuthBaseUrl());
 const draftApiSecret = ref(getAuthApiSecret() ?? '');
 const pwdVisible = reactive<Record<string, boolean>>({});
 
@@ -40,32 +40,32 @@ const isDirty = computed(() =>
 );
 
 watch(
-  () => authStore.baseUrl, // 实现
-  (value) => { // 实现
-    draftBaseUrl.value = value; // 实现
+  () => authStore.baseUrl,
+  (value) => {
+    draftBaseUrl.value = value;
   },
 );
 
 watch(
   () => authStore.apiSecret,
-  (value) => { // 实现
+  (value) => {
     draftApiSecret.value = value ?? '';
   },
 );
 
-onMounted(() => { // 实现
-  playlistSync.initAutoSync(); // 实现
-}); // 实现
-watch( // 实现
-  () => authStore.isLoggedIn, // 实现
-  (loggedIn) => { // 实现
-    if (loggedIn) { // 实现
-      playlistSync.checkAutoSync(); // 实现
-    } // 实现
-  }, // 实现
-); // 实现
+onMounted(() => {
+  playlistSync.initAutoSync();
+});
+watch(
+  () => authStore.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) {
+      playlistSync.checkAutoSync();
+    }
+  },
+);
 async function handleSaveBaseUrl() {
-  const next = draftBaseUrl.value.trim(); // 实现
+  const next = draftBaseUrl.value.trim();
   const nextSecret = draftApiSecret.value.trim();
   try {
     await setAuthBaseUrl(next);
@@ -77,7 +77,7 @@ async function handleSaveBaseUrl() {
 }
 
 async function handleResetBaseUrl() {
-  draftBaseUrl.value = DEFAULT_AUTH_BASE_URL; // 实现
+  draftBaseUrl.value = DEFAULT_AUTH_BASE_URL;
   draftApiSecret.value = '';
   try {
     await setAuthBaseUrl(DEFAULT_AUTH_BASE_URL);
@@ -88,21 +88,21 @@ async function handleResetBaseUrl() {
   }
 }
 
-const showLogoutConfirm = ref(false); // 实现
+const showLogoutConfirm = ref(false);
 
-function handleLogout() { // 实现
-  showLogoutConfirm.value = true; // 实现
+function handleLogout() {
+  showLogoutConfirm.value = true;
 }
 
 async function confirmLogout() {
-  showLogoutConfirm.value = false; // 实现
+  showLogoutConfirm.value = false;
   try {
     await logout();
   } catch {
     // 忽略登出接口异常，本地登出照常执行
   }
-  authStore.reset(); // 实现
-  showToast('已退出登录', 'info'); // 实现
+  authStore.reset();
+  showToast('已退出登录', 'info');
 }
 
 function handleChangePassword() {
@@ -113,80 +113,80 @@ function handleDeleteAccount() {
   void showDeleteAccountDialog();
 }
 
-const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; label: string; desc: string }> = [ // 实现
-  { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' }, // 实现
+const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; label: string; desc: string }> = [
+  { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' },
   { key: 'favorites', label: '收藏', desc: '同步我的收藏歌曲' },
-  { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' }, // 实现
-  { key: 'settings', label: '本地设置', desc: '同步播放设置、歌词设置、快捷键等偏好配置' }, // 实现
+  { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' },
+  { key: 'settings', label: '本地设置', desc: '同步播放设置、歌词设置、快捷键等偏好配置' },
 ];
 
-function toggleUpload(key: keyof typeof settingsStore.settings.upload) { // 实现
-  settingsStore.patchSettings({ // 实现
+function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
+  settingsStore.patchSettings({
     upload: {
-      ...settingsStore.settings.upload, // 实现
-      [key]: !settingsStore.settings.upload[key], // 实现
+      ...settingsStore.settings.upload,
+      [key]: !settingsStore.settings.upload[key],
     },
   });
 }
-const formattedLastSync = computed(() => { // 实现
-  if (!playlistSync.lastSyncTime.value) return null; // 实现
-  const date = new Date(playlistSync.lastSyncTime.value); // 实现
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; // 实现
-}); // 实现
-const syncSummary = computed(() => { // 实现
-  const r = playlistSync.lastSyncResult.value; // 实现
-  if (!r) return null; // 实现
-  const parts: string[] = []; // 实现
-  if (r.uploadedPlaylists > 0) parts.push(`上传 ${r.uploadedPlaylists} 个歌单`); // 实现
-  if (r.downloadedPlaylists > 0) parts.push(`下载 ${r.downloadedPlaylists} 个歌单`); // 实现
-  if (r.uploadedSongs > 0) parts.push(`${r.uploadedSongs} 首歌曲`); // 实现
-  if (r.downloadedSongs > 0) parts.push(`${r.downloadedSongs} 首歌曲`); // 实现
-  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`); // 实现
-  return parts.length > 0 ? parts.join('，') : '无变更'; // 实现
-}); // 实现
-const syncErrors = computed(() => { // 实现
-  const r = playlistSync.lastSyncResult.value; // 实现
-  if (!r || r.errors.length === 0) return []; // 实现
-  return r.errors; // 实现
-}); // 实现
-const formattedLastPluginSync = computed(() => { // 实现
-  if (!playlistSync.lastPluginSyncTime.value) return null; // 实现
-  const date = new Date(playlistSync.lastPluginSyncTime.value); // 实现
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; // 实现
-}); // 实现
-const pluginSyncSummary = computed(() => { // 实现
-  const r = playlistSync.lastPluginSyncResult.value; // 实现
-  if (!r) return null; // 实现
-  const parts: string[] = []; // 实现
-  if (r.uploadedPlugins > 0) parts.push(`上传 ${r.uploadedPlugins} 个插件`); // 实现
-  if (r.downloadedPlugins > 0) parts.push(`恢复 ${r.downloadedPlugins} 个插件`); // 实现
-  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`); // 实现
-  return parts.length > 0 ? parts.join('，') : '无变更'; // 实现
-}); // 实现
-const pluginSyncErrors = computed(() => { // 实现
-  const r = playlistSync.lastPluginSyncResult.value; // 实现
-  if (!r || r.errors.length === 0) return []; // 实现
-  return r.errors; // 实现
-}); // 实现
-const formattedLastSettingsSync = computed(() => { // 实现
-  if (!playlistSync.lastSettingsSyncTime.value) return null; // 实现
-  const date = new Date(playlistSync.lastSettingsSyncTime.value); // 实现
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; // 实现
-}); // 实现
-const settingsSyncSummary = computed(() => { // 实现
-  const r = playlistSync.lastSettingsSyncResult.value; // 实现
-  if (!r) return null; // 实现
-  const parts: string[] = []; // 实现
-  if (r.uploaded) parts.push('已上传'); // 实现
-  if (r.downloaded) parts.push('已下载'); // 实现
-  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`); // 实现
-  return parts.length > 0 ? parts.join('，') : '无变更'; // 实现
-}); // 实现
-const settingsSyncErrors = computed(() => { // 实现
-  const r = playlistSync.lastSettingsSyncResult.value; // 实现
-  if (!r || r.errors.length === 0) return []; // 实现
-  return r.errors; // 实现
-}); // 实现
+const formattedLastSync = computed(() => {
+  if (!playlistSync.lastSyncTime.value) return null;
+  const date = new Date(playlistSync.lastSyncTime.value);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+});
+const syncSummary = computed(() => {
+  const r = playlistSync.lastSyncResult.value;
+  if (!r) return null;
+  const parts: string[] = [];
+  if (r.uploadedPlaylists > 0) parts.push(`上传 ${r.uploadedPlaylists} 个歌单`);
+  if (r.downloadedPlaylists > 0) parts.push(`下载 ${r.downloadedPlaylists} 个歌单`);
+  if (r.uploadedSongs > 0) parts.push(`${r.uploadedSongs} 首歌曲`);
+  if (r.downloadedSongs > 0) parts.push(`${r.downloadedSongs} 首歌曲`);
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
+  return parts.length > 0 ? parts.join('，') : '无变更';
+});
+const syncErrors = computed(() => {
+  const r = playlistSync.lastSyncResult.value;
+  if (!r || r.errors.length === 0) return [];
+  return r.errors;
+});
+const formattedLastPluginSync = computed(() => {
+  if (!playlistSync.lastPluginSyncTime.value) return null;
+  const date = new Date(playlistSync.lastPluginSyncTime.value);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+});
+const pluginSyncSummary = computed(() => {
+  const r = playlistSync.lastPluginSyncResult.value;
+  if (!r) return null;
+  const parts: string[] = [];
+  if (r.uploadedPlugins > 0) parts.push(`上传 ${r.uploadedPlugins} 个插件`);
+  if (r.downloadedPlugins > 0) parts.push(`恢复 ${r.downloadedPlugins} 个插件`);
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
+  return parts.length > 0 ? parts.join('，') : '无变更';
+});
+const pluginSyncErrors = computed(() => {
+  const r = playlistSync.lastPluginSyncResult.value;
+  if (!r || r.errors.length === 0) return [];
+  return r.errors;
+});
+const formattedLastSettingsSync = computed(() => {
+  if (!playlistSync.lastSettingsSyncTime.value) return null;
+  const date = new Date(playlistSync.lastSettingsSyncTime.value);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+});
+const settingsSyncSummary = computed(() => {
+  const r = playlistSync.lastSettingsSyncResult.value;
+  if (!r) return null;
+  const parts: string[] = [];
+  if (r.uploaded) parts.push('已上传');
+  if (r.downloaded) parts.push('已下载');
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
+  return parts.length > 0 ? parts.join('，') : '无变更';
+});
+const settingsSyncErrors = computed(() => {
+  const r = playlistSync.lastSettingsSyncResult.value;
+  if (!r || r.errors.length === 0) return [];
+  return r.errors;
+});
 const formattedLastFavoritesSync = computed(() => {
   if (!playlistSync.lastFavoritesSyncTime.value) return null;
   const date = new Date(playlistSync.lastFavoritesSyncTime.value);
@@ -209,22 +209,22 @@ const favoritesSyncErrors = computed(() => {
   return r.errors;
 });
 
-const nextSyncTimeDisplay = computed(() => { // 实现
-  const nextSyncAt = settingsStore.settings.autoSync.nextSyncAt; // 实现
-  if (!nextSyncAt || nextSyncAt <= 0) return null; // 实现
-  const date = new Date(nextSyncAt); // 实现
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`; // 实现
-}); // 实现
-function toggleAutoSync() { // 实现
-  const enabled = !settingsStore.settings.autoSync.enabled; // 实现
-  playlistSync.patchAutoSyncConfig({ enabled }); // 实现
-  if (enabled) { // 实现
-    showToast('自动同步已开启', 'success'); // 实现
-  } else { // 实现
-    showToast('自动同步已关闭', 'info'); // 实现
-  } // 实现
-} // 实现
-function updateAutoSyncIntervalSeconds(event: Event) { // 实现
+const nextSyncTimeDisplay = computed(() => {
+  const nextSyncAt = settingsStore.settings.autoSync.nextSyncAt;
+  if (!nextSyncAt || nextSyncAt <= 0) return null;
+  const date = new Date(nextSyncAt);
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+});
+function toggleAutoSync() {
+  const enabled = !settingsStore.settings.autoSync.enabled;
+  playlistSync.patchAutoSyncConfig({ enabled });
+  if (enabled) {
+    showToast('自动同步已开启', 'success');
+  } else {
+    showToast('自动同步已关闭', 'info');
+  }
+}
+function updateAutoSyncIntervalSeconds(event: Event) {
   const target = event.target as HTMLInputElement;
   const hours = Math.max(0, Math.min(168, Math.round(parseFloat(target.value) || 0)));
   if (hours === 0) {
@@ -232,16 +232,16 @@ function updateAutoSyncIntervalSeconds(event: Event) { // 实现
     playlistSync.patchAutoSyncConfig({ syncIntervalSeconds: 3600 });
     target.value = '1';
     return;
-  } // 实现
+  }
   target.value = String(hours);
   playlistSync.patchAutoSyncConfig({ syncIntervalSeconds: hours * 3600 });
-} // 实现
-function updateAutoSyncMaxDelay(event: Event) { // 实现
+}
+function updateAutoSyncMaxDelay(event: Event) {
   const target = event.target as HTMLInputElement;
   const value = Math.max(1, Math.min(720, Math.round(parseFloat(target.value) || 1)));
   target.value = String(value);
   playlistSync.patchAutoSyncConfig({ maxDelayMinutes: value });
-} // 实现
+}
 
 // ==================== 手动覆盖同步：确认弹窗 ====================
 // 手动按钮=强制覆盖（上传覆盖云端/下载覆盖本地），自动同步仍走对比合并。

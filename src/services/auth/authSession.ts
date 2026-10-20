@@ -136,7 +136,7 @@ export function clearAuth(): void {
   });
 }
 
-export function isAuthPayload(value: unknown): value is AuthPayload {
+function isAuthPayload(value: unknown): value is AuthPayload {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Partial<AuthPayload>;
   return (

@@ -3,7 +3,7 @@
 // 供列表组件决定是否点亮 / 加粗滚动条等 UI 反馈。
 
 /** 热区默认宽度（像素）：从容器右缘向内计算。 */
-export const DEFAULT_SCROLLBAR_HOT_ZONE_PX = 48; // 实现
+export const DEFAULT_SCROLLBAR_HOT_ZONE_PX = 48;
 
 /**
  * 判断指针是否处于纵向滚动条热区。

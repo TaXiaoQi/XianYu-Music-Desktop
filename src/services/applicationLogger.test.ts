@@ -10,11 +10,11 @@ import {
     type ApplicationLogEntry,
 } from "./applicationLogger";
 
-const createEntry = ( // 实现
+const createEntry = (
     level: ApplicationLogEntry["level"],
     timestamp: number,
     category = "player",
-): ApplicationLogEntry => ({ // 实现
+): ApplicationLogEntry => ({
     id: `${level}-${timestamp}`,
     timestamp,
     level,

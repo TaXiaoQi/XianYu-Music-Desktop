@@ -1,17 +1,17 @@
-import { describe, expect, it } from 'vitest'; // 实现
+import { describe, expect, it } from 'vitest';
 import { isRemoteSong, parseIntervalToSeconds } from './remoteSong';
 
-describe('isRemoteSong', () => { // 实现
-  it('returns true for songs marked as remote by source_type', () => { // 实现
-    expect(isRemoteSong({ path: 'C:/Music/demo.flac', source_type: 'remote' })).toBe(true); // 实现
+describe('isRemoteSong', () => {
+  it('returns true for songs marked as remote by source_type', () => {
+    expect(isRemoteSong({ path: 'C:/Music/demo.flac', source_type: 'remote' })).toBe(true);
   });
 
-  it('returns true for remote uri songs without source_type', () => { // 实现
+  it('returns true for remote uri songs without source_type', () => {
     expect(isRemoteSong({ path: 'remote://source/demo.flac' })).toBe(true); 
   });
 
-  it('returns false for local songs', () => { // 实现
-    expect(isRemoteSong({ path: 'C:/Music/demo.flac', source_type: 'local' })).toBe(false); // 实现
+  it('returns false for local songs', () => {
+    expect(isRemoteSong({ path: 'C:/Music/demo.flac', source_type: 'local' })).toBe(false);
   });
 });
 

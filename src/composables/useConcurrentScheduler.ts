@@ -4,7 +4,7 @@
  * 旧任务一结束就立刻顶上运行最近一次暂存的任务，更早的暂存被丢弃。
  */
 
-export function useConcurrentScheduler() { // 实现
+export function useConcurrentScheduler() {
     // 当前是否已有任务在跑（用其 Promise 标记）
     let running: Promise<unknown> | null = null;
     // 被顶替后暂存起来、等待上一任务结束后执行的启动函数

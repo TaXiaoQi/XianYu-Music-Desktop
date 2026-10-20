@@ -118,7 +118,7 @@ export function shouldApplyStartupThemePaint(
 }
 
 /** 挂载前把持久化主题色与明暗基调一次性刷到 document，消除首帧闪烁 */
-export function applyPersistedStartupTheme() { // 实现
+export function applyPersistedStartupTheme() {
     if (typeof document === "undefined") return;
 
     const snapshot = readStartupSettingsSnapshot();
@@ -137,7 +137,7 @@ export function applyPersistedStartupTheme() { // 实现
 }
 
 /** Vue 首屏渲染就绪后摘除首帧补绘，把背景控制权交还给正常渲染链路 */
-export function clearStartupThemePaint() { // 实现
+export function clearStartupThemePaint() {
     if (typeof document === "undefined") return;
     if (!document.documentElement.hasAttribute(ROOT_PAINT_FLAG)) return;
 

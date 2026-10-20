@@ -354,7 +354,7 @@ function takeNextQueuedPath(priority: PreloadPriority) {
         return candidate;
     }
 
-    return undefined; // 实现
+    return undefined;
 }
 
 function kickOffThumbnailLoad(path: string) {
@@ -497,7 +497,7 @@ function enqueueFullCoverPreload(path: string) {
     fullPreloadQueue.push(path);
 }
 
-export function useCoverCache() { // 实现
+export function useCoverCache() {
     installVisibilityHook();
 
     const pruneFor = (kind: CoverKind) => {

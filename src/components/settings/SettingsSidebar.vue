@@ -1,8 +1,8 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
 import { ArrowDown, ArrowUp, GripVertical, RotateCcw } from 'lucide-vue-next';
 
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import {
   DEFAULT_SIDEBAR_ORDER,
@@ -13,7 +13,7 @@ import type { SidebarItemKey } from '../../types';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
 import SettingHint from './SettingHint.vue';
 
-const { settings } = useSettings(); // 实现
+const { settings } = useSettings();
 const { showToast } = useToast();
 
 const orderedItems = computed(() => {

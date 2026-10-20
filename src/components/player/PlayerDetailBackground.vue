@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { usePlayer } from "../../features/playback";
@@ -9,7 +9,7 @@ import { lyricsSettings } from "../../composables/lyrics";
 import { fileApi } from "../../services/tauri/fileApi";
 import { useBilibiliVideoBackground } from "../../composables/useBilibiliVideoBackground";
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     bgOpacity?: number;
     active?: boolean;
 }>();
@@ -33,9 +33,9 @@ const {
 } = useBilibiliVideoBackground();
 const soundEffectStore = useSoundEffectStore();
 const playbackStore = usePlaybackStore();
-const videoRef = ref<HTMLVideoElement | null>(null); // 实现
-const videoPlaybackFailed = ref(false); // 实现
-const coverImgFailed = ref(false); // 实现
+const videoRef = ref<HTMLVideoElement | null>(null);
+const videoPlaybackFailed = ref(false);
+const coverImgFailed = ref(false);
 
 // --- MV 音频接管：把音频交给 MV 自带音轨（等功率交叉淡化，与移动端一致） ---
 const mvTargetVolume = () =>
@@ -143,16 +143,16 @@ watch(
     },
 );
 
-const viewportArea = ref( // 实现
+const viewportArea = ref(
     typeof window !== "undefined" ? window.innerWidth * window.innerHeight : 0,
 );
-const isLargeViewport = computed(() => viewportArea.value >= 2000000); // 实现
+const isLargeViewport = computed(() => viewportArea.value >= 2000000);
 
-const updateViewportArea = () => { // 实现
+const updateViewportArea = () => {
     viewportArea.value = window.innerWidth * window.innerHeight;
 };
 
-const thumbCoverUrl = computed(() => { // 实现
+const thumbCoverUrl = computed(() => {
     if (!(props.active ?? true)) return "";
     if (coverImgFailed.value && currentCoverFull.value) {
         return currentCoverFull.value;
@@ -160,7 +160,7 @@ const thumbCoverUrl = computed(() => { // 实现
     return currentCover.value || currentCoverFull.value || "";
 });
 
-watch([currentCover, currentCoverFull], () => { // 实现
+watch([currentCover, currentCoverFull], () => {
     coverImgFailed.value = false;
 });
 
@@ -189,7 +189,7 @@ watch(currentSongPath, (path) => fetchSongBackground(path), {
     immediate: true,
 });
 
-const customBgUrl = computed(() => { // 实现
+const customBgUrl = computed(() => {
     const path = songBgPath.value || lyricsSettings.customBackgroundImage;
     if (!path) return "";
     return path.startsWith("http") ||
@@ -199,12 +199,12 @@ const customBgUrl = computed(() => { // 实现
         : convertFileSrc(path);
 });
 
-const backgroundBlurPx = computed(() => { // 实现
+const backgroundBlurPx = computed(() => {
     const percent = lyricsSettings.backgroundBlur;
     return (percent / 100) * 52;
 });
 
-const coverFilterStyle = computed(() => { // 实现
+const coverFilterStyle = computed(() => {
     const blur = backgroundBlurPx.value;
     if (blur === 0) return "brightness(0.78) saturate(1.42) contrast(1.16)";
     return `blur(${blur}px) brightness(0.78) saturate(1.42) contrast(1.16)`;
@@ -224,7 +224,7 @@ const audioPlaybackRate = computed(() => {
     return Math.min(2.5, Math.max(0.25, rate));
 });
 
-const syncBackgroundVideo = (force = false) => { // 实现
+const syncBackgroundVideo = (force = false) => {
     const video = videoRef.value;
     if (!video || !Number.isFinite(video.duration) || video.duration <= 0)
         return;
@@ -254,7 +254,7 @@ const syncBackgroundVideo = (force = false) => { // 实现
     }
 };
 
-const updateVideoPlayback = () => { // 实现
+const updateVideoPlayback = () => {
     const video = videoRef.value;
     if (!video) return;
     if (showBackgroundVideo.value && isPlaying.value) {
@@ -265,7 +265,7 @@ const updateVideoPlayback = () => { // 实现
     }
 };
 
-watch(backgroundVideoUrl, async () => { // 实现
+watch(backgroundVideoUrl, async () => {
     videoPlaybackFailed.value = false;
     await nextTick();
     syncBackgroundVideo(true);
@@ -275,14 +275,14 @@ watch(
     [isPlaying, () => props.active, showBackgroundVideo],
     updateVideoPlayback,
 );
-watch(currentTime, () => syncBackgroundVideo(false)); // 实现
+watch(currentTime, () => syncBackgroundVideo(false));
 watch(audioPlaybackRate, (rate) => {
     const video = videoRef.value;
     if (video) video.playbackRate = rate;
 });
 watch(mvSyncOffsetSec, () => syncBackgroundVideo(true));
 
-const handleVideoLoaded = () => { // 实现
+const handleVideoLoaded = () => {
     syncBackgroundVideo(true);
     updateVideoPlayback();
     // 视频就绪时若已判定接管（起播即接管）：从这里启动等功率交叉淡化——
@@ -292,7 +292,7 @@ const handleVideoLoaded = () => { // 实现
     }
 };
 
-const handleVideoError = () => { // 实现
+const handleVideoError = () => {
     videoPlaybackFailed.value = true;
     mvNotifyVideoError();
     // 视频出错导致 MV 无声时，还原歌曲音频，避免静音失声。
@@ -310,12 +310,12 @@ const handleVideoProgress = () => {
 
 const handleVideoCanPlay = () => mvNotifyPlayable();
 
-onMounted(() => { // 实现
+onMounted(() => {
     window.addEventListener("resize", updateViewportArea);
     updateViewportArea();
 });
 
-onUnmounted(() => { // 实现
+onUnmounted(() => {
     window.removeEventListener("resize", updateViewportArea);
     if (mvAudioTakenOver.value) mvAudioTakenOver.value = false;
     void playbackApi.setVolume(mvTargetVolume());

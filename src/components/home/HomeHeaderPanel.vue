@@ -1,8 +1,8 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue';
 
-import type { FolderNode, Song } from '../../types'; // 实现
-import { useI18n } from '../../features/i18n'; // 实现
+import type { FolderNode, Song } from '../../types';
+import { useI18n } from '../../features/i18n';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLibraryStore } from '../../features/library/store';
@@ -17,7 +17,7 @@ import {
   type FavoriteCollectionEntry,
 } from '../../features/collections/store';
 
-const { isEnglish } = useI18n(); // 实现
+const { isEnglish } = useI18n();
 const { filterCondition } = usePlayerViewState();
 const { playlists, applySourceSync } = useLibraryCollections();
 const libraryStore = useLibraryStore();
@@ -28,26 +28,26 @@ const FoldersHeader = defineAsyncComponent(() => import('../headers/FoldersHeade
 const LocalMusicHeader = defineAsyncComponent(() => import('../headers/LocalMusicHeader.vue'));
 const PlaylistSourceSyncModal = defineAsyncComponent(() => import('../overlays/PlaylistSourceSyncModal.vue'));
 
-interface PlaylistDetail { // 实现
-  name: string; // 实现
-  date: string; // 实现
+interface PlaylistDetail {
+  name: string;
+  date: string;
 }
 
-interface Props { // 实现
-  localViewMode: string; // 实现
-  isBatchMode: boolean; // 实现
-  isManagementMode: boolean; // 实现
-  activeRootPath: string; // 实现
-  selectedCount: number; // 实现
-  folderTree: FolderNode[]; // 实现
-  currentFolderFilter: string; // 实现
-  playlistDetail: PlaylistDetail | null; // 实现
-  localSongList: Song[]; // 实现
+interface Props {
+  localViewMode: string;
+  isBatchMode: boolean;
+  isManagementMode: boolean;
+  activeRootPath: string;
+  selectedCount: number;
+  folderTree: FolderNode[];
+  currentFolderFilter: string;
+  playlistDetail: PlaylistDetail | null;
+  localSongList: Song[];
   localSongPaths?: string[];
   scrollContainerRef?: HTMLElement | null;
 }
 
-const props = defineProps<Props>(); // 实现
+const props = defineProps<Props>();
 
 const localPlaylistFavoriteEntry = computed<FavoriteCollectionEntry | null>(() => {
   if (props.localViewMode !== 'playlist') return null;
@@ -64,37 +64,37 @@ const localPlaylistFavoriteEntry = computed<FavoriteCollectionEntry | null>(() =
   };
 });
 
-const emit = defineEmits<{ // 实现
-  (event: 'update:isBatchMode', value: boolean): void; // 实现
-  (event: 'update:isManagementMode', value: boolean): void; // 实现
-  (event: 'playAll'): void; // 实现
-  (event: 'batchPlay'): void; // 实现
-  (event: 'showAddToPlaylist'): void; // 实现
-  (event: 'batchDelete'): void; // 实现
-  (event: 'folderBatchDelete'): void; // 实现
-  (event: 'batchMove'): void; // 实现
+const emit = defineEmits<{
+  (event: 'update:isBatchMode', value: boolean): void;
+  (event: 'update:isManagementMode', value: boolean): void;
+  (event: 'playAll'): void;
+  (event: 'batchPlay'): void;
+  (event: 'showAddToPlaylist'): void;
+  (event: 'batchDelete'): void;
+  (event: 'folderBatchDelete'): void;
+  (event: 'batchMove'): void;
   (event: 'batchDownload'): void;
-  (event: 'rootCreatePlaylist', path: string, name: string): void; // 实现
-  (event: 'addFolder'): void; // 实现
-  (event: 'refreshFolder'): void; // 实现
-  (event: 'removeFolder', path: string, name?: string): void; // 实现
-  (event: 'rootCreateFolder', path: string): void; // 实现
-  (event: 'rootDeleteFolder', path: string): void; // 实现
-  (event: 'activeRootChange', value: string): void; // 实现
-  (event: 'renamePlaylist'): void; // 实现
-  (event: 'refreshAll'): void; // 实现
+  (event: 'rootCreatePlaylist', path: string, name: string): void;
+  (event: 'addFolder'): void;
+  (event: 'refreshFolder'): void;
+  (event: 'removeFolder', path: string, name?: string): void;
+  (event: 'rootCreateFolder', path: string): void;
+  (event: 'rootDeleteFolder', path: string): void;
+  (event: 'activeRootChange', value: string): void;
+  (event: 'renamePlaylist'): void;
+  (event: 'refreshAll'): void;
   (event: 'selectAll'): void;
   (event: 'batchAddToFavorites'): void;
 }>();
 
-const isBatchModeModel = computed({ // 实现
-  get: () => props.isBatchMode, // 实现
-  set: (value: boolean) => emit('update:isBatchMode', value), // 实现
+const isBatchModeModel = computed({
+  get: () => props.isBatchMode,
+  set: (value: boolean) => emit('update:isBatchMode', value),
 });
 
-const isManagementModeModel = computed({ // 实现
-  get: () => props.isManagementMode, // 实现
-  set: (value: boolean) => emit('update:isManagementMode', value), // 实现
+const isManagementModeModel = computed({
+  get: () => props.isManagementMode,
+  set: (value: boolean) => emit('update:isManagementMode', value),
 });
 
 // ==================== 从源端更新导入的歌单 ====================

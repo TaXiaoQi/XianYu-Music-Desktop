@@ -36,7 +36,7 @@ const TAG_KEYWORDS = [
 const BRACKET_GROUP = /[【\[\(（][^\】\]\)）]*[】\]\)）]/g;
 
 /** 去扩展名与音质/来源标签（括号包裹形式整体剔除）。 */
-export function cleanCloudFileName(raw: string): string {
+function cleanCloudFileName(raw: string): string {
   let name = raw.trim();
   const dot = name.lastIndexOf('.');
   if (dot > 0) {

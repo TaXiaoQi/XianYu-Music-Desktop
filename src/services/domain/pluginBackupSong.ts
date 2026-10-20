@@ -114,7 +114,7 @@ function parseDurationSeconds(value: unknown): number {
   return Math.floor(numeric > 1000 ? numeric / 1000 : numeric);
 }
 
-export function formatInterval(seconds: number): string {
+function formatInterval(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
@@ -132,7 +132,7 @@ export function extractArtist(rawSong: any): string {
   return '未知歌手';
 }
 
-export function extractAlbum(rawSong: any): string {
+function extractAlbum(rawSong: any): string {
   if (typeof rawSong.album === 'string' && rawSong.album.trim()) return rawSong.album.trim();
   if (rawSong.album?.name) return String(rawSong.album.name);
   if (rawSong.albumName) return String(rawSong.albumName);

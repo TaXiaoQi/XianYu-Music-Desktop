@@ -1,35 +1,35 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useSettings } from '../../features/settings/useSettings'; // 实现
-import { playerStorage } from '../../services/storage/playerStorage'; // 实现
+import { useSettings } from '../../features/settings/useSettings';
+import { playerStorage } from '../../services/storage/playerStorage';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 import { usePlayer } from '../../features/playback';
-import { useToast } from '../../composables/toast'; // 实现
-import { appApi } from '../../services/tauri/appApi'; // 实现
-import { playbackApi } from '../../services/tauri/playbackApi'; // 实现
-import ConfirmModal from '../overlays/ConfirmModal.vue'; // 实现
+import { useToast } from '../../composables/toast';
+import { appApi } from '../../services/tauri/appApi';
+import { playbackApi } from '../../services/tauri/playbackApi';
+import ConfirmModal from '../overlays/ConfirmModal.vue';
 import SettingHint from './SettingHint.vue';
-import { useI18n } from '../../features/i18n'; // 实现
+import { useI18n } from '../../features/i18n';
 import { usePerformanceMode } from '../../composables/usePerformanceMode';
 import { AUDIO_FILE_ASSOCIATION_EXTENSIONS, audioFileAssociationLabel } from '../../features/settings/audioFileAssociations';
 import type { AppLanguage, PerformanceMode } from '../../types';
 
-const { settings, patchSettings } = useSettings(); // 实现
+const { settings, patchSettings } = useSettings();
 const {
   pauseSong,
-  libraryScanProgress, // 实现
-} = usePlayer(); // 实现
-const { showToast } = useToast(); // 实现
-const { t } = useI18n(); // 实现
+  libraryScanProgress,
+} = usePlayer();
+const { showToast } = useToast();
+const { t } = useI18n();
 
-const appLanguage = computed({ // 实现
-  get: () => settings.value.language, // 实现
-  set: (value: AppLanguage) => { // 实现
-    if (settings.value.language === value) return; // 实现
-    patchSettings({ language: value }); // 实现
-    playerStorage.writeSettings(settings.value); // 实现
+const appLanguage = computed({
+  get: () => settings.value.language,
+  set: (value: AppLanguage) => {
+    if (settings.value.language === value) return;
+    patchSettings({ language: value });
+    playerStorage.writeSettings(settings.value);
   },
 });
 
@@ -155,23 +155,23 @@ const syncFileAssociationsFromSystem = async () => {
   }
 };
 
-async function handleGpuAccelerationChange() { // 实现
-  const previous = settings.value.gpuAcceleration; // 实现
-  const next = !previous; // 实现
+async function handleGpuAccelerationChange() {
+  const previous = settings.value.gpuAcceleration;
+  const next = !previous;
 
-  settings.value.gpuAcceleration = next; // 实现
+  settings.value.gpuAcceleration = next;
 
   try {
     await toolboxApi.setGpuAcceleration(next);
-    showToast(t('toast.gpuUpdated'), 'success'); // 实现
-  } catch (error) { // 实现
-    settings.value.gpuAcceleration = previous; // 实现
-    showToast(t('toast.gpuFailed'), 'error'); // 实现
-    console.error('Failed to update GPU acceleration setting:', error); // 实现
+    showToast(t('toast.gpuUpdated'), 'success');
+  } catch (error) {
+    settings.value.gpuAcceleration = previous;
+    showToast(t('toast.gpuFailed'), 'error');
+    console.error('Failed to update GPU acceleration setting:', error);
   }
 }
-const showClearAllDataConfirm = ref(false); // 实现
-const isClearingAllData = ref(false); // 实现
+const showClearAllDataConfirm = ref(false);
+const isClearingAllData = ref(false);
 
 // --- 性能模式：auto 自动检测 / full 满特效 / performance 性能优先 ---
 const { effectiveMode } = usePerformanceMode();
@@ -215,8 +215,8 @@ const handlePerformanceModeDropdownOutsideClick = (event: MouseEvent) => {
   }
 };
 
-const isLibraryScanActive = computed( // 实现
-  () => !!libraryScanProgress.value && !libraryScanProgress.value.done // 实现
+const isLibraryScanActive = computed(
+  () => !!libraryScanProgress.value && !libraryScanProgress.value.done
 );
 
 // --- 在线播放流式缓存管理 ---
@@ -268,41 +268,41 @@ const handleClearStreamCache = async () => {
   try {
     await playbackApi.clearStreamCache();
     await refreshStreamCacheInfo();
-    showToast(t('toast.cacheCleared'), 'success'); // 实现
-  } catch (error) { // 实现
+    showToast(t('toast.cacheCleared'), 'success');
+  } catch (error) {
     console.error('Failed to clear stream cache:', error);
-    showToast(t('toast.cacheClearFailed'), 'error'); // 实现
+    showToast(t('toast.cacheClearFailed'), 'error');
   } finally {
     isClearingStreamCache.value = false;
   }
 };
 
-const openClearAllDataConfirm = () => { // 实现
-  if (isClearingAllData.value || isLibraryScanActive.value) { // 实现
+const openClearAllDataConfirm = () => {
+  if (isClearingAllData.value || isLibraryScanActive.value) {
     return;
   }
 
-  showClearAllDataConfirm.value = true; // 实现
+  showClearAllDataConfirm.value = true;
 };
 
-const handleClearAllData = async () => { // 实现
-  if (isClearingAllData.value) { // 实现
+const handleClearAllData = async () => {
+  if (isClearingAllData.value) {
     return;
   }
 
-  isClearingAllData.value = true; // 实现
+  isClearingAllData.value = true;
 
   try {
-    await pauseSong().catch(() => {}); // 实现
-    await appApi.clearAllAppData(); // 实现
-    localStorage.clear(); // 实现
-    sessionStorage.clear(); // 实现
-    window.location.reload(); // 实现
-  } catch (error) { // 实现
-    console.error('Failed to clear all app data:', error); // 实现
-    showToast(t('toast.resetFailed'), 'error'); // 实现
-    showClearAllDataConfirm.value = false; // 实现
-    isClearingAllData.value = false; // 实现
+    await pauseSong().catch(() => {});
+    await appApi.clearAllAppData();
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.reload();
+  } catch (error) {
+    console.error('Failed to clear all app data:', error);
+    showToast(t('toast.resetFailed'), 'error');
+    showClearAllDataConfirm.value = false;
+    isClearingAllData.value = false;
   }
 };
 

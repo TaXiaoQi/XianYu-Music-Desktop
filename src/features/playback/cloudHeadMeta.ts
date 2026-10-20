@@ -58,7 +58,7 @@ const contextOf = (song: Song): CloudPlayContext | null =>
   ) ?? CloudPlayContext.tryParsePath(song.path);
 
 /** 对无封面的网盘曲目安排一次头部元数据探测（幂等、限并发、失败静默）。 */
-export const scheduleCloudHeadMeta = (song: Song): void => {
+const scheduleCloudHeadMeta = (song: Song): void => {
   if (!song.path.startsWith('cloud://')) return;
   if (scheduled.has(song.path)) return;
   if (song.cover_thumb_path) return;

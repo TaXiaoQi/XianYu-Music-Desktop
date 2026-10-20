@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed } from 'vue';
 import { ListChecks, ListPlus, RefreshCw } from 'lucide-vue-next';
 

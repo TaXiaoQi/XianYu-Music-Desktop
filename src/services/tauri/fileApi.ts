@@ -91,7 +91,7 @@ function extractPalette(
     return tauriInvoke("extract_palette", { source, count, colorBoost, depth });
 }
 
-export const fileApi = { // 实现
+export const fileApi = {
     deleteFolder,
     moveFileToFolder,
     batchMoveMusicFiles,

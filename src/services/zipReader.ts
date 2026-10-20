@@ -32,7 +32,7 @@ function findEocd(data: Uint8Array): number {
   return -1;
 }
 
-export function parseZip(data: Uint8Array): Map<string, Uint8Array> {
+function parseZip(data: Uint8Array): Map<string, Uint8Array> {
   const result = new Map<string, Uint8Array>();
 
   const eocdOffset = findEocd(data);

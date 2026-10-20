@@ -26,7 +26,7 @@ export function useWallpaperActions({
     onSelect,
     onCloseRequest,
 }: UseWallpaperActionsOptions) {
-    const downloadingId = ref<number | null>(null); // 实现
+    const downloadingId = ref<number | null>(null);
     const downloadError = ref("");
     const downloadedWallpapers = ref<DownloadedWallpaper[]>([]);
     const selectedDownloadIds = ref<number[]>([]);
@@ -75,7 +75,7 @@ export function useWallpaperActions({
     const downloadedRecord = (id: number) =>
         downloadedWallpapers.value.find((item) => item.id === id);
 
-    const downloadAndUse = async (wallpaper: Wallpaper) => { // 实现
+    const downloadAndUse = async (wallpaper: Wallpaper) => {
         if (downloadingId.value !== null) return;
         downloadingId.value = wallpaper.id;
         downloadError.value = "";
@@ -131,7 +131,7 @@ export function useWallpaperActions({
         } finally {
             downloadingId.value = null;
         }
-    }; // 实现
+    };
     const toggleDownloadSelection = (id: number) => {
         selectedDownloadIds.value = selectedDownloadIds.value.includes(id)
             ? selectedDownloadIds.value.filter((item) => item !== id)

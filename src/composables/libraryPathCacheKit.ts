@@ -21,7 +21,7 @@ export type FolderViewPathDemand = {
 };
 
 /** 歌手/专辑二选一的详情过滤条件，null 表示不过滤。 */
-export type CollectionDetailFace = { type: 'artist' | 'album'; name: string } | null;
+type CollectionDetailFace = { type: 'artist' | 'album'; name: string } | null;
 
 /** 收藏视图的取数请求形状。 */
 export type FavoritePathDemand = {
@@ -43,19 +43,19 @@ export const historyFingerprint = (entries: HistoryItem[]) =>
   entries.map(entry => `${entry.path}\u0002${entry.playedAt}`).join('\u0003');
 
 /** 后端检索接口接受的「本地音乐」排序值（custom 排序完全由前端完成，不下发）。 */
-export type BackendLocalSortMode = Exclude<LocalSortMode, 'custom'>;
+type BackendLocalSortMode = Exclude<LocalSortMode, 'custom'>;
 
 /** 后端检索接口接受的「文件夹」排序值。 */
-export type BackendFolderSortMode = Exclude<FolderSortMode, 'custom'>;
+type BackendFolderSortMode = Exclude<FolderSortMode, 'custom'>;
 
 /** 请求过期错误携带的标记码，调用方用它区分「数据已过期」与真实故障。 */
-export const STALE_PATH_REQUEST_CODE = 'STALE_LIBRARY_PATH_REQUEST';
+const STALE_PATH_REQUEST_CODE = 'STALE_LIBRARY_PATH_REQUEST';
 
 /**
  * 一致性守卫：发起请求前用 capture 记录数据版本快照，
  * 回填时用 retains 复核；快照过期则拒绝写入缓存并抛出过期错误。
  */
-export interface PathFreshnessGuard {
+interface PathFreshnessGuard {
   capture: () => unknown;
   retains: (token: unknown) => boolean;
 }

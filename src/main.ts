@@ -1,28 +1,28 @@
-import { createApp } from 'vue' // 实现
+import { createApp } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { installCriticalFirstPaintSync } from './composables/criticalFirstPaint'
-import { getCurrentWindow } from '@tauri-apps/api/window' // 实现
-import './style.css' // 实现
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import './style.css'
 import './utils/requestIdleCallbackPolyfill'
-import App from './App.vue' // 实现
-import router from './router' // 实现
-import { applyPersistedStartupTheme, applyPersistedThemeColor, shouldApplyStartupThemePaint } from './composables/startupTheme' // 实现
+import App from './App.vue'
+import router from './router'
+import { applyPersistedStartupTheme, applyPersistedThemeColor, shouldApplyStartupThemePaint } from './composables/startupTheme'
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
-import { installApplicationLogger } from './services/applicationLogger' // 实现
+import { installApplicationLogger } from './services/applicationLogger'
 import { initFallbackModuleSync, installFallbackModuleConfigWatch } from './services/fallbackModules/sync'
 import { reportError } from './services/domain/usageStats'
 import { installScrollbarController } from './utils/scrollbarController'
 import { setLoggerCallback } from './services/domain/pluginEngineBase'
 
-const currentWindowLabel = (() => { // 实现
+const currentWindowLabel = (() => {
   try {
-    return getCurrentWindow().label // 实现
+    return getCurrentWindow().label
   } catch {
-    return 'main' // 实现
+    return 'main'
   }
 })()
 
-installApplicationLogger(currentWindowLabel) // 实现
+installApplicationLogger(currentWindowLabel)
 
 // 插件引擎域内 log() 此前无回调注册、消息全被静默丢弃（getLyric/MV 探测等
 // 排障日志在 devtools 与日志文件里都不可见）——统一转发到 console
@@ -32,25 +32,25 @@ if (currentWindowLabel === 'main') {
   initFallbackModuleSync()
 }
 
-applyPersistedThemeColor() // 实现
+applyPersistedThemeColor()
 
-if (shouldApplyStartupThemePaint(currentWindowLabel)) { // 实现
-  applyPersistedStartupTheme() // 实现
+if (shouldApplyStartupThemePaint(currentWindowLabel)) {
+  applyPersistedStartupTheme()
 }
 
-const formatError = (error: unknown) => { // 实现
-  if (error instanceof Error) { // 实现
-    return `${error.name}: ${error.message}${error.stack ? `\n\n${error.stack}` : ''}` // 实现
+const formatError = (error: unknown) => {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}${error.stack ? `\n\n${error.stack}` : ''}`
   }
 
-  if (typeof error === 'string') { // 实现
-    return error // 实现
+  if (typeof error === 'string') {
+    return error
   }
 
   try {
-    return JSON.stringify(error, null, 2) // 实现
+    return JSON.stringify(error, null, 2)
   } catch {
-    return String(error) // 实现
+    return String(error)
   }
 }
 
@@ -78,9 +78,9 @@ const recoverDynamicImportError = createDynamicImportRecovery({
   },
 })
 
-const showFatalError = (title: string, error: unknown) => { // 实现
-  const message = formatError(error) // 实现
-  console.error(title, error) // 实现
+const showFatalError = (title: string, error: unknown) => {
+  const message = formatError(error)
+  console.error(title, error)
 
   let diagnosticDump = ''
   try {
@@ -98,8 +98,8 @@ const showFatalError = (title: string, error: unknown) => { // 实现
     // Ignore storage failures. The visible fallback is the important part. 
   }
 
-  const appRoot = document.getElementById('app') // 实现
-  if (!appRoot) return // 实现
+  const appRoot = document.getElementById('app')
+  if (!appRoot) return
 
   appRoot.replaceChildren()
 
@@ -126,8 +126,8 @@ const showFatalError = (title: string, error: unknown) => { // 实现
   appRoot.append(page)
 }
 
-const app = createApp(App) // 实现
-const pinia = createPinia() // 实现
+const app = createApp(App)
+const pinia = createPinia()
 setActivePinia(pinia)
 
 installCriticalFirstPaintSync(router)
@@ -145,25 +145,25 @@ const formatComponentChain = (instance: unknown): string => {
   return names.length > 0 ? `\n\ncomponent chain:\n${names.join(' at ')}` : ''
 }
 
-app.use(pinia) // 实现
-app.use(router) // 实现
+app.use(pinia)
+app.use(router)
 
 // 兜底模块配置快照：启动推一次，设置变化防抖整包推（依赖 pinia，故在 use(pinia) 后）
 if (currentWindowLabel === 'main') {
   installFallbackModuleConfigWatch()
 }
 
-app.config.errorHandler = (error, _instance, info) => { // 实现
+app.config.errorHandler = (error, _instance, info) => {
   const chain = _instance ? formatComponentChain(_instance) : ''
   console.error(`[VueError ${info}] component chain: ${chain || '(no instance)'}`)
   if (chain && error instanceof Error) {
     error = Object.assign(new Error(`${error.message}${chain}`), { name: error.name })
   }
-  if (error instanceof Error) { // 实现
-    reportError(error.name || 'VueError', error.message, error.stack, info) // 实现
-  } else { // 实现
-    reportError('VueError', String(error), '', info) // 实现
-  } // 实现
+  if (error instanceof Error) {
+    reportError(error.name || 'VueError', error.message, error.stack, info)
+  } else {
+    reportError('VueError', String(error), '', info)
+  }
   if (recoverDynamicImportError(error)) return
 
   if (isBenignTauriChannelError(error)) {
@@ -171,10 +171,10 @@ app.config.errorHandler = (error, _instance, info) => { // 实现
     return
   }
 
-  showFatalError(`前端运行错误: ${info}`, error) // 实现
+  showFatalError(`前端运行错误: ${info}`, error)
 }
 
-document.addEventListener('contextmenu', (e) => e.preventDefault()) // 实现
+document.addEventListener('contextmenu', (e) => e.preventDefault())
 
 installScrollbarController()
 
@@ -195,17 +195,17 @@ const isBenignTauriChannelError = (error: unknown): boolean => {
     || msg.includes('Failed to send message to channel')
 }
 
-window.addEventListener('error', (event) => { // 实现
+window.addEventListener('error', (event) => {
   const error = event.error ?? event.message
   if (isBenignResizeObserverError(error) || isBenignTauriChannelError(error)) {
     event.preventDefault()
     return
   }
-  if (error instanceof Error) { // 实现
-    reportError(error.name || 'Error', error.message, error.stack, `${event.filename}:${event.lineno}:${event.colno}`) // 实现
-  } else if (typeof error === 'string') { // 实现
-    reportError('WindowError', error, '', `${event.filename}:${event.lineno}:${event.colno}`) // 实现
-  } // 实现
+  if (error instanceof Error) {
+    reportError(error.name || 'Error', error.message, error.stack, `${event.filename}:${event.lineno}:${event.colno}`)
+  } else if (typeof error === 'string') {
+    reportError('WindowError', error, '', `${event.filename}:${event.lineno}:${event.colno}`)
+  }
   if (recoverDynamicImportError(error)) {
     event.preventDefault()
     return
@@ -213,18 +213,18 @@ window.addEventListener('error', (event) => { // 实现
   showFatalError('窗口脚本错误', error)
 })
 
-window.addEventListener('unhandledrejection', (event) => { // 实现
-  const reason = event.reason // 实现
-  if (reason instanceof Error) { // 实现
-    reportError('unhandledrejection', reason.message, reason.stack) // 实现
-  } else { // 实现
-    reportError('unhandledrejection', String(reason)) // 实现
-  } // 实现
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason
+  if (reason instanceof Error) {
+    reportError('unhandledrejection', reason.message, reason.stack)
+  } else {
+    reportError('unhandledrejection', String(reason))
+  }
   if (recoverDynamicImportError(event.reason) || isBenignTauriChannelError(reason)) {
     event.preventDefault()
     return
   }
-  showFatalError('未处理的异步错误', event.reason) // 实现
+  showFatalError('未处理的异步错误', event.reason)
 })
 
 const mountApp = () => {

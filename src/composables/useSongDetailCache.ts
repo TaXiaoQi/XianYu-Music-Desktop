@@ -14,7 +14,7 @@ const detailCache = new MemoryCache<string, SongDetail>({
 // 尚未返回的详情请求，按路径索引，用于合并同曲目的重复拉取
 const pendingDetailLoads = new Map<string, Promise<SongDetail>>();
 
-export function useSongDetailCache() { // 实现
+export function useSongDetailCache() {
     /**
      * 读取曲目详情：先查缓存，再复用在途请求，
      * 都未命中时才真正发起调用，并在成功后写入缓存。

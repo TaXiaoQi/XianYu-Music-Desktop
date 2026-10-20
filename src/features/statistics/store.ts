@@ -5,7 +5,7 @@ import { defineStore } from "pinia";
 import { statisticsApi } from "../../services/tauri/statisticsApi";
 
 /** 后端返回的媒体库总量统计（字段名与 Rust 侧序列化输出一致，勿改） */
-export type LibraryStats = {
+type LibraryStats = {
     total_songs: number;
     total_duration: number;
     total_file_size: number;
@@ -17,16 +17,16 @@ export type LibraryStats = {
 };
 
 /** 热门单曲条目：value 为折算后的热度值 */
-export type TopSong = { song_path: string; play_count: number; value: number };
+type TopSong = { song_path: string; play_count: number; value: number };
 
 /** 热门歌手条目 */
-export type TopArtist = { artist: string; play_count: number };
+type TopArtist = { artist: string; play_count: number };
 
 /** 热门专辑条目 */
-export type TopAlbum = { album: string; play_count: number };
+type TopAlbum = { album: string; play_count: number };
 
 /** 按时间范围聚合的用户行为统计 */
-export type BehaviorStats = {
+type BehaviorStats = {
     total_plays: number;
     total_duration: number;
     top_songs: TopSong[];
@@ -38,7 +38,7 @@ export type BehaviorStats = {
 };
 
 /** 音质档次分布 */
-export type QualityDistribution = {
+type QualityDistribution = {
     hires: number;
     super_quality: number;
     high_quality: number;
@@ -46,7 +46,7 @@ export type QualityDistribution = {
 };
 
 /** 音频格式分布 */
-export type FormatDistribution = {
+type FormatDistribution = {
     flac: number;
     mp3: number;
     alac: number;

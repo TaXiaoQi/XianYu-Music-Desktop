@@ -21,7 +21,7 @@ function compareVer(a: string, b: string): number {
   return 0;
 }
 
-export async function installPluginFromPath(
+async function installPluginFromPath(
   filePath: string,
 ): Promise<'installed' | 'skipped'> {
   const { showToast } = useToast();

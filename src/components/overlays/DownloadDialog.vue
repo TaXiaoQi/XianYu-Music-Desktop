@@ -1,11 +1,11 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
-import { open } from '@tauri-apps/plugin-dialog'; // 实现
+import { open } from '@tauri-apps/plugin-dialog';
 
-import { downloadToLocal } from '../../composables/useDownloadToLocal'; // 实现
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { downloadToLocal } from '../../composables/useDownloadToLocal';
+import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
-import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver'; // 实现
+import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import {
   ensureSharedQualityProbe,
   ensureProbeRequestedUrls,
@@ -14,7 +14,7 @@ import {
 } from '../../services/domain/qualitySharedProbe';
 import { probeSizesForKeys } from '../../services/domain/qualitySizeMeta';
 import { formatFileSize } from '../../utils/format';
-import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types'; // 实现
+import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import type { Song, DownloadFileNameStyle, DownloadQuality, QualityKey } from '../../types';
 
 const props = defineProps<{
@@ -22,16 +22,16 @@ const props = defineProps<{
   song: Song | null;
   initialQuality?: DownloadQuality | null;
 }>();
-const emit = defineEmits<{ (e: 'close'): void }>(); // 实现
+const emit = defineEmits<{ (e: 'close'): void }>();
 
-const { settings } = useSettings(); // 实现
+const { settings } = useSettings();
 const playbackStore = usePlaybackStore();
 
-const selectedQuality = ref<DownloadQuality>('320k'); // 实现
-const downloadDir = ref(''); // 实现
+const selectedQuality = ref<DownloadQuality>('320k');
+const downloadDir = ref('');
 const selectedFileNameStyle = ref<DownloadFileNameStyle>('artist-title');
 const downloadLyrics = ref(false);
-const availableQualities = ref<QualityKey[] | null>(null); // 实现
+const availableQualities = ref<QualityKey[] | null>(null);
 const declaredQualities = ref<QualityKey[] | null>(null);
 const probedUrls = ref<Partial<Record<QualityKey, string>>>({});
 const qualitySizes = ref<Partial<Record<QualityKey, number>>>({});
@@ -46,7 +46,7 @@ const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; de
 ];
 
 const dialogTitle = computed(() => {
-  const song = props.song; // 实现
+  const song = props.song;
   if (!song) return '下载歌曲';
   const title = song.title || song.name || '未知歌曲';
   const artist = song.artist || '未知歌手';
@@ -151,16 +151,16 @@ const probeQualitySizesIncremental = async (
   });
 };
 
-const supportedQualityKeys = computed<QualityKey[]>(() => { // 实现
+const supportedQualityKeys = computed<QualityKey[]>(() => {
   if (isProbing.value) {
     const declared = declaredQualities.value;
     return (declared && declared.length > 0)
       ? ALL_QUALITY_KEYS.filter(k => declared.includes(k))
       : [];
   }
-  const list = availableQualities.value; // 实现
+  const list = availableQualities.value;
   if (list === null) return [];
-  return ALL_QUALITY_KEYS.filter(k => list.includes(k)); // 实现
+  return ALL_QUALITY_KEYS.filter(k => list.includes(k));
 });
 
 const hasNoQualityOptions = computed(() => supportedQualityKeys.value.length === 0);
@@ -320,23 +320,23 @@ watch(
 
 onUnmounted(abortProbe);
 
-const chooseDir = async () => { // 实现
-  const selected = await open({ directory: true, multiple: false, title: '选择下载目录' }); // 实现
-  if (selected && typeof selected === 'string') { // 实现
-    downloadDir.value = selected; // 实现
+const chooseDir = async () => {
+  const selected = await open({ directory: true, multiple: false, title: '选择下载目录' });
+  if (selected && typeof selected === 'string') {
+    downloadDir.value = selected;
   }
 };
 
-const handleDownload = async () => { // 实现
-  if (!props.song) return; // 实现
-  const song = props.song; // 实现
+const handleDownload = async () => {
+  if (!props.song) return;
+  const song = props.song;
   const preResolvedUrls = probedUrls.value;
-  emit('close'); // 实现
-  await downloadToLocal(song, { // 实现
-    quality: selectedQuality.value, // 实现
-    downloadDir: downloadDir.value || undefined, // 实现
+  emit('close');
+  await downloadToLocal(song, {
+    quality: selectedQuality.value,
+    downloadDir: downloadDir.value || undefined,
     downloadAudio: true,
-    downloadLyrics: downloadLyrics.value, // 实现
+    downloadLyrics: downloadLyrics.value,
     downloadCover: false,
     fileNameStyle: selectedFileNameStyle.value,
     preResolvedUrls,

@@ -3,7 +3,7 @@ import type {
   SongDetail,
 } from '../../types';
 
-export interface MovedMusicFilePath {
+interface MovedMusicFilePath {
   old_path: string;
   new_path: string;
 }
@@ -70,18 +70,18 @@ export interface ListenDurations {
   total: number;
 }
 
-export interface TopSong {
+interface TopSong {
   song_path: string;
   play_count: number;
   value: number;
 }
 
-export interface TopArtist {
+interface TopArtist {
   artist: string;
   play_count: number;
 }
 
-export interface TopAlbum {
+interface TopAlbum {
   album: string;
   play_count: number;
 }

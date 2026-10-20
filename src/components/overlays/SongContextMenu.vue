@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import {
     computed,
     defineAsyncComponent,
@@ -60,7 +60,7 @@ interface RankUserBrief {
     avatar?: string;
 }
 
-const props = defineProps<{ // 实现
+const props = defineProps<{
     visible: boolean;
     song: SongEntity | null;
     x: number;
@@ -99,7 +99,7 @@ const {
     isFavorite: checkFavorite,
     toggleFavorite: flipFavorite,
 } = useLibraryCollections();
-const { filterCondition } = usePlayerViewState(); // 实现
+const { filterCondition } = usePlayerViewState();
 const { openSongInfo: showDossier } = useSongInfoDialog();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(useRouter());
 const { openDownloadDialog } = useDownloadDialog();

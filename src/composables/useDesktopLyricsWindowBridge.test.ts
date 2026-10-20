@@ -8,10 +8,10 @@ import {
     useDesktopLyricsWindowBridge,
 } from "./useDesktopLyricsWindowBridge";
 
-declare const require: <T = unknown>(id: string) => T; // 实现
+declare const require: <T = unknown>(id: string) => T;
 
 // vi.hoisted 内无法直接用静态 import，因此通过 require 拿到 vue 的 ref。
-const mocks = vi.hoisted(() => { // 实现
+const mocks = vi.hoisted(() => {
     const vueApi = require("vue") as typeof import("vue");
     const ref = vueApi.ref;
 

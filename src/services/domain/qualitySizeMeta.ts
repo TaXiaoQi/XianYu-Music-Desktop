@@ -2,7 +2,7 @@ import type { QualityKey, Song } from '../../types';
 import { normalizeQualityKey } from '../../types';
 import { downloadApi } from '../tauri/downloadApi';
 
-export function parseQualitySizeText(size: unknown): number | null {
+function parseQualitySizeText(size: unknown): number | null {
   if (typeof size === 'number') return size > 0 ? Math.floor(size) : null;
   if (typeof size !== 'string') return null;
   const s = size.trim().toLowerCase();
@@ -24,7 +24,7 @@ export function parseQualitySizeText(size: unknown): number | null {
   return Math.round(v * mult);
 }
 
-export function readQualitySizeFromMeta(song: Song, quality: QualityKey): number | null {
+function readQualitySizeFromMeta(song: Song, quality: QualityKey): number | null {
   const scan = (raw: unknown): number | null => {
     if (!raw || typeof raw !== 'object') return null;
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {

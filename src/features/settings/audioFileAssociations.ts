@@ -22,7 +22,5 @@ export const AUDIO_FILE_ASSOCIATION_EXTENSIONS = [
   'wav',
 ] as const;
 
-export type AudioFileAssociationExtension = (typeof AUDIO_FILE_ASSOCIATION_EXTENSIONS)[number];
-
 /** 展示用标签：语言中立，直接用大写扩展名。 */
 export const audioFileAssociationLabel = (ext: string): string => ext.toUpperCase();

@@ -223,7 +223,7 @@ const nextFrame = () =>
 
 const waitForRoutePaint = () => nextFrame().then(nextFrame);
 
-export function useTrayMenuEvents(router: Router) { // 实现
+export function useTrayMenuEvents(router: Router) {
     const mainWindow = getCurrentWindow();
     const {
         currentSong,

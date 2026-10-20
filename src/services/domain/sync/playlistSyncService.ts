@@ -38,14 +38,14 @@ const USE_SYNC_V2 = true;
 
 // ==================== 端口（由 UI 层注入 store 实例） ====================
 
-export interface PlaylistSyncCollectionsPort {
+interface PlaylistSyncCollectionsPort {
   playlists: Playlist[];
   getPlaylistById(id: string): Playlist | undefined;
   setPlaylistCloudId(id: string, cloudId: string): boolean;
   setPlaylistCloudCoverUrl(id: string, url: string): void;
 }
 
-export interface PlaylistSyncLibraryPort {
+interface PlaylistSyncLibraryPort {
   songList: Song[];
   setExtraSong(song: Song): void;
 }

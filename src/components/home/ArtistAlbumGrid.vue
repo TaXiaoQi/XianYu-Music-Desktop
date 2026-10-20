@@ -1,4 +1,4 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 首页歌手详情里的专辑网格：封面读取缓存 Map，空态由异步组件兜底。
 import { defineAsyncComponent as lazyLoad } from "vue";
 

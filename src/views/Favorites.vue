@@ -96,7 +96,7 @@
     </div>
 </template>
 
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
@@ -158,14 +158,14 @@ const { openHomePlaylist } = useHomeNavigation(router);
 const { favTab } = storeToRefs(navigationStore);
 const { favoriteCollections } = storeToRefs(collectionsStore);
 
-const { displaySongList, searchQuery } = usePlayerLibraryView(); // 实现
-const { playSong, addSongsToQueue } = usePlaybackController(); // 实现
-const { openAddToPlaylistDialog } = useAddToPlaylistDialog(); // 实现
+const { displaySongList, searchQuery } = usePlayerLibraryView();
+const { playSong, addSongsToQueue } = usePlaybackController();
+const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { settings } = useSettings();
 const { showToast } = useToast();
 const { favoritePaths, clearFavorites } = useLibraryCollections();
 
-const localSongList = computed(() => displaySongList.value); // 实现
+const localSongList = computed(() => displaySongList.value);
 
 const filterEntriesBySearch = (
     entries: FavoriteCollectionEntry[],
@@ -192,9 +192,9 @@ const favoriteAlbumEntries = computed(() =>
 );
 
 // ========== 状态管理 ========== 
-const isBatchMode = ref(false); // 实现
-const selectedPaths = ref<Set<string>>(new Set()); // 实现
-const songTableRef = ref<any>(null); // 实现
+const isBatchMode = ref(false);
+const selectedPaths = ref<Set<string>>(new Set());
+const songTableRef = ref<any>(null);
 
 watch(favTab, (tab) => {
     if (tab !== "songs") {
@@ -237,9 +237,9 @@ const handleRemoveCollection = (entry: FavoriteCollectionEntry) => {
     );
 };
 
-const showConfirm = ref(false); // 实现
+const showConfirm = ref(false);
 const confirmMessage = ref("");
-const confirmAction = ref<() => void>(() => {}); // 实现
+const confirmAction = ref<() => void>(() => {});
 const {
     showContextMenu,
     contextMenuX,
@@ -258,7 +258,7 @@ watch(isBatchMode, (val) => {
 
 // ========== 业务逻辑处理 ========== 
 
-const handlePlayAll = () => { // 实现
+const handlePlayAll = () => {
     if (localSongList.value.length > 0) {
         const firstSong = localSongList.value[0];
         void launchFlyingCover(firstSong.path, "");
@@ -266,7 +266,7 @@ const handlePlayAll = () => { // 实现
     }
 };
 
-const handlePlaySong = (song: Song) => { // 实现
+const handlePlaySong = (song: Song) => {
     const shouldInsertAfterCurrent = searchQuery.value.trim().length > 0;
     void playSong(
         song,
@@ -274,11 +274,11 @@ const handlePlaySong = (song: Song) => { // 实现
     );
 };
 
-const handleAddAllToQueue = () => { // 实现
+const handleAddAllToQueue = () => {
     addSongsToQueue(localSongList.value);
 };
 
-const handleBatchPlay = () => { // 实现
+const handleBatchPlay = () => {
     const selected = localSongList.value.filter((s) =>
         selectedPaths.value.has(s.path),
     );
@@ -365,14 +365,14 @@ const handleSelectAll = () => {
     }
 };
 
-const executeBatchDelete = () => { // 实现
+const executeBatchDelete = () => {
     const newPathSet = new Set(selectedPaths.value);
     favoritePaths.value = favoritePaths.value.filter((p) => !newPathSet.has(p));
     selectedPaths.value.clear();
     showConfirm.value = false;
 };
 
-const requestBatchDelete = () => { // 实现
+const requestBatchDelete = () => {
     if (selectedPaths.value.size === 0) return;
     const paths = Array.from(selectedPaths.value);
     if (
@@ -389,7 +389,7 @@ const requestBatchDelete = () => { // 实现
     showConfirm.value = true;
 };
 
-const executeConfirmAction = async () => { // 实现
+const executeConfirmAction = async () => {
     await confirmAction.value();
     showConfirm.value = false;
 };
@@ -453,7 +453,7 @@ async function confirmDeleteScope(scope: SyncDeleteScope) {
     );
 }
 
-const handleClearAll = () => { // 实现
+const handleClearAll = () => {
     const paths = [...favoritePaths.value];
     if (
         paths.length > 0 &&
@@ -470,7 +470,7 @@ const handleClearAll = () => { // 实现
     showConfirm.value = true;
 };
 
-const openAddToPlaylistSelection = () => { // 实现
+const openAddToPlaylistSelection = () => {
     const songPaths = isBatchMode.value
         ? Array.from(selectedPaths.value)
         : contextMenuTargetSong.value

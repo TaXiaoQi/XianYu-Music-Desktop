@@ -63,7 +63,7 @@ export interface LyricResultContract {
 }
 
 /** 对齐 Rust playlist_fetcher::common 的 PlaylistSong（serde camelCase，冻结） */
-export interface PlaylistSongResultContract {
+interface PlaylistSongResultContract {
   id: string;
   title: string;
   artist: string;

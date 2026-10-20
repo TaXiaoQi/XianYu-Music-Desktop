@@ -10,7 +10,7 @@ import {
     isDirectParent,
 } from "./playerLibraryViewShared";
 
-interface FolderListItem { // 实现
+interface FolderListItem {
     path: string;
     name: string;
     count: number;

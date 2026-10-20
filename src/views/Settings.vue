@@ -1,7 +1,7 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 import { computed, defineAsyncComponent, h, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch, type Component } from 'vue';
-import { Search, X } from 'lucide-vue-next'; // 实现
-import { useRoute, useRouter } from 'vue-router'; // 实现
+import { Search, X } from 'lucide-vue-next';
+import { useRoute, useRouter } from 'vue-router';
 
 const settingsLoaders = {
   about: () => import("../components/settings/SettingsAbout.vue").then(m => m.default),
@@ -63,34 +63,34 @@ const SettingsNetwork = lazySettings(settingsLoaders.network);
 const SettingsAdvanced = lazySettings(settingsLoaders.advanced);
 const SettingsLinkage = lazySettings(settingsLoaders.linkage);
 const SettingsFeedback = lazySettings(settingsLoaders.feedback);
-import { useDeveloperMode } from '../features/settings/developerMode'; // 实现
+import { useDeveloperMode } from '../features/settings/developerMode';
 import {
-  searchSettings, // 实现
-  type SettingsSearchItem, // 实现
-  type SettingsTabId, // 实现
-} from '../features/settings/searchIndex'; // 实现
+  searchSettings,
+  type SettingsSearchItem,
+  type SettingsTabId,
+} from '../features/settings/searchIndex';
 import { clamp } from '../utils/math';
-import { useI18n } from '../features/i18n'; // 实现
+import { useI18n } from '../features/i18n';
 
-type SettingsViewTabId = SettingsTabId | 'debug'; // 实现
+type SettingsViewTabId = SettingsTabId | 'debug';
 
 const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'sleepTimer', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'network', 'advanced', 'linkage', 'feedback', 'debug', 'about'];
 
-const route = useRoute(); // 实现
-const router = useRouter(); // 实现
-const { isDeveloperMode } = useDeveloperMode(); // 实现
-const { t } = useI18n(); // 实现
+const route = useRoute();
+const router = useRouter();
+const { isDeveloperMode } = useDeveloperMode();
+const { t } = useI18n();
 
-const canOpenTab = (tab: string): tab is SettingsViewTabId => ( // 实现
-  VALID_TABS.includes(tab as SettingsViewTabId) && (tab !== 'debug' || isDeveloperMode.value) // 实现
+const canOpenTab = (tab: string): tab is SettingsViewTabId => (
+  VALID_TABS.includes(tab as SettingsViewTabId) && (tab !== 'debug' || isDeveloperMode.value)
 );
 
-const initialTab = (() => { // 实现
-  const q = route.query.tab as string | undefined; // 实现
-  return (q && canOpenTab(q)) ? q : 'general'; // 实现
+const initialTab = (() => {
+  const q = route.query.tab as string | undefined;
+  return (q && canOpenTab(q)) ? q : 'general';
 })();
 
-const activeTab = ref<SettingsViewTabId>(initialTab); // 实现
+const activeTab = ref<SettingsViewTabId>(initialTab);
 
 const tabRenderError = ref<Error | null>(null);
 onErrorCaptured((error) => {
@@ -99,10 +99,10 @@ onErrorCaptured((error) => {
 });
 const mainRef = ref<HTMLElement | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
-const settingsQuery = ref(''); // 实现
-const activeSearchResultIndex = ref(0); // 实现
-const searchResults = computed(() => searchSettings(settingsQuery.value)); // 实现
-let highlightTimer: ReturnType<typeof setTimeout> | null = null; // 实现
+const settingsQuery = ref('');
+const activeSearchResultIndex = ref(0);
+const searchResults = computed(() => searchSettings(settingsQuery.value));
+let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 // --- 侧边栏拖拽调整宽度逻辑 ---
 const STORAGE_KEY_SIDEBAR_WIDTH = 'settings_sidebar_width';
@@ -165,25 +165,25 @@ const resetSidebarWidth = () => {
 };
 
 let pushedTab: SettingsViewTabId = initialTab;
-watch(() => route.query.tab, (q) => { // 实现
-  const next = (q as string | undefined) ?? ''; // 实现
+watch(() => route.query.tab, (q) => {
+  const next = (q as string | undefined) ?? '';
   if (next && canOpenTab(next) && next !== pushedTab) {
     pushedTab = next;
-    activeTab.value = next; // 实现
+    activeTab.value = next;
   }
 });
 
-watch(activeTab, (t) => { // 实现
+watch(activeTab, (t) => {
   tabRenderError.value = null;
   if (pushedTab !== t) {
     pushedTab = t;
-    void router.replace({ query: { ...route.query, tab: t } }); // 实现
+    void router.replace({ query: { ...route.query, tab: t } });
   }
 });
 
-watch(isDeveloperMode, (enabled) => { // 实现
-  if (!enabled && activeTab.value === 'debug') { // 实现
-    activeTab.value = 'about'; // 实现
+watch(isDeveloperMode, (enabled) => {
+  if (!enabled && activeTab.value === 'debug') {
+    activeTab.value = 'about';
   }
 });
 
@@ -210,97 +210,97 @@ const waitForTabEnter = (): Promise<void> => {
   });
 };
 
-watch(settingsQuery, () => { // 实现
-  activeSearchResultIndex.value = 0; // 实现
+watch(settingsQuery, () => {
+  activeSearchResultIndex.value = 0;
 });
 
-const normalizeElementText = (element: Element) => ( // 实现
-  element.textContent?.replace(/\s+/g, ' ').trim() ?? '' // 实现
+const normalizeElementText = (element: Element) => (
+  element.textContent?.replace(/\s+/g, ' ').trim() ?? ''
 );
 
-const findSearchTarget = (targetText: string): HTMLElement | null => { // 实现
-  const root = contentRef.value; // 实现
-  if (!root) return null; // 实现
+const findSearchTarget = (targetText: string): HTMLElement | null => {
+  const root = contentRef.value;
+  if (!root) return null;
 
-  const normalizedTarget = targetText.replace(/\s+/g, ' ').trim(); // 实现
-  const candidates = Array.from(root.querySelectorAll<HTMLElement>('*')) // 实现
-    .map(element => ({ element, text: normalizeElementText(element) })) // 实现
-    .filter(candidate => candidate.text.includes(normalizedTarget)); // 实现
+  const normalizedTarget = targetText.replace(/\s+/g, ' ').trim();
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>('*'))
+    .map(element => ({ element, text: normalizeElementText(element) }))
+    .filter(candidate => candidate.text.includes(normalizedTarget));
 
-  candidates.sort((a, b) => { // 实现
-    const exactDifference = Number(a.text !== normalizedTarget) - Number(b.text !== normalizedTarget); // 实现
-    return exactDifference || a.text.length - b.text.length; // 实现
+  candidates.sort((a, b) => {
+    const exactDifference = Number(a.text !== normalizedTarget) - Number(b.text !== normalizedTarget);
+    return exactDifference || a.text.length - b.text.length;
   });
 
-  return candidates[0]?.element ?? null; // 实现
+  return candidates[0]?.element ?? null;
 };
 
-const getHighlightContainer = (target: HTMLElement): HTMLElement => { // 实现
-  const root = contentRef.value; // 实现
-  let current = target; // 实现
+const getHighlightContainer = (target: HTMLElement): HTMLElement => {
+  const root = contentRef.value;
+  let current = target;
 
-  while (current.parentElement && current.parentElement !== root) { // 实现
-    const parent = current.parentElement; // 实现
-    const textLength = normalizeElementText(parent).length; // 实现
-    if (parent.getBoundingClientRect().height > 180 || textLength > 480) break; // 实现
-    current = parent; // 实现
+  while (current.parentElement && current.parentElement !== root) {
+    const parent = current.parentElement;
+    const textLength = normalizeElementText(parent).length;
+    if (parent.getBoundingClientRect().height > 180 || textLength > 480) break;
+    current = parent;
   }
 
-  return current; // 实现
+  return current;
 };
 
-const revealSearchResult = async (item: SettingsSearchItem) => { // 实现
+const revealSearchResult = async (item: SettingsSearchItem) => {
   const needSwitch = activeTab.value !== item.tab;
   if (needSwitch) {
     const enterPromise = waitForTabEnter();
     activeTab.value = item.tab;
     await enterPromise;
   }
-  settingsQuery.value = ''; // 实现
+  settingsQuery.value = '';
 
-  if (!item.target) { // 实现
-    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' }); // 实现
+  if (!item.target) {
+    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
 
-  const target = findSearchTarget(item.target); // 实现
-  if (!target) { // 实现
-    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' }); // 实现
+  const target = findSearchTarget(item.target);
+  if (!target) {
+    mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
 
-  const highlightTarget = getHighlightContainer(target); // 实现
-  document.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight'); // 实现
-  highlightTarget.classList.add('settings-search-highlight'); // 实现
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' }); // 实现
+  const highlightTarget = getHighlightContainer(target);
+  document.querySelector('.settings-search-highlight')?.classList.remove('settings-search-highlight');
+  highlightTarget.classList.add('settings-search-highlight');
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  if (highlightTimer) clearTimeout(highlightTimer); // 实现
-  highlightTimer = setTimeout(() => { // 实现
-    highlightTarget.classList.remove('settings-search-highlight'); // 实现
-    highlightTimer = null; // 实现
+  if (highlightTimer) clearTimeout(highlightTimer);
+  highlightTimer = setTimeout(() => {
+    highlightTarget.classList.remove('settings-search-highlight');
+    highlightTimer = null;
   }, 2200);
 };
 
-const clearSettingsSearch = () => { // 实现
-  settingsQuery.value = ''; // 实现
+const clearSettingsSearch = () => {
+  settingsQuery.value = '';
 };
 
-const handleSearchKeydown = (event: KeyboardEvent) => { // 实现
-  const results = searchResults.value; // 实现
-  if (!settingsQuery.value || results.length === 0) return; // 实现
+const handleSearchKeydown = (event: KeyboardEvent) => {
+  const results = searchResults.value;
+  if (!settingsQuery.value || results.length === 0) return;
 
-  if (event.key === 'ArrowDown') { // 实现
-    event.preventDefault(); // 实现
-    activeSearchResultIndex.value = (activeSearchResultIndex.value + 1) % results.length; // 实现
-  } else if (event.key === 'ArrowUp') { // 实现
-    event.preventDefault(); // 实现
-    activeSearchResultIndex.value = (activeSearchResultIndex.value - 1 + results.length) % results.length; // 实现
-  } else if (event.key === 'Enter') { // 实现
-    event.preventDefault(); // 实现
-    const result = results[activeSearchResultIndex.value]; // 实现
-    if (result) void revealSearchResult(result); // 实现
-  } else if (event.key === 'Escape') { // 实现
-    clearSettingsSearch(); // 实现
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    activeSearchResultIndex.value = (activeSearchResultIndex.value + 1) % results.length;
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    activeSearchResultIndex.value = (activeSearchResultIndex.value - 1 + results.length) % results.length;
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    const result = results[activeSearchResultIndex.value];
+    if (result) void revealSearchResult(result);
+  } else if (event.key === 'Escape') {
+    clearSettingsSearch();
   }
 };
 
@@ -322,38 +322,38 @@ onMounted(() => {
   }
 });
 
-onBeforeUnmount(() => { // 实现
+onBeforeUnmount(() => {
   cancelWarmup?.();
-  if (highlightTimer) clearTimeout(highlightTimer); // 实现
+  if (highlightTimer) clearTimeout(highlightTimer);
   stopSidebarResize();
 });
 
-const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => [ // 实现
-  { id: 'account', name: t('settings.account') }, // 实现
-  { id: 'general', name: t('settings.general') }, // 实现
-  { id: 'theme', name: t('settings.theme') }, // 实现
+const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => [
+  { id: 'account', name: t('settings.account') },
+  { id: 'general', name: t('settings.general') },
+  { id: 'theme', name: t('settings.theme') },
   { id: 'plugins', name: t('settings.plugins') },
-  { id: 'audioOutput', name: t('settings.playback') }, // 实现
-  { id: 'download', name: t('settings.download') }, // 实现
+  { id: 'audioOutput', name: t('settings.playback') },
+  { id: 'download', name: t('settings.download') },
   { id: 'linkage', name: t('settings.linkage') },
   { id: 'network', name: t('settings.network') },
-  { id: 'library', name: t('settings.library') }, // 实现
-  { id: 'toolbox', name: t('settings.toolbox') }, // 实现
-  { id: 'desktopLyrics', name: t('settings.desktopLyrics') }, // 实现
+  { id: 'library', name: t('settings.library') },
+  { id: 'toolbox', name: t('settings.toolbox') },
+  { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
   { id: 'sleepTimer', name: t('settings.sleepTimer') },
-  { id: 'shortcuts', name: t('settings.shortcuts') }, // 实现
-  { id: 'advanced', name: t('settings.advanced') }, // 实现
+  { id: 'shortcuts', name: t('settings.shortcuts') },
+  { id: 'advanced', name: t('settings.advanced') },
   { id: 'feedback', name: t('settings.feedback') },
-  { id: 'about', name: t('settings.about') }, // 实现
+  { id: 'about', name: t('settings.about') },
 ]);
 
-const tabs = computed(() => { // 实现
-  if (!isDeveloperMode.value) return baseTabs.value; // 实现
-  const aboutIndex = baseTabs.value.findIndex(tab => tab.id === 'about'); // 实现
+const tabs = computed(() => {
+  if (!isDeveloperMode.value) return baseTabs.value;
+  const aboutIndex = baseTabs.value.findIndex(tab => tab.id === 'about');
   return [
-    ...baseTabs.value.slice(0, aboutIndex), // 实现
-    { id: 'debug' as const, name: t('settings.debug') }, // 实现
-    ...baseTabs.value.slice(aboutIndex), // 实现
+    ...baseTabs.value.slice(0, aboutIndex),
+    { id: 'debug' as const, name: t('settings.debug') },
+    ...baseTabs.value.slice(aboutIndex),
   ];
 });
 </script>

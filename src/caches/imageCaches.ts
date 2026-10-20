@@ -2,7 +2,7 @@ import { MemoryCache as LruStore } from '../utils/MemoryCache';
 
 // 视口封面快照的两种形态：纯 url 列表（歌曲表）与 path→url 条目列表（歌手 / 专辑页）
 export type ViewportCoverSnapshot = Array<string>;
-export type ViewportCoverUrlSnapshotEntry = { path: string; url: string };
+type ViewportCoverUrlSnapshotEntry = { path: string; url: string };
 export type ViewportCoverUrlSnapshot = Array<ViewportCoverUrlSnapshotEntry>;
 
 // 统一建仓入口：参数依次为容量上限与存活毫秒数
@@ -34,12 +34,8 @@ const managedCaches: Array<{ prune(): void; clear(): void }> = [
   artistViewportCoverSnapshotCache, albumViewportCoverSnapshotCache, songTableViewportCoverSnapshotCache,
 ];
 
-export function pruneImageCaches(): void {
+function pruneImageCaches(): void {
   managedCaches.forEach((cache) => { cache.prune(); });
-}
-
-export function clearImageCaches(): void {
-  managedCaches.forEach((cache) => { cache.clear(); });
 }
 
 // 重型清理：头图与快照直接清空；滚动位置与侧栏封面只做过期修剪

@@ -8,39 +8,39 @@
 
 import { computed, ref, watch } from 'vue'; // 响应式基础
 
-import { usePlaybackStore } from '../../features/playback/store'; // 实现
+import { usePlaybackStore } from '../../features/playback/store';
 import { useLibraryStore } from '../../features/library/store';
 import type { Song } from '../../types';
 import { fetchOnlineLyricsRaw } from '../../features/playback/onlineLyrics';
-import { useSettingsStore } from '../../features/settings/store'; // 实现
-import { useLyricsSettingsStore } from '../../features/lyricsSettings/store'; // 实现
+import { useSettingsStore } from '../../features/settings/store';
+import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
 import { toTraditional } from '../../features/i18n/traditional';
 import { lyricsApi } from '../../services/tauri/lyricsApi';
 import { getCurrentLyricDisplayLines } from './converters'; // 歌词行计算
-import type { // 实现
-  CurrentLyricDisplayState, // 实现
-  DesktopLyricsSettings, // 实现
-  LyricDocument, // 实现
+import type {
+  CurrentLyricDisplayState,
+  DesktopLyricsSettings,
+  LyricDocument,
   LyricLine,
   LyricsPayload,
-  LyricsSettings, // 实现
-  LyricsStatus, // 实现
-  SemanticLine, // 实现
-} from './types'; // 实现
+  LyricsSettings,
+  LyricsStatus,
+  SemanticLine,
+} from './types';
 
 /* ==================== 基础状态 ==================== */
 
-export const showDesktopLyrics = ref(false); // 实现
-export const showLyricsPlayerSettingsPanel = ref(false); // 实现
-export const lyricsStatus = ref<LyricsStatus>('idle'); // 实现
-export const parsedLyrics = ref<LyricLine[]>([]); // 实现
-export const lyricDocument = ref<LyricDocument | null>(null); // 实现
+export const showDesktopLyrics = ref(false);
+const showLyricsPlayerSettingsPanel = ref(false);
+export const lyricsStatus = ref<LyricsStatus>('idle');
+const parsedLyrics = ref<LyricLine[]>([]);
+const lyricDocument = ref<LyricDocument | null>(null);
 
-const rawLyrics = ref(''); // 实现
-const semanticLyrics = ref<SemanticLine[]>([]); // 实现
+const rawLyrics = ref('');
+const semanticLyrics = ref<SemanticLine[]>([]);
 
 /** 加载请求序号：失效旧请求，防止乱序回写。 */
-let loadRequestId = 0; // 实现
+let loadRequestId = 0;
 /** 在线歌词的轮询上限与当前计数。 */
 const MAX_ONLINE_LYRICS_RETRIES = 15;
 let onlineLyricsRetryCount = 0;
@@ -63,7 +63,7 @@ export function markOnlineLyricsUnavailable(songPath: string) {
   unavailableOnlineLyricsPaths.add(songPath);
 
   // 仅在标记的仍是当前歌曲时立即清空展示，避免闪回旧词。
-  const playbackStore = usePlaybackStore(); // 实现
+  const playbackStore = usePlaybackStore();
   if (playbackStore.currentSong?.path !== songPath) return;
 
   loadRequestId += 1;
@@ -84,38 +84,38 @@ export function clearOnlineLyricsUnavailable(songPath: string) {
  * 读透传到 store，写转成一次 patch 调用。
  */
 function bindSettingsView<T extends object>(
-  read: () => T, // 实现
+  read: () => T,
   apply: (patch: Partial<T>) => void,
 ): T {
-  return new Proxy({} as T, { // 实现
-    get(_target, property) { // 实现
-      return read()[property as keyof T]; // 实现
+  return new Proxy({} as T, {
+    get(_target, property) {
+      return read()[property as keyof T];
     },
-    set(_target, property, value) { // 实现
-      if (typeof property !== 'string') return false; // 实现
+    set(_target, property, value) {
+      if (typeof property !== 'string') return false;
       apply({ [property]: value } as Partial<T>);
-      return true; // 实现
+      return true;
     },
-    has(_target, property) { // 实现
-      return property in read(); // 实现
+    has(_target, property) {
+      return property in read();
     },
     ownKeys() {
-      return Reflect.ownKeys(read()); // 实现
+      return Reflect.ownKeys(read());
     },
-    getOwnPropertyDescriptor() { // 实现
+    getOwnPropertyDescriptor() {
       return { enumerable: true, configurable: true };
     },
   });
 }
 
 export const lyricsSettings = bindSettingsView<LyricsSettings>(
-  () => useLyricsSettingsStore().lyricsSettings, // 实现
-  (patch) => useLyricsSettingsStore().patchLyricsSettings(patch), // 实现
+  () => useLyricsSettingsStore().lyricsSettings,
+  (patch) => useLyricsSettingsStore().patchLyricsSettings(patch),
 );
 
-export const desktopLyricsSettings = bindSettingsView<DesktopLyricsSettings>(
-  () => useLyricsSettingsStore().desktopLyricsSettings, // 实现
-  (patch) => useLyricsSettingsStore().patchDesktopLyricsSettings(patch), // 实现
+const desktopLyricsSettings = bindSettingsView<DesktopLyricsSettings>(
+  () => useLyricsSettingsStore().desktopLyricsSettings,
+  (patch) => useLyricsSettingsStore().patchDesktopLyricsSettings(patch),
 );
 
 /* ==================== 文本后处理 ==================== */
@@ -173,7 +173,7 @@ function adoptPayload(payload: LyricsPayload | null | undefined, rawText: string
   semanticLyrics.value = payload?.semanticLines ?? [];
   parsedLyrics.value = (payload?.displayLines ?? []).map(asDisplayLine);
 
-  if (parsedLyrics.value.length === 0) { // 实现
+  if (parsedLyrics.value.length === 0) {
     const synthesized = synthesizeEvenlySpacedLines(rawText, durationSec);
     if (synthesized.length > 0) parsedLyrics.value = synthesized;
   }
@@ -202,7 +202,7 @@ function ensureSongPathWatcher() {
 
 /** 在线歌词轮询：约 0.8s 后重试一次自身。 */
 function scheduleOnlineRetry(songPath: string, requestId: number) {
-  const playbackStore = usePlaybackStore(); // 实现
+  const playbackStore = usePlaybackStore();
   setTimeout(() => {
     if (playbackStore.currentSong?.path === songPath && requestId === loadRequestId) {
       void loadLyrics();
@@ -212,20 +212,20 @@ function scheduleOnlineRetry(songPath: string, requestId: number) {
 
 export async function loadLyrics(overrideLyricsRaw?: string) {
   ensureSongPathWatcher(); // 启动路径监听
-  const requestId = ++loadRequestId; // 实现
-  const playbackStore = usePlaybackStore(); // 实现
-  const song = playbackStore.currentSong; // 实现
+  const requestId = ++loadRequestId;
+  const playbackStore = usePlaybackStore();
+  const song = playbackStore.currentSong;
 
-  if (!song) { // 实现
+  if (!song) {
     resetLyricContent();
-    lyricsStatus.value = 'idle'; // 实现
+    lyricsStatus.value = 'idle';
     onlineLyricsRetryCount = 0;
     return;
   }
 
   if (lastWatchedSongPath !== song.path) onlineLyricsRetryCount = 0;
 
-  lyricsStatus.value = 'loading'; // 实现
+  lyricsStatus.value = 'loading';
   resetLyricContent();
 
   try {
@@ -239,7 +239,7 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       unavailableOnlineLyricsPaths.delete(song.path);
       return; // 提前返回
     } // 校验结束
-    const lyricsPath = song.cue_source_path || song.path; // 实现
+    const lyricsPath = song.cue_source_path || song.path;
     // cloud:// 网盘曲目同样走在线取词分支：内嵌歌词优先（预探结果），
     // 否则网盘曲目永远落本地 DB 分支拿不到歌词
     const isOnlineSong =
@@ -293,15 +293,15 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
     }
 
     const payload = await lyricsApi.getSongLyricsPayload(lyricsPath);
-    if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return; // 实现
+    if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 
     adoptPayload(payload, payload?.rawLyrics || '', playbackStore.currentSong?.duration ?? 0);
-  } catch (error) { // 实现
-    if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return; // 实现
+  } catch (error) {
+    if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 
     resetLyricContent();
-    lyricsStatus.value = 'error'; // 实现
-    console.error('Failed to load lyrics:', error); // 实现
+    lyricsStatus.value = 'error';
+    console.error('Failed to load lyrics:', error);
   }
 }
 
@@ -314,7 +314,7 @@ function findLineIndexAt(lines: LyricLine[], targetTime: number): number {
 
   while (low <= high) {
     const mid = (low + high) >> 1;
-    if (lines[mid].time <= targetTime) { // 实现
+    if (lines[mid].time <= targetTime) {
       found = mid;
       low = mid + 1;
     } else {
@@ -325,10 +325,10 @@ function findLineIndexAt(lines: LyricLine[], targetTime: number): number {
   return found;
 }
 
-export const currentLyricIndex = computed(() => { // 实现
-  if (parsedLyrics.value.length === 0) return -1; // 实现
+const currentLyricIndex = computed(() => {
+  if (parsedLyrics.value.length === 0) return -1;
 
-  const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay; // 实现
+  const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay;
   if (targetTime < 0) return -1; // 负时间无歌词
 
   return findLineIndexAt(parsedLyrics.value, targetTime);
@@ -342,55 +342,55 @@ function placeholderState(text: string): CurrentLyricDisplayState {
   };
 }
 
-export const currentLyricLine = computed<CurrentLyricDisplayState>(() => {
+const currentLyricLine = computed<CurrentLyricDisplayState>(() => {
   if (lyricsStatus.value === 'loading') return placeholderState('Loading lyrics...');
   if (lyricsStatus.value === 'error') return placeholderState('Lyrics unavailable');
 
-  if (parsedLyrics.value.length === 0) { // 实现
-    const fallback = rawLyrics.value.trim() ? 'No synchronized lyrics' : 'Instrumental / No lyrics'; // 实现
+  if (parsedLyrics.value.length === 0) {
+    const fallback = rawLyrics.value.trim() ? 'No synchronized lyrics' : 'Instrumental / No lyrics';
     return placeholderState(fallback);
   }
 
-  const index = currentLyricIndex.value; // 实现
-  if (index !== -1) { // 实现
-    const current = parsedLyrics.value[index]; // 实现
-    const displayLines = getCurrentLyricDisplayLines( // 实现
+  const index = currentLyricIndex.value;
+  if (index !== -1) {
+    const current = parsedLyrics.value[index];
+    const displayLines = getCurrentLyricDisplayLines(
       current,
-      lyricsSettings.showTranslation, // 实现
-      lyricsSettings.showRomaji, // 实现
+      lyricsSettings.showTranslation,
+      lyricsSettings.showRomaji,
     );
     return {
-      text: current.text, // 实现
-      lines: displayLines.map((line) => line.text), // 实现
-      displayLines, // 实现
+      text: current.text,
+      lines: displayLines.map((line) => line.text),
+      displayLines,
     };
   }
 
   const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay; // 补偿音频延迟
   if (targetTime < 0 || parsedLyrics.value.length === 0) return placeholderState('···');
-  const first = parsedLyrics.value[0]; // 实现
+  const first = parsedLyrics.value[0];
   return {
-    text: first.text, // 实现
-    lines: [first.text], // 实现
-    displayLines: [{ kind: 'main', text: first.text }], // 实现
+    text: first.text,
+    lines: [first.text],
+    displayLines: [{ kind: 'main', text: first.text }],
   };
 });
 
 /* ==================== 组合式出口 ==================== */
 
-export function useLyrics() { // 实现
+export function useLyrics() {
   return {
-    showDesktopLyrics, // 实现
-    showLyricsPlayerSettingsPanel, // 实现
-    lyricsSettings, // 实现
-    desktopLyricsSettings, // 实现
-    lyricsStatus, // 实现
-    currentLyricLine, // 实现
-    currentLyricIndex, // 实现
-    parsedLyrics, // 实现
-    lyricDocument, // 实现
+    showDesktopLyrics,
+    showLyricsPlayerSettingsPanel,
+    lyricsSettings,
+    desktopLyricsSettings,
+    lyricsStatus,
+    currentLyricLine,
+    currentLyricIndex,
+    parsedLyrics,
+    lyricDocument,
     loadLyrics,
-    semanticLyrics, // 实现
+    semanticLyrics,
     rawLyrics,
   };
 }

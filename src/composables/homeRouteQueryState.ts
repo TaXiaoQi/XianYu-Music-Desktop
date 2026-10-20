@@ -3,8 +3,6 @@ import type { LocationQuery, LocationQueryRaw } from 'vue-router';
 /** 首页路由上承载视图状态的受控 query 参数名（冻结约定，逐字不可改） */
 export const HOME_URL_PARAMS = ['view', 'filter', 'folder'] as const;
 
-export type HomeUrlParam = (typeof HOME_URL_PARAMS)[number];
-
 /** 只需一个 query 参数即可成页的视图 */
 const SINGLE_PARAM_VIEWS = ['all', 'statistics', 'leaderboard', 'dailyRecommend', 'topLists'];
 
@@ -21,7 +19,7 @@ export interface RoutedHomeState {
 }
 
 /** query 值可能是数组或 null，仅取首个字符串段 */
-export const firstQueryText = (value: unknown): string => {
+const firstQueryText = (value: unknown): string => {
   const candidate = Array.isArray(value) ? value[0] : value;
   return typeof candidate === 'string' ? candidate : '';
 };
@@ -31,7 +29,7 @@ export const carriesHomeParams = (query: LocationQuery): boolean =>
   HOME_URL_PARAMS.some((key) => query[key] !== undefined);
 
 /** 无显式参数时的兜底状态 */
-export const idleHomeState = (): RoutedHomeState => ({
+const idleHomeState = (): RoutedHomeState => ({
   viewMode: IDLE_HOME_VIEW,
   filter: '',
   folder: '',

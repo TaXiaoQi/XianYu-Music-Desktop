@@ -6,7 +6,7 @@ type ThemeAssetKind = 'icons' | 'stickers';
 
 const cssName = (slot: string) => slot.replace(/[^a-z0-9-]/gi, '-');
 
-export function applyDesktopThemeCssVariables(theme: DesktopThemeVisuals) {
+function applyDesktopThemeCssVariables(theme: DesktopThemeVisuals) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   const radius = theme.quickEntryShape === 'circle'

@@ -2,8 +2,8 @@ import { ref, watch, onUnmounted } from "vue";
 import type { DownloadQuality, Song } from "../types";
 import { useSettings } from "../features/settings/useSettings";
 
-const isDownloadDialogVisible = ref(false); // 实现
-const currentDownloadSong = ref<Song | null>(null); // 实现
+const isDownloadDialogVisible = ref(false);
+const currentDownloadSong = ref<Song | null>(null);
 const currentDownloadInitialQuality = ref<DownloadQuality | null>(null);
 
 const SK_AUDIO = "dl_dialog_audio";
@@ -11,20 +11,20 @@ const SK_LYRICS = "dl_dialog_lyrics";
 const SK_COVER = "dl_dialog_cover";
 const SK_INIT = "dl_dialog_initialized";
 
-const readBool = (key: string, fallback: boolean): boolean => { // 实现
+const readBool = (key: string, fallback: boolean): boolean => {
     const v = localStorage.getItem(key);
     return v === null ? fallback : v === "true";
 };
 
-const downloadAudio = ref(readBool(SK_AUDIO, true)); // 实现
-const downloadLyrics = ref(readBool(SK_LYRICS, true)); // 实现
-const downloadCover = ref(readBool(SK_COVER, true)); // 实现
+const downloadAudio = ref(readBool(SK_AUDIO, true));
+const downloadLyrics = ref(readBool(SK_LYRICS, true));
+const downloadCover = ref(readBool(SK_COVER, true));
 
 let selectionInitialized = localStorage.getItem(SK_INIT) === "true";
-let watchRegistered = false; // 实现
+let watchRegistered = false;
 let closeDialogTimer: ReturnType<typeof setTimeout> | null = null;
 
-function initSelectionIfNeeded() { // 实现
+function initSelectionIfNeeded() {
     if (selectionInitialized) return;
     const { settings } = useSettings();
     downloadAudio.value = true;
@@ -34,7 +34,7 @@ function initSelectionIfNeeded() { // 实现
     localStorage.setItem(SK_INIT, "true");
 }
 
-function registerPersistenceWatchers() { // 实现
+function registerPersistenceWatchers() {
     if (watchRegistered) return;
     watch(downloadAudio, (v) => localStorage.setItem(SK_AUDIO, String(v)));
     watch(downloadLyrics, (v) => localStorage.setItem(SK_LYRICS, String(v)));
@@ -42,7 +42,7 @@ function registerPersistenceWatchers() { // 实现
     watchRegistered = true;
 }
 
-export function useDownloadDialog() { // 实现
+export function useDownloadDialog() {
     registerPersistenceWatchers();
 
     onUnmounted(() => {

@@ -4,7 +4,7 @@ import { useLibraryStore } from "./store";
 import { useNavigationStore } from "../../shared/stores/navigation";
 import { usePlayerLibraryView } from "./usePlayerLibraryView";
 
-export function useLibraryBrowse() { // 实现
+export function useLibraryBrowse() {
     const library = useLibraryStore();
     const nav = useNavigationStore();
     const view = usePlayerLibraryView();

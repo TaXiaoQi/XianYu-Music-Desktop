@@ -1,6 +1,4 @@
 
-import { Buffer } from 'buffer';
-
 // ==================== Huffman 解码 ====================
 
 interface HuffmanTable {
@@ -160,14 +158,6 @@ export function inflateRawSync(data: Uint8Array): Uint8Array {
   return new Uint8Array(output);
 }
 
-export function inflateZlibSync(data: Uint8Array): Uint8Array {
-  if (data.length < 6) throw new Error('zlib: 数据过短');
-  if ((data[0] & 0x0f) !== 8) throw new Error('zlib: 不支持的压缩方法');
-  let offset = 2;
-  if (data[1] & 0x20) offset += 4;
-  return inflateRawSync(data.subarray(offset, data.length - 4));
-}
-
 export function gunzipSync(data: Uint8Array): Uint8Array {
   if (data.length < 18 || data[0] !== 0x1f || data[1] !== 0x8b) throw new Error('gzip: 无效头部');
   if (data[2] !== 8) throw new Error('gzip: 不支持的压缩方法');
@@ -178,21 +168,4 @@ export function gunzipSync(data: Uint8Array): Uint8Array {
   if (flg & 0x10) { while (data[offset] !== 0) offset++; offset++; }
   if (flg & 0x02) offset += 2;
   return inflateRawSync(data.subarray(offset, data.length - 8));
-}
-
-export function inflateAutoSync(data: Uint8Array): Uint8Array {
-  if (data.length >= 2) {
-    if (data[0] === 0x1f && data[1] === 0x8b) return gunzipSync(data);
-    if ((data[0] & 0x0f) === 8 && ((data[0] << 8 | data[1]) % 31 === 0)) return inflateZlibSync(data);
-  }
-  return inflateRawSync(data);
-}
-
-export function toUint8Array(data: any): Uint8Array {
-  if (data instanceof Uint8Array) return data;
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  if (data && typeof data === 'object' && data.buffer instanceof ArrayBuffer) {
-    return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.buffer.byteLength);
-  }
-  return Buffer.from(data);
 }

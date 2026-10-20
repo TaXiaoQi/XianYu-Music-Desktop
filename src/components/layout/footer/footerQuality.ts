@@ -11,7 +11,7 @@ export interface QualityOption {
 }
 
 /** 底栏音质缩写：与移动端一致，仅用于紧凑展示。 */
-export const QUALITY_ABBR: Record<QualityKey, string> = {
+const QUALITY_ABBR: Record<QualityKey, string> = {
   mgg: 'LQ',
   '128k': '128',
   '192k': '192',

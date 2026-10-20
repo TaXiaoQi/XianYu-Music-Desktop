@@ -1,33 +1,33 @@
-<script setup lang="ts"> // 实现
+<script setup lang="ts">
 // 引导流程窗口材质步：none / mica / acrylic / blur 四档选择与失焦保材质开关。
-import { useSettingsThemeControls } from '../../../composables/useSettingsThemeControls'; // 实现
+import { useSettingsThemeControls } from '../../../composables/useSettingsThemeControls';
 
-type OnboardingWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur'; // 实现
+type OnboardingWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur';
 
 const {
-  materialMode, // 实现
+  materialMode,
   keepWindowMaterialOnBlur,
   setKeepWindowMaterialOnBlur,
-  toggleWindowMaterial, // 实现
-  isWindowMaterialButtonDisabled, // 实现
-  isWindows11, // 实现
-} = useSettingsThemeControls(); // 实现
+  toggleWindowMaterial,
+  isWindowMaterialButtonDisabled,
+  isWindows11,
+} = useSettingsThemeControls();
 
 // --- 默认材质按钮：切回 none ---
-const setMaterialToNone = () => { // 实现
-  if (materialMode.value !== 'none') { // 实现
-    toggleWindowMaterial(materialMode.value as 'acrylic' | 'mica' | 'blur'); // 实现
+const setMaterialToNone = () => {
+  if (materialMode.value !== 'none') {
+    toggleWindowMaterial(materialMode.value as 'acrylic' | 'mica' | 'blur');
   }
 };
 
-const selectWindowMaterial = (mode: OnboardingWindowMaterial) => { // 实现
-  if (materialMode.value === mode) return; // 实现
-  if (mode === 'none') { // 实现
-    setMaterialToNone(); // 实现
+const selectWindowMaterial = (mode: OnboardingWindowMaterial) => {
+  if (materialMode.value === mode) return;
+  if (mode === 'none') {
+    setMaterialToNone();
     return;
   }
-  if (isWindowMaterialButtonDisabled(mode)) return; // 实现
-  toggleWindowMaterial(mode); // 实现
+  if (isWindowMaterialButtonDisabled(mode)) return;
+  toggleWindowMaterial(mode);
 };
 </script>
 

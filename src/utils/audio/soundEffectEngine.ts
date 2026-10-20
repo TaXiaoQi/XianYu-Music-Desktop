@@ -1,4 +1,4 @@
-export const freqsPreset = [ // 实现
+export const freqsPreset = [
     {
         name: "流行",
         hz31: 6,
@@ -118,7 +118,7 @@ export const freqsPreset = [ // 实现
     },
 ] as const;
 export { advancedEqPresets } from "./advancedEffectPresets";
-export const convolutions = [ // 实现
+export const convolutions = [
     { name: "教堂", label: "church", dry: 55, wet: 65, source: "s3_r1_bd.wav" },
     {
         name: "大厅",
@@ -171,4 +171,3 @@ export const convolutions = [ // 实现
     },
 ] as const;
 export { algorithmicReverbs } from "./advancedEffectPresets";
-export type { AlgorithmicReverbPreset } from "./advancedEffectPresets";

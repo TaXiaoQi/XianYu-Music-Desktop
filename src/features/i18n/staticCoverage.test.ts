@@ -11,11 +11,11 @@ import { parse as parseSfc } from "@vue/compiler-sfc";
 
 import { toEnglish } from "./english";
 
-const hasHan = (value: string) => /[\u3400-\u9fff\uf900-\ufaff]/.test(value); // 实现
+const hasHan = (value: string) => /[\u3400-\u9fff\uf900-\ufaff]/.test(value);
 const roots = ["components", "views"].map((directory) =>
     resolve(process.cwd(), "src", directory),
 );
-const ignoredSamples = new Set([ // 实现
+const ignoredSamples = new Set([
     "第一次参观卢浮宫",
     "我要离开家去往海岸线",
     "知难辞",
@@ -25,7 +25,7 @@ const ignoredSamples = new Set([ // 实现
     "夜航星",
 ]);
 
-function collectVueFiles(directory: string): string[] { // 实现
+function collectVueFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) return collectVueFiles(path);
@@ -33,7 +33,7 @@ function collectVueFiles(directory: string): string[] { // 实现
     });
 }
 
-function collectStaticText(root: RootNode): string[] { // 实现
+function collectStaticText(root: RootNode): string[] {
     const values: string[] = [];
     const visit = (node: RootNode | TemplateChildNode) => {
         if (node.type === NodeTypes.TEXT) {

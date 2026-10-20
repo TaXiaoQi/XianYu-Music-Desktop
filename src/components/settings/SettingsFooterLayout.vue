@@ -5,24 +5,24 @@ import {
   Play,
   RotateCcw,
   SkipBack,
-  SkipForward, // 实现
+  SkipForward,
 } from 'lucide-vue-next';
 
 import { useToast } from '../../composables/toast';
-import { useSettings } from '../../features/settings/useSettings'; // 实现
+import { useSettings } from '../../features/settings/useSettings';
 import {
   DEFAULT_FOOTER_LAYOUT,
   computeCollapsedItems,
   dropFooterItemToPalette,
   dropFooterItemToSlot,
-  getFooterItemMeta, // 实现
-  getFooterPreviewSlotItems, // 实现
-  moveFooterItemToPreviewSlot, // 实现
+  getFooterItemMeta,
+  getFooterPreviewSlotItems,
+  moveFooterItemToPreviewSlot,
   normalizeFooterLayout,
-  type FooterPreviewSlot, // 实现
+  type FooterPreviewSlot,
 } from '../../features/settings/footerItems';
 import type { DownloadQuality, FooterItemKey, FooterLayoutSettings, QualityKey } from '../../types';
-import FooterControlIcon from '../layout/FooterControlIcon.vue'; // 实现
+import FooterControlIcon from '../layout/FooterControlIcon.vue';
 import FooterControlItem from '../layout/FooterControlItem.vue';
 import SettingHint from './SettingHint.vue';
 
@@ -30,15 +30,15 @@ const { footerLayout, patchFooterLayout } = useSettings();
 const { showToast } = useToast();
 
 const layout = computed(() => normalizeFooterLayout(footerLayout.value));
-const previewSlots = computed(() => getFooterPreviewSlotItems(layout.value)); // 实现
+const previewSlots = computed(() => getFooterPreviewSlotItems(layout.value));
 const collapsedPreviewItems = computed(() => computeCollapsedItems(layout.value));
 
-const LEFT_SLOTS: FooterPreviewSlot[] = ['left-0', 'left-1']; // 实现
-const MIDDLE_LEFT_SLOTS: FooterPreviewSlot[] = ['middle-left']; // 实现
-const MIDDLE_RIGHT_SLOTS: FooterPreviewSlot[] = ['middle-right']; // 实现
-const RIGHT_SLOTS: FooterPreviewSlot[] = ['right-0', 'right-1', 'right-2', 'right-3', 'right-4']; // 实现
+const LEFT_SLOTS: FooterPreviewSlot[] = ['left-0', 'left-1'];
+const MIDDLE_LEFT_SLOTS: FooterPreviewSlot[] = ['middle-left'];
+const MIDDLE_RIGHT_SLOTS: FooterPreviewSlot[] = ['middle-right'];
+const RIGHT_SLOTS: FooterPreviewSlot[] = ['right-0', 'right-1', 'right-2', 'right-3', 'right-4'];
 
-const getItemLabel = (key: FooterItemKey | null) => key ? getFooterItemMeta(key)?.label ?? key : ''; // 实现
+const getItemLabel = (key: FooterItemKey | null) => key ? getFooterItemMeta(key)?.label ?? key : '';
 
 const previewCurrentSong = ref<any>({
   title: 'I\'m leaving home',
@@ -137,12 +137,12 @@ type PreviewDragSource =
 
 interface PreviewDragState {
   source: PreviewDragSource;
-  startX: number; // 实现
-  startY: number; // 实现
+  startX: number;
+  startY: number;
   x: number;
   y: number;
-  moved: boolean; // 实现
-  targetSlot: FooterPreviewSlot | null; // 实现
+  moved: boolean;
+  targetSlot: FooterPreviewSlot | null;
   paletteIndex: number | null;
   collapse: boolean;
 }
@@ -189,12 +189,12 @@ const startItemDrag = (event: PointerEvent, source: PreviewDragSource) => {
 };
 
 const handleItemDragMove = (event: PointerEvent) => {
-  const state = dragState.value; // 实现
-  if (!state) return; // 实现
-  state.x = event.clientX; // 实现
-  state.y = event.clientY; // 实现
-  if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) >= 4) { // 实现
-    state.moved = true; // 实现
+  const state = dragState.value;
+  if (!state) return;
+  state.x = event.clientX;
+  state.y = event.clientY;
+  if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) >= 4) {
+    state.moved = true;
   }
   if (state.moved) {
     const drop = resolveDropTarget(event.clientX, event.clientY);
@@ -212,7 +212,7 @@ const cleanupItemDrag = () => {
   window.removeEventListener('pointermove', handleItemDragMove);
   window.removeEventListener('pointerup', finishItemDrag);
   window.removeEventListener('pointercancel', cancelItemDrag);
-  document.body.style.userSelect = ''; // 实现
+  document.body.style.userSelect = '';
   isDragActive.value = false;
 };
 
@@ -244,7 +244,7 @@ const applyItemDrop = (state: PreviewDragState) => {
 };
 
 const finishItemDrag = () => {
-  const state = dragState.value; // 实现
+  const state = dragState.value;
   if (state?.moved) applyItemDrop(state);
   dragState.value = null;
   cleanupItemDrag();

@@ -14,7 +14,7 @@ export interface DesktopLyricsPreviewSettings {
   playerAlignment: string;
 }
 
-export const PREVIEW_FIXED_PALETTES = {
+const PREVIEW_FIXED_PALETTES = {
   auto: ['#8ec5ff', '#ff8cab', '#88f3c2', '#ffe07d'],
   default: ['#EC4141', '#ff8364', '#f7b267', '#ffd166'],
   pink: ['#f472b6', '#fb7185', '#f9a8d4', '#fbcfe8'],
@@ -23,7 +23,7 @@ export const PREVIEW_FIXED_PALETTES = {
   white: ['#ffffff', '#f3f4f6', '#d1d5db', '#9ca3af'],
 } as const;
 
-export function hexToRgbTriplet(value: string) {
+function hexToRgbTriplet(value: string) {
   const normalized = normalizeHexColor(value, '#000000');
   const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(normalized);
   if (!match) return '0 0 0';
@@ -35,7 +35,7 @@ export function hexToRgbTriplet(value: string) {
   ].join(' ');
 }
 
-export const resolvePreviewPalette = (settings: DesktopLyricsPreviewSettings) => {
+const resolvePreviewPalette = (settings: DesktopLyricsPreviewSettings) => {
   if (settings.colorScheme === 'custom') {
     return [
       settings.customPlayedColor,

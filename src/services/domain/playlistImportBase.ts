@@ -11,7 +11,7 @@ export interface PlaylistSource {
   pluginSource?: import('../../types').PluginSource;
 }
 
-export interface PlaylistInfo {
+interface PlaylistInfo {
   name: string;
   img: string;
   desc: string;
@@ -19,7 +19,7 @@ export interface PlaylistInfo {
   playCount: string;
 }
 
-export interface PlaylistSourceRef {
+interface PlaylistSourceRef {
   /** 来源插件 id（MusicFree 插件 id 或 wy|tx|kw|kg 平台） */
   sourcePluginId?: string;
   /** 来源链接或 ID */

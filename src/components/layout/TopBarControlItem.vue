@@ -2,12 +2,12 @@
 import { inject, type Ref } from 'vue';
 import TopBarControlIcon from './TopBarControlIcon.vue';
 import type { TopBarItemKey } from '../../types';
-import { useI18n } from '../../features/i18n'; // 实现
+import { useI18n } from '../../features/i18n';
 
 defineProps<{
   itemKey: TopBarItemKey;
 }>();
-const { t } = useI18n(); // 实现
+const { t } = useI18n();
 
 const ctx = inject<{
   isDarkTheme: Ref<boolean>;

@@ -14,10 +14,10 @@ const EDGE_TRIGGER_PX = 60;
 const DRAG_ACTIVATE_DISTANCE = 5;
 const SELECT_ZONE_RATIO = 0.6;
 
-export function useSongDrag( // 实现
-    displaySongList: Ref<Song[]>, // 实现
-    isBatchMode: Ref<boolean>, // 实现
-    selectedPaths: Ref<Set<string>>, // 实现
+export function useSongDrag(
+    displaySongList: Ref<Song[]>,
+    isBatchMode: Ref<boolean>,
+    selectedPaths: Ref<Set<string>>,
     songTableRef: Ref<{ containerRef: HTMLElement | null } | null>,
 ) {
     const {
@@ -28,7 +28,7 @@ export function useSongDrag( // 实现
         updateFolderOrder,
     } = usePlayer();
     const { setPlaylistSortMode, filterCondition } = usePlayer();
-    const { updateLocalOrder } = usePlayer(); // 实现
+    const { updateLocalOrder } = usePlayer();
     const { playlists } = storeToRefs(useCollectionsStore());
 
     interface ReorderPlan {
@@ -41,30 +41,30 @@ export function useSongDrag( // 实现
      * 没有可移动项、或目标本身就在移动集合里时，视为无需重排。
      * 从上方拖来时插到目标之后，从下方拖来时插到目标之前。
      */
-    const reorderPathOrder = ( // 实现
-        pathOrder: string[], // 实现
-        movingPaths: string[], // 实现
+    const reorderPathOrder = (
+        pathOrder: string[],
+        movingPaths: string[],
         targetPath?: string,
     ): ReorderPlan => {
-        const movingSet = new Set(movingPaths); // 实现
+        const movingSet = new Set(movingPaths);
         const movingInOrder = pathOrder.filter((path) => movingSet.has(path));
         if (
             movingInOrder.length === 0 ||
             (targetPath && movingSet.has(targetPath))
         ) {
-            return { reordered: pathOrder, changed: false }; // 实现
+            return { reordered: pathOrder, changed: false };
         }
 
         const rest = pathOrder.filter((path) => !movingSet.has(path));
         let insertAt = rest.length;
 
-        if (targetPath) { // 实现
+        if (targetPath) {
             const targetIndexInRest = rest.indexOf(targetPath);
             if (targetIndexInRest !== -1) {
                 const firstMovingIndex = pathOrder.findIndex((path) =>
                     movingSet.has(path),
                 );
-                const targetIndexInOriginal = pathOrder.indexOf(targetPath); // 实现
+                const targetIndexInOriginal = pathOrder.indexOf(targetPath);
                 const movingFromAbove =
                     firstMovingIndex !== -1 &&
                     firstMovingIndex < targetIndexInOriginal;
@@ -83,15 +83,15 @@ export function useSongDrag( // 实现
     };
 
     /** 与 reorderPathOrder 同规则，但直接作用于歌曲数组（按 path 对齐） */
-    const reorderSongArrayByPaths = ( // 实现
-        songs: Song[], // 实现
-        movingPaths: string[], // 实现
+    const reorderSongArrayByPaths = (
+        songs: Song[],
+        movingPaths: string[],
         targetPath?: string,
     ): { reordered: Song[]; changed: boolean } => {
         const originalPaths = songs.map((song) => song.path);
         const plan = reorderPathOrder(originalPaths, movingPaths, targetPath);
         if (!plan.changed) {
-            return { reordered: songs, changed: false }; // 实现
+            return { reordered: songs, changed: false };
         }
         const songByPath = new Map(
             songs.map((song) => [song.path, song] as const),
@@ -120,8 +120,8 @@ export function useSongDrag( // 实现
     /** 沿指定方向持续滚动列表容器，直到指针松开 */
     const startAutoScroll = (direction: "up" | "down") => {
         if (autoScrollHandle) return;
-        const container = songTableRef.value?.containerRef; // 实现
-        if (!container) return; // 实现
+        const container = songTableRef.value?.containerRef;
+        if (!container) return;
 
         const step = () => {
             if (!pointerActive) {
@@ -226,7 +226,7 @@ export function useSongDrag( // 实现
         index: number;
     }) => {
         const { event, song, index } = payload;
-        if (!isPrimaryDragPointer(event)) { // 实现
+        if (!isPrimaryDragPointer(event)) {
             return;
         }
 
@@ -234,7 +234,7 @@ export function useSongDrag( // 实现
         originX = event.clientX;
         originY = event.clientY;
 
-        if (isBatchMode.value) { // 实现
+        if (isBatchMode.value) {
             applyBatchDragStart(event, song, index);
         } else {
             applyPlainDragStart(song, index);
@@ -266,8 +266,8 @@ export function useSongDrag( // 实现
 
     /** 框选拖拽过程：按锚点到当前行扩展或收缩选区 */
     const handleSelectionDragMove = (e: PointerEvent) => {
-        const container = songTableRef.value?.containerRef; // 实现
-        if (!container) return; // 实现
+        const container = songTableRef.value?.containerRef;
+        if (!container) return;
 
         const rect = container.getBoundingClientRect();
         if (e.clientY < rect.top || e.clientY > rect.bottom) {
@@ -380,10 +380,10 @@ export function useSongDrag( // 实现
         }
     };
 
-    const onGlobalPointerMove = (e: PointerEvent) => { // 实现
+    const onGlobalPointerMove = (e: PointerEvent) => {
         if (!pointerActive) return;
         if (e.pointerType !== "mouse") {
-            e.preventDefault(); // 实现
+            e.preventDefault();
         }
 
         if (isBatchMode.value && selectDragActive.value) {
@@ -392,14 +392,14 @@ export function useSongDrag( // 实现
         }
 
         // 尚未激活时，移动距离超过阈值才进入拖拽状态
-        if (!dragSession.active) { // 实现
+        if (!dragSession.active) {
             const travel = Math.sqrt(
                 Math.pow(e.clientX - originX, 2) +
                     Math.pow(e.clientY - originY, 2),
             );
             if (travel > DRAG_ACTIVATE_DISTANCE) {
-                dragSession.active = true; // 实现
-                dragSession.showGhost = true; // 实现
+                dragSession.active = true;
+                dragSession.showGhost = true;
             }
         }
 
@@ -408,7 +408,7 @@ export function useSongDrag( // 实现
         dragSession.mouseX = e.clientX;
         dragSession.mouseY = e.clientY;
 
-        const container = songTableRef.value?.containerRef; // 实现
+        const container = songTableRef.value?.containerRef;
         if (container) {
             syncEdgeAutoScroll(e.clientY, container);
         }
@@ -424,8 +424,8 @@ export function useSongDrag( // 实现
         dragSession.targetFolder = null;
         dragSession.targetPlaylist = null;
         dragSession.insertIndex = -1;
-        dragSession.showGhost = false; // 实现
-        dragSession.active = false; // 实现
+        dragSession.showGhost = false;
+        dragSession.active = false;
     };
 
     /** 投放到歌单：追加歌曲并按结果提示 */
@@ -438,13 +438,13 @@ export function useSongDrag( // 实现
                 ? `已添加 ${addedCount} 首歌曲到 ${target.name}`
                 : "歌曲已存在于歌单";
         useToast().showToast(message, addedCount > 0 ? "success" : "info");
-        dragSession.showGhost = false; // 实现
-        dragSession.active = false; // 实现
+        dragSession.showGhost = false;
+        dragSession.active = false;
     };
 
     /** 歌单视图内拖拽：重排当前歌单并切换为自定义排序 */
     const reorderPlaylist = (
-        movingPaths: string[], // 实现
+        movingPaths: string[],
         targetPath: string | undefined,
     ) => {
         const playlistId = filterCondition.value;
@@ -461,7 +461,7 @@ export function useSongDrag( // 实现
 
     /** 其余视图：按视图类型分别提交重排结果 */
     const reorderLibrary = (
-        movingPaths: string[], // 实现
+        movingPaths: string[],
         targetPath: string | undefined,
     ) => {
         const fullList = [...songList.value];
@@ -521,18 +521,18 @@ export function useSongDrag( // 实现
             reorderLibrary(movingPaths, targetPath);
         }
 
-        dragSession.showGhost = false; // 实现
-        dragSession.active = false; // 实现
+        dragSession.showGhost = false;
+        dragSession.active = false;
     };
 
-    const onGlobalPointerEnd = (cancelled = false) => { // 实现
+    const onGlobalPointerEnd = (cancelled = false) => {
         pointerActive = false;
-        stopAutoScroll(); // 实现
+        stopAutoScroll();
         selectDragActive.value = false;
         selectMode.value = null;
 
-        if (cancelled) { // 实现
-            resetDragState(); // 实现
+        if (cancelled) {
+            resetDragState();
             return;
         }
 
@@ -558,8 +558,8 @@ export function useSongDrag( // 实现
         }, 100);
     };
 
-    const onGlobalPointerUp = () => onGlobalPointerEnd(false); // 实现
-    const onGlobalPointerCancel = () => onGlobalPointerEnd(true); // 实现
+    const onGlobalPointerUp = () => onGlobalPointerEnd(false);
+    const onGlobalPointerCancel = () => onGlobalPointerEnd(true);
 
     const bindGlobalListeners = () => {
         window.addEventListener("pointermove", onGlobalPointerMove);
@@ -568,7 +568,7 @@ export function useSongDrag( // 实现
     };
 
     const unbindGlobalListeners = () => {
-        stopAutoScroll(); // 实现
+        stopAutoScroll();
         window.removeEventListener("pointermove", onGlobalPointerMove);
         window.removeEventListener("pointerup", onGlobalPointerUp);
         window.removeEventListener("pointercancel", onGlobalPointerCancel);

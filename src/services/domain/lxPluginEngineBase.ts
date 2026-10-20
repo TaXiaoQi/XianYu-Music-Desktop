@@ -20,14 +20,14 @@ export function log(msg: string) {
 
 // ==================== 类型 ====================
 
-export interface LxSourceInfo {
+interface LxSourceInfo {
   type: 'music';
   name?: string;
   actions: string[];
   qualitys: string[];
 }
 
-export interface LxInitInfo {
+interface LxInitInfo {
   sources: Record<string, LxSourceInfo>;
   openDevTools?: boolean;
 }

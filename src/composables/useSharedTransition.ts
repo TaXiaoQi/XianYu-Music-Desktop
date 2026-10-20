@@ -245,7 +245,7 @@ const coverAppearance = computed<CSSProperties>(() => {
     return appearance;
 });
 
-export function useSharedTransition() { // 实现
+export function useSharedTransition() {
     return {
         animationPhase: morphPhase,
         isAnimating: morphBusy,

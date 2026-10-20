@@ -1,5 +1,5 @@
 // 壁纸中心共享模型：类型、常量与纯函数工具（列表/操作/上传组合函数与卡片子组件共用）。
-export interface Wallpaper { // 实现
+export interface Wallpaper {
     id: number;
     title: string;
     description: string;
@@ -11,13 +11,13 @@ export interface Wallpaper { // 实现
     category: string;
     uploaderId?: string;
     uploaderNickname?: string;
-} // 实现
-export interface MyWallpaper extends Wallpaper { // 实现
+}
+export interface MyWallpaper extends Wallpaper {
     status: "normal" | "disabled" | "pending" | "rejected" | string;
     reviewedAt?: string | null;
     reviewedBy?: string;
     createdAt?: string;
-} // 实现
+}
 export interface DownloadedWallpaper extends Wallpaper {
     localPath: string;
     downloadedAt: string;
@@ -43,7 +43,7 @@ export const isVideo = (wallpaper: Wallpaper): boolean =>
         wallpaper.mediaType || (wallpaper.videoUrl ? "video" : "image"),
     ) === "video";
 
-export const statusMeta = (status: string): { text: string; cls: string } => { // 实现
+export const statusMeta = (status: string): { text: string; cls: string } => {
     switch (status) {
         case "normal":
             return { text: "已通过", cls: "bg-green-500/20 text-green-300" };
@@ -56,4 +56,4 @@ export const statusMeta = (status: string): { text: string; cls: string } => { /
         default:
             return { text: status, cls: "bg-white/10 text-white/60" };
     }
-}; // 实现
+};

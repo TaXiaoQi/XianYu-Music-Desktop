@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { usePlaybackStore } from "./store";
 import { useUiStore } from "../../shared/stores/ui";
 
-const demoSong = { // 实现
+const demoSong = {
     path: "/music/demo.flac",
     name: "demo.flac",
     title: "Demo",

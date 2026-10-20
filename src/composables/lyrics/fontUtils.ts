@@ -33,7 +33,7 @@ const builtinFamilySet: ReadonlySet<string> = (() => {
     return collected;
 })();
 
-export function getLyricsFontFamily(preset: string): string { // 实现
+export function getLyricsFontFamily(preset: string): string {
     for (const option of LYRICS_FONT_OPTIONS) {
         if (option.value === preset) {
             return option.fontFamily;
@@ -196,12 +196,6 @@ export async function registerImportedLyricsFonts(
         document.fonts.add(entry.face);
     }
     bumpRevision();
-}
-
-export async function importLyricsFontFile(
-    sourcePath: string,
-): Promise<ImportedLyricsFont> {
-    return lyricsApi.importLyricsFont(sourcePath);
 }
 
 /* ==================== 系统字体枚举 ==================== */

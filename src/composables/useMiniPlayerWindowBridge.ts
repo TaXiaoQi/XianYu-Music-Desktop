@@ -39,7 +39,7 @@ export { restoreMainWindowFromMiniMode };
 // 迷你窗进度条推流的节流间隔（毫秒）。
 const PROGRESS_SYNC_GAP_MS = 250;
 
-export function useMiniPlayerWindowBridge() { // 实现
+export function useMiniPlayerWindowBridge() {
     const hostWindow = getCurrentWindow();
     const { settings: appSettings } = useSettings();
     const ui = useUiStore();

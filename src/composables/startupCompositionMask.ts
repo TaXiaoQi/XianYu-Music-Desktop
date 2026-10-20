@@ -25,7 +25,7 @@ const sleepMs = (durationMs: number) =>
         setTimeout(resolve, Math.max(0, durationMs));
     });
 
-export interface ReleaseStartupCompositionMaskOptions { // 实现
+export interface ReleaseStartupCompositionMaskOptions {
     startedAt: number;
     hide: () => void;
     now?: () => number;
@@ -34,7 +34,7 @@ export interface ReleaseStartupCompositionMaskOptions { // 实现
     waitForStablePaint?: () => Promise<unknown>;
 }
 
-export interface StartupRevealReadinessOptions { // 实现
+export interface StartupRevealReadinessOptions {
     minDelayMs?: number;
     waitForStablePaint?: () => Promise<unknown>;
 }

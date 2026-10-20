@@ -27,7 +27,7 @@ interface DurationFixerDeps {
 }
 
 // 先从 lx 缓存或 rawData 里推算已知时长；推算不出返回 0，交给后续网络探测。
-export const peekKnownDuration = (song: Song): number => {
+const peekKnownDuration = (song: Song): number => {
   const path = song.path ?? '';
 
   if (path.startsWith(LX_SCHEME)) {

@@ -13,7 +13,7 @@ export interface SystemInfoPayload {
   machine_name: string;
 }
 
-export interface AudioDeviceFormat {
+interface AudioDeviceFormat {
   sample_format: string;
   min_sample_rate: number;
   max_sample_rate: number;
@@ -125,13 +125,13 @@ export interface DlnaRendererStatus {
 
 // ===== 控制通道（桌面 TCP 遥控，与 Rust control_channel/commands.rs 对齐，serde camelCase）=====
 
-export interface ControlChannelDeviceEntry {
+interface ControlChannelDeviceEntry {
   token: string;
   deviceName: string;
   pairedAt: number;
 }
 
-export interface ControlChannelClientEntry {
+interface ControlChannelClientEntry {
   id: number;
   name: string;
 }
@@ -157,118 +157,118 @@ export interface ControlPairingCodeInfo {
 
 export type ReverbKind = 'none' | 'algorithmic' | 'convolution';
 export type SpatialMode = 'none' | 'surround3d' | 'd8' | 'd36' | 'virtual';
-export type DistortionType = 'soft' | 'hard';
-export type DelayType = 'single' | 'pingpong';
-export type VirtualSurroundMode = '5.1' | '7.1';
+type DistortionType = 'soft' | 'hard';
+type DelayType = 'single' | 'pingpong';
+type VirtualSurroundMode = '5.1' | '7.1';
 
-export interface ModulationParams {
+interface ModulationParams {
   enabled: boolean;
   rate: number;
   depth: number;
 }
-export interface FlangerParams {
-  enabled: boolean;
-  rate: number;
-  depth: number;
-  feedback: number;
-  mix: number;
-}
-export interface PhaserParams {
+interface FlangerParams {
   enabled: boolean;
   rate: number;
   depth: number;
   feedback: number;
   mix: number;
 }
-export interface DelayParams {
+interface PhaserParams {
+  enabled: boolean;
+  rate: number;
+  depth: number;
+  feedback: number;
+  mix: number;
+}
+interface DelayParams {
   enabled: boolean;
   timeMs: number;
   feedback: number;
   mix: number;
   delayType: DelayType;
 }
-export interface CompressorParams {
+interface CompressorParams {
   enabled: boolean;
   threshold: number;
   ratio: number;
   attack: number;
   release: number;
 }
-export interface MultibandParams {
+interface MultibandParams {
   enabled: boolean;
   lowFreq: number;
   midFreq: number;
   threshold: number;
   ratio: number;
 }
-export interface LimiterParams {
+interface LimiterParams {
   enabled: boolean;
   threshold: number;
 }
-export interface NoiseGateParams {
+interface NoiseGateParams {
   enabled: boolean;
   threshold: number;
   attack: number;
   release: number;
 }
-export interface ExpanderParams {
+interface ExpanderParams {
   enabled: boolean;
   threshold: number;
   ratio: number;
 }
-export interface AgcParams {
+interface AgcParams {
   enabled: boolean;
   targetLevel: number;
 }
-export interface DeEsserParams {
+interface DeEsserParams {
   enabled: boolean;
   threshold: number;
   frequency: number;
 }
-export interface DistortionParams {
+interface DistortionParams {
   enabled: boolean;
   amount: number;
   distortionType: DistortionType;
 }
-export interface ExciterParams {
+interface ExciterParams {
   enabled: boolean;
   amount: number;
   frequency: number;
 }
-export interface SubBassParams {
+interface SubBassParams {
   enabled: boolean;
   amount: number;
   frequency: number;
 }
-export interface LoFiParams {
+interface LoFiParams {
   enabled: boolean;
   sampleRate: number;
   bitDepth: number;
   noise: number;
 }
-export interface BitcrushParams {
+interface BitcrushParams {
   enabled: boolean;
   bits: number;
 }
-export interface StereoWidenParams {
+interface StereoWidenParams {
   enabled: boolean;
   amount: number;
 }
-export interface StereoSepParams {
+interface StereoSepParams {
   enabled: boolean;
   width: number;
   centerLevel: number;
 }
-export interface CrossfeedParams {
+interface CrossfeedParams {
   enabled: boolean;
   strength: number;
 }
-export interface BassBoostParams {
+interface BassBoostParams {
   enabled: boolean;
   gain: number;
   dynamic: boolean;
 }
-export interface DynamicEqParams {
+interface DynamicEqParams {
   enabled: boolean;
 }
 
