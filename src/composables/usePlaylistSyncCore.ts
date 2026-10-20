@@ -16,6 +16,12 @@ import { createFavoritesSyncFlow } from '../services/domain/sync/favoritesSyncSe
 import { createAutoSyncFlow } from '../services/domain/sync/autoSyncService';
 import { downloadCloudCredsOnLogin } from '../services/domain/cloudCredsSync';
 import {
+  downloadHistory,
+  mergeHistory,
+  uploadHistory,
+} from '../services/domain/historySync';
+import { getCiyuanxiId } from '../services/domain/playlistSyncSong';
+import {
   autoSyncStatus,
   autoSyncDelayed,
   lastFavoritesSyncResult,
@@ -151,6 +157,19 @@ export function usePlaylistSync() {
       syncFavorites: favoritesFlow.syncFavorites,
       syncSettings: settingsFlow.syncSettings,
       syncCloudCreds: () => downloadCloudCredsOnLogin(),
+      uploadHistoryOnly: async () => {
+        const ciyuanxiId = getCiyuanxiId();
+        if (!ciyuanxiId) return;
+        await uploadHistory(ciyuanxiId, collectionsStore.recentSongs);
+      },
+      downloadHistoryOnly: async () => {
+        const ciyuanxiId = getCiyuanxiId();
+        if (!ciyuanxiId) return;
+        const cloud = await downloadHistory(ciyuanxiId);
+        collectionsStore.setRecentSongs(
+          mergeHistory(collectionsStore.recentSongs, cloud),
+        );
+      },
     },
     statistics: statisticsStore,
     isLoginSyncCompleted: () => loginSyncCompleted.value,

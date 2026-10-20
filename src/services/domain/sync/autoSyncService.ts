@@ -15,6 +15,8 @@ export interface AutoSyncTaskSet {
   syncFavorites(): Promise<unknown>;
   syncSettings(): Promise<unknown>;
   syncCloudCreds(): Promise<unknown>;
+  uploadHistoryOnly(): Promise<unknown>;
+  downloadHistoryOnly(): Promise<unknown>;
 }
 
 export interface AutoSyncFlowDeps {
@@ -79,6 +81,15 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
       if (upload.settings) {
         parallelTasks.push({ label: '上传设置', run: deps.tasks.uploadSettingsOnly });
       }
+      // 播放历史云同步（对齐移动端，不受 upload 开关门控）：先拉后推，
+      // 下载仅补本地缺失条目
+      parallelTasks.push({
+        label: '同步播放历史',
+        run: async () => {
+          await deps.tasks.downloadHistoryOnly();
+          await deps.tasks.uploadHistoryOnly();
+        },
+      });
 
       if (parallelTasks.length > 0) {
         const results = await Promise.allSettled(parallelTasks.map(task => task.run()));
