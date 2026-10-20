@@ -38,6 +38,7 @@ import {
   settingsSyncing,
   syncProgress,
   syncing,
+  syncToastBridge,
   pluginSyncProgress,
   pluginSyncing,
   favoritesSyncProgress,
@@ -54,6 +55,34 @@ function logSync(_msg: string, ..._args: unknown[]) {
 
 function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
+}
+
+// ==================== 手动同步进度提示（复用插件导入的底部弹出进度 toast） ====================
+// service 层 onProgress/onStep 经 syncToastBridge 推进弹出文案与计数；手动入口
+// 由 withSyncToast 挂桥并在 finally 摘除——自动同步不挂桥，静默只写行内状态
+
+function emitSyncProgress(msg: string, pct?: number) {
+  syncToastBridge.value?.(msg, pct);
+}
+
+function withSyncToast<TArgs extends unknown[], R>(
+  fn: (...args: TArgs) => Promise<R>,
+  initialText: string,
+): (...args: TArgs) => Promise<R> {
+  return async (...args: TArgs) => {
+    const toast = useToast().showProgressToast(initialText);
+    let lastPct = 0;
+    syncToastBridge.value = (msg, pct) => {
+      if (typeof pct === 'number') lastPct = pct;
+      toast.update(msg, lastPct);
+    };
+    try {
+      return await fn(...args);
+    } finally {
+      syncToastBridge.value = null;
+      toast.close();
+    }
+  };
 }
 
 export function usePlaylistSync() {
@@ -89,7 +118,7 @@ export function usePlaylistSync() {
   const { uploadPlaylists, downloadPlaylists, deleteCloudPlaylistLocal } = createPlaylistSyncService({
     collections: collectionsStore,
     library: libraryStore,
-    onProgress: msg => { syncProgress.value = msg; },
+    onProgress: msg => { syncProgress.value = msg; emitSyncProgress(msg); },
     notify: showToast,
     log: logSync,
     logError: logSyncError,
@@ -98,7 +127,10 @@ export function usePlaylistSync() {
   const pluginFlow = createPluginSyncFlow({
     canSync,
     isUploadEnabled: isPluginUploadEnabled,
-    onProgress: msg => { pluginSyncProgress.value = msg; },
+    onProgress: msg => { pluginSyncProgress.value = msg; emitSyncProgress(msg); },
+    onStep: (done, total, label) => {
+      emitSyncProgress(`正在同步插件 "${label}" (${done}/${total})...`, (done / total) * 100);
+    },
     notify: showToast,
     setSyncing: v => { pluginSyncing.value = v; },
     setLastResult: result => { lastPluginSyncResult.value = result; },
@@ -114,7 +146,7 @@ export function usePlaylistSync() {
     isPluginUploadEnabled,
     getSettings: () => settingsStore.settings,
     replaceSettings: next => settingsStore.replaceSettings(next),
-    onProgress: msg => { settingsSyncProgress.value = msg; },
+    onProgress: msg => { settingsSyncProgress.value = msg; emitSyncProgress(msg); },
     notify: showToast,
     setSyncing: v => { settingsSyncing.value = v; },
     setLastResult: result => { lastSettingsSyncResult.value = result; },
@@ -131,7 +163,7 @@ export function usePlaylistSync() {
     isUploadEnabled: isFavoritesUploadEnabled,
     collections: collectionsStore,
     library: libraryStore,
-    onProgress: msg => { favoritesSyncProgress.value = msg; },
+    onProgress: msg => { favoritesSyncProgress.value = msg; emitSyncProgress(msg); },
     notify: showToast,
     setSyncing: v => { favoritesSyncing.value = v; },
     setLastResult: result => { lastFavoritesSyncResult.value = result; },
@@ -196,6 +228,7 @@ export function usePlaylistSync() {
 
     syncing.value = true;
     syncProgress.value = '正在同步歌单...';
+    emitSyncProgress('正在同步歌单...');
     lastSyncResult.value = null;
 
     try {
@@ -210,6 +243,7 @@ export function usePlaylistSync() {
       if (isUploadEnabled()) {
         logSync('syncPlaylists: 步骤 1/2 - 开始上传');
         syncProgress.value = '正在上传本地歌单到云端...';
+        emitSyncProgress('正在上传本地歌单到云端...');
         uploadResult = await uploadPlaylists();
         logSync('syncPlaylists: 步骤 1/2 - 上传完成', uploadResult);
       } else {
@@ -218,6 +252,7 @@ export function usePlaylistSync() {
 
       logSync('syncPlaylists: 步骤 2/2 - 开始下载');
       syncProgress.value = '正在从云端拉取歌单...';
+      emitSyncProgress('正在从云端拉取歌单...');
       const downloadResult = await downloadPlaylists();
       logSync('syncPlaylists: 步骤 2/2 - 下载完成', downloadResult);
 
@@ -282,6 +317,7 @@ export function usePlaylistSync() {
 
     syncing.value = true;
     syncProgress.value = '正在上传歌单到云端...';
+    emitSyncProgress('正在上传歌单到云端...');
 
     try {
       const result = await uploadPlaylists(options);
@@ -317,6 +353,7 @@ export function usePlaylistSync() {
 
     syncing.value = true;
     syncProgress.value = '正在从云端下载歌单...';
+    emitSyncProgress('正在从云端下载歌单...');
 
     try {
       const result = await downloadPlaylists(options);
@@ -430,18 +467,19 @@ export function usePlaylistSync() {
     isPluginUploadEnabled,
     isSettingsUploadEnabled,
     isFavoritesUploadEnabled,
-    syncPlaylists,
-    syncPlugins: pluginFlow.syncPlugins,
-    syncSettings: settingsFlow.syncSettings,
-    uploadOnly,
-    downloadOnly,
-    uploadPluginsOnly: pluginFlow.uploadPluginsOnly,
-    downloadPluginsOnly: pluginFlow.downloadPluginsOnly,
-    uploadSettingsOnly: settingsFlow.uploadSettingsOnly,
-    downloadSettingsOnly: settingsFlow.downloadSettingsOnly,
-    uploadFavoritesOnly: favoritesFlow.uploadFavoritesOnly,
-    downloadFavoritesOnly: favoritesFlow.downloadFavoritesOnly,
-    syncFavorites: favoritesFlow.syncFavorites,
+    // 手动同步入口统一弹进度 toast（自动同步走 tasks 引用的原函数，不弹）
+    syncPlaylists: withSyncToast(syncPlaylists, '正在同步歌单...'),
+    syncPlugins: withSyncToast(pluginFlow.syncPlugins, '正在同步插件...'),
+    syncSettings: withSyncToast(settingsFlow.syncSettings, '正在同步设置...'),
+    syncFavorites: withSyncToast(favoritesFlow.syncFavorites, '正在同步收藏...'),
+    uploadOnly: withSyncToast(uploadOnly, '正在上传歌单...'),
+    downloadOnly: withSyncToast(downloadOnly, '正在下载歌单...'),
+    uploadPluginsOnly: withSyncToast(pluginFlow.uploadPluginsOnly, '正在同步插件...'),
+    downloadPluginsOnly: withSyncToast(pluginFlow.downloadPluginsOnly, '正在恢复插件...'),
+    uploadSettingsOnly: withSyncToast(settingsFlow.uploadSettingsOnly, '正在同步设置...'),
+    downloadSettingsOnly: withSyncToast(settingsFlow.downloadSettingsOnly, '正在下载设置...'),
+    uploadFavoritesOnly: withSyncToast(favoritesFlow.uploadFavoritesOnly, '正在上传收藏...'),
+    downloadFavoritesOnly: withSyncToast(favoritesFlow.downloadFavoritesOnly, '正在下载收藏...'),
     uploadPlaylists,
     downloadPlaylists,
     deleteCloudPlaylistLocal,

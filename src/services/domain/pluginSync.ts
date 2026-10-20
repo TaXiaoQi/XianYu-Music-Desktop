@@ -160,8 +160,16 @@ export interface PluginSyncResult {
     errors: string[];
 }
 // ==================== 上传 ====================
+/** onStep：逐插件进度回调（done 从 1 计），供同步进度提示展示计数 */
+export type PluginSyncStepCallback = (
+    done: number,
+    total: number,
+    label: string,
+) => void;
+
 export async function uploadPlugins(
     options?: { overwrite?: boolean },
+    onStep?: PluginSyncStepCallback,
 ): Promise<PluginSyncResult> {
     // 覆盖上传（手动「同步至服务器」）：本地用户插件全集即云端目标状态，
     // 先清掉云端多出的插件/订阅再全量上传；自动同步不带 options，仍走合并
@@ -281,6 +289,7 @@ export async function uploadPlugins(
     const uploadedIds: string[] = [];
     for (let i = 0; i < toUpload.length; i++) {
         const plugin = toUpload[i];
+        onStep?.(i + 1, toUpload.length, plugin.name);
         logSync(
             `uploadPlugins: [${i + 1}/${toUpload.length}] 上传插件 "${plugin.name}"`,
         );
@@ -387,6 +396,7 @@ function trimCloudDeletedPlugins(
 
 export async function downloadPlugins(
     options?: { overwrite?: boolean },
+    onStep?: PluginSyncStepCallback,
 ): Promise<PluginSyncResult> {
     // 覆盖下载（手动「更新至本地」）：清空本地用户插件与订阅后按云端快照重装，
     // 不应用墓碑/删除账本；云端为空时结果即本地清空
@@ -491,6 +501,7 @@ export async function downloadPlugins(
             logSync(
                 `downloadPlugins: [${i + 1}/${cloudPlugins.length}] 恢复插件 "${item.name}" (${item.format})`,
             );
+            onStep?.(i + 1, cloudPlugins.length, item.name);
 
             try {
                 const script = item.scriptEncoded

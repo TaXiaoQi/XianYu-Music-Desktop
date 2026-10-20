@@ -68,6 +68,11 @@ export const lastFavoritesSyncResult = ref<SyncResult | null>(persistedSyncState
 export const autoSyncStatus = ref('');
 export const autoSyncDelayed = ref(false);
 
+/** 手动同步的进度 toast 桥：usePlaylistSyncCore 在手动入口挂上、finally 摘除；
+ * service 层的 onProgress/onStep 经此把阶段性文案与计数推进到弹出提示。
+ * 自动同步不挂桥，静默进行只写行内状态。 */
+export const syncToastBridge = ref<((msg: string, pct?: number) => void) | null>(null);
+
 export const loginSyncCompleted = ref(loadLoginSyncCompleted());
 
 function persistSyncStatus(category: keyof PersistedSyncState) {
