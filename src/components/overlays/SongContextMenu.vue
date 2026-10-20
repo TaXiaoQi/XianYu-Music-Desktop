@@ -78,6 +78,7 @@ const emit = defineEmits([
     "close",
     "add-to-playlist",
     "delete-disk",
+    "remove-from-favorites",
     "view-online-artist",
     "view-online-album",
     "view-leaderboard-user",
@@ -234,9 +235,15 @@ const removeFromCurrentList = () => {
         return;
     }
 
-    // 收藏 / 最近播放 / 全部歌曲视图直接出列
+    // 收藏视图：交给宿主页接删除范围三选一（有云端副本时弹窗，无则直接出列）
+    if (activeRoute.path === "/favorites") {
+        emit("remove-from-favorites", props.song);
+        emit("close");
+        return;
+    }
+
+    // 最近播放 / 全部歌曲视图直接出列
     if (
-        activeRoute.path === "/favorites" ||
         activeRoute.path === "/recent" ||
         libraryScope.value === "all"
     ) {

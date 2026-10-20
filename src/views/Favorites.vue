@@ -28,6 +28,7 @@
                         :selectedPaths="selectedPaths"
                         memoryScopeKey="favorites-view"
                         :download-completed-as-local="true"
+                        :unfavorite-scope-handler="handleSingleUnfavorite"
                         stagger-enter
                         @play="handlePlaySong"
                         @contextmenu="handleContextMenu"
@@ -69,6 +70,7 @@
             :resolved-file-path="contextMenuResolvedPath"
             @close="showContextMenu = false"
             @add-to-playlist="openAddToPlaylistSelection"
+            @remove-from-favorites="handleUnfavoriteClick"
             @view-online-artist="handleOnlineViewArtist"
             @view-online-album="handleOnlineViewAlbum"
         />
@@ -468,6 +470,29 @@ const handleClearAll = () => {
     confirmMessage.value = "确定要清空收藏列表吗？";
     confirmAction.value = clearFavorites;
     showConfirm.value = true;
+};
+
+// ========== 单首移除接三选一（行内心形取消收藏 / 右键菜单「从列表移除」） ==========
+// 有云端副本才弹删除范围三选一，否则与批量入口一致直接出列
+const ejectFavorite = (song: Song) => {
+    favoritePaths.value = favoritePaths.value.filter((p) => p !== song.path);
+};
+
+const handleSingleUnfavorite = (song: Song): boolean => {
+    if (
+        getCiyuanxiId() &&
+        loadSyncedFavoritePaths().includes(song.path)
+    ) {
+        deleteScopePaths.value = [song.path];
+        deleteScopeIsClearAll.value = false;
+        showDeleteScope.value = true;
+        return true;
+    }
+    return false;
+};
+
+const handleUnfavoriteClick = (song: Song) => {
+    if (!handleSingleUnfavorite(song)) ejectFavorite(song);
 };
 
 const openAddToPlaylistSelection = () => {

@@ -139,6 +139,8 @@ const props = defineProps<{
   indexOffset?: number;
   songReasons?: Map<string, string>;
   staggerEnter?: boolean;
+  /** 收藏页注入：取消收藏且歌曲有云端副本时弹删除范围三选一，返回 true 表示已接管 */
+  unfavoriteScopeHandler?: (song: Song) => boolean;
 }>();
 
 const emit = defineEmits<{
@@ -165,6 +167,12 @@ const {
 } = usePlayerLibraryView();
 const { addLibraryFolder, scanLibrary, refreshFolder, expandFolderPath } = useLibraryRuntimeActions();
 const { isFavorite, toggleFavorite } = useLibraryCollections();
+
+// 取消收藏走宿主页注入的三选一（仅收藏页注入；其他页面保持直接切换）
+function handleFavoriteClick(song: Song) {
+  if (isFavorite(song) && props.unfavoriteScopeHandler?.(song)) return;
+  toggleFavorite(song);
+}
 const router = useRouter();
 const route = useRoute();
 const { openHomeArtist } = useHomeNavigation(router);
@@ -1129,7 +1137,7 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
 
           <!-- 收藏 + 时长 -->
           <div class="flex shrink-0 items-center gap-3 text-xs font-mono text-gray-900 dark:text-gray-100" :class="{ 'pointer-events-none opacity-20': dragSession.active }">
-            <button v-if="!isBatchMode" class="focus:outline-none" @click.stop="toggleFavorite(song)">
+            <button v-if="!isBatchMode" class="focus:outline-none" @click.stop="handleFavoriteClick(song)">
               <svg v-if="isFavorite(song)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" class="h-4 w-4 text-[color:var(--favorite-color)]" fill="currentColor">
                 <path clip-rule="evenodd" fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" />
               </svg>
