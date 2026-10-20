@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-vue-next';
+import { ArrowLeft } from 'lucide-vue-next';
 
 import type { Song, PluginSearchResult } from '../types';
 import {
@@ -400,28 +400,7 @@ const currentSongs = computed<Song[]>(() =>
   isUserMode.value ? userModeSongs.value : songList.value,
 );
 
-// ==================== 分页 ====================
-const PAGE_SIZE = 20;
-const currentDetailPage = ref(1);
-const pageTransitionDirection = ref<'forward' | 'back'>('forward');
-const totalDetailPages = computed(() =>
-  Math.ceil(currentSongs.value.length / PAGE_SIZE),
-);
-const pagedSongs = computed(() =>
-  currentSongs.value.slice(
-    (currentDetailPage.value - 1) * PAGE_SIZE,
-    currentDetailPage.value * PAGE_SIZE,
-  ),
-);
-const pageIndexOffset = computed(() => (currentDetailPage.value - 1) * PAGE_SIZE);
-
-function goToDetailPage(page: number) {
-  pageTransitionDirection.value = page > currentDetailPage.value ? 'forward' : 'back';
-  currentDetailPage.value = page;
-  nextTick(() => {
-    detailScrollRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
-  });
-}
+// 列表渲染不做外层分页：全量数据交给 SongTable 内部分段渲染（滚动追加，单批下限 20 行）
 
 let mfCoverFetchVersion = 0;
 const MF_COVER_CONCURRENCY = 3;
@@ -654,9 +633,6 @@ async function loadData(page = 1) {
   } finally {
     if (version === loadVersion) {
       loading.value = false;
-    }
-    if (page === 1) {
-      currentDetailPage.value = 1;
     }
     hasInitialLoad.value = true;
   }
@@ -1284,36 +1260,18 @@ watch(
           <div class="relative">
           <Transition name="tab-fade" mode="out-in">
             <div v-if="artistActiveTab === 'songs'" key="songs">
-              <Transition :name="pageTransitionDirection === 'forward' ? 'page-slide-forward' : 'page-slide-back'" mode="out-in">
-                <div :key="currentDetailPage">
-                  <SongTable
-                    :songs="pagedSongs"
-                    :indexOffset="pageIndexOffset"
-                    :is-batch-mode="isBatchMode"
-                    :selected-paths="selectedPaths"
-                    :memory-scope-key="(isUserMode ? 'online-detail-user' : 'online-detail-artist') + '::' + detailMemoryKey + '::d' + navToken"
-                    page-scroll-mode
-                    :scroll-container-ref="detailScrollRef"
-                    stagger-enter
-                    @play="handlePlaySong"
-                    @contextmenu="handleMySongContextMenu"
-                    @update:selectedPaths="selectedPaths = $event"
-                  />
-                </div>
-              </Transition>
-              <div v-if="totalDetailPages > 1" class="flex items-center justify-center gap-3 py-5 select-none">
-                <button
-                  class="px-3 py-1 rounded-lg text-sm text-gray-500 dark:text-white/50 hover:text-[#ec4141] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  :disabled="currentDetailPage === 1"
-                  @click="goToDetailPage(currentDetailPage - 1)"
-                >上一页</button>
-                <span class="text-sm text-gray-500 dark:text-white/50">{{ currentDetailPage }} / {{ totalDetailPages }}</span>
-                <button
-                  class="px-3 py-1 rounded-lg text-sm text-gray-500 dark:text-white/50 hover:text-[#ec4141] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  :disabled="currentDetailPage === totalDetailPages"
-                  @click="goToDetailPage(currentDetailPage + 1)"
-                >下一页</button>
-              </div>
+              <SongTable
+                :songs="currentSongs"
+                :is-batch-mode="isBatchMode"
+                :selected-paths="selectedPaths"
+                :memory-scope-key="(isUserMode ? 'online-detail-user' : 'online-detail-artist') + '::' + detailMemoryKey + '::d' + navToken"
+                page-scroll-mode
+                :scroll-container-ref="detailScrollRef"
+                stagger-enter
+                @play="handlePlaySong"
+                @contextmenu="handleMySongContextMenu"
+                @update:selectedPaths="selectedPaths = $event"
+              />
             </div>
 
             <div v-else-if="artistActiveTab === 'albums'" key="albums" class="p-4 md:p-6 lg:p-8">
@@ -1393,45 +1351,19 @@ watch(
             @selectAll="handleSelectAll"
           />
           <div class="relative">
-            <Transition :name="pageTransitionDirection === 'forward' ? 'page-slide-forward' : 'page-slide-back'" mode="out-in">
-              <div :key="currentDetailPage">
-                <SongTable
-                  :songs="pagedSongs"
-                  :indexOffset="pageIndexOffset"
-                  :is-batch-mode="isBatchMode"
-                  :selected-paths="selectedPaths"
-                  memory-scope-key="'online-detail-album::' + detailMemoryKey + '::d' + navToken"
-                  page-scroll-mode
-                  :scroll-container-ref="detailScrollRef"
-                  :disable-scroll-memory="true"
-                  stagger-enter
-                  @play="handlePlaySong"
-                  @contextmenu="handleMySongContextMenu"
-                  @update:selectedPaths="selectedPaths = $event"
-                />
-              </div>
-            </Transition>
-            <div v-if="totalDetailPages > 1" class="flex items-center justify-center gap-3 py-5 select-none">
-              <button
-                class="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium bg-white/5 hover:bg-white/10 dark:bg-white/5 dark:hover:bg-white/10 text-gray-600 dark:text-white/60 hover:text-[#ec4141] dark:hover:text-[#ec4141] border border-black/5 dark:border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-                :disabled="currentDetailPage === 1"
-                @click="goToDetailPage(currentDetailPage - 1)"
-              >
-                <ChevronLeft class="w-4 h-4" />
-                上一页
-              </button>
-              <span class="px-3 py-1.5 rounded-full text-sm font-mono text-gray-500 dark:text-white/40 bg-white/5 dark:bg-white/5 border border-black/5 dark:border-white/10 min-w-[4rem] text-center">
-                {{ currentDetailPage }} / {{ totalDetailPages }}
-              </span>
-              <button
-                class="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium bg-white/5 hover:bg-white/10 dark:bg-white/5 dark:hover:bg-white/10 text-gray-600 dark:text-white/60 hover:text-[#ec4141] dark:hover:text-[#ec4141] border border-black/5 dark:border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-                :disabled="currentDetailPage === totalDetailPages"
-                @click="goToDetailPage(currentDetailPage + 1)"
-              >
-                下一页
-                <ChevronRight class="w-4 h-4" />
-              </button>
-            </div>
+            <SongTable
+              :songs="currentSongs"
+              :is-batch-mode="isBatchMode"
+              :selected-paths="selectedPaths"
+              memory-scope-key="'online-detail-album::' + detailMemoryKey + '::d' + navToken"
+              page-scroll-mode
+              :scroll-container-ref="detailScrollRef"
+              :disable-scroll-memory="true"
+              stagger-enter
+              @play="handlePlaySong"
+              @contextmenu="handleMySongContextMenu"
+              @update:selectedPaths="selectedPaths = $event"
+            />
           </div>
         </div>
 
@@ -1451,45 +1383,19 @@ watch(
             @selectAll="handleSelectAll"
           />
           <div class="relative">
-            <Transition :name="pageTransitionDirection === 'forward' ? 'page-slide-forward' : 'page-slide-back'" mode="out-in">
-              <div :key="currentDetailPage">
-                <SongTable
-                  :songs="pagedSongs"
-                  :indexOffset="pageIndexOffset"
-                  :is-batch-mode="isBatchMode"
-                  :selected-paths="selectedPaths"
-                  memory-scope-key="'online-detail-playlist::' + detailMemoryKey + '::d' + navToken"
-                  page-scroll-mode
-                  :scroll-container-ref="detailScrollRef"
-                  :disable-scroll-memory="true"
-                  stagger-enter
-                  @play="handlePlaySong"
-                  @contextmenu="handleMySongContextMenu"
-                  @update:selectedPaths="selectedPaths = $event"
-                />
-              </div>
-            </Transition>
-            <div v-if="totalDetailPages > 1" class="flex items-center justify-center gap-3 py-5 select-none">
-              <button
-                class="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium bg-white/5 hover:bg-white/10 dark:bg-white/5 dark:hover:bg-white/10 text-gray-600 dark:text-white/60 hover:text-[#ec4141] dark:hover:text-[#ec4141] border border-black/5 dark:border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-                :disabled="currentDetailPage === 1"
-                @click="goToDetailPage(currentDetailPage - 1)"
-              >
-                <ChevronLeft class="w-4 h-4" />
-                上一页
-              </button>
-              <span class="px-3 py-1.5 rounded-full text-sm font-mono text-gray-500 dark:text-white/40 bg-white/5 dark:bg-white/5 border border-black/5 dark:border-white/10 min-w-[4rem] text-center">
-                {{ currentDetailPage }} / {{ totalDetailPages }}
-              </span>
-              <button
-                class="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium bg-white/5 hover:bg-white/10 dark:bg-white/5 dark:hover:bg-white/10 text-gray-600 dark:text-white/60 hover:text-[#ec4141] dark:hover:text-[#ec4141] border border-black/5 dark:border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-                :disabled="currentDetailPage === totalDetailPages"
-                @click="goToDetailPage(currentDetailPage + 1)"
-              >
-                下一页
-                <ChevronRight class="w-4 h-4" />
-              </button>
-            </div>
+            <SongTable
+              :songs="currentSongs"
+              :is-batch-mode="isBatchMode"
+              :selected-paths="selectedPaths"
+              memory-scope-key="'online-detail-playlist::' + detailMemoryKey + '::d' + navToken"
+              page-scroll-mode
+              :scroll-container-ref="detailScrollRef"
+              :disable-scroll-memory="true"
+              stagger-enter
+              @play="handlePlaySong"
+              @contextmenu="handleMySongContextMenu"
+              @update:selectedPaths="selectedPaths = $event"
+            />
           </div>
         </div>
 
@@ -1554,31 +1460,5 @@ watch(
 .tab-fade-leave-to {
   opacity: 0;
   transform: translateY(-12px);
-}
-
-.page-slide-forward-enter-active,
-.page-slide-back-enter-active {
-  transition: opacity 200ms ease, transform 200ms cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-.page-slide-forward-leave-active,
-.page-slide-back-leave-active {
-  pointer-events: none;
-  transition: opacity 140ms ease, transform 140ms ease;
-}
-.page-slide-forward-enter-from {
-  opacity: 0;
-  transform: translateX(24px);
-}
-.page-slide-forward-leave-to {
-  opacity: 0;
-  transform: translateX(-24px);
-}
-.page-slide-back-enter-from {
-  opacity: 0;
-  transform: translateX(-24px);
-}
-.page-slide-back-leave-to {
-  opacity: 0;
-  transform: translateX(24px);
 }
 </style>
