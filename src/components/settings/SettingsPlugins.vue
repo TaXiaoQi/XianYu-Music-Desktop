@@ -825,6 +825,12 @@ function openPluginDetail(plugin: PluginSource) {
   box-shadow: inset 0 0 0 1px rgba(230, 162, 60, 0.4);
 }
 
+/* 免费音源品牌标签（全豆要/次合代等）：沿用 BakaMusic 标签配色 */
+.settings-plugin-tag--free {
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+}
+
 .settings-pop-panel-enter-active,
 .settings-pop-panel-leave-active {
   transition:
@@ -1145,6 +1151,11 @@ function openPluginDetail(plugin: PluginSource) {
 }
 
 .dark .settings-plugin-tag--baka {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+}
+
+.dark .settings-plugin-tag--free {
   background: rgba(59, 130, 246, 0.15);
   color: #93c5fd;
 }

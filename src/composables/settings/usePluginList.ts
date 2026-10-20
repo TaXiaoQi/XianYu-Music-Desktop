@@ -70,12 +70,15 @@ export function usePluginList() {
     }
   }
 
-  // 付费订阅来源品牌标签（付费聆澜/付费ikun，无来源名回落「付费」），随插件列表联动
+  // 订阅来源品牌标签（付费聆澜/付费ikun 金色；免费全豆要/次合代 baka 色），随插件列表联动
   const subBrandLabelById = computed(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, { text: string; paid: boolean }>();
     for (const p of plugins.value) {
       const tag = getPluginSubTag(p);
-      if (tag) map.set(p.id, tag.label === '付费' ? '付费' : `付费${tag.label}`);
+      if (!tag) continue;
+      map.set(p.id, tag.paid
+        ? { text: tag.label === '付费' ? '付费' : `付费${tag.label}`, paid: true }
+        : { text: tag.label, paid: false });
     }
     return map;
   });

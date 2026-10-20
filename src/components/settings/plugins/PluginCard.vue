@@ -12,7 +12,7 @@ const props = defineProps<{
   searchQuery: string;
   isBaka: boolean;
   hasUserVars: boolean;
-  subBrandLabel?: string;
+  subBrandLabel?: { text: string; paid: boolean };
   updateCheck?: PluginUpdateCheckResult;
   updating: boolean;
 }>();
@@ -67,10 +67,11 @@ const colorClasses = computed(() => pluginColorClasses(props.plugin.format, prop
           </span>
           <span
             v-if="subBrandLabel"
-            class="settings-plugin-tag settings-plugin-tag--brand shrink-0 whitespace-nowrap"
-            title="付费订阅来源"
+            class="settings-plugin-tag shrink-0 whitespace-nowrap"
+            :class="subBrandLabel.paid ? 'settings-plugin-tag--brand' : 'settings-plugin-tag--free'"
+            :title="subBrandLabel.paid ? '付费订阅来源' : '免费音源'"
           >
-            {{ subBrandLabel }}
+            {{ subBrandLabel.text }}
           </span>
           <span
             v-if="plugin.updateAvailable"

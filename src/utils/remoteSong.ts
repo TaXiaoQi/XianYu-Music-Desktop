@@ -43,16 +43,33 @@ function getStoredPluginById(pluginId: string): PluginSource | null {
 // 标签直接显示来源品牌名；仅带 key= 无来源名时回落显示「付费」。
 const SUB_SOURCE_BRAND_ALIAS: Record<string, string> = { linglan: '聆澜' };
 
+// —— baka 免费聚合音源品牌（全豆要/次合代等）：同样按 source=/名称识别，
+// 标签用 baka 配色渲染，与付费金色区分
+const FREE_SUB_SOURCE_BRAND_ALIAS: Record<string, string> = {
+  quandouyao: '全豆要',
+  cihedai: '次合代',
+  ciheidai: '次合代',
+};
+
 // 插件名/作者内置品牌词（ikun 插件 URL 只有 key 无 source，靠名称识别）
 const SUB_SOURCE_BRAND_KEYWORDS: Array<[string, string]> = [
   ['聆澜', '聆澜'],
   ['ikun', 'ikun'],
 ];
 
-const brandFromIdentity = (name?: string, author?: string): string | null => {
+const FREE_SUB_SOURCE_BRAND_KEYWORDS: Array<[string, string]> = [
+  ['全豆要', '全豆要'],
+  ['次合代', '次合代'],
+];
+
+const brandFromIdentity = (
+  name: string | undefined,
+  author: string | undefined,
+  keywords: Array<[string, string]>,
+): string | null => {
   const hay = `${(name ?? '').trim()} ${(author ?? '').trim()}`.toLowerCase();
   if (!hay.trim()) return null;
-  for (const [kw, brand] of SUB_SOURCE_BRAND_KEYWORDS) {
+  for (const [kw, brand] of keywords) {
     if (hay.includes(kw)) return brand;
   }
   return null;
@@ -72,12 +89,15 @@ const urlSourceValue = (url?: string | null): string | null => {
 const normalizeSourceValue = (v: string): string =>
   v.toLowerCase().replace(/\.json$/, '');
 
-const brandFromUrl = (url?: string | null): string | null => {
+const brandFromUrl = (
+  url: string | null | undefined,
+  alias: Record<string, string>,
+): string | null => {
   const v = urlSourceValue(url);
   if (!v) return null;
-  // 仅识别已知付费品牌别名：公开订阅也会用 source= 传自定义标识（如 quandouyao），
-  // 未知值不再视为付费，避免免费插件被误标
-  return SUB_SOURCE_BRAND_ALIAS[v.toLowerCase()] ?? null;
+  // 仅识别已知品牌别名：公开订阅也会用 source= 传自定义标识，
+  // 未知值不视为任何来源品牌，避免免费插件被误标为付费
+  return alias[v.toLowerCase()] ?? null;
 };
 
 const urlHasKey = (url?: string | null): boolean => {
@@ -115,8 +135,8 @@ const readSubscriptions = (): PluginSubscriptionLike[] => {
 
 export interface SongSourceTagInfo {
   label: string;
-  /** 命中付费订阅来源品牌（或付费标记），标签用金色高亮渲染 */
-  brand: boolean;
+  /** true=付费订阅来源（插件页金色高亮）；false=免费音源品牌（baka 配色）；省略=普通来源 */
+  paid?: boolean;
 }
 
 // URL 型插件转正后 filePath 指向本地脚本，带 key=/source= 的原始安装 URL
@@ -124,22 +144,30 @@ export interface SongSourceTagInfo {
 const installUrl = (p: PluginSource): string => p.sourceUrl || p.filePath;
 
 const pluginSubTag = (p: PluginSource): SongSourceTagInfo | null => {
-  const own = brandFromUrl(installUrl(p));
-  if (own) return { label: own, brand: true };
-  const named = brandFromIdentity(p.name, p.author);
-  if (named) return { label: named, brand: true };
-  if (urlHasKey(installUrl(p))) return { label: '付费', brand: true };
+  const url = installUrl(p);
+  const own = brandFromUrl(url, SUB_SOURCE_BRAND_ALIAS);
+  if (own) return { label: own, paid: true };
+  const named = brandFromIdentity(p.name, p.author, SUB_SOURCE_BRAND_KEYWORDS);
+  if (named) return { label: named, paid: true };
+  if (urlHasKey(url)) return { label: '付费', paid: true };
+  // baka 免费聚合音源（全豆要/次合代）：同样按 source=/名称识别，普通配色渲染
+  const freeFromUrl = brandFromUrl(url, FREE_SUB_SOURCE_BRAND_ALIAS);
+  if (freeFromUrl) return { label: freeFromUrl, paid: false };
+  const freeNamed = brandFromIdentity(p.name, p.author, FREE_SUB_SOURCE_BRAND_KEYWORDS);
+  if (freeNamed) return { label: freeNamed, paid: false };
   // 插件 URL 自带 source 标识时按 source 值精确归属订阅（订阅 URL 的 source 常多一个
   // .json 后缀）；同一台主机可挂多个订阅（公共+付费并存），禁止按 host/名称猜归属
-  const ownSrc = urlSourceValue(installUrl(p));
+  const ownSrc = urlSourceValue(url);
   if (!ownSrc) return null;
   const ownKey = normalizeSourceValue(ownSrc);
   for (const sub of readSubscriptions()) {
     const subSrc = urlSourceValue(sub.url);
     if (!subSrc || normalizeSourceValue(subSrc) !== ownKey) continue;
-    const brand = brandFromUrl(sub.url);
-    if (brand) return { label: brand, brand: true };
-    if (urlHasKey(sub.url)) return { label: '付费', brand: true };
+    const brand = brandFromUrl(sub.url, SUB_SOURCE_BRAND_ALIAS);
+    if (brand) return { label: brand, paid: true };
+    if (urlHasKey(sub.url)) return { label: '付费', paid: true };
+    const freeBrand = brandFromUrl(sub.url, FREE_SUB_SOURCE_BRAND_ALIAS);
+    if (freeBrand) return { label: freeBrand, paid: false };
     break;
   }
   return null;
@@ -156,20 +184,20 @@ export const getSongSourceTag = (
   if (path?.startsWith('cloud://')) {
     // 网盘歌曲：优先取搜索结果写入的盘名（rawData.providerName），缺失时兜底
     const providerName = song?.rawData?.providerName;
-    return { label: typeof providerName === 'string' && providerName ? providerName : '网盘', brand: false };
+    return { label: typeof providerName === 'string' && providerName ? providerName : '网盘' };
   }
   if (path?.startsWith('lx://')) {
     const sourceId = path.slice('lx://'.length).split('/')[0] as LxSourceId;
-    return { label: LX_SOURCE_NAMES[sourceId] ?? '在线', brand: false };
+    return { label: LX_SOURCE_NAMES[sourceId] ?? '在线' };
   }
 
   if (path?.startsWith('plugin://')) {
     const pluginId = song?.plugin_id || song?.rawData?.pluginId;
     const plugin = pluginId ? getStoredPluginById(pluginId) : null;
     // 歌曲页等场景维持原样（红色标签显示插件名）；付费品牌标签只在插件管理页展示
-    if (plugin) return { label: plugin.name, brand: false };
-    return { label: '在线', brand: false };
+    if (plugin) return { label: plugin.name };
+    return { label: '在线' };
   }
 
-  return { label: '远程', brand: false };
+  return { label: '远程' };
 };
