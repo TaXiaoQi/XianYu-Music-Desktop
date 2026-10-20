@@ -70,6 +70,15 @@ export const useAuthStore = defineStore("auth", () => {
         stats.value = null;
     }
 
+    // 会话过期（401）只清内存，凭据保留在 keyring：服务端抖动/误判不应
+    // 导致凭据永久丢失（对齐移动端 401 只清内存保留磁盘密文），重启后
+    // restoreSession 仍可从 keyring 恢复重试；显式登出才走 reset 删凭据
+    function expireSession() {
+        token.value = null;
+        user.value = null;
+        stats.value = null;
+    }
+
     async function restoreSession() {
         if (initialized.value || initializing.value) return;
         initializing.value = true;
@@ -99,7 +108,7 @@ export const useAuthStore = defineStore("auth", () => {
     if (!expiredHandlerRegistered) {
         expiredHandlerRegistered = true;
         onAccountExpired(() => {
-            reset();
+            expireSession();
             void showSessionExpiredDialog().then((goLogin) => {
                 if (goLogin) router.push({ name: "Auth" });
             });
@@ -119,6 +128,7 @@ export const useAuthStore = defineStore("auth", () => {
         setUser,
         setStats,
         reset,
+        expireSession,
         restoreSession,
     };
 });
