@@ -136,6 +136,8 @@ const props = defineProps<{
   scrollContainerRef?: HTMLElement | null;
   disableScrollMemory?: boolean;
   downloadCompletedAsLocal?: boolean;
+  /** 为 true 时非流媒体行不再渲染「本地」来源标签（在线搜索页装有音源插件时传入） */
+  hideLocalSourceTag?: boolean;
   indexOffset?: number;
   songReasons?: Map<string, string>;
   staggerEnter?: boolean;
@@ -1156,7 +1158,7 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
               :title="getSongSourceTag(song).label"
             >{{ getSongSourceTag(song).label }}</span>
             <span
-              v-else
+              v-else-if="!hideLocalSourceTag"
               class="whitespace-nowrap rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
             >本地</span>
           </div>

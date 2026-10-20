@@ -20,6 +20,7 @@
             :is-batch-mode="false"
             :selected-paths="new Set()"
             memory-scope-key="search-track-list"
+            :hide-local-source-tag="hasEnabledPlugin"
             stagger-enter
             @play="handlePlaySong"
             @contextmenu="handleTrackContextMenu"
@@ -86,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type {
   Song,
@@ -112,6 +113,7 @@ import { useSearchResults } from '../composables/search/useSearchResults';
 import { useSearchQuery, type SearchTypeKey } from '../composables/search/useSearchQuery';
 import { useSearchNavigation } from '../composables/search/useSearchNavigation';
 import { useToast } from '../composables/toast';
+import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngine';
 
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
@@ -121,6 +123,13 @@ const { playSong } = usePlaybackController();
 const uiStore = useUiStore();
 const playbackStore = usePlaybackStore();
 const onlineDetailStore = useOnlineDetailStore();
+
+// 装有启用的音源插件时，在线搜索结果不展示「本地」来源标签（在线歌随时可播，
+// 已下载与否由下载列表达）；pluginsVersion 仅作响应式依赖，插件装卸即时刷新
+const hasEnabledPlugin = computed(() => {
+  void pluginsVersion.value;
+  return getStoredPlugins().some((p) => p.enabled);
+});
 
 // ==================== 内容类型切换 ====================
 const activeSearchType = ref<SearchTypeKey>('track');
