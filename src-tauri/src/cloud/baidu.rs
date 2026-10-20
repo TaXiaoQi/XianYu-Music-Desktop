@@ -674,23 +674,6 @@ fn is_rate_limited(host: &str) -> bool {
     host.contains("d2-ant") || host.contains("speed-limited")
 }
 
-/// 相对 Location → 绝对 URL（仅覆盖绝对/协议相对/根相对三种，足够直链跳转）。
-fn absolute_url(base: &str, loc: &str) -> Option<String> {
-    if loc.starts_with("http://") || loc.starts_with("https://") {
-        return Some(loc.to_string());
-    }
-    if let Some(rest) = loc.strip_prefix("//") {
-        let scheme = base.split("://").next()?;
-        return Some(format!("{scheme}://{rest}"));
-    }
-    if loc.starts_with('/') {
-        let idx = base.find("://")? + 3;
-        let host_end = base[idx..].find('/').map(|i| idx + i).unwrap_or(base.len());
-        return Some(format!("{}{loc}", &base[..host_end]));
-    }
-    None
-}
-
 /// RC4（百度 /api/download 签名：网页 sign2 下发的即固定 RC4 JS 实现，
 /// key=sign3、data=sign1，输出 base64 即 sign，2026-10 逆向实测）。
 fn rc4(key: &[u8], data: &[u8]) -> Vec<u8> {
