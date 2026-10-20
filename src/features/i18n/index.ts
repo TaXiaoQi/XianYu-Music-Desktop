@@ -179,7 +179,7 @@ const zhCN = {
   'sidebar.favorites': '我的收藏',
   'sidebar.recent': '最近播放',
   'sidebar.folders': '文件夹',
-  'sidebar.plugins': '插件管理',
+  'sidebar.plugins': '音源管理',
   'sidebar.account': '个人中心',
   'sidebar.topLists': '榜单',
   'sidebar.dailyRecommend': '每日推荐',

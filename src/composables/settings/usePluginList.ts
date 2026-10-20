@@ -40,7 +40,7 @@ export function usePluginList() {
   const pluginStatsLabel = computed(() => {
     const total = plugins.value.length;
     const enabled = plugins.value.filter((p) => p.enabled).length;
-    return `共 ${total} 个插件，已启用 ${enabled} 个`;
+    return `共 ${total} 个音源，已启用 ${enabled} 个`;
   });
 
   const allPluginsEnabled = computed(() => {

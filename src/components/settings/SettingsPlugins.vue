@@ -6,6 +6,8 @@ import type { PluginSource } from '../../types';
 import { getStoredPlugins, loadPlugins, removePluginSource, togglePlugin, log, pluginsVersion } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
+import { cloudProviders } from '../../services/cloud/cloudRegistry';
+import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
 import SettingHint, { SETTING_HINT_Z_INDEX } from './SettingHint.vue';
 import { getCiyuanxiId } from '../../services/domain/playlistSync';
 import { deleteCloudPlugins } from '../../services/domain/pluginSync';
@@ -13,7 +15,7 @@ import { getSyncedPluginIds, isPluginSynced, addDownloadSkipIds, addUploadSkipId
 import type { SyncDeleteScope } from '../overlays/SyncDeleteScopeModal.vue';
 import { usePluginList } from '../../composables/settings/usePluginList';
 import { usePluginBadges } from '../../composables/settings/usePluginBadges';
-import { usePluginDragSort } from '../../composables/settings/usePluginDragSort';
+import { usePluginDragSort, type SortableSourceRow } from '../../composables/settings/usePluginDragSort';
 import { usePluginInstall, PluginInstallCancelled } from '../../composables/settings/usePluginInstall';
 import { usePluginSubscriptions } from '../../composables/settings/usePluginSubscriptions';
 import { usePluginUpdates } from '../../composables/settings/usePluginUpdates';
@@ -21,6 +23,7 @@ import PluginLocalInstallPanel from './plugins/PluginLocalInstallPanel.vue';
 import PluginUrlInstallPanel from './plugins/PluginUrlInstallPanel.vue';
 import PluginSubscriptionPanel from './plugins/PluginSubscriptionPanel.vue';
 import PluginCard from './plugins/PluginCard.vue';
+import CloudSourceCard from './plugins/CloudSourceCard.vue';
 import PluginDetailDialog from './plugins/PluginDetailDialog.vue';
 import PluginConfirmDialog from './plugins/PluginConfirmDialog.vue';
 
@@ -97,7 +100,6 @@ const {
   plugins,
   searchQuery,
   isPluginBusy,
-  sortPlugins,
   filteredPlugins,
   refreshPluginList,
   pluginStatsLabel,
@@ -113,12 +115,139 @@ const {
   refreshBakaBadges,
 } = usePluginBadges();
 
+// ==================== 网盘伪音源行（每个已绑定网盘一条，支持开关/排序/解绑） ====================
+const cloudAccountCounts = ref<Record<string, number>>({});
+// 拖拽中各网盘的排序位草稿（前方插件数），落手时持久化
+const cloudSortIndexDrafts = ref<Record<string, number | null>>({});
+let unsubCloudCreds: (() => void) | null = null;
+
+async function refreshCloudAccountCounts() {
+  const counts: Record<string, number> = {};
+  for (const p of cloudProviders) {
+    try {
+      counts[p.id] = (await CloudCredentialsStore.instance.accountsFor(p.id)).length;
+    } catch { counts[p.id] = 0; /* 单个网盘查询失败不影响其余 */ }
+  }
+  cloudAccountCounts.value = counts;
+  cloudSortIndexDrafts.value = { ...cloudSortIndexDrafts.value };
+}
+
+// 设置里的网盘排序位变化（如换设备同步）时同步草稿
+watch(() => settings.value.plugins.cloudSources, (overrides) => {
+  const next: Record<string, number | null> = { ...cloudSortIndexDrafts.value };
+  for (const pid of Object.keys(overrides)) {
+    next[pid] = overrides[pid]?.sortIndex ?? null;
+  }
+  cloudSortIndexDrafts.value = next;
+}, { deep: true });
+
+const cloudNameFor = (providerId: string) =>
+  cloudProviders.find((p) => p.id === providerId)?.displayName ?? providerId;
+const cloudEnabledFor = (providerId: string) =>
+  settings.value.plugins.cloudSources[providerId]?.enabled !== false;
+const cloudDescriptionFor = (providerId: string) => {
+  if (!cloudEnabledFor(providerId)) return '已关闭，搜索不再拉取该网盘';
+  const n = cloudAccountCounts.value[providerId] ?? 0;
+  return n > 0 ? `已绑定 ${n} 个账号，搜索时可拉取该网盘音乐` : '未绑定账号';
+};
+
+function toggleCloudSource(providerId: string) {
+  patchSettings({
+    plugins: {
+      cloudSources: {
+        [providerId]: {
+          enabled: !cloudEnabledFor(providerId),
+          sortIndex: cloudSortIndexDrafts.value[providerId] ?? null,
+        },
+      },
+    },
+  });
+}
+
+function persistCloudSortIndexes(indexes: Record<string, number | null>) {
+  const overrides: Record<string, { enabled: boolean; sortIndex: number | null }> = {};
+  for (const [pid, idx] of Object.entries(indexes)) {
+    overrides[pid] = { enabled: cloudEnabledFor(pid), sortIndex: idx };
+  }
+  if (Object.keys(overrides).length === 0) return;
+  patchSettings({ plugins: { cloudSources: overrides } });
+}
+
+/**
+ * 展示行 = 已安装插件 + 已绑定网盘的伪音源行。
+ * 网盘行按排序位草稿（前方插件数）插入到对应插件之后；搜索过滤时只显示插件行（与拖拽禁用一致）。
+ */
+const displayRows = computed<SortableSourceRow[]>(() => {
+  const rows: SortableSourceRow[] = filteredPlugins.value.map((p) => ({ key: p.id, plugin: p }));
+  if (searchQuery.value.trim()) return rows;
+  const cloudRows: SortableSourceRow[] = cloudProviders
+    .filter((p) => (cloudAccountCounts.value[p.id] ?? 0) > 0)
+    .map((p) => ({ key: `cloud:${p.id}`, cloud: { providerId: p.id } }));
+  // cloud 插在第一个 sortOrder >= idx 的插件之前；null=末尾；同位保持注册顺序
+  cloudRows.sort((a, b) => {
+    const ia = cloudSortIndexDrafts.value[a.cloud!.providerId] ?? Number.MAX_SAFE_INTEGER;
+    const ib = cloudSortIndexDrafts.value[b.cloud!.providerId] ?? Number.MAX_SAFE_INTEGER;
+    return ia - ib;
+  });
+  let ci = 0;
+  const merged: SortableSourceRow[] = [];
+  for (const row of rows) {
+    const pIdx = row.plugin?.sortOrder ?? 0;
+    while (ci < cloudRows.length) {
+      const cIdx = cloudSortIndexDrafts.value[cloudRows[ci].cloud!.providerId];
+      if (cIdx == null || cIdx > pIdx) break;
+      merged.push(cloudRows[ci++]);
+    }
+    merged.push(row);
+  }
+  while (ci < cloudRows.length) merged.push(cloudRows[ci++]);
+  return merged;
+});
+
 const {
   draggingIndex,
   listRef,
   startDragging,
   stopDragging,
-} = usePluginDragSort({ plugins, filteredPlugins, searchQuery, sortPlugins });
+} = usePluginDragSort({
+  plugins,
+  rows: displayRows,
+  searchQuery,
+  cloudSortIndexDrafts,
+  persistCloudSortIndexes,
+});
+
+// ==================== 删除网盘音源（同时解绑该网盘已绑定账号） ====================
+const pendingCloudProviderId = ref<string | null>(null);
+const pendingCloudName = computed(() =>
+  pendingCloudProviderId.value ? cloudNameFor(pendingCloudProviderId.value) : '');
+const pendingCloudAccountCount = computed(() =>
+  pendingCloudProviderId.value ? (cloudAccountCounts.value[pendingCloudProviderId.value] ?? 0) : 0);
+
+function requestRemoveCloudSource(providerId: string) {
+  pendingCloudProviderId.value = providerId;
+}
+
+function cancelRemoveCloudSource() {
+  pendingCloudProviderId.value = null;
+}
+
+async function confirmRemoveCloudSource() {
+  const providerId = pendingCloudProviderId.value;
+  if (!providerId) return;
+  pendingCloudProviderId.value = null;
+  try {
+    const accounts = await CloudCredentialsStore.instance.accountsFor(providerId);
+    for (const account of accounts) {
+      await CloudCredentialsStore.instance.removeAccount(providerId, account.accountId);
+    }
+    showToast(`已删除「${cloudNameFor(providerId)}」音源并解绑 ${accounts.length} 个账号`);
+    await refreshCloudAccountCounts();
+  } catch (err) {
+    log(`[SettingsPlugins] 解绑网盘账号失败: ${err instanceof Error ? err.message : String(err)}`);
+    showToast('删除失败，请重试');
+  }
+}
 
 // ==================== 安装面板显隐 ====================
 const showSubscriptionPanel = ref(false);
@@ -174,6 +303,10 @@ onMounted(async () => {
   plugins.value = getStoredPlugins();
   void refreshUserVarBadges();
   void refreshBakaBadges();
+  void refreshCloudAccountCounts();
+  unsubCloudCreds = CloudCredentialsStore.instance.subscribe(() => {
+    void refreshCloudAccountCounts();
+  });
   setupDragDropListeners();
 });
 
@@ -184,6 +317,8 @@ watch(pluginsVersion, () => {
 
 onUnmounted(() => {
   stopDragging();
+  unsubCloudCreds?.();
+  unsubCloudCreds = null;
 });
 
 function toggleSubscriptionPanel() {
@@ -463,7 +598,7 @@ function openPluginDetail(plugin: PluginSource) {
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-          已安装插件
+          已安装音源
         </h2>
         <div class="flex items-center gap-3">
           <div class="text-xs text-gray-500 dark:text-white/55">
@@ -496,7 +631,7 @@ function openPluginDetail(plugin: PluginSource) {
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="搜索插件名称、平台或作者"
+          placeholder="搜索音源名称、平台或作者"
           class="h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
         />
       </div>
@@ -508,9 +643,9 @@ function openPluginDetail(plugin: PluginSource) {
         <div class="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mb-4">
           <Puzzle class="h-7 w-7 text-gray-400 dark:text-white/40" />
         </div>
-        <div class="text-sm font-medium text-gray-600 dark:text-gray-300">还没有安装任何插件</div>
+        <div class="text-sm font-medium text-gray-600 dark:text-gray-300">还没有安装任何音源</div>
         <div class="text-xs text-gray-400 dark:text-white/45 mt-1.5">
-          从本地文件、网络 URL 或订阅源安装插件后，会在这里显示
+          从本地文件、网络 URL 或订阅源安装音源后，会在这里显示
         </div>
       </div>
 
@@ -518,7 +653,7 @@ function openPluginDetail(plugin: PluginSource) {
         v-else-if="filteredPlugins.length === 0"
         class="flex flex-col items-center justify-center py-8 text-center"
       >
-        <div class="text-sm text-gray-500 dark:text-white/60">未找到匹配的插件</div>
+        <div class="text-sm text-gray-500 dark:text-white/60">未找到匹配的音源</div>
       </div>
 
       <div
@@ -527,24 +662,37 @@ function openPluginDetail(plugin: PluginSource) {
         class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
       >
       <TransitionGroup name="plugin-sort" tag="div" class="flex flex-col">
-        <PluginCard
-          v-for="(plugin, index) in filteredPlugins"
-          :key="plugin.id"
-          :plugin="plugin"
-          :index="index"
-          :dragging="draggingIndex === index"
-          :search-query="searchQuery"
-          :is-baka="pluginsBakaIds.has(plugin.id)"
-          :has-user-vars="pluginsWithUserVars.has(plugin.id)"
-          :sub-brand-label="subBrandLabelById.get(plugin.id)"
-          :update-check="updateCheckResults.get(plugin.id)"
-          :updating="updatingPluginId === plugin.id"
-          @drag-start="startDragging"
-          @open-detail="openPluginDetail"
-          @update="handleUpdatePlugin"
-          @uninstall="handleUninstallPlugin"
-          @toggle="handleTogglePlugin"
-        />
+        <template v-for="(row, index) in displayRows" :key="row.key">
+          <CloudSourceCard
+            v-if="row.cloud"
+            :index="index"
+            :dragging="draggingIndex === index"
+            :search-query="searchQuery"
+            :name="cloudNameFor(row.cloud.providerId)"
+            :description="cloudDescriptionFor(row.cloud.providerId)"
+            :enabled="cloudEnabledFor(row.cloud.providerId)"
+            @drag-start="startDragging"
+            @toggle="toggleCloudSource(row.cloud.providerId)"
+            @remove="requestRemoveCloudSource(row.cloud.providerId)"
+          />
+          <PluginCard
+            v-else-if="row.plugin"
+            :plugin="row.plugin"
+            :index="index"
+            :dragging="draggingIndex === index"
+            :search-query="searchQuery"
+            :is-baka="pluginsBakaIds.has(row.plugin.id)"
+            :has-user-vars="pluginsWithUserVars.has(row.plugin.id)"
+            :sub-brand-label="subBrandLabelById.get(row.plugin.id)"
+            :update-check="updateCheckResults.get(row.plugin.id)"
+            :updating="updatingPluginId === row.plugin.id"
+            @drag-start="startDragging"
+            @open-detail="openPluginDetail"
+            @update="handleUpdatePlugin"
+            @uninstall="handleUninstallPlugin"
+            @toggle="handleTogglePlugin"
+          />
+        </template>
       </TransitionGroup>
       </div>
     </section>
@@ -579,6 +727,17 @@ function openPluginDetail(plugin: PluginSource) {
       @confirm="confirmRemoveSubscription"
     >
       确认要移除订阅 <strong class="text-[#EC4141]">{{ pendingRemoveSubscription?.name }}</strong> 吗？移除后需重新添加。
+    </PluginConfirmDialog>
+
+    <PluginConfirmDialog
+      :visible="pendingCloudProviderId !== null"
+      :title="`删除网盘音源「${pendingCloudName}」`"
+      confirm-text="确认删除"
+      :overlay-z-class="overlayZClass"
+      @cancel="cancelRemoveCloudSource"
+      @confirm="confirmRemoveCloudSource"
+    >
+      确认要删除该网盘音源吗？将同时解绑其下 <strong class="text-[#EC4141]">{{ pendingCloudAccountCount }}</strong> 个已绑定的网盘账号，绑定信息将无法恢复。
     </PluginConfirmDialog>
 
     <PluginDetailDialog

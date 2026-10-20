@@ -717,10 +717,18 @@ export interface ShortcutSettings {
   global: ShortcutBindingMap;
 }
 
+export interface CloudSourceOverride {
+  enabled: boolean;
+  /** 前方插件数（排序位，与插件 sortOrder 同一坐标系）；null=固定末尾 */
+  sortIndex: number | null;
+}
+
 export interface PluginSettings {
   autoUpdateOnStartup: boolean;
   lazyLoad: boolean;
   skipVersionCheck: boolean;
+  /** 网盘音源按 providerId 的覆盖配置；未配置的已绑定网盘默认 enabled=true、sortIndex=null（末尾） */
+  cloudSources: Record<string, CloudSourceOverride>;
 }
 
 type SongClickAction = 'double' | 'single';

@@ -6,6 +6,7 @@ import {
 import { getStoredPlugins, pluginsVersion } from '../../services/domain/pluginEngine';
 import { cloudProviders } from '../../services/cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
+import { useSettings } from '../../features/settings/useSettings';
 import type { PluginSource } from '../../types';
 
 // ==================== 来源列表（从插件加载，无插件则索引本地）====================
@@ -65,7 +66,15 @@ export function useSearchSources() {
     pluginSourceList.value = items;
   }
 
-  // ==================== 网盘来源（已绑定账号的盘，没选目录默认全部目录）====================
+  // ==================== 网盘来源（每个已绑定网盘一个来源，没选目录默认全部目录）====================
+  // 网盘音源开关（音源管理页，按网盘独立）：关闭后不展示、不再拉取该网盘来源
+  const { settings } = useSettings();
+  const cloudSourceOverrides = computed(() => settings.value.plugins.cloudSources);
+  const cloudSourceEnabledFor = (providerId: string) =>
+    cloudSourceOverrides.value[providerId]?.enabled !== false;
+  const cloudSortIndexFor = (providerId: string) =>
+    cloudSourceOverrides.value[providerId]?.sortIndex ?? null;
+
   const cloudSourceList = ref<SourceItem[]>([]);
   let cloudRefreshVersion = 0;
 
@@ -73,6 +82,7 @@ export function useSearchSources() {
     const version = ++cloudRefreshVersion;
     const items: SourceItem[] = [];
     for (const p of cloudProviders) {
+      if (!cloudSourceEnabledFor(p.id)) continue;
       const accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
       if (version !== cloudRefreshVersion) return;
       // 未绑定账号的盘不展示；同盘多账号只显示一个来源（搜索时取第一个账号）
@@ -89,11 +99,26 @@ export function useSearchSources() {
 
   const allSourceList = computed<SourceItem[]>(() => {
     // 本地来源恒在首位（与移动端一致）：有插件/网盘等网页来源时也保留本地搜索
-    const base: SourceItem[] = [
-      { id: 'local', name: '本地', type: 'local' },
-      ...pluginSourceList.value,
-    ];
-    return [...base, ...cloudSourceList.value];
+    const out: SourceItem[] = [{ id: 'local', name: '本地', type: 'local' }];
+    // 网盘排序位 = 前方插件数（音源管理页拖拽落点）；null=固定末尾。
+    // 同位多个网盘保持注册顺序：cloud 插在第一个 sortOrder >= idx 的插件之前
+    const clouds = [...cloudSourceList.value].sort((a, b) => {
+      const ia = cloudSortIndexFor(a.cloudProviderId!) ?? Number.MAX_SAFE_INTEGER;
+      const ib = cloudSortIndexFor(b.cloudProviderId!) ?? Number.MAX_SAFE_INTEGER;
+      return ia - ib;
+    });
+    let ci = 0;
+    for (const p of pluginSourceList.value) {
+      const pIdx = p.source?.sortOrder ?? 0;
+      while (ci < clouds.length) {
+        const cIdx = cloudSortIndexFor(clouds[ci].cloudProviderId!);
+        if (cIdx == null || cIdx > pIdx) break;
+        out.push(clouds[ci++]);
+      }
+      out.push(p);
+    }
+    while (ci < clouds.length) out.push(clouds[ci++]);
+    return out;
   });
   const selectedSourceId = ref<string>('');
 
@@ -120,6 +145,16 @@ export function useSearchSources() {
       selectedSourceId.value = allSourceList.value[0].id;
     }
   });
+
+  // 网盘开关/绑定变化：重建来源列表，若当前选中的网盘来源被移除则回退到第一个来源
+  watch(cloudSourceOverrides, () => {
+    const prevSelectedId = selectedSourceId.value;
+    void refreshCloudSourceList();
+    const stillExists = allSourceList.value.some(s => s.id === prevSelectedId);
+    if (!stillExists && allSourceList.value.length > 0) {
+      selectedSourceId.value = allSourceList.value[0].id;
+    }
+  }, { deep: true });
 
   // 凭据落盘即刷新网盘来源（登录同步后台导入绑定后，已打开的搜索页跟随）
   const unsubCreds = CloudCredentialsStore.instance.subscribe(() => {

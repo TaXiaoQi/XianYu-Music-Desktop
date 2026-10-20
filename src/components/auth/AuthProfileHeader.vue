@@ -35,7 +35,7 @@ type Shortcut = {
 
 const personalShortcuts: Shortcut[] = [
   { label: '账号设置', desc: '管理账号信息', to: '/settings?tab=account', icon: 'cog' },
-  { label: '插件管理', desc: '管理已安装插件', to: '/settings?tab=plugins', icon: 'plugin' },
+  { label: '音源管理', desc: '管理已安装音源', to: '/settings?tab=plugins', icon: 'plugin' },
   { label: '主题外观', desc: '换肤与界面风格', to: '/settings?tab=theme', icon: 'theme' },
   { label: '本地音乐', desc: '管理本地曲库', to: '/?view=all', icon: 'folder' },
 ];

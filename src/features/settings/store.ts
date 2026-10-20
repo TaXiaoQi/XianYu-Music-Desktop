@@ -4,7 +4,7 @@ import { computed, ref } from 'vue';
 import type {
   ThemeSettings, SidebarSettings, FooterLayoutSettings, TopBarLayoutSettings,
   AudioSettings, LyricsSettings, DesktopLyricsSettings,
-  DownloadSettings, UploadSettings, PluginSettings, AutoSyncConfig, LogSettings,
+  DownloadSettings, UploadSettings, PluginSettings, CloudSourceOverride, AutoSyncConfig, LogSettings,
   ImportedLyricsFont, EqualizerPreset, MvQualityKey, AppSettings, DesktopThemeSurface, DesktopThemeVisuals,
   PerPageBackground,
 } from '../../types';
@@ -232,6 +232,7 @@ const defaultUploadSettings: UploadSettings = {
 
 const defaultPluginSettings: PluginSettings = {
   autoUpdateOnStartup: false, lazyLoad: true, skipVersionCheck: false,
+  cloudSources: {},
 };
 
 const defaultAutoSyncConfig: AutoSyncConfig = { // 自动同步默认配置
@@ -673,10 +674,32 @@ export const mergeAudioSettings = (base: AudioSettings, patch: AudioSettingsPatc
 /* 插件 / 自动同步 / 日志设置合并                                            */
 /* ---------------------------------------------------------------------- */
 
+const mergeCloudSourceOverrides = (
+  base: Record<string, CloudSourceOverride>,
+  patch: Record<string, CloudSourceOverride> | undefined,
+): Record<string, CloudSourceOverride> => {
+  if (!patch) return base;
+  const out: Record<string, CloudSourceOverride> = { ...base };
+  for (const [pid, override] of Object.entries(patch)) {
+    if (!override) continue;
+    const prev = out[pid];
+    out[pid] = {
+      enabled: chooseBoolean(override.enabled, prev?.enabled ?? true),
+      sortIndex: override.sortIndex === null
+        ? null
+        : (typeof override.sortIndex === 'number'
+          ? Math.max(0, Math.floor(override.sortIndex))
+          : (prev?.sortIndex ?? null)),
+    };
+  }
+  return out;
+};
+
 const mergePluginSettings = (base: PluginSettings, patch: PluginSettingsPatch): PluginSettings => ({
   autoUpdateOnStartup: chooseBoolean(patch.autoUpdateOnStartup, base.autoUpdateOnStartup),
   lazyLoad: chooseBoolean(patch.lazyLoad, base.lazyLoad),
   skipVersionCheck: chooseBoolean(patch.skipVersionCheck, base.skipVersionCheck),
+  cloudSources: mergeCloudSourceOverrides(base.cloudSources, patch.cloudSources),
 });
 
 const mergeAutoSyncConfig = (base: AutoSyncConfig, patch: AutoSyncConfigPatch): AutoSyncConfig => {
