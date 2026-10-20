@@ -348,6 +348,8 @@ export async function restorePluginFromSync(
       enabled: source.enabled,
       sortOrder: source.sortOrder ?? loadedSource.sortOrder,
       importedAt: source.importedAt || loadedSource.importedAt,
+      // 云端插件快照携带的原始安装 URL（含 key=/source=）透传给本地
+      sourceUrl: source.sourceUrl || loadedSource.sourceUrl,
     };
 
     const entry = pluginInstances.get(loadedSource.id);
@@ -410,7 +412,8 @@ export async function migrateHttpPluginsToLocal(): Promise<number> {
         continue;
       }
       const savedPath = await pluginApi.savePluginScript(p.id, script);
-      updatePluginSource(p.id, { filePath: savedPath });
+      // 原 URL 迁入 sourceUrl：付费来源判定（key=/source=）与检查更新仍需原始 URL
+      updatePluginSource(p.id, { filePath: savedPath, sourceUrl: p.filePath });
       // 转正后缓存记录不再需要，脚本本体即正式文件；
       // 已缓存的实例按旧 URL 内容加载，丢弃待按本地文件重建
       pluginInstances.delete(p.id);

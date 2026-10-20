@@ -851,6 +851,8 @@ export interface PluginSource {
   author: string;
   description: string;
   filePath: string;
+  /** URL 型插件转正（脚本落盘）后保留的原始安装 URL，付费来源判定与检查更新使用 */
+  sourceUrl?: string;
   importedAt: number;
   enabled: boolean;
   sources: string[];

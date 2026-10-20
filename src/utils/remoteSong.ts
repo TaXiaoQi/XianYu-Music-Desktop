@@ -119,15 +119,19 @@ export interface SongSourceTagInfo {
   brand: boolean;
 }
 
+// URL 型插件转正后 filePath 指向本地脚本，带 key=/source= 的原始安装 URL
+// 保留在 sourceUrl，付费标志判定必须读原始 URL
+const installUrl = (p: PluginSource): string => p.sourceUrl || p.filePath;
+
 const pluginSubTag = (p: PluginSource): SongSourceTagInfo | null => {
-  const own = brandFromUrl(p.filePath);
+  const own = brandFromUrl(installUrl(p));
   if (own) return { label: own, brand: true };
   const named = brandFromIdentity(p.name, p.author);
   if (named) return { label: named, brand: true };
-  if (urlHasKey(p.filePath)) return { label: '付费', brand: true };
+  if (urlHasKey(installUrl(p))) return { label: '付费', brand: true };
   // 插件 URL 自带 source 标识时按 source 值精确归属订阅（订阅 URL 的 source 常多一个
   // .json 后缀）；同一台主机可挂多个订阅（公共+付费并存），禁止按 host/名称猜归属
-  const ownSrc = urlSourceValue(p.filePath);
+  const ownSrc = urlSourceValue(installUrl(p));
   if (!ownSrc) return null;
   const ownKey = normalizeSourceValue(ownSrc);
   for (const sub of readSubscriptions()) {
