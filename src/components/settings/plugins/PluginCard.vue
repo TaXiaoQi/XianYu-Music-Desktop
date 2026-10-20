@@ -185,14 +185,4 @@ const colorClasses = computed(() => pluginColorClasses(props.plugin.format, prop
 .settings-plugin-card--dragging { /* 样式 */
   background: rgba(236, 65, 65, 0.06); /* 样式 */
 }
-
-.plugin-sort-move {
-  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-} /* 样式 */
-@media (prefers-reduced-motion: reduce) {
-  .plugin-sort-move {
-    transition: none;
-  }
-} /* 样式 */
 </style>

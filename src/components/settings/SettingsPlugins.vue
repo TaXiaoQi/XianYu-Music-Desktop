@@ -24,6 +24,7 @@ import PluginUrlInstallPanel from './plugins/PluginUrlInstallPanel.vue';
 import PluginSubscriptionPanel from './plugins/PluginSubscriptionPanel.vue';
 import PluginCard from './plugins/PluginCard.vue';
 import CloudSourceCard from './plugins/CloudSourceCard.vue';
+import SortableRow from './plugins/SortableRow.vue';
 import PluginDetailDialog from './plugins/PluginDetailDialog.vue';
 import PluginConfirmDialog from './plugins/PluginConfirmDialog.vue';
 
@@ -662,7 +663,7 @@ function openPluginDetail(plugin: PluginSource) {
         class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
       >
       <TransitionGroup name="plugin-sort" tag="div" class="flex flex-col">
-        <template v-for="(row, index) in displayRows" :key="row.key">
+        <SortableRow v-for="(row, index) in displayRows" :key="row.key">
           <CloudSourceCard
             v-if="row.cloud"
             :index="index"
@@ -692,7 +693,7 @@ function openPluginDetail(plugin: PluginSource) {
             @uninstall="handleUninstallPlugin"
             @toggle="handleTogglePlugin"
           />
-        </template>
+        </SortableRow>
       </TransitionGroup>
       </div>
     </section>
@@ -1443,5 +1444,24 @@ function openPluginDetail(plugin: PluginSource) {
 
 .dark .plugin-detail-var-cancel:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1); /* 样式 */
+}
+
+/* 拖拽排序的 FLIP 补间动画：move class 加在 SortableRow 包装层（TransitionGroup
+   直接子节点）上，需全局规则才能同时带动插件行与网盘行 */
+.plugin-sort-move {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plugin-sort-move {
+    transition: none;
+  }
+}
+
+/* 卡片包进包装层后 :last-child 判定失效（卡片恒为包装层唯一子节点），
+   分隔线改由包装层按行位置控制 */
+.plugin-sortable-row:not(:last-child) .settings-plugin-card {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12); /* 样式 */
 }
 </style>
