@@ -19,6 +19,7 @@ import {
 } from '../../services/auth/authService'; // 实现
 import SettingHint from './SettingHint.vue';
 import SettingsCloud from './SettingsCloud.vue';
+import PluginConfirmDialog from './plugins/PluginConfirmDialog.vue';
 
 const authStore = useAuthStore(); // 实现
 const settingsStore = useSettingsStore(); // 实现
@@ -241,6 +242,66 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
   target.value = String(value);
   playlistSync.patchAutoSyncConfig({ maxDelayMinutes: value });
 } // 实现
+
+// ==================== 手动覆盖同步：确认弹窗 ====================
+// 手动按钮=强制覆盖（上传覆盖云端/下载覆盖本地），自动同步仍走对比合并。
+type OverwriteAction =
+  | 'playlist-upload' | 'playlist-download'
+  | 'plugin-upload' | 'plugin-download'
+  | 'settings-upload' | 'settings-download'
+  | 'favorites-upload' | 'favorites-download';
+
+const OVERWRITE_CONFIRM_TEXT: Record<OverwriteAction, { title: string; message: string }> = {
+  'playlist-upload': { title: '覆盖上传歌单', message: '将用本地歌单全量覆盖云端，云端多出的歌单会被移除；本地歌单为空时云端歌单将被全部清空。确定继续吗？' },
+  'playlist-download': { title: '覆盖下载歌单', message: '将用云端歌单全量覆盖本地，本地多出的歌单会被移除。确定继续吗？' },
+  'plugin-upload': { title: '覆盖上传插件', message: '将用本地插件全量覆盖云端，云端多出的插件与订阅会被移除。确定继续吗？' },
+  'plugin-download': { title: '覆盖下载插件', message: '将清空本地插件与订阅，并按云端内容重新安装。确定继续吗？' },
+  'settings-upload': { title: '覆盖上传设置', message: '将用本地设置覆盖云端设置。确定继续吗？' },
+  'settings-download': { title: '覆盖下载设置', message: '将用云端设置覆盖本地设置。确定继续吗？' },
+  'favorites-upload': { title: '覆盖上传收藏', message: '将用本地收藏全量覆盖云端，云端多出的收藏会被移除。确定继续吗？' },
+  'favorites-download': { title: '覆盖下载收藏', message: '将用云端收藏全量覆盖本地，本地多出的收藏会被移除。确定继续吗？' },
+};
+
+const showOverwriteConfirm = ref(false);
+const pendingOverwriteAction = ref<OverwriteAction | null>(null);
+
+function requestOverwrite(action: OverwriteAction) {
+  pendingOverwriteAction.value = action;
+  showOverwriteConfirm.value = true;
+}
+
+function confirmOverwrite() {
+  const action = pendingOverwriteAction.value;
+  showOverwriteConfirm.value = false;
+  pendingOverwriteAction.value = null;
+  if (!action) return;
+  switch (action) {
+    case 'playlist-upload':
+      void playlistSync.uploadOnly({ overwrite: true });
+      break;
+    case 'playlist-download':
+      void playlistSync.downloadOnly({ overwrite: true });
+      break;
+    case 'plugin-upload':
+      void playlistSync.uploadPluginsOnly({ overwrite: true });
+      break;
+    case 'plugin-download':
+      void playlistSync.downloadPluginsOnly({ overwrite: true });
+      break;
+    case 'settings-upload':
+      void playlistSync.uploadSettingsOnly();
+      break;
+    case 'settings-download':
+      void playlistSync.downloadSettingsOnly();
+      break;
+    case 'favorites-upload':
+      void playlistSync.uploadFavoritesOnly({ overwrite: true });
+      break;
+    case 'favorites-download':
+      void playlistSync.downloadFavoritesOnly({ overwrite: true });
+      break;
+  }
+}
 </script>
 
 <template>
@@ -453,7 +514,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.syncing.value"
-                @click="playlistSync.uploadOnly()"
+                @click="requestOverwrite('playlist-upload')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -461,10 +522,10 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 同步至服务器
               </button>
               <button
-                type="button" 
+                type="button"
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.syncing.value"
-                @click="playlistSync.downloadOnly()"
+                @click="requestOverwrite('playlist-download')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -495,7 +556,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.pluginSyncing.value"
-                @click="playlistSync.uploadPluginsOnly()"
+                @click="requestOverwrite('plugin-upload')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -506,7 +567,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 type="button" 
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.pluginSyncing.value"
-                @click="playlistSync.downloadPluginsOnly()"
+                @click="requestOverwrite('plugin-download')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -537,7 +598,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.settingsSyncing.value"
-                @click="playlistSync.uploadSettingsOnly()"
+                @click="requestOverwrite('settings-upload')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -548,7 +609,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 type="button" 
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.settingsSyncing.value"
-                @click="playlistSync.downloadSettingsOnly()"
+                @click="requestOverwrite('settings-download')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -580,7 +641,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 type="button" 
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.favoritesSyncing.value"
-                @click="playlistSync.uploadFavoritesOnly()"
+                @click="requestOverwrite('favorites-upload')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -591,7 +652,7 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
                 type="button" 
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.favoritesSyncing.value"
-                @click="playlistSync.downloadFavoritesOnly()"
+                @click="requestOverwrite('favorites-download')"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -709,8 +770,20 @@ function updateAutoSyncMaxDelay(event: Event) { // 实现
             </div>
           </div>
         </div>
-      </Transition> 
+      </Transition>
     </Teleport>
+
+    <!-- 手动覆盖同步确认弹窗（复用插件三合一弹窗壳） -->
+    <PluginConfirmDialog
+      :visible="showOverwriteConfirm"
+      :title="pendingOverwriteAction ? OVERWRITE_CONFIRM_TEXT[pendingOverwriteAction].title : ''"
+      confirm-text="确认覆盖"
+      overlay-z-class="z-[200]"
+      @cancel="showOverwriteConfirm = false"
+      @confirm="confirmOverwrite"
+    >
+      {{ pendingOverwriteAction ? OVERWRITE_CONFIRM_TEXT[pendingOverwriteAction].message : '' }}
+    </PluginConfirmDialog>
   </div>
 </template>
 

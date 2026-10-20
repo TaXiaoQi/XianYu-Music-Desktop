@@ -26,14 +26,15 @@ export interface FavoritesDownloadData {
 export async function uploadFavorites(
   ciyuanxiId: string,
   songs: Song[],
-  options?: { deletePaths?: string[] },
+  options?: { deletePaths?: string[]; merge?: boolean },
 ): Promise<FavoritesUploadResult> {
   const payload: SyncSongPayload[] = songs.map(songToSyncPayload);
   try {
     const body: Record<string, unknown> = {
       user_id: ciyuanxiId,
       favorites: payload,
-      merge: true,
+      // merge=false 为手动覆盖上传：服务端用本次上传全量替换收藏（默认合并，自动同步不受影响）
+      merge: options?.merge !== false,
     };
     const del = options?.deletePaths ?? [];
     if (del.length > 0) {
@@ -55,6 +56,16 @@ export async function downloadFavorites(
   ciyuanxiId: string,
   options?: { skipToken?: boolean },
 ): Promise<Song[]> {
+  const { songs } = await downloadFavoritesWithLedger(ciyuanxiId, options);
+  return songs;
+}
+
+/** 下载云端收藏 + 删除广播账本：deletedPaths 为其他端「删除全部/删除云端」
+ * 的 path 列表，拉取端据此裁剪本地副本（向后兼容：旧服务端缺省为空）。 */
+export async function downloadFavoritesWithLedger(
+  ciyuanxiId: string,
+  options?: { skipToken?: boolean },
+): Promise<{ songs: Song[]; deletedPaths: string[] }> {
   try {
     const data = await signedRequest<FavoritesDownloadData>('favorites_sync_download', {
       user_id: ciyuanxiId,
@@ -64,7 +75,11 @@ export async function downloadFavorites(
       skipToken: options?.skipToken,
     });
     const favorites = data?.favorites ?? [];
-    return favorites.map(syncPayloadToSong);
+    const rawDeleted = (data as { deleted_paths?: unknown } | undefined)?.deleted_paths;
+    const deletedPaths = Array.isArray(rawDeleted)
+      ? rawDeleted.filter((p): p is string => typeof p === 'string' && p.length > 0)
+      : [];
+    return { songs: favorites.map(syncPayloadToSong), deletedPaths };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logSyncError(`downloadFavorites 失败: ${msg}`);

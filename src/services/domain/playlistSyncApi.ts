@@ -99,8 +99,11 @@ async function signedRequestWithRetry<T>(
 export async function fileSyncUpload(
   ciyuanxiId: string,
   playlists: FileSyncPlaylistData[],
+  options?: { merge?: boolean },
 ): Promise<FileSyncUploadResult> {
   logSync(`fileSyncUpload → user_id=${ciyuanxiId}, playlists=${playlists.length}`);
+  // merge=false 为手动覆盖上传：服务端用本次上传全量替换快照（默认合并，自动同步不受影响）
+  const doMerge = options?.merge !== false;
   const totalSongs = playlists.reduce((sum, pl) => sum + pl.songs.length, 0);
   logSync(`fileSyncUpload: 总歌曲数=${totalSongs}`);
 
@@ -162,7 +165,7 @@ export async function fileSyncUpload(
   logSync(`fileSyncUpload: 所有分块上传完成, 发送 upload_finish`);
   const finishData = await signedRequestWithRetry<{ playlist_count: number; song_total: number }>(
     'file_sync_upload_finish',
-    { user_id: ciyuanxiId, merge: true },
+    { user_id: ciyuanxiId, merge: doMerge },
     startFinishTimeoutOptions,
     FILE_SYNC_MAX_RETRIES,
     'upload_finish',

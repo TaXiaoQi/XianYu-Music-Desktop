@@ -22,6 +22,7 @@ import {
 } from './lxPluginEngine';
 import { pluginApi } from '../tauri/pluginApi';
 import { fetchWithTimeout } from './pluginFetch';
+import { readCachedHttpScript, writeCachedHttpScript, removeCachedHttpScript } from './pluginScriptCache';
 import { compareVersions, createPluginUpdateService } from './pluginUpdates';
 import { createPluginSubscriptionService } from './pluginSubscriptions';
 import { clearPluginSyncTombstones } from './pluginSyncState';
@@ -261,8 +262,19 @@ export async function getPluginScript(id: string): Promise<string | null> {
     if (source.filePath.startsWith('builtin://')) {
       return null;
     } else if (source.filePath.startsWith('http')) {
-      const resp = await fetchWithTimeout(source.filePath, 10000);
-      if (resp.ok) return await resp.text();
+      try {
+        const resp = await fetchWithTimeout(source.filePath, 10000);
+        if (resp.ok) {
+          const script = await resp.text();
+          // 拉取成功即静默落盘缓存：远程源不可达时上传有脚本可用
+          await writeCachedHttpScript(id, script);
+          return script;
+        }
+      } catch {
+        /* 落到缓存兜底 */
+      }
+      const cached = await readCachedHttpScript(id);
+      if (cached) return cached;
     } else {
       return await pluginApi.readPluginFile(source.filePath);
     }
@@ -308,6 +320,9 @@ export async function restorePluginFromSync(
       const savedPath = await persistPluginScriptToDataDir(existing, script);
       if (savedPath) {
         updates.filePath = savedPath;
+      } else if (existing.filePath.startsWith('http')) {
+        // URL 型脚本无文件路径可持久化，落缓存兜底：云端重装后远程源再挂也不失联
+        await writeCachedHttpScript(source.id, script);
       }
       updatePluginSource(source.id, updates);
       log(`restorePluginFromSync: 插件已存在, 更新元数据 ${source.name}`);
@@ -323,6 +338,9 @@ export async function restorePluginFromSync(
     const savedPath = await persistPluginScriptToDataDir(loadedSource, script);
     if (savedPath) {
       loadedSource.filePath = savedPath;
+    } else if (loadedSource.filePath.startsWith('http')) {
+      // URL 型脚本无文件路径可持久化，落缓存兜底
+      await writeCachedHttpScript(loadedSource.id, script);
     }
 
     const merged: PluginSource = {
@@ -355,6 +373,60 @@ export async function restorePluginFromSync(
   }
 }
 
+// ==================== URL 型插件本地转正 ====================
+
+/**
+ * 存量 URL 型插件本地转正（多端统一「安装即落盘」模型）：
+ * 拉取脚本落盘并把 filePath 改指向本地（sourceUrl 保留，仍用于检查更新）。
+ * 转正后加载实例/同步上传只读本地，第三方源挂掉不再导致插件失联。
+ * 拉取失败的保持原状，继续由脚本缓存兜底，下次启动重试。
+ * 幂等：转正后 filePath 为本地，重复调用自动跳过。
+ */
+export async function migrateHttpPluginsToLocal(): Promise<number> {
+  const httpPlugins = getStoredPlugins().filter(p => p.filePath.startsWith('http'));
+  if (httpPlugins.length === 0) return 0;
+  let migrated = 0;
+  for (const p of httpPlugins) {
+    try {
+      let script = '';
+      try {
+        const resp = await fetchWithTimeout(p.filePath, 10000);
+        if (resp.ok) script = await resp.text();
+      } catch {
+        /* 尝试带 UA 的通道 */
+      }
+      if (!script) {
+        try {
+          script = await pluginApi.fetchPluginUrl(p.filePath);
+        } catch {
+          /* 源不可达，保留现状，下次启动重试 */
+          continue;
+        }
+      }
+      // 最小防坏校验：拒绝空脚本与误拉到的 HTML 错误页
+      const trimmed = script.trim();
+      if (trimmed.length < 50 || /^<!doctype html|^<html/i.test(trimmed)) {
+        log(`[migrate] ${p.name} 源返回内容非插件脚本，跳过转正`);
+        continue;
+      }
+      const savedPath = await pluginApi.savePluginScript(p.id, script);
+      updatePluginSource(p.id, { filePath: savedPath });
+      // 转正后缓存记录不再需要，脚本本体即正式文件；
+      // 已缓存的实例按旧 URL 内容加载，丢弃待按本地文件重建
+      pluginInstances.delete(p.id);
+      removeCachedHttpScript(p.id);
+      migrated++;
+      log(`[migrate] URL 型插件已转正本地: ${p.name}`);
+    } catch (e: any) {
+      log(`[migrate] URL 型插件转正失败 ${p.name}: ${e?.message || e}`);
+    }
+  }
+  if (migrated > 0) {
+    bumpPluginsVersion();
+  }
+  return migrated;
+}
+
 // ==================== 订阅管理 ====================
 
 const pluginSubscriptionService = createPluginSubscriptionService({
@@ -369,6 +441,7 @@ export const isValidSubscriptionUrl = pluginSubscriptionService.isValidSubscript
 export const addSubscription = pluginSubscriptionService.addSubscription;
 export const updateSubscription = pluginSubscriptionService.updateSubscription;
 export const removeSubscription = pluginSubscriptionService.removeSubscription;
+export const removeSubscriptionsByUrls = pluginSubscriptionService.removeSubscriptionsByUrls;
 export const mergeSubscriptionsFromCloud = pluginSubscriptionService.mergeSubscriptionsFromCloud;
 export const installFromSubscriptionUrl = pluginSubscriptionService.installFromSubscriptionUrl;
 export const installAllSubscriptions = pluginSubscriptionService.installAllSubscriptions;

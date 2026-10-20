@@ -13,7 +13,7 @@ import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared'; /
 import { useSettings } from './features/settings/useSettings'; // 实现
 import { usePluginHostStore } from './features/pluginHost/store';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions'; // 实现
-import { loadPlugins, checkAllPluginUpdates, performPluginUpdate, getStoredPlugins } from './services/domain/pluginEngine';
+import { loadPlugins, checkAllPluginUpdates, performPluginUpdate, getStoredPlugins, migrateHttpPluginsToLocal } from './services/domain/pluginEngine';
 import { configureApplicationLogger } from './services/applicationLogger'; // 实现
 import { reportAppOpen } from './services/domain/usageStats';
 import { useUiStore } from './shared/stores/ui';
@@ -235,6 +235,11 @@ if (currentWindowLabel === 'main') { // 实现
 
     const pluginConfig = settings.value.plugins;
     void loadPlugins(pluginConfig.lazyLoad).then(async () => {
+      // 存量 URL 型插件后台转正本地（幂等，失败静默等下次）：
+      // 转正后插件加载/同步上传不再依赖第三方源存活，多端统一「安装即落盘」模型
+      void migrateHttpPluginsToLocal().then(n => {
+        if (n > 0) showToast(`已本地化 ${n} 个远程插件`, 'success');
+      });
       if (!pluginConfig.autoUpdateOnStartup) return;
       try {
         const results = await checkAllPluginUpdates();

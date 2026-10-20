@@ -10,6 +10,7 @@ import {
   removeSubscription,
   updateSubscription,
 } from '../../services/domain/pluginEngine';
+import { deleteCloudSubscriptions } from '../../services/domain/pluginSync';
 import { useToast } from '../toast';
 import { validatePluginUrl } from './usePluginInstall';
 
@@ -155,9 +156,11 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
     showRemoveSubscriptionConfirm.value = true;
   }
 
-  function confirmRemoveSubscription() {
+  async function confirmRemoveSubscription() {
     const sub = pendingRemoveSubscription.value;
     if (!sub) return;
+    // 云端订阅为各端并集，本地移除前先显式删云端；失败（未登录/离线）仅删本地
+    await deleteCloudSubscriptions([sub.url]);
     removeSubscription(sub.id);
     subscriptions.value = getSubscriptions();
     showRemoveSubscriptionConfirm.value = false;

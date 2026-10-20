@@ -242,27 +242,9 @@ function confirmUninstallAll() { // 实现
   showToast('已卸载全部插件', 'success'); // 实现
 }
 
-const showUninstallPluginConfirm = ref(false); // 实现
-const pendingUninstallPlugin = ref<PluginSource | null>(null); // 实现
-
 function handleUninstallPlugin(plugin: PluginSource) { // 实现
-  if (getCiyuanxiId() && isPluginSynced(plugin.id)) {
-    pluginDeleteScopeIds.value = [plugin.id];
-    showPluginDeleteScope.value = true;
-    return;
-  }
-  pendingUninstallPlugin.value = plugin; // 实现
-  showUninstallPluginConfirm.value = true; // 实现
-}
-
-function confirmUninstallPlugin() { // 实现
-  const plugin = pendingUninstallPlugin.value; // 实现
-  if (!plugin) return; // 实现
-  removePluginSource(plugin.id); // 实现
-  refreshPluginList(); // 实现
-  showUninstallPluginConfirm.value = false; // 实现
-  pendingUninstallPlugin.value = null; // 实现
-  showToast(`已卸载 ${plugin.name}`, 'success'); // 实现
+  pluginDeleteScopeIds.value = [plugin.id];
+  showPluginDeleteScope.value = true;
 }
 
 async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
@@ -301,7 +283,11 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
   for (const id of ids) {
     removePluginSource(id);
   }
-  addDownloadSkipIds(ids);
+  // 墓碑只记已同步到云端的插件：未上云插件若也记 downloadSkip，
+  // 会把该 id 永久挡在云端下载之外，无法再通过同步恢复
+  if (syncedIds.length > 0) {
+    addDownloadSkipIds(syncedIds);
+  }
   refreshPluginList(); // 实现
   showToast(`已从本机删除 ${ids.length} 个插件（云端保留）`, 'success');
 }
@@ -574,20 +560,9 @@ function openPluginDetail(plugin: PluginSource) { // 实现
       确认要卸载全部 <strong class="text-[#EC4141]">{{ plugins.length }}</strong> 个插件吗？卸载后无法恢复，需重新安装。
     </PluginConfirmDialog>
 
-    <PluginConfirmDialog
-      :visible="showUninstallPluginConfirm"
-      title="卸载插件"
-      confirm-text="确认卸载"
-      :overlay-z-class="overlayZClass"
-      @cancel="showUninstallPluginConfirm = false"
-      @confirm="confirmUninstallPlugin"
-    >
-      确认要卸载插件 <strong class="text-[#EC4141]">{{ pendingUninstallPlugin?.name }}</strong> 吗？卸载后无法恢复，需重新安装。
-    </PluginConfirmDialog>
-
     <SyncDeleteScopeModal
       v-model:visible="showPluginDeleteScope"
-      title="该插件已同步到云端"
+      title="卸载插件"
       description="请选择删除范围"
       :can-delete-cloud="pluginScopeCanDeleteCloud"
       disabled-hint="该插件暂无云端副本，此选项不可用"

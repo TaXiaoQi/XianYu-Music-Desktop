@@ -248,7 +248,7 @@ export function usePlaylistSync() {
     }
   }
 
-  async function uploadOnly(): Promise<void> {
+  async function uploadOnly(options?: { overwrite?: boolean }): Promise<void> {
     logSync('========== uploadOnly 开始 ==========');
     if (!canSync()) {
       logSyncError('uploadOnly: 未登录或无弦予号');
@@ -266,7 +266,7 @@ export function usePlaylistSync() {
     syncProgress.value = '正在上传歌单到云端...';
 
     try {
-      const result = await uploadPlaylists();
+      const result = await uploadPlaylists(options);
       lastSyncTime.value = Date.now();
       lastSyncResult.value = result;
       logSync(`uploadOnly 完成: uploadedPlaylists=${result.uploadedPlaylists}, uploadedSongs=${result.uploadedSongs}, errors=${result.errors.length}`);
@@ -289,7 +289,7 @@ export function usePlaylistSync() {
     }
   }
 
-  async function downloadOnly(): Promise<void> {
+  async function downloadOnly(options?: { overwrite?: boolean }): Promise<void> {
     logSync('========== downloadOnly 开始 ==========');
     if (!canSync()) {
       logSyncError('downloadOnly: 未登录或无弦予号');
@@ -301,7 +301,7 @@ export function usePlaylistSync() {
     syncProgress.value = '正在从云端下载歌单...';
 
     try {
-      const result = await downloadPlaylists();
+      const result = await downloadPlaylists(options);
       lastSyncTime.value = Date.now();
       lastSyncResult.value = result;
       logSync(`downloadOnly 完成: downloadedPlaylists=${result.downloadedPlaylists}, downloadedSongs=${result.downloadedSongs}, errors=${result.errors.length}`);

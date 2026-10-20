@@ -93,7 +93,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
     }
   }
 
-  async function uploadPluginsOnly(): Promise<void> {
+  async function uploadPluginsOnly(options?: { overwrite?: boolean }): Promise<void> {
     deps.log('========== uploadPluginsOnly 开始 ==========');
     if (!deps.canSync()) {
       deps.logError('uploadPluginsOnly: 未登录或无弦予号');
@@ -111,7 +111,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
     deps.onProgress('正在上传插件到云端...');
 
     try {
-      const result = await uploadPlugins();
+      const result = await uploadPlugins(options);
       deps.setLastTime(Date.now());
       deps.setLastResult(result);
       deps.log(`uploadPluginsOnly 完成: uploadedPlugins=${result.uploadedPlugins}, errors=${result.errors.length}`);
@@ -133,7 +133,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
     }
   }
 
-  async function downloadPluginsOnly(): Promise<void> {
+  async function downloadPluginsOnly(options?: { overwrite?: boolean }): Promise<void> {
     deps.log('========== downloadPluginsOnly 开始 ==========');
     if (!deps.canSync()) {
       deps.logError('downloadPluginsOnly: 未登录或无弦予号');
@@ -145,7 +145,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
     deps.onProgress('正在从云端下载插件...');
 
     try {
-      const result = await downloadPlugins();
+      const result = await downloadPlugins(options);
       deps.setLastTime(Date.now());
       deps.setLastResult(result);
       deps.log(`downloadPluginsOnly 完成: downloadedPlugins=${result.downloadedPlugins}, errors=${result.errors.length}`);

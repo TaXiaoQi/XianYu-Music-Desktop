@@ -122,7 +122,10 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     return firstRemoteSongCover(songs);
   }
 
-  async function uploadPlaylists(): Promise<SyncResult> {
+  async function uploadPlaylists(options?: { overwrite?: boolean }): Promise<SyncResult> {
+    // 覆盖上传（手动「同步至服务器」）：跳过墓碑/云端保留等合并裁剪，
+    // 本地歌单全集即云端目标状态；自动同步不带 options，仍走合并对比
+    const overwrite = options?.overwrite === true;
     const result: SyncResult = {
       uploadedPlaylists: 0,
       downloadedPlaylists: 0,
@@ -143,7 +146,8 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     playlists.forEach((pl, idx) => {
       deps.log(`  本地歌单[${idx}]: name="${pl.name}", id=${pl.id}, cloudId=${pl.cloudId ?? 'none'}, songPaths=${pl.songPaths.length}, songs.meta=${pl.songs?.length ?? 0}`);
     });
-    if (playlists.length === 0) {
+    // 覆盖上传不早退：本地为空也上传空快照（merge=false），即快捷清空云端歌单
+    if (playlists.length === 0 && !overwrite) {
       deps.log('uploadPlaylists: 无歌单，直接返回');
       return result;
     }
@@ -160,7 +164,7 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
         }
         let payloadSongs = songs.map(songToSyncPayload);
         let deletedSongPaths: string[] | undefined;
-        if (pl.cloudId) {
+        if (pl.cloudId && !overwrite) {
           const cloudId = pl.cloudId;
           const localPaths = new Set(songs.map(s => s.path));
           const keepMap = getCloudKeepSongs(cloudId);
@@ -198,7 +202,7 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
       const totalSongs = playlistData.reduce((sum, pl) => sum + pl.songs.length, 0);
       deps.log(`uploadPlaylists: 收集完成, 歌单=${playlistData.length}, 总歌曲=${totalSongs}`);
 
-      const uploadResult = await fileSyncUpload(ciyuanxiId, playlistData);
+      const uploadResult = await fileSyncUpload(ciyuanxiId, playlistData, { merge: !overwrite });
       result.uploadedPlaylists = uploadResult.playlist_count;
       result.uploadedSongs = uploadResult.song_total;
       deps.log(`uploadPlaylists 完成: uploadedPlaylists=${result.uploadedPlaylists}, uploadedSongs=${result.uploadedSongs}`);
@@ -221,7 +225,7 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     return result;
   }
 
-  async function downloadPlaylists(): Promise<SyncResult> {
+  async function downloadPlaylists(options?: { overwrite?: boolean }): Promise<SyncResult> {
     const result: SyncResult = {
       uploadedPlaylists: 0,
       downloadedPlaylists: 0,
@@ -240,7 +244,9 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     deps.onProgress('正在从云端下载歌单...');
 
     try {
-      if (USE_SYNC_V2) {
+      if (options?.overwrite === true) {
+        await downloadOverwriteSnapshot(ciyuanxiId, result);
+      } else if (USE_SYNC_V2) {
         await downloadViaOps(ciyuanxiId, result);
       } else {
         await downloadViaSnapshot(ciyuanxiId, result);
@@ -275,6 +281,8 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     });
 
     const data = await fileSyncV2DownloadOps(ciyuanxiId, localReports);
+    // 云端删除广播：其他端「删除全部/删除云端」的歌单按 cloudId 真删本地
+    trimDeletedCloudPlaylists(data?.deleted_playlist_cloud_ids ?? []);
     const ops = data?.ops ?? [];
     if (ops.length === 0) {
       deps.log('downloadPlaylists(v2): 云端无变更');
@@ -322,9 +330,34 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     deps.log(`downloadPlaylists(v2): created=${outcome.createdPlaylists}, merged=${outcome.mergedPlaylists}, added=${outcome.addedSongs}, removed=${outcome.removedSongs}`);
   }
 
+  /** 云端删除广播裁剪：其他端「删除全部/删除云端」的歌单按 cloudId 真删本地。
+   * 仅按 cloudId 匹配，无绑定的本地歌单不动（名字跨端不可靠，不作匹配依据）；
+   * 裁剪后清该歌单遗留墓碑，并解除「删除本地（云端保留）」的下载跳过。 */
+  function trimDeletedCloudPlaylists(cloudIds: string[]): void {
+    const victims = new Set(cloudIds.filter(id => id.length > 0));
+    if (victims.size === 0) return;
+    // 云端已删：本机对应墓碑与下载跳过记录随之失效，无论本地是否存在都清掉
+    for (const cid of victims) clearPlaylistSongTombstones(cid);
+    removeDownloadSkipPlaylistIds(Array.from(victims));
+    let removed = 0;
+    for (let i = collections.playlists.length - 1; i >= 0; i--) {
+      const cid = collections.playlists[i].cloudId ?? '';
+      if (cid && victims.has(cid)) {
+        collections.playlists.splice(i, 1);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      deps.log(`downloadPlaylists: 按云端删除账本裁剪 ${removed} 个歌单`);
+    }
+  }
+
   /** v1 路径：全量快照下载 + 本地合并（回退开关用）。 */
   async function downloadViaSnapshot(ciyuanxiId: string, result: SyncResult): Promise<void> {
     const downloadData = await fileSyncDownload(ciyuanxiId);
+    // 云端删除广播：其他端「删除全部/删除云端」的歌单按 cloudId 真删本地
+    // （须在空歌单早退之前执行：快照可能只剩账本、playlists 为空）
+    trimDeletedCloudPlaylists(downloadData?.deleted_playlist_cloud_ids ?? []);
     if (!downloadData || !downloadData.playlists || downloadData.playlists.length === 0) {
       deps.log('downloadPlaylists: 云端无歌单数据');
       return;
@@ -461,6 +494,65 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
         deps.log(`downloadPlaylists: 创建新歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
       }
     }
+  }
+
+  /** 覆盖下载（手动「更新至本地」）：云端快照全量替换本地歌单。
+   * 不走 v2 diff、不应用墓碑/删除账本，本地独有歌单将被移除；
+   * 被替换歌单的 tombstone 随之清除，避免下次上传把覆盖前的删除重放到云端。 */
+  async function downloadOverwriteSnapshot(ciyuanxiId: string, result: SyncResult): Promise<void> {
+    const downloadData = await fileSyncDownload(ciyuanxiId);
+    const cloudPlaylists = downloadData?.playlists ?? [];
+    if (cloudPlaylists.length === 0) {
+      deps.log('downloadPlaylists(overwrite): 云端无歌单数据');
+      return;
+    }
+    deps.log(`downloadPlaylists(overwrite): 云端共 ${cloudPlaylists.length} 个歌单, ${downloadData?.stats?.song_total ?? 0} 首歌曲`);
+    const matchIndex = buildLibraryMatchIndex(library.songList);
+
+    // 本地歌单整体被替换：旧歌单的墓碑与下载跳过记录全部失效，一并清空
+    const staleCloudIds = collections.playlists
+      .map(pl => pl.cloudId ?? '')
+      .filter(Boolean);
+    for (const cid of staleCloudIds) clearPlaylistSongTombstones(cid);
+    removeDownloadSkipPlaylistIds(staleCloudIds);
+
+    const rebuilt: Playlist[] = [];
+    for (let i = 0; i < cloudPlaylists.length; i++) {
+      const cloudPl = cloudPlaylists[i];
+      deps.onProgress(`正在下载歌单 (${i + 1}/${cloudPlaylists.length})：${cloudPl.name}`);
+      const deletedPaths = new Set(cloudPl.deletedSongPaths ?? []);
+      const localSongs = (cloudPl.songs ?? [])
+        .filter(raw => {
+          const p = (raw as any).path as string | undefined;
+          return !p || !deletedPaths.has(p);
+        })
+        .map(raw => {
+          const restored = syncPayloadToSong(raw);
+          const resolved = resolveLocalPath(matchIndex, restored);
+          return resolved === restored.path ? restored : { ...restored, path: resolved };
+        });
+      rebuilt.push({
+        id: cloudPl.id,
+        name: cloudPl.name,
+        songPaths: localSongs.map(s => s.path),
+        songs: localSongs.length > 0 ? localSongs : undefined,
+        cloudId: cloudPl.cloudId,
+        isCloud: true,
+        cloudCoverUrl: cloudPl.cloudCoverUrl || '',
+        isFavorite: cloudPl.isFavorite,
+        createdAt: cloudPl.createdAt,
+        ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
+        ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
+        ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
+      });
+      for (const song of localSongs) {
+        library.setExtraSong(song);
+      }
+      result.downloadedPlaylists++;
+      result.downloadedSongs += localSongs.length;
+    }
+    collections.playlists.splice(0, collections.playlists.length, ...rebuilt);
+    deps.log(`downloadPlaylists(overwrite): 已用云端快照替换本地歌单 ${rebuilt.length} 个`);
   }
 
   async function deleteCloudPlaylistLocal(playlistId: string): Promise<boolean> {

@@ -94,6 +94,15 @@ export const createPluginSubscriptionService = ({
     saveSubscriptions(getSubscriptions().filter(s => s.id !== id));
   };
 
+  /** 按 url 批量移除（删除广播裁剪用：账本以 url 为标识）。 */
+  const removeSubscriptionsByUrls = (urls: string[]): void => {
+    const rm = new Set(urls.map(u => u.trim()).filter(Boolean));
+    if (rm.size === 0) return;
+    const list = getSubscriptions();
+    const next = list.filter(s => !rm.has(s.url));
+    if (next.length !== list.length) saveSubscriptions(next);
+  };
+
   const mergeSubscriptionsFromCloud = (
     cloud: Array<{ url?: unknown; name?: unknown; id?: unknown; addedAt?: unknown }>,
   ): number => {
@@ -282,6 +291,7 @@ export const createPluginSubscriptionService = ({
     addSubscription,
     updateSubscription,
     removeSubscription,
+    removeSubscriptionsByUrls,
     mergeSubscriptionsFromCloud,
     installFromSubscriptionUrl,
     installAllSubscriptions,

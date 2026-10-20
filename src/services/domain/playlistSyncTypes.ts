@@ -65,6 +65,8 @@ export interface FileSyncDownloadData {
     songs: SyncSongPayload[];
     deletedSongPaths?: string[];
   }>;
+  /** 删除广播账本：其他端「删除全部/删除云端」的歌单 cloudId（旧服务端缺省为空） */
+  deleted_playlist_cloud_ids?: string[];
 }
 
 // ==================== v2 下载协议：服务端 diff ops ====================
@@ -118,4 +120,6 @@ export interface SyncOpsDownloadData {
   ops: SyncOp[];
   stats: SyncOpsStats;
   snapshot_timestamp: number;
+  /** 删除广播账本：其他端「删除全部/删除云端」的歌单 cloudId（旧服务端缺省为空） */
+  deleted_playlist_cloud_ids?: string[];
 }

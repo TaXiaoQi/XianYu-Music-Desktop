@@ -24,6 +24,7 @@ import { isAnimePluginScript, loadAnimePluginFromScript } from './animePluginEng
 import { hostSha256Hex } from '../tauri/hostCryptoApi';
 import { pluginApi } from '../tauri/pluginApi';
 import { fetchWithTimeout } from './pluginFetch';
+import { readCachedHttpScript, writeCachedHttpScript } from './pluginScriptCache';
 import { BakaPluginManager } from './bakaPluginManager';
 
 // ==================== 插件加载（与 MusicFree Plugin.mountPlugin() 完全一致）====================
@@ -170,6 +171,17 @@ async function loadPluginInstance(source: import('../../types').PluginSource): P
           script = await pluginApi.fetchPluginUrl(source.filePath);
         } catch (error) {
           readError = `无法下载插件脚本：${String(error)}`;
+        }
+      }
+      if (script) {
+        // 拉取成功即静默落盘缓存：下次远程源不可达时可直接加载
+        await writeCachedHttpScript(source.id, script);
+      } else {
+        // 远程源不可达：回退本地缓存脚本（上次成功拉取时落盘）
+        script = (await readCachedHttpScript(source.id)) ?? '';
+        if (script) {
+          readError = '';
+          log(`[ensurePluginInstance] ${source.name} 远程源不可达，已回退本地缓存脚本`);
         }
       }
     } else if (source.filePath) {

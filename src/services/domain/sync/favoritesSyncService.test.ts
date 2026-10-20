@@ -5,6 +5,7 @@ import { createFavoritesSyncFlow, type FavoritesSyncFlowDeps } from './favorites
 
 vi.mock('../favoritesSync', () => ({
   downloadFavorites: vi.fn(),
+  downloadFavoritesWithLedger: vi.fn(),
   uploadFavorites: vi.fn(),
 }));
 vi.mock('../playlistSyncSong', () => ({
@@ -19,7 +20,7 @@ vi.mock('../favoritesSyncState', () => ({
   removeLocalOnlyPaths: vi.fn(),
 }));
 
-import { downloadFavorites } from '../favoritesSync';
+import { downloadFavoritesWithLedger } from '../favoritesSync';
 import { getCloudKeepPaths } from '../favoritesSyncState';
 
 const song = (overrides: Partial<Song> = {}): Song =>
@@ -86,7 +87,7 @@ function makeHarness(options: {
 }
 
 beforeEach(() => {
-  vi.mocked(downloadFavorites).mockReset();
+  vi.mocked(downloadFavoritesWithLedger).mockReset();
   vi.mocked(getCloudKeepPaths).mockReturnValue(new Set<string>());
 });
 
@@ -94,7 +95,7 @@ describe('createFavoritesSyncFlow.downloadFavoritesOnly', () => {
   it('云端在线收藏下载后补挂进曲库索引并写入元数据表', async () => {
     const onlineA = song({ path: 'lx://wy/a1', title: '云歌A', name: '云歌A', artist: '歌手A', album: '专辑A' });
     const onlineB = song({ path: 'lx://tx/b1', title: '云歌B', name: '云歌B', artist: '歌手B', album: '专辑B' });
-    vi.mocked(downloadFavorites).mockResolvedValue([onlineA, onlineB]);
+    vi.mocked(downloadFavoritesWithLedger).mockResolvedValue({ songs: [onlineA, onlineB], deletedPaths: [] });
     const { deps, favoritePaths, metaWrites, extraWrites } = makeHarness();
 
     await createFavoritesSyncFlow(deps).downloadFavoritesOnly();
@@ -111,7 +112,7 @@ describe('createFavoritesSyncFlow.downloadFavoritesOnly', () => {
   it('元数据表按合并语义写入，不清掉既有在线收藏元数据', async () => {
     const oldMeta = song({ path: 'lx://kg/old', title: '旧收藏', name: '旧收藏', artist: '旧歌手', album: '旧专辑' });
     const incoming = song({ path: 'lx://wy/new1', title: '新歌', name: '新歌', artist: '新歌手', album: '新专辑' });
-    vi.mocked(downloadFavorites).mockResolvedValue([incoming]);
+    vi.mocked(downloadFavoritesWithLedger).mockResolvedValue({ songs: [incoming], deletedPaths: [] });
     const { deps, metaWrites } = makeHarness({ favoriteSongMeta: { 'lx://kg/old': oldMeta } });
 
     await createFavoritesSyncFlow(deps).downloadFavoritesOnly();
@@ -124,7 +125,7 @@ describe('createFavoritesSyncFlow.downloadFavoritesOnly', () => {
   it('本地匹配命中的收藏不进元数据表也不补挂曲库索引', async () => {
     const localSong = song({ path: 'D:\\music\\晴天.mp3', title: '晴天', name: '晴天', artist: '周杰伦', album: '叶惠美' });
     const cloudCopy = song({ path: 'D:\\music\\晴天.mp3', title: '晴天', name: '晴天', artist: '周杰伦', album: '叶惠美' });
-    vi.mocked(downloadFavorites).mockResolvedValue([cloudCopy]);
+    vi.mocked(downloadFavoritesWithLedger).mockResolvedValue({ songs: [cloudCopy], deletedPaths: [] });
     const { deps, favoritePaths, metaWrites, extraWrites } = makeHarness({ librarySongs: [localSong] });
 
     await createFavoritesSyncFlow(deps).downloadFavoritesOnly();
@@ -137,7 +138,7 @@ describe('createFavoritesSyncFlow.downloadFavoritesOnly', () => {
 
   it('cloudKeep 标记的路径跳过合并与补挂', async () => {
     const onlineA = song({ path: 'lx://wy/a1', title: '云歌A', name: '云歌A', artist: '歌手A', album: '专辑A' });
-    vi.mocked(downloadFavorites).mockResolvedValue([onlineA]);
+    vi.mocked(downloadFavoritesWithLedger).mockResolvedValue({ songs: [onlineA], deletedPaths: [] });
     vi.mocked(getCloudKeepPaths).mockReturnValue(new Set<string>(['lx://wy/a1']));
     const { deps, favoritePaths, extraWrites } = makeHarness();
 
