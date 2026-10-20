@@ -130,16 +130,27 @@ export function usePluginInstall(options: UsePluginInstallOptions) {
         return;
       }
 
-      const progress = showProgressToast(`正在导入插件文件 (0/${pluginFiles.length})`);
+      let cancelled = false;
+      const progress = showProgressToast(`正在导入插件文件 (0/${pluginFiles.length})`, {
+        cancellable: true,
+        onCancel: () => { cancelled = true; },
+      });
+      let processed = 0;
       for (let i = 0; i < pluginFiles.length; i++) {
+        if (cancelled) break;
         const fileName = pluginFiles[i].split(/[\\/]/).pop() || pluginFiles[i];
         progress.update(
           `正在导入 ${fileName} (${i + 1}/${pluginFiles.length})`,
           ((i + 1) / pluginFiles.length) * 100,
         );
         await installFromFilePath(pluginFiles[i]);
+        processed++;
       }
-      progress.complete(`已处理 ${pluginFiles.length} 个插件文件`, 'success');
+      if (cancelled) {
+        progress.complete(`已取消导入（已处理 ${processed}/${pluginFiles.length}）`, 'info');
+      } else {
+        progress.complete(`已处理 ${pluginFiles.length} 个插件文件`, 'success');
+      }
     });
   }
 
@@ -195,7 +206,10 @@ export function usePluginInstall(options: UsePluginInstallOptions) {
 
     isPluginBusy.value = true;
     urlInstallCancelled.value = false;
-    const progress = showProgressToast('正在导入插件...');
+    const progress = showProgressToast('正在导入插件...', {
+      cancellable: true,
+      onCancel: () => { urlInstallCancelled.value = true; },
+    });
     urlInstallProgress = progress;
     try {
       const content = await fetchRemoteScript(url, () => urlInstallCancelled.value);
@@ -249,18 +263,24 @@ export function usePluginInstall(options: UsePluginInstallOptions) {
     let successCount = 0;
     let failCount = 0;
     const names: string[] = [];
-    const progress = externalProgress ?? showProgressToast(`正在导入插件 (0/${items.length})`);
+    // 无外部 toast 时自建可取消进度（取消置本地标志）；有外部 toast 时由调用方接取消
+    let selfCancelled = false;
+    const isCancelled = cancelled ?? (() => selfCancelled);
+    const progress = externalProgress ?? showProgressToast(`正在导入插件 (0/${items.length})`, {
+      cancellable: true,
+      onCancel: () => { selfCancelled = true; },
+    });
     for (let i = 0; i < items.length; i++) {
       // 批量导入逐项响应取消（PluginInstallCancelled 向上穿透，由调用方静默处理）
-      if (cancelled?.()) throw new PluginInstallCancelled();
+      if (isCancelled()) throw new PluginInstallCancelled();
       const item = items[i];
       progress.update(
         `正在导入 ${item.name || '未命名插件'} (${i + 1}/${items.length})`,
         ((i + 1) / items.length) * 100,
       );
       try {
-        const script = await fetchRemoteScript(item.url, cancelled);
-        if (cancelled?.()) throw new PluginInstallCancelled();
+        const script = await fetchRemoteScript(item.url, isCancelled);
+        if (isCancelled()) throw new PluginInstallCancelled();
         if (!script || !script.trim()) {
           failCount++;
           continue;

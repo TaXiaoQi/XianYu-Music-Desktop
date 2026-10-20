@@ -73,6 +73,10 @@ export const autoSyncDelayed = ref(false);
  * 自动同步不挂桥，静默进行只写行内状态。 */
 export const syncToastBridge = ref<((msg: string, pct?: number) => void) | null>(null);
 
+/** 手动同步的取消信号：withSyncToast 挂 AbortController.signal（toast 取消按钮
+ * 触发 abort），各层循环检查点感知后短路；自动同步不挂（null）不可取消 */
+export const syncAbortSignal = ref<AbortSignal | null>(null);
+
 export const loginSyncCompleted = ref(loadLoginSyncCompleted());
 
 function persistSyncStatus(category: keyof PersistedSyncState) {

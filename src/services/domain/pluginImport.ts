@@ -61,11 +61,17 @@ async function installPluginFromPath(
 
 export async function importPluginScriptsFromPaths(paths: string[]): Promise<void> {
   const { showToast, showProgressToast } = useToast();
-  const progress = showProgressToast(`正在导入插件文件 (0/${paths.length})`);
+  let cancelled = false;
+  const progress = showProgressToast(`正在导入插件文件 (0/${paths.length})`, {
+    cancellable: true,
+    onCancel: () => { cancelled = true; },
+  });
   const names: string[] = [];
   let failCount = 0;
+  let processed = 0;
 
   for (let i = 0; i < paths.length; i++) {
+    if (cancelled) break;
     const fileName = paths[i].split(/[\\/]/).pop() || paths[i];
     progress.update(
       `正在导入 ${fileName} (${i + 1}/${paths.length})`,
@@ -81,8 +87,13 @@ export async function importPluginScriptsFromPaths(paths: string[]): Promise<voi
       failCount++;
       showToast(`${fileName}: ${e?.message || '安装失败'}`, 'error');
     }
+    processed++;
   }
 
+  if (cancelled) {
+    progress.complete(`已取消导入（已处理 ${processed}/${paths.length}）`, 'info');
+    return;
+  }
   if (names.length > 0) {
     progress.complete(
       `成功导入 ${names.length} 个插件: ${names.join(', ')}${failCount > 0 ? `，${failCount} 个失败` : ''}`,

@@ -5,6 +5,8 @@ interface ToastMessage {
     text: string;
     type?: "success" | "error" | "info";
     progress?: number | null;
+    /** 进度 toast 显示取消按钮（点击触发创建时传入的 onCancel 并关闭） */
+    cancellable?: boolean;
 }
 
 export interface ToastHandle {
@@ -15,6 +17,7 @@ export interface ToastHandle {
 }
 
 const toasts = ref<ToastMessage[]>([]);
+const cancelHandlers = new Map<number, () => void>();
 let nextId = 0;
 
 export function useToast() {
@@ -29,12 +32,23 @@ export function useToast() {
         }, 3000);
     };
 
-    const showProgressToast = (text: string): ToastHandle => {
+    const showProgressToast = (
+        text: string,
+        opts?: { cancellable?: boolean; onCancel?: () => void },
+    ): ToastHandle => {
         const id = nextId++;
-        toasts.value.push({ id, text, type: "info", progress: 0 });
+        toasts.value.push({
+            id,
+            text,
+            type: "info",
+            progress: 0,
+            cancellable: opts?.cancellable === true,
+        });
+        if (opts?.onCancel) cancelHandlers.set(id, opts.onCancel);
         const find = () => toasts.value.find((t) => t.id === id);
         const remove = () => {
             toasts.value = toasts.value.filter((t) => t.id !== id);
+            cancelHandlers.delete(id);
         };
         let finished = false;
         return {
@@ -59,7 +73,9 @@ export function useToast() {
                     t.text = finalText;
                     t.type = type;
                     t.progress = null;
+                    t.cancellable = false;
                 }
+                cancelHandlers.delete(id);
                 setTimeout(remove, 3000);
             },
             fail(finalText: string) {
@@ -73,9 +89,19 @@ export function useToast() {
         };
     };
 
+    /** 用户点击进度 toast 的取消按钮：触发 onCancel 回调并立即关闭 toast；
+     * 进行中的流程在下一个检查点（循环步骤/阶段边界）感知后短路 */
+    const cancelToast = (id: number) => {
+        const handler = cancelHandlers.get(id);
+        cancelHandlers.delete(id);
+        toasts.value = toasts.value.filter((t) => t.id !== id);
+        handler?.();
+    };
+
     return {
         toasts,
         showToast,
         showProgressToast,
+        cancelToast,
     };
 }

@@ -54,6 +54,8 @@ export interface PlaylistSyncDeps {
   collections: PlaylistSyncCollectionsPort;
   library: PlaylistSyncLibraryPort;
   onProgress(msg: string): void;
+  /** 手动同步的取消信号（toast 取消按钮 abort），自动同步返回 null */
+  getSyncSignal?(): AbortSignal | null;
   notify(msg: string, kind: ToastKind): void;
   log(msg: string, ...args: unknown[]): void;
   logError(msg: string, ...args: unknown[]): void;
@@ -202,6 +204,10 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
       const totalSongs = playlistData.reduce((sum, pl) => sum + pl.songs.length, 0);
       deps.log(`uploadPlaylists: 收集完成, 歌单=${playlistData.length}, 总歌曲=${totalSongs}`);
 
+      if (deps.getSyncSignal?.()?.aborted) {
+        deps.log('uploadPlaylists: 收到取消信号，跳过上传请求');
+        return result;
+      }
       const uploadResult = await fileSyncUpload(ciyuanxiId, playlistData, { merge: !overwrite });
       result.uploadedPlaylists = uploadResult.playlist_count;
       result.uploadedSongs = uploadResult.song_total;
@@ -242,6 +248,11 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
     }
 
     deps.onProgress('正在从云端下载歌单...');
+
+    if (deps.getSyncSignal?.()?.aborted) {
+      deps.log('downloadPlaylists: 收到取消信号，跳过下载');
+      return result;
+    }
 
     try {
       if (options?.overwrite === true) {

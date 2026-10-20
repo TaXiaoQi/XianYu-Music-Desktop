@@ -167,9 +167,18 @@ export type PluginSyncStepCallback = (
     label: string,
 ) => void;
 
+/** 取消检查点：手动同步 toast 的取消按钮触发 abort 后，循环步骤短路返回
+ * 部分结果（已完成的插件保留），正在执行的请求不受影响 */
+function abortGuard(signal: AbortSignal | undefined, where: string): boolean {
+    if (!signal?.aborted) return false;
+    logSync(`${where}: 收到取消信号，停止后续插件处理`);
+    return true;
+}
+
 export async function uploadPlugins(
     options?: { overwrite?: boolean },
     onStep?: PluginSyncStepCallback,
+    signal?: AbortSignal,
 ): Promise<PluginSyncResult> {
     // 覆盖上传（手动「同步至服务器」）：本地用户插件全集即云端目标状态，
     // 先清掉云端多出的插件/订阅再全量上传；自动同步不带 options，仍走合并
@@ -288,6 +297,7 @@ export async function uploadPlugins(
     }
     const uploadedIds: string[] = [];
     for (let i = 0; i < toUpload.length; i++) {
+        if (abortGuard(signal, "uploadPlugins")) break;
         const plugin = toUpload[i];
         onStep?.(i + 1, toUpload.length, plugin.name);
         logSync(
@@ -397,6 +407,7 @@ function trimCloudDeletedPlugins(
 export async function downloadPlugins(
     options?: { overwrite?: boolean },
     onStep?: PluginSyncStepCallback,
+    signal?: AbortSignal,
 ): Promise<PluginSyncResult> {
     // 覆盖下载（手动「更新至本地」）：清空本地用户插件与订阅后按云端快照重装，
     // 不应用墓碑/删除账本；云端为空时结果即本地清空
@@ -491,6 +502,7 @@ export async function downloadPlugins(
         const downloadSkip = overwrite ? new Set<string>() : getDownloadSkipIds();
         const restoredIds: string[] = [];
         for (let i = 0; i < cloudPlugins.length; i++) {
+            if (abortGuard(signal, "downloadPlugins")) break;
             const item = cloudPlugins[i];
             if (downloadSkip.has(item.id)) {
                 logSync(

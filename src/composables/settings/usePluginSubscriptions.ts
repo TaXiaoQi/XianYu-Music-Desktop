@@ -106,16 +106,24 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
       return;
     }
     syncingAll.value = true;
-    const progress = showProgressToast(`正在同步订阅 (0/${subscriptions.value.length})`);
+    let cancelled = false;
+    const progress = showProgressToast(`正在同步订阅 (0/${subscriptions.value.length})`, {
+      cancellable: true,
+      onCancel: () => { cancelled = true; },
+    });
     try {
       const res = await installAllSubscriptions((index, total, sub) => {
         progress.update(
           `正在同步 ${sub.name || '订阅'} (${index + 1}/${total})`,
           ((index + 1) / total) * 100,
         );
-      });
+      }, () => cancelled);
       subscriptions.value = getSubscriptions();
       refreshPluginList();
+      if (cancelled) {
+        progress.complete('已取消同步订阅', 'info');
+        return;
+      }
       progress.complete(
         `同步完成: 共安装 ${res.totalInstalled} 个插件${res.failedSubs ? `，${res.failedSubs} 个订阅失败` : ''}`,
         res.failedSubs ? 'info' : 'success',

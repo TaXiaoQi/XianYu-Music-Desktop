@@ -254,11 +254,13 @@ export const createPluginSubscriptionService = ({
 
   const installAllSubscriptions = async (
     onProgress?: (index: number, total: number, sub: PluginSubscription, result: SubscriptionInstallResult) => void,
+    isCancelled?: () => boolean,
   ): Promise<{ totalSubs: number; totalInstalled: number; failedSubs: number }> => {
     const subs = getSubscriptions();
     const summary = { totalSubs: subs.length, totalInstalled: 0, failedSubs: 0 };
 
     for (let i = 0; i < subs.length; i++) {
+      if (isCancelled?.()) break;
       const sub = subs[i];
       let result: SubscriptionInstallResult;
       try {

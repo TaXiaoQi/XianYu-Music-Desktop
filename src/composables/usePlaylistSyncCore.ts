@@ -39,6 +39,7 @@ import {
   syncProgress,
   syncing,
   syncToastBridge,
+  syncAbortSignal,
   pluginSyncProgress,
   pluginSyncing,
   favoritesSyncProgress,
@@ -70,16 +71,22 @@ function withSyncToast<TArgs extends unknown[], R>(
   initialText: string,
 ): (...args: TArgs) => Promise<R> {
   return async (...args: TArgs) => {
-    const toast = useToast().showProgressToast(initialText);
+    const controller = new AbortController();
+    const toast = useToast().showProgressToast(initialText, {
+      cancellable: true,
+      onCancel: () => controller.abort(),
+    });
     let lastPct = 0;
     syncToastBridge.value = (msg, pct) => {
       if (typeof pct === 'number') lastPct = pct;
       toast.update(msg, lastPct);
     };
+    syncAbortSignal.value = controller.signal;
     try {
       return await fn(...args);
     } finally {
       syncToastBridge.value = null;
+      syncAbortSignal.value = null;
       toast.close();
     }
   };
@@ -119,6 +126,7 @@ export function usePlaylistSync() {
     collections: collectionsStore,
     library: libraryStore,
     onProgress: msg => { syncProgress.value = msg; emitSyncProgress(msg); },
+    getSyncSignal: () => syncAbortSignal.value,
     notify: showToast,
     log: logSync,
     logError: logSyncError,
@@ -131,6 +139,7 @@ export function usePlaylistSync() {
     onStep: (done, total, label) => {
       emitSyncProgress(`正在同步插件 "${label}" (${done}/${total})...`, (done / total) * 100);
     },
+    getSyncSignal: () => syncAbortSignal.value,
     notify: showToast,
     setSyncing: v => { pluginSyncing.value = v; },
     setLastResult: result => { lastPluginSyncResult.value = result; },
@@ -251,38 +260,53 @@ export function usePlaylistSync() {
       }
 
       logSync('syncPlaylists: 步骤 2/2 - 开始下载');
-      syncProgress.value = '正在从云端拉取歌单...';
-      emitSyncProgress('正在从云端拉取歌单...');
-      const downloadResult = await downloadPlaylists();
-      logSync('syncPlaylists: 步骤 2/2 - 下载完成', downloadResult);
-
-      const combined: SyncResult = {
-        uploadedPlaylists: uploadResult.uploadedPlaylists,
-        downloadedPlaylists: downloadResult.downloadedPlaylists,
-        uploadedSongs: uploadResult.uploadedSongs,
-        downloadedSongs: downloadResult.downloadedSongs,
-        errors: [...uploadResult.errors, ...downloadResult.errors],
-      };
-
-      lastSyncResult.value = combined;
-      lastSyncTime.value = Date.now();
-
-      logSync(`syncPlaylists 完成: uploaded=${combined.uploadedPlaylists}歌单/${combined.uploadedSongs}歌, downloaded=${combined.downloadedPlaylists}歌单/${combined.downloadedSongs}歌, errors=${combined.errors.length}`);
-      if (combined.errors.length > 0) {
-        combined.errors.forEach((err, idx) => logSyncError(`syncPlaylists error[${idx}]: ${err}`));
-      }
-
-      if (combined.errors.length > 0) {
-        showToast(`歌单同步完成（${combined.errors.length} 个错误）`, 'error');
+      if (syncAbortSignal.value?.aborted) {
+        logSync('syncPlaylists: 收到取消信号，跳过下载阶段');
       } else {
-        const parts: string[] = [];
-        if (combined.uploadedPlaylists > 0) parts.push(`上传 ${combined.uploadedPlaylists} 个歌单`);
-        if (combined.downloadedPlaylists > 0) parts.push(`下载 ${combined.downloadedPlaylists} 个歌单`);
-        showToast(parts.length > 0 ? `歌单同步完成：${parts.join('，')}` : '歌单已是最新', 'success');
-      }
+        syncProgress.value = '正在从云端拉取歌单...';
+        emitSyncProgress('正在从云端拉取歌单...');
+        const downloadResult = await downloadPlaylists();
+        logSync('syncPlaylists: 步骤 2/2 - 下载完成', downloadResult);
 
+        const combined: SyncResult = {
+          uploadedPlaylists: uploadResult.uploadedPlaylists,
+          downloadedPlaylists: downloadResult.downloadedPlaylists,
+          uploadedSongs: uploadResult.uploadedSongs,
+          downloadedSongs: downloadResult.downloadedSongs,
+          errors: [...uploadResult.errors, ...downloadResult.errors],
+        };
+
+        lastSyncResult.value = combined;
+        lastSyncTime.value = Date.now();
+
+        logSync(`syncPlaylists 完成: uploaded=${combined.uploadedPlaylists}歌单/${combined.uploadedSongs}歌, downloaded=${combined.downloadedPlaylists}歌单/${combined.downloadedSongs}歌, errors=${combined.errors.length}`);
+        if (combined.errors.length > 0) {
+          combined.errors.forEach((err, idx) => logSyncError(`syncPlaylists error[${idx}]: ${err}`));
+        }
+
+        if (combined.errors.length > 0) {
+          showToast(`歌单同步完成（${combined.errors.length} 个错误）`, 'error');
+        } else {
+          const parts: string[] = [];
+          if (combined.uploadedPlaylists > 0) parts.push(`上传 ${combined.uploadedPlaylists} 个歌单`);
+          if (combined.downloadedPlaylists > 0) parts.push(`下载 ${combined.downloadedPlaylists} 个歌单`);
+          showToast(parts.length > 0 ? `歌单同步完成：${parts.join('，')}` : '歌单已是最新', 'success');
+        }
+
+        logSync('========== syncPlaylists 结束 ==========');
+        return combined;
+      }
+      // 已取消：返回部分上传结果
+      lastSyncTime.value = Date.now();
+      showToast('歌单同步已取消', 'info');
       logSync('========== syncPlaylists 结束 ==========');
-      return combined;
+      return {
+        uploadedPlaylists: uploadResult.uploadedPlaylists,
+        downloadedPlaylists: 0,
+        uploadedSongs: uploadResult.uploadedSongs,
+        downloadedSongs: 0,
+        errors: [],
+      };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logSyncError(`syncPlaylists 异常: ${msg}`, error);

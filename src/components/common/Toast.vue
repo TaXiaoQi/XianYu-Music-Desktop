@@ -2,7 +2,7 @@
 import { useToast as useToastCenter } from "../../composables/toast";
 import ToastStatusIcon from "./toast/ToastStatusIcon.vue";
 
-const { toasts } = useToastCenter();
+const { toasts, cancelToast } = useToastCenter();
 </script>
 
 <template>
@@ -36,6 +36,16 @@ const { toasts } = useToastCenter();
                         :kind="toast.type"
                     />
                     <span class="max-w-[320px] truncate">{{ toast.text }}</span>
+                    <button
+                        v-if="toast.progress != null && toast.cancellable"
+                        class="ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/15 hover:text-white"
+                        title="取消"
+                        @click="cancelToast(toast.id)"
+                    >
+                        <svg viewBox="0 0 12 12" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+                        </svg>
+                    </button>
                 </div>
                 <div
                     v-if="toast.progress != null"

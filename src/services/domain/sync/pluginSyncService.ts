@@ -14,6 +14,8 @@ export interface PluginSyncFlowDeps {
   onProgress(msg: string): void;
   /** 逐插件计数回调，供手动同步进度提示推进（自动同步可不注入） */
   onStep?: PluginSyncStepCallback;
+  /** 手动同步的取消信号（toast 取消按钮 abort），自动同步返回 null */
+  getSyncSignal?(): AbortSignal | null;
   notify(msg: string, kind: ToastKind): void;
   setSyncing(v: boolean): void;
   setLastResult(result: PluginSyncResult | null): void;
@@ -47,7 +49,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
       if (deps.isUploadEnabled()) {
         deps.log('syncPlugins: 步骤 1/2 - 开始上传插件');
         deps.onProgress('正在上传插件到云端...');
-        uploadResult = await uploadPlugins(undefined, deps.onStep);
+        uploadResult = await uploadPlugins(undefined, deps.onStep, deps.getSyncSignal?.() ?? undefined);
         deps.log('syncPlugins: 步骤 1/2 - 上传插件完成', uploadResult);
       } else {
         deps.log('syncPlugins: 步骤 1/2 - 插件上传未开启，跳过');
@@ -55,7 +57,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
 
       deps.log('syncPlugins: 步骤 2/2 - 开始下载插件');
       deps.onProgress('正在从云端恢复插件...');
-      const downloadResult = await downloadPlugins(undefined, deps.onStep);
+      const downloadResult = await downloadPlugins(undefined, deps.onStep, deps.getSyncSignal?.() ?? undefined);
       deps.log('syncPlugins: 步骤 2/2 - 下载插件完成', downloadResult);
 
       const combined: PluginSyncResult = {
@@ -114,7 +116,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
     deps.onProgress('正在上传插件到云端...');
 
     try {
-      const result = await uploadPlugins(options, deps.onStep);
+      const result = await uploadPlugins(options, deps.onStep, deps.getSyncSignal?.() ?? undefined);
       deps.setLastTime(Date.now());
       deps.setLastResult(result);
       deps.log(`uploadPluginsOnly 完成: uploadedPlugins=${result.uploadedPlugins}, errors=${result.errors.length}`);
@@ -148,7 +150,7 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
     deps.onProgress('正在从云端下载插件...');
 
     try {
-      const result = await downloadPlugins(options, deps.onStep);
+      const result = await downloadPlugins(options, deps.onStep, deps.getSyncSignal?.() ?? undefined);
       deps.setLastTime(Date.now());
       deps.setLastResult(result);
       deps.log(`downloadPluginsOnly 完成: downloadedPlugins=${result.downloadedPlugins}, errors=${result.errors.length}`);
