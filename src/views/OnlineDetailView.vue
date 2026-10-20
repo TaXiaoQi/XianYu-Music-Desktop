@@ -61,6 +61,7 @@ import {
   type LxArtistSearchResult,
 } from '../services/domain/lxMusicSdk';
 import { ensureLxPluginInstance, lxPluginGetPic } from '../services/domain/lxPluginEngine';
+import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngine';
 import { lxToplistFetchTracks } from '../services/domain/lxToplist';
 import { cacheLxSong } from '../services/domain/lxSongCache';
 import { cacheLxSongInfo } from '../services/domain/lxLyricFetcher';
@@ -209,6 +210,13 @@ watch(artistDetailAvailable, (available) => {
 });
 
 const isUserMode = computed(() => detailType.value === 'user');
+
+// 装有启用的音源插件时，在线详情页不展示「本地」来源标签（与搜索页同语义）；
+// pluginsVersion 仅作响应式依赖，插件装卸即时刷新
+const hasEnabledPlugin = computed(() => {
+  void pluginsVersion.value;
+  return getStoredPlugins().some((p) => p.enabled);
+});
 
 const collectionFavoriteEntry = computed<FavoriteCollectionEntry | null>(() => {
   const c = ctx.value;
@@ -1265,6 +1273,7 @@ watch(
                 :is-batch-mode="isBatchMode"
                 :selected-paths="selectedPaths"
                 :memory-scope-key="(isUserMode ? 'online-detail-user' : 'online-detail-artist') + '::' + detailMemoryKey + '::d' + navToken"
+                :hide-local-source-tag="hasEnabledPlugin"
                 page-scroll-mode
                 :scroll-container-ref="detailScrollRef"
                 stagger-enter
@@ -1356,6 +1365,7 @@ watch(
               :is-batch-mode="isBatchMode"
               :selected-paths="selectedPaths"
               memory-scope-key="'online-detail-album::' + detailMemoryKey + '::d' + navToken"
+              :hide-local-source-tag="hasEnabledPlugin"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
               :disable-scroll-memory="true"
@@ -1388,6 +1398,7 @@ watch(
               :is-batch-mode="isBatchMode"
               :selected-paths="selectedPaths"
               memory-scope-key="'online-detail-playlist::' + detailMemoryKey + '::d' + navToken"
+              :hide-local-source-tag="hasEnabledPlugin"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
               :disable-scroll-memory="true"
