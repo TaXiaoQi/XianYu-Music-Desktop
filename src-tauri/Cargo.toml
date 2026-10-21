@@ -23,6 +23,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "xianyu-music-desktop"
 path = "src/main.rs"
 
+# 独立托盘守护进程：主进程崩溃/卡死时的兜底托盘（仅 Windows 实装，
+# 打包时由 scripts/copy-tray-daemon.js 经 beforeBundleCommand 复制进 externalBin）
+[[bin]]
+name = "xianyu-tray-daemon"
+path = "src/bin/xianyu_tray_daemon.rs"
+
 [build-dependencies] 
 tauri-build = { version = "2", features = [] } 
 
@@ -88,8 +94,12 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 tokio-util = { version = "0.7", default-features = false, features = ["io"] }
 socket2 = "0.6"
 
-[target.'cfg(windows)'.dependencies] 
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel"] }
+[target.'cfg(windows)'.dependencies]
+# 托盘守护进程（xianyu_tray_daemon）的托盘与事件循环实现，仅守护进程使用；
+# 与主程序 Tauri 内置的 tray-icon/tao 版本各自独立，互不影响
+tray-icon = { version = "0.24", default-features = false }
+tao = "0.35"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel"] }
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_Com"] }
 windows-core = "0.61"
 webview2-com = "0.38"

@@ -28,6 +28,13 @@
   DeleteRegValue HKCU "Software\Classes\.${EXT}\OpenWithProgIds" "XianYu Music Audio"
 !macroend
 
+!macro NSIS_HOOK_PREINSTALL
+  ; 托盘守护进程独立于主进程运行（主进程被 Tauri 模板结束时它仍存活），
+  ; 升级覆盖安装前先结束，避免其 exe 被占用导致安装失败
+  nsExec::Exec 'taskkill /F /IM xianyu-tray-daemon.exe /T'
+  Pop $R0
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   ${If} $LANGUAGE == 1028
     WriteRegStr HKCU "${XY_LANG_REGKEY}" "${XY_LANG_REGVALUE}" "zh-TW"
@@ -146,6 +153,9 @@
 ;   仅在用户勾选删除时才清理，未勾选时保留全部数据。
 ; ============================================================================
 !macro NSIS_HOOK_PREUNINSTALL
+  ; 同 PREINSTALL：卸载删除文件前先结束独立运行的托盘守护进程
+  nsExec::Exec 'taskkill /F /IM xianyu-tray-daemon.exe /T'
+  Pop $R0
   ${If} $DeleteAppDataCheckboxState = 1
     SetShellVarContext current
     RmDir /r "$LOCALAPPDATA\${BUNDLEID}\EBWebView"

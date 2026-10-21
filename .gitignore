@@ -20,6 +20,8 @@ src-tauri/target/
 src-tauri/gen/*
 !src-tauri/gen/windows
 # src-tauri/bin/ 的内置 ffmpeg sidecar 产物需入库（参考移动端 jniLibs 预编译做法），他人无需重编即可打包
+# 托盘守护进程 sidecar 同 ffmpeg 入库（tauri-build 在构建期校验 externalBin 文件存在，
+# 入库保证全新 clone 直接可 dev/build；每次打包时 copy-tray-daemon.js 会用最新构建覆盖刷新）
 
 # --- 🔧 IDE 与 编辑器配置 --- 
 .vscode/

@@ -8,6 +8,7 @@
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
+    "beforeBundleCommand": "node scripts/copy-tray-daemon.js",
     "frontendDist": "../dist"
   },
   "app": {
@@ -22,7 +23,8 @@
         "decorations": false,
         "transparent": true,
         "visible": false,
-        "center": true
+        "center": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222"
       }
     ],
     "security": {
@@ -42,7 +44,8 @@
       "nsis"
     ],
     "externalBin": [
-      "bin/ffmpeg"
+      "bin/ffmpeg",
+      "bin/xianyu-tray-daemon"
     ],
     "copyright": "Copyright © 2026 XianYu Music Team",
     "shortDescription": "A beautiful local music player powered by Tauri.",

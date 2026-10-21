@@ -4,10 +4,10 @@ pub mod cloud; // 网盘业务（十盘，TS 经 cloud_proxy command 调用）
 pub(crate) mod control_channel; pub(crate) mod crash_log; mod custom_fonts; mod database; pub(crate) mod dlna;
 pub mod error; mod fallback_host; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
 mod host_crypto; mod install_language; mod music; mod netproxy;
-mod player; mod plugin_host; mod plugins; mod power;
+mod player; mod plugin_host; mod plugins; mod power; mod process_priority;
 mod recognize; mod remote; mod security; mod skin_image;
 mod sleep_timer; mod statistics; mod system_audio; mod system_fonts;
-mod system_info; mod taskbar; mod toolbox; mod tray_capture; mod webview_settings;
+mod system_info; mod taskbar; mod toolbox; mod tray_capture; mod tray_daemon; mod webview_settings;
 mod window_boundary; mod window_foreground; mod window_fullscreen; mod window_material; mod window_theme;
 mod window_z_order; // 实现
 
@@ -378,6 +378,8 @@ pub fn graceful_shutdown(app: &tauri::AppHandle) {
     window_z_order::shutdown_topmost_guard();
     taskbar::shutdown_taskbar_zorder_guard();
     webview_settings::clear_webview_cache(app);
+    // 通知托盘守护进程随主进程正常退出（不再保留崩溃兜底托盘）
+    tray_daemon::signal_exit();
     // 排查闪退的关键标记：crash.log 里紧邻本条的异常/panic 记录即非崩溃退出
     crash_log::log_event("正常退出");
     app.exit(0);
@@ -414,7 +416,13 @@ fn dispatch_run_event(app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
     if let tauri::RunEvent::Opened { urls } = event {
         app_runtime::handle_opened_urls(app_handle, urls);
     }
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
+    #[cfg(windows)]
+    if let tauri::RunEvent::Exit = &event {
+        // 兜底：任何退出路径最终都会走到 Exit，通知托盘守护进程自退
+        let _ = app_handle;
+        tray_daemon::signal_exit();
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
     let _ = (app_handle, event);
 }
 

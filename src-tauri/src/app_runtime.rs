@@ -580,6 +580,14 @@ pub(crate) fn setup_app( // setup_app
     // 网络代理必须在构造任何 HTTP client 之前确定，故放在 setup 的第一步。
     crate::netproxy::load(app.handle());
 
+    // 高占用保命：提升主进程调度优先级并退出 EcoQoS 节流，负载打满时保住
+    // 音频与界面响应（仅 Windows，其它平台保持默认调度）。
+    crate::process_priority::boost();
+
+    // 托盘兜底：拉起独立守护进程。主进程崩溃/卡死时它弹出可用的兜底托盘
+    // （重启/强杀入口），正常退出时收到事件随主进程自退（仅 Windows）。
+    crate::tray_daemon::spawn();
+
     app.manage(PendingOpenPaths::default()); // 实现
     app.manage(PendingDeepLinks::default());
     app.manage(TrayMenuRuntimeState::default());
@@ -735,6 +743,9 @@ pub(crate) fn exit_app(app: tauri::AppHandle) {
 /// （窗口状态保存、WebView 缓存清理等照常发生），再拉起新进程。
 #[tauri::command]
 pub(crate) fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    // restart 在主线程直接走 process::restart，不触发 RunEvent::Exit，
+    // 需先显式通知守护进程随旧进程退出（新进程会拉起自己的守护进程）
+    crate::tray_daemon::signal_exit();
     app.restart()
 }
 
