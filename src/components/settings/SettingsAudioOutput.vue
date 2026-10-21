@@ -128,13 +128,37 @@ function updateVolumeBalancePopoverPosition() {
   };
 }
 
-function toggleVolumeBalancePopover() {
-  showVolumeBalancePopover.value = !showVolumeBalancePopover.value;
-  if (showVolumeBalancePopover.value) {
-    nextTick(() => {
-      updateVolumeBalancePopoverPosition();
-    });
+// 说明浮层：悬停即开、移开延迟收起，点击只开不关（幂等），
+// 避免「hover 误触点击 → 开→关来回跳」的观感闪烁。
+let volumeBalanceCloseTimer: number | null = null;
+
+function cancelVolumeBalanceClose() {
+  if (volumeBalanceCloseTimer !== null) {
+    window.clearTimeout(volumeBalanceCloseTimer);
+    volumeBalanceCloseTimer = null;
   }
+}
+
+function openVolumeBalancePopover() {
+  cancelVolumeBalanceClose();
+  if (showVolumeBalancePopover.value) return;
+  showVolumeBalancePopover.value = true;
+  nextTick(() => {
+    updateVolumeBalancePopoverPosition();
+  });
+}
+
+function scheduleVolumeBalancePopoverClose() {
+  cancelVolumeBalanceClose();
+  volumeBalanceCloseTimer = window.setTimeout(() => {
+    volumeBalanceCloseTimer = null;
+    showVolumeBalancePopover.value = false;
+  }, 160);
+}
+
+function closeVolumeBalancePopoverNow() {
+  cancelVolumeBalanceClose();
+  showVolumeBalancePopover.value = false;
 }
 
 function handleVolumeBalancePopoverOutsideClick(event: MouseEvent) {
@@ -145,7 +169,7 @@ function handleVolumeBalancePopoverOutsideClick(event: MouseEvent) {
     && !volumeBalanceTriggerRef.value.contains(event.target as Node)
     && !volumeBalancePopoverRef.value.contains(event.target as Node)
   ) {
-    showVolumeBalancePopover.value = false;
+    closeVolumeBalancePopoverNow();
   }
 }
 
@@ -672,7 +696,11 @@ onScopeDispose(() => {
               :class="{ 'volume-balance-hint-btn--active': showVolumeBalancePopover }"
               :aria-expanded="showVolumeBalancePopover"
               :aria-label="'音量平衡说明'"
-              @click.stop="toggleVolumeBalancePopover"
+              @mouseenter="openVolumeBalancePopover"
+              @mouseleave="scheduleVolumeBalancePopoverClose"
+              @focus="openVolumeBalancePopover"
+              @blur="closeVolumeBalancePopoverNow"
+              @click.stop="openVolumeBalancePopover"
             >
               <CircleHelp class="h-4 w-4" aria-hidden="true" />
             </button>
@@ -900,6 +928,8 @@ onScopeDispose(() => {
           class="volume-balance-popover"
           role="dialog"
           :style="volumeBalancePopoverStyle"
+          @mouseenter="openVolumeBalancePopover"
+          @mouseleave="scheduleVolumeBalancePopoverClose"
         >
           <div class="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
             {{ volumeBalanceTip }}
