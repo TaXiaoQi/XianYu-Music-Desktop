@@ -66,40 +66,42 @@
                 </label>
             </div>
 
-            <div class="library-list" v-if="hasFolders">
+            <div
+                v-if="hasFolders"
+                class="mb-4 overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10"
+            >
                 <div
-                    class="library-item"
                     v-for="folder in folders"
                     :key="folder.path"
+                    class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/40 dark:hover:bg-white/10"
                 >
-                    <div class="folder-icon">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="22"
-                            height="22"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-                            <path
-                                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
-                            />
-                        </svg>
-                    </div>
-                    <div class="folder-info">
-                        <div class="folder-path" :title="folder.path">
+                    <svg
+                        class="shrink-0 text-gray-500 dark:text-gray-400"
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path
+                            d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                        />
+                    </svg>
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200" :title="folder.path">
                             {{ folder.path }}
                         </div>
-                        <div class="folder-stats">
+                        <div class="text-xs text-gray-500 dark:text-gray-400">
                             {{ folderStatLabel(folder) }}
                         </div>
                     </div>
                     <button
                         title="移除文件夹"
-                        class="remove-btn"
+                        class="shrink-0 rounded-lg p-1.5 text-gray-400 transition hover:bg-[#EC4141]/10 hover:text-[#EC4141] dark:hover:text-[#ff8b8b]"
                         @click="askToRemoveFolder(folder.path)"
                     >
                         <svg
@@ -457,13 +459,6 @@ const finalizeRemove = async () => {
     font-size: 1rem;
 }
 
-.library-list { /* 样式 */
-    gap: 10px;
-    margin-bottom: 16px;
-    display: flex;
-    flex-direction: column;
-}
-
 .network-share-row { /* 样式 */
     display: flex;
     align-items: center;
@@ -554,68 +549,6 @@ const finalizeRemove = async () => {
     flex-shrink: 0;
     color: var(--text-secondary);
     font-size: 0.85rem;
-}
-
-.library-item { /* 样式 */
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 16px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    background: rgba(0, 0, 0, 0.2);
-    transition: all 0.2s;
-}
-
-.library-item:hover { /* 样式 */
-    border-color: rgba(255, 255, 255, 0.12);
-    background: rgba(0, 0, 0, 0.3);
-}
-
-.folder-icon { /* 样式 */
-    flex-shrink: 0;
-    opacity: 0.6;
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-}
-
-.folder-info { /* 样式 */
-    min-width: 0;
-    flex: 1;
-}
-
-.folder-path { /* 样式 */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-primary);
-    margin-bottom: 3px;
-    font-size: 0.95rem;
-}
-
-.folder-stats { /* 样式 */
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-}
-
-.remove-btn { /* 样式 */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    cursor: pointer;
-    padding: 8px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-secondary);
-    transition: all 0.2s;
-}
-
-.remove-btn:hover { /* 样式 */
-    color: #ff4d4f;
-    background: rgba(255, 0, 0, 0.12);
 }
 
 .scan-status-card, /* 样式 */
