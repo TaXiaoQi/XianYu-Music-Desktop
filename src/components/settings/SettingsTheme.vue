@@ -302,21 +302,6 @@ const selectColorScheme = (value: 'system' | 'light' | 'dark') => {
   closeSchemeDropdown();
 };
 
-// ---- 壁纸模式（原「自定义」配色单出改名）：开启进入自定义壁纸/配色模式 ----
-const schemeBeforeWallpaperMode = ref<'system' | 'light' | 'dark'>('system');
-const isWallpaperMode = computed(() => colorScheme.value === 'custom');
-
-const toggleWallpaperMode = (enabled: boolean) => {
-  if (enabled) {
-    if (colorScheme.value !== 'custom') {
-      schemeBeforeWallpaperMode.value = colorScheme.value;
-    }
-    setColorScheme('custom');
-  } else {
-    setColorScheme(schemeBeforeWallpaperMode.value);
-  }
-};
-
 // ---- 组件开关样式行内下拉（经典扁平 / 液态玻璃） ----
 const {
   openId: styleDropdownId,
@@ -575,43 +560,13 @@ onUnmounted(() => {
           <button
             type="button"
             :ref="(el) => registerSchemeTrigger('colorScheme', el)"
-            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            class="flex h-9 w-36 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             @click="toggleSchemeDropdown('colorScheme')"
           >
-            <span>{{ currentSchemeLabel }}</span>
+            <span class="truncate">{{ currentSchemeLabel }}</span>
             <ChevronDown
-              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
               :class="schemeDropdownId === 'colorScheme' ? 'rotate-180' : ''"
-              aria-hidden="true"
-            />
-          </button>
-        </div>
-
-        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
-          <span class="min-w-0">
-            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Mode' : '壁纸模式' }}</span>
-            <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom wallpaper & colors — pick one in Wallpaper Center' : '使用自定义壁纸与配色，可在壁纸中心挑选' }}</span>
-          </span>
-          <button
-            type="button"
-            class="glass-switch"
-            :class="{ 'is-checked': isWallpaperMode }"
-            @click="toggleWallpaperMode(!isWallpaperMode)"
-          ></button>
-        </div>
-
-        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
-          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.switchStyleTitle }}</span>
-          <button
-            type="button"
-            :ref="(el) => registerStyleTrigger('switchStyle', el)"
-            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-            @click="toggleStyleDropdown('switchStyle')"
-          >
-            <span>{{ currentSwitchStyleLabel }}</span>
-            <ChevronDown
-              class="h-4 w-4 text-gray-400 transition-transform duration-200"
-              :class="styleDropdownId === 'switchStyle' ? 'rotate-180' : ''"
               aria-hidden="true"
             />
           </button>
@@ -660,6 +615,23 @@ onUnmounted(() => {
           </span>
           <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
+
+        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.switchStyleTitle }}</span>
+          <button
+            type="button"
+            :ref="(el) => registerStyleTrigger('switchStyle', el)"
+            class="flex h-9 w-36 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+            @click="toggleStyleDropdown('switchStyle')"
+          >
+            <span class="truncate">{{ currentSwitchStyleLabel }}</span>
+            <ChevronDown
+              class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+              :class="styleDropdownId === 'switchStyle' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
 
       <Teleport to="body">
         <Transition name="settings-dropdown">
@@ -1134,7 +1106,8 @@ onUnmounted(() => {
         {{ isEnglish ? 'Playback page' : '播放页设置' }}
       </h2>
 
-      <label class="relative flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
+      <div class="divide-y divide-gray-200/40 rounded-2xl border border-gray-200/40 bg-white/20 dark:divide-gray-800/40 dark:border-gray-800/40 dark:bg-black/10">
+      <label class="relative flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
         <span class="min-w-0">
           <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailCoverLabel }}</span>
           <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailCoverHint }}</span>
@@ -1178,7 +1151,7 @@ onUnmounted(() => {
         </Teleport>
       </label>
 
-      <label class="relative flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
+      <label class="relative flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
         <span class="min-w-0">
           <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailStyleLabel }}</span>
           <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailStyleHint }}</span>
@@ -1223,7 +1196,7 @@ onUnmounted(() => {
       </label>
     <div
       v-if="playerDetailStyle === 'vinyl'"
-      class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10"
+      class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
     >
       <span class="min-w-0">
         <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylMaterialLabel }}</span>
@@ -1247,7 +1220,7 @@ onUnmounted(() => {
     </div>
     <div
       v-if="playerDetailStyle === 'vinyl'"
-      class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10"
+      class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
     >
       <span class="min-w-0">
         <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylPlatterStyleLabel }}</span>
@@ -1270,7 +1243,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+      <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
         <span class="min-w-0">
           <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshBackgroundLabel }}</span>
           <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailMeshBackgroundHint }}</span>
@@ -1284,7 +1257,7 @@ onUnmounted(() => {
       </div>
       <div
         v-if="playerDetailMeshBackground"
-        class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+        class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
       >
         <span class="min-w-0">
           <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshAntiAliasLabel }}</span>
@@ -1296,6 +1269,7 @@ onUnmounted(() => {
           :class="{ 'is-checked': playerDetailMeshAntiAlias }"
           @click="setPlayerDetailMeshAntiAlias(!playerDetailMeshAntiAlias)"
         ></button>
+      </div>
       </div>
     </section>
 

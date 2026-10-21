@@ -33,7 +33,9 @@ export function useInlineSelectDropdown() {
     if (!trigger || !panel) return;
 
     const rect = trigger.getBoundingClientRect();
-    const panelWidth = panel.offsetWidth;
+    // 对齐设置页语言选择器标准：面板宽度跟随触发器（内容更宽时以内容为准，
+    // 下限 176px 保证选项文字 + 对勾不换行），右缘与触发器对齐
+    const panelWidth = Math.max(rect.width, panel.offsetWidth, 176);
     const panelHeight = panel.offsetHeight;
     const gap = 6;
     const viewportPadding = 12;
@@ -46,7 +48,11 @@ export function useInlineSelectDropdown() {
       ? rect.bottom + gap
       : Math.max(viewportPadding, rect.top - panelHeight - gap);
 
-    panelStyle.value = { left: `${left}px`, top: `${top}px` };
+    panelStyle.value = {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${Math.round(panelWidth)}px`,
+    };
   }
 
   function handleOutsideClick(event: MouseEvent) {
