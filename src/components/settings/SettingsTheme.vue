@@ -67,6 +67,7 @@ const TEXT = computed(() => isEnglish.value ? {
   materialFlowDynamic: 'Dynamic Flow',
   materialFlowStatic: 'Static Flow',
   materialAcrylic: 'Acrylic',
+  materialMica: 'Mica',
   materialFrosted: 'Frosted Glass',
   windowMaterialBlur: 'Acrylic Blur',
   windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.',
@@ -138,6 +139,7 @@ const TEXT = computed(() => isEnglish.value ? {
   materialFlowDynamic: '动态流光',
   materialFlowStatic: '静态流光',
   materialAcrylic: '亚克力',
+  materialMica: '云母',
   materialFrosted: '毛玻璃',
   windowMaterialBlur: '毛玻璃',
   windowMaterialUnsupportedHint: '仅 Windows 10 / 11 支持。',
@@ -347,7 +349,7 @@ const MATERIAL_OPTIONS = computed<Array<{ value: MaterialPresetValue; label: str
   { value: 'dynamic-flow', label: TEXT.value.materialFlowDynamic },
   { value: 'dynamic-blur', label: TEXT.value.materialFlowStatic },
   { value: 'material-acrylic', label: TEXT.value.materialAcrylic },
-  { value: 'material-mica', label: 'Mica' },
+  { value: 'material-mica', label: TEXT.value.materialMica },
   { value: 'material-blur', label: TEXT.value.materialFrosted },
 ]);
 
@@ -370,7 +372,7 @@ const {
   registerTrigger: registerTrayTrigger,
   toggle: toggleTrayDropdown,
   close: closeTrayDropdown,
-} = useInlineSelectDropdown<boolean>();
+} = useInlineSelectDropdown();
 
 const TRAY_STYLE_OPTIONS = computed<Array<{ value: boolean; label: string }>>(() => [
   { value: true, label: TEXT.value.customTrayMenuOn },
@@ -1062,7 +1064,7 @@ onUnmounted(() => {
         <button
           ref="coverTriggerRef"
           type="button"
-          class="cover-select-trigger flex h-9 w-52 shrink-0 items-center justify-between gap-2 rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-700 transition hover:bg-white/70 focus:border-[#EC4141]/50 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/[0.15]"
+          class="cover-select-trigger flex h-9 w-44 shrink-0 items-center justify-between gap-2 rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-700 transition hover:bg-white/70 focus:border-[#EC4141]/50 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/[0.15]"
           :class="isCoverMenuOpen ? 'cover-select-trigger--open' : ''"
           @click="toggleCoverMenu"
         >
@@ -1106,7 +1108,7 @@ onUnmounted(() => {
         <button
           ref="styleTriggerRef"
           type="button"
-          class="cover-select-trigger flex h-9 w-52 shrink-0 items-center justify-between gap-2 rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-700 transition hover:bg-white/70 focus:border-[#EC4141]/50 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/[0.15]"
+          class="cover-select-trigger flex h-9 w-44 shrink-0 items-center justify-between gap-2 rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-700 transition hover:bg-white/70 focus:border-[#EC4141]/50 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/[0.15]"
           :class="isStyleMenuOpen ? 'cover-select-trigger--open' : ''"
           @click="toggleStyleMenu"
         >
@@ -1230,19 +1232,48 @@ onUnmounted(() => {
       </h2>
 
       <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
-        <span class="min-w-0">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.customTrayMenu }}</span>
-          <span class="mt-1 block text-xs text-gray-500 dark:text-white/50">
-            {{ useCustomTrayMenu ? TEXT.customTrayMenuOn : TEXT.customTrayMenuOff }}
-          </span>
-        </span>
+        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.customTrayMenu }}</span>
         <button
           type="button"
-          class="glass-switch"
-          :class="{ 'is-checked': useCustomTrayMenu }"
-          @click="setUseCustomTrayMenu(!useCustomTrayMenu)"
-        ></button>
+          :ref="(el) => registerTrayTrigger('trayStyle', el)"
+          class="flex h-9 w-44 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="toggleTrayDropdown('trayStyle')"
+        >
+          <span class="truncate">{{ currentTrayStyleLabel }}</span>
+          <ChevronDown
+            class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+            :class="trayDropdownId === 'trayStyle' ? 'rotate-180' : ''"
+            aria-hidden="true"
+          />
+        </button>
       </div>
+
+      <Teleport to="body">
+        <Transition name="settings-dropdown">
+          <div
+            v-if="trayDropdownId"
+            ref="trayPanelRef"
+            class="settings-inline-dropdown custom-scrollbar"
+            :style="trayPanelStyle"
+          >
+            <button
+              v-for="option in TRAY_STYLE_OPTIONS"
+              :key="String(option.value)"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': useCustomTrayMenu === option.value }"
+              @click="selectTrayStyle(option.value)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+              <Check
+                v-if="useCustomTrayMenu === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </Transition>
+      </Teleport>
     </section>
 
     <section class="space-y-3"> 

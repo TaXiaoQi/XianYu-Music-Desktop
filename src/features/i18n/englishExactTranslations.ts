@@ -427,6 +427,7 @@ export const exactEnglishTranslations: Record<string, string> = {
   '动态流光': 'Dynamic Flow',
   '静态流光': 'Static Flow',
   '亚克力': 'Acrylic',
+  '云母': 'Mica',
   '底部栏布局': 'Footer Layout',
   '顶部栏布局': 'Top Bar Layout',
   '侧边栏管理': 'Sidebar Management',
