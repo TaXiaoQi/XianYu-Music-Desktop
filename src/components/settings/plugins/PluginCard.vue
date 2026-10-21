@@ -183,6 +183,7 @@ const colorClasses = computed(() => pluginColorClasses(props.plugin.format, prop
   cursor: not-allowed; /* 样式 */
 } /* 样式 */
 .settings-plugin-card--dragging { /* 样式 */
-  background: rgba(236, 65, 65, 0.06); /* 样式 */
+  background: rgba(236, 65, 65, 0.1); /* 样式 */
+  box-shadow: inset 0 0 0 1px rgba(236, 65, 65, 0.3); /* 样式 */
 }
 </style>
