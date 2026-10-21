@@ -2838,4 +2838,5 @@ export const exactEnglishTranslations: Record<string, string> = {
   "浏览已绑定网盘的目录，可直接试听或下载到音乐库。": "Browse directories of the linked cloud drive; play directly or download to your library.",
   "网盘文件夹": "Cloud drive folders",
   "选择当前文件夹": "Use this folder",
+  "返回上一级": "Go up one level",
 };

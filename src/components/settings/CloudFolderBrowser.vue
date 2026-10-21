@@ -351,11 +351,11 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <!-- 面包屑 -->
+      <!-- 面包屑 + 返回上一级（移动端选择器同款） -->
       <div v-if="browseSel" :class="rowClass" class="flex-wrap">
         <span class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-xs">
           <template v-for="(c, i) in browseCrumbs" :key="`${i}:${c.path}`">
-            <span v-if="i > 0" class="text-gray-400 dark:text-white/30">/</span>
+            <span v-if="i > 0" class="text-gray-400 dark:text-white/30">›</span>
             <button
               type="button"
               class="truncate rounded px-1 transition hover:text-[#EC4141]"
@@ -366,6 +366,16 @@ onBeforeUnmount(() => {
             </button>
           </template>
         </span>
+        <button
+          v-if="browseCrumbs.length > 1"
+          type="button"
+          :class="selectChipClass(false)"
+          class="shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="browseLoading"
+          @click="jumpToCrumb(browseCrumbs.length - 2)"
+        >
+          {{ t('cloud.goUp') }}
+        </button>
       </div>
 
       <!-- 选择当前目录（移动端同款） -->
