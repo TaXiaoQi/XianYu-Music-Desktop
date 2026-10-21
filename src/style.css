@@ -455,8 +455,14 @@ html.no-glass-switch .glass-switch::after {
   transition: background-color 150ms ease;
 }
 
-.settings-inline-dropdown-item:hover {
+.settings-inline-dropdown-item:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.04);
+}
+
+/* 档位禁用态：仅置灰提示，选项本身始终保留在列表中 */
+.settings-inline-dropdown-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .settings-inline-dropdown-item.is-active {
@@ -468,7 +474,7 @@ html.no-glass-switch .glass-switch::after {
   color: #e5e7eb;
 }
 
-.dark .settings-inline-dropdown-item:hover {
+.dark .settings-inline-dropdown-item:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.06);
 }
 

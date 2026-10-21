@@ -135,7 +135,10 @@ export function useSettingsThemeControls() {
 
   // 仅环境/平台门禁（不含主题冲突）：供下拉档位禁用态使用——
   // 主题冲突由「选中时互斥关停另一方」消化，不阻断下拉选择。
+  // 能力探测是异步的：探测完成前一律放行，避免打开页面瞬间三档材质误置灰。
+  const materialCapabilitiesReady = ref(false);
   const isMaterialModeEnvironmentBlocked = (mode: PickableMaterialMode) => {
+    if (!materialCapabilitiesReady.value) return false;
     if (capabilities.value.systemTransparencyEnabled === false) return true;
     const requiresWindows11 = mode === 'mica' || mode === 'acrylic';
     const requiresWindowsBlur = mode === 'blur';
@@ -225,7 +228,11 @@ export function useSettingsThemeControls() {
   const setPlayerDetailVinylMaterial = (value: VinylPlinthMaterial) => { playerDetailVinylMaterial.value = value; };
   const setPlayerDetailVinylPlatterStyle = (value: VinylPlatterStyle) => { playerDetailVinylPlatterStyle.value = value; };
 
-  onMounted(() => void probeMaterialCapabilities());
+  onMounted(() => {
+    void probeMaterialCapabilities()
+      .catch(() => undefined)
+      .finally(() => { materialCapabilitiesReady.value = true; });
+  });
 
   return {
     theme,
