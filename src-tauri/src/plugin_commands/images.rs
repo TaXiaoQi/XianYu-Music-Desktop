@@ -52,6 +52,17 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         .timeout(Duration::from_secs(15))
         .redirect(ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
+        // 封面图是非敏感内容：部分网络环境 DNS 污染后 CDN 证书 CN 不匹配
+        // （如 kwcdn.kuwo.cn 报 ERR_CERT_COMMON_NAME_INVALID），直连与严格
+        // 校验的代理双双失败。此处放宽证书校验保住封面加载；SSRF 防护
+        // （URL 校验 / pinned DNS / 重定向策略）不受影响。
+        .danger_accept_invalid_certs(true)
+        // 图片本身就是压缩格式，禁用传输压缩：避免 CDN 返回的 gzip/br 流
+        // 在弱网/污染链路下解码失败（reqwest "error decoding response body"），
+        // 也省去 4MB+ 大图的解压开销。
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| e.to_string())?;

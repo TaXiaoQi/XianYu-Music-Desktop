@@ -6,6 +6,7 @@ const PROXY_COVER_DOMAINS = [
   'y.gtimg.cn',
   'qpic.cn',
   'sycdn.kuwo.cn',
+  'kwcdn.kuwo.cn',
   'music.126.net',
   '163.com',
   'douyin.com',
