@@ -11,6 +11,7 @@ import {
   txHandleResult,
 } from './lxSearchPlatform';
 import { buildKugouCoverUrl } from './lxSearchKg';
+import { fetchWySheetAllTracks } from './playlistImportWy';
 import { decodeName, formatSingerName } from '../../utils/musicFormat';
 import { dispatchFallbackModule } from '../fallbackModules/registry';
 import type { LxSourceId } from './lxMusicSdkTypes';
@@ -555,6 +556,24 @@ export async function lxGetPlaylistTracks(
         return { list, isEnd: list.length < limit };
       }
       case 'wy': {
+        // 主路径：v3 detail 全量 trackIds + weapi 批量详情，单次取全
+        // （匿名 v6 明细只吐 10 条，trackIds 却是全量——「歌单只显示 10 首」根因；
+        // 与 wy.js 插件 / Rust playlist_fetcher wy.rs 同源）
+        try {
+          const all = await fetchWySheetAllTracks(playlistId);
+          if (all.length > 0) {
+            const list = all.map(d => buildSimpleLxItem(
+              'wy', d.id, d.title, d.artist, d.album, '',
+              formatPlayTime(Math.floor((d.duration || 0) / 1000)), d.coverUrl || null,
+            ));
+            if (page === 1) return { list, isEnd: true };
+            const start = (page - 1) * limit;
+            const slice = list.slice(start, start + limit);
+            return { list: slice, isEnd: start + slice.length >= list.length };
+          }
+        } catch (e: any) {
+          console.warn(`[LxMusicSdk] WY playlist ${playlistId}: 全量主路径失败(${e?.message || e})，回退 v6 分页`);
+        }
         const offset = (page - 1) * limit;
         const url = `https://music.163.com/api/v6/playlist/detail?id=${playlistId}&n=${limit}&offset=${offset}`;
         const data = await httpGetJson(url, {

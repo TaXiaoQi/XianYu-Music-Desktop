@@ -98,6 +98,40 @@ export async function fetchWyTrackMetaByIds(
   return patches;
 }
 
+// ==================== 歌单全量（v3 trackIds + weapi 批量详情） ====================
+
+/// 匿名 v6/playlist/detail 的 tracks 明细只吐 10 条（trackIds 却是全量）——
+/// 歌单全量走 v3 detail 拿全量 trackIds，再 weapi song/detail 批量补详情，
+/// 与 wy.js 插件（40/批缓存续页）/ Rust playlist_fetcher wy.rs 同源
+export async function fetchWySheetAllTracks(playlistId: string): Promise<PluginSearchResult[]> {
+  if (!/^\d+$/.test(playlistId)) return [];
+
+  const resp = await httpFetch(
+    `https://music.163.com/api/v3/playlist/detail?id=${playlistId}&n=5000`,
+    'GET',
+    {
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+      'Referer': 'https://music.163.com/',
+      Cookie: 'MUSIC_A=1',
+    },
+  );
+  const body = resp.body;
+  const trackIds: any[] = body?.playlist?.trackIds || [];
+  const ids = trackIds.map(t => String(t?.id ?? '')).filter(id => /^\d+$/.test(id));
+  if (ids.length === 0) {
+    log(`fetchWySheetAllTracks: playlist ${playlistId} 无 trackIds（code=${body?.code}）`);
+    return [];
+  }
+
+  const BATCH_SIZE = 1000;
+  const all: PluginSearchResult[] = [];
+  for (let offset = 0; offset < ids.length; offset += BATCH_SIZE) {
+    all.push(...(await fetchWyMusicDetailList(ids.slice(offset, offset + BATCH_SIZE))));
+  }
+  log(`fetchWySheetAllTracks: playlist ${playlistId} trackIds=${ids.length}, details=${all.length}`);
+  return all;
+}
+
 function parseWyTrack(track: any): PluginSearchResult | null {
   const id = String(track.id ?? '');
   if (!id || id === '0') return null;
