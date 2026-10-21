@@ -30,8 +30,8 @@ import SidebarPlaylists from './SidebarPlaylists.vue';
 
 const { sticker } = useDesktopTheme();
 
-const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
 const PlaylistContextMenu = defineAsyncComponent(() => import('../overlays/PlaylistContextMenu.vue'));
+const PlaylistDeletePopconfirm = defineAsyncComponent(() => import('../overlays/PlaylistDeletePopconfirm.vue'));
 const PlaylistModal = defineAsyncComponent(() => import('../overlays/PlaylistModal.vue'));
 const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
 
@@ -140,13 +140,17 @@ const contextMenuShown = contextMenuApi.showContextMenu;
 const contextMenuPosX = contextMenuApi.contextMenuX;
 const contextMenuPosY = contextMenuApi.contextMenuY;
 const contextMenuTarget = contextMenuApi.targetPlaylist;
-const deleteDialogVisible = contextMenuApi.showDeleteModal;
-const deleteDialogText = contextMenuApi.deleteModalContent;
+const deleteConfirmVisible = contextMenuApi.showDeleteConfirm;
+const deleteConfirmText = contextMenuApi.deleteConfirmText;
+const deleteConfirmAnchorEl = contextMenuApi.deleteConfirmAnchorEl;
+const deleteConfirmAnchorX = contextMenuApi.deleteConfirmAnchorX;
+const deleteConfirmAnchorY = contextMenuApi.deleteConfirmAnchorY;
 const scopeDialogVisible = contextMenuApi.showDeleteScopeModal;
 const cloudRemovable = contextMenuApi.canDeleteCloud;
 const applyDeleteScope = contextMenuApi.confirmDeleteScope;
 const requestPlaylistDelete = contextMenuApi.handleDeletePlaylist;
 const applyPlaylistDelete = contextMenuApi.confirmDeletePlaylist;
+const cancelPlaylistDelete = contextMenuApi.cancelDeleteConfirm;
 const openPlaylistContextMenu = contextMenuApi.handlePlaylistContextMenu;
 const runMenuPlay = contextMenuApi.handleMenuPlay;
 const runMenuEnqueue = contextMenuApi.handleMenuAddToQueue;
@@ -242,7 +246,7 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
         @createPlaylist="handleCreatePlaylist" @importPlaylist="handleImportPlaylist"
         @pointerDown="beginPlaylistPointer" @itemPointerMove="trackPlaylistPointer"
         @playlistClick="handleSidebarPlaylistClick" @playlistContextMenu="openPlaylistContextMenu"
-        @deletePlaylist="requestPlaylistDelete" @favoriteCollectionClick="handleFavoriteCollectionClick"
+        @deletePlaylist="(id, name, event) => requestPlaylistDelete(id, name, event)" @favoriteCollectionClick="handleFavoriteCollectionClick"
         @removeFavoriteCollection="handleRemoveFavoriteCollection"
       />
     </nav>
@@ -255,10 +259,10 @@ const asideWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }));
       @play="runMenuPlay" @add-to-queue="runMenuEnqueue" @delete="runMenuDelete"
     />
 
-    <ModernModal 
-      v-if="deleteDialogVisible" v-model:visible="deleteDialogVisible"
-      title="删除播放列表" :content="deleteDialogText" type="danger" confirm-text="删除"
-      @confirm="applyPlaylistDelete"
+    <PlaylistDeletePopconfirm
+      :visible="deleteConfirmVisible" :text="deleteConfirmText"
+      :anchor="deleteConfirmAnchorEl" :fallback-x="deleteConfirmAnchorX" :fallback-y="deleteConfirmAnchorY"
+      @confirm="applyPlaylistDelete" @cancel="cancelPlaylistDelete"
     />
 
     <SyncDeleteScopeModal

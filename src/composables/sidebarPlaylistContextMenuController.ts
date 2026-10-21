@@ -49,19 +49,33 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
   const menuPosY = ref(0);
   const menuTargetPlaylist = ref<Playlist | null>(null);
 
-  const deleteDialogVisible = ref(false);
-  const deleteDialogText = ref('');
-  const deleteDialogIds = ref<string[]>([]);
+  // —— 删除气泡确认（Popconfirm）状态 ——
+  const deleteConfirmVisible = ref(false);
+  const deleteConfirmText = ref('');
+  const deleteConfirmIds = ref<string[]>([]);
+  // 锚点：行内删除按钮传触发事件（停靠按钮弹出）；右键菜单路径无元素，
+  // 用菜单位置做坐标兜底
+  const deleteAnchorEl = ref<HTMLElement | null>(null);
+  const deleteAnchorX = ref(0);
+  const deleteAnchorY = ref(0);
 
   const scopeDialogVisible = ref(false);
   const scopeDialogIds = ref<string[]>([]);
   const cloudRemovable = computed(() => scopeDialogIds.value.some((id) => hasCloudId(id)));
 
   /** 命中云端歌单时改走删除范围弹窗 */
-  const routeToDeleteFlow = (ids: string[], prompt: string) => {
-    deleteDialogIds.value = ids;
-    deleteDialogText.value = prompt;
-    deleteDialogVisible.value = true;
+  const routeToDeleteFlow = (
+    ids: string[],
+    prompt: string,
+    anchor?: MouseEvent | null,
+  ) => {
+    deleteConfirmIds.value = ids;
+    deleteConfirmText.value = prompt;
+    deleteAnchorEl.value =
+      anchor?.currentTarget instanceof HTMLElement ? anchor.currentTarget : null;
+    deleteAnchorX.value = anchor?.clientX ?? menuPosX.value;
+    deleteAnchorY.value = anchor?.clientY ?? menuPosY.value;
+    deleteConfirmVisible.value = true;
   };
 
   const openScopeDialog = (ids: string[]) => {
@@ -69,20 +83,29 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
     scopeDialogVisible.value = true;
   };
 
-  const requestPlaylistDelete = (id: string, name: string) => {
+  const cancelDeleteConfirm = () => {
+    deleteConfirmVisible.value = false;
+    deleteConfirmIds.value = [];
+  };
+
+  const requestPlaylistDelete = (id: string, name: string, anchor?: MouseEvent | null) => {
     if (isCloudOrigin(id)) {
       openScopeDialog([id]);
       return;
     }
-    routeToDeleteFlow([id], `确定要删除播放列表 "${name}" 吗？`);
+    routeToDeleteFlow([id], `确定要删除播放列表 "${name}" 吗？`, anchor);
   };
 
-  const requestBatchPlaylistDelete = (ids: string[], count: number) => {
+  const requestBatchPlaylistDelete = (
+    ids: string[],
+    count: number,
+    anchor?: MouseEvent | null,
+  ) => {
     if (ids.some((id) => isCloudOrigin(id))) {
       openScopeDialog(ids);
       return;
     }
-    routeToDeleteFlow(ids, `确定要删除 ${count} 个播放列表吗？`);
+    routeToDeleteFlow(ids, `确定要删除 ${count} 个播放列表吗？`, anchor);
   };
 
   /** 云端删除范围确认：local 仅删本地，all 连云端一起删，cloud 仅删云端 */
@@ -115,10 +138,9 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
   };
 
   const applyPlaylistDelete = () => {
-    deleteDialogIds.value.forEach((id) => deletePlaylist(id));
+    deleteConfirmIds.value.forEach((id) => deletePlaylist(id));
     clearSelection();
-    deleteDialogIds.value = [];
-    deleteDialogVisible.value = false;
+    cancelDeleteConfirm();
   };
 
   const openPlaylistContextMenu = (event: MouseEvent, playlist: Playlist) => {
@@ -175,13 +197,17 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
     contextMenuX: menuPosX,
     contextMenuY: menuPosY,
     targetPlaylist: menuTargetPlaylist,
-    showDeleteModal: deleteDialogVisible,
-    deleteModalContent: deleteDialogText,
+    showDeleteConfirm: deleteConfirmVisible,
+    deleteConfirmText,
+    deleteConfirmAnchorEl: deleteAnchorEl,
+    deleteConfirmAnchorX: deleteAnchorX,
+    deleteConfirmAnchorY: deleteAnchorY,
     showDeleteScopeModal: scopeDialogVisible,
     canDeleteCloud: cloudRemovable,
     confirmDeleteScope: applyDeleteScope,
     handleDeletePlaylist: requestPlaylistDelete,
     confirmDeletePlaylist: applyPlaylistDelete,
+    cancelDeleteConfirm,
     handlePlaylistContextMenu: openPlaylistContextMenu,
     handleMenuPlay: runMenuPlay,
     handleMenuAddToQueue: runMenuEnqueue,
