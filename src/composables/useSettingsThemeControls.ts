@@ -133,6 +133,16 @@ export function useSettingsThemeControls() {
   const isWindowMaterialButtonDisabled = (mode: PickableMaterialMode) =>
     materialMode.value !== mode && materialModeBlocker(mode) !== null;
 
+  // 仅环境/平台门禁（不含主题冲突）：供下拉档位禁用态使用——
+  // 主题冲突由「选中时互斥关停另一方」消化，不阻断下拉选择。
+  const isMaterialModeEnvironmentBlocked = (mode: PickableMaterialMode) => {
+    if (capabilities.value.systemTransparencyEnabled === false) return true;
+    const requiresWindows11 = mode === 'mica' || mode === 'acrylic';
+    const requiresWindowsBlur = mode === 'blur';
+    return (requiresWindows11 && !isWindows11.value)
+      || (requiresWindowsBlur && (!capabilities.value.isWindows || !capabilities.value.supportsBlur));
+  };
+
   // —— 动作入口 ——
   const setColorScheme = (mode: 'light' | 'dark' | 'custom' | 'system') => {
     colorScheme.value = mode;
@@ -227,8 +237,10 @@ export function useSettingsThemeControls() {
     playerDetailMeshBackground, playerDetailMeshAntiAlias,
     isWindows11, hasWindowMaterialSelected,
     isWindowMaterialDisabled, isWindowMaterialButtonDisabled,
+    isMaterialModeEnvironmentBlocked,
     getWindowMaterialModeDisabledReason, windowMaterialDisabledReason,
     isDynamicBgDisabled,
+    applyDynamicBgType, applyMaterialSetting,
     showFlowTuning, showBlurTuning: blurTuningPanelVisible,
     setColorScheme, setAccentColor, resetAccentColor, setDynamicType, setUseGlassSwitch,
     toggleWindowMaterial, openCustomModal, toggleFlowTuning, toggleBlurTuning: toggleBlurPanel,

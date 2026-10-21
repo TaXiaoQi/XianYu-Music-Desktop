@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { Check, ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
@@ -63,6 +63,7 @@ const TEXT = computed(() => isEnglish.value ? {
   dynamicBlur: 'Static Blur',
   dynamicDisabledHint: 'Dynamic backgrounds are disabled while a custom skin or window material is active.',
   windowMaterialTitle: 'Window Material',
+  materialPresetTitle: 'Theme Material',
   windowMaterialBlur: 'Acrylic Blur',
   windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.',
   windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.',
@@ -129,6 +130,7 @@ const TEXT = computed(() => isEnglish.value ? {
   dynamicBlur: '静态模糊',
   dynamicDisabledHint: '自定义皮肤或窗口材质启用时，动态背景会自动停用。',
   windowMaterialTitle: '窗口材质',
+  materialPresetTitle: '主题材质',
   windowMaterialBlur: '毛玻璃',
   windowMaterialUnsupportedHint: '仅 Windows 10 / 11 支持。',
   windowMaterialTransparencyHint: '需在系统设置中开启透明效果后才可用。',
@@ -224,21 +226,15 @@ const {
   useCustomTrayMenu,
   showLeaderboard,
   playerDetailCoverBehavior,
-  isWindowMaterialDisabled,
-  isWindowMaterialButtonDisabled,
-  getWindowMaterialModeDisabledReason,
+  isMaterialModeEnvironmentBlocked,
   windowMaterialDisabledReason,
-  isDynamicBgDisabled,
+  applyDynamicBgType,
+  applyMaterialSetting,
   showFlowTuning,
-  showBlurTuning,
   setColorScheme,
   setAccentColor,
   resetAccentColor,
-  setDynamicType,
-  toggleWindowMaterial,
   openCustomModal,
-  toggleFlowTuning,
-  toggleBlurTuning,
   setFlowColorBoost,
   setFlowDepth,
   setFlowSpeed,
@@ -324,6 +320,78 @@ const currentSwitchStyleLabel = computed(() =>
 const selectSwitchStyle = (value: boolean) => {
   setUseGlassSwitch(value);
   closeStyleDropdown();
+};
+
+// ---- 主题材质行内下拉（动态背景三档 + 原生窗口材质三档合并） ----
+type MaterialPresetValue = 'off' | 'dynamic-flow' | 'dynamic-blur' | 'material-acrylic' | 'material-mica' | 'material-blur';
+
+const {
+  openId: materialDropdownId,
+  panelRef: materialPanelRef,
+  panelStyle: materialPanelStyle,
+  registerTrigger: registerMaterialTrigger,
+  toggle: toggleMaterialDropdown,
+  close: closeMaterialDropdown,
+} = useInlineSelectDropdown();
+
+const MATERIAL_OPTIONS = computed<Array<{ value: MaterialPresetValue; label: string }>>(() => [
+  { value: 'off', label: TEXT.value.dynamicOff },
+  { value: 'dynamic-flow', label: TEXT.value.dynamicFlow },
+  { value: 'dynamic-blur', label: TEXT.value.dynamicBlur },
+  { value: 'material-acrylic', label: 'Acrylic' },
+  { value: 'material-mica', label: 'Mica' },
+  { value: 'material-blur', label: TEXT.value.windowMaterialBlur },
+]);
+
+const currentMaterialPreset = computed<MaterialPresetValue>(() => {
+  if (theme.value.dynamicBgType === 'flow') return 'dynamic-flow';
+  if (theme.value.dynamicBgType === 'blur') return 'dynamic-blur';
+  if (materialMode.value !== 'none') return `material-${materialMode.value}`;
+  return 'off';
+});
+
+const currentMaterialLabel = computed(() =>
+  MATERIAL_OPTIONS.value.find((option) => option.value === currentMaterialPreset.value)?.label ?? TEXT.value.dynamicOff
+);
+
+// 下拉档位禁用判定：流光两档只受自定义配色阻断（材质冲突在选择时自动互斥消化）；
+// 原生材质三档只看环境/平台门禁。
+const isMaterialPresetDisabled = (value: MaterialPresetValue) => {
+  if (value === 'off') return false;
+  if (value.startsWith('dynamic-')) return colorScheme.value === 'custom';
+  return isMaterialModeEnvironmentBlocked(value.replace('material-', '') as 'mica' | 'acrylic' | 'blur');
+};
+
+const materialPresetHint = (value: MaterialPresetValue): string => {
+  if (value === 'off' || value.startsWith('dynamic-')) {
+    return colorScheme.value === 'custom' ? TEXT.value.dynamicDisabledHint : '';
+  }
+  const mode = value.replace('material-', '') as 'mica' | 'acrylic' | 'blur';
+  if (!isMaterialModeEnvironmentBlocked(mode)) return '';
+  if (windowMaterialDisabledReason.value === 'transparency') return TEXT.value.windowMaterialTransparencyHint;
+  if (mode === 'mica' || mode === 'acrylic') return TEXT.value.windowMaterialWin11Only;
+  return TEXT.value.windowMaterialUnsupportedHint;
+};
+
+const selectMaterialPreset = (value: MaterialPresetValue) => {
+  if (isMaterialPresetDisabled(value)) return;
+
+  if (value === 'off') {
+    applyDynamicBgType('none');
+    applyMaterialSetting('none');
+    showFlowTuning.value = false;
+  } else if (value.startsWith('dynamic-')) {
+    applyMaterialSetting('none');
+    applyDynamicBgType(value === 'dynamic-flow' ? 'flow' : 'blur');
+    showFlowTuning.value = value === 'dynamic-flow';
+  } else {
+    const mode = value.replace('material-', '') as 'mica' | 'acrylic' | 'blur';
+    applyDynamicBgType('none');
+    applyMaterialSetting(mode);
+    showFlowTuning.value = false;
+  }
+
+  closeMaterialDropdown();
 };
 
 // ---- 主题广场入口（列表与应用在 ThemeGallery.vue 弹层内）----
@@ -560,7 +628,7 @@ onUnmounted(() => {
           <button
             type="button"
             :ref="(el) => registerSchemeTrigger('colorScheme', el)"
-            class="flex h-9 w-36 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+            class="flex h-9 w-44 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             @click="toggleSchemeDropdown('colorScheme')"
           >
             <span class="truncate">{{ currentSchemeLabel }}</span>
@@ -592,6 +660,145 @@ onUnmounted(() => {
           </button>
         </div>
 
+        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.materialPresetTitle }}</span>
+          <button
+            type="button"
+            :ref="(el) => registerMaterialTrigger('materialPreset', el)"
+            class="flex h-9 w-44 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+            @click="toggleMaterialDropdown('materialPreset')"
+          >
+            <span class="truncate">{{ currentMaterialLabel }}</span>
+            <ChevronDown
+              class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+              :class="materialDropdownId === 'materialPreset' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+
+        <div
+          v-if="materialMode !== 'none'"
+          class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
+        >
+          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
+          <span class="flex items-center gap-3">
+            <SettingHint :text="TEXT.keepWindowMaterialOnBlurHint" />
+            <button
+              type="button"
+              class="glass-switch"
+              :class="{ 'is-checked': keepWindowMaterialOnBlur }"
+              @click="setKeepWindowMaterialOnBlur(!keepWindowMaterialOnBlur)"
+            ></button>
+          </span>
+        </div>
+
+        <div v-if="theme.dynamicBgType === 'flow'" class="px-4 py-3">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ FLOW_TEXT.panelTitle }}</div>
+            <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]">
+              {{ theme.flowColorBoost }} / {{ theme.flowDepth }} / {{ theme.flowSpeed }} / {{ theme.flowTexture }}
+            </div>
+          </div>
+          <div class="space-y-4">
+            <label class="block">
+              <div class="mb-1.5 flex items-center justify-between gap-4">
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.colorBoost }}</div>
+                <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowColorBoost }}</div>
+              </div>
+              <RangeSlider
+                :model-value="theme.flowColorBoost"
+                :min="0"
+                :max="100"
+                :step="1"
+                variant="brand"
+                @update:model-value="setFlowColorBoost"
+              />
+              <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
+                <span>{{ FLOW_TEXT.subtle }}</span>
+                <span>{{ FLOW_TEXT.vivid }}</span>
+              </div>
+            </label>
+            <label class="block">
+              <div class="mb-1.5 flex items-center justify-between gap-4">
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.depth }}</div>
+                <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowDepth }}</div>
+              </div>
+              <RangeSlider
+                :model-value="theme.flowDepth"
+                :min="0"
+                :max="100"
+                :step="1"
+                variant="brand"
+                @update:model-value="setFlowDepth"
+              />
+              <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
+                <span>{{ FLOW_TEXT.airy }}</span>
+                <span>{{ FLOW_TEXT.deep }}</span>
+              </div>
+            </label>
+            <label class="block">
+              <div class="mb-1.5 flex items-center justify-between gap-4">
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.speed }}</div>
+                <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowSpeed }}</div>
+              </div>
+              <RangeSlider
+                :model-value="theme.flowSpeed"
+                :min="0"
+                :max="100"
+                :step="1"
+                variant="brand"
+                @update:model-value="setFlowSpeed"
+              />
+              <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
+                <span>{{ FLOW_TEXT.calm }}</span>
+                <span>{{ FLOW_TEXT.brisk }}</span>
+              </div>
+            </label>
+            <label class="block">
+              <div class="mb-1.5 flex items-center justify-between gap-4">
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.texture }}</div>
+                <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowTexture }}</div>
+              </div>
+              <RangeSlider
+                :model-value="theme.flowTexture"
+                :min="0"
+                :max="100"
+                :step="1"
+                variant="brand"
+                @update:model-value="setFlowTexture"
+              />
+              <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
+                <span>{{ FLOW_TEXT.clean }}</span>
+                <span>{{ FLOW_TEXT.textured }}</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div v-if="materialMode === 'blur'" class="px-4 py-3">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ BLUR_TEXT.panelTitle }}</div>
+            <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]">
+              {{ theme.windowBlurTint }}
+            </div>
+          </div>
+          <label class="block">
+            <RangeSlider
+              :model-value="theme.windowBlurTint"
+              :min="0"
+              :max="100"
+              :step="1"
+              variant="brand"
+              @update:model-value="setWindowBlurTint"
+            />
+            <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50">
+              <span>{{ BLUR_TEXT.clear }}</span>
+              <span>{{ BLUR_TEXT.solid }}</span>
+            </div>
+          </label>
+        </div>
+
         <button
           type="button"
           class="group flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-white/30 dark:hover:bg-white/10"
@@ -621,7 +828,7 @@ onUnmounted(() => {
           <button
             type="button"
             :ref="(el) => registerStyleTrigger('switchStyle', el)"
-            class="flex h-9 w-36 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+            class="flex h-9 w-44 shrink-0 items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             @click="toggleStyleDropdown('switchStyle')"
           >
             <span class="truncate">{{ currentSwitchStyleLabel }}</span>
@@ -683,328 +890,36 @@ onUnmounted(() => {
             </button>
           </div>
         </Transition>
+        <Transition name="settings-dropdown">
+          <div
+            v-if="materialDropdownId"
+            ref="materialPanelRef"
+            class="settings-inline-dropdown custom-scrollbar"
+            :style="materialPanelStyle"
+          >
+            <button
+              v-for="option in MATERIAL_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': currentMaterialPreset === option.value }"
+              :disabled="isMaterialPresetDisabled(option.value)"
+              :title="materialPresetHint(option.value)"
+              @click="selectMaterialPreset(option.value)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+              <Check
+                v-if="currentMaterialPreset === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </Transition>
       </Teleport>
       </div>
     </section>
 
-    <section class="space-y-3"> 
-      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          {{ TEXT.dynamicTitle }}
-        </span>
-        <SettingHint :text="isDynamicBgDisabled ? `${TEXT.dynamicHint} ${TEXT.dynamicDisabledHint}` : TEXT.dynamicHint" />
-      </h2>
-      <div class="space-y-4"> 
-        <div :class="isDynamicBgDisabled ? 'pointer-events-none opacity-50' : ''"> 
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-3"> 
-            <button
-              type="button" 
-              class="rounded-xl border px-4 py-3 text-left transition-all" 
-              :class="theme.dynamicBgType === 'none' 
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
-                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
-              @click="setDynamicType('none')" 
-            >
-              <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicOff }}</div> 
-            </button>
-
-            <div class="relative"> 
-              <button
-                type="button" 
-                class="w-full rounded-xl border px-4 py-3 pr-12 text-left transition-all" 
-                :class="theme.dynamicBgType === 'flow' 
-                  ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
-                  : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
-                @click="setDynamicType('flow')" 
-              >
-                <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicFlow }}</div> 
-              </button>
-
-              <button
-                type="button" 
-                class="absolute bottom-3 right-3 rounded-full p-1 text-[#EC4141]/70 opacity-40 transition-all duration-300 hover:bg-[#EC4141]/10 hover:opacity-100" 
-                :class="showFlowTuning && theme.dynamicBgType === 'flow' ? 'bg-[#EC4141]/10 opacity-100' : ''" 
-                :aria-label="FLOW_TEXT.toggleLabel" 
-                @click.stop="toggleFlowTuning" 
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg" 
-                  class="h-4 w-4 transition-transform duration-300" 
-                  :class="showFlowTuning && theme.dynamicBgType === 'flow' ? 'rotate-180' : ''" 
-                  fill="none"
-                  viewBox="0 0 24 24" 
-                  stroke="currentColor" 
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /> 
-                </svg>
-              </button>
-            </div>
-
-            <button
-              type="button" 
-              class="rounded-xl border px-4 py-3 text-left transition-all" 
-              :class="theme.dynamicBgType === 'blur' 
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
-                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
-              @click="setDynamicType('blur')" 
-            >
-              <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicBlur }}</div> 
-            </button>
-          </div>
-
-          <transition name="flow-panel"> 
-            <div
-              v-if="theme.dynamicBgType === 'flow' && showFlowTuning && !isDynamicBgDisabled" 
-              class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
-            >
-              <div class="mb-4 flex items-center justify-between gap-3"> 
-                <div>
-                  <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ FLOW_TEXT.panelTitle }}</div> 
-                  <div class="text-xs text-gray-600 dark:text-white/60">XianYu Music Flow</div>
-                </div>
-                <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]"> 
-                  {{ theme.flowColorBoost }} / {{ theme.flowDepth }} / {{ theme.flowSpeed }} / {{ theme.flowTexture }} 
-                </div>
-              </div>
-
-              <div class="space-y-4"> 
-              <label class="block"> 
-                <div class="mb-1.5 flex items-center justify-between gap-4"> 
-                  <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.colorBoost }}</div> 
-                  </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowColorBoost }}</div> 
-                </div>
-                <RangeSlider
-                  :model-value="theme.flowColorBoost"
-                  :min="0"
-                  :max="100"
-                  :step="1"
-                  variant="brand"
-                  @update:model-value="setFlowColorBoost"
-                />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
-                  <span>{{ FLOW_TEXT.subtle }}</span> 
-                  <span>{{ FLOW_TEXT.vivid }}</span> 
-                </div>
-              </label>
-
-              <label class="block"> 
-                <div class="mb-1.5 flex items-center justify-between gap-4"> 
-                  <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.depth }}</div> 
-                  </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowDepth }}</div> 
-                </div>
-                <RangeSlider
-                  :model-value="theme.flowDepth"
-                  :min="0"
-                  :max="100"
-                  :step="1"
-                  variant="brand"
-                  @update:model-value="setFlowDepth"
-                />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
-                  <span>{{ FLOW_TEXT.airy }}</span> 
-                  <span>{{ FLOW_TEXT.deep }}</span> 
-                </div>
-              </label>
-
-              <label class="block"> 
-                <div class="mb-1.5 flex items-center justify-between gap-4"> 
-                  <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.speed }}</div> 
-                  </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowSpeed }}</div> 
-                </div>
-                <RangeSlider
-                  :model-value="theme.flowSpeed"
-                  :min="0"
-                  :max="100"
-                  :step="1"
-                  variant="brand"
-                  @update:model-value="setFlowSpeed"
-                />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
-                  <span>{{ FLOW_TEXT.calm }}</span> 
-                  <span>{{ FLOW_TEXT.brisk }}</span> 
-                </div>
-              </label>
-
-              <label class="block"> 
-                <div class="mb-1.5 flex items-center justify-between gap-4"> 
-                  <div>
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ FLOW_TEXT.texture }}</div> 
-                  </div>
-                  <div class="text-xs font-medium tabular-nums text-[#EC4141]">{{ theme.flowTexture }}</div> 
-                </div>
-                <RangeSlider
-                  :model-value="theme.flowTexture"
-                  :min="0"
-                  :max="100"
-                  :step="1"
-                  variant="brand"
-                  @update:model-value="setFlowTexture"
-                />
-                <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
-                  <span>{{ FLOW_TEXT.clean }}</span> 
-                  <span>{{ FLOW_TEXT.textured }}</span> 
-                </div>
-              </label>
-            </div>
-          </div>
-        </transition> 
-
-      </div>
-      </div>
-    </section>
-
-    <section class="space-y-3"> 
-      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          {{ TEXT.windowMaterialTitle }}
-        </span>
-        <SettingHint
-          v-if="windowMaterialDisabledReason"
-          :text="windowMaterialDisabledReason === 'windows'
-            ? TEXT.windowMaterialUnsupportedHint
-            : windowMaterialDisabledReason === 'transparency'
-              ? TEXT.windowMaterialTransparencyHint
-              : TEXT.windowMaterialConflictHint"
-        />
-      </h2>
-      <div
-        class=""
-        :class="isWindowMaterialDisabled ? 'opacity-50' : ''" 
-      >
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-3"> 
-          <button
-            type="button" 
-            class="rounded-xl border px-4 py-3 text-left transition-all" 
-            :class="[
-              materialMode === 'acrylic' 
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
-                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
-              isWindowMaterialButtonDisabled('acrylic') ? 'cursor-not-allowed opacity-45' : '', 
-            ]"
-            :disabled="isWindowMaterialButtonDisabled('acrylic')" 
-            :aria-disabled="isWindowMaterialButtonDisabled('acrylic')" 
-            :title="getWindowMaterialModeDisabledReason('acrylic') === 'windows11' ? TEXT.windowMaterialWin11Only : ''" 
-            @click="toggleWindowMaterial('acrylic')" 
-          >
-            <div class="flex items-center justify-between gap-3"> 
-              <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Acrylic</span> 
-            </div>
-          </button>
-
-          <button
-            type="button" 
-            class="rounded-xl border px-4 py-3 text-left transition-all" 
-            :class="[
-              materialMode === 'mica' 
-                ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
-                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
-              isWindowMaterialButtonDisabled('mica') ? 'cursor-not-allowed opacity-45' : '', 
-            ]"
-            :disabled="isWindowMaterialButtonDisabled('mica')" 
-            :aria-disabled="isWindowMaterialButtonDisabled('mica')" 
-            :title="getWindowMaterialModeDisabledReason('mica') === 'windows11' ? TEXT.windowMaterialWin11Only : ''" 
-            @click="toggleWindowMaterial('mica')" 
-          >
-            <div class="flex items-center justify-between gap-3"> 
-              <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Mica</span> 
-            </div>
-          </button>
-
-          <div class="relative"> 
-            <button
-              type="button" 
-              class="w-full rounded-xl border px-4 py-3 pr-12 text-left transition-all" 
-              :class="[
-                materialMode === 'blur' 
-                  ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm' 
-                  : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
-                isWindowMaterialButtonDisabled('blur') ? 'cursor-not-allowed opacity-45' : '', 
-              ]"
-              :disabled="isWindowMaterialButtonDisabled('blur')" 
-              :aria-disabled="isWindowMaterialButtonDisabled('blur')" 
-              @click="toggleWindowMaterial('blur')" 
-            >
-              <div class="flex items-center justify-between gap-3"> 
-                <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.windowMaterialBlur }}</span> 
-              </div>
-            </button>
-
-            <button
-              type="button" 
-              class="absolute bottom-3 right-3 rounded-full p-1 text-[#EC4141]/70 opacity-40 transition-all duration-300 hover:bg-[#EC4141]/10 hover:opacity-100" 
-              :class="showBlurTuning && materialMode === 'blur' ? 'bg-[#EC4141]/10 opacity-100' : ''" 
-              :aria-label="BLUR_TEXT.toggleLabel" 
-              @click.stop="toggleBlurTuning" 
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg" 
-                class="h-4 w-4 transition-transform duration-300" 
-                :class="showBlurTuning && materialMode === 'blur' ? 'rotate-180' : ''" 
-                fill="none"
-                viewBox="0 0 24 24" 
-                stroke="currentColor" 
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /> 
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div
-          class="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all dark:border-gray-800/40 dark:bg-black/10"
-          :class="materialMode === 'none' ? 'opacity-50' : 'hover:border-[#EC4141]/35 hover:bg-white/30 dark:hover:bg-white/10'"
-        >
-          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
-          <span class="flex items-center gap-3">
-            <SettingHint :text="TEXT.keepWindowMaterialOnBlurHint" />
-            <button
-              type="button"
-              class="glass-switch"
-              :class="{ 'is-checked': keepWindowMaterialOnBlur && materialMode !== 'none' }"
-              :disabled="materialMode === 'none'"
-              @click="setKeepWindowMaterialOnBlur(!keepWindowMaterialOnBlur)"
-            ></button>
-          </span>
-        </div>
-
-        <transition name="flow-panel"> 
-          <div
-            v-if="materialMode === 'blur' && showBlurTuning" 
-            class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
-          >
-            <div class="mb-4 flex items-center justify-between gap-3"> 
-              <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ BLUR_TEXT.panelTitle }}</div> 
-              <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]"> 
-                {{ theme.windowBlurTint }} 
-              </div>
-            </div>
-
-            <label class="block"> 
-              <RangeSlider
-                :model-value="theme.windowBlurTint"
-                :min="0"
-                :max="100"
-                :step="1"
-                variant="brand"
-                @update:model-value="setWindowBlurTint"
-              />
-              <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500 dark:text-white/50"> 
-                <span>{{ BLUR_TEXT.clear }}</span> 
-                <span>{{ BLUR_TEXT.solid }}</span> 
-              </div>
-            </label>
-          </div>
-        </transition> 
-      </div>
-    </section>
 
     <!-- 主题色选色弹窗：入口已并入「主题」分组 -->
     <Teleport to="body">

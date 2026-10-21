@@ -423,6 +423,7 @@ export const exactEnglishTranslations: Record<string, string> = {
   '配色方案': 'Color Scheme',
   '动态背景': 'Dynamic Background',
   '窗口材质': 'Window Material',
+  '主题材质': 'Theme Material',
   '底部栏布局': 'Footer Layout',
   '顶部栏布局': 'Top Bar Layout',
   '侧边栏管理': 'Sidebar Management',
