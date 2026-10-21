@@ -49,6 +49,40 @@ function isValidAlbumId(source: LxSourceId, albumId: string): boolean {
   return /^\d+$/.test(albumId);
 }
 
+// 咪咕 queryMusicListSongs 条目封面：albumImgs[0].img → albumPic/img3/img2/img1，
+// http(s) 原样、// 补 http:、裸路径补 d.musicapp.migu.cn 前缀（对齐 Rust mg.rs pick_cover_url）
+function mgCoverUrl(item: any): string | null {
+  const imgs = item?.albumImgs;
+  let raw = Array.isArray(imgs) && imgs.length > 0 ? String(imgs[0]?.img ?? '') : '';
+  if (!raw) raw = String(item?.albumPic ?? item?.img3 ?? item?.img2 ?? item?.img1 ?? '');
+  if (!raw) return null;
+  if (/^https?:/.test(raw)) return raw;
+  if (raw.startsWith('//')) return `http://${raw.slice(2)}`;
+  return `http://d.musicapp.migu.cn${raw}`;
+}
+
+// 咪咕时长：候选字段顺序取第一个有效值；"mm:ss"/"hh:mm:ss" 逐段 ×60 累加，
+// 数字 ≥1000 按毫秒折算、否则按秒，返回秒（对齐 Rust mg.rs pick_duration_seconds）
+function mgLengthSeconds(item: any): number {
+  for (const key of ['duration', 'length', 'songTime', 'playTime', 'timeLength', 'songLength', 'lengthOfTrack']) {
+    const v = item?.[key];
+    if (v == null || v === '') continue;
+    if (typeof v === 'string' && v.includes(':')) {
+      let total = 0;
+      let ok = true;
+      for (const part of v.split(':')) {
+        const n = Number.parseInt(part, 10);
+        if (Number.isNaN(n)) { ok = false; break; }
+        total = total * 60 + n;
+      }
+      if (ok && total > 0) return total;
+    } else if (typeof v === 'number' && v > 0) {
+      return v >= 1000 ? Math.round(v / 1000) : Math.round(v);
+    }
+  }
+  return 0;
+}
+
 export async function lxGetAlbumSongs(
   source: LxSourceId,
   albumRawData: any,
@@ -543,17 +577,24 @@ export async function lxGetPlaylistTracks(
         return { list, isEnd: list.length < limit };
       }
       case 'mg': {
-        // 该接口单页上限较小，压低 pageSize 保证能完整翻页
+        // playlist_callback 旧接口已下线（返回 HTML → Invalid JSON）。改用咪咕 App
+        // 同款 queryMusicListSongs.do（与插件 getMusicSheetInfo / Rust playlist_fetcher
+        // mg.rs 同源）：30/页，code='000000' + list，短页即止；条目字段
+        // songName/artists/album/length/albumImgs 为该接口实测命名
         const mgPageSize = Math.min(limit, 30);
-        const url = `https://m.music.migu.cn/migu/remoting/playlist_callback?playlistId=${playlistId}&pageNo=${page}&pageSize=${mgPageSize}`;
-        const data = await httpGetJson(url);
-        const rawList: any[] = data?.list || data?.resultList || [];
+        const url = `https://app.c.nf.migu.cn/MIGUM2.0/v1.0/user/queryMusicListSongs.do?musicListId=${playlistId}&pageNo=${page}&pageSize=${mgPageSize}`;
+        const data = await httpGetJson(url, {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+          Referer: 'https://m.music.migu.cn/',
+        });
+        if (data?.code && data.code !== '000000') throw new Error(`MG playlist ${playlistId}: code=${data.code}`);
+        const rawList: any[] = data?.list || [];
         if (rawList.length === 0) console.warn(`[LxMusicSdk] MG playlist ${playlistId}: empty list`);
         const list = rawList.map((item: any) => buildSimpleLxItem(
-          'mg', String(item.songId || item.id), item.name || item.songName || '',
-          formatSingerName(item.singerList || item.singers),
+          'mg', String(item.songId || item.id), item.songName || item.name || '',
+          formatSingerName(item.artists) || formatSingerName(String(item.singer ?? '').split('|').join('、')),
           item.album || item.albumName || '', item.albumId || '',
-          formatPlayTime(item.duration || 0), item.img3 || item.img2 || item.img1 || null,
+          formatPlayTime(mgLengthSeconds(item)), mgCoverUrl(item),
           { copyrightId: item.copyrightId },
         ));
         return { list, isEnd: list.length < mgPageSize };

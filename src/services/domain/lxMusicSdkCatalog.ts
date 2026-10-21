@@ -92,16 +92,18 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
     seen.add(dedupeKey);
 
     const creator = raw.creator;
-    let coverUrl = String(firstValue(raw, ['coverUrl', 'coverImgUrl', 'img', 'imgurl', 'pic', 'picUrl', 'pic_url', 'PIC', 'album_pic_url', 'hts_pic']) || '');
+    // 候选表含咪咕歌单特有字段：musicListPicUrl(封面)/userName(创建者)/
+    // musicNum(歌曲数)/playNum(播放数)，均为实测 V3 歌单条目字段名
+    let coverUrl = String(firstValue(raw, ['coverUrl', 'coverImgUrl', 'img', 'imgurl', 'pic', 'picUrl', 'pic_url', 'PIC', 'album_pic_url', 'hts_pic', 'musicListPicUrl']) || '');
     if (coverUrl.startsWith('//')) coverUrl = `https:${coverUrl}`;
     else if (coverUrl.startsWith('http://')) coverUrl = coverUrl.replace('http://', 'https://');
     results.push({
       id: `${source}:playlist:${id}`,
       title: decodeName(String(titleValue).replace(/<[^>]*>/g, '')),
       coverUrl,
-      artist: String(firstValue(raw, ['artist', 'author', 'nickname', 'uname', 'UNAME']) || creator?.name || creator?.nickname || ''),
-      trackCount: Number(firstValue(raw, ['trackCount', 'trackcount', 'songCount', 'song_count', 'songnum', 'SONGNUM'])) || undefined,
-      playCount: Number(firstValue(raw, ['playCount', 'playcount', 'play_count', 'playcnt', 'listennum', 'LISTENNUM'])) || undefined,
+      artist: String(firstValue(raw, ['artist', 'author', 'nickname', 'uname', 'userName', 'UNAME']) || creator?.name || creator?.nickname || ''),
+      trackCount: Number(firstValue(raw, ['trackCount', 'trackcount', 'songCount', 'song_count', 'songnum', 'musicNum', 'SONGNUM'])) || undefined,
+      playCount: Number(firstValue(raw, ['playCount', 'playcount', 'play_count', 'playcnt', 'playNum', 'listennum', 'LISTENNUM'])) || undefined,
       rawData: raw,
     });
   }
@@ -207,7 +209,9 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
     'User-Agent': 'Mozilla/5.0 (Linux; Android 11)',
   });
   const resultData = data?.songListResultData || data?.songlistResultData || {};
-  return normalizeLxPlaylistResults(source, resultData.resultList || resultData.list || []);
+  // 咪咕 V3 歌单数组在 songListResultData.result（resultList/list 是旧猜测字段，
+  // 实测响应里不存在——读错字段会静默返回空，小蜜音乐 tab 恒 0 结果）
+  return normalizeLxPlaylistResults(source, resultData.result || resultData.resultList || resultData.list || []);
 }
 
 export async function lxCatalogSearch(
