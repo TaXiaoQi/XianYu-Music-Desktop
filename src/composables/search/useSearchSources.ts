@@ -98,8 +98,13 @@ export function useSearchSources() {
   }
 
   const allSourceList = computed<SourceItem[]>(() => {
-    // 本地来源恒在首位（与移动端一致）：有插件/网盘等网页来源时也保留本地搜索
-    const out: SourceItem[] = [{ id: 'local', name: '本地', type: 'local' }];
+    // 有启用的音源插件时不再提供「本地」来源：在线歌随时可播，已下载与否由
+    // 下载列表达，本地入口只剩「本地音乐」页（pluginsVersion 仅为响应式依赖）
+    void pluginsVersion.value;
+    const hasEnabledPlugin = getStoredPlugins().some((p) => p.enabled);
+    const out: SourceItem[] = hasEnabledPlugin
+      ? []
+      : [{ id: 'local', name: '本地', type: 'local' }];
     // 网盘排序位 = 前方插件数（音源管理页拖拽落点）；null=固定末尾。
     // 同位多个网盘保持注册顺序：cloud 插在第一个 sortOrder >= idx 的插件之前
     const clouds = [...cloudSourceList.value].sort((a, b) => {
