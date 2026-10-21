@@ -49,11 +49,19 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
   /**
    * 远程封面（含导入备份里记录的 http:// 直链）不得直接进 <img>：
    * CSP 不放行外部 http 且部分 CDN 有热链防护，统一走原生代理取回
-   * dataUrl（就绪后 bump 版本号驱动模板重取），本地/协议地址原样返回。
+   * dataUrl，本地/协议地址原样返回。
+   * 传 cacheKey 时在取图就绪回调里直接回填侧栏缓存——否则未就绪期的
+   * 空值占位会被 adopt/get 的「缓存已有」早退判定短路，重启后封面永久空白。
    */
-  const proxiedRemoteCover = (url: string): string => {
+  const proxiedRemoteCover = (url: string, cacheKey?: string): string => {
     if (!/^https?:\/\//i.test(url)) return url;
-    return getDisplayCoverUrl(url, () => bumpCoverVersion());
+    return getDisplayCoverUrl(url, () => {
+      if (cacheKey) {
+        const ready = getDisplayCoverUrl(url);
+        if (ready) sidebarPlaylistCoverCache.set(cacheKey, ready);
+      }
+      bumpCoverVersion();
+    });
   };
 
   /** 用歌单内首曲的缩略图直接预热封面缓存 */
@@ -78,14 +86,17 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
 
     const primedUrl = primeFromPlaylistTracks(playlistId, firstSongPath);
     if (primedUrl) {
-      sidebarPlaylistCoverCache.set(playlistId, proxiedRemoteCover(primedUrl));
-      return true;
+      const url = proxiedRemoteCover(primedUrl, playlistId);
+      if (url) {
+        sidebarPlaylistCoverCache.set(playlistId, url);
+        return true;
+      }
     }
 
     try {
       const assetUrl = await loadCover(firstSongPath);
       if (assetUrl) {
-        sidebarPlaylistCoverCache.set(playlistId, proxiedRemoteCover(assetUrl));
+        sidebarPlaylistCoverCache.set(playlistId, proxiedRemoteCover(assetUrl, playlistId));
         return true;
       }
       return sidebarPlaylistCoverCache.delete(playlistId);
@@ -108,10 +119,14 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
       return true;
     }
 
-    sidebarPlaylistCoverCache.set(
-      playlistId,
-      looksLikeSelfContainedUrl(coverPath) ? proxiedRemoteCover(coverPath) : convertFileSrc(coverPath),
-    );
+    const customUrl = looksLikeSelfContainedUrl(coverPath)
+      ? proxiedRemoteCover(coverPath, playlistId)
+      : convertFileSrc(coverPath);
+    // 代理取图未就绪返回空串：不写缓存占位（否则会永久短路后续刷新），
+    // 就绪回调里由 proxiedRemoteCover 直接回填
+    if (customUrl) {
+      sidebarPlaylistCoverCache.set(playlistId, customUrl);
+    }
     return true;
   };
 
@@ -122,7 +137,10 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
       return false;
     }
     activeCustomCoverByPlaylist.set(playlistId, cloudCoverUrl);
-    sidebarPlaylistCoverCache.set(playlistId, proxiedRemoteCover(cloudCoverUrl));
+    const url = proxiedRemoteCover(cloudCoverUrl, playlistId);
+    if (url) {
+      sidebarPlaylistCoverCache.set(playlistId, url);
+    }
     return true;
   };
 
@@ -179,26 +197,25 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
     if (cached) {
       return cached;
     }
-    // 缓存占位存在但值为 undefined：http 直链封面代理取图中，等待取回后的
-    // bump 刷新；此处若继续走下方同步分支会每次渲染重复 bump 造成递归更新
-    if (sidebarPlaylistCoverCache.has(playlistId)) {
-      return undefined;
-    }
 
     const playlist = playlists.value.find((item) => item.id === playlistId);
 
     if (playlist?.coverPath) {
       const url = looksLikeSelfContainedUrl(playlist.coverPath)
-        ? proxiedRemoteCover(playlist.coverPath)
+        ? proxiedRemoteCover(playlist.coverPath, playlistId)
         : convertFileSrc(playlist.coverPath);
-      sidebarPlaylistCoverCache.set(playlistId, url);
-      activeCustomCoverByPlaylist.set(playlistId, playlist.coverPath);
+      if (url) {
+        sidebarPlaylistCoverCache.set(playlistId, url);
+        activeCustomCoverByPlaylist.set(playlistId, playlist.coverPath);
+      }
       return url;
     }
 
     if (playlist?.cloudCoverUrl && looksLikeRemoteHttp(playlist.cloudCoverUrl)) {
-      const url = proxiedRemoteCover(playlist.cloudCoverUrl);
-      sidebarPlaylistCoverCache.set(playlistId, url);
+      const url = proxiedRemoteCover(playlist.cloudCoverUrl, playlistId);
+      if (url) {
+        sidebarPlaylistCoverCache.set(playlistId, url);
+      }
       return url;
     }
 
@@ -206,9 +223,11 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
     if (firstSongPath) {
       const primedUrl = primeFromPlaylistTracks(playlistId, firstSongPath);
       if (primedUrl) {
-        const url = proxiedRemoteCover(primedUrl);
-        sidebarPlaylistCoverCache.set(playlistId, url);
-        return url;
+        const url = proxiedRemoteCover(primedUrl, playlistId);
+        if (url) {
+          sidebarPlaylistCoverCache.set(playlistId, url);
+          return url;
+        }
       }
       void requestCoverLoad(playlistId, firstSongPath);
     }
