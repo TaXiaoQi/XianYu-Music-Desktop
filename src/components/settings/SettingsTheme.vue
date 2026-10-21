@@ -64,6 +64,10 @@ const TEXT = computed(() => isEnglish.value ? {
   dynamicDisabledHint: 'Dynamic backgrounds are disabled while a custom skin or window material is active.',
   windowMaterialTitle: 'Window Material',
   materialPresetTitle: 'Theme Material',
+  materialFlowDynamic: 'Dynamic Flow',
+  materialFlowStatic: 'Static Flow',
+  materialAcrylic: 'Acrylic',
+  materialFrosted: 'Frosted Glass',
   windowMaterialBlur: 'Acrylic Blur',
   windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.',
   windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.',
@@ -72,10 +76,10 @@ const TEXT = computed(() => isEnglish.value ? {
   keepWindowMaterialOnBlur: 'Keep Material When Unfocused',
   keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.',
   trayMenuTitle: 'Tray Menu',
-  customTrayMenu: 'Use Custom Tray Menu',
-  customTrayMenuHint: 'Use the tray menu drawn by XianYu Music. Turn this off to use the native system menu.',
+  customTrayMenu: 'Tray Style',
+  customTrayMenuHint: 'Use the tray menu drawn by XianYu Music, or switch back to the native system menu.',
   customTrayMenuOn: 'Custom',
-  customTrayMenuOff: 'System',
+  customTrayMenuOff: 'System Native',
   leaderboardTitle: 'Home Leaderboard',
   leaderboardEnable: 'Show the listening leaderboard on Home',
   leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.',
@@ -131,6 +135,10 @@ const TEXT = computed(() => isEnglish.value ? {
   dynamicDisabledHint: '自定义皮肤或窗口材质启用时，动态背景会自动停用。',
   windowMaterialTitle: '窗口材质',
   materialPresetTitle: '主题材质',
+  materialFlowDynamic: '动态流光',
+  materialFlowStatic: '静态流光',
+  materialAcrylic: '亚克力',
+  materialFrosted: '毛玻璃',
   windowMaterialBlur: '毛玻璃',
   windowMaterialUnsupportedHint: '仅 Windows 10 / 11 支持。',
   windowMaterialTransparencyHint: '需在系统设置中开启透明效果后才可用。',
@@ -139,10 +147,10 @@ const TEXT = computed(() => isEnglish.value ? {
   keepWindowMaterialOnBlur: '失焦保持材质',
   keepWindowMaterialOnBlurHint: '开启后窗口失焦时仍会尝试保持当前材质效果。',
   trayMenuTitle: '托盘菜单',
-  customTrayMenu: '启动自定义托盘',
-  customTrayMenuHint: '开启后默认使用 XianYu Music 绘制的托盘菜单；关闭后使用系统原生菜单。',
+  customTrayMenu: '托盘样式',
+  customTrayMenuHint: '使用弦予音乐绘制的托盘菜单，或切换回系统原生菜单。',
   customTrayMenuOn: '自定义',
-  customTrayMenuOff: '系统',
+  customTrayMenuOff: '系统原生',
   leaderboardTitle: '首页排行榜',
   leaderboardEnable: '是否在首页展示听歌排行榜',
   leaderboardHint: '关闭后首页将不再显示听歌排行榜。',
@@ -336,11 +344,11 @@ const {
 
 const MATERIAL_OPTIONS = computed<Array<{ value: MaterialPresetValue; label: string }>>(() => [
   { value: 'off', label: TEXT.value.dynamicOff },
-  { value: 'dynamic-flow', label: TEXT.value.dynamicFlow },
-  { value: 'dynamic-blur', label: TEXT.value.dynamicBlur },
-  { value: 'material-acrylic', label: 'Acrylic' },
+  { value: 'dynamic-flow', label: TEXT.value.materialFlowDynamic },
+  { value: 'dynamic-blur', label: TEXT.value.materialFlowStatic },
+  { value: 'material-acrylic', label: TEXT.value.materialAcrylic },
   { value: 'material-mica', label: 'Mica' },
-  { value: 'material-blur', label: TEXT.value.windowMaterialBlur },
+  { value: 'material-blur', label: TEXT.value.materialFrosted },
 ]);
 
 const currentMaterialPreset = computed<MaterialPresetValue>(() => {
@@ -353,6 +361,30 @@ const currentMaterialPreset = computed<MaterialPresetValue>(() => {
 const currentMaterialLabel = computed(() =>
   MATERIAL_OPTIONS.value.find((option) => option.value === currentMaterialPreset.value)?.label ?? TEXT.value.dynamicOff
 );
+
+// ---- 托盘样式行内下拉（自定义 / 系统原生） ----
+const {
+  openId: trayDropdownId,
+  panelRef: trayPanelRef,
+  panelStyle: trayPanelStyle,
+  registerTrigger: registerTrayTrigger,
+  toggle: toggleTrayDropdown,
+  close: closeTrayDropdown,
+} = useInlineSelectDropdown<boolean>();
+
+const TRAY_STYLE_OPTIONS = computed<Array<{ value: boolean; label: string }>>(() => [
+  { value: true, label: TEXT.value.customTrayMenuOn },
+  { value: false, label: TEXT.value.customTrayMenuOff },
+]);
+
+const currentTrayStyleLabel = computed(() =>
+  useCustomTrayMenu.value ? TEXT.value.customTrayMenuOn : TEXT.value.customTrayMenuOff
+);
+
+const selectTrayStyle = (value: boolean) => {
+  setUseCustomTrayMenu(value);
+  closeTrayDropdown();
+};
 
 // 下拉档位禁用判定：流光两档只受自定义配色阻断（材质冲突在选择时自动互斥消化）；
 // 原生材质三档只看环境/平台门禁。
