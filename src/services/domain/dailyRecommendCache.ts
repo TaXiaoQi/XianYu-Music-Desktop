@@ -2,13 +2,15 @@
 import { mulberry32 } from './dailyRecommendCore';
 import type { DailyRecommendAlgorithm, DailyRecommendItem } from './dailyRecommendTypes';
 
-// v2：候选新增 cloudCtx 网盘载荷（v1 无该字段，直接换 key 作废旧缓存）
-const CACHE_KEY = 'xy.dailyRecommend.v2';
+// v3：新增 pluginFingerprint 插件指纹（v2 无该字段，直接换 key 作废旧缓存）：
+// 装/启用插件后日推候选池会变，指纹不匹配即重新生成，避免旧缓存长期命中
+const CACHE_KEY = 'xy.dailyRecommend.v3';
 
 interface DailyRecommendCache {
   ciyuanxiId: string;
   date: string;
   batch: number;
+  pluginFingerprint: string;
   algorithm: DailyRecommendAlgorithm;
   candidates: DailyRecommendItem[];
 }
@@ -19,6 +21,7 @@ export function loadCache(): DailyRecommendCache | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DailyRecommendCache;
     if (!parsed?.algorithm?.strategies || !Array.isArray(parsed.candidates)) return null;
+    if (typeof parsed.pluginFingerprint !== 'string') return null;
     return parsed;
   } catch {
     return null;
