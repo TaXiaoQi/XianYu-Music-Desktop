@@ -418,3 +418,72 @@ html.no-glass-switch .glass-switch::after {
     transform: none;
   }
 }
+
+/* --- 设置页行内下拉（Teleport + fixed 定位，规避 overflow-hidden 分组裁切） --- */
+.settings-inline-dropdown {
+  position: fixed;
+  z-index: 500;
+  width: 288px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+.dark .settings-inline-dropdown {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(38, 38, 38, 0.95);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.settings-inline-dropdown-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1f2937;
+  transition: background-color 150ms ease;
+}
+
+.settings-inline-dropdown-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.settings-inline-dropdown-item.is-active {
+  background: rgba(236, 65, 65, 0.1);
+  color: #ec4141;
+}
+
+.dark .settings-inline-dropdown-item {
+  color: #e5e7eb;
+}
+
+.dark .settings-inline-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dark .settings-inline-dropdown-item.is-active {
+  background: rgba(236, 65, 65, 0.2);
+  color: #ff8b8b;
+}
+
+.settings-dropdown-enter-active,
+.settings-dropdown-leave-active {
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.settings-dropdown-enter-from,
+.settings-dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}

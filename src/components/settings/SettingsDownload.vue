@@ -7,6 +7,7 @@ import { downloadApi } from '../../services/tauri/downloadApi';
 import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior, MvQualityKey } from '../../types';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import RangeSlider from '../common/RangeSlider.vue';
+import { useInlineSelectDropdown } from '../../composables/useInlineSelectDropdown';
 import { computed, ref } from 'vue';
 
 const { settings, patchSettings } = useSettings();
@@ -14,12 +15,17 @@ const { isEnglish } = useI18n();
 const { showToast } = useToast();
 
 const showDownloadQualityModal = ref(false);
-const showDownloadBehaviorModal = ref(false);
-const showQualityFallbackModal = ref(false);
-const showFileNameStyleModal = ref(false);
-const showLyricsFormatModal = ref(false);
-const showLyricsStyleModal = ref(false);
 const showMvQualityModal = ref(false);
+
+// --- 行内下拉（触发按钮下方展开，互斥单开） ---
+const {
+  openId: openDropdownId,
+  panelRef: dropdownPanelRef,
+  panelStyle: dropdownPanelStyle,
+  registerTrigger,
+  toggle: toggleDropdown,
+  close: closeDropdown,
+} = useInlineSelectDropdown();
 
 const FILE_NAME_STYLE_OPTIONS = computed<{ value: DownloadFileNameStyle; label: string; description: string }[]>(() => isEnglish.value ? [
   { value: 'artist-title', label: 'Artist - Title', description: 'Artist first, followed by the song title' },
@@ -87,7 +93,7 @@ const handleMvQualitySelect = (value: MvQualityKey) => {
 };
 
 const handleDownloadBehaviorSelect = (value: DownloadBehavior) => {
-  showDownloadBehaviorModal.value = false;
+  closeDropdown();
   patchSettings({ download: { ...settings.value.download, behavior: value } });
 };
 
@@ -101,22 +107,22 @@ const handleBatchDownloadLimitChange = (value: number) => {
 };
 
 const handleQualityFallbackSelect = (value: DownloadQualityFallbackBehavior) => {
-  showQualityFallbackModal.value = false;
+  closeDropdown();
   patchSettings({ download: { ...settings.value.download, qualityFallbackBehavior: value } });
 };
 
 const handleFileNameStyleSelect = (value: DownloadFileNameStyle) => {
-  showFileNameStyleModal.value = false;
+  closeDropdown();
   patchSettings({ download: { ...settings.value.download, fileNameStyle: value } });
 };
 
 const handleLyricsFormatSelect = (value: 'lrc' | 'txt') => {
-  showLyricsFormatModal.value = false;
+  closeDropdown();
   patchSettings({ download: { ...settings.value.download, lyricsFormat: value } });
 };
 
 const handleLyricsStyleSelect = (value: DownloadLyricsStyle) => {
-  showLyricsStyleModal.value = false;
+  closeDropdown();
   patchSettings({ download: { ...settings.value.download, lyricsStyle: value } });
 };
 
@@ -170,11 +176,16 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
+            :ref="(el) => registerTrigger('downloadBehavior', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-            @click="showDownloadBehaviorModal = true"
+            @click="toggleDropdown('downloadBehavior')"
           >
             <span>{{ DOWNLOAD_BEHAVIOR_OPTIONS.find(o => o.value === settings.download.behavior)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openDropdownId === 'downloadBehavior' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
         <div class="desktop-setting-row">
@@ -201,41 +212,117 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
     </section>
 
     <Teleport to="body">
-      <Transition name="modal-pop">
+      <Transition name="settings-dropdown">
         <div
-          v-if="showDownloadBehaviorModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showDownloadBehaviorModal = false"
+          v-if="openDropdownId"
+          ref="dropdownPanelRef"
+          class="settings-inline-dropdown custom-scrollbar"
+          :style="dropdownPanelStyle"
         >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择下载行为</h3>
-              <button
-                @click="showDownloadBehaviorModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in DOWNLOAD_BEHAVIOR_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.download.behavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleDownloadBehaviorSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.download.behavior === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
+          <template v-if="openDropdownId === 'downloadBehavior'">
+            <button
+              v-for="option in DOWNLOAD_BEHAVIOR_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.download.behavior === option.value }"
+              @click="handleDownloadBehaviorSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.download.behavior === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openDropdownId === 'qualityFallback'">
+            <button
+              v-for="option in QUALITY_FALLBACK_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.download.qualityFallbackBehavior === option.value }"
+              @click="handleQualityFallbackSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.download.qualityFallbackBehavior === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openDropdownId === 'fileNameStyle'">
+            <button
+              v-for="option in FILE_NAME_STYLE_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.download.fileNameStyle === option.value }"
+              @click="handleFileNameStyleSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.download.fileNameStyle === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openDropdownId === 'lyricsFormat'">
+            <button
+              v-for="option in LYRICS_FORMAT_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.download.lyricsFormat === option.value }"
+              @click="handleLyricsFormatSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.download.lyricsFormat === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openDropdownId === 'lyricsStyle'">
+            <button
+              v-for="option in LYRICS_STYLE_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.download.lyricsStyle === option.value }"
+              @click="handleLyricsStyleSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.download.lyricsStyle === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
         </div>
       </Transition>
     </Teleport>
@@ -267,11 +354,16 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
+            :ref="(el) => registerTrigger('qualityFallback', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-            @click="showQualityFallbackModal = true"
+            @click="toggleDropdown('qualityFallback')"
           >
             <span>{{ QUALITY_FALLBACK_OPTIONS.find(o => o.value === settings.download.qualityFallbackBehavior)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openDropdownId === 'qualityFallback' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
         <div class="desktop-setting-row">
@@ -374,166 +466,6 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
       </Transition>
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showQualityFallbackModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showQualityFallbackModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择音质缺失行为</h3>
-              <button
-                @click="showQualityFallbackModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in QUALITY_FALLBACK_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.download.qualityFallbackBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleQualityFallbackSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.download.qualityFallbackBehavior === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showFileNameStyleModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showFileNameStyleModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择文件名样式</h3>
-              <button
-                @click="showFileNameStyleModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in FILE_NAME_STYLE_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.download.fileNameStyle === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleFileNameStyleSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.download.fileNameStyle === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showLyricsFormatModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showLyricsFormatModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择歌词格式</h3>
-              <button
-                @click="showLyricsFormatModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in LYRICS_FORMAT_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.download.lyricsFormat === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleLyricsFormatSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.download.lyricsFormat === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showLyricsStyleModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showLyricsStyleModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择歌词样式</h3>
-              <button
-                @click="showLyricsStyleModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in LYRICS_STYLE_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.download.lyricsStyle === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleLyricsStyleSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.download.lyricsStyle === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -546,11 +478,16 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
+            :ref="(el) => registerTrigger('fileNameStyle', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-            @click="showFileNameStyleModal = true"
+            @click="toggleDropdown('fileNameStyle')"
           >
             <span>{{ FILE_NAME_STYLE_OPTIONS.find(o => o.value === settings.download.fileNameStyle)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openDropdownId === 'fileNameStyle' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
@@ -585,11 +522,16 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
+            :ref="(el) => registerTrigger('lyricsFormat', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-            @click="showLyricsFormatModal = true"
+            @click="toggleDropdown('lyricsFormat')"
           >
             <span>{{ LYRICS_FORMAT_OPTIONS.find(o => o.value === settings.download.lyricsFormat)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openDropdownId === 'lyricsFormat' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
@@ -600,11 +542,16 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
+            :ref="(el) => registerTrigger('lyricsStyle', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-            @click="showLyricsStyleModal = true"
+            @click="toggleDropdown('lyricsStyle')"
           >
             <span>{{ LYRICS_STYLE_OPTIONS.find(o => o.value === settings.download.lyricsStyle)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openDropdownId === 'lyricsStyle' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
