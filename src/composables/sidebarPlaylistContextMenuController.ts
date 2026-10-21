@@ -93,7 +93,7 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
       openScopeDialog([id]);
       return;
     }
-    routeToDeleteFlow([id], `确定要删除播放列表 "${name}" 吗？`, anchor);
+    routeToDeleteFlow([id], `确定删除歌单（${name}）`, anchor);
   };
 
   const requestBatchPlaylistDelete = (
@@ -105,7 +105,7 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
       openScopeDialog(ids);
       return;
     }
-    routeToDeleteFlow(ids, `确定要删除 ${count} 个播放列表吗？`, anchor);
+    routeToDeleteFlow(ids, `确定删除 ${count} 个歌单？`, anchor);
   };
 
   /** 云端删除范围确认：local 仅删本地，all 连云端一起删，cloud 仅删云端 */
