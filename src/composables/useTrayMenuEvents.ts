@@ -1,5 +1,6 @@
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
 import { storeToRefs } from "pinia";
@@ -245,6 +246,7 @@ export function useTrayMenuEvents(router: Router) {
     let stopStateWatcher: (() => void) | null = null;
     let stopCustomWatcher: (() => void) | null = null;
     let warmupTimer: number | null = null;
+    let heartbeatTimer: number | null = null;
 
     const buildTraySnapshot = (): TrayMenuStatePayload => ({
         currentSong: currentSong.value,
@@ -458,6 +460,13 @@ export function useTrayMenuEvents(router: Router) {
                 announceTrayReady();
             }),
         );
+
+        // 心跳：托盘右键由 Rust 端按心跳判定 webview 是否存活，崩溃后降级
+        // 原生菜单保证退出可用；失败静默（命令不可用等场景不影响功能）
+        heartbeatTimer = window.setInterval(() => {
+            void invoke("tray_heartbeat").catch(() => {});
+        }, 5_000);
+        void invoke("tray_heartbeat").catch(() => {});
     });
 
     onUnmounted(() => {
@@ -467,5 +476,9 @@ export function useTrayMenuEvents(router: Router) {
         disposers.splice(0).forEach((off) => off());
         stopStateWatcher = null;
         stopCustomWatcher = null;
+        if (heartbeatTimer !== null) {
+            window.clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+        }
     });
 }

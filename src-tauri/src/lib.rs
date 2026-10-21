@@ -19,6 +19,7 @@ use app_runtime::{
     open_devtools,
     restart_app,
     setup_app,
+    tray_heartbeat,
     update_native_tray_menu,
     was_launched_at_startup,
 };
@@ -690,6 +691,7 @@ pub fn run() { // run
             set_network_proxy,
             test_network_proxy,
             update_native_tray_menu,
+            tray_heartbeat,
             set_gpu_acceleration, // 实现
             check_update_by_rust, // 实现
             download_update_file, // 实现

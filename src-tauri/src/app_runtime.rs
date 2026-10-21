@@ -7,6 +7,7 @@ use crate::player::{init_player};
 use crate::player::PlaybackSessionState;
 use std::collections::{HashSet};
 use std::path::{PathBuf, Path};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex};
 use tauri::{ // 实现
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -69,6 +70,8 @@ pub(crate) struct LaunchedAtStartupState(pub(crate) bool);
 pub(crate) struct TrayMenuRuntimeState {
     native_menu_enabled: Mutex<bool>,
     native_menu_state: Mutex<NativeTrayMenuState>,
+    /// 前端心跳（毫秒时间戳）：webview 崩溃/卡死后停跳，托盘右键据此降级原生菜单
+    last_heartbeat_ms: AtomicU64,
 }
 
 #[derive(Copy, Clone, serde::Serialize)]
@@ -207,6 +210,52 @@ fn emit_tray_action<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: &str) 
 
 fn emit_tray_menu_open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, x: f64, y: f64) { // 实现
     let _ = app.emit(APP_TRAY_MENU_OPEN_EVENT, TrayMenuOpenPayload { x, y }); // 实现
+}
+
+/// 心跳超时阈值：超过该时长未收到前端心跳即认定 webview 不可用。
+fn frontend_alive_after_ms() -> u64 {
+    12_000
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn frontend_last_heartbeat_ms<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> u64 {
+    app.try_state::<TrayMenuRuntimeState>()
+        .map(|state| state.last_heartbeat_ms.load(Ordering::Relaxed))
+        .unwrap_or(0)
+}
+
+/// 前端心跳上报：托盘右键据此判断 webview 是否可用（见 on_tray_icon_event）。
+#[tauri::command]
+pub(crate) fn tray_heartbeat<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    let now = now_ms();
+    if let Some(state) = app.try_state::<TrayMenuRuntimeState>() {
+        state.last_heartbeat_ms.store(now, Ordering::Relaxed);
+    }
+}
+
+/// 前端不可用时把托盘降级回原生菜单（含退出项，退出在 Rust 端闭环）。
+/// 降级后常驻原生菜单直到进程重启；Tauri 的 TrayIcon 无程序化 popup，
+/// 因此本次右键已错过挂载时机，菜单在下次右键时由系统弹出。
+fn degrade_to_native_tray_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(state) = app.try_state::<TrayMenuRuntimeState>() {
+        if let Ok(mut enabled) = state.native_menu_enabled.lock() {
+            *enabled = true;
+        }
+        let menu_state = state.native_menu_state.lock().ok().map(|value| value.clone());
+        if let Some(menu_state) = menu_state {
+            if let Some(tray) = app.tray_by_id(TRAY_ID) {
+                if let Ok(menu) = build_tray_menu(app, &menu_state) {
+                    let _ = tray.set_menu(Some(menu));
+                }
+            }
+        }
+    }
 }
 
 fn is_native_tray_menu_enabled<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
@@ -439,8 +488,12 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 
                 | TRAY_MENU_PLAY_MODE_ID
                 | TRAY_MENU_DESKTOP_LYRICS_ID
                 | TRAY_MENU_MINI_PLAYER_ID
-                | TRAY_MENU_SETTINGS_ID
-                | TRAY_MENU_QUIT_ID => emit_tray_action(app, action),
+                | TRAY_MENU_SETTINGS_ID => emit_tray_action(app, action),
+                TRAY_MENU_QUIT_ID => {
+                    // 退出必须在 Rust 端闭环：弹出原生菜单的降级场景多因前端
+                    // 已崩溃，emit 无人处理会导致永远无法退出
+                    app.exit(0);
+                }
                 _ => {}
             }
         })
@@ -463,9 +516,16 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 
             } = event
             {
                 let app = tray.app_handle();
-                if !is_native_tray_menu_enabled(&app) {
-                    emit_tray_menu_open(&app, position.x, position.y);
+                if is_native_tray_menu_enabled(&app) {
+                    return;
                 }
+                if frontend_last_heartbeat_ms(&app) + frontend_alive_after_ms() >= now_ms() {
+                    emit_tray_menu_open(&app, position.x, position.y);
+                    return;
+                }
+                // 前端心跳超时（webview 崩溃/卡死）：降级挂回原生菜单，
+                // 下次右键由系统弹出，保证始终有可用的退出途径
+                degrade_to_native_tray_menu(&app);
             }
         })
         .build(app.handle())?; // 实现
