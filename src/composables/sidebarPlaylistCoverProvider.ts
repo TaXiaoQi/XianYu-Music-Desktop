@@ -30,12 +30,20 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
 
   const coverVersion = ref(0);
   const inflightCoverLoads = new Set<string>();
+  // 同一 tick 内多次 bump（如批量导入后 N 个封面代理并发取回）合并为一次
+  // 版本推进，避免连环重渲染打爆 Vue 调度器的递归更新上限
+  let bumpQueued = false;
 
   let backgroundRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let backgroundRefreshIdleHandle: number | null = null;
 
   const bumpCoverVersion = () => {
-    coverVersion.value += 1;
+    if (bumpQueued) return;
+    bumpQueued = true;
+    Promise.resolve().then(() => {
+      bumpQueued = false;
+      coverVersion.value += 1;
+    });
   };
 
   /**
@@ -171,6 +179,11 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
     if (cached) {
       return cached;
     }
+    // 缓存占位存在但值为 undefined：http 直链封面代理取图中，等待取回后的
+    // bump 刷新；此处若继续走下方同步分支会每次渲染重复 bump 造成递归更新
+    if (sidebarPlaylistCoverCache.has(playlistId)) {
+      return undefined;
+    }
 
     const playlist = playlists.value.find((item) => item.id === playlistId);
 
@@ -180,14 +193,12 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
         : convertFileSrc(playlist.coverPath);
       sidebarPlaylistCoverCache.set(playlistId, url);
       activeCustomCoverByPlaylist.set(playlistId, playlist.coverPath);
-      bumpCoverVersion();
       return url;
     }
 
     if (playlist?.cloudCoverUrl && looksLikeRemoteHttp(playlist.cloudCoverUrl)) {
       const url = proxiedRemoteCover(playlist.cloudCoverUrl);
       sidebarPlaylistCoverCache.set(playlistId, url);
-      bumpCoverVersion();
       return url;
     }
 
