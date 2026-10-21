@@ -34,8 +34,9 @@ export function useInlineSelectDropdown() {
 
     const rect = trigger.getBoundingClientRect();
     // 对齐设置页语言选择器标准：面板宽度跟随触发器（内容更宽时以内容为准，
-    // 下限 176px 保证选项文字 + 对勾不换行），右缘与触发器对齐
-    const panelWidth = Math.max(rect.width, panel.offsetWidth, 176);
+    // 下限 176px 保证选项文字 + 对勾不换行），右缘与触发器对齐。
+    // 宽度先取整再参与 left 计算：首次定位与后续重定位口径一致，避免面板轻微横移
+    const panelWidth = Math.round(Math.max(rect.width, panel.offsetWidth, 176));
     const panelHeight = panel.offsetHeight;
     const gap = 6;
     const viewportPadding = 12;
@@ -51,7 +52,7 @@ export function useInlineSelectDropdown() {
     panelStyle.value = {
       left: `${left}px`,
       top: `${top}px`,
-      width: `${Math.round(panelWidth)}px`,
+      width: `${panelWidth}px`,
     };
   }
 
@@ -64,8 +65,12 @@ export function useInlineSelectDropdown() {
     openId.value = null;
   }
 
-  function handleViewportChange() {
-    if (openId.value) updatePosition();
+  function handleViewportChange(event?: Event) {
+    if (!openId.value) return;
+    // 面板自身内容滚动不重定位：捕获阶段会收到面板内部 scroll 事件，
+    // 此时重定位会因滚动条出现/亚像素取整让面板整体轻微横移
+    if (event?.target instanceof Node && panelRef.value?.contains(event.target)) return;
+    updatePosition();
   }
 
   onMounted(() => {
@@ -80,5 +85,5 @@ export function useInlineSelectDropdown() {
     window.removeEventListener('scroll', handleViewportChange, true);
   });
 
-  return { openId, panelRef, panelStyle, registerTrigger, toggle, close };
+  return { openId, panelRef, panelStyle, registerTrigger, toggle, close, reposition: updatePosition };
 }

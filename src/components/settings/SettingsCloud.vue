@@ -647,8 +647,6 @@ onBeforeUnmount(() => {
         </div>
       </transition>
 
-      <div class="mx-4 h-px [background:rgba(148,163,184,0.12)]"></div>
-
       <!-- 分享链接导入 -->
       <button
         type="button"

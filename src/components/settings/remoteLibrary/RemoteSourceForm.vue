@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
-import { ArrowLeft, Eye, EyeOff } from 'lucide-vue-next';
+import { reactive } from 'vue';
+import { Eye, EyeOff } from 'lucide-vue-next';
 
-const props = defineProps<{
+// 标题由宿主的展开条承担，这里只渲染表单本体（头部已并入展开条）
+defineProps<{
   editing: boolean;
   persisting: boolean;
   probing: boolean;
@@ -23,8 +24,6 @@ const rootDirectory = defineModel<string>('rootPath', { required: true });
 const revealed = reactive<Record<'secret', boolean>>({ secret: false });
 const holdingFocus = reactive<Record<'secret', boolean>>({ secret: false });
 
-const heading = computed(() => (props.editing ? '编辑 WebDAV 音乐库' : '添加 WebDAV 音乐库'));
-
 const toggleReveal = () => {
   revealed.secret = !revealed.secret;
 };
@@ -37,13 +36,6 @@ const dropFocus = () => {
 
 <template>
   <section class="rl-editor">
-    <div class="rl-editor__head">
-      <button type="button" class="rl-editor__back" @click="emit('cancel')">
-        <ArrowLeft :size="20" aria-hidden="true" />
-      </button>
-      <h2 class="rl-editor__title">{{ heading }}</h2>
-    </div>
-
     <div class="rl-sheet">
       <div class="rl-grid">
         <label class="rl-grid__cell">
@@ -106,13 +98,13 @@ const dropFocus = () => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: rl-editor-enter 300ms ease both;
+  animation: rl-editor-enter 240ms ease both;
 }
 
 @keyframes rl-editor-enter {
   from {
     opacity: 0;
-    transform: translateX(16px);
+    transform: translateY(8px);
   }
 
   to {
@@ -121,40 +113,8 @@ const dropFocus = () => {
   }
 }
 
-.rl-editor__head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.rl-editor__back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: -8px;
-  border-radius: 9999px;
-  padding: 8px;
-  color: #6b7280;
-  transition: color 150ms ease, background-color 150ms ease;
-}
-
-.rl-editor__back:hover {
-  background: #f3f4f6;
-  color: #111827;
-}
-
-.rl-editor__title {
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 700;
-}
-
 .rl-sheet {
-  border-radius: 12px;
-  border: 1px solid rgba(229, 231, 235, 0.4);
-  background: rgba(255, 255, 255, 0.2);
-  padding: 16px;
+  padding: 0 16px 16px;
 }
 
 .rl-grid {

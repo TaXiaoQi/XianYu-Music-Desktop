@@ -164,7 +164,7 @@ const defaultDesktopTheme: DesktopThemeVisuals = {
 const defaultThemeSettings: ThemeSettings = {
   mode: 'system', accentColor: DEFAULT_THEME_COLOR,
   desktopTheme: defaultDesktopTheme,
-  playerDetailCoverBehavior: 'remember', lastPlayerDetailCoverVisible: true,
+  playerDetailCoverBehavior: 'hide', lastPlayerDetailCoverVisible: true,
   playerDetailStyle: 'classic', playerDetailMeshBackground: true, playerDetailMeshAntiAlias: true,
   playerDetailMeshSpeed: 1, playerDetailVinylMaterial: 'light', playerDetailVinylPlatterStyle: 'metal',
   dynamicBgType: 'none', windowMaterial: 'none', keepWindowMaterialOnBlur: true,

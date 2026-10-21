@@ -9,7 +9,6 @@ import ToolboxStep1 from '../ToolboxStep1.vue';
 import ToolboxStep2 from '../ToolboxStep2.vue';
 import ToolboxStep3 from '../ToolboxStep3.vue';
 import ToolboxStep4 from '../ToolboxStep4.vue';
-import ToolboxToolHeader from './ToolboxToolHeader.vue';
 import ToolboxStepTrack from './ToolboxStepTrack.vue';
 import ToolboxSetupStage from './ToolboxSetupStage.vue';
 import ToolboxPreprocessPreview from './ToolboxPreprocessPreview.vue';
@@ -27,10 +26,6 @@ interface PreviewRow {
   originalName: string;
   newName: string;
 }
-
-const emit = defineEmits<{
-  (e: 'exit'): void;
-}>();
 
 const toast = useToast();
 
@@ -268,16 +263,10 @@ const restartFlow = () => {
   targetFolder.value = '';
   discardStageOutputs();
 };
-
-const quitFlow = () => {
-  emit('exit');
-};
 </script>
 
 <template>
   <div class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <ToolboxToolHeader caption="音乐整理 · 批处理流程" @back="quitFlow" />
-
     <ToolboxStepTrack :stages="FLOW_STAGES" :active-index="activeStageIndex" />
 
     <section

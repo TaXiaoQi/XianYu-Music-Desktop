@@ -637,7 +637,7 @@ watch(
     @click.stop="showPlayerDetail && toggleLyricsPlayerSettings()"
     :disabled="!showPlayerDetail"
     :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', !showPlayerDetail ? 'cursor-not-allowed text-gray-400 dark:text-white/40' : (showLyricsPlayerSettingsPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'))]"
-    :title="!showPlayerDetail ? '歌词页设置（仅播放页可用）' : '页面样式'"
+    :title="!showPlayerDetail ? '歌词页设置（仅播放页可用）' : '封面样式'"
   >
     <FooterControlIcon item-key="pageStyle" class="h-4 w-4" />
   </button>

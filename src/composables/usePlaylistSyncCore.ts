@@ -121,20 +121,31 @@ export function usePlaylistSync() {
     return authStore.isLoggedIn && !!authStore.user?.ciyuanxi_id;
   }
 
+  // 手动同步是用户的显式操作，绕过「上传」数据范围开关；开关仅约束自动同步的同步范围。
+  let manualUploadBypass = false;
+  function withManualUploadBypass<TArgs extends unknown[], T>(fn: (...args: TArgs) => Promise<T>): (...args: TArgs) => Promise<T> {
+    return (...args: TArgs) => {
+      manualUploadBypass = true;
+      return Promise.resolve(fn(...args)).finally(() => {
+        manualUploadBypass = false;
+      });
+    };
+  }
+
   function isUploadEnabled(): boolean {
-    return settingsStore.settings.upload.playlists;
+    return manualUploadBypass || settingsStore.settings.upload.playlists;
   }
 
   function isPluginUploadEnabled(): boolean {
-    return settingsStore.settings.upload.plugins;
+    return manualUploadBypass || settingsStore.settings.upload.plugins;
   }
 
   function isSettingsUploadEnabled(): boolean {
-    return settingsStore.settings.upload.settings;
+    return manualUploadBypass || settingsStore.settings.upload.settings;
   }
 
   function isFavoritesUploadEnabled(): boolean {
-    return settingsStore.settings.upload.favorites;
+    return manualUploadBypass || settingsStore.settings.upload.favorites;
   }
 
   // ==================== 各域服务（业务与 IO 在 services 层，UI 状态经端口写入） ====================
@@ -513,13 +524,13 @@ export function usePlaylistSync() {
     syncPlugins: withSyncToast(pluginFlow.syncPlugins, '正在同步插件...'),
     syncSettings: withSyncToast(settingsFlow.syncSettings, '正在同步设置...'),
     syncFavorites: withSyncToast(favoritesFlow.syncFavorites, '正在同步收藏...'),
-    uploadOnly: withSyncToast(uploadOnly, '正在上传歌单...'),
+    uploadOnly: withSyncToast(withManualUploadBypass(uploadOnly), '正在上传歌单...'),
     downloadOnly: withSyncToast(downloadOnly, '正在下载歌单...'),
-    uploadPluginsOnly: withSyncToast(pluginFlow.uploadPluginsOnly, '正在同步插件...'),
+    uploadPluginsOnly: withSyncToast(withManualUploadBypass(pluginFlow.uploadPluginsOnly), '正在同步插件...'),
     downloadPluginsOnly: withSyncToast(pluginFlow.downloadPluginsOnly, '正在恢复插件...'),
-    uploadSettingsOnly: withSyncToast(settingsFlow.uploadSettingsOnly, '正在同步设置...'),
+    uploadSettingsOnly: withSyncToast(withManualUploadBypass(settingsFlow.uploadSettingsOnly), '正在同步设置...'),
     downloadSettingsOnly: withSyncToast(settingsFlow.downloadSettingsOnly, '正在下载设置...'),
-    uploadFavoritesOnly: withSyncToast(favoritesFlow.uploadFavoritesOnly, '正在上传收藏...'),
+    uploadFavoritesOnly: withSyncToast(withManualUploadBypass(favoritesFlow.uploadFavoritesOnly), '正在上传收藏...'),
     downloadFavoritesOnly: withSyncToast(favoritesFlow.downloadFavoritesOnly, '正在下载收藏...'),
     uploadPlaylists,
     downloadPlaylists,

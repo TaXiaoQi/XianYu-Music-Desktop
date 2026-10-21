@@ -154,7 +154,7 @@ describe('settings store', () => {
     it('tracks the player detail cover behavior and the last in-page choice', () => {
       const store = freshStore();
 
-      expect(store.theme.playerDetailCoverBehavior).toBe('remember');
+      expect(store.theme.playerDetailCoverBehavior).toBe('hide');
       expect(store.theme.lastPlayerDetailCoverVisible).toBe(true);
       store.patchTheme({
         playerDetailCoverBehavior: 'show',

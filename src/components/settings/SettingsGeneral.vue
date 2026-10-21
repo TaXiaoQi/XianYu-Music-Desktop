@@ -112,6 +112,8 @@ const isWindowsPlatform = computed(() => {
   return ua.includes('Windows');
 });
 
+const showFileAssocPanel = ref(false);
+
 const associatedExtensions = computed<string[]>(
   () => settings.value.audioFileAssociations ?? [],
 );
@@ -341,7 +343,7 @@ onMounted(() => {
               :aria-expanded="isLanguageDropdownOpen"
               :aria-label="t('language.label')" 
               @click="isLanguageDropdownOpen = !isLanguageDropdownOpen"
-              class="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+              class="flex h-9 w-full items-center min-w-[176px] justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             >
               <span class="truncate">{{ currentLanguageLabel }}</span>
               <ChevronDown
@@ -445,7 +447,7 @@ onMounted(() => {
               :aria-expanded="isPerformanceModeDropdownOpen"
               :aria-label="t('general.performanceMode')"
               @click="isPerformanceModeDropdownOpen = !isPerformanceModeDropdownOpen"
-              class="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+              class="flex h-9 w-full items-center min-w-[176px] justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             >
               <span class="truncate">{{ currentPerformanceModeLabel }}</span>
               <ChevronDown
@@ -534,36 +536,58 @@ onMounted(() => {
         {{ t('general.fileAssoc') }}
       </h2>
       <p class="text-xs leading-5 text-gray-500 dark:text-white/45">{{ t('general.fileAssocHint') }}</p>
-      <div class="rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="flex items-center justify-end gap-2 border-b border-gray-200/40 px-4 py-2.5 dark:border-gray-800/40">
-          <button
-            type="button"
-            class="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
-            @click="setAllFileAssociations(true)"
-          >
-            {{ t('general.fileAssocAll') }}
-          </button>
-          <button
-            type="button"
-            class="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
-            @click="setAllFileAssociations(false)"
-          >
-            {{ t('general.fileAssocNone') }}
-          </button>
-        </div>
-        <div
-          v-for="ext in AUDIO_FILE_ASSOCIATION_EXTENSIONS"
-          :key="ext"
-          class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+      <div class="overflow-hidden rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+        <button
+          type="button"
+          class="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/40 dark:hover:bg-white/10"
+          :aria-expanded="showFileAssocPanel"
+          @click="showFileAssocPanel = !showFileAssocPanel"
         >
-          <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ audioFileAssociationLabel(ext) }}</div>
-          <button
-            type="button"
-            class="glass-switch"
-            :class="{ 'is-checked': isExtensionAssociated(ext) }"
-            @click="toggleFileAssociation(ext, !isExtensionAssociated(ext))"
-          ></button>
-        </div>
+          <span class="min-w-0 flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.fileAssoc') }}</span>
+          <span class="text-sm font-semibold text-[#EC4141] tabular-nums">
+            {{ associatedExtensions.length }}/{{ AUDIO_FILE_ASSOCIATION_EXTENSIONS.length }}
+          </span>
+          <ChevronDown
+            class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200"
+            :class="{ 'rotate-180': showFileAssocPanel }"
+            aria-hidden="true"
+          />
+        </button>
+        <transition name="settings-pop-panel">
+          <div v-if="showFileAssocPanel">
+            <div class="flex items-center justify-end gap-2 border-t border-gray-200/40 px-4 py-2.5 dark:border-gray-800/40">
+              <button
+                type="button"
+                class="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
+                @click="setAllFileAssociations(true)"
+              >
+                {{ t('general.fileAssocAll') }}
+              </button>
+              <button
+                type="button"
+                class="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
+                @click="setAllFileAssociations(false)"
+              >
+                {{ t('general.fileAssocNone') }}
+              </button>
+            </div>
+            <div class="max-h-[320px] overflow-y-auto border-t border-gray-200/40 dark:border-gray-800/40">
+              <div
+                v-for="ext in AUDIO_FILE_ASSOCIATION_EXTENSIONS"
+                :key="ext"
+                class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+              >
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ audioFileAssociationLabel(ext) }}</div>
+                <button
+                  type="button"
+                  class="glass-switch"
+                  :class="{ 'is-checked': isExtensionAssociated(ext) }"
+                  @click="toggleFileAssociation(ext, !isExtensionAssociated(ext))"
+                ></button>
+              </div>
+            </div>
+          </div>
+        </transition>
       </div>
       <SettingHint severity="warning" :text="t('general.fileAssocNote')" />
     </section>
@@ -753,5 +777,29 @@ onMounted(() => {
 .settings-dropdown-leave-to {
   opacity: 0;
   transform: translateY(-6px) scale(0.96);
+}
+
+.settings-pop-panel-enter-active,
+.settings-pop-panel-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 240ms ease,
+    max-height 240ms ease;
+  transform-origin: top center;
+  overflow: hidden;
+}
+
+.settings-pop-panel-enter-from,
+.settings-pop-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.97);
+  max-height: 0;
+}
+
+.settings-pop-panel-enter-to,
+.settings-pop-panel-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  max-height: 400px;
 }
 </style>

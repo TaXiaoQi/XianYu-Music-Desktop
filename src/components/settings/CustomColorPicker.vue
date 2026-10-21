@@ -9,6 +9,8 @@ const props = defineProps<{
   triggerRef?: HTMLElement | null;
   /** 面板层级，宿主遮罩更高时需要抬高（默认 130） */
   zIndex?: number;
+  /** 内嵌模式：不做 Teleport/定位/外点关闭，直接平铺在宿主布局里（主题色弹窗用） */
+  inline?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -243,13 +245,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="inline">
     <Transition name="picker-pop">
       <div
-        v-if="isOpen"
+        v-if="isOpen || inline"
         ref="panelRef"
-        class="picker-pop-panel select-none backdrop-blur-2xl shadow-2xl rounded-2xl border p-3 overflow-hidden"
-        :style="[{ ...(panelStyle as Record<string, string>) }, { zIndex: zIndex ?? 130 }]"
+        class="select-none"
+        :class="inline
+          ? 'w-full'
+          : 'picker-pop-panel backdrop-blur-2xl shadow-2xl rounded-2xl border p-3 overflow-hidden'"
+        :style="inline ? undefined : [{ ...(panelStyle as Record<string, string>) }, { zIndex: zIndex ?? 130 }]"
         @click.stop
         @mousedown.stop
       >
@@ -272,6 +277,7 @@ onUnmounted(() => {
 
         <div class="mt-3 flex items-center gap-3 px-1">
           <button
+            v-if="!inline"
             type="button"
             class="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
             title="吸管取色"
@@ -281,6 +287,7 @@ onUnmounted(() => {
           </button>
 
           <input
+            v-if="!inline"
             ref="nativeColorInputRef"
             :value="modelValue"
             type="color"
@@ -289,6 +296,7 @@ onUnmounted(() => {
           />
 
           <div
+            v-if="!inline"
             class="w-6 h-6 rounded-full border border-black/10 dark:border-white/20 shadow-sm shrink-0"
             :style="{ backgroundColor: modelValue }"
           ></div>
@@ -305,7 +313,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="mt-3 grid grid-cols-3 gap-2 px-1 text-center">
+        <div v-if="!inline" class="mt-3 grid grid-cols-3 gap-2 px-1 text-center">
           <div class="flex flex-col gap-1">
             <input
               :value="rgb.r"

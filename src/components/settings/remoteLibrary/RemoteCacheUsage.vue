@@ -34,21 +34,21 @@ const meterLabel = computed(() => {
   border-radius: 12px;
   border: 1px solid rgba(229, 231, 235, 0.4);
   background: rgba(255, 255, 255, 0.2);
-  padding: 16px;
+  padding: 8px 16px;
   color: rgb(31 41 55);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .rl-button {
-  min-height: 36px;
+  min-height: 28px;
   border: 1px solid rgba(236, 65, 65, 0.18);
   border-radius: 999px;
   background: #ec4141;
-  padding: 0 15px;
+  padding: 0 12px;
   color: #ffffff;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rl-button:hover:not(:disabled) {

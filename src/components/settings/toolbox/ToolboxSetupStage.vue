@@ -29,34 +29,27 @@ const pickPathLeaf = (path: string) => {
 <template>
   <div class="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(520px,3fr)]">
     <section class="toolbox-section space-y-3">
-      <h2 class="toolbox-section-title">
-        <span class="toolbox-section-bar"></span>
-        基础配置
-      </h2>
-
-      <div class="toolbox-stack">
-        <div class="toolbox-item">
-          <div class="mb-3 flex items-center justify-between gap-4">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MusicTag 路径</div>
-            <div class="flex items-center gap-3">
-              <SettingHint text="用于歌曲标签写入和人工校对。" />
-              <button
-                type="button"
-                class="toolbox-ghost-btn"
-                @click="$emit('choose-app')"
-              >
-                选择路径
-              </button>
-            </div>
-          </div>
-          <div class="toolbox-path-field">
-            <span v-if="musicTagApp" class="break-all text-gray-700 dark:text-gray-200">{{ musicTagApp }}</span>
-            <span v-else class="text-gray-500 dark:text-white/45">请选择 MusicTag.exe</span>
+      <div class="toolbox-item">
+        <div class="flex items-center justify-between gap-4">
+          <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MusicTag 路径</div>
+          <div class="flex items-center gap-3">
+            <SettingHint text="用于歌曲标签写入和人工校对。" />
+            <button
+              type="button"
+              class="toolbox-ghost-btn"
+              @click="$emit('choose-app')"
+            >
+              选择路径
+            </button>
           </div>
         </div>
+        <div class="toolbox-path-field mt-3">
+          <span v-if="musicTagApp" class="break-all text-gray-700 dark:text-gray-200">{{ musicTagApp }}</span>
+          <span v-else class="text-gray-500 dark:text-white/45">请选择 MusicTag.exe</span>
+        </div>
 
-        <div class="toolbox-item">
-          <div class="mb-3 flex items-center justify-between gap-4">
+        <div class="mt-4 border-t border-gray-200/50 pt-4 dark:border-gray-800/50">
+          <div class="flex items-center justify-between gap-4">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">目标文件夹</div>
             <div class="flex items-center gap-3">
               <SettingHint severity="warning" text="这里决定本次要处理的整批歌曲文件。" />
@@ -69,7 +62,7 @@ const pickPathLeaf = (path: string) => {
               </button>
             </div>
           </div>
-          <div class="toolbox-path-field">
+          <div class="toolbox-path-field mt-3">
             <span v-if="targetFolder" class="break-all text-gray-700 dark:text-gray-200">{{ targetFolder }}</span>
             <span v-else class="text-gray-500 dark:text-white/45">请选择要整理的歌曲目录</span>
           </div>
@@ -171,23 +164,20 @@ const pickPathLeaf = (path: string) => {
   background: #ec4141;
 }
 
-.toolbox-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .toolbox-item {
   border: 1px solid rgba(229, 231, 235, 0.4);
-  border-radius: 10px;
-  padding: 14px 16px;
+  border-radius: 12px;
+  padding: 16px;
   background: rgba(255, 255, 255, 0.2);
-  transition: background 0.2s, border-color 0.2s;
+  transition: background-color 160ms ease;
 }
 
 .toolbox-item:hover {
-  border-color: rgba(229, 231, 235, 0.5);
-  background: rgba(229, 231, 235, 0.4);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+:global(.dark) .toolbox-item:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .toolbox-ghost-btn {

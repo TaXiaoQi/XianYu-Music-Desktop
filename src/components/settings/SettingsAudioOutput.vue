@@ -8,7 +8,7 @@ import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import SettingsPluginHost from './SettingsPluginHost.vue';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
-import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue';
+import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { playbackApi } from '../../services/tauri/playbackApi';
 import type { AudioOutputStatus, AudioDevice, AudioDeviceFormats } from '../../services/tauri/contracts';
@@ -197,11 +197,14 @@ onScopeDispose(() => {
   window.removeEventListener('scroll', handleSettingsDropdownViewportChange, true);
 });
 
-const showQualityModal = ref(false);
-const showMvQualityModal = ref(false);
-
 // --- 设置行内联下拉（fixed 定位跟随触发按钮，避免被 overflow-hidden 分组裁切） ---
-type SettingsDropdownId = 'fallbackBehavior' | 'failureBehavior' | 'shareFailureBehavior' | 'outputDevice';
+type SettingsDropdownId =
+  | 'fallbackBehavior'
+  | 'failureBehavior'
+  | 'shareFailureBehavior'
+  | 'outputDevice'
+  | 'onlineQuality'
+  | 'mvQuality';
 const openSettingsDropdownId = ref<SettingsDropdownId | null>(null);
 const settingsDropdownTriggerEls = new Map<SettingsDropdownId, HTMLElement>();
 const settingsDropdownPanelRef = ref<HTMLElement | null>(null);
@@ -230,7 +233,10 @@ function updateSettingsDropdownPosition() {
   if (!trigger || !panel) return;
 
   const rect = trigger.getBoundingClientRect();
-  const panelWidth = panel.offsetWidth;
+  // 与设置页行内下拉标准一致：面板宽度跟随触发器（内容更宽时以内容为准，下限 176px），
+  // 右缘与触发器对齐，避免面板比触发器窄的观感。
+  // 宽度先取整再参与 left 计算：首次定位与后续重定位口径一致，避免面板轻微横移
+  const panelWidth = Math.round(Math.max(rect.width, panel.offsetWidth, 176));
   const panelHeight = panel.offsetHeight;
   const gap = 6;
   const viewportPadding = 12;
@@ -243,7 +249,11 @@ function updateSettingsDropdownPosition() {
     ? rect.bottom + gap
     : Math.max(viewportPadding, rect.top - panelHeight - gap);
 
-  settingsDropdownPanelStyle.value = { left: `${left}px`, top: `${top}px` };
+  settingsDropdownPanelStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${panelWidth}px`,
+  };
 }
 
 function handleSettingsDropdownOutsideClick(event: MouseEvent) {
@@ -255,9 +265,31 @@ function handleSettingsDropdownOutsideClick(event: MouseEvent) {
   openSettingsDropdownId.value = null;
 }
 
-function handleSettingsDropdownViewportChange() {
-  if (openSettingsDropdownId.value) updateSettingsDropdownPosition();
+function handleSettingsDropdownViewportChange(event?: Event) {
+  if (!openSettingsDropdownId.value) return;
+  // 面板自身内容滚动不重定位：捕获阶段会收到面板内部 scroll 事件，
+  // 此时重定位会因滚动条出现/亚像素取整让面板整体轻微横移
+  if (event?.target instanceof Node && settingsDropdownPanelRef.value?.contains(event.target)) return;
+  updateSettingsDropdownPosition();
 }
+
+// 超过 5 项时面板限高滚动，并在展开时把当前选中项滚入可视区
+watch(openSettingsDropdownId, async (id) => {
+  if (!id) return;
+  await nextTick();
+  const panel = settingsDropdownPanelRef.value;
+  if (!panel) return;
+  const items = panel.querySelectorAll<HTMLElement>('.settings-inline-dropdown-item');
+  if (items.length > 5) {
+    panel.style.maxHeight = `${items[0].offsetHeight * 5}px`;
+  } else {
+    panel.style.maxHeight = '';
+  }
+  // 限高后高度变了，重新定位一次：首次定位按未限高的全量高度算的 top 会让面板悬空
+  updateSettingsDropdownPosition();
+  panel.querySelector('.settings-inline-dropdown-item.is-active')
+    ?.scrollIntoView({ block: 'nearest' });
+});
 
 const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
   { label: 'Skip to Next Track', value: 'skip' },
@@ -336,12 +368,12 @@ const patchOnlineQuality = (value: OnlineDefaultQuality) => {
 };
 
 const handleQualitySelect = (value: OnlineDefaultQuality) => {
-  showQualityModal.value = false;
+  closeSettingsDropdown();
   patchOnlineQuality(value);
 };
 
 const handleMvQualitySelect = (value: MvQualityKey) => {
-  showMvQualityModal.value = false;
+  closeSettingsDropdown();
   patchSettings({ audio: { ...settings.value.audio, mvDefaultQuality: value } });
 };
 
@@ -374,6 +406,39 @@ const toggleSongClickAction = () => {
   settings.value.songClickAction = songClickActionEnabled.value ? 'single' : 'double';
 };
 const showLyricsSyncOffsetPanel = ref(false);
+const showFadeDurationPanel = ref(false);
+const showShareValidityPanel = ref(false);
+
+const FADE_DURATION_MIN_MS = 100;
+const FADE_DURATION_MAX_MS = 2000;
+const FADE_DURATION_STEP_MS = 100;
+const FADE_DURATION_DEFAULT_MS = 500;
+
+const adjustFadeDuration = (delta: number) => {
+  const current = settings.value.audio.fadeInOutDurationMs;
+  const next = Math.round((current + delta) / FADE_DURATION_STEP_MS) * FADE_DURATION_STEP_MS;
+  settings.value.audio.fadeInOutDurationMs = Math.max(FADE_DURATION_MIN_MS, Math.min(FADE_DURATION_MAX_MS, next));
+};
+
+const handleFadeDurationInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const parsed = parseFloat(target.value);
+  const next = Number.isNaN(parsed)
+    ? FADE_DURATION_DEFAULT_MS
+    : Math.round(parsed / FADE_DURATION_STEP_MS) * FADE_DURATION_STEP_MS;
+  settings.value.audio.fadeInOutDurationMs = Math.max(FADE_DURATION_MIN_MS, Math.min(FADE_DURATION_MAX_MS, next));
+  target.value = String(settings.value.audio.fadeInOutDurationMs);
+};
+
+const SHARE_VALIDITY_DEFAULT_MINUTES = 120;
+
+const handleValidityInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const parsed = parseFloat(target.value);
+  const next = Number.isNaN(parsed) ? SHARE_VALIDITY_DEFAULT_MINUTES : Math.round(parsed / 5) * 5;
+  handleValidityChange(next);
+  target.value = String(shareValidityMinutes.value);
+};
 const audioOutputStatus = ref<AudioOutputStatus | null>(null);
 const audioOutputDevices = ref<AudioDevice[]>([]);
 const selectedOutputDeviceId = ref<string>('');
@@ -656,28 +721,87 @@ onScopeDispose(() => {
 
         <Transition name="settings-pop-panel">
           <div v-if="settings.audio.fadeInOutEnabled" class="flex flex-col">
-          <div class="desktop-setting-row pl-8">
-            <div class="flex-1 space-y-1"> 
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2"> 
-                渐入渐出时长
-                <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400"> 
+          <div>
+            <button
+              type="button"
+              class="desktop-setting-row w-full pl-8"
+              @click="showFadeDurationPanel = !showFadeDurationPanel"
+            >
+              <div class="min-w-0 flex-1 space-y-1 pr-3 text-left">
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">渐入渐出时长</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+                  设置音量从零渐变到目标值的过渡时间，范围 0.1 ~ 2 秒。
+                </div>
+              </div>
+              <div class="flex items-center gap-3 shrink-0">
+                <div class="text-xs font-medium text-gray-600 dark:text-gray-300 tabular-nums">
                   {{ (settings.audio.fadeInOutDurationMs / 1000).toFixed(1) }} 秒
-                </span>
+                </div>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-4 w-4 text-gray-400 transition-transform duration-200"
+                  :class="showFadeDurationPanel ? 'rotate-180' : ''"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                </svg>
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl"> 
-                设置音量从零渐变到目标值的过渡时间，范围 0.1 ~ 2 秒。
+            </button>
+            <transition name="settings-pop-panel">
+              <div v-if="showFadeDurationPanel" class="px-4 pb-4 pl-12">
+                <div class="settings-expand-panel">
+                  <div class="flex flex-col gap-4 md:flex-row md:items-center">
+                    <div class="flex min-w-[240px] flex-1 items-center gap-2">
+                      <button
+                        type="button"
+                        class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
+                        :disabled="settings.audio.fadeInOutDurationMs <= FADE_DURATION_MIN_MS"
+                        aria-label="减少 0.1 秒"
+                        @click="adjustFadeDuration(-FADE_DURATION_STEP_MS)"
+                      >
+                        <Minus class="h-4 w-4" />
+                      </button>
+                      <RangeSlider
+                        v-model="settings.audio.fadeInOutDurationMs"
+                        :min="FADE_DURATION_MIN_MS"
+                        :max="FADE_DURATION_MAX_MS"
+                        :step="FADE_DURATION_STEP_MS"
+                        variant="native"
+                        class="min-w-0 flex-1 h-1.5 cursor-pointer"
+                      />
+                      <button
+                        type="button"
+                        class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
+                        :disabled="settings.audio.fadeInOutDurationMs >= FADE_DURATION_MAX_MS"
+                        aria-label="增加 0.1 秒"
+                        @click="adjustFadeDuration(FADE_DURATION_STEP_MS)"
+                      >
+                        <Plus class="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <input
+                        :value="settings.audio.fadeInOutDurationMs"
+                        type="number"
+                        :min="FADE_DURATION_MIN_MS"
+                        :max="FADE_DURATION_MAX_MS"
+                        :step="FADE_DURATION_STEP_MS"
+                        class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                        @change="handleFadeDurationInput"
+                      />
+                      <button
+                        type="button"
+                        class="settings-action-button settings-action-button--soft"
+                        @click="settings.audio.fadeInOutDurationMs = FADE_DURATION_DEFAULT_MS"
+                      >
+                        恢复默认
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="flex items-center gap-3"> 
-              <RangeSlider
-                v-model="settings.audio.fadeInOutDurationMs"
-                :min="100"
-                :max="2000"
-                :step="100"
-                variant="native"
-                class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer"
-              />
-            </div>
+            </transition>
           </div>
         </div>
         </Transition>
@@ -787,13 +911,17 @@ onScopeDispose(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认播放音质</div>
           </div>
           <button
-            type="button" 
-            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
-            @click="showQualityModal = true"
+            type="button"
+            :ref="(el) => registerSettingsDropdownTrigger('onlineQuality', el)"
+            class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            @click="toggleSettingsDropdown('onlineQuality')"
           >
-            <span>{{ qualityLabel(settings.audio.onlineDefaultQuality) }}</span> 
-            <span class="text-xs text-gray-400">{{ QUALITY_META[settings.audio.onlineDefaultQuality].description }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <span>{{ qualityLabel(settings.audio.onlineDefaultQuality) }}</span>
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openSettingsDropdownId === 'onlineQuality' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
@@ -820,13 +948,17 @@ onScopeDispose(() => {
             </div>
           </div>
           <button
-            type="button" 
-            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
-            @click="showMvQualityModal = true"
+            type="button"
+            :ref="(el) => registerSettingsDropdownTrigger('mvQuality', el)"
+            class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            @click="toggleSettingsDropdown('mvQuality')"
           >
             <span>{{ settings.audio.mvDefaultQuality ?? '720P' }}</span>
-            <span class="text-xs text-gray-400">{{ MV_QUALITY_META[settings.audio.mvDefaultQuality ?? '720P'].description }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openSettingsDropdownId === 'mvQuality' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
@@ -837,7 +969,7 @@ onScopeDispose(() => {
           <button
             type="button"
             :ref="(el) => registerSettingsDropdownTrigger('fallbackBehavior', el)"
-            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="toggleSettingsDropdown('fallbackBehavior')"
           >
             <span>{{ QUALITY_FALLBACK_OPTIONS.find(o => o.value === settings.audio.onlineQualityFallbackBehavior)?.label }}</span>
@@ -859,7 +991,7 @@ onScopeDispose(() => {
           <button
             type="button"
             :ref="(el) => registerSettingsDropdownTrigger('failureBehavior', el)"
-            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="toggleSettingsDropdown('failureBehavior')"
           >
             <span>{{ FAILURE_BEHAVIOR_OPTIONS.find(o => o.value === settings.audio.onlineFailureBehavior)?.label }}</span>
@@ -871,27 +1003,88 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <div class="desktop-setting-row"> 
-          <div class="min-w-0 flex-1 space-y-1 pr-3">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接有效时长</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-              分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）。
+        <div>
+          <button
+            type="button"
+            class="desktop-setting-row w-full"
+            @click="showShareValidityPanel = !showShareValidityPanel"
+          >
+            <div class="min-w-0 flex-1 space-y-1 pr-3 text-left">
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接有效时长</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+                分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）。
+              </div>
             </div>
-          </div>
-          <div class="flex shrink-0 items-center gap-3">
-            <RangeSlider
-              :model-value="shareValidityMinutes"
-              :min="5"
-              :max="1440"
-              :step="5"
-              variant="native"
-              class="w-52 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer"
-              @update:model-value="handleValidityChange"
-            />
-            <span class="w-20 shrink-0 text-right text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200">
-              {{ shareValidityLabel }}
-            </span>
-          </div>
+            <div class="flex items-center gap-3 shrink-0">
+              <div class="text-xs font-medium text-gray-600 dark:text-gray-300 tabular-nums">
+                {{ shareValidityLabel }}
+              </div>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4 text-gray-400 transition-transform duration-200"
+                :class="showShareValidityPanel ? 'rotate-180' : ''"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+              </svg>
+            </div>
+          </button>
+          <transition name="settings-pop-panel">
+            <div v-if="showShareValidityPanel" class="px-4 pb-4">
+              <div class="settings-expand-panel">
+                <div class="flex flex-col gap-4 md:flex-row md:items-center">
+                  <div class="flex min-w-[240px] flex-1 items-center gap-2">
+                    <button
+                      type="button"
+                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
+                      :disabled="shareValidityMinutes <= 5"
+                      aria-label="减少 5 分钟"
+                      @click="handleValidityChange(shareValidityMinutes - 5)"
+                    >
+                      <Minus class="h-4 w-4" />
+                    </button>
+                    <RangeSlider
+                      :model-value="shareValidityMinutes"
+                      :min="5"
+                      :max="1440"
+                      :step="5"
+                      variant="native"
+                      class="min-w-0 flex-1 h-1.5 cursor-pointer"
+                      @update:model-value="handleValidityChange"
+                    />
+                    <button
+                      type="button"
+                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
+                      :disabled="shareValidityMinutes >= 1440"
+                      aria-label="增加 5 分钟"
+                      @click="handleValidityChange(shareValidityMinutes + 5)"
+                    >
+                      <Plus class="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <input
+                      :value="shareValidityMinutes"
+                      type="number"
+                      :min="5"
+                      :max="1440"
+                      :step="5"
+                      class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                      @change="handleValidityInput"
+                    />
+                    <button
+                      type="button"
+                      class="settings-action-button settings-action-button--soft"
+                      @click="handleValidityChange(SHARE_VALIDITY_DEFAULT_MINUTES)"
+                    >
+                      恢复默认
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </transition>
         </div>
 
         <div class="desktop-setting-row"> 
@@ -904,7 +1097,7 @@ onScopeDispose(() => {
           <button
             type="button"
             :ref="(el) => registerSettingsDropdownTrigger('shareFailureBehavior', el)"
-            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="toggleSettingsDropdown('shareFailureBehavior')"
           >
             <span>{{ SHARE_FAILURE_BEHAVIOR_OPTIONS.find(o => o.value === settings.sharePlaybackFailureBehavior)?.label }}</span>
@@ -933,88 +1126,6 @@ onScopeDispose(() => {
         >
           <div class="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
             {{ volumeBalanceTip }}
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showQualityModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showQualityModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择默认播放音质</h3>
-              <button
-                @click="showQualityModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-3">
-              <div class="grid grid-cols-3 gap-1.5">
-                <button
-                  v-for="key in ALL_QUALITY_KEYS"
-                  :key="key"
-                  type="button"
-                  class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center whitespace-nowrap flex flex-col items-center gap-0.5"
-                  :class="settings.audio.onlineDefaultQuality === key
-                    ? 'bg-[#EC4141] text-white shadow-sm'
-                    : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
-                  :title="QUALITY_META[key].description"
-                  @click="handleQualitySelect(key)"
-                >
-                  <span>{{ qualityLabel(key) }}</span> 
-                  <span
-                    class="text-[10px] font-normal opacity-75"
-                    :class="settings.audio.onlineDefaultQuality === key ? '' : 'text-gray-400 dark:text-gray-500'"
-                  >{{ QUALITY_META[key].description }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showMvQualityModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showMvQualityModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择 MV 默认画质</h3>
-              <button
-                @click="showMvQualityModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-3">
-              <div class="grid grid-cols-3 gap-1.5">
-                <button
-                  v-for="key in MV_QUALITY_KEYS"
-                  :key="key"
-                  type="button"
-                  class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center whitespace-nowrap flex flex-col items-center gap-0.5"
-                  :class="(settings.audio.mvDefaultQuality ?? '720P') === key
-                    ? 'bg-[#EC4141] text-white shadow-sm'
-                    : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
-                  :title="MV_QUALITY_META[key].description"
-                  @click="handleMvQualitySelect(key)"
-                >
-                  <span>{{ MV_QUALITY_META[key].label }}</span>
-                  <span
-                    class="text-[10px] font-normal opacity-75"
-                    :class="(settings.audio.mvDefaultQuality ?? '720P') === key ? '' : 'text-gray-400 dark:text-gray-500'"
-                  >{{ MV_QUALITY_META[key].description }}</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </Transition>
@@ -1105,6 +1216,48 @@ onScopeDispose(() => {
               />
             </button>
           </template>
+
+          <template v-else-if="openSettingsDropdownId === 'onlineQuality'">
+            <button
+              v-for="key in ALL_QUALITY_KEYS"
+              :key="key"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.audio.onlineDefaultQuality === key }"
+              :title="QUALITY_META[key].description"
+              @click="handleQualitySelect(key)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ qualityLabel(key) }}</span>
+              </span>
+              <Check
+                v-if="settings.audio.onlineDefaultQuality === key"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openSettingsDropdownId === 'mvQuality'">
+            <button
+              v-for="key in MV_QUALITY_KEYS"
+              :key="key"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': (settings.audio.mvDefaultQuality ?? '720P') === key }"
+              :title="MV_QUALITY_META[key].description"
+              @click="handleMvQualitySelect(key)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ MV_QUALITY_META[key].label }}</span>
+              </span>
+              <Check
+                v-if="(settings.audio.mvDefaultQuality ?? '720P') === key"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
         </div>
       </Transition>
     </Teleport>
@@ -1157,7 +1310,7 @@ onScopeDispose(() => {
             type="button"
             :ref="(el) => registerSettingsDropdownTrigger('outputDevice', el)"
             :disabled="isChangingOutputDevice"
-            class="flex max-w-[260px] shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            class="flex max-w-[260px] shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="toggleSettingsDropdown('outputDevice')"
           >
             <span class="truncate">{{ selectedOutputDeviceLabel }}</span>

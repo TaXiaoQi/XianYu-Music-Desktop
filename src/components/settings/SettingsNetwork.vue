@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { RefreshCw } from 'lucide-vue-next';
 
 import { useNetworkProxy } from '../../composables/useNetworkProxy';
 import { useToast } from '../../composables/toast';
@@ -12,9 +11,6 @@ const { isEnglish } = useI18n();
 
 const text = computed(() => (isEnglish.value ? {
   pageTitle: 'Network',
-  pageSubtitle: 'HTTP proxy',
-  cardTitle: 'Network proxy',
-  cardSubtitle: 'HTTP proxy host and authentication',
   enable: 'Enable network proxy',
   host: 'Host',
   port: 'Port',
@@ -36,9 +32,6 @@ const text = computed(() => (isEnglish.value ? {
   loadFailed: 'Could not read proxy settings',
 } : {
   pageTitle: '网络',
-  pageSubtitle: 'HTTP 代理',
-  cardTitle: '网络代理',
-  cardSubtitle: 'HTTP 代理主机与认证',
   enable: '启用网络代理',
   host: '主机',
   port: '端口',
@@ -164,126 +157,102 @@ onMounted(async () => {
 
 <template>
   <div class="w-full space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <section
-      class="rounded-2xl border border-gray-200/50 bg-white/30 p-5 dark:border-gray-800/50 dark:bg-black/20"
-    >
-      <div class="flex items-center gap-4">
-        <span
-          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#EC4141]/10 text-[#EC4141]"
-        >
-          <RefreshCw :size="22" />
-        </span>
-        <div class="min-w-0">
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {{ text.pageTitle }}
-          </h2>
-          <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            {{ text.pageSubtitle }}
-          </p>
+    <section class="space-y-3">
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        {{ text.pageTitle }}
+      </h2>
+
+      <div
+        class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10"
+      >
+        <div class="flex items-center justify-between gap-5 px-5 py-4">
+          <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ text.enable }}</span>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': state.enabled }"
+            @click="state.enabled = !state.enabled"
+          ></button>
         </div>
-      </div>
-    </section>
 
-    <section
-      class="overflow-hidden rounded-2xl border border-gray-200/50 bg-white/30 dark:border-gray-800/50 dark:bg-black/20"
-    >
-      <div class="border-b border-gray-200/50 px-5 py-4 dark:border-gray-800/50">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          {{ text.cardTitle }}
-        </h3>
-        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-          {{ text.cardSubtitle }}
-        </p>
-      </div>
+        <div class="border-t border-gray-200/50 dark:border-gray-800/50">
+          <label
+            class="flex items-center gap-3 border-b border-gray-200/50 px-5 py-4 dark:border-gray-800/50"
+          >
+            <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.host }}</span>
+            <input v-model.trim="state.host" :disabled="!state.enabled" placeholder="127.0.0.1" :class="inputClass" />
+          </label>
+          <label
+            class="flex items-center gap-3 border-b border-gray-200/50 px-5 py-4 dark:border-gray-800/50"
+          >
+            <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.port }}</span>
+            <input
+              v-model="portInput"
+              type="number"
+              inputmode="numeric"
+              placeholder="7890"
+              :disabled="!state.enabled"
+              :class="inputClass"
+            />
+          </label>
+          <label class="flex items-center gap-3 border-b border-gray-200/50 px-5 py-4 dark:border-gray-800/50">
+            <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.username }}</span>
+            <input v-model.trim="state.username" :disabled="!state.enabled" :class="inputClass" />
+          </label>
+          <label class="flex items-center gap-3 px-5 py-4">
+            <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.password }}</span>
+            <input
+              v-model="passwordInput"
+              type="password"
+              autocomplete="off"
+              :placeholder="passwordPlaceholder"
+              :disabled="!state.enabled"
+              :class="inputClass"
+            />
+          </label>
+        </div>
 
-      <div class="flex items-center justify-between gap-5 px-5 py-4">
-        <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ text.enable }}</span>
-        <button
-          type="button"
-          class="glass-switch"
-          :class="{ 'is-checked': state.enabled }"
-          @click="state.enabled = !state.enabled"
-        ></button>
-      </div>
+        <div
+          class="flex flex-wrap items-center gap-3 border-t border-gray-200/50 px-5 py-4 dark:border-gray-800/50"
+        >
+          <button
+            type="button"
+            class="rounded-lg bg-[#EC4141] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#d63a3a] disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="saving"
+            @click="handleSave"
+          >
+            {{ text.save }}
+          </button>
+          <button
+            type="button"
+            class="rounded-lg border border-gray-300/60 px-4 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700/60 dark:text-gray-200 dark:hover:bg-white/10"
+            :disabled="testing || !state.enabled"
+            @click="handleTest"
+          >
+            {{ testing ? text.testing : text.test }}
+          </button>
+          <span
+            v-if="testResultText"
+            class="text-xs"
+            :class="testResult?.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#EC4141]'"
+          >
+            {{ testResultText }}
+          </span>
+        </div>
 
-      <div
-        class="grid grid-cols-1 border-t border-gray-200/50 sm:grid-cols-2 dark:border-gray-800/50"
-      >
-        <label
-          class="flex items-center gap-3 border-b border-gray-200/50 px-5 py-4 sm:border-r dark:border-gray-800/50"
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200/50 bg-gray-50/40 px-5 py-3 dark:border-gray-800/50 dark:bg-white/5"
         >
-          <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.host }}</span>
-          <input v-model.trim="state.host" :disabled="!state.enabled" placeholder="127.0.0.1" :class="inputClass" />
-        </label>
-        <label
-          class="flex items-center gap-3 border-b border-gray-200/50 px-5 py-4 dark:border-gray-800/50"
-        >
-          <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.port }}</span>
-          <input
-            v-model="portInput"
-            type="number"
-            inputmode="numeric"
-            placeholder="7890"
-            :disabled="!state.enabled"
-            :class="inputClass"
-          />
-        </label>
-        <label class="flex items-center gap-3 px-5 py-4 sm:border-r">
-          <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.username }}</span>
-          <input v-model.trim="state.username" :disabled="!state.enabled" :class="inputClass" />
-        </label>
-        <label class="flex items-center gap-3 px-5 py-4">
-          <span class="w-12 shrink-0 text-sm text-gray-500 dark:text-gray-400">{{ text.password }}</span>
-          <input
-            v-model="passwordInput"
-            type="password"
-            autocomplete="off"
-            :placeholder="passwordPlaceholder"
-            :disabled="!state.enabled"
-            :class="inputClass"
-          />
-        </label>
-      </div>
-
-      <div
-        class="flex flex-wrap items-center gap-3 border-t border-gray-200/50 px-5 py-4 dark:border-gray-800/50"
-      >
-        <button
-          type="button"
-          class="rounded-lg bg-[#EC4141] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#d63a3a] disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="saving"
-          @click="handleSave"
-        >
-          {{ text.save }}
-        </button>
-        <button
-          type="button"
-          class="rounded-lg border border-gray-300/60 px-4 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700/60 dark:text-gray-200 dark:hover:bg-white/10"
-          :disabled="testing || !state.enabled"
-          @click="handleTest"
-        >
-          {{ testing ? text.testing : text.test }}
-        </button>
-        <span
-          v-if="testResultText"
-          class="text-xs"
-          :class="testResult?.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#EC4141]'"
-        >
-          {{ testResultText }}
-        </span>
-      </div>
-
-      <div
-        class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200/50 bg-gray-50/40 px-5 py-3 dark:border-gray-800/50 dark:bg-white/5"
-      >
-        <span class="text-xs text-gray-500 dark:text-gray-400">{{ text.restartHint }}</span>
-        <button
-          type="button"
-          class="rounded-lg border border-gray-300/60 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-white/60 dark:border-gray-700/60 dark:text-gray-200 dark:hover:bg-white/10"
-          @click="handleRestart"
-        >
-          {{ text.restartNow }}
-        </button>
+          <span class="text-xs text-gray-500 dark:text-gray-400">{{ text.restartHint }}</span>
+          <button
+            type="button"
+            class="rounded-lg border border-gray-300/60 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-white/60 dark:border-gray-700/60 dark:text-gray-200 dark:hover:bg-white/10"
+            @click="handleRestart"
+          >
+            {{ text.restartNow }}
+          </button>
+        </div>
       </div>
     </section>
   </div>

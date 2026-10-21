@@ -1,5 +1,5 @@
 <template>
-    <div class="settings-content">
+    <div>
         <div class="setting-item-group">
             <h2
                 class="mb-3 flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"
@@ -66,8 +66,27 @@
                 </label>
             </div>
 
-            <div
+            <!-- 本地文件夹：点击展开/收起文件夹列表 -->
+            <button
                 v-if="hasFolders"
+                type="button"
+                class="mb-2 flex w-full items-center gap-4 rounded-xl border border-gray-200/40 bg-white/20 px-4 py-3 text-left transition-colors hover:bg-white/40 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+                :aria-expanded="localFoldersExpanded"
+                @click="localFoldersExpanded = !localFoldersExpanded"
+            >
+                <span class="min-w-0 flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">本地文件夹</span>
+                <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                    共 {{ folders.length }} 个
+                </span>
+                <ChevronDown
+                    class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+                    :class="{ 'rotate-180': localFoldersExpanded }"
+                    :stroke-width="2.2"
+                />
+            </button>
+
+            <div
+                v-if="hasFolders && localFoldersExpanded"
                 class="mb-4 overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10"
             >
                 <div
@@ -216,6 +235,7 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { ref, computed } from "vue";
+import { ChevronDown } from "lucide-vue-next";
 import { open } from "@tauri-apps/plugin-dialog";
 import ConfirmModal from "../overlays/ConfirmModal.vue";
 import ModernInputModal from "../common/ModernInputModal.vue";
@@ -257,6 +277,9 @@ const scanBusy = computed(() => {
 });
 
 const hasFolders = computed(() => folders.value.length > 0);
+
+// 文件夹列表默认收起（避免一长串路径把设置页撑爆），点「本地文件夹」行展开
+const localFoldersExpanded = ref(false);
 
 // 短音频时长阈值的双向绑定
 const minDurationSeconds = computed({
@@ -391,9 +414,6 @@ const finalizeRemove = async () => {
 </script>
 
 <style scoped> /* 样式 */
-.settings-content {
-    padding: 0 10px;
-}
 
 .setting-item-group {
     border-radius: 12px;
@@ -459,16 +479,30 @@ const finalizeRemove = async () => {
     font-size: 1rem;
 }
 
-.network-share-row { /* 样式 */
+.network-share-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 14px;
-    padding: 12px 14px;
+    padding: 8px 16px;
     margin-bottom: 16px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    border: 1px solid rgba(229, 231, 235, 0.4);
+    background: rgba(255, 255, 255, 0.2);
+    transition: background-color 160ms ease;
+}
+
+.network-share-row:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+:global(.dark) .network-share-row {
+    border-color: rgba(31, 41, 55, 0.4);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+:global(.dark) .network-share-row:hover {
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .network-share-copy {
@@ -482,20 +516,21 @@ const finalizeRemove = async () => {
     font-size: 0.9rem;
 }
 
-.network-share-desc { /* 样式 */
-    line-height: 1.4;
-    font-size: 0.78rem;
+.network-share-desc {
+    line-height: 20px;
+    font-size: 0.75rem;
     color: var(--text-secondary);
 }
 
-.network-share-button { /* 样式 */
+.network-share-button {
     flex-shrink: 0;
     cursor: pointer;
-    padding: 7px 12px;
+    padding: 4px 12px;
     border-radius: 8px;
     border: 1px solid rgba(236, 65, 65, 0.28);
     font: inherit;
-    font-size: 0.82rem;
+    font-size: 0.75rem;
+    line-height: 20px;
     background: rgba(236, 65, 65, 0.08);
     color: #ec4141;
     transition:

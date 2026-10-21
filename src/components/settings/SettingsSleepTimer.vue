@@ -18,7 +18,7 @@ const sleepTimer = useSleepTimerStore();
 const COUNTDOWN_PRESETS = [15, 30, 45, 60, 90];
 const IDLE_PRESETS = [10, 20, 30, 60];
 
-const rowClass = 'flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10';
+const rowClass = 'flex flex-wrap items-center justify-between gap-4 px-4 py-3.5';
 
 // --- 行内下拉（触发按钮下方展开，互斥单开） ---
 const {
@@ -75,19 +75,23 @@ onMounted(() => {
 <template>
   <section class="space-y-3">
     <div class="px-1">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.title') }}</h2>
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        {{ t('sleepTimer.title') }}
+      </h2>
       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.description') }}</p>
     </div>
 
+    <div class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
     <div :class="rowClass">
       <span class="min-w-[12rem] flex-1">
-        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.modeLabel') }}</span>
+        <span class="block whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('sleepTimer.modeLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.modeHint') }}</span>
       </span>
       <button
         type="button"
         :ref="(el) => registerTrigger('sleepMode', el)"
-        class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+        class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
         @click="toggleDropdown('sleepMode')"
       >
         <span>{{ modeLabel }}</span>
@@ -101,13 +105,13 @@ onMounted(() => {
 
     <div v-if="sleepTimer.mode === 'countdown'" :class="rowClass">
       <span class="min-w-[12rem] flex-1">
-        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.countdownLabel') }}</span>
+        <span class="block whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('sleepTimer.countdownLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.countdownHint') }}</span>
       </span>
       <button
         type="button"
         :ref="(el) => registerTrigger('countdownMinutes', el)"
-        class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+        class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
         @click="toggleDropdown('countdownMinutes')"
       >
         <span>{{ countdownLabel }}</span>
@@ -121,13 +125,13 @@ onMounted(() => {
 
     <div v-else :class="rowClass">
       <span class="min-w-[12rem] flex-1">
-        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.idleLabel') }}</span>
+        <span class="block whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('sleepTimer.idleLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.idleHint') }}</span>
       </span>
       <button
         type="button"
         :ref="(el) => registerTrigger('idleMinutes', el)"
-        class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+        class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
         @click="toggleDropdown('idleMinutes')"
       >
         <span>{{ idleLabel }}</span>
@@ -141,13 +145,13 @@ onMounted(() => {
 
     <div :class="rowClass">
       <span class="min-w-[12rem] flex-1">
-        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">{{ t('sleepTimer.actionLabel') }}</span>
+        <span class="block whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('sleepTimer.actionLabel') }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ t('sleepTimer.actionHint') }}</span>
       </span>
       <button
         type="button"
         :ref="(el) => registerTrigger('sleepAction', el)"
-        class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+        class="flex shrink-0 items-center min-w-[176px] justify-between gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
         @click="toggleDropdown('sleepAction')"
       >
         <span>{{ actionLabel }}</span>
@@ -161,7 +165,7 @@ onMounted(() => {
 
     <div :class="rowClass">
       <span class="min-w-[12rem] flex-1">
-        <span class="block whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-200">
+        <span class="block whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">
           {{ sleepTimer.running ? t('sleepTimer.runningLabel') : t('sleepTimer.idle') }}
         </span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
@@ -170,11 +174,12 @@ onMounted(() => {
       </span>
       <button
         type="button"
-        class="shrink-0 rounded-lg bg-[#EC4141] px-4 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+        class="shrink-0 rounded-lg bg-[#EC4141] px-4 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90"
         @click="sleepTimer.running ? sleepTimer.cancel() : sleepTimer.start()"
       >
         {{ sleepTimer.running ? t('sleepTimer.cancel') : t('sleepTimer.start') }}
       </button>
+    </div>
     </div>
 
     <Teleport to="body">

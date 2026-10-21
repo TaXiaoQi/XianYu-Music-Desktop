@@ -1,6 +1,6 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { Check, ChevronDown, ChevronRight } from 'lucide-vue-next';
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
 import { useInlineSelectDropdown } from '../../composables/useInlineSelectDropdown';
@@ -30,6 +30,7 @@ const TEXT = computed(() => isEnglish.value ? {
   accentCustom: 'Custom Color',
   accentHex: 'HEX Value',
   accentReset: 'Reset to Default',
+  accentApply: 'Apply',
   playerDetailCoverTitle: 'Lyrics Page Cover',
   playerDetailCoverHint: 'Choose what to show whenever the Now Playing page opens',
   playerDetailCoverLabel: 'When opening the Now Playing page',
@@ -38,7 +39,7 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailCoverRemember: 'Remember Last Choice',
   playerDetailStyleTitle: 'Now Playing Page Style',
   playerDetailStyleHint: 'Choose the layout skin of the Now Playing page',
-  playerDetailStyleLabel: 'Page style',
+  playerDetailStyleLabel: 'Cover style',
   playerDetailStyleClassic: 'Classic',
   playerDetailStyleVinyl: 'Vinyl Record',
   playerDetailVinylMaterialLabel: 'Plinth material',
@@ -102,6 +103,7 @@ const TEXT = computed(() => isEnglish.value ? {
   accentCustom: '自定义颜色',
   accentHex: 'HEX 色值',
   accentReset: '恢复默认',
+  accentApply: '应用',
   playerDetailCoverTitle: '歌词页封面',
   playerDetailCoverHint: '设置每次打开播放详情页时的默认展示方式',
   playerDetailCoverLabel: '打开播放详情页时',
@@ -110,7 +112,7 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailCoverRemember: '跟随上次选择',
   playerDetailStyleTitle: '播放详情页样式',
   playerDetailStyleHint: '选择播放详情页的外观皮肤',
-  playerDetailStyleLabel: '页面样式',
+  playerDetailStyleLabel: '封面样式',
   playerDetailStyleClassic: '经典',
   playerDetailStyleVinyl: '黑胶唱片',
   playerDetailVinylMaterialLabel: '底座材质',
@@ -243,7 +245,6 @@ const {
   showFlowTuning,
   setColorScheme,
   setAccentColor,
-  resetAccentColor,
   openCustomModal,
   setFlowColorBoost,
   setFlowDepth,
@@ -270,12 +271,31 @@ const {
 
 const commitAccentColor = (event: Event) => {
   const input = event.target as HTMLInputElement;
-  setAccentColor(input.value);
-  input.value = theme.value.accentColor;
+  const raw = input.value.trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+    customAccentDraft.value = `#${raw.toUpperCase()}`;
+  }
+  input.value = customAccentDraft.value;
 };
 
-// ---- 主题色弹窗（对齐移动端：入口行 + 居中弹窗选色） ----
+// ---- 主题色弹窗（对齐移动端：色板网格 + 内嵌取色器 + Hex/应用） ----
 const isAccentModalOpen = ref(false);
+
+// 自定义取色器只改草稿，点「应用」才真正生效
+const customAccentDraft = ref(theme.value.accentColor);
+
+watch(isAccentModalOpen, (open) => {
+  if (open) customAccentDraft.value = theme.value.accentColor;
+});
+
+const canApplyCustomAccent = computed(
+  () => customAccentDraft.value.toUpperCase() !== theme.value.accentColor.toUpperCase(),
+);
+
+const applyCustomAccent = () => {
+  if (!canApplyCustomAccent.value) return;
+  setAccentColor(customAccentDraft.value);
+};
 
 const currentAccentLabel = computed(() => {
   const current = theme.value.accentColor.toLowerCase();
@@ -449,14 +469,6 @@ const openCustomSkin = () => {
   openCustomModal();
 };
 
-// ---- 自定义 2D 调色盘弹窗控制器 ----
-const isCustomColorPickerOpen = ref(false);
-const colorPickerTriggerRef = ref<HTMLElement | null>(null);
-
-function toggleCustomColorPicker() {
-  isCustomColorPickerOpen.value = !isCustomColorPickerOpen.value;
-}
-
 // ---- 歌词页封面选择（自定义弹窗，替代原生 <select>） ----
 const COVER_OPTIONS = computed<Array<{ value: 'show' | 'hide' | 'remember'; label: string }>>(() => [
   { value: 'show', label: TEXT.value.playerDetailCoverShow },
@@ -492,7 +504,7 @@ function updateCoverMenuPosition() {
   const rect = trigger.getBoundingClientRect();
   const viewportPadding = 16;
   const gap = 8;
-  const menuWidth = Math.max(rect.width, 200);
+  const menuWidth = Math.max(rect.width, 176);
   const menuHeight = 160;
 
   let left = rect.right - menuWidth;
@@ -591,7 +603,7 @@ function updateStyleMenuPosition() {
   const rect = trigger.getBoundingClientRect();
   const viewportPadding = 16;
   const gap = 8;
-  const menuWidth = Math.max(rect.width, 200);
+  const menuWidth = Math.max(rect.width, 176);
   const menuHeight = 120;
 
   let left = rect.right - menuWidth;
@@ -667,7 +679,7 @@ onUnmounted(() => {
 
       <div class="overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
         <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
-          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.paletteTitle }}</span>
+          <span class="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.paletteTitle }}</span>
           <button
             type="button"
             :ref="(el) => registerSchemeTrigger('colorScheme', el)"
@@ -685,7 +697,7 @@ onUnmounted(() => {
 
         <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
           <span class="min-w-0">
-            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.accentTitle }}</span>
+            <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.accentTitle }}</span>
             <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.accentHint }}</span>
           </span>
           <button
@@ -704,7 +716,7 @@ onUnmounted(() => {
         </div>
 
         <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
-          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.materialPresetTitle }}</span>
+          <span class="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.materialPresetTitle }}</span>
           <button
             type="button"
             :ref="(el) => registerMaterialTrigger('materialPreset', el)"
@@ -724,7 +736,7 @@ onUnmounted(() => {
           v-if="materialMode !== 'none'"
           class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
         >
-          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
+          <span class="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
           <span class="flex items-center gap-3">
             <SettingHint :text="TEXT.keepWindowMaterialOnBlurHint" />
             <button
@@ -848,7 +860,7 @@ onUnmounted(() => {
           @click="squareOpen = true"
         >
           <span class="min-w-0">
-            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.squareEntry }}</span>
+            <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.squareEntry }}</span>
             <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Import theme packages, apply icons, stickers & component colors' : '导入主题包并应用图标、贴纸与组件色块' }}</span>
           </span>
           <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
@@ -860,14 +872,14 @@ onUnmounted(() => {
           @click="openCustomSkin()"
         >
           <span class="min-w-0">
-            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Center' : '壁纸中心' }}</span>
+            <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Center' : '壁纸中心' }}</span>
             <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom backgrounds & dynamic wallpapers' : '自定义背景与动态壁纸' }}</span>
           </span>
           <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
 
         <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
-          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.switchStyleTitle }}</span>
+          <span class="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.switchStyleTitle }}</span>
           <button
             type="button"
             :ref="(el) => registerStyleTrigger('switchStyle', el)"
@@ -981,11 +993,11 @@ onUnmounted(() => {
                 >✕</button>
               </div>
               <div class="p-4">
-                <div class="grid grid-cols-4 gap-3 sm:grid-cols-8">
+                <div class="grid grid-cols-4 gap-3">
           <button
             v-for="preset in ACCENT_COLOR_PRESETS"
             :key="preset.value"
-            type="button" 
+            type="button"
             class="group flex min-w-0 flex-col items-center gap-2 rounded-xl border px-2 py-3 transition-all"
             :class="theme.accentColor === preset.value
               ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
@@ -994,62 +1006,59 @@ onUnmounted(() => {
             @click="setAccentColor(preset.value)"
           >
             <span
-              class="h-7 w-7 rounded-full border-2 border-white shadow-sm ring-1 ring-black/10 transition-transform group-hover:scale-110 dark:ring-white/20"
+              class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white shadow-sm ring-1 ring-black/10 transition-transform group-hover:scale-110 dark:ring-white/20"
               :style="{ backgroundColor: preset.value }"
-            ></span>
-            <span class="w-full truncate text-center text-[11px] font-medium text-gray-600 dark:text-white/60">
+            >
+              <Check
+                v-if="theme.accentColor === preset.value"
+                class="h-4 w-4 text-white drop-shadow"
+                :stroke-width="3"
+                aria-hidden="true"
+              />
+            </span>
+            <span class="w-full text-center text-[11px] font-medium text-gray-600 dark:text-white/60">
               {{ preset.label }}
             </span>
           </button>
         </div>
 
-        <div class="mt-4 flex flex-col gap-3 border-t border-gray-200/40 pt-4 sm:flex-row sm:items-end dark:border-white/10">
-          <label class="flex min-w-0 flex-1 items-center gap-3">
-            <span class="text-xs font-medium text-gray-600 dark:text-white/60">{{ TEXT.accentCustom }}</span>
-            <button
-              ref="colorPickerTriggerRef"
-              type="button"
-              class="relative h-9 w-12 shrink-0 overflow-hidden rounded-xl border border-black/10 shadow-sm transition-transform active:scale-95 dark:border-white/15 cursor-pointer"
-              :title="TEXT.accentCustom"
-              @click="toggleCustomColorPicker"
-            >
-              <span
-                class="absolute inset-0 transition-colors"
-                :style="{ backgroundColor: theme.accentColor }"
-              ></span>
-            </button>
+        <!-- 分隔：自定义颜色 -->
+        <div class="mt-5 flex items-center gap-3">
+          <span class="h-px flex-1 bg-gray-200/60 dark:bg-white/10"></span>
+          <span class="text-xs font-medium text-gray-400 dark:text-white/40">{{ TEXT.accentCustom }}</span>
+          <span class="h-px flex-1 bg-gray-200/60 dark:bg-white/10"></span>
+        </div>
 
-            <CustomColorPicker
-              :model-value="theme.accentColor"
-              :is-open="isCustomColorPickerOpen"
-              :trigger-ref="colorPickerTriggerRef"
-              @update:model-value="setAccentColor"
-              @close="isCustomColorPickerOpen = false"
-            />
-          </label>
+        <!-- 内嵌取色器：只改草稿，点「应用」生效 -->
+        <CustomColorPicker
+          inline
+          :model-value="customAccentDraft"
+          :is-open="false"
+          @update:model-value="customAccentDraft = $event"
+        />
 
-          <label class="flex min-w-0 flex-1 flex-col gap-1.5">
-            <span class="text-xs font-medium text-gray-600 dark:text-white/60">{{ TEXT.accentHex }}</span>
-            <input
-              :value="theme.accentColor"
-              type="text"
-              maxlength="7"
-              spellcheck="false"
-              class="h-9 rounded-lg border border-black/10 bg-white/45 px-3 font-mono text-xs uppercase text-gray-800 outline-none transition focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
-              placeholder="#EC4141"
-              @change="commitAccentColor"
-              @keydown.enter="($event.target as HTMLInputElement).blur()"
-            />
-          </label>
-
+        <div class="mt-4 flex items-center gap-3">
+          <span
+            class="h-9 w-12 shrink-0 rounded-xl border border-black/10 shadow-sm dark:border-white/15"
+            :style="{ backgroundColor: customAccentDraft }"
+          ></span>
+          <input
+            :value="customAccentDraft"
+            type="text"
+            maxlength="7"
+            spellcheck="false"
+            class="h-9 min-w-0 flex-1 rounded-lg border border-black/10 bg-white/45 px-3 font-mono text-xs uppercase text-gray-800 outline-none transition focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
+            placeholder="#EC4141"
+            @change="commitAccentColor"
+            @keydown.enter="($event.target as HTMLInputElement).blur()"
+          />
           <button
             type="button"
-            class="h-9 shrink-0 rounded-lg border border-gray-200/60 bg-white/30 px-3 text-xs font-medium text-gray-600 transition hover:border-[#EC4141]/40 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
-            :disabled="theme.accentColor === '#EC4141'"
-            :class="theme.accentColor === '#EC4141' ? 'cursor-not-allowed opacity-40' : ''"
-            @click="resetAccentColor"
+            class="h-9 shrink-0 rounded-lg bg-[#EC4141] px-6 text-xs font-medium text-white shadow-sm transition hover:bg-[#d13b3b] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!canApplyCustomAccent"
+            @click="applyCustomAccent"
           >
-            {{ TEXT.accentReset }}
+            {{ TEXT.accentApply }}
           </button>
         </div>
               </div>
@@ -1067,7 +1076,7 @@ onUnmounted(() => {
       <div class="overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
       <label class="relative flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
         <span class="min-w-0">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailCoverLabel }}</span>
+          <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailCoverLabel }}</span>
           <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailCoverHint }}</span>
         </span>
         <button
@@ -1100,7 +1109,7 @@ onUnmounted(() => {
                   :class="playerDetailCoverBehavior === option.value ? 'cover-select-option--active' : ''"
                   @click="handleCoverSelect(option.value)"
                 >
-                  <span>{{ option.label }}</span>
+                  <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
                   <Check v-if="playerDetailCoverBehavior === option.value" class="h-4 w-4 shrink-0" />
                 </button>
               </div>
@@ -1111,7 +1120,7 @@ onUnmounted(() => {
 
       <label class="relative flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
         <span class="min-w-0">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailStyleLabel }}</span>
+          <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailStyleLabel }}</span>
           <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailStyleHint }}</span>
         </span>
         <button
@@ -1144,7 +1153,7 @@ onUnmounted(() => {
                   :class="playerDetailStyle === option.value ? 'cover-select-option--active' : ''"
                   @click="handleStyleSelect(option.value)"
                 >
-                  <span>{{ option.label }}</span>
+                  <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
                   <Check v-if="playerDetailStyle === option.value" class="h-4 w-4 shrink-0" />
                 </button>
               </div>
@@ -1157,7 +1166,7 @@ onUnmounted(() => {
       class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
     >
       <span class="min-w-0">
-        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylMaterialLabel }}</span>
+        <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylMaterialLabel }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailVinylMaterialHint }}</span>
       </span>
       <div class="grid shrink-0 grid-cols-4 gap-1.5">
@@ -1181,7 +1190,7 @@ onUnmounted(() => {
       class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
     >
       <span class="min-w-0">
-        <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylPlatterStyleLabel }}</span>
+        <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailVinylPlatterStyleLabel }}</span>
         <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailVinylPlatterStyleHint }}</span>
       </span>
       <div class="grid shrink-0 grid-cols-2 gap-1.5">
@@ -1203,7 +1212,7 @@ onUnmounted(() => {
 
       <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
         <span class="min-w-0">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshBackgroundLabel }}</span>
+          <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshBackgroundLabel }}</span>
           <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailMeshBackgroundHint }}</span>
         </span>
         <button
@@ -1218,7 +1227,7 @@ onUnmounted(() => {
         class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10"
       >
         <span class="min-w-0">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshAntiAliasLabel }}</span>
+          <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshAntiAliasLabel }}</span>
           <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailMeshAntiAliasHint }}</span>
         </span>
         <button
@@ -1241,7 +1250,7 @@ onUnmounted(() => {
       </h2>
 
       <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
-        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.customTrayMenu }}</span>
+        <span class="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.customTrayMenu }}</span>
         <button
           type="button"
           :ref="(el) => registerTrayTrigger('trayStyle', el)"
@@ -1295,7 +1304,7 @@ onUnmounted(() => {
       </h2>
 
       <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
-        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.leaderboardEnable }}</span>
+        <span class="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.leaderboardEnable }}</span>
         <button
           type="button"
           class="glass-switch"

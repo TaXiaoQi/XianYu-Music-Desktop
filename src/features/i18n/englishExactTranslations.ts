@@ -1099,7 +1099,7 @@ export const exactEnglishTranslations: Record<string, string> = {
   '管理': 'Manage',
   '实时预览': 'Live Preview',
   '基础配置': 'Basic Settings',
-  '页面样式': 'Page Style',
+  '封面样式': 'Cover Style',
   '背景样式': 'Background Style',
   '日志管理': 'Log Management',
   '导出日志': 'Export logs',

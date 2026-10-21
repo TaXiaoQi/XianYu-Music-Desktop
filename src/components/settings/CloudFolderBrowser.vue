@@ -267,6 +267,14 @@ watch(
   },
 );
 
+// 目录浏览区默认收起（几十个文件夹会把设置页撑爆），点「选择文件夹」行展开
+const folderBrowserExpanded = ref(false);
+const toggleFolderBrowser = () => {
+  folderBrowserExpanded.value = !folderBrowserExpanded.value;
+  // 兜底：账号就绪 watch 已自动 openBrowse，这里覆盖手动提前展开的场景
+  if (folderBrowserExpanded.value && browseIndex.value < 0) openBrowse();
+};
+
 onMounted(() => {
   void refreshAccounts();
   // 凭据落盘即刷新：登录同步后台导入绑定后，面板无需重开即跟随
@@ -334,6 +342,26 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <!-- 选择文件夹：点击展开/收起目录浏览区 -->
+      <button
+        type="button"
+        :class="rowClass"
+        class="w-full text-left"
+        :aria-expanded="folderBrowserExpanded"
+        @click="toggleFolderBrowser"
+      >
+        <span class="min-w-0 flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">选择文件夹</span>
+        <span v-if="selectedPaths.size > 0" class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+          已选 {{ selectedPaths.size }}
+        </span>
+        <ChevronDown
+          class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+          :class="{ 'rotate-180': folderBrowserExpanded }"
+          :stroke-width="2.2"
+        />
+      </button>
+
+      <template v-if="folderBrowserExpanded">
       <!-- 已选 chips（跨目录累积） -->
       <div v-if="selectedPaths.size > 0" :class="rowClass">
         <span class="flex min-w-0 flex-1 flex-wrap gap-1.5">
@@ -472,6 +500,7 @@ onBeforeUnmount(() => {
           保存
         </button>
       </div>
+      </template>
     </template>
   </div>
 </template>

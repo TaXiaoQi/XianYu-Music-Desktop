@@ -129,7 +129,7 @@ export const FOOTER_ITEMS: FooterItemMeta[] = [
     },
     {
         key: "pageStyle",
-        label: "页面样式",
+        label: "封面样式",
         description: "歌词页样式面板（仅播放页可用）",
         icon: "palette",
     },

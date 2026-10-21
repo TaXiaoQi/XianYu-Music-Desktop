@@ -22,7 +22,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl space-y-6 px-6 pb-10 pt-2">
+  <div class="w-full space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
     <SettingsRemoteControl />
 
     <section class="space-y-3">

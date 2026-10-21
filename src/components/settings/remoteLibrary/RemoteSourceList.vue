@@ -92,7 +92,7 @@ const emit = defineEmits<{
 .rl-catalog__name {
   color: #111827;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .rl-catalog__address {
@@ -118,7 +118,7 @@ const emit = defineEmits<{
   gap: 12px;
   color: rgb(75 85 99);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .rl-meter__lane {
@@ -151,7 +151,7 @@ const emit = defineEmits<{
   padding: 0 15px;
   color: #ec4141;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rl-chip:disabled {

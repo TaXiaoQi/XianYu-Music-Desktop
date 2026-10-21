@@ -149,7 +149,7 @@ const cloudEnabledFor = (providerId: string) =>
 const cloudDescriptionFor = (providerId: string) => {
   if (!cloudEnabledFor(providerId)) return '已关闭，搜索不再拉取该网盘';
   const n = cloudAccountCounts.value[providerId] ?? 0;
-  return n > 0 ? `已绑定 ${n} 个账号，搜索时可拉取该网盘音乐` : '未绑定账号';
+  return n > 0 ? `已绑定 ${n} 个账号` : '未绑定账号';
 };
 
 function toggleCloudSource(providerId: string) {

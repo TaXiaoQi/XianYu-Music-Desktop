@@ -9,7 +9,7 @@ import {
 } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { Plus } from "lucide-vue-next";
+import { ChevronDown } from "lucide-vue-next";
 import { useToast as useToastNotifications } from "../../composables/toast";
 import { remoteLibraryApi as remoteLibraryService } from "../../services/tauri/remoteLibraryApi";
 import type {
@@ -314,70 +314,78 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="mt-8 flex w-full flex-col gap-8">
-        <RemoteSourceForm
-            v-if="drafting"
-            v-model:base-url="draft.baseUrl"
-            v-model:name="draft.name"
-            v-model:password="draft.password"
-            v-model:root-path="draft.rootPath"
-            v-model:username="draft.username"
-            :editing="draft.id.length > 0"
-            :persisting="persisting"
-            :probing="probing"
-            @cancel="closeDraft"
-            @probe="probeConnection"
-            @submit="submitDraft"
-        />
-
-        <template v-else>
-            <section class="flex flex-col gap-3">
-                <RemoteSectionHeader>添加远程音乐库</RemoteSectionHeader>
+        <section class="flex flex-col gap-3">
+            <RemoteSectionHeader>添加远程音乐库</RemoteSectionHeader>
+            <!-- 展开条与表单合成一个折叠卡片 -->
+            <div
+                class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 transition-colors dark:border-gray-800/40 dark:bg-black/10"
+            >
                 <button
                     type="button"
-                    class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed bg-transparent py-5 text-sm font-bold transition-all duration-200 border-gray-300 text-gray-500 hover:border-[#EC4141] hover:bg-[#EC4141]/5 hover:text-[#EC4141] dark:border-gray-600/50 dark:text-gray-400"
-                    @click="openDraft"
+                    class="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/40 dark:hover:bg-white/10"
+                    :aria-expanded="drafting"
+                    @click="drafting ? closeDraft() : openDraft()"
                 >
-                    <Plus :size="18" :stroke-width="2.5" aria-hidden="true" />
-                    添加 WebDAV 音乐库
+                    <span class="min-w-0 flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">添加 WebDAV 音乐库</span>
+                    <ChevronDown
+                        class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+                        :class="{ 'rotate-180': drafting }"
+                        :stroke-width="2.2"
+                    />
                 </button>
-            </section>
 
-            <section class="flex flex-col gap-3">
-                <RemoteSectionHeader>已添加</RemoteSectionHeader>
-                <RemoteSourceList
-                    :loading="fetchingSources"
-                    :percent="percentComplete"
-                    :progress="syncStatus"
-                    :progress-caption="progressCaption"
-                    :sources="sourceList"
-                    :syncing-id="syncingId"
-                    @browse="openExplorerAt"
-                    @edit="startEditing"
-                    @remove="markForRemoval"
-                    @sync="startSync"
+                <RemoteSourceForm
+                    v-if="drafting"
+                    v-model:base-url="draft.baseUrl"
+                    v-model:name="draft.name"
+                    v-model:password="draft.password"
+                    v-model:root-path="draft.rootPath"
+                    v-model:username="draft.username"
+                    :editing="draft.id.length > 0"
+                    :persisting="persisting"
+                    :probing="probing"
+                    @cancel="closeDraft"
+                    @probe="probeConnection"
+                    @submit="submitDraft"
                 />
-            </section>
+            </div>
+        </section>
 
-            <section class="flex flex-col gap-3">
-                <RemoteSectionHeader>远程缓存</RemoteSectionHeader>
-                <RemoteCacheUsage
-                    :busy="wipingCache"
-                    :usage="cacheMeter"
-                    @clear="wipeRemoteCache"
-                />
-            </section>
+        <section class="flex flex-col gap-3">
+            <RemoteSectionHeader>已添加</RemoteSectionHeader>
+            <RemoteSourceList
+                :loading="fetchingSources"
+                :percent="percentComplete"
+                :progress="syncStatus"
+                :progress-caption="progressCaption"
+                :sources="sourceList"
+                :syncing-id="syncingId"
+                @browse="openExplorerAt"
+                @edit="startEditing"
+                @remove="markForRemoval"
+                @sync="startSync"
+            />
+        </section>
 
-            <section v-if="explorerTargetId" class="flex flex-col gap-3">
-                <RemoteSectionHeader>远程目录</RemoteSectionHeader>
-                <RemoteBrowserPanel
-                    :busy="explorerBusy"
-                    :items="explorerEntries"
-                    :location="explorerLocation"
-                    @ascend="ascendExplorer"
-                    @enter="descendExplorer"
-                />
-            </section>
-        </template>
+        <section class="flex flex-col gap-3">
+            <RemoteSectionHeader>远程缓存</RemoteSectionHeader>
+            <RemoteCacheUsage
+                :busy="wipingCache"
+                :usage="cacheMeter"
+                @clear="wipeRemoteCache"
+            />
+        </section>
+
+        <section v-if="explorerTargetId" class="flex flex-col gap-3">
+            <RemoteSectionHeader>远程目录</RemoteSectionHeader>
+            <RemoteBrowserPanel
+                :busy="explorerBusy"
+                :items="explorerEntries"
+                :location="explorerLocation"
+                @ascend="ascendExplorer"
+                @enter="descendExplorer"
+            />
+        </section>
 
         <RemovalDialog
             :content="`确定要删除“${removalCandidate?.name ?? ''}”吗？远程歌曲索引会从音乐库中移除。`"
