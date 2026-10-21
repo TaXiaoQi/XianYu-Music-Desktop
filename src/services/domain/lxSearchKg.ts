@@ -10,7 +10,7 @@ import {
 
 // ==================== KG (酷狗) Search ====================
 
-function buildKugouCoverUrl(url: string | null | undefined, size = 480): string | null {
+export function buildKugouCoverUrl(url: string | null | undefined, size = 480): string | null {
   if (!url || typeof url !== 'string') return null;
   let u = url.trim();
   if (!u) return null;

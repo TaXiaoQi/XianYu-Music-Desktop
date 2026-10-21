@@ -8,9 +8,9 @@ import {
   type LxSearchResultItem,
 } from './lxMusicSdkBase';
 import {
-  kgFilterData,
   txHandleResult,
 } from './lxSearchPlatform';
+import { buildKugouCoverUrl } from './lxSearchKg';
 import { decodeName, formatSingerName } from '../../utils/musicFormat';
 import { dispatchFallbackModule } from '../fallbackModules/registry';
 import type { LxSourceId } from './lxMusicSdkTypes';
@@ -139,9 +139,11 @@ async function kgAlbumAllSongs(albumId: string): Promise<LxSearchResultItem[]> {
   const out: LxSearchResultItem[] = [];
   for (let page = 1; page <= ALBUM_MAX_PAGES; page++) {
     const url = `http://mobilecdn.kugou.com/api/v3/album/song?albumid=${albumId}&page=${page}&pagesize=${pagesize}`;
-    const data = await httpGetJson(url);
+    const data = await httpGetJson(url, KG_V3_HEADERS);
     const infoList: any[] = data?.data?.info || [];
-    out.push(...infoList.map((item: any) => kgFilterData(item)));
+    out.push(...infoList
+      .map((item: any) => kgItemToLx(item))
+      .filter((item): item is LxSearchResultItem => item !== null));
     if (infoList.length < pagesize) break;
   }
   if (out.length === 0) console.warn(`[LxMusicSdk] KG album ${albumId}: empty info list`);
@@ -167,6 +169,64 @@ async function mgAlbumAllSongs(albumId: string, albumName: string): Promise<LxSe
   }
   if (out.length === 0) console.warn(`[LxMusicSdk] MG album ${albumId}: empty list`);
   return out;
+}
+
+// ==================== KG 歌单/专辑条目（v9 歌单页全量 + v3 兜底） ====================
+// v3 special/getSongList 对无 Referer 请求返回纯文本 "Access Deny"（非 JSON），
+// 且其条目为小写字段（hash/audio_id/filename），旧映射 kgFilterData 是 search_v2 的大写字段，对不上。
+// 歌单主路径改走 v9 歌单页单次全量（对齐 Rust playlist_fetcher/kg.rs 的 v9 逻辑）。
+
+const KG_V3_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  Referer: 'https://www.kugou.com/',
+};
+
+function kgItemToLx(item: any, opts: { durationMs?: boolean } = {}): LxSearchResultItem | null {
+  const hash = String(item?.hash || '');
+  const songmid = String(item?.audio_id ?? item?.album_audio_id ?? item?.mixsongid ?? '') || hash;
+  if (!hash && !songmid) return null;
+  let name = decodeName(item?.songname || '');
+  let singer = decodeName(item?.singername || '');
+  if (!name) {
+    const filename = String(item?.filename || '');
+    const sep = filename.indexOf(' - ');
+    if (sep > 0) {
+      if (!singer) singer = decodeName(filename.slice(0, sep));
+      name = decodeName(filename.slice(sep + 3));
+    } else {
+      name = decodeName(filename);
+    }
+  }
+  // v3 接口 duration 单位为秒；v9 歌单页为毫秒
+  const durationSec = (Number(item?.duration) || 0) / (opts.durationMs ? 1000 : 1);
+  return {
+    ...buildSimpleLxItem(
+      'kg', songmid, name, singer,
+      decodeName(item?.album_name || ''), item?.album_id ?? '',
+      formatPlayTime(durationSec),
+      buildKugouCoverUrl(item?.ori_img_url || item?.trans_param?.union_cover || item?.imgurl || null),
+    ),
+    hash: hash || undefined,
+    types: hash ? [{ type: '128k', size: '', hash }] : [],
+    _types: hash ? { '128k': { size: '', hash } } : {},
+  };
+}
+
+async function kgSheetTracksV9(playlistId: string): Promise<LxSearchResultItem[]> {
+  // 注意：该域名的 HTTPS 证书 CN 不匹配（reqwest 严格校验会失败），走明文 http
+  const html = await httpGetText(
+    `http://www2.kugou.kugou.com/yueku/v9/special/single/${encodeURIComponent(playlistId)}-5-9999.html`,
+    KG_V3_HEADERS,
+  );
+  const match = html.match(/global\.data\s*=\s*(\[[\s\S]+]);/);
+  if (!match) throw new Error('v9 页面未找到 global.data');
+  const arr = JSON.parse(match[1]) as any[];
+  if (!Array.isArray(arr)) throw new Error('v9 页面 global.data 不是数组');
+  const list = arr
+    .map((item) => kgItemToLx(item, { durationMs: true }))
+    .filter((item): item is LxSearchResultItem => item !== null);
+  if (!list.length) throw new Error('v9 页面歌曲列表为空');
+  return list;
 }
 
 async function lxGetAlbumSongsBuiltin(
@@ -391,11 +451,23 @@ export async function lxGetPlaylistTracks(
         return { list: slice, isEnd: start + slice.length >= all.length };
       }
       case 'kg': {
+        // 主路径：v9 歌单页单次全量（对齐 Rust kg 歌单导入），失败回退 v3 分页
+        try {
+          const all = await kgSheetTracksV9(playlistId);
+          if (page === 1) return { list: all, isEnd: true };
+          const start = (page - 1) * limit;
+          const slice = all.slice(start, start + limit);
+          return { list: slice, isEnd: start + slice.length >= all.length };
+        } catch (e: any) {
+          console.warn(`[LxMusicSdk] KG playlist ${playlistId}: v9 页面全量失败(${e?.message || e})，回退 v3 分页`);
+        }
         const url = `http://mobilecdn.kugou.com/api/v3/song/special/getSongList?specialid=${playlistId}&page=${page}&pagesize=${limit}`;
-        const data = await httpGetJson(url);
+        const data = await httpGetJson(url, KG_V3_HEADERS);
         const infoList: any[] = data?.data?.info || [];
         if (infoList.length === 0) console.warn(`[LxMusicSdk] KG playlist ${playlistId}: empty info list`);
-        const list = infoList.map((item: any) => kgFilterData(item));
+        const list = infoList
+          .map((item: any) => kgItemToLx(item))
+          .filter((item): item is LxSearchResultItem => item !== null);
         // 优先按上游 total 判定结尾，避免单页上限小于请求 pagesize 时提前截断
         const total = Number(data?.data?.total);
         const isEnd = Number.isFinite(total) && total > 0
