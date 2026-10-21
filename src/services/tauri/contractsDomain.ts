@@ -55,6 +55,38 @@ export interface LyricSongInfoContract {
   source?: string;
 }
 
+/** 对齐 Rust lx_recommend_sheets::LxRecommendTag（serde camelCase，冻结） */
+export interface LxRecommendTagContract {
+  id: string;
+  title: string;
+  digest?: string;
+  source: string;
+}
+
+/** getRecommendSheetTags 出参：{pinned:[tag], data:[{title, data:[tag]}]} */
+export interface LxRecommendTagsResultContract {
+  pinned: LxRecommendTagContract[];
+  data: { title: string; data: LxRecommendTagContract[] }[];
+}
+
+/** 对齐 Rust lx_recommend_sheets::LxRecommendSheet（serde camelCase，冻结） */
+export interface LxRecommendSheetContract {
+  id: string;
+  title: string;
+  artist: string;
+  artwork?: string | null;
+  playCount: number;
+  worksNum: number;
+  description: string;
+  source: string;
+}
+
+/** getRecommendSheetsByTag 出参：{isEnd, data:[sheet]}，与 MF 插件协议同形 */
+export interface LxRecommendSheetsResultContract {
+  isEnd: boolean;
+  data: LxRecommendSheetContract[];
+}
+
 export interface LyricResultContract {
   lyric: string;
   tlyric: string;

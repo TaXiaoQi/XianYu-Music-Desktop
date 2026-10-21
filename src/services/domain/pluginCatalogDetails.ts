@@ -36,6 +36,12 @@ import type {
   PluginAlbumResult,
 } from './pluginCatalogShared';
 import { lxToplistFetchTopLists, lxToplistFetchTracks } from './lxToplist';
+import {
+  lxRecommendSheetTagsFallback,
+  lxRecommendSheetsByTagFallback,
+  type LxRecommendSheetsResult,
+  type LxRecommendTag,
+} from './lxRecommendSheets';
 
 // ==================== 插件榜单 ====================
 
@@ -79,6 +85,121 @@ export async function pluginSupportsTopLists(source: PluginSource): Promise<bool
   if (source.format === 'lx') return lxToplistSourcesOf(source).length > 0;
   const inst = await ensurePluginInstance(source);
   return !!inst && typeof inst.instance.getTopLists === 'function';
+}
+
+// ==================== 插件推荐歌单 ====================
+
+// MF 插件协议自带推荐歌单能力（getRecommendSheetTags/getRecommendSheetsByTag）；
+// LX 音源经 lx_recommend_sheets 兜底模块提供同协议能力（平台集合与榜单一致）
+export async function pluginSupportsRecommendSheets(source: PluginSource): Promise<boolean> {
+  if (source.format === 'lx') return lxToplistSourcesOf(source).length > 0;
+  const inst = await ensurePluginInstance(source);
+  return !!inst && typeof inst.instance.getRecommendSheetTags === 'function';
+}
+
+// MF 插件 tags 出参取默认标签：defaultTag 优先，其次首个标签；无标签协议传 null
+function pickDefaultRecommendTag(tags: any): any {
+  if (!tags || typeof tags !== 'object') return null;
+  if (tags.defaultTag) return tags.defaultTag;
+  if (Array.isArray(tags.tags) && tags.tags.length > 0) return tags.tags[0];
+  return null;
+}
+
+export async function pluginGetRecommendSheets(source: PluginSource, lxKey?: string): Promise<PluginPlaylistSearchResult[]> {
+  if (source.format === 'lx') return pluginLxRecommendSheets(source, lxKey);
+  try {
+    if (await BakaPluginManager.isBakaPlugin(source)) {
+      const tag = pickDefaultRecommendTag(await BakaPluginManager.getRecommendSheetTags(source));
+      return await BakaPluginManager.getRecommendSheetsByTag(source, tag, 1);
+    }
+    const inst = await ensurePluginInstance(source);
+    if (!inst) return [];
+    let tag: any = null;
+    if (typeof inst.instance.getRecommendSheetTags === 'function') {
+      tag = pickDefaultRecommendTag(await inst.instance.getRecommendSheetTags());
+    }
+    if (typeof inst.instance.getRecommendSheetsByTag !== 'function') return [];
+    const result = (await inst.instance.getRecommendSheetsByTag(tag, 1)) ?? {};
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
+    const covers = await extractCoverUrls(list);
+    return list
+      .map((item: any, i: number) => {
+        resetMediaItem(item, source.name);
+        const id = String(item.id || item.sheetId || '');
+        return {
+          id,
+          title: stripHtmlTags(item.title || item.name || ''),
+          coverUrl: covers[i] || '',
+          playCount: item.playCount || undefined,
+          trackCount: item.trackCount || item.musicCount || undefined,
+          platform: item.platform || source.name,
+          platformId: id,
+          pluginId: source.id,
+          rawData: item,
+        };
+      })
+      .filter((item) => item.id && item.title);
+  } catch (e: any) {
+    console.warn(`[${source.name}] 推荐歌单获取失败:`, e?.message || e);
+    return [];
+  }
+}
+
+// lx_recommend_sheets 条目 → PluginPlaylistSearchResult。条目缺 source（下发 JS
+// 模块形状差异）时回退请求的平台键；_lxSource 供详情页进 lx 引擎分支
+function lxRecommendSheetList(
+  result: LxRecommendSheetsResult | null,
+  fallbackSource: string,
+  source: PluginSource,
+): PluginPlaylistSearchResult[] {
+  const data = Array.isArray(result?.data) ? result!.data : [];
+  return data
+    .map((entry: any) => {
+      const lxSource = String(entry?.source ?? '') || fallbackSource;
+      const id = String(entry?.id ?? '');
+      resetMediaItem(entry, source.name);
+      return {
+        id,
+        title: stripHtmlTags(entry?.title || ''),
+        coverUrl: String(entry?.artwork ?? ''),
+        playCount: Number(entry?.playCount) || undefined,
+        trackCount: Number(entry?.worksNum) || undefined,
+        artist: String(entry?.artist ?? ''),
+        platform: source.name,
+        platformId: id,
+        pluginId: source.id,
+        rawData: { ...entry, _lxSource: lxSource, _lxPlaylistId: id },
+      };
+    })
+    .filter((item) => item.id && item.title);
+}
+
+// LX 音源推荐歌单：取 pinned 首个标签（指定 lxKey 时只接受该平台的标签）拉第一页；
+// 空结果且有标签时以 null 标签（各平台默认推荐）对首个平台重试一次
+async function pluginLxRecommendSheets(source: PluginSource, lxKey?: string): Promise<PluginPlaylistSearchResult[]> {
+  const keys = lxToplistSourcesOf(source, lxKey);
+  if (keys.length === 0) return [];
+  try {
+    const tags = await lxRecommendSheetTagsFallback(keys);
+    let tag: LxRecommendTag | null = null;
+    const pinned = tags?.pinned;
+    if (Array.isArray(pinned) && pinned.length > 0 && pinned[0]) {
+      if (lxKey == null || String(pinned[0].source ?? '') === lxKey) {
+        tag = pinned[0];
+      }
+    }
+    const tagSource = String(tag?.source ?? '');
+    const srcKey = tagSource || keys[0];
+    let list = lxRecommendSheetList(await lxRecommendSheetsByTagFallback(srcKey, tag, 1), srcKey, source);
+    if (list.length === 0 && tag != null) {
+      list = lxRecommendSheetList(await lxRecommendSheetsByTagFallback(keys[0], null, 1), keys[0], source);
+    }
+    return list;
+  } catch (e: any) {
+    console.warn(`[${source.name}] LX 推荐歌单获取失败:`, e?.message || e);
+    return [];
+  }
 }
 
 // ==================== 插件歌单详情 ====================

@@ -4,7 +4,7 @@ import type { LocationQuery, LocationQueryRaw } from 'vue-router';
 export const HOME_URL_PARAMS = ['view', 'filter', 'folder'] as const;
 
 /** 只需一个 query 参数即可成页的视图 */
-const SINGLE_PARAM_VIEWS = ['all', 'statistics', 'leaderboard', 'dailyRecommend', 'topLists'];
+const SINGLE_PARAM_VIEWS = ['all', 'statistics', 'leaderboard', 'dailyRecommend', 'recommendedSheets', 'topLists'];
 
 /** 需要携带 filter 参数定位内容的视图 */
 const FILTERED_VIEWS = ['artist', 'album', 'playlist'];

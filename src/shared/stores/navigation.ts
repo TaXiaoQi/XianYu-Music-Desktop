@@ -13,6 +13,7 @@ type NavigationViewMode =
     | "statistics"
     | "leaderboard"
     | "dailyRecommend"
+    | "recommendedSheets"
     | "topLists";
 
 const SEARCH_HISTORY_KEY = "search_history";

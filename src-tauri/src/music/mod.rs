@@ -7,6 +7,7 @@ pub mod covers; // 实现
 pub mod cue; // 实现
 pub mod files; // 实现
 pub mod library; // 实现
+pub mod lx_recommend_sheets; // 实现（自移动端 rust 同名模块移植）
 pub mod lx_search;
 pub mod lyric_fetcher;
 pub mod lyrics; // 实现
@@ -27,6 +28,7 @@ pub use auth::{
   get_auth_credentials, save_auth_credentials, set_auth_api_secret, set_auth_base_url,
 };
 pub use lyric_fetcher::{decrypt_plugin_lyric, fetch_lyric_from_source};
+pub use lx_recommend_sheets::{lx_recommend_sheet_tags, lx_recommend_sheets_by_tag};
 pub use playlist_fetcher::fetch_playlist_from_source;
 pub use palette::extract_palette;
 pub use url_resolver::{find_alternative_lx_source, get_lx_cover};

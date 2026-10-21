@@ -3,7 +3,7 @@ use super::{LxSearchItem, LxTypeTuple};
 use crate::music::url_resolver::LxTypeEntry;
 use std::collections::HashMap;
 
-pub(super) fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
+pub(crate) fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
     let u = url.trim();
     if u.is_empty() {
         return None;

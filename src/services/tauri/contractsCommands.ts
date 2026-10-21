@@ -27,6 +27,8 @@ import type {
   AlternativeSourceResultContract,
   LyricResultContract,
   LyricSongInfoContract,
+  LxRecommendSheetsResultContract,
+  LxRecommendTagsResultContract,
   LxUrlSongInfoContract,
   PlaybackSessionDataContract,
   PlaylistImportResultContract,
@@ -638,6 +640,15 @@ export interface TauriCommandMap {
   fallback_module_config_hash: {
     payload: undefined;
     response: string;
+  };
+  // ===== LX 推荐歌单（Rust lx_recommend_sheets builtin 后端）=====
+  lx_recommend_sheet_tags: {
+    payload: { sources: string[] };
+    response: LxRecommendTagsResultContract;
+  };
+  lx_recommend_sheets_by_tag: {
+    payload: { source: string; tagId: string; digest: string; page: number };
+    response: LxRecommendSheetsResultContract;
   };
   // ===== 宿主侧平台签名/加密（Rust host_crypto）=====
   host_zzc_sign: {

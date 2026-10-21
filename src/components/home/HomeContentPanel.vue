@@ -14,7 +14,7 @@ const MasterPanel = defineAsyncComponent(
 
 type ArtistTabKey = "songs" | "albums" | "details";
 type DiscoverTabKey =
-    "statistics" | "leaderboard" | "dailyRecommend" | "topLists";
+    "statistics" | "leaderboard" | "dailyRecommend" | "recommendedSheets" | "topLists";
 
 interface ArtistAlbumItem {
     key: string;
@@ -66,6 +66,7 @@ const DISCOVER_PAGES: readonly string[] = [
     "statistics",
     "leaderboard",
     "dailyRecommend",
+    "recommendedSheets",
     "topLists",
 ];
 

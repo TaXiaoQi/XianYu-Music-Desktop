@@ -10,6 +10,9 @@ mod wy;
 
 pub use api::lx_search;
 pub use common::{LxSearchItem, LxTypeTuple};
+// lx_recommend_sheets（推荐歌单）复用的底层 helper
+pub(crate) use common::{decode_name, http_get_json, http_get_text, http_post_json};
+pub(crate) use kg::build_kugou_cover_url;
 
 #[cfg(test)]
 use cache::make_search_cache_key;

@@ -81,6 +81,7 @@ const DISCOVER_PAGES = new Set([
     "statistics",
     "leaderboard",
     "dailyRecommend",
+    "recommendedSheets",
     "topLists",
 ]);
 

@@ -2,6 +2,7 @@
 export type FallbackModuleKey =
   | 'lx_search'
   | 'lx_toplist'
+  | 'lx_recommend_sheets'
   | 'lx_album'
   | 'lx_duration'
   | 'lx_lyric'
@@ -12,6 +13,7 @@ export type FallbackModuleKey =
 export const FALLBACK_MODULE_METHODS: Record<FallbackModuleKey, string[]> = {
   lx_search: ['search'],
   lx_toplist: ['getTopLists', 'getTopListDetail'],
+  lx_recommend_sheets: ['getRecommendSheetTags', 'getRecommendSheetsByTag'],
   lx_album: ['searchAlbums', 'getAlbumSongs'],
   lx_duration: ['batchTrackInterval'],
   lx_lyric: ['fetchLyric'],

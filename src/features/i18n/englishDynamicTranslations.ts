@@ -2347,6 +2347,10 @@ export const dynamicEnglishTranslations: Array<{
     replace: (_m, g0) => `Loading charts from ${g0}…`,
   },
   {
+    pattern: new RegExp("^正在从 (.+) 加载推荐歌单…$"),
+    replace: (_m, g0) => `Loading recommend sheets from ${g0}…`,
+  },
+  {
     pattern: new RegExp("^(.+)万播放$"),
     replace: (_m, g0) => `${g0}0K plays`,
   },

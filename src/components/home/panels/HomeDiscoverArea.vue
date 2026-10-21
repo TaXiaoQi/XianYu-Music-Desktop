@@ -5,6 +5,7 @@ import HomeDiscoverTabs from '../HomeDiscoverTabs.vue';
 import StatisticsPage from '../../statistics/StatisticsPage.vue';
 import LeaderboardPage from '../../statistics/LeaderboardPage.vue';
 import DailyRecommend from '../../../views/DailyRecommend.vue';
+import RecommendedSheets from '../../../views/RecommendedSheets.vue';
 import TopLists from '../../../views/TopLists.vue';
 import { useSettings } from '../../../features/settings/useSettings';
 
@@ -39,6 +40,7 @@ const forwardTabChange = (tab: HomeDiscoverTab) => {
       <StatisticsPage v-if="effectivePage === 'statistics'" key="statistics" class="min-h-0 flex-1" />
       <LeaderboardPage v-else-if="effectivePage === 'leaderboard'" key="leaderboard" class="min-h-0 flex-1" />
       <DailyRecommend v-else-if="effectivePage === 'dailyRecommend'" key="dailyRecommend" class="min-h-0 flex-1" />
+      <RecommendedSheets v-else-if="effectivePage === 'recommendedSheets'" key="recommendedSheets" class="min-h-0 flex-1" />
       <TopLists v-else-if="effectivePage === 'topLists'" key="topLists" class="min-h-0 flex-1" />
     </KeepAlive>
   </div>

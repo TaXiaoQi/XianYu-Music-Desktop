@@ -63,7 +63,7 @@ const orderedItems = computed(() => {
 const isHomeActive = computed(
   () =>
     props.currentPath === '/' &&
-    ['statistics', 'leaderboard', 'dailyRecommend', 'topLists'].includes(props.currentViewMode),
+    ['statistics', 'leaderboard', 'dailyRecommend', 'recommendedSheets', 'topLists'].includes(props.currentViewMode),
 );
 
 const activeKey = computed<SidebarItemKey | null>(() => {

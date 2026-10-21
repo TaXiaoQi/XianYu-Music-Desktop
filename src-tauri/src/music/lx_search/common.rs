@@ -82,7 +82,7 @@ fn decode_numeric_entities(s: &str) -> String {
     .into_owned()
 }
 
-pub(super) fn decode_name(s: &str) -> String {
+pub(crate) fn decode_name(s: &str) -> String {
     let named = s
         .replace("&amp;", "&")
         .replace("&lt;", "<")
@@ -125,7 +125,7 @@ fn http_client() -> &'static Result<reqwest::Client, String> {
     })
 }
 
-pub(super) async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+pub(crate) async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
     let client = http_client().as_ref().map_err(|e| e.clone())?;
     let mut req = client.get(url);
     for (key, value) in headers {
@@ -143,7 +143,26 @@ pub(super) async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result
     serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))
 }
 
-pub(super) async fn http_post_json(
+/// GET 请求返回原始响应文本（推荐歌单等接口存在非 JSON 响应形态）
+pub(crate) async fn http_get_text(url: &str, headers: &[(&str, &str)]) -> Result<String, String> {
+    let client = http_client().as_ref().map_err(|e| e.clone())?;
+    let mut req = client.get(url);
+    for (key, value) in headers {
+        req = req.header(*key, *value);
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let body = resp.text().await.map_err(|e| e.to_string())?;
+
+    if status != 200 {
+        return Err(format!("HTTP {} for {}", status, url));
+    }
+
+    Ok(body)
+}
+
+pub(crate) async fn http_post_json(
     url: &str,
     body: &str,
     headers: &[(&str, &str)],

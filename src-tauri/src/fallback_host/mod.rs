@@ -29,6 +29,10 @@ pub const FALLBACK_SHIM_JS: &str = include_str!("shim.js");
 pub(crate) const FALLBACK_MODULE_METHODS: &[(&str, &[&str])] = &[
     ("lx_search", &["search"]),
     ("lx_toplist", &["getTopLists", "getTopListDetail"]),
+    (
+        "lx_recommend_sheets",
+        &["getRecommendSheetTags", "getRecommendSheetsByTag"],
+    ),
     ("lx_album", &["searchAlbums", "getAlbumSongs"]),
     ("lx_duration", &["batchTrackInterval"]),
     ("lx_lyric", &["fetchLyric"]),

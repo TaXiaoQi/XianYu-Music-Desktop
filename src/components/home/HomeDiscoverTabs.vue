@@ -4,7 +4,7 @@ import { computed } from 'vue';
 import { useI18n } from '../../features/i18n';
 import { useSettings } from '../../features/settings/useSettings';
 
-export type HomeDiscoverTab = 'statistics' | 'leaderboard' | 'dailyRecommend' | 'topLists';
+export type HomeDiscoverTab = 'statistics' | 'leaderboard' | 'dailyRecommend' | 'recommendedSheets' | 'topLists';
 
 interface Props {
   activeMode: string;
@@ -30,6 +30,7 @@ const tabs = computed<{ key: HomeDiscoverTab; label: string }[]>(() => {
   }
   items.push(
     { key: 'dailyRecommend', label: isEnglish.value ? 'Daily Mix' : '每日推荐' },
+    { key: 'recommendedSheets', label: isEnglish.value ? 'Recommend Sheets' : '推荐歌单' },
     { key: 'topLists', label: isEnglish.value ? 'Charts' : '音源榜单' },
   );
   return items;
