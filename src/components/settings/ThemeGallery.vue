@@ -4,13 +4,15 @@
 // 我的上传（my_themes，只读）/ 我的下载（库内 source==='square' 子集）。
 // 「下载即应用」：广场应用同时入库；应用复用 applyDesktopThemePackage → replaceTheme。
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useSettings } from '../../features/settings/useSettings';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
+import { readFileBytes } from '../../services/tauri/pluginApi';
 import { getStoredAuth, signedRequest } from '../../services/auth/authService';
-import { applyDesktopThemePackage, materializeDesktopThemeWallpapers } from '../../features/settings/desktopThemePackage';
+import { applyDesktopThemePackage, materializeDesktopThemeWallpapers, parseDesktopThemeJson } from '../../features/settings/desktopThemePackage';
 import {
   listThemeSquare,
   squareItemPackage,
@@ -128,6 +130,53 @@ const applySquareTheme = async (item: ThemeSquareItem) => {
 // —— 本地库 / 我的下载 ——
 const library = ref<LibraryThemeEntry[]>([]);
 const removingKey = ref('');
+
+// —— 本地导入（原外观页「本地导入」迁入）：文件选择 → 解析校验 → 应用入库 ——
+const isImportingTheme = ref(false);
+
+const importLocalTheme = async () => {
+  if (isImportingTheme.value) return;
+  const selected = await open({
+    multiple: false,
+    directory: false,
+    title: isEnglish.value ? 'Import desktop theme JSON' : '导入桌面主题 JSON',
+    filters: [{ name: 'Theme JSON', extensions: ['json'] }],
+  });
+  const path = Array.isArray(selected) ? selected[0] : selected;
+  if (!path) return;
+
+  isImportingTheme.value = true;
+  try {
+    const bytes = await readFileBytes(path);
+    const text = new TextDecoder().decode(bytes);
+    const result = parseDesktopThemeJson(text);
+    // 应用链路与库内应用共用：整体替换主题设置，保留与主题无关的个人开关。
+    const current = theme.value;
+    const settings = await materializeDesktopThemeWallpapers(result.settings, current);
+    replaceTheme({
+      ...settings,
+      useCustomTrayMenu: current.useCustomTrayMenu,
+      showLeaderboard: current.showLeaderboard,
+      playerDetailCoverBehavior: current.playerDetailCoverBehavior,
+      lastPlayerDetailCoverVisible: current.lastPlayerDetailCoverVisible,
+    });
+    // 落入本地主题库，支持二次应用。
+    addLibraryTheme({
+      source: 'file',
+      name: result.package.name || (isEnglish.value ? 'Untitled theme' : '未命名主题'),
+      author: result.package.author || '',
+      preview: libraryPreview(String(result.package.preview || '')),
+      raw: JSON.parse(text),
+    });
+    refreshLibrary();
+    showToast(isEnglish.value ? 'Desktop theme applied' : '桌面主题已应用', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : (isEnglish.value ? 'Invalid theme file' : '主题文件无效');
+    showToast(message, 'error');
+  } finally {
+    isImportingTheme.value = false;
+  }
+};
 
 const refreshLibrary = () => { library.value = listLibraryThemes(); };
 
@@ -269,8 +318,19 @@ const applyMyTheme = async (item: MyThemeItem) => {
         </div>
 
         <div class="flex-1 overflow-y-auto p-5">
-          <!-- 本地：库内全部主题包 -->
+          <!-- 本地：库内全部主题包 + 本地导入 -->
           <div v-if="activeTab === 'local'">
+            <div class="mb-4 flex justify-end">
+              <button
+                class="flex items-center gap-1.5 rounded-full bg-[#EC4141] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isImportingTheme"
+                @click="importLocalTheme"
+              >
+                <svg v-if="isImportingTheme" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                {{ isEnglish ? 'Import' : '导入' }}
+              </button>
+            </div>
             <div v-if="library.length === 0" class="py-16 text-center text-xs text-white/45">还没有导入主题</div>
             <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-4">
               <div

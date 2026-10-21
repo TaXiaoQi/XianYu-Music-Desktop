@@ -1,27 +1,16 @@
 <script setup lang="ts">
-import { Check, ChevronDown, ChevronRight, FileUp, Loader2 } from 'lucide-vue-next';
-import { open } from '@tauri-apps/plugin-dialog';
+import { Check, ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
+import { useInlineSelectDropdown } from '../../composables/useInlineSelectDropdown';
 import { useI18n } from '../../features/i18n';
-import { useSettings } from '../../features/settings/useSettings';
-import { useToast } from '../../composables/toast';
-import {
-  parseDesktopThemeJson,
-  materializeDesktopThemeWallpapers,
-  type DesktopThemeImportResult,
-} from '../../features/settings/desktopThemePackage';
-import { addLibraryTheme, libraryPreview } from '../../features/settings/themeLibrary';
 import ThemeGallery from './ThemeGallery.vue';
-import { readFileBytes } from '../../services/tauri/pluginApi';
 import SettingHint from './SettingHint.vue';
 import RangeSlider from '../common/RangeSlider.vue';
 import CustomColorPicker from './CustomColorPicker.vue';
 
 const { isEnglish, t } = useI18n();
-const { replaceTheme } = useSettings();
-const { showToast } = useToast();
 
 const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue'));
 const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
@@ -288,52 +277,43 @@ const currentAccentLabel = computed(() => {
   return preset?.label ?? TEXT.value.accentCustom;
 });
 
-const isImportingTheme = ref(false);
+// ---- 配色方案行内下拉（跟随系统/浅色/深色；壁纸模式单出为独立开关） ----
+const {
+  openId: schemeDropdownId,
+  panelRef: schemePanelRef,
+  panelStyle: schemePanelStyle,
+  registerTrigger: registerSchemeTrigger,
+  toggle: toggleSchemeDropdown,
+  close: closeSchemeDropdown,
+} = useInlineSelectDropdown();
 
-/** 导入与广场应用共用的落盘链路：整体替换主题设置，保留与主题无关的个人开关。 */
-const applyThemeResult = async (result: DesktopThemeImportResult) => {
-  const current = theme.value;
-  const settings = await materializeDesktopThemeWallpapers(result.settings, current);
-  replaceTheme({
-    ...settings,
-    useCustomTrayMenu: current.useCustomTrayMenu,
-    showLeaderboard: current.showLeaderboard,
-    playerDetailCoverBehavior: current.playerDetailCoverBehavior,
-    lastPlayerDetailCoverVisible: current.lastPlayerDetailCoverVisible,
-  });
+const SCHEME_OPTIONS = computed<Array<{ value: 'system' | 'light' | 'dark'; label: string }>>(() => [
+  { value: 'system', label: TEXT.value.systemScheme },
+  { value: 'light', label: TEXT.value.lightScheme },
+  { value: 'dark', label: TEXT.value.darkScheme },
+]);
+
+const currentSchemeLabel = computed(() =>
+  SCHEME_OPTIONS.value.find((option) => option.value === colorScheme.value)?.label ?? TEXT.value.systemScheme
+);
+
+const selectColorScheme = (value: 'system' | 'light' | 'dark') => {
+  setColorScheme(value);
+  closeSchemeDropdown();
 };
 
-const importDesktopTheme = async () => {
-  if (isImportingTheme.value) return;
-  const selected = await open({
-    multiple: false,
-    directory: false,
-    title: isEnglish.value ? 'Import desktop theme JSON' : '导入桌面主题 JSON',
-    filters: [{ name: 'Theme JSON', extensions: ['json'] }],
-  });
-  const path = Array.isArray(selected) ? selected[0] : selected;
-  if (!path) return;
+// ---- 壁纸模式（原「自定义」配色单出改名）：开启进入自定义壁纸/配色模式 ----
+const schemeBeforeWallpaperMode = ref<'system' | 'light' | 'dark'>('system');
+const isWallpaperMode = computed(() => colorScheme.value === 'custom');
 
-  isImportingTheme.value = true;
-  try {
-    const bytes = await readFileBytes(path);
-    const text = new TextDecoder().decode(bytes);
-    const result = parseDesktopThemeJson(text);
-    await applyThemeResult(result);
-    // 落入本地主题库（与主题中心弹窗「本地」Tab 共用），支持二次应用。
-    addLibraryTheme({
-      source: 'file',
-      name: result.package.name || (isEnglish.value ? 'Untitled theme' : '未命名主题'),
-      author: result.package.author || '',
-      preview: libraryPreview(String(result.package.preview || '')),
-      raw: JSON.parse(text),
-    });
-    showToast(isEnglish.value ? 'Desktop theme applied' : '桌面主题已应用', 'success');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : (isEnglish.value ? 'Invalid theme file' : '主题文件无效');
-    showToast(message, 'error');
-  } finally {
-    isImportingTheme.value = false;
+const toggleWallpaperMode = (enabled: boolean) => {
+  if (enabled) {
+    if (colorScheme.value !== 'custom') {
+      schemeBeforeWallpaperMode.value = colorScheme.value;
+    }
+    setColorScheme('custom');
+  } else {
+    setColorScheme(schemeBeforeWallpaperMode.value);
   }
 };
 
@@ -559,91 +539,72 @@ onUnmounted(() => {
 
 <template>
   <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300"> 
-    <section class="space-y-3"> 
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
-        {{ TEXT.paletteTitle }} 
+    <section class="space-y-3">
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        {{ isEnglish ? 'Theme' : '主题' }}
       </h2>
-      <div class=""> 
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <button
-            type="button" 
-            class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'system' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-            @click="setColorScheme('system')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-            <span class="text-sm font-semibold">{{ TEXT.systemScheme }}</span>
-          </button>
 
-          <button
-            type="button" 
-            class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'light' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-            @click="setColorScheme('light')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-            <span class="text-sm font-semibold">{{ TEXT.lightScheme }}</span>
-          </button>
-
-          <button
-            type="button" 
-            class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'dark' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-            @click="setColorScheme('dark')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-            <span class="text-sm font-semibold">{{ TEXT.darkScheme }}</span>
-          </button>
-
-          <button
-            type="button" 
-            class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'custom' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-            @click="openCustomSkin()"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"></path></svg> 
-            <span class="text-sm font-semibold">{{ TEXT.customShort }}</span> 
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-3"> 
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
-        {{ isEnglish ? 'Desktop theme package' : '桌面主题包' }}
-      </h2>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.paletteTitle }}</span>
         <button
           type="button"
-          class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-          :class="'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-          @click="squareOpen = true"
+          :ref="(el) => registerSchemeTrigger('colorScheme', el)"
+          class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+          @click="toggleSchemeDropdown('colorScheme')"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
-          <span class="text-sm font-semibold">{{ TEXT.squareEntry }}</span>
-        </button>
-
-        <button
-          type="button"
-          class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60"
-          :class="'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-          :disabled="isImportingTheme"
-          @click="importDesktopTheme"
-        >
-          <Loader2 v-if="isImportingTheme" class="h-5 w-5 animate-spin opacity-90" />
-          <FileUp v-else class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" />
-          <span class="text-sm font-semibold">{{ isImportingTheme ? (isEnglish ? 'Importing…' : '导入中…') : (isEnglish ? 'Local Import' : '本地导入') }}</span>
+          <span>{{ currentSchemeLabel }}</span>
+          <ChevronDown
+            class="h-4 w-4 text-gray-400 transition-transform duration-200"
+            :class="schemeDropdownId === 'colorScheme' ? 'rotate-180' : ''"
+            aria-hidden="true"
+          />
         </button>
       </div>
-    </section>
 
-    <section class="space-y-3"> 
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200"> 
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span> 
-        {{ TEXT.switchStyleTitle }}
-      </h2>
+      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+        <span class="min-w-0">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Mode' : '壁纸模式' }}</span>
+          <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom wallpaper & colors — pick one in Wallpaper Center' : '使用自定义壁纸与配色，可在壁纸中心挑选' }}</span>
+        </span>
+        <button
+          type="button"
+          class="glass-switch"
+          :class="{ 'is-checked': isWallpaperMode }"
+          @click="toggleWallpaperMode(!isWallpaperMode)"
+        ></button>
+      </div>
+
+      <button
+        type="button"
+        class="group flex w-full items-center gap-3 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 text-left transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+        @click="squareOpen = true"
+      >
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EC4141]/10 text-[#EC4141]">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.squareEntry }}</span>
+          <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Import theme packages, apply icons, stickers & component colors' : '导入主题包并应用图标、贴纸与组件色块' }}</span>
+        </span>
+        <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+      </button>
+
+      <button
+        type="button"
+        class="group flex w-full items-center gap-3 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 text-left transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+        @click="openCustomSkin()"
+      >
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EC4141]/10 text-[#EC4141]">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Center' : '壁纸中心' }}</span>
+          <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom backgrounds & dynamic wallpapers' : '自定义背景与动态壁纸' }}</span>
+        </span>
+        <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+      </button>
+
       <div class="grid grid-cols-2 gap-3">
         <button
           type="button"
@@ -669,6 +630,33 @@ onUnmounted(() => {
           <span class="text-sm font-semibold">{{ t('theme.glassSwitch') }}</span>
         </button>
       </div>
+
+      <Teleport to="body">
+        <Transition name="settings-dropdown">
+          <div
+            v-if="schemeDropdownId"
+            ref="schemePanelRef"
+            class="settings-inline-dropdown custom-scrollbar"
+            :style="schemePanelStyle"
+          >
+            <button
+              v-for="option in SCHEME_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': colorScheme === option.value }"
+              @click="selectColorScheme(option.value)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+              <Check
+                v-if="colorScheme === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </Transition>
+      </Teleport>
     </section>
 
     <section class="space-y-3"> 
