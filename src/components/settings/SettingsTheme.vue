@@ -317,6 +317,30 @@ const toggleWallpaperMode = (enabled: boolean) => {
   }
 };
 
+// ---- 组件开关样式行内下拉（经典扁平 / 液态玻璃） ----
+const {
+  openId: styleDropdownId,
+  panelRef: stylePanelRef,
+  panelStyle: stylePanelStyle,
+  registerTrigger: registerStyleTrigger,
+  toggle: toggleStyleDropdown,
+  close: closeStyleDropdown,
+} = useInlineSelectDropdown();
+
+const SWITCH_STYLE_OPTIONS = computed<Array<{ value: boolean; label: string }>>(() => [
+  { value: false, label: t('theme.flatSwitch') },
+  { value: true, label: t('theme.glassSwitch') },
+]);
+
+const currentSwitchStyleLabel = computed(() =>
+  useGlassSwitch.value ? t('theme.glassSwitch') : t('theme.flatSwitch')
+);
+
+const selectSwitchStyle = (value: boolean) => {
+  setUseGlassSwitch(value);
+  closeStyleDropdown();
+};
+
 // ---- 主题广场入口（列表与应用在 ThemeGallery.vue 弹层内）----
 const squareOpen = ref(false);
 
@@ -545,91 +569,97 @@ onUnmounted(() => {
         {{ isEnglish ? 'Theme' : '主题' }}
       </h2>
 
-      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
-        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.paletteTitle }}</span>
+      <div class="divide-y divide-gray-200/40 rounded-2xl border border-gray-200/40 bg-white/20 dark:divide-gray-800/40 dark:border-gray-800/40 dark:bg-black/10">
+        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.paletteTitle }}</span>
+          <button
+            type="button"
+            :ref="(el) => registerSchemeTrigger('colorScheme', el)"
+            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            @click="toggleSchemeDropdown('colorScheme')"
+          >
+            <span>{{ currentSchemeLabel }}</span>
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="schemeDropdownId === 'colorScheme' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Mode' : '壁纸模式' }}</span>
+            <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom wallpaper & colors — pick one in Wallpaper Center' : '使用自定义壁纸与配色，可在壁纸中心挑选' }}</span>
+          </span>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': isWallpaperMode }"
+            @click="toggleWallpaperMode(!isWallpaperMode)"
+          ></button>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.switchStyleTitle }}</span>
+          <button
+            type="button"
+            :ref="(el) => registerStyleTrigger('switchStyle', el)"
+            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            @click="toggleStyleDropdown('switchStyle')"
+          >
+            <span>{{ currentSwitchStyleLabel }}</span>
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="styleDropdownId === 'switchStyle' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.accentTitle }}</span>
+            <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.accentHint }}</span>
+          </span>
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-2"
+            :aria-label="TEXT.accentTitle"
+            @click="isAccentModalOpen = true"
+          >
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ currentAccentLabel }}</span>
+            <span
+              class="h-6 w-6 rounded-full border-2 border-white shadow-sm ring-1 ring-black/10 transition-transform hover:scale-110 dark:ring-white/20"
+              :style="{ backgroundColor: theme.accentColor }"
+            ></span>
+            <ChevronRight class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
+
         <button
           type="button"
-          :ref="(el) => registerSchemeTrigger('colorScheme', el)"
-          class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-          @click="toggleSchemeDropdown('colorScheme')"
+          class="group flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-white/30 dark:hover:bg-white/10"
+          @click="squareOpen = true"
         >
-          <span>{{ currentSchemeLabel }}</span>
-          <ChevronDown
-            class="h-4 w-4 text-gray-400 transition-transform duration-200"
-            :class="schemeDropdownId === 'colorScheme' ? 'rotate-180' : ''"
-            aria-hidden="true"
-          />
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.squareEntry }}</span>
+            <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Import theme packages, apply icons, stickers & component colors' : '导入主题包并应用图标、贴纸与组件色块' }}</span>
+          </span>
+          <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
-      </div>
 
-      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
-        <span class="min-w-0">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Mode' : '壁纸模式' }}</span>
-          <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom wallpaper & colors — pick one in Wallpaper Center' : '使用自定义壁纸与配色，可在壁纸中心挑选' }}</span>
-        </span>
         <button
           type="button"
-          class="glass-switch"
-          :class="{ 'is-checked': isWallpaperMode }"
-          @click="toggleWallpaperMode(!isWallpaperMode)"
-        ></button>
-      </div>
-
-      <button
-        type="button"
-        class="group flex w-full items-center gap-3 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 text-left transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
-        @click="squareOpen = true"
-      >
-        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EC4141]/10 text-[#EC4141]">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
-        </span>
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.squareEntry }}</span>
-          <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Import theme packages, apply icons, stickers & component colors' : '导入主题包并应用图标、贴纸与组件色块' }}</span>
-        </span>
-        <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-      </button>
-
-      <button
-        type="button"
-        class="group flex w-full items-center gap-3 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 text-left transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
-        @click="openCustomSkin()"
-      >
-        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EC4141]/10 text-[#EC4141]">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-        </span>
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Center' : '壁纸中心' }}</span>
-          <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom backgrounds & dynamic wallpapers' : '自定义背景与动态壁纸' }}</span>
-        </span>
-        <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-      </button>
-
-      <div class="grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-          :class="!useGlassSwitch
-            ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]'
-            : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-          @click="setUseGlassSwitch(false)"
+          class="group flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-white/30 dark:hover:bg-white/10"
+          @click="openCustomSkin()"
         >
-          <span class="text-base opacity-90 transition-transform group-hover:scale-110">🔳</span>
-          <span class="text-sm font-semibold">{{ t('theme.flatSwitch') }}</span>
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ isEnglish ? 'Wallpaper Center' : '壁纸中心' }}</span>
+            <span class="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">{{ isEnglish ? 'Custom backgrounds & dynamic wallpapers' : '自定义背景与动态壁纸' }}</span>
+          </span>
+          <ChevronRight class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
-
-        <button
-          type="button"
-          class="group flex items-center gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-          :class="useGlassSwitch
-            ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]'
-            : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-          @click="setUseGlassSwitch(true)"
-        >
-          <span class="text-base opacity-90 transition-transform group-hover:scale-110">💧</span>
-          <span class="text-sm font-semibold">{{ t('theme.glassSwitch') }}</span>
-        </button>
-      </div>
 
       <Teleport to="body">
         <Transition name="settings-dropdown">
@@ -656,7 +686,33 @@ onUnmounted(() => {
             </button>
           </div>
         </Transition>
+
+        <Transition name="settings-dropdown">
+          <div
+            v-if="styleDropdownId"
+            ref="stylePanelRef"
+            class="settings-inline-dropdown custom-scrollbar"
+            :style="stylePanelStyle"
+          >
+            <button
+              v-for="option in SWITCH_STYLE_OPTIONS"
+              :key="String(option.value)"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': useGlassSwitch === option.value }"
+              @click="selectSwitchStyle(option.value)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+              <Check
+                v-if="useGlassSwitch === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </Transition>
       </Teleport>
+      </div>
     </section>
 
     <section class="space-y-3"> 
@@ -978,32 +1034,8 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="space-y-3"> 
-      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          {{ TEXT.accentTitle }}
-        </span>
-        <SettingHint :text="TEXT.accentHint" />
-      </h2>
-
-      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
-        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ currentAccentLabel }}</span>
-        <button
-          type="button"
-          class="flex shrink-0 items-center gap-1.5"
-          :aria-label="TEXT.accentTitle"
-          @click="isAccentModalOpen = true"
-        >
-          <span
-            class="h-6 w-6 rounded-full border-2 border-white shadow-sm ring-1 ring-black/10 transition-transform hover:scale-110 dark:ring-white/20"
-            :style="{ backgroundColor: theme.accentColor }"
-          ></span>
-          <ChevronRight class="h-4 w-4 text-gray-400" aria-hidden="true" />
-        </button>
-      </div>
-
-      <Teleport to="body">
+    <!-- 主题色选色弹窗：入口已并入「主题」分组 -->
+    <Teleport to="body">
         <Transition name="modal-pop">
           <div
             v-if="isAccentModalOpen"
@@ -1095,7 +1127,6 @@ onUnmounted(() => {
           </div>
         </Transition>
       </Teleport>
-    </section>
 
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
