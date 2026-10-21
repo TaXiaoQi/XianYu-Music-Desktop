@@ -30,6 +30,13 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
 
   const coverVersion = ref(0);
   const inflightCoverLoads = new Set<string>();
+  /**
+   * 代理取图进行中/已失败的歌单标记：渲染与重算的稳定短路锚点。
+   * 取图就绪回填缓存后移除；失败则保留（不重试，避免每次渲染重发请求）。
+   * 没有这个标记，未就绪期 adopt/sync 每轮都报「有变化」→ bump → 重渲染
+   * → 再报，TransitionGroup 递归更新爆栈。
+   */
+  const pendingRemoteCovers = new Set<string>();
   // 同一 tick 内多次 bump（如批量导入后 N 个封面代理并发取回）合并为一次
   // 版本推进，避免连环重渲染打爆 Vue 调度器的递归更新上限
   let bumpQueued = false;
@@ -50,18 +57,25 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
    * 远程封面（含导入备份里记录的 http:// 直链）不得直接进 <img>：
    * CSP 不放行外部 http 且部分 CDN 有热链防护，统一走原生代理取回
    * dataUrl，本地/协议地址原样返回。
-   * 传 cacheKey 时在取图就绪回调里直接回填侧栏缓存——否则未就绪期的
-   * 空值占位会被 adopt/get 的「缓存已有」早退判定短路，重启后封面永久空白。
+   * 传 cacheKey 时空返回（取图中/失败）登记 pending 标记，就绪回调里
+   * 回填侧栏缓存并解除标记——保证取图期间渲染与重算全部短路。
    */
   const proxiedRemoteCover = (url: string, cacheKey?: string): string => {
     if (!/^https?:\/\//i.test(url)) return url;
-    return getDisplayCoverUrl(url, () => {
+    const result = getDisplayCoverUrl(url, () => {
       if (cacheKey) {
         const ready = getDisplayCoverUrl(url);
-        if (ready) sidebarPlaylistCoverCache.set(cacheKey, ready);
+        if (ready) {
+          sidebarPlaylistCoverCache.set(cacheKey, ready);
+          pendingRemoteCovers.delete(cacheKey);
+        }
       }
       bumpCoverVersion();
     });
+    if (!result && cacheKey) {
+      pendingRemoteCovers.add(cacheKey);
+    }
+    return result;
   };
 
   /** 用歌单内首曲的缩略图直接预热封面缓存 */
@@ -79,7 +93,10 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
 
   /** 同步单个歌单的首曲封面；返回缓存是否发生变化 */
   const syncFirstTrackCover = async (playlistId: string, firstSongPath: string): Promise<boolean> => {
-    if (activeFirstTrackByPlaylist.get(playlistId) === firstSongPath && sidebarPlaylistCoverCache.has(playlistId)) {
+    if (
+      activeFirstTrackByPlaylist.get(playlistId) === firstSongPath
+      && (sidebarPlaylistCoverCache.has(playlistId) || pendingRemoteCovers.has(playlistId))
+    ) {
       return false;
     }
     activeFirstTrackByPlaylist.set(playlistId, firstSongPath);
@@ -108,13 +125,17 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
   /** 采纳（或清除）歌单自定义封面 */
   const adoptCustomCover = (playlistId: string, coverPath: string | undefined): boolean => {
     const previous = activeCustomCoverByPlaylist.get(playlistId);
-    if (previous === coverPath && sidebarPlaylistCoverCache.has(playlistId)) {
+    if (
+      previous === coverPath
+      && (sidebarPlaylistCoverCache.has(playlistId) || pendingRemoteCovers.has(playlistId))
+    ) {
       return false;
     }
     activeCustomCoverByPlaylist.set(playlistId, coverPath);
 
     if (!coverPath) {
       sidebarPlaylistCoverCache.delete(playlistId);
+      pendingRemoteCovers.delete(playlistId);
       activeFirstTrackByPlaylist.delete(playlistId);
       return true;
     }
@@ -133,7 +154,10 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
   /** 采纳歌单云端封面；返回缓存是否变化 */
   const adoptCloudCover = (playlistId: string, cloudCoverUrl: string): boolean => {
     const previous = activeCustomCoverByPlaylist.get(playlistId);
-    if (previous === cloudCoverUrl && sidebarPlaylistCoverCache.has(playlistId)) {
+    if (
+      previous === cloudCoverUrl
+      && (sidebarPlaylistCoverCache.has(playlistId) || pendingRemoteCovers.has(playlistId))
+    ) {
       return false;
     }
     activeCustomCoverByPlaylist.set(playlistId, cloudCoverUrl);
@@ -196,6 +220,10 @@ export function useSidebarPlaylistCovers({ playlists, loadCover, primeCoverPath 
     const cached = sidebarPlaylistCoverCache.get(playlistId);
     if (cached) {
       return cached;
+    }
+    // 代理取图中/已失败：保持渲染稳定，等就绪回调回填缓存后统一 bump
+    if (pendingRemoteCovers.has(playlistId)) {
+      return undefined;
     }
 
     const playlist = playlists.value.find((item) => item.id === playlistId);
