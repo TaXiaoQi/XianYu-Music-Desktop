@@ -152,26 +152,88 @@ function handleVolumeBalancePopoverOutsideClick(event: MouseEvent) {
 onMounted(() => {
   window.addEventListener('mousedown', handleVolumeBalancePopoverOutsideClick);
   window.addEventListener('mousedown', handleRackSupportPopoverOutsideClick);
+  window.addEventListener('mousedown', handleSettingsDropdownOutsideClick);
   window.addEventListener('resize', updateVolumeBalancePopoverPosition);
   window.addEventListener('resize', updateRackSupportPopoverPosition);
+  window.addEventListener('resize', handleSettingsDropdownViewportChange);
   window.addEventListener('scroll', updateVolumeBalancePopoverPosition, true);
   window.addEventListener('scroll', updateRackSupportPopoverPosition, true);
+  window.addEventListener('scroll', handleSettingsDropdownViewportChange, true);
 });
 
 onScopeDispose(() => {
   window.removeEventListener('mousedown', handleVolumeBalancePopoverOutsideClick);
   window.removeEventListener('mousedown', handleRackSupportPopoverOutsideClick);
+  window.removeEventListener('mousedown', handleSettingsDropdownOutsideClick);
   window.removeEventListener('resize', updateVolumeBalancePopoverPosition);
   window.removeEventListener('resize', updateRackSupportPopoverPosition);
+  window.removeEventListener('resize', handleSettingsDropdownViewportChange);
   window.removeEventListener('scroll', updateVolumeBalancePopoverPosition, true);
   window.removeEventListener('scroll', updateRackSupportPopoverPosition, true);
+  window.removeEventListener('scroll', handleSettingsDropdownViewportChange, true);
 });
 
 const showQualityModal = ref(false);
-const showFailureBehaviorModal = ref(false);
-const showFallbackBehaviorModal = ref(false);
 const showMvQualityModal = ref(false);
-const showShareFailureBehaviorModal = ref(false);
+
+// --- 设置行内联下拉（fixed 定位跟随触发按钮，避免被 overflow-hidden 分组裁切） ---
+type SettingsDropdownId = 'fallbackBehavior' | 'failureBehavior' | 'shareFailureBehavior' | 'outputDevice';
+const openSettingsDropdownId = ref<SettingsDropdownId | null>(null);
+const settingsDropdownTriggerEls = new Map<SettingsDropdownId, HTMLElement>();
+const settingsDropdownPanelRef = ref<HTMLElement | null>(null);
+const settingsDropdownPanelStyle = ref<Record<string, string>>({});
+
+const registerSettingsDropdownTrigger = (id: SettingsDropdownId, el: unknown) => {
+  if (el instanceof HTMLElement) settingsDropdownTriggerEls.set(id, el);
+  else settingsDropdownTriggerEls.delete(id);
+};
+
+const toggleSettingsDropdown = (id: SettingsDropdownId) => {
+  openSettingsDropdownId.value = openSettingsDropdownId.value === id ? null : id;
+  if (openSettingsDropdownId.value) {
+    nextTick(updateSettingsDropdownPosition);
+  }
+};
+
+const closeSettingsDropdown = () => {
+  openSettingsDropdownId.value = null;
+};
+
+function updateSettingsDropdownPosition() {
+  const id = openSettingsDropdownId.value;
+  const trigger = id ? settingsDropdownTriggerEls.get(id) : null;
+  const panel = settingsDropdownPanelRef.value;
+  if (!trigger || !panel) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const panelWidth = panel.offsetWidth;
+  const panelHeight = panel.offsetHeight;
+  const gap = 6;
+  const viewportPadding = 12;
+
+  let left = rect.right - panelWidth;
+  left = Math.min(Math.max(left, viewportPadding), window.innerWidth - panelWidth - viewportPadding);
+
+  const fitsBelow = rect.bottom + gap + panelHeight <= window.innerHeight - viewportPadding;
+  const top = fitsBelow
+    ? rect.bottom + gap
+    : Math.max(viewportPadding, rect.top - panelHeight - gap);
+
+  settingsDropdownPanelStyle.value = { left: `${left}px`, top: `${top}px` };
+}
+
+function handleSettingsDropdownOutsideClick(event: MouseEvent) {
+  if (!openSettingsDropdownId.value || !settingsDropdownPanelRef.value) return;
+  const target = event.target as Node;
+  if (settingsDropdownPanelRef.value.contains(target)) return;
+  const trigger = settingsDropdownTriggerEls.get(openSettingsDropdownId.value);
+  if (trigger?.contains(target)) return;
+  openSettingsDropdownId.value = null;
+}
+
+function handleSettingsDropdownViewportChange() {
+  if (openSettingsDropdownId.value) updateSettingsDropdownPosition();
+}
 
 const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
   { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
@@ -260,17 +322,17 @@ const handleMvQualitySelect = (value: MvQualityKey) => {
 };
 
 const handleFailureBehaviorSelect = (value: OnlineFailureBehavior) => {
-  showFailureBehaviorModal.value = false;
+  closeSettingsDropdown();
   patchSettings({ audio: { ...settings.value.audio, onlineFailureBehavior: value } });
 };
 
 const handleShareFailureBehaviorSelect = (value: ShareFailureBehavior) => {
-  showShareFailureBehaviorModal.value = false;
+  closeSettingsDropdown();
   patchSettings({ sharePlaybackFailureBehavior: value });
 };
 
 const handleFallbackBehaviorSelect = (value: OnlineQualityFallbackBehavior) => {
-  showFallbackBehaviorModal.value = false;
+  closeSettingsDropdown();
   patchQualityFallback(value);
 };
 
@@ -291,7 +353,6 @@ const showLyricsSyncOffsetPanel = ref(false);
 const audioOutputStatus = ref<AudioOutputStatus | null>(null);
 const audioOutputDevices = ref<AudioDevice[]>([]);
 const selectedOutputDeviceId = ref<string>('');
-const showOutputDeviceModal = ref(false);
 const isChangingOutputDevice = ref(false);
 const wasapiExclusiveSideEffectTip = '开启后会独占播放设备：其他软件可能无声；设备断开或被占用时会自动回退默认播放。';
 let unlistenAudioOutput: UnlistenFn | null = null;
@@ -372,7 +433,7 @@ const loadAudioOutputDevices = async () => {
 
 const handleOutputDeviceSelect = async (deviceId: string) => {
   if (isChangingOutputDevice.value) return;
-  showOutputDeviceModal.value = false;
+  closeSettingsDropdown();
   if (deviceId === selectedOutputDeviceId.value) return;
   isChangingOutputDevice.value = true;
   try {
@@ -746,12 +807,17 @@ onScopeDispose(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认音质播放失败行为</div>
           </div>
           <button
-            type="button" 
+            type="button"
+            :ref="(el) => registerSettingsDropdownTrigger('fallbackBehavior', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
-            @click="showFallbackBehaviorModal = true"
+            @click="toggleSettingsDropdown('fallbackBehavior')"
           >
             <span>{{ QUALITY_FALLBACK_OPTIONS.find(o => o.value === settings.audio.onlineQualityFallbackBehavior)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openSettingsDropdownId === 'fallbackBehavior' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
@@ -763,12 +829,17 @@ onScopeDispose(() => {
             </div>
           </div>
           <button
-            type="button" 
+            type="button"
+            :ref="(el) => registerSettingsDropdownTrigger('failureBehavior', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
-            @click="showFailureBehaviorModal = true"
+            @click="toggleSettingsDropdown('failureBehavior')"
           >
             <span>{{ FAILURE_BEHAVIOR_OPTIONS.find(o => o.value === settings.audio.onlineFailureBehavior)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openSettingsDropdownId === 'failureBehavior' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
@@ -803,12 +874,17 @@ onScopeDispose(() => {
             </div>
           </div>
           <button
-            type="button" 
+            type="button"
+            :ref="(el) => registerSettingsDropdownTrigger('shareFailureBehavior', el)"
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
-            @click="showShareFailureBehaviorModal = true"
+            @click="toggleSettingsDropdown('shareFailureBehavior')"
           >
             <span>{{ SHARE_FAILURE_BEHAVIOR_OPTIONS.find(o => o.value === settings.sharePlaybackFailureBehavior)?.label }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 text-gray-400 transition-transform duration-200"
+              :class="openSettingsDropdownId === 'shareFailureBehavior' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
@@ -915,126 +991,98 @@ onScopeDispose(() => {
     </Teleport>
 
     <Teleport to="body">
-      <Transition name="modal-pop">
+      <Transition name="settings-dropdown">
         <div
-          v-if="showFallbackBehaviorModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showFallbackBehaviorModal = false"
+          v-if="openSettingsDropdownId"
+          ref="settingsDropdownPanelRef"
+          class="settings-inline-dropdown custom-scrollbar"
+          :style="settingsDropdownPanelStyle"
         >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择默认音质播放失败行为</h3>
-              <button
-                @click="showFallbackBehaviorModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in QUALITY_FALLBACK_OPTIONS"
-                :key="option.value"
-                type="button" 
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.audio.onlineQualityFallbackBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleFallbackBehaviorSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.audio.onlineQualityFallbackBehavior === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
+          <template v-if="openSettingsDropdownId === 'fallbackBehavior'">
+            <button
+              v-for="option in QUALITY_FALLBACK_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.audio.onlineQualityFallbackBehavior === option.value }"
+              @click="handleFallbackBehaviorSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.audio.onlineQualityFallbackBehavior === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openSettingsDropdownId === 'failureBehavior'">
+            <button
+              v-for="option in FAILURE_BEHAVIOR_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.audio.onlineFailureBehavior === option.value }"
+              @click="handleFailureBehaviorSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.audio.onlineFailureBehavior === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openSettingsDropdownId === 'shareFailureBehavior'">
+            <button
+              v-for="option in SHARE_FAILURE_BEHAVIOR_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': settings.sharePlaybackFailureBehavior === option.value }"
+              @click="handleShareFailureBehaviorSelect(option.value)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{{ option.label }}</span>
+                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
+              </span>
+              <Check
+                v-if="settings.sharePlaybackFailureBehavior === option.value"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+
+          <template v-else-if="openSettingsDropdownId === 'outputDevice'">
+            <button
+              v-for="device in outputDeviceOptions"
+              :key="device.id || 'default'"
+              type="button"
+              class="settings-inline-dropdown-item"
+              :class="{ 'is-active': selectedOutputDeviceId === device.id }"
+              @click="handleOutputDeviceSelect(device.id)"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ device.name }}</span>
+              <Check
+                v-if="selectedOutputDeviceId === device.id"
+                class="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
         </div>
       </Transition>
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showFailureBehaviorModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showFailureBehaviorModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择起播失败行为</h3>
-              <button
-                @click="showFailureBehaviorModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in FAILURE_BEHAVIOR_OPTIONS"
-                :key="option.value"
-                type="button" 
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.audio.onlineFailureBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleFailureBehaviorSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.audio.onlineFailureBehavior === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showShareFailureBehaviorModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showShareFailureBehaviorModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择分享链接播放失败行为</h3>
-              <button
-                @click="showShareFailureBehaviorModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="option in SHARE_FAILURE_BEHAVIOR_OPTIONS"
-                :key="option.value"
-                type="button" 
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="settings.sharePlaybackFailureBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleShareFailureBehaviorSelect(option.value)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
-                </div>
-                <Check
-                  v-if="settings.sharePlaybackFailureBehavior === option.value"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <section class="space-y-3"> 
+    <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         播放设置
@@ -1079,13 +1127,18 @@ onScopeDispose(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放设备</div>
           </div>
           <button
-            type="button" 
+            type="button"
+            :ref="(el) => registerSettingsDropdownTrigger('outputDevice', el)"
             :disabled="isChangingOutputDevice"
             class="flex max-w-[260px] shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
-            @click="showOutputDeviceModal = true"
+            @click="toggleSettingsDropdown('outputDevice')"
           >
             <span class="truncate">{{ selectedOutputDeviceLabel }}</span>
-            <ChevronDown class="h-4 w-4 text-gray-400 shrink-0" aria-hidden="true" />
+            <ChevronDown
+              class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200"
+              :class="openSettingsDropdownId === 'outputDevice' ? 'rotate-180' : ''"
+              aria-hidden="true"
+            />
           </button>
         </div>
         <div>
@@ -1288,45 +1341,6 @@ onScopeDispose(() => {
       </div>
     </section>
 
-    <Teleport to="body">
-      <Transition name="modal-pop">
-        <div
-          v-if="showOutputDeviceModal"
-          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          @click.self="showOutputDeviceModal = false"
-        >
-          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
-            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择播放设备</h3>
-              <button
-                @click="showOutputDeviceModal = false"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >✕</button>
-            </div>
-            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-              <button
-                v-for="device in outputDeviceOptions"
-                :key="device.id || 'default'"
-                type="button" 
-                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                :class="selectedOutputDeviceId === device.id ? 'bg-gray-50 dark:bg-white/5' : ''"
-                @click="handleOutputDeviceSelect(device.id)"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ device.name }}</div>
-                </div>
-                <Check
-                  v-if="selectedOutputDeviceId === device.id"
-                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
     <SettingsPluginHost />
   </div>
 </template>
@@ -1528,4 +1542,62 @@ onScopeDispose(() => {
   opacity: 0;
   transform: translateY(-4px);
 }
+
+.settings-inline-dropdown {
+  position: fixed;
+  z-index: 500;
+  width: 288px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+:global(.dark) .settings-inline-dropdown {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(38, 38, 38, 0.95);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.settings-inline-dropdown-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1f2937;
+  transition: background-color 150ms ease;
+}
+
+.settings-inline-dropdown-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.settings-inline-dropdown-item.is-active {
+  background: rgba(236, 65, 65, 0.1);
+  color: #ec4141;
+}
+
+:global(.dark) .settings-inline-dropdown-item {
+  color: #e5e7eb;
+}
+
+:global(.dark) .settings-inline-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:global(.dark) .settings-inline-dropdown-item.is-active {
+  background: rgba(236, 65, 65, 0.2);
+  color: #ff8b8b;
+}
+
 </style>
