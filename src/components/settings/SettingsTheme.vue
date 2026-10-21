@@ -344,14 +344,23 @@ const {
   close: closeMaterialDropdown,
 } = useInlineSelectDropdown();
 
-const MATERIAL_OPTIONS = computed<Array<{ value: MaterialPresetValue; label: string }>>(() => [
-  { value: 'off', label: TEXT.value.dynamicOff },
-  { value: 'dynamic-flow', label: TEXT.value.materialFlowDynamic },
-  { value: 'dynamic-blur', label: TEXT.value.materialFlowStatic },
-  { value: 'material-acrylic', label: TEXT.value.materialAcrylic },
-  { value: 'material-mica', label: TEXT.value.materialMica },
-  { value: 'material-blur', label: TEXT.value.materialFrosted },
-]);
+const MATERIAL_OPTIONS = computed<Array<{ value: MaterialPresetValue; label: string }>>(() => {
+  const all: Array<{ value: MaterialPresetValue; label: string }> = [
+    { value: 'off', label: TEXT.value.dynamicOff },
+    { value: 'dynamic-flow', label: TEXT.value.materialFlowDynamic },
+    { value: 'dynamic-blur', label: TEXT.value.materialFlowStatic },
+    { value: 'material-acrylic', label: TEXT.value.materialAcrylic },
+    { value: 'material-mica', label: TEXT.value.materialMica },
+    { value: 'material-blur', label: TEXT.value.materialFrosted },
+  ];
+  // 当前系统不支持的材质档位直接不显示（避免用户困惑），但当前生效中的档位保留，
+  // 防止「下拉显示关闭、实际材质仍在运行」的状态错乱。
+  return all.filter((option) => {
+    if (option.value === 'off' || option.value.startsWith('dynamic-')) return true;
+    if (option.value === currentMaterialPreset.value) return true;
+    return !isMaterialModeEnvironmentBlocked(option.value.replace('material-', '') as 'mica' | 'acrylic' | 'blur');
+  });
+});
 
 const currentMaterialPreset = computed<MaterialPresetValue>(() => {
   if (theme.value.dynamicBgType === 'flow') return 'dynamic-flow';
@@ -656,7 +665,7 @@ onUnmounted(() => {
         {{ isEnglish ? 'Theme' : '主题' }}
       </h2>
 
-      <div class="divide-y divide-gray-200/40 rounded-2xl border border-gray-200/40 bg-white/20 dark:divide-gray-800/40 dark:border-gray-800/40 dark:bg-black/10">
+      <div class="overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
         <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
           <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.paletteTitle }}</span>
           <button
@@ -1055,7 +1064,7 @@ onUnmounted(() => {
         {{ isEnglish ? 'Playback page' : '播放页设置' }}
       </h2>
 
-      <div class="divide-y divide-gray-200/40 rounded-2xl border border-gray-200/40 bg-white/20 dark:divide-gray-800/40 dark:border-gray-800/40 dark:bg-black/10">
+      <div class="overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
       <label class="relative flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
         <span class="min-w-0">
           <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailCoverLabel }}</span>
