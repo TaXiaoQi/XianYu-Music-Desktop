@@ -235,33 +235,33 @@ function handleSettingsDropdownViewportChange() {
   if (openSettingsDropdownId.value) updateSettingsDropdownPosition();
 }
 
-const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
-  { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
-  { label: 'Stop Playback', description: 'Stop playback and wait for manual action', value: 'stop' },
-  { label: 'Auto Switch Source', description: 'Retry via sibling plugins / alternative sources for the same song; falls back to stop when exhausted', value: 'autoswitch' },
+const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Skip to Next Track', value: 'skip' },
+  { label: 'Stop Playback', value: 'stop' },
+  { label: 'Auto Switch Source', value: 'autoswitch' },
 ] : [
-  { label: '跳到下一首', description: '自动播放队列中的下一首歌曲', value: 'skip' },
-  { label: '停止播放',   description: '停止播放，等待用户手动操作', value: 'stop' },
-  { label: '自动换源',   description: '同平台插件重试 + 跨平台换源重播同一首歌，全部无果后停止', value: 'autoswitch' },
+  { label: '跳到下一首', value: 'skip' },
+  { label: '停止播放',   value: 'stop' },
+  { label: '自动换源',   value: 'autoswitch' },
 ]);
 
-const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [
-  { label: 'Pause', description: 'Do not try another quality; pause and wait for manual action', value: 'pause' },
-  { label: 'Play Lower Quality', description: 'Automatically use the nearest lower available quality', value: 'lower' },
-  { label: 'Play Higher Quality', description: 'Automatically use the nearest higher available quality', value: 'higher' },
+const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Pause Playback', value: 'pause' },
+  { label: 'Play Lower Quality', value: 'lower' },
+  { label: 'Play Higher Quality', value: 'higher' },
 ] : [
-  { label: '暂停',         description: '不尝试其他音质，暂停等待用户操作', value: 'pause' },
-  { label: '播放更低音质', description: '自动降级到可用的更低音质',         value: 'lower' },
-  { label: '播放更高音质', description: '自动升级到可用的更高音质',         value: 'higher' },
+  { label: '暂停播放',     value: 'pause' },
+  { label: '播放更低音质', value: 'lower' },
+  { label: '播放更高音质', value: 'higher' },
 ]);
 
 type ShareFailureBehavior = 'pause' | 'replace';
-const SHARE_FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: ShareFailureBehavior }[]>(() => isEnglish.value ? [
-  { label: 'Pause Playback', description: 'Stop and show error when the shared song fails to start', value: 'pause' },
-  { label: 'Replace & Replay', description: 'Rebuild source via plugin index and replay the same song', value: 'replace' },
+const SHARE_FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; value: ShareFailureBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Pause Playback', value: 'pause' },
+  { label: 'Replace & Replay', value: 'replace' },
 ] : [
-  { label: '暂停播放', description: '分享歌曲起播失败时停止并显示错误', value: 'pause' },
-  { label: '替换播放', description: '按来源信息走插件索引换源重播同一首歌', value: 'replace' },
+  { label: '暂停播放', value: 'pause' },
+  { label: '替换播放', value: 'replace' },
 ]);
 
 const shareValidityMinutes = computed(() =>
@@ -1009,7 +1009,6 @@ onScopeDispose(() => {
             >
               <span class="min-w-0 flex-1">
                 <span class="block truncate">{{ option.label }}</span>
-                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
               </span>
               <Check
                 v-if="settings.audio.onlineQualityFallbackBehavior === option.value"
@@ -1030,7 +1029,6 @@ onScopeDispose(() => {
             >
               <span class="min-w-0 flex-1">
                 <span class="block truncate">{{ option.label }}</span>
-                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
               </span>
               <Check
                 v-if="settings.audio.onlineFailureBehavior === option.value"
@@ -1051,7 +1049,6 @@ onScopeDispose(() => {
             >
               <span class="min-w-0 flex-1">
                 <span class="block truncate">{{ option.label }}</span>
-                <span class="mt-0.5 block truncate text-[11px] font-normal opacity-70">{{ option.description }}</span>
               </span>
               <Check
                 v-if="settings.sharePlaybackFailureBehavior === option.value"
