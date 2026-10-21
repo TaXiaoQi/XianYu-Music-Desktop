@@ -5,6 +5,8 @@ description = "A beautiful local music player powered by Tauri."
 authors = ["lyc"] 
 license = "LicenseRef-XSAL-1.0"
 edition = "2021" 
+# 多 bin 包（主程序 + 托盘守护进程）：tauri dev 的 cargo run 需要指定默认二进制
+default-run = "xianyu-music-desktop"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html 
 
