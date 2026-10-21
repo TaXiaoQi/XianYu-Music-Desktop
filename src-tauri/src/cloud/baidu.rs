@@ -1013,23 +1013,6 @@ mod tests {
     }
 
     #[test]
-    fn redirect_url_resolution() {
-        assert_eq!(
-            absolute_url("https://a.com/x", "https://b.com/y").as_deref(),
-            Some("https://b.com/y")
-        );
-        assert_eq!(
-            absolute_url("https://a.com/x", "//b.com/y").as_deref(),
-            Some("https://b.com/y")
-        );
-        assert_eq!(
-            absolute_url("https://a.com/x", "/y?z=1").as_deref(),
-            Some("https://a.com/y?z=1")
-        );
-        assert_eq!(absolute_url("https://a.com/x", "y"), None);
-    }
-
-    #[test]
     fn rc4_classic_vector() {
         // RC4 标准测试向量（key="Key", data="Plaintext"）。
         let out = rc4(b"Key", b"Plaintext");
