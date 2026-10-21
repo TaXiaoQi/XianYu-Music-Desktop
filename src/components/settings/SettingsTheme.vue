@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronDown, FileUp, Loader2 } from 'lucide-vue-next';
+import { Check, ChevronDown, ChevronRight, FileUp, Loader2 } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
@@ -278,6 +278,15 @@ const commitAccentColor = (event: Event) => {
   setAccentColor(input.value);
   input.value = theme.value.accentColor;
 };
+
+// ---- 主题色弹窗（对齐移动端：入口行 + 居中弹窗选色） ----
+const isAccentModalOpen = ref(false);
+
+const currentAccentLabel = computed(() => {
+  const current = theme.value.accentColor.toLowerCase();
+  const preset = ACCENT_COLOR_PRESETS.value.find((item) => item.value.toLowerCase() === current);
+  return preset?.label ?? TEXT.value.accentCustom;
+});
 
 const isImportingTheme = ref(false);
 
@@ -990,8 +999,39 @@ onUnmounted(() => {
         <SettingHint :text="TEXT.accentHint" />
       </h2>
 
-      <div class="rounded-2xl border border-gray-200/40 bg-white/20 p-4 dark:border-gray-800/40 dark:bg-black/10">
-        <div class="grid grid-cols-4 gap-3 sm:grid-cols-8">
+      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ currentAccentLabel }}</span>
+        <button
+          type="button"
+          class="flex shrink-0 items-center gap-1.5"
+          :aria-label="TEXT.accentTitle"
+          @click="isAccentModalOpen = true"
+        >
+          <span
+            class="h-6 w-6 rounded-full border-2 border-white shadow-sm ring-1 ring-black/10 transition-transform hover:scale-110 dark:ring-white/20"
+            :style="{ backgroundColor: theme.accentColor }"
+          ></span>
+          <ChevronRight class="h-4 w-4 text-gray-400" aria-hidden="true" />
+        </button>
+      </div>
+
+      <Teleport to="body">
+        <Transition name="modal-pop">
+          <div
+            v-if="isAccentModalOpen"
+            class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+            @click.self="isAccentModalOpen = false"
+          >
+            <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[420px] overflow-hidden">
+              <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+                <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">{{ TEXT.accentTitle }}</h3>
+                <button
+                  @click="isAccentModalOpen = false"
+                  class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >✕</button>
+              </div>
+              <div class="p-4">
+                <div class="grid grid-cols-4 gap-3 sm:grid-cols-8">
           <button
             v-for="preset in ACCENT_COLOR_PRESETS"
             :key="preset.value"
@@ -1053,7 +1093,7 @@ onUnmounted(() => {
           </label>
 
           <button
-            type="button" 
+            type="button"
             class="h-9 shrink-0 rounded-lg border border-gray-200/60 bg-white/30 px-3 text-xs font-medium text-gray-600 transition hover:border-[#EC4141]/40 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
             :disabled="theme.accentColor === '#EC4141'"
             :class="theme.accentColor === '#EC4141' ? 'cursor-not-allowed opacity-40' : ''"
@@ -1062,21 +1102,23 @@ onUnmounted(() => {
             {{ TEXT.accentReset }}
           </button>
         </div>
-      </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
     </section>
 
-    <section class="space-y-3"> 
-      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          {{ TEXT.playerDetailCoverTitle }}
-        </span>
-        <SettingHint :text="TEXT.playerDetailCoverHint" />
+    <section class="space-y-3">
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        {{ isEnglish ? 'Playback page' : '播放页设置' }}
       </h2>
 
       <label class="relative flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
-        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
-          {{ TEXT.playerDetailCoverLabel }}
+        <span class="min-w-0">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailCoverLabel }}</span>
+          <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailCoverHint }}</span>
         </span>
         <button
           ref="coverTriggerRef"
@@ -1116,20 +1158,11 @@ onUnmounted(() => {
           </Transition>
         </Teleport>
       </label>
-    </section>
-
-    <section class="space-y-3">
-      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          {{ TEXT.playerDetailStyleTitle }}
-        </span>
-        <SettingHint :text="TEXT.playerDetailStyleHint" />
-      </h2>
 
       <label class="relative flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
-        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
-          {{ TEXT.playerDetailStyleLabel }}
+        <span class="min-w-0">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailStyleLabel }}</span>
+          <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailStyleHint }}</span>
         </span>
         <button
           ref="styleTriggerRef"
@@ -1217,20 +1250,11 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
-    </section>
-
-    <section class="space-y-3">
-      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="flex items-center gap-2">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          {{ TEXT.playerDetailMeshBackgroundTitle }}
-        </span>
-        <SettingHint :text="TEXT.playerDetailMeshBackgroundHint" />
-      </h2>
 
       <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
-        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
-          {{ TEXT.playerDetailMeshBackgroundLabel }}
+        <span class="min-w-0">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.playerDetailMeshBackgroundLabel }}</span>
+          <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.playerDetailMeshBackgroundHint }}</span>
         </span>
         <button
           type="button"
