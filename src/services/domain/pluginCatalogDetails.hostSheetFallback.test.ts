@@ -111,6 +111,53 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
     expect(playlistImportApi.fetchPlaylistFromSource).not.toHaveBeenCalled();
   });
 
+  it('单页型插件忽略 page 参数（第二页与首页重复）→ 视为截断，宿主全量补齐', async () => {
+    const page1Hashes = Array.from({ length: 10 }, (_, i) => `OLD${String(i).padStart(6, '0')}`);
+    const page1List = page1Hashes.map(makePluginSong);
+    const getMusicSheetInfo = vi.fn((_item: any, _page: number) =>
+      Promise.resolve({ isEnd: true, list: page1List.map(s => ({ ...s })) }));
+    (ensurePluginInstance as ReturnType<typeof vi.fn>).mockResolvedValue({ instance: { getMusicSheetInfo } });
+    // 宿主 kg 返回全量 80 首，前 10 首与插件首页 hash 对齐
+    const full = Array.from({ length: 80 }, (_, i) =>
+      makeHostSong(i, i < page1Hashes.length ? page1Hashes[i] : undefined));
+    (playlistImportApi.fetchPlaylistFromSource as ReturnType<typeof vi.fn>).mockImplementation(
+      async (source: string) => (source === 'kg' ? { source: 'kg', songs: full, total: full.length, info: {} } : Promise.reject(new Error('nope'))),
+    );
+
+    const { songs, isEnd } = await pluginGetPlaylistDetailWithEnd(makeSource(), { id: '666', trackCount: 80 }, 1);
+    expect(isEnd).toBe(true);
+    expect(songs).toHaveLength(80);
+    expect((songs[0] as any).rawData.songmid).toBe('OLD000000');
+  });
+
+  it('result.sheetItem 回传的 trackIds 合并回 sheetItem 供下一页使用', async () => {
+    const trackIds = Array.from({ length: 40 }, (_, i) => 9000 + i);
+    const getMusicSheetInfo = vi.fn((item: any, page: number) => {
+      if (page === 1) {
+        return Promise.resolve({
+          isEnd: false,
+          musicList: Array.from({ length: 40 }, (_, i) => makePluginSong(`MF${i}`)),
+          sheetItem: { id: '999', _trackIds: trackIds },
+        });
+      }
+      // 第二页应能从 sheetItem 顶层拿到 _trackIds（宿主合并协议）
+      return Promise.resolve({
+        isEnd: true,
+        musicList: Array.isArray(item?._trackIds) && item._trackIds.length === 40
+          ? Array.from({ length: 30 }, (_, i) => makePluginSong(`MF2-${i}`))
+          : [],
+      });
+    });
+    (ensurePluginInstance as ReturnType<typeof vi.fn>).mockResolvedValue({ instance: { getMusicSheetInfo } });
+
+    const sheetItem: any = { id: '999', title: '合并协议' };
+    const first = await pluginGetPlaylistDetailWithEnd(makeSource(), sheetItem, 1);
+    expect(first.songs).toHaveLength(40);
+    expect(first.isEnd).toBe(false);
+    expect(Array.isArray(sheetItem._trackIds)).toBe(true);
+    expect(sheetItem._trackIds).toHaveLength(40);
+  });
+
   it('声明曲目数 ≤ 插件首页 → 首页已完整，不探测不兜底', async () => {
     const getMusicSheetInfo = vi.fn((_item: any, page: number) =>
       Promise.resolve({ isEnd: true, list: Array.from({ length: 20 }, (_, i) => makePluginSong(`DONE${i}`)) }));

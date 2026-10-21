@@ -169,6 +169,14 @@ async function pluginGetPlaylistDetailInner(
         );
         const list = extractResultList(result);
         if (list.length > 0) {
+          // MusicFree 宿主协议：插件把 trackIds 放在 result.sheetItem 里回传
+          // （如网易云插件用模块级缓存 + sheetItem._trackIds 续页）。原样合并回
+          // sheetItem（与调用方共享同一引用），下一页调用时插件可直接拿到全量 ID，
+          // 不依赖其模块缓存在沙箱里存活。
+          if (result && typeof result.sheetItem === 'object' && result.sheetItem !== null
+              && sheetItem && typeof sheetItem === 'object') {
+            try { Object.assign(sheetItem, result.sheetItem); } catch { /* 冻结对象忽略 */ }
+          }
           if (page === 1) {
             // 插件歌单详情单页截断时用宿主全量补齐（酷狗 31 / QQ 50 场景）
             const fullSheet = await hostFullSheetIfTruncated(
@@ -256,12 +264,21 @@ async function hostFullSheetIfTruncated(
   if (page1IsEnd !== true) return null;
 
   let probeCount = 0;
+  let probeFirstKeys: string[] = [];
   try {
-    probeCount = extractResultList(await getSheetInfo(sheetItem, 2)).length;
+    const probeList = extractResultList(await getSheetInfo(sheetItem, 2));
+    probeCount = probeList.length;
+    probeFirstKeys = probeList.length > 0 ? sheetSongIdKeys(probeList[0]) : [];
   } catch {
     // 第二页异常按「不翻页」处理
   }
-  if (probeCount > 0) return null;
+  if (probeCount > 0) {
+    // 单页型插件可能忽略 page 参数，第二页返回与首页相同的内容。
+    // 首条 ID 对得上 → 视为未翻页，继续走宿主全量兜底；否则交回常规分页循环。
+    const page1FirstKeys = sheetSongIdKeys(page1List[0]);
+    const duplicated = probeFirstKeys.some(k => page1FirstKeys.includes(k));
+    if (!duplicated) return null;
+  }
 
   const sheetId = String(sheetItem?.id ?? sheetItem?.rawData?.id ?? '').trim();
   if (!sheetId) return null;
@@ -272,6 +289,7 @@ async function hostFullSheetIfTruncated(
     ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('wy', sheetId))],
     ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('tx', sheetId))],
     ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('kw', sheetId))],
+    ['mg', () => dispatchFallbackModule('playlist_import', 'getListDetailMg', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('mg', sheetId))],
   ];
   for (const [platform, run] of runners) {
     try {

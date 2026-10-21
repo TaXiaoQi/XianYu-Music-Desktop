@@ -186,9 +186,9 @@ export function looksLikeSheetLinkOrId(keyword: string): boolean {
   return /https?:\/\/|\.com|\.cn|\.cc|netease|kugou|kuwo|qishui|douyin|qq\.com/.test(t);
 }
 
-// ==================== 宿主歌单导入兜底（酷狗→汽水→网易→QQ→酷我） ====================
+// ==================== 宿主歌单导入兜底（酷狗→汽水→网易→QQ→酷我→咪咕） ====================
 
-type HostPlatform = 'kg' | 'qishui' | 'wy' | 'tx' | 'kw';
+type HostPlatform = 'kg' | 'qishui' | 'wy' | 'tx' | 'kw' | 'mg';
 
 function isHostPlatformKeyword(platform: HostPlatform, keyword: string): boolean {
   const t = (keyword || '').trim().toLowerCase();
@@ -203,6 +203,8 @@ function isHostPlatformKeyword(platform: HostPlatform, keyword: string): boolean
       return t.includes('y.qq.com');
     case 'kw':
       return t.includes('kuwo.cn');
+    case 'mg':
+      return t.includes('migu.cn');
   }
 }
 
@@ -221,6 +223,8 @@ export function sourceMatchesHostPlatform(source: PluginSource, platform: HostPl
       return name.includes('qq') || name.includes('企鹅') || name.includes('腾讯') || has('tx') || has('qq');
     case 'kw':
       return name.includes('酷我') || name.includes('kuwo') || has('kw') || has('kuwo') || has('酷我');
+    case 'mg':
+      return name.includes('咪咕') || name.includes('migu') || has('mg') || has('migu') || has('咪咕');
   }
 }
 
@@ -275,6 +279,7 @@ async function hostSheetFallback(
     ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('wy', keyword))],
     ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('tx', keyword))],
     ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('kw', keyword))],
+    ['mg', () => dispatchFallbackModule('playlist_import', 'getListDetailMg', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('mg', keyword))],
   ];
   for (const [platform, run] of runners) {
     const applicable = isHostPlatformKeyword(platform, keyword) ||

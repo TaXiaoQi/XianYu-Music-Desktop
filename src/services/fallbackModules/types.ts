@@ -29,6 +29,7 @@ export const FALLBACK_MODULE_METHODS: Record<FallbackModuleKey, string[]> = {
     'getListDetailWy',
     'getListDetailTx',
     'getListDetailKw',
+    'getListDetailMg',
     'getListDetailQishui',
   ],
 };
