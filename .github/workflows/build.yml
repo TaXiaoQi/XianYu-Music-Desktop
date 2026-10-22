@@ -131,13 +131,22 @@ jobs:
           install -m 0755 "$TMP_DIR/ffmpeg" "src-tauri/bin/ffmpeg-${{ matrix.target }}"
 
       - name: Build Tauri app
-        run: npm run tauri:build:mac -- --target ${{ matrix.target }}
+        # npm 脚本里硬编码了 target（tauri:build:mac=x86_64 / tauri:build:mac:arm64=aarch64），
+        # 追加 --target 参数只会落到行尾的 move-bundles 上，必须按架构选脚本。
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            npm run tauri:build:mac:arm64
+          else
+            npm run tauri:build:mac
+          fi
 
       - name: Stage bundle artifacts
         run: |
-          mkdir -p release-assets
-          find src-tauri/target/release/bundle/dmg -type f -name "*.dmg" \
-            -exec cp {} release-assets/ \;
+          mkdir -p release-assets releases/macos
+          # move-bundles.js 会把新鲜产物归档到 releases/macos；交叉目标的 bundle
+          # 也不在 target/release/bundle 下，两处都扫一遍（cp -n 去重）。
+          find releases/macos src-tauri/target/*/release/bundle/dmg \
+            -type f -name "*.dmg" -exec cp -n {} release-assets/ \; || true
           if [ -z "$(ls -A release-assets)" ]; then
             echo "No Tauri bundle artifacts were produced." >&2
             exit 1
