@@ -10,6 +10,8 @@ import type { ToastKind } from './toastKind';
 
 export interface PluginSyncFlowDeps {
   canSync(): boolean;
+  /** 纯登录态：未登录时服务层应提示「请先登录」，与互斥区分开 */
+  isAuthed(): boolean;
   isUploadEnabled(): boolean;
   onProgress(msg: string): void;
   /** 逐插件计数回调，供手动同步进度提示推进（自动同步可不注入） */
@@ -29,10 +31,15 @@ export interface PluginSyncFlowDeps {
 export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
   async function syncPlugins(): Promise<PluginSyncResult> {
     deps.log('========== syncPlugins 开始 ==========');
-    if (!deps.canSync()) {
+    if (!deps.isAuthed()) {
       deps.logError('syncPlugins: 未登录或无弦予号，取消同步');
       deps.notify('请先登录后再同步', 'error');
       return { uploadedPlugins: 0, downloadedPlugins: 0, syncedSubscriptions: 0, errors: ['未登录'] };
+    }
+    if (!deps.canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      deps.log('syncPlugins: 其他同步进行中，跳过本次');
+      return { uploadedPlugins: 0, downloadedPlugins: 0, syncedSubscriptions: 0, errors: [] };
     }
 
     deps.setSyncing(true);
@@ -98,17 +105,23 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
     }
   }
 
-  async function uploadPluginsOnly(options?: { overwrite?: boolean }): Promise<void> {
+  async function uploadPluginsOnly(options?: { overwrite?: boolean; silent?: boolean }): Promise<void> {
+    const notify = (msg: string, kind: ToastKind) => { if (!options?.silent) deps.notify(msg, kind); };
     deps.log('========== uploadPluginsOnly 开始 ==========');
-    if (!deps.canSync()) {
+    if (!deps.isAuthed()) {
       deps.logError('uploadPluginsOnly: 未登录或无弦予号');
       deps.notify('请先登录后再同步', 'error');
+      return;
+    }
+    if (!deps.canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      deps.log('uploadPluginsOnly: 其他同步进行中，跳过本次');
       return;
     }
 
     if (!deps.isUploadEnabled()) {
       deps.log('uploadPluginsOnly: 插件上传未开启');
-      deps.notify('插件同步已关闭，请在设置中开启', 'info');
+      notify('插件同步已关闭，请在设置中开启', 'info');
       return;
     }
 
@@ -122,27 +135,33 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
       deps.log(`uploadPluginsOnly 完成: uploadedPlugins=${result.uploadedPlugins}, errors=${result.errors.length}`);
 
       if (result.errors.length > 0) {
-        deps.notify(`插件上传完成（${result.errors.length} 个错误）`, 'error');
+        notify(`插件上传完成（${result.errors.length} 个错误）`, 'error');
       } else if (result.uploadedPlugins > 0) {
-        deps.notify(`已上传 ${result.uploadedPlugins} 个插件`, 'success');
+        notify(`已上传 ${result.uploadedPlugins} 个插件`, 'success');
       } else {
-        deps.notify('插件已同步，无需上传', 'info');
+        notify('插件已同步，无需上传', 'info');
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       deps.logError(`uploadPluginsOnly 异常: ${msg}`, error);
-      deps.notify(`插件上传失败：${msg}`, 'error');
+      notify(`插件上传失败：${msg}`, 'error');
     } finally {
       deps.setSyncing(false);
       deps.onProgress('');
     }
   }
 
-  async function downloadPluginsOnly(options?: { overwrite?: boolean }): Promise<void> {
+  async function downloadPluginsOnly(options?: { overwrite?: boolean; silent?: boolean }): Promise<void> {
+    const notify = (msg: string, kind: ToastKind) => { if (!options?.silent) deps.notify(msg, kind); };
     deps.log('========== downloadPluginsOnly 开始 ==========');
-    if (!deps.canSync()) {
+    if (!deps.isAuthed()) {
       deps.logError('downloadPluginsOnly: 未登录或无弦予号');
       deps.notify('请先登录后再同步', 'error');
+      return;
+    }
+    if (!deps.canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      deps.log('downloadPluginsOnly: 其他同步进行中，跳过本次');
       return;
     }
 
@@ -156,16 +175,16 @@ export function createPluginSyncFlow(deps: PluginSyncFlowDeps) {
       deps.log(`downloadPluginsOnly 完成: downloadedPlugins=${result.downloadedPlugins}, errors=${result.errors.length}`);
 
       if (result.errors.length > 0) {
-        deps.notify(`插件下载完成（${result.errors.length} 个错误）`, 'error');
+        notify(`插件下载完成（${result.errors.length} 个错误）`, 'error');
       } else if (result.downloadedPlugins > 0) {
-        deps.notify(`已恢复 ${result.downloadedPlugins} 个插件`, 'success');
+        notify(`已恢复 ${result.downloadedPlugins} 个插件`, 'success');
       } else {
-        deps.notify('云端暂无插件', 'info');
+        notify('云端暂无插件', 'info');
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       deps.logError(`downloadPluginsOnly 异常: ${msg}`, error);
-      deps.notify(`插件下载失败：${msg}`, 'error');
+      notify(`插件下载失败：${msg}`, 'error');
     } finally {
       deps.setSyncing(false);
       deps.onProgress('');

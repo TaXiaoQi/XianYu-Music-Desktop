@@ -115,10 +115,15 @@ export function usePlaylistSync() {
   const statisticsStore = useStatisticsStore();
   const { showToast } = useToast();
 
+  // 纯登录态判断：未登录时服务层应提示「请先登录」，与互斥区分开
+  function isAuthed(): boolean {
+    return authStore.isLoggedIn && !!authStore.user?.ciyuanxi_id;
+  }
+
   function canSync(): boolean {
     // 同步全局互斥：任一域在途时拒绝发起新同步（自动周期同步 tick 同样被挡）
     if (anyDomainSyncing()) return false;
-    return authStore.isLoggedIn && !!authStore.user?.ciyuanxi_id;
+    return isAuthed();
   }
 
   // 手动同步是用户的显式操作，绕过「上传」数据范围开关；开关仅约束自动同步的同步范围。
@@ -162,6 +167,7 @@ export function usePlaylistSync() {
 
   const pluginFlow = createPluginSyncFlow({
     canSync,
+    isAuthed,
     isUploadEnabled: isPluginUploadEnabled,
     onProgress: msg => { pluginSyncProgress.value = msg; emitSyncProgress(msg); },
     onStep: (done, total, label) => {
@@ -178,6 +184,7 @@ export function usePlaylistSync() {
 
   const settingsFlow = createSettingsSyncFlow({
     canSync,
+    isAuthed,
     isSettingsUploadEnabled,
     isPlaylistUploadEnabled: isUploadEnabled,
     isPluginUploadEnabled,
@@ -197,6 +204,8 @@ export function usePlaylistSync() {
 
   const favoritesFlow = createFavoritesSyncFlow({
     canSync,
+    isAuthed,
+    isSelfSyncing: () => favoritesSyncing.value,
     isUploadEnabled: isFavoritesUploadEnabled,
     collections: collectionsStore,
     library: libraryStore,
@@ -214,13 +223,14 @@ export function usePlaylistSync() {
     tasks: {
       uploadPlaylists,
       downloadPlaylistsOnly: downloadPlaylists,
-      uploadPluginsOnly: pluginFlow.uploadPluginsOnly,
-      downloadPluginsOnly: pluginFlow.downloadPluginsOnly,
-      uploadFavoritesOnly: favoritesFlow.uploadFavoritesOnly,
-      uploadSettingsOnly: settingsFlow.uploadSettingsOnly,
+      // 自动同步传 silent: true 静默执行（结果 toast 仅手动同步弹出）
+      uploadPluginsOnly: options => pluginFlow.uploadPluginsOnly(options),
+      downloadPluginsOnly: options => pluginFlow.downloadPluginsOnly(options),
+      uploadFavoritesOnly: options => favoritesFlow.uploadFavoritesOnly(options),
+      uploadSettingsOnly: options => settingsFlow.uploadSettingsOnly(options),
       syncPlaylists: () => syncPlaylists(),
       syncPlugins: pluginFlow.syncPlugins,
-      syncFavorites: favoritesFlow.syncFavorites,
+      syncFavorites: options => favoritesFlow.syncFavorites(options),
       syncSettings: settingsFlow.syncSettings,
       syncCloudCreds: () => downloadCloudCredsOnLogin(),
       uploadHistoryOnly: async () => {
@@ -251,7 +261,7 @@ export function usePlaylistSync() {
 
   async function syncPlaylists(): Promise<SyncResult> {
     logSync('========== syncPlaylists 开始 ==========');
-    if (!canSync()) {
+    if (!isAuthed()) {
       logSyncError('syncPlaylists: 未登录或无弦予号，取消同步');
       showToast('请先登录后再同步', 'error');
       return {
@@ -260,6 +270,17 @@ export function usePlaylistSync() {
         uploadedSongs: 0,
         downloadedSongs: 0,
         errors: ['未登录'],
+      };
+    }
+    if (!canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      logSync('syncPlaylists: 其他同步进行中，跳过本次');
+      return {
+        uploadedPlaylists: 0,
+        downloadedPlaylists: 0,
+        uploadedSongs: 0,
+        downloadedSongs: 0,
+        errors: [],
       };
     }
 
@@ -355,9 +376,15 @@ export function usePlaylistSync() {
 
   async function uploadOnly(options?: { overwrite?: boolean }): Promise<void> {
     logSync('========== uploadOnly 开始 ==========');
-    if (!canSync()) {
+    if (!isAuthed()) {
       logSyncError('uploadOnly: 未登录或无弦予号');
       showToast('请先登录后再同步', 'error');
+      return;
+    }
+
+    if (!canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      logSync('uploadOnly: 其他同步进行中，跳过本次');
       return;
     }
 
@@ -397,9 +424,15 @@ export function usePlaylistSync() {
 
   async function downloadOnly(options?: { overwrite?: boolean }): Promise<void> {
     logSync('========== downloadOnly 开始 ==========');
-    if (!canSync()) {
+    if (!isAuthed()) {
       logSyncError('downloadOnly: 未登录或无弦予号');
       showToast('请先登录后再同步', 'error');
+      return;
+    }
+
+    if (!canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      logSync('downloadOnly: 其他同步进行中，跳过本次');
       return;
     }
 

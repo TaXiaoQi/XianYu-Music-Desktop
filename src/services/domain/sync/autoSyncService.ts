@@ -6,13 +6,13 @@ import { fetchServerListenSummary } from '../leaderboardReport';
 interface AutoSyncTaskSet {
   uploadPlaylists(): Promise<unknown>;
   downloadPlaylistsOnly(): Promise<unknown>;
-  uploadPluginsOnly(): Promise<unknown>;
-  downloadPluginsOnly(): Promise<unknown>;
-  uploadFavoritesOnly(): Promise<unknown>;
-  uploadSettingsOnly(): Promise<unknown>;
+  uploadPluginsOnly(options?: { silent?: boolean }): Promise<unknown>;
+  downloadPluginsOnly(options?: { silent?: boolean }): Promise<unknown>;
+  uploadFavoritesOnly(options?: { silent?: boolean }): Promise<unknown>;
+  uploadSettingsOnly(options?: { silent?: boolean }): Promise<unknown>;
   syncPlaylists(): Promise<unknown>;
   syncPlugins(): Promise<unknown>;
-  syncFavorites(): Promise<unknown>;
+  syncFavorites(options?: { silent?: boolean }): Promise<unknown>;
   syncSettings(): Promise<unknown>;
   syncCloudCreds(): Promise<unknown>;
   uploadHistoryOnly(): Promise<unknown>;
@@ -47,15 +47,18 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
       const upload = deps.getUploadConfig();
       let hasError = false;
 
-      const parallelTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
+      // 串行执行各域同步：此前并行会让「全局互斥」在域间互相锁住（插件/收藏/
+      // 设置被并行在途的其他域挡掉，还误报「请先登录后再同步」），串行保证
+      // 每个域每周期都真正同步，且对 2C2G 服务器更友好
+      const syncTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
       // 网盘凭据周期拉取：其他端绑定/轮换的变更及时到达本端；
       // LWW 门控在 syncCloudCreds 内部（本地较新跳过下发，无变化不落盘）
-      parallelTasks.push({ label: '同步网盘账号', run: deps.tasks.syncCloudCreds });
-      // 统一「先拉后推」（对齐移动端 _syncAll）：其他设备推上云的变更在本
+      syncTasks.push({ label: '同步网盘账号', run: deps.tasks.syncCloudCreds });
+      // 统一「先拉后推」（对齐移动端 _sync_all）：其他设备推上云的变更在本
       // 周期内即可到达，不再只靠登录时的一次性全量同步；各域 download 内部
       // 有内容对比，无变化不落盘，成本可控。设置域维持仅上传（两端口径一致）
       if (upload.playlists) {
-        parallelTasks.push({
+        syncTasks.push({
           label: '同步歌单',
           run: async () => {
             await deps.tasks.downloadPlaylistsOnly();
@@ -64,26 +67,27 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
         });
       }
       if (upload.plugins) {
-        parallelTasks.push({
+        syncTasks.push({
           label: '同步插件',
           run: async () => {
-            await deps.tasks.downloadPluginsOnly();
-            await deps.tasks.uploadPluginsOnly();
+            // silent: 自动同步静默执行，结果 toast 仅手动同步弹出
+            await deps.tasks.downloadPluginsOnly({ silent: true });
+            await deps.tasks.uploadPluginsOnly({ silent: true });
           },
         });
       }
       if (upload.favorites) {
-        parallelTasks.push({
+        syncTasks.push({
           label: '同步收藏',
-          run: deps.tasks.syncFavorites,
+          run: () => deps.tasks.syncFavorites({ silent: true }),
         });
       }
       if (upload.settings) {
-        parallelTasks.push({ label: '上传设置', run: deps.tasks.uploadSettingsOnly });
+        syncTasks.push({ label: '上传设置', run: () => deps.tasks.uploadSettingsOnly({ silent: true }) });
       }
       // 播放历史云同步（对齐移动端，不受 upload 开关门控）：先拉后推，
       // 下载仅补本地缺失条目
-      parallelTasks.push({
+      syncTasks.push({
         label: '同步播放历史',
         run: async () => {
           await deps.tasks.downloadHistoryOnly();
@@ -91,14 +95,13 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
         },
       });
 
-      if (parallelTasks.length > 0) {
-        const results = await Promise.allSettled(parallelTasks.map(task => task.run()));
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            deps.logError(`performAutoSync: ${parallelTasks[index].label}失败`, result.reason);
-            hasError = true;
-          }
-        });
+      for (const task of syncTasks) {
+        try {
+          await task.run();
+        } catch (e) {
+          deps.logError(`performAutoSync: ${task.label}失败`, e);
+          hasError = true;
+        }
       }
 
       deps.log('performAutoSync: 上传完成，开始拉取云端听歌统计');
@@ -135,6 +138,7 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
     deps.log('========== 首次登录全量同步开始 ==========');
     const upload = deps.getUploadConfig();
     try {
+      // 串行执行（理由同 performAutoSync：并行会被全局互斥互相锁住）
       const tasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
       if (upload.playlists) {
         tasks.push({ label: '同步歌单', run: deps.tasks.syncPlaylists });
@@ -145,8 +149,12 @@ export function createAutoSyncFlow(deps: AutoSyncFlowDeps) {
       if (upload.favorites) {
         tasks.push({ label: '同步收藏', run: deps.tasks.syncFavorites });
       }
-      if (tasks.length > 0) {
-        await Promise.allSettled(tasks.map(task => task.run()));
+      for (const task of tasks) {
+        try {
+          await task.run();
+        } catch (e) {
+          deps.logError(`syncOnLoginSuccess: ${task.label}失败`, e);
+        }
       }
       try {
         await fetchServerListenSummary();

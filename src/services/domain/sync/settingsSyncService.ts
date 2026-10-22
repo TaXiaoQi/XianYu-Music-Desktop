@@ -27,6 +27,8 @@ export type SettingsConflictChoice = 'cancel' | SettingsCategoryChoices;
 
 export interface SettingsSyncPorts {
   canSync(): boolean;
+  /** 纯登录态：未登录时服务层应提示「请先登录」，与互斥区分开 */
+  isAuthed(): boolean;
   isSettingsUploadEnabled(): boolean;
   isPlaylistUploadEnabled(): boolean;
   isPluginUploadEnabled(): boolean;
@@ -64,17 +66,23 @@ function applyCloudSettingsLocally(
 }
 
 export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
-  async function uploadSettingsOnly(): Promise<void> {
+  async function uploadSettingsOnly(options?: { silent?: boolean }): Promise<void> {
+    const notify = (msg: string, kind: ToastKind) => { if (!options?.silent) ports.notify(msg, kind); };
     ports.log('========== uploadSettingsOnly 开始 ==========');
-    if (!ports.canSync()) {
+    if (!ports.isAuthed()) {
       ports.logError('uploadSettingsOnly: 未登录或无弦予号');
       ports.notify('请先登录后再同步', 'error');
+      return;
+    }
+    if (!ports.canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      ports.log('uploadSettingsOnly: 其他同步进行中，跳过本次');
       return;
     }
 
     if (!ports.isSettingsUploadEnabled()) {
       ports.log('uploadSettingsOnly: 设置同步未开启');
-      ports.notify('设置同步已关闭，请在设置中开启', 'info');
+      notify('设置同步已关闭，请在设置中开启', 'info');
       return;
     }
 
@@ -88,16 +96,16 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
       ports.log(`uploadSettingsOnly 完成: uploaded=${result.uploaded}, errors=${result.errors.length}`);
 
       if (result.errors.length > 0) {
-        ports.notify(`设置上传完成（${result.errors.length} 个错误）`, 'error');
+        notify(`设置上传完成（${result.errors.length} 个错误）`, 'error');
       } else if (result.uploaded) {
-        ports.notify('设置已上传到云端', 'success');
+        notify('设置已上传到云端', 'success');
       } else {
-        ports.notify('设置上传失败', 'info');
+        notify('设置上传失败', 'info');
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       ports.logError(`uploadSettingsOnly 异常: ${msg}`, error);
-      ports.notify(`设置上传失败：${msg}`, 'error');
+      notify(`设置上传失败：${msg}`, 'error');
     } finally {
       ports.setSyncing(false);
       ports.onProgress('');
@@ -106,9 +114,14 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
 
   async function downloadSettingsOnly(): Promise<void> {
     ports.log('========== downloadSettingsOnly 开始 ==========');
-    if (!ports.canSync()) {
+    if (!ports.isAuthed()) {
       ports.logError('downloadSettingsOnly: 未登录或无弦予号');
       ports.notify('请先登录后再同步', 'error');
+      return;
+    }
+    if (!ports.canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      ports.log('downloadSettingsOnly: 其他同步进行中，跳过本次');
       return;
     }
 
@@ -141,10 +154,15 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
 
   async function syncSettings(): Promise<SettingsSyncResult> {
     ports.log('========== syncSettings 开始 ==========');
-    if (!ports.canSync()) {
+    if (!ports.isAuthed()) {
       ports.logError('syncSettings: 未登录或无弦予号，取消同步');
       ports.notify('请先登录后再同步', 'error');
       return { uploaded: false, downloaded: false, errors: ['未登录'] };
+    }
+    if (!ports.canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      ports.log('syncSettings: 其他同步进行中，跳过本次');
+      return { uploaded: false, downloaded: false, errors: [] };
     }
 
     ports.setSyncing(true);

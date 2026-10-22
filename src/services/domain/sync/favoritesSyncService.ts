@@ -30,6 +30,10 @@ interface FavoritesSyncLibraryPort {
 
 export interface FavoritesSyncFlowDeps {
   canSync(): boolean;
+  /** 纯登录态：未登录时服务层应提示「请先登录」，与互斥区分开 */
+  isAuthed(): boolean;
+  /** 本域是否已在途：syncFavorites 串行编排内部调用时用它重入放行 */
+  isSelfSyncing(): boolean;
   isUploadEnabled(): boolean;
   collections: FavoritesSyncCollectionsPort;
   library: FavoritesSyncLibraryPort;
@@ -54,20 +58,30 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
       .filter((song): song is Song => !!song);
   }
 
-  async function uploadFavoritesOnly(options?: { overwrite?: boolean }): Promise<void> {
+  async function uploadFavoritesOnly(options?: { overwrite?: boolean; silent?: boolean }): Promise<void> {
     // 覆盖上传（手动「同步至服务器」）：本地收藏全集即云端目标状态，
     // 忽略「仅保留本地」墓碑，清掉墓碑缓存；自动同步不带 options，仍走合并
     const overwrite = options?.overwrite === true;
+    // 静默模式（自动同步）：抑制结果 toast，避免每个同步周期打扰用户
+    const notify = (msg: string, kind: ToastKind) => { if (!options?.silent) deps.notify(msg, kind); };
     deps.log('========== uploadFavoritesOnly 开始 ==========');
-    if (!deps.canSync()) {
-      deps.logError('uploadFavoritesOnly: 未登录或无弦予号');
-      deps.notify('请先登录后再同步', 'error');
-      return;
+    // syncFavorites 串行编排内部调用时已持有互斥并完成登录检查，重入放行（此前自锁导致收藏永远同步不了）
+    if (!deps.isSelfSyncing()) {
+      if (!deps.isAuthed()) {
+        deps.logError('uploadFavoritesOnly: 未登录或无弦予号');
+        deps.notify('请先登录后再同步', 'error');
+        return;
+      }
+      if (!deps.canSync()) {
+        // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+        deps.log('uploadFavoritesOnly: 其他同步进行中，跳过本次');
+        return;
+      }
     }
 
     if (!deps.isUploadEnabled()) {
       deps.log('uploadFavoritesOnly: 收藏上传未开启');
-      deps.notify('收藏同步已关闭，请在设置中开启', 'info');
+      notify('收藏同步已关闭，请在设置中开启', 'info');
       return;
     }
 
@@ -78,12 +92,12 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
       const songs = collectFavoriteSongs();
       const ciyuanxiId = getCiyuanxiId();
       if (!ciyuanxiId) {
-        deps.notify('未获取到弦予号', 'error');
+        notify('未获取到弦予号', 'error');
         return;
       }
       if (songs.length === 0 && !overwrite) {
         deps.log('uploadFavoritesOnly: 本地收藏为空，跳过上传');
-        deps.notify('本地收藏为空，跳过上传', 'info');
+        notify('本地收藏为空，跳过上传', 'info');
         return;
       }
       if (overwrite) {
@@ -101,7 +115,7 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
           errors: [],
         });
         deps.log(`uploadFavoritesOnly(overwrite) 完成: uploaded=${result.song_count}`);
-        deps.notify(`已覆盖上传 ${result.song_count} 首收藏歌曲`, 'success');
+        notify(`已覆盖上传 ${result.song_count} 首收藏歌曲`, 'success');
         return;
       }
       const localOnly = getLocalOnlyPaths();
@@ -123,26 +137,35 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
         errors: [],
       });
       deps.log(`uploadFavoritesOnly 完成: uploaded=${result.song_count}`);
-      deps.notify(result.song_count > 0 ? `已上传 ${result.song_count} 首收藏歌曲` : '收藏已是最新', 'success');
+      notify(result.song_count > 0 ? `已上传 ${result.song_count} 首收藏歌曲` : '收藏已是最新', 'success');
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       deps.logError(`uploadFavoritesOnly 异常: ${msg}`, error);
-      deps.notify(`收藏上传失败：${msg}`, 'error');
+      notify(`收藏上传失败：${msg}`, 'error');
     } finally {
       deps.setSyncing(false);
       deps.onProgress('');
     }
   }
 
-  async function downloadFavoritesOnly(options?: { overwrite?: boolean }): Promise<void> {
+  async function downloadFavoritesOnly(options?: { overwrite?: boolean; silent?: boolean }): Promise<void> {
     // 覆盖下载（手动「更新至本地」）：云端收藏全集替换本地，不应用删除账本与墓碑；
     // 云端为空时结果即本地清空。自动同步不带 options，仍走合并
     const overwrite = options?.overwrite === true;
+    const notify = (msg: string, kind: ToastKind) => { if (!options?.silent) deps.notify(msg, kind); };
     deps.log('========== downloadFavoritesOnly 开始 ==========');
-    if (!deps.canSync()) {
-      deps.logError('downloadFavoritesOnly: 未登录或无弦予号');
-      deps.notify('请先登录后再同步', 'error');
-      return;
+    // syncFavorites 串行编排内部调用时已持有互斥并完成登录检查，重入放行（此前自锁导致收藏永远同步不了）
+    if (!deps.isSelfSyncing()) {
+      if (!deps.isAuthed()) {
+        deps.logError('downloadFavoritesOnly: 未登录或无弦予号');
+        deps.notify('请先登录后再同步', 'error');
+        return;
+      }
+      if (!deps.canSync()) {
+        // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+        deps.log('downloadFavoritesOnly: 其他同步进行中，跳过本次');
+        return;
+      }
     }
 
     deps.setSyncing(true);
@@ -151,7 +174,7 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
     try {
       const ciyuanxiId = getCiyuanxiId();
       if (!ciyuanxiId) {
-        deps.notify('未获取到弦予号', 'error');
+        notify('未获取到弦予号', 'error');
         return;
       }
       const { songs: offlineList, deletedPaths } = await downloadFavoritesWithLedger(ciyuanxiId);
@@ -211,7 +234,7 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
           errors: [],
         });
         deps.log(`downloadFavoritesOnly(overwrite) 完成: total=${matchedList.length}, cloud=${offlineList.length}`);
-        deps.notify(matchedList.length > 0 ? `已覆盖下载 ${matchedList.length} 首收藏歌曲` : '云端暂无收藏，本地收藏已清空', 'success');
+        notify(matchedList.length > 0 ? `已覆盖下载 ${matchedList.length} 首收藏歌曲` : '云端暂无收藏，本地收藏已清空', 'success');
         return;
       }
 
@@ -252,22 +275,27 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
         errors: [],
       });
       deps.log(`downloadFavoritesOnly 完成: added=${added}, cloud=${offlineList.length}`);
-      deps.notify(added > 0 ? `已下载 ${added} 首收藏歌曲` : '收藏已是最新', 'success');
+      notify(added > 0 ? `已下载 ${added} 首收藏歌曲` : '收藏已是最新', 'success');
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       deps.logError(`downloadFavoritesOnly 异常: ${msg}`, error);
-      deps.notify(`收藏下载失败：${msg}`, 'error');
+      notify(`收藏下载失败：${msg}`, 'error');
     } finally {
       deps.setSyncing(false);
       deps.onProgress('');
     }
   }
 
-  async function syncFavorites(): Promise<void> {
+  async function syncFavorites(options?: { silent?: boolean }): Promise<void> {
     deps.log('========== syncFavorites 开始 ==========');
-    if (!deps.canSync()) {
+    if (!deps.isAuthed()) {
       deps.logError('syncFavorites: 未登录或无弦予号');
       deps.notify('请先登录后再同步', 'error');
+      return;
+    }
+    if (!deps.canSync()) {
+      // 其他域同步中（互斥）：静默跳过，避免误报「未登录」
+      deps.log('syncFavorites: 其他同步进行中，跳过本次');
       return;
     }
 
@@ -275,9 +303,11 @@ export function createFavoritesSyncFlow(deps: FavoritesSyncFlowDeps) {
     deps.onProgress('正在从云端下载收藏...');
 
     try {
-      await downloadFavoritesOnly();
+      // 内部调用经 isSelfSyncing 重入放行，互斥由本函数全程持有（先拉后推）
+      const silent = options?.silent === true;
+      await downloadFavoritesOnly({ silent });
       deps.onProgress('正在上传收藏到云端...');
-      await uploadFavoritesOnly();
+      await uploadFavoritesOnly({ silent });
     } finally {
       deps.setSyncing(false);
       deps.onProgress('');
