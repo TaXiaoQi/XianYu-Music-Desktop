@@ -115,6 +115,7 @@ fn dir_flag_189(v: Option<&Value>) -> bool {
 }
 
 /// `(data['fileId'] ?? '-1').toString()`。
+#[cfg(test)]
 fn file_id_of(data: &Value) -> String {
     data.get("fileId")
         .filter(|v| !v.is_null())
@@ -679,11 +680,11 @@ mod tests {
         // 无 /api 前缀 + recursive/mediaType 参数（对齐同域 Cookie 实现抓包）。
         assert_eq!(
             search_url("lo fi", 2),
-            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum=2&recursive=1&mediaType=0&filename=lo+fi"
+            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=60&pageNum=2&recursive=1&mediaType=0&filename=lo+fi"
         );
         assert_eq!(
             search_url("周深", 1),
-            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum=1&recursive=1&mediaType=0&filename=%E5%91%A8%E6%B7%B1"
+            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=60&pageNum=1&recursive=1&mediaType=0&filename=%E5%91%A8%E6%B7%B1"
         );
     }
 
