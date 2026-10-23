@@ -15,6 +15,7 @@ use tauri::{ // 实现
     Emitter, Manager,
 };
 use tokio::sync::{Semaphore};
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 const APP_SHOW_MAIN_EVENT: &str = "app:show-main"; // 实现
 const APP_DEEP_LINK_EVENT: &str = "app:deep-link";
@@ -685,6 +686,14 @@ pub(crate) fn setup_app( // setup_app
             let scale = main.scale_factor().unwrap_or(1.0);
             let _ = main.set_size(tauri::PhysicalSize::new(min_w * scale, min_h * scale));
             let _ = main.center();
+        } else {
+            // 显式恢复窗口状态：插件的 on_window_ready 恢复经 run_on_main_thread
+            // 延迟队列触发，时序随 tauri/tao 升级漂移（2.11.5→2.12.5 后实测
+            // 恢复失效，窗口每次启动回落配置默认尺寸，而退出保存始终正常——
+            // 状态文件里持续是用户当次手动调整值）。插件 setup 阶段已把磁盘
+            // 状态载入缓存，此处直接恢复一次，与延迟钩子幂等并存，不再依赖
+            // 钩子时序
+            let _ = main.restore_state(StateFlags::all());
         }
     }
 
