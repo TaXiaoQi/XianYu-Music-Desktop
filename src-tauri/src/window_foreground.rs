@@ -22,8 +22,8 @@ pub struct ForegroundWindowInfo {
 /// 暴露给兄弟模块：解析 Tauri 窗口的 Win32 顶层句柄
 /// （托盘鼠标钩子比对命中窗口时共用）。
 #[cfg(target_os = "windows")]
-pub(crate) fn window_hwnd(
-    window: &tauri::WebviewWindow,
+pub(crate) fn window_hwnd<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
 ) -> Option<windows_sys::Win32::Foundation::HWND> {
     imp::resolve_hwnd(window)
 }
@@ -74,7 +74,7 @@ mod imp {
     };
 
     /// 从 Tauri 窗口解析 Win32 句柄。
-    pub(super) fn resolve_hwnd(window: &WebviewWindow) -> Option<HWND> {
+    pub(super) fn resolve_hwnd<R: tauri::Runtime>(window: &WebviewWindow<R>) -> Option<HWND> {
         let borrowed_window = window.as_ref().window();
         let Ok(handle) = borrowed_window.window_handle() else {
             return None;
