@@ -18,8 +18,7 @@ const feedbackType = ref<'problem' | 'suggestion' | 'beta'>('problem');
 const feedbackContent = ref('');
 const submittingFeedback = ref(false);
 const feedbackAuth = ref(getStoredAuth());
-const attachErrorLogs = ref(false);
-const attachAllLogs = ref(false);
+const attachAllLogs = ref(true);
 const feedbackImages = ref<string[]>([]);
 const maxFeedbackImages = 6;
 const feedbackImageInput = ref<HTMLInputElement | null>(null);
@@ -46,7 +45,6 @@ const refreshFeedbackAuth = () => {
 const isFeedbackLoggedIn = computed(() => !!feedbackAuth.value?.user?.ciyuanxi_id);
 
 const hasAnyLogs = computed(() => entries.value.length > 0);
-const hasErrorLogs = computed(() => entries.value.some(e => e.level === 'error'));
 
 const compressImageToDataUrl = (file: File, maxWidth = 1600, quality = 0.82): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -136,28 +134,20 @@ const submitUserFeedback = async () => {
 
   submittingFeedback.value = true;
   try {
-    let errorLogsText: string | undefined;
     let allLogsText: string | undefined;
-    if (feedbackType.value === 'problem' && (attachErrorLogs.value || attachAllLogs.value)) {
+    if (feedbackType.value === 'problem' && attachAllLogs.value) {
       const analysis = analyzeApplicationLogs(entries.value);
-      if (attachErrorLogs.value) {
-        errorLogsText = formatApplicationLogExport(entries.value, 'error', analysis);
-      }
-      if (attachAllLogs.value) {
-        allLogsText = formatApplicationLogExport(entries.value, 'all', analysis);
-      }
+      allLogsText = formatApplicationLogExport(entries.value, 'all', analysis);
     }
     await submitFeedback(title, content, {
       feedbackType: feedbackType.value,
-      errorLogs: errorLogsText,
       allLogs: allLogsText,
       images: feedbackImages.value.length > 0 ? [...feedbackImages.value] : undefined,
     });
     openDoneDialog(feedbackType.value === 'beta' ? '申请已提交，请留意审核结果' : '反馈已提交，感谢您的支持');
     feedbackContent.value = '';
     feedbackImages.value = [];
-    attachErrorLogs.value = false;
-    attachAllLogs.value = false;
+    attachAllLogs.value = true;
   } catch (error: any) {
     const msg = error?.message || String(error);
     if (msg.includes('正在审核')) {
@@ -305,17 +295,8 @@ const myFeedbackTypeLabel = (type: string): string => {
           </span>
         </label>
 
-        <div v-if="feedbackType === 'problem' && (hasErrorLogs || hasAnyLogs)" class="flex flex-wrap items-center gap-4">
-          <label v-if="hasErrorLogs" class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
-            <input
-              type="checkbox"
-              class="h-3.5 w-3.5 rounded border-gray-300 text-[#EC4141] focus:ring-[#EC4141]/30 dark:border-gray-600 dark:bg-gray-700"
-              :checked="attachErrorLogs"
-              @change="attachErrorLogs = ($event.target as HTMLInputElement).checked"
-            />
-            附上错误日志
-          </label>
-          <label v-if="hasAnyLogs" class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
+        <div v-if="feedbackType === 'problem' && hasAnyLogs" class="flex flex-wrap items-center gap-4">
+          <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
             <input
               type="checkbox"
               class="h-3.5 w-3.5 rounded border-gray-300 text-[#EC4141] focus:ring-[#EC4141]/30 dark:border-gray-600 dark:bg-gray-700"
