@@ -97,11 +97,24 @@ export async function pluginSupportsRecommendSheets(source: PluginSource): Promi
   return !!inst && typeof inst.instance.getRecommendSheetTags === 'function';
 }
 
-// MF 插件 tags 出参取默认标签：defaultTag 优先，其次首个标签；无标签协议传 null
+// MF 插件 tags 出参取默认标签：defaultTag → tags[0]（旧约定）→
+// pinned 首个（MusicFree 标准形态 {pinned, data}，酷我[T]/JOOX/网易云/bilibili
+// 等社区插件）→ 首分组首标签兜底；标签须原样回传（如酷我 pinned.digest 决定
+// 取数端点），无可选标签传 null 交插件自身默认。社区插件普遍未对 null 判空
+// （tag.id 直接抛错），绝不能在标签可得时把 null 传下去
 function pickDefaultRecommendTag(tags: any): any {
   if (!tags || typeof tags !== 'object') return null;
   if (tags.defaultTag) return tags.defaultTag;
   if (Array.isArray(tags.tags) && tags.tags.length > 0) return tags.tags[0];
+  const candidates: any[] = [
+    ...(Array.isArray(tags.pinned) ? tags.pinned : []),
+    ...(Array.isArray(tags.data) && tags.data.length > 0 && tags.data[0] && typeof tags.data[0] === 'object'
+      ? tags.data[0].data || []
+      : []),
+  ];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && candidate.id != null) return candidate;
+  }
   return null;
 }
 
