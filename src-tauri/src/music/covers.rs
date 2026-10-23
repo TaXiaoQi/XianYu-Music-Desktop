@@ -550,6 +550,39 @@ pub fn clear_cover_cache(app: AppHandle) -> Result<(), String> {
   Ok(())
 }
 
+/// 封面文件读为 data URL（移动端 Image.file 的桌面等价物）。webview 里
+/// asset 协议对共享数据目录封面的渲染不稳定（2026-10 起播封面实测：
+/// URL 合法、作用域已放行却无报错地不渲染），改由 rust 读字节内联，
+/// 绕开 asset 作用域/CSP/file:// 三层约束。仅接受图片魔数，避免被当作
+/// 任意文件读取通道。
+#[tauri::command] // 实现
+pub async fn read_cover_data_url(path: String) -> Result<String, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    let bytes = fs::read(&path).map_err(|_| "cover read failed".to_string())?;
+    if bytes.len() > 8 * 1024 * 1024 {
+      return Err("cover too large".into());
+    }
+    let mime = if bytes.starts_with(&PNG_MAGIC) {
+      "image/png"
+    } else if bytes.starts_with(&JPEG_MAGIC) {
+      "image/jpeg"
+    } else if bytes.starts_with(b"GIF8") {
+      "image/gif"
+    } else if bytes.starts_with(b"RIFF") && bytes.len() > 11 && &bytes[8..12] == b"WEBP" {
+      "image/webp"
+    } else {
+      return Err("not an image".into());
+    };
+    use base64::Engine as _;
+    Ok(format!(
+      "data:{mime};base64,{}",
+      base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+  })
+  .await
+  .map_err(|e| e.to_string())?
+}
+
 #[tauri::command] // 实现
 pub async fn get_song_cover_thumbnail( // 实现
   path: String,

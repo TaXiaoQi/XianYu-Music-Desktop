@@ -82,6 +82,16 @@ function getSongCoverThumbnail(path: string): Promise<string> {
     return tauriInvoke("get_song_cover_thumbnail", { path });
 }
 
+// 封面文件读为 data URL（移动端 Image.file 的桌面等价物；绕开 webview
+// asset 协议/CSP 层）。仅接受图片魔数，读不到或非图片返回空串。
+async function readCoverDataUrl(path: string): Promise<string> {
+    try {
+        return await tauriInvoke("read_cover_data_url", { path });
+    } catch {
+        return "";
+    }
+}
+
 function extractPalette(
     source: string,
     count: number,
@@ -108,5 +118,6 @@ export const fileApi = {
     clearSongBackground,
     getSongCover,
     getSongCoverThumbnail,
+    readCoverDataUrl,
     extractPalette,
 };

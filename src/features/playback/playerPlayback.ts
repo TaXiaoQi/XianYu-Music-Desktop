@@ -21,7 +21,7 @@ import {getLastCloudResolveError} from './cloudPlaybackResolver';
 import {lookupCloudMeta} from './cloudHeadMeta';
 import {scheduleOnlinePrecache} from './onlinePrecache';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
-import {getDisplayCoverUrl} from '../../utils/coverProxy';
+import {getDisplayCoverUrl, resolveLocalCoverDataUrl} from '../../utils/coverProxy';
 import {createPlaybackRuntime} from './playbackRuntime';
 import {createPlaybackVolumeController} from './playbackVolume';
 import {createPlaybackStatistics} from './playbackStatistics';
@@ -38,6 +38,7 @@ import {
 import {createPlaybackTimers} from './playbackTimers';
 import {createPreviewPlayback} from './previewPlayback';
 import {createPlaybackSeek} from './playbackSeek';
+import type {PeekedNextSource, PeekedNextTrack} from './playerQueue';
 import {
   buildQueueWithInsertedSong as buildQueueWithInsertedSongPure,
   clampResumeTimeToPreviewClip,
@@ -58,6 +59,10 @@ interface CreatePlayerPlaybackDeps {
   addToHistory: (song: Song) => void | Promise<void>;
   loadLyrics: (overrideLyricsRaw?: string) => void | Promise<void>;
   handleAutoNext: () => void;
+  /** 无缝预拼接：队列侧「下一首」解析（不推进队列） */
+  peekNextTrack?: () => PeekedNextTrack | null;
+  /** 无缝拼接切换生效后按来源分支推进队列 */
+  advanceQueueForSplicedSong?: (song: Song, source: PeekedNextSource) => void;
   onBeforePlay?: (song: Song, options: PlaySongOptions) => void;
 }
 
@@ -78,6 +83,8 @@ export const createPlayerPlayback = ({
   addToHistory,
   loadLyrics,
   handleAutoNext,
+  peekNextTrack,
+  advanceQueueForSplicedSong,
   onBeforePlay,
 }: CreatePlayerPlaybackDeps) => {
   const playbackStore = usePlaybackStore();
@@ -123,6 +130,54 @@ export const createPlayerPlayback = ({
     clearManagedTimeout,
     clearManagedShortTimers,
   } = createPlaybackTimers();
+
+  // —— 无缝播放（预拼接下一首）——
+  // 已成功入槽的预拼接曲目及其队列来源；拼接生效（transitioned）或人为干预时清除。
+  let pendingGapless: PeekedNextTrack | null = null;
+
+  /** 无缝拼接只认本地磁盘文件（含 QMC/CUE 载体）；插件/在线/网盘链路退回普通切歌。 */
+  const isGaplessEligiblePath = (path: string) =>
+    !!path
+    && !path.startsWith('http://')
+    && !path.startsWith('https://')
+    && !path.startsWith('plugin://')
+    && !path.startsWith('lx://')
+    && !path.startsWith('cloud://');
+
+  const clearPendingGapless = (cancelBackend = true) => {
+    const hadPending = pendingGapless !== null;
+    pendingGapless = null;
+    if (hadPending && cancelBackend && !dlnaCast.isCasting) {
+      void playbackApi.cancelPrepareNext().catch(() => {});
+    }
+  };
+
+  /** 把「下一首」的解码链提前建好放进后端交接槽；当前曲自然播完时后端无缝接上。 */
+  const maybePrepareNextTrack = () => {
+    pendingGapless = null;
+    const current = currentSong.value;
+    if (!current || !isPlaying.value || dlnaCast.isCasting) return;
+    if (!settingsStore.settings.audio.gaplessEnabled) return;
+    if (!isGaplessEligiblePath(current.cue_source_path || current.path)) return;
+    const peeked = peekNextTrack?.();
+    if (!peeked) return;
+    if (!isGaplessEligiblePath(peeked.song.cue_source_path || peeked.song.path)) return;
+    const balance = settingsStore.settings.audio.volumeBalance;
+    const currentPath = current.path;
+    void playbackApi.prepareNextTrack({
+      path: peeked.song.cue_source_path || peeked.song.path,
+      songId: peeked.song.id ?? null,
+      volumeBalanceEnabled: balance?.enabled ?? false,
+      gainOffsetDb: balance?.gainOffsetDb ?? 0,
+      preventClipping: balance?.preventClipping ?? true,
+    }).then((ok) => {
+      // 异步期间曲子已被人为切走则丢弃（后端也会按 for_path 校验）
+      if (ok && currentSong.value?.path === currentPath) {
+        pendingGapless = peeked;
+      }
+    }).catch(() => {});
+  };
+
 
   let playbackRuntimeController = undefined as unknown as ReturnType<typeof createPlaybackRuntime>;
   let playbackVolumeController = undefined as unknown as ReturnType<typeof createPlaybackVolumeController>;
@@ -247,6 +302,8 @@ export const createPlayerPlayback = ({
 
     const requestId = ++playRequestId;
     clearVolumeRestoreTimer();
+    // 人为换曲：作废预拼接状态并通知后端清槽（新链路会重新装备）
+    clearPendingGapless();
 
     cancelledPlayRequestId = -1;
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
@@ -371,7 +428,40 @@ export const createPlayerPlayback = ({
       : primeCoverPath(coverLookupPath, song.cover_thumb_path);
     const cachedFullCover = getFullCoverUrl(coverLookupPath);
     const immediateCover = cachedCover || persistedCover;
+    // TODO(cover-diag): 临时诊断，定位起播丢封面后移除
+    console.warn('[cover-diag] 起播封面输入 ' + JSON.stringify({
+      thumb: song.cover_thumb_path ?? null,
+      cachedCover: cachedCover ? `${cachedCover.length}::${cachedCover}` : null,
+      persistedCover: persistedCover ? `${persistedCover.length}::${persistedCover}` : null,
+    }));
     let displayCover = '';
+    // 索引封面已回填标记：loadCover 对 cloud:// 走 ensure_cached_path（下载
+    // 音频再提封面），慢路径失败返回空时不得清掉索引回填的封面（2026-10
+    // 百度播放实测：列表封面正常、播放页被空结果分支清成占位图）。
+    let cloudCoverApplied = false;
+    const isLocalFilePath = (p: string | undefined | null): p is string =>
+      !!p && /^[A-Za-z]:[\\/]/.test(p);
+    // data URL 兜底（移动端 Image.file 的桌面等价物）：asset 协议对共享
+    // 数据目录的封面渲染不稳定（2026-10 起播实测：URL 合法、asset 作用域
+    // 已放行、控制台无报错却仍不渲染），播放页封面改由 rust 读字节内联，
+    // 绕开 asset/CSP/file:// 三层约束。
+    const applyCoverDataUrl = (rawPath: string) => {
+      void resolveLocalCoverDataUrl(rawPath).then((dataUrl) => {
+        // TODO(cover-diag): 临时诊断，定位起播丢封面后移除
+        console.warn('[cover-diag] data URL 兜底', {
+          input: rawPath.slice(-40),
+          ok: !!dataUrl,
+          len: dataUrl?.length ?? 0,
+        });
+        if (!dataUrl) return;
+        if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
+        currentCover.value = dataUrl;
+        currentCoverFull.value = dataUrl;
+      });
+    };
+    if (isLocalFilePath(song.cover_thumb_path)) {
+      applyCoverDataUrl(song.cover_thumb_path);
+    }
     if (immediateCover) {
       displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
         if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
@@ -380,11 +470,15 @@ export const createPlayerPlayback = ({
       });
       currentCover.value = displayCover;
       currentCoverPath.value = coverLookupPath;
+      // asset/本地形态的索引封面同步转 data URL，防止后到覆盖丢失渲染
+      applyCoverDataUrl(immediateCover);
     }
     currentCoverFull.value = cachedFullCover || displayCover || immediateCover || '';
     if (!immediateCover && coverLookupPath.startsWith('cloud://')) {
       // 网盘曲目实例未带回填字段时，查持久化元数据索引兜底起播封面
       void lookupCloudMeta(coverLookupPath).then((meta) => {
+        // TODO(cover-diag): 临时诊断
+        console.warn('[cover-diag] 索引兜底', { hit: !!meta?.coverPath, cover: meta?.coverPath?.slice(-60) ?? null });
         if (!meta?.coverPath) return;
         if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
         song.cover_thumb_path = meta.coverPath;
@@ -392,6 +486,10 @@ export const createPlayerPlayback = ({
         currentCover.value = cloudDisplay;
         currentCoverFull.value = cloudDisplay;
         currentCoverPath.value = coverLookupPath;
+        cloudCoverApplied = true;
+        if (isLocalFilePath(meta.coverPath)) {
+          applyCoverDataUrl(meta.coverPath);
+        }
       });
     }
     preloadPriorityCovers(getLikelyThumbnailPaths(song));
@@ -405,15 +503,21 @@ export const createPlayerPlayback = ({
         }
 
         const normalizedCover = cover || '';
+        // TODO(cover-diag): 临时诊断
+        console.warn('[cover-diag] 缩略图加载返回', { cover: normalizedCover ? normalizedCover.slice(0, 70) : '(空)' });
         if (normalizedCover) {
           currentCover.value = getDisplayCoverUrl(normalizedCover);
           currentCoverPath.value = song.path;
-        } else if (!immediateCover) {
+          // asset/本地形态同步转 data URL：本分支常后于起播 data URL 到达，
+          // 不转换会把已渲染的 data URL 覆盖回不渲染的 asset URL
+          applyCoverDataUrl(normalizedCover);
+        } else if (!immediateCover && !cloudCoverApplied) {
           currentCover.value = '';
           currentCoverPath.value = '';
         }
         if (!currentCoverFull.value) {
           currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
+          applyCoverDataUrl(normalizedCover);
         }
       })
       .catch(() => {
@@ -431,6 +535,7 @@ export const createPlayerPlayback = ({
           }
 
           currentCoverFull.value = fullCoverUrl;
+          applyCoverDataUrl(fullCoverUrl);
         })
         .catch(() => {});
     }
@@ -548,6 +653,12 @@ export const createPlayerPlayback = ({
             currentCover.value = displayCover;
             currentCoverPath.value = song.path;
             currentCoverFull.value = displayCover;
+            void resolveLocalCoverDataUrl(resolvedOnlineAudio.coverThumbPath).then((dataUrl) => {
+              if (!dataUrl) return;
+              if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
+              currentCover.value = dataUrl;
+              currentCoverFull.value = dataUrl;
+            });
           }
         }
       }
@@ -609,11 +720,21 @@ export const createPlayerPlayback = ({
             const normalizedCoverPath = coverPath || '';
             if (normalizedCover) {
               currentCover.value = getDisplayCoverUrl(normalizedCover);
+              void resolveLocalCoverDataUrl(normalizedCover).then((dataUrl) => {
+                if (!dataUrl) return;
+                if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
+                currentCover.value = dataUrl;
+              });
             } else if (!immediateCover) {
               currentCover.value = '';
             }
             if (!currentCoverFull.value) {
               currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
+              void resolveLocalCoverDataUrl(normalizedCover).then((dataUrl) => {
+                if (!dataUrl || currentCoverFull.value) return;
+                if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
+                currentCoverFull.value = dataUrl;
+              });
             }
 
             await playbackApi.updatePlaybackMetadata({
@@ -878,6 +999,8 @@ export const createPlayerPlayback = ({
         loadLyrics();
         startPlaybackRuntime();
         recordStartedSongToHistory();
+        // 本地曲起播成功：预拼接「下一首」，曲终时后端无缝接上
+        maybePrepareNextTrack();
 
         if (shouldFadeOnSwitch) {
           if (!playBeforeFlyCover) {
@@ -900,11 +1023,21 @@ export const createPlayerPlayback = ({
             const normalizedCoverPath = coverPath || '';
             if (normalizedCover) {
               currentCover.value = getDisplayCoverUrl(normalizedCover);
+              void resolveLocalCoverDataUrl(normalizedCover).then((dataUrl) => {
+                if (!dataUrl) return;
+                if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
+                currentCover.value = dataUrl;
+              });
             } else if (!immediateCover) {
               currentCover.value = '';
             }
             if (!currentCoverFull.value) {
               currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
+              void resolveLocalCoverDataUrl(normalizedCover).then((dataUrl) => {
+                if (!dataUrl || currentCoverFull.value) return;
+                if (isStaleRequest(requestId, playRequestId, currentSong.value?.path, song.path)) return;
+                currentCoverFull.value = dataUrl;
+              });
             }
 
             await playbackApi.updatePlaybackMetadata({
@@ -983,6 +1116,7 @@ export const createPlayerPlayback = ({
     setPreviewDetectedPath,
     onPreviewDetected: handlePreviewClipDetected,
     onAutoNext: handleAutoNext,
+    isGaplessPending: () => pendingGapless !== null,
     flushStatistics: flushPlaySession,
     startStatisticsSession,
   });
@@ -1004,6 +1138,90 @@ export const createPlayerPlayback = ({
     getPlayRequestId: () => playRequestId,
     isShareLinkPlaybackActive: () => shareLinkPlaybackActive,
   });
+
+  // 无缝拼接切换生效（后端已开始输出下一首）：采纳预拼接曲目，按来源分支推进队列，
+  // 并做与 playSong 成功路径一致的最小状态变更（进度基线/歌词/封面/媒体信息/统计）。
+  listen<{seq: number; durationSecs: number}>('playback:transitioned', (event) => {
+    const pending = pendingGapless;
+    pendingGapless = null;
+    if (!pending) {
+      // 预拼接状态丢失（如交叉中途 seek 作废后槽位残留再拼接）：按普通自动切歌对齐
+      handleAutoNext();
+      return;
+    }
+    const spliced = pending.song;
+    advanceQueueForSplicedSong?.(spliced, pending.source);
+    onlineStreamFailureCtx = null;
+
+    if (event.payload?.durationSecs && event.payload.durationSecs > 0
+      && (!spliced.duration || spliced.duration <= 0)) {
+      spliced.duration = Math.floor(event.payload.durationSecs);
+    }
+
+    scheduleLyricsPlayerPreload(spliced);
+    currentSong.value = spliced;
+    isPlaying.value = true;
+    isSongLoaded.value = true;
+
+    flushPlaySession();
+    startStatisticsSession();
+    scheduleAddToHistory(spliced);
+    reanchorPlaybackClock(0);
+    resetPlaybackProgressTracking();
+    void loadLyrics();
+
+    const coverLookupPath = spliced.cue_source_path || spliced.path;
+    const cachedCover = peekCoverUrl(coverLookupPath) || spliced.cover_thumb_path || '';
+    currentCoverPath.value = coverLookupPath;
+    if (cachedCover) {
+      const display = getDisplayCoverUrl(cachedCover);
+      currentCover.value = display;
+      currentCoverFull.value = display;
+      void resolveLocalCoverDataUrl(cachedCover).then((dataUrl) => {
+        if (!dataUrl || currentSong.value?.path !== spliced.path) return;
+        currentCover.value = dataUrl;
+        currentCoverFull.value = dataUrl;
+      });
+    } else {
+      currentCover.value = '';
+      currentCoverFull.value = '';
+      void loadCover(coverLookupPath).then((cover) => {
+        if (currentSong.value?.path !== spliced.path) return;
+        const display = getDisplayCoverUrl(cover || '');
+        if (display) {
+          currentCover.value = display;
+          currentCoverFull.value = display;
+        }
+        void resolveLocalCoverDataUrl(cover || '').then((dataUrl) => {
+          if (!dataUrl || currentSong.value?.path !== spliced.path) return;
+          currentCover.value = dataUrl;
+          currentCoverFull.value = dataUrl;
+        });
+      }).catch(() => {});
+    }
+    preloadPriorityCovers(getLikelyThumbnailPaths(spliced));
+
+    void playbackApi.updatePlaybackMetadata({
+      title: getSmtcTitle(spliced),
+      artist: spliced.artist || 'Unknown Artist',
+      album: spliced.album || 'Unknown Album',
+      cover: spliced.cover_thumb_path || '',
+      duration: Math.floor(spliced.duration || 0),
+      isPlaying: true,
+    }).catch(() => {});
+
+    // 链式预拼接「下一首的下一首」
+    maybePrepareNextTrack();
+  }).catch(() => {});
+
+  // 后端判定无法拼接（采样率/声道不一致）：撤回抑制，曲终回落普通自动切歌
+  listen<string>('playback:prepare-rejected', (event) => {
+    const rejectedPath = event.payload;
+    if (pendingGapless
+      && (pendingGapless.song.cue_source_path || pendingGapless.song.path) === rejectedPath) {
+      pendingGapless = null;
+    }
+  }).catch(() => {});
 
   // 在线音频流播放中途下载失败：后端通常表现为自然播完，这里显式接管换源。
   listen<{url: string; reason?: string}>('online-stream-failed', async (event) => {
@@ -1039,6 +1257,11 @@ export const createPlayerPlayback = ({
       currentCover.value = display;
       currentCoverFull.value = display;
       currentCoverPath.value = meta.cloudPath;
+      void resolveLocalCoverDataUrl(meta.coverPath).then((dataUrl) => {
+        if (!dataUrl || currentSong.value?.path !== meta.cloudPath) return;
+        currentCover.value = dataUrl;
+        currentCoverFull.value = dataUrl;
+      });
     }
     if (meta.lyricsRaw) {
       void loadLyrics();
@@ -1048,6 +1271,8 @@ export const createPlayerPlayback = ({
   const pauseSong = async () => {
     playbackStatisticsController.pauseSession();
     flushPlaySession();
+    // 暂停会拆掉后端无缝装备：预拼接状态一并作废，恢复后再重准备
+    clearPendingGapless();
 
     if (!isSongLoaded.value) {
       cancelledPlayRequestId = playRequestId;
@@ -1087,6 +1312,8 @@ export const createPlayerPlayback = ({
       // === 暂停分支 ===
       playbackStatisticsController.pauseSession();
       flushPlaySession();
+      // 暂停会拆掉后端无缝装备：预拼接状态一并作废，恢复后再重准备
+      clearPendingGapless();
 
       if (!isSongLoaded.value) {
         cancelledPlayRequestId = playRequestId;
@@ -1141,6 +1368,8 @@ export const createPlayerPlayback = ({
       startStatisticsSession();
       startPlaybackRuntime();
     }
+    // 恢复播放：暂停时后端无缝装备已拆，这里重新预拼接「下一首」
+    maybePrepareNextTrack();
   };
 
   const dispose = () => {
@@ -1153,6 +1382,7 @@ export const createPlayerPlayback = ({
     clearVolumeRestoreTimer();
     clearManagedShortTimers();
     onlineStreamFailureCtx = null;
+    clearPendingGapless(false);
     togglePlayToken += 1;
     playRequestId += 1;
     cancelledPlayRequestId = -1;

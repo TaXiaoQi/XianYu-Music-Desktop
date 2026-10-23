@@ -4,6 +4,7 @@ import type { PlaybackSessionData } from '../../services/tauri/sessionApi';
 import { useLibraryStore } from '../library/store';
 import { usePlaybackStore } from './store';
 import { useCoverCache } from '../../composables/useCoverCache';
+import { resolveLocalCoverDataUrl } from '../../utils/coverProxy';
 
 interface PlayerRestoreKeys {
   playerPlaylistPaths: string;
@@ -134,12 +135,24 @@ export const createPlayerRestore = ({
           const finalCover = cover || primedCover || '';
           playbackStore.currentCover = finalCover;
           playbackStore.currentCoverFull = finalCover;
+          // asset/本地形态转 data URL（webview 对共享数据目录 asset 协议
+          // 渲染不稳定），保证恢复会话后播放页封面可渲染
+          void resolveLocalCoverDataUrl(finalCover).then(dataUrl => {
+            if (!dataUrl || playbackStore.currentSong?.path !== songPath) return;
+            playbackStore.currentCover = dataUrl;
+            playbackStore.currentCoverFull = dataUrl;
+          });
           retainFullCoverPaths([]);
         })
         .catch(() => {
           if (primedCover) {
             playbackStore.currentCover = primedCover;
             playbackStore.currentCoverFull = primedCover;
+            void resolveLocalCoverDataUrl(primedCover).then(dataUrl => {
+              if (!dataUrl || playbackStore.currentSong?.path !== songPath) return;
+              playbackStore.currentCover = dataUrl;
+              playbackStore.currentCoverFull = dataUrl;
+            });
           }
         });
       playbackStore.isSongLoaded = false;

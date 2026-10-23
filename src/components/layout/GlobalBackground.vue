@@ -15,6 +15,7 @@ import { usePlayer } from "../../features/playback";
 import { usePlaybackStore } from "../../features/playback/store";
 import { useThemeSettings } from "../../composables/useThemeSettings";
 import { useCoverCache } from "../../composables/useCoverCache";
+import { resolveLocalCoverDataUrl } from "../../utils/coverProxy";
 import { useWindowMaterial } from "../../composables/windowMaterial";
 import { getPreblurredBackgroundUrl } from "../../composables/preblurredBackgroundCache";
 import { useRenderingPower } from "../../composables/renderingPower";
@@ -396,8 +397,17 @@ watch(
                 backdropPlan.value?.variant !== "blur"
             )
                 return;
-            playbackStore.currentCoverFull =
-                fetched || playbackStore.currentCover;
+            const rawCover = fetched || playbackStore.currentCover;
+            // asset/本地形态转 data URL（webview 对共享数据目录 asset 协议
+            // 渲染不稳定），http/data: 原样透传
+            const resolved = await resolveLocalCoverDataUrl(rawCover);
+            if (
+                ticket !== coverFetchTicket ||
+                currentSongPath.value !== path ||
+                backdropPlan.value?.variant !== "blur"
+            )
+                return;
+            playbackStore.currentCoverFull = resolved || rawCover;
         } catch {
             if (
                 ticket !== coverFetchTicket ||

@@ -227,6 +227,7 @@ export interface TauriCommandMap {
   };
   get_song_cover_thumbnail: { payload: { path: string }; response: string };
   get_song_cover: { payload: { path: string }; response: string };
+  read_cover_data_url: { payload: { path: string }; response: string };
   extract_palette: {
     payload: { source: string; count: number; colorBoost: number; depth: number };
     response: string[];
@@ -322,6 +323,21 @@ export interface TauriCommandMap {
   stop_audio: { payload: undefined; response: void };
   resume_audio: { payload: undefined; response: void };
   seek_audio: { payload: SeekAudioOptions; response: void };
+  set_playback_features: {
+    payload: { crossfadeEnabled: boolean; crossfadeSeconds: number; skipSilenceEnabled: boolean };
+    response: void;
+  };
+  prepare_next_track: {
+    payload: {
+      path: string;
+      songId?: number | null;
+      volumeBalanceEnabled?: boolean;
+      gainOffsetDb?: number;
+      preventClipping?: boolean;
+    };
+    response: boolean;
+  };
+  cancel_prepare_next: { payload: undefined; response: void };
   set_audio_output_mode: { payload: { outputMode: AudioOutputMode }; response: void };
   set_output_device: { payload: { deviceId: string | null }; response: void };
   set_prevent_sleep: { payload: { active: boolean }; response: void };

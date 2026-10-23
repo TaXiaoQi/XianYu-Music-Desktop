@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue';
 import { useCoverCache } from './useCoverCache';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlaybackStore } from '../features/playback/store';
+import { resolveLocalCoverDataUrl } from '../utils/coverProxy';
 import { storeToRefs } from 'pinia';
 
 /**
@@ -98,6 +99,12 @@ export function useDetailCover(options: {
 
     if (cachedFullCoverUrl) {
       currentCoverFull.value = cachedFullCoverUrl;
+      // asset/本地形态转 data URL（webview 对共享数据目录 asset 协议渲染
+      // 不稳定）；先写原值保住 key 更新，data URL 就绪后覆盖
+      void resolveLocalCoverDataUrl(cachedFullCoverUrl).then((dataUrl) => {
+        if (!dataUrl || path !== currentSongPath.value || !isExpanded.value) return;
+        currentCoverFull.value = dataUrl;
+      });
       preloadFullCovers(retainedPaths.filter(candidatePath => candidatePath !== path));
       return;
     }
@@ -112,6 +119,9 @@ export function useDetailCover(options: {
       if (requestId !== fullCoverRequestId || path !== currentSongPath.value || !isExpanded.value) return;
       if (fullCoverUrl) {
         currentCoverFull.value = fullCoverUrl;
+        const dataUrl = await resolveLocalCoverDataUrl(fullCoverUrl);
+        if (requestId !== fullCoverRequestId || path !== currentSongPath.value || !isExpanded.value) return;
+        if (dataUrl) currentCoverFull.value = dataUrl;
       }
       fullCoverLoading.value = false;
     } catch {
