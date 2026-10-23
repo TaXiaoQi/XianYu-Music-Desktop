@@ -281,6 +281,27 @@ export const createPlayerLifecycle = ({
     const settingsStore = useSettingsStore();
     const uiStore = useUiStore();
     const { settings } = storeToRefs(settingsStore);
+    // 均衡器开关双向同步：音效弹窗 soundEffectStore.eqEnabled 为实体开关，
+    // settings.audio.equalizer.enabled 为设置侧镜像（供设置页 UI 读写）。
+    // 启动以音效快照恢复值为准；之后任一侧变化互写，相等时跳过防循环。
+    const soundEffectStoreForEq = useSoundEffectStore();
+    watch(
+        () => soundEffectStoreForEq.eqEnabled,
+        (v) => {
+            if (settings.value.audio.equalizer.enabled !== v) {
+                settings.value.audio.equalizer.enabled = v;
+            }
+        },
+        { immediate: true },
+    );
+    watch(
+        () => settings.value.audio.equalizer.enabled,
+        (v) => {
+            if (typeof v === "boolean" && soundEffectStoreForEq.eqEnabled !== v) {
+                soundEffectStoreForEq.eqEnabled = v;
+            }
+        },
+    );
     const {
         sourceSongPaths,
         watchedFolders,
@@ -347,7 +368,7 @@ export const createPlayerLifecycle = ({
         const gains = eqFreqLabels.map(
             (label) => soundEffectStore.eqBands[label] ?? 0,
         );
-        const enabled = !soundEffectStore.bypassAll;
+        const enabled = !soundEffectStore.bypassAll && soundEffectStore.eqEnabled;
         const preamp = 0;
         const eq = { enabled, preamp, gains };
 
@@ -367,6 +388,19 @@ export const createPlayerLifecycle = ({
             .setEqualizerSettings(eq.enabled, eq.preamp, eq.gains)
             .catch((err) => {
                 console.warn("Failed to update equalizer settings:", err);
+            });
+    };
+
+    const syncPlaybackFeatures = async () => {
+        const audio = settings.value.audio;
+        await playbackApi
+            .setPlaybackFeatures({
+                crossfadeEnabled: audio.crossfadeEnabled,
+                crossfadeSeconds: audio.crossfadeSeconds,
+                skipSilenceEnabled: audio.skipSilenceEnabled,
+            })
+            .catch((err) => {
+                console.warn("Failed to update playback features:", err);
             });
     };
 
@@ -497,6 +531,16 @@ export const createPlayerLifecycle = ({
                 void syncEqualizerSettings();
             },
             { deep: true },
+        );
+        watch(
+            () => [
+                settings.value.audio.crossfadeEnabled,
+                settings.value.audio.crossfadeSeconds,
+                settings.value.audio.skipSilenceEnabled,
+            ],
+            () => {
+                void syncPlaybackFeatures();
+            },
         );
         watch(artistCustomOrder, scheduleStatePersistence);
         watch(albumCustomOrder, scheduleStatePersistence);
@@ -836,6 +880,7 @@ export const createPlayerLifecycle = ({
                 await syncLoudnessSettings();
             }
             await syncEqualizerSettings();
+            await syncPlaybackFeatures();
 
             await restorePathBackedState(rustSession);
             await restoreRecentHistory();
@@ -857,6 +902,12 @@ export const createPlayerLifecycle = ({
                 if (storedLastTime !== null) {
                     currentTime.value = storedLastTime;
                 }
+            }
+
+            // 「自动播放」：恢复完成后自动续播。启动态 isSongLoaded=false，
+            // togglePlay 会按未加载分支走 playSong 从 currentTime 起播。
+            if (settings.value.audio.autoPlayOnLaunch && currentSong.value) {
+                void togglePlay();
             }
 
             disposeSessionSync = usePlaybackSessionSync().init();

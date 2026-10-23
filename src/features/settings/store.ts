@@ -63,6 +63,13 @@ const clampFadeDuration = (candidate: number | undefined, fallback: number): num
   return Math.min(2000, Math.max(100, Math.round(candidate)));
 };
 
+const clampCrossfadeSeconds = (candidate: number | undefined, fallback: number): number => {
+  if (candidate === undefined || !Number.isFinite(candidate)) {
+    return fallback;
+  }
+  return Math.min(12, Math.max(1, Math.round(candidate)));
+};
+
 const resolveMvQuality = (
   candidate: MvQualityKey | undefined,
   fallback: MvQualityKey | undefined,
@@ -212,7 +219,11 @@ export const defaultAudioSettings: AudioSettings = {
   showRealQualitySizes: false,
   onlineFailureBehavior: 'stop', onlineQualityFallbackBehavior: 'lower',
   streamCacheSizeMB: 512, streamCacheDir: '',
-  fadeInOutEnabled: true, fadeInOutDurationMs: 500, mvDefaultQuality: '720P',
+  fadeInOutEnabled: true, fadeInOutDurationMs: 500,
+  gaplessEnabled: true, crossfadeEnabled: false, crossfadeSeconds: 5,
+  skipSilenceEnabled: false,
+  autoPlayOnLaunch: false,
+  mvDefaultQuality: '720P',
 };
 
 const defaultDownloadSettings: DownloadSettings = {
@@ -666,6 +677,11 @@ export const mergeAudioSettings = (base: AudioSettings, patch: AudioSettingsPatc
     streamCacheDir: pickString(patch.streamCacheDir, base.streamCacheDir ?? ''),
     fadeInOutEnabled: chooseBoolean(patch.fadeInOutEnabled, base.fadeInOutEnabled ?? false),
     fadeInOutDurationMs: clampFadeDuration(patch.fadeInOutDurationMs, base.fadeInOutDurationMs ?? 1000),
+    gaplessEnabled: chooseBoolean(patch.gaplessEnabled, base.gaplessEnabled ?? true),
+    crossfadeEnabled: chooseBoolean(patch.crossfadeEnabled, base.crossfadeEnabled ?? false),
+    crossfadeSeconds: clampCrossfadeSeconds(patch.crossfadeSeconds, base.crossfadeSeconds ?? 5),
+    skipSilenceEnabled: chooseBoolean(patch.skipSilenceEnabled, base.skipSilenceEnabled ?? false),
+    autoPlayOnLaunch: chooseBoolean(patch.autoPlayOnLaunch, base.autoPlayOnLaunch ?? false),
     mvDefaultQuality: resolveMvQuality(patch.mvDefaultQuality, base.mvDefaultQuality),
   };
 };

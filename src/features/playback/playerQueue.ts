@@ -12,6 +12,14 @@ interface QueuePlaySongOptions {
     insertAfterCurrent?: boolean;
 }
 
+/** 无缝预拼接时记录的「下一首」及其队列来源分支。 */
+export type PeekedNextSource = "temp" | "future" | "sequential";
+
+export interface PeekedNextTrack {
+    song: Song;
+    source: PeekedNextSource;
+}
+
 interface CreatePlayerQueueDeps {
     playSong: (
         song: Song,
@@ -264,6 +272,72 @@ export const createPlayerQueue = ({
         runPlaySong(navigationList[index]);
     };
 
+    /**
+     * 预览「自动切歌时接的下一首」但不推进队列（供无缝预拼接用）。
+     * 与 nextSong 的分支保持一致；随机模式下无预知池时返回 null（走普通切歌）。
+     */
+    const peekNextTrack = (): PeekedNextTrack | null => {
+        if (tempQueue.value.length > 0 && tempQueue.value[0]) {
+            return { song: tempQueue.value[0], source: "temp" };
+        }
+
+        const navigationList = getNavigationList();
+        if (!navigationList.length) return null;
+
+        // 单曲循环：自动切歌语义是重播当前曲（handleAutoNext 特判），不预拼接下一首
+        if (playMode.value === 1) return null;
+
+        if (playMode.value === 2) {
+            const futurePath = shuffleFuture[shuffleFuture.length - 1];
+            const futureSong = findSongByPath(futurePath, navigationList);
+            return futureSong ? { song: futureSong, source: "future" } : null;
+        }
+
+        let index = navigationList.findIndex(
+            (song) => song.path === currentSong.value?.path,
+        );
+        index = (index + 1) % navigationList.length;
+        const next = navigationList[index];
+        return next ? { song: next, source: "sequential" } : null;
+    };
+
+    /**
+     * 无缝拼接切换生效后，按预拼接时的来源分支做与 nextSong 一致的队列推进。
+     */
+    const advanceQueueForSplicedSong = (spliced: Song, source: PeekedNextSource) => {
+        const previousSong = currentSong.value;
+        switch (source) {
+            case "temp": {
+                const [first] = tempQueue.value;
+                if (first && first.path === spliced.path) {
+                    tempQueue.value = tempQueue.value.slice(1);
+                } else {
+                    tempQueue.value = tempQueue.value.filter(
+                        (item) => item.path !== spliced.path,
+                    );
+                }
+                break;
+            }
+            case "future": {
+                const top = shuffleFuture[shuffleFuture.length - 1];
+                if (top === spliced.path) {
+                    shuffleFuture.pop();
+                } else {
+                    removeFromShuffleRemaining(spliced.path);
+                }
+                if (previousSong && previousSong.path !== spliced.path) {
+                    pushBounded(shuffleHistory, previousSong.path);
+                }
+                shuffleCyclePlayed.add(spliced.path);
+                removeFromShuffleRemaining(spliced.path);
+                break;
+            }
+            case "sequential":
+            default:
+                break;
+        }
+    };
+
     const prevSong = () => {
         const navigationList = getNavigationList();
         if (!navigationList.length) return;
@@ -355,6 +429,8 @@ export const createPlayerQueue = ({
         resetShuffleState,
         handleBeforePlay,
         nextSong,
+        peekNextTrack,
+        advanceQueueForSplicedSong,
         prevSong,
         clearQueue,
         removeSongFromQueue,

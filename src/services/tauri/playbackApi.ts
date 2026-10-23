@@ -128,6 +128,28 @@ export const playbackApi = {
         return tauriInvoke("seek_audio", options);
     },
 
+    // —— 播放特性（无缝拼接 / 曲间淡入淡出 / 跳过静音） ——
+    setPlaybackFeatures(payload: {
+        crossfadeEnabled: boolean;
+        crossfadeSeconds: number;
+        skipSilenceEnabled: boolean;
+    }): Promise<void> {
+        return tauriInvoke("set_playback_features", payload);
+    },
+    /** 预拼接下一首（仅本地文件可成功），返回是否成功入槽。 */
+    prepareNextTrack(payload: {
+        path: string;
+        songId?: number | null;
+        volumeBalanceEnabled?: boolean;
+        gainOffsetDb?: number;
+        preventClipping?: boolean;
+    }): Promise<boolean> {
+        return tauriInvoke("prepare_next_track", payload);
+    },
+    cancelPrepareNext(): Promise<void> {
+        return tauriInvoke("cancel_prepare_next");
+    },
+
     // —— 输出设备 ——
     setAudioOutputMode(
         outputMode: PlayAudioOptions["outputMode"],

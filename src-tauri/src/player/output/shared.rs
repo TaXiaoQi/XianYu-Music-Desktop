@@ -150,6 +150,7 @@ fn open_restore_reader(
 }
 
 /// 中断后的原地恢复：重建 Sink 与源链，按已播进度跳转后续播或暂停。
+/// 返回本链的无缝播放装备（供恢复后的预拼接使用）。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn restore_current_playback( // restore_current_playback
     output: &Option<SharedOutputBackend>, // 实现
@@ -164,31 +165,37 @@ pub(crate) fn restore_current_playback( // restore_current_playback
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     remote_stream: Option<&RemoteStreamSource>,
     streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
-) {
+    features: crate::player::types::PlaybackFeatures,
+) -> Option<crate::player::source_pipeline::GaplessRig> {
     if current_path.is_empty() { // 实现
-        return;
+        return None;
     }
-    let Some(output) = output else { return };
+    let Some(output) = output else { return None };
 
     *current_sink = output.create_sink().ok();
 
-    // 以恢复时刻的进度作为跳转目标。
+    // 以恢复时刻的进度作为跳转目标（含跳过静音的丢弃量：原曲时间轴）。
+    let played = progress.samples_played.load(Ordering::Relaxed);
+    let dropped = progress.skipped_samples.load(Ordering::Relaxed);
     let elapsed = progress_seconds_from_samples(
-        progress.samples_played.load(Ordering::Relaxed),
+        played + dropped,
         progress.sample_rate.load(Ordering::Relaxed),
         progress.channels.load(Ordering::Relaxed),
     );
     let jump_target = Duration::from_secs_f64(elapsed);
+    // 重建后的丢弃计数从零重算，避免与旧链的残值双重计入
+    progress.skipped_samples.store(0, Ordering::Relaxed);
 
     let Ok(reader) = open_restore_reader(current_path, remote_stream, streaming_state) else {
-        return;
+        return None;
     };
     let Ok(decoded) = Decoder::new(reader) else {
-        return;
+        return None;
     };
 
     // 与主播放路径一致：超过双声道先下混为立体声。
     let source_channels = decoded.channels();
+    let rate = decoded.sample_rate();
     progress.channels.store(
         if source_channels > 2 {
             2
@@ -208,7 +215,41 @@ pub(crate) fn restore_current_playback( // restore_current_playback
     };
 
     let skipped = unified.skip_duration(jump_target);
-    let buffered = crate::player::buffered_source::BufferedSource::new(skipped);
+
+    // 无缝拼接管线（与 feed_decoder_chain 相同的层次）
+    let skip_state = Arc::new(crate::player::silence_skip::SkipSilenceState::new(
+        features.skip_silence_enabled,
+        features.skip_threshold_db,
+        features.skip_keep_ms,
+        progress.skipped_samples.clone(),
+    ));
+    let slot = crate::player::queue_producer::new_next_slot();
+    let transition = Arc::new(crate::player::queue_producer::TransitionState::new());
+    let blocks = crate::player::buffered_source::SourceBlocks::new(skipped);
+    let skipping = crate::player::silence_skip::SilenceSkipProducer::new(
+        blocks,
+        progress.channels.load(Ordering::Relaxed) as u16,
+        rate,
+        skip_state.clone(),
+    );
+    let queue = crate::player::queue_producer::QueueProducer::new(
+        Box::new(skipping),
+        rate,
+        progress.channels.load(Ordering::Relaxed) as u16,
+        None, // 恢复场景元数据不重算；交叉窗靠运行期设置，缺失时退回纯拼接
+        slot.clone(),
+        transition.clone(),
+    );
+    let crossfade_ms = queue.crossfade_handle();
+    crossfade_ms.store(features.crossfade_ms, Ordering::Relaxed);
+
+    let buffered = crate::player::buffered_source::BufferedSource::from_producer(
+        Box::new(queue),
+        rate,
+        progress.channels.load(Ordering::Relaxed) as u16,
+        None,
+        Some(progress.buffered.clone()),
+    );
 
     let (normalized_source, normalizer_handle) =
         VolumeNormalizer::new(buffered, volume_balance_gain, 100);
@@ -234,4 +275,11 @@ pub(crate) fn restore_current_playback( // restore_current_playback
             sink.pause();
         }
     }
+
+    Some(crate::player::source_pipeline::GaplessRig {
+        slot,
+        transition,
+        skip_state,
+        crossfade_ms,
+    })
 }

@@ -2,6 +2,7 @@ import type {PluginSearchResult, PluginSource, Song} from '../../types';
 import {canPlayMusic, getStoredPlugins, pluginSearch} from '../../services/domain/pluginEngine';
 import {extractDurationMs} from '../../services/domain/pluginResultMappers';
 import {getFailedOnlineSource, findAlternativeOnlineSource, findSiblingPluginCandidate} from './onlineFailoverFacade';
+import {invalidateCloudDirectLink} from './cloudPlaybackResolver';
 import type {PlaySong, PlaySongOptions} from './playerPlaybackTypes';
 
 const ONLINE_FAILURE_LOOP_GUARD_MS = 30_000;
@@ -284,6 +285,12 @@ export function createOnlinePlaybackFailureController(
     }
 
     try { await deps.playbackApi.stopAudio(); } catch {}
+    // 云端歌曲：作废直链缓存，下次播放强制重新解析新签名直链（直链缓存
+    // 注释既定设计）。百度 d.pcs 实测（2026-10）：31326/hitcode:104 风控
+    // 同直链复用持续 403，换新直链才有恢复机会。
+    if (song.path.startsWith('cloud://')) {
+      try { await invalidateCloudDirectLink(song.path, song); } catch { /* 作废失败不影响失败处理 */ }
+    }
     if (shouldFade) {
       void deps.playbackApi.setVolume(deps.playbackStore.volume / 100).catch(() => {});
     }

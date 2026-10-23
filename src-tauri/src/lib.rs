@@ -152,6 +152,7 @@ use music::{ // 实现
     get_song_background,
     get_song_cover,
     get_song_cover_thumbnail,
+    read_cover_data_url,
     get_song_detail,
     get_song_lyrics_for_edit,
     get_song_lyrics_payload,
@@ -203,6 +204,9 @@ use player::{ // 实现
     mv_proxy_url,
     pause_audio,
     play_audio,
+    prepare_next_track,
+    cancel_prepare_next,
+    set_playback_features,
     plugin_host_close_editor,
     plugin_host_editor_states,
     plugin_host_get_parameter_values,
@@ -483,6 +487,7 @@ pub fn run() { // run
             scan_folder_as_playlists, // 实现
             get_song_cover_thumbnail, // 实现
             get_song_cover, // 实现
+            read_cover_data_url, // 实现
             extract_palette,
             authed_request,
             save_auth_credentials,
@@ -543,6 +548,9 @@ pub fn run() { // run
             get_playback_start_failed,
             get_playback_start_failed_reason,
             get_playback_start_failed_info,
+            set_playback_features,
+            cancel_prepare_next,
+            prepare_next_track,
             get_audio_visualizer_samples, // 实现
             get_track_loudness_info, // 实现
             update_loudness_settings, // 实现

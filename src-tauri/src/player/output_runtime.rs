@@ -98,7 +98,8 @@ pub(super) fn rebuild_output_stack(
     temp_file_feed: Option<&crate::player::stream_cache::StreamingTempFileState>,
     dsd_passthrough: bool,
     bit_perfect: bool,
-) {
+    features: crate::player::types::PlaybackFeatures,
+) -> Option<crate::player::source_pipeline::GaplessRig> {
     // 先把旧后端放掉再开新的，避免设备句柄残留占用
     *shared_out = None;
     *shared_out = SharedOutputBackend::open(audio_host, chosen_device.as_deref()).ok();
@@ -128,7 +129,7 @@ pub(super) fn rebuild_output_stack(
                 *downgrade_note = None;
                 *exclusive_session = Some(session);
                 *shared_out = None;
-                return;
+                return None; // 独占路径暂不接无缝管线
             }
             Err(error) => {
                 *live_mode = AudioOutputMode::Shared;
@@ -163,7 +164,8 @@ pub(super) fn rebuild_output_stack(
         loudness_slot,
         remote_feed,
         temp_file_feed,
-    );
+        features,
+    )
 }
 
 // 只重建共享输出链（无独占分支），供超时自救等场景复用
@@ -184,7 +186,8 @@ pub(super) fn reopen_shared_pipeline(
     loudness_slot: &mut Option<VolumeNormalizerHandle>,
     remote_feed: Option<&RemoteStreamSource>,
     temp_file_feed: Option<&crate::player::stream_cache::StreamingTempFileState>,
-) {
+    features: crate::player::types::PlaybackFeatures,
+) -> Option<crate::player::source_pipeline::GaplessRig> {
     *shared_out = SharedOutputBackend::open(audio_host, chosen_device.as_deref()).ok();
     *live_device_label = shared_out
         .as_ref()
@@ -202,7 +205,8 @@ pub(super) fn reopen_shared_pipeline(
         loudness_slot,
         remote_feed,
         temp_file_feed,
-    );
+        features,
+    )
 }
 
 // 独占会话结束后做收尾：正常结束直接清场，异常断开则回落共享并广播
@@ -231,12 +235,13 @@ pub(super) fn drain_finished_exclusive(
     app: &AppHandle,
     status_slot: &Arc<Mutex<AudioOutputStatus>>,
     prior_system_default: &mut Option<String>,
-) -> bool {
+    features: crate::player::types::PlaybackFeatures,
+) -> (bool, Option<crate::player::source_pipeline::GaplessRig>) {
     let Some(outcome) = exclusive_session
         .as_ref()
         .and_then(|session| session.try_finished())
     else {
-        return false;
+        return (false, None);
     };
 
     teardown_exclusive_session(exclusive_session);
@@ -247,7 +252,7 @@ pub(super) fn drain_finished_exclusive(
             "WASAPI 独占模式已断开，已自动切回共享模式：{error}"
         ));
 
-        reopen_shared_pipeline(
+        let rig = reopen_shared_pipeline(
             chosen_device,
             shared_out,
             audio_host,
@@ -263,6 +268,7 @@ pub(super) fn drain_finished_exclusive(
             loudness_slot,
             remote_feed,
             temp_file_feed,
+            features,
         );
         if chosen_device.is_none() {
             *prior_system_default = default_output_device_name(audio_host);
@@ -277,9 +283,10 @@ pub(super) fn drain_finished_exclusive(
             *live_mode,
             downgrade_note,
         );
+        return (true, rig);
     }
 
-    true
+    (true, None)
 }
 
 // 把系统媒体键（SMTC/MPRIS）接到前端约定的事件名上

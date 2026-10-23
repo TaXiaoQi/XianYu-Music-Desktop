@@ -1,4 +1,14 @@
 use super::remote_reader::RemoteRangeReader;
+
+/// 无缝播放会话装备：链构建时创建，命令线程持有以驱动预拼接与运行期参数。
+/// 换链（手动切歌/暂停/设备切换）即作废，由前端在新链就位后重新预拼接。
+pub(crate) struct GaplessRig {
+    pub slot: crate::player::queue_producer::NextSlot,
+    pub transition: Arc<crate::player::queue_producer::TransitionState>,
+    pub skip_state: Arc<crate::player::silence_skip::SkipSilenceState>,
+    pub crossfade_ms: Arc<AtomicU64>,
+}
+
 fn feed_decoder_chain<R>(
     reader: R,
     backend: &Option<SharedOutputBackend>,
@@ -11,11 +21,13 @@ fn feed_decoder_chain<R>(
     effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
     master_volume: Arc<AtomicU32>,
     origin_note: Option<String>,
-) where
+    features: crate::player::types::PlaybackFeatures,
+) -> Option<GaplessRig>
+where
     R: Read + Seek + Send + Sync + 'static,
 {
     let Some(backend) = backend else {
-        return;
+        return None;
     };
     *sink_slot = backend.create_sink().ok();
 
@@ -30,88 +42,129 @@ fn feed_decoder_chain<R>(
         }
         live_progress.start_failed.store(true, Ordering::Relaxed);
     }
-    if let Ok(source) = decoded {
-        let rate = source.sample_rate();
-        let channels = source.channels();
-        // 超过双声道的流（伪 6ch 全景声之类）rodio 不会自动下混，直接播会炸音，这里在样本层折成立体声
-        let downmixed_lanes: u32 = if channels > 2 { 2 } else { channels as u32 };
-        live_progress.sample_rate.store(rate, Ordering::Relaxed);
-        live_progress
-            .channels
-            .store(downmixed_lanes, Ordering::Relaxed);
+    let Ok(source) = decoded else {
+        return None;
+    };
+    let rate = source.sample_rate();
+    let channels = source.channels();
+    // 超过双声道的流（伪 6ch 全景声之类）rodio 不会自动下混，直接播会炸音，这里在样本层折成立体声
+    let downmixed_lanes: u32 = if channels > 2 { 2 } else { channels as u32 };
+    live_progress.sample_rate.store(rate, Ordering::Relaxed);
+    live_progress
+        .channels
+        .store(downmixed_lanes, Ordering::Relaxed);
 
-        // rodio 对某些容器会给出 u32::MAX 纳秒哨兵当作"未知时长"，这里识别为 0
-        let duration_secs = source
-            .total_duration()
-            .map(|d| {
-                if d.as_nanos() == u32::MAX as u128 {
-                    0.0
-                } else {
-                    d.as_secs_f64()
-                }
-            })
-            .unwrap_or(0.0);
-        live_progress
-            .total_duration_secs
-            .store(duration_secs.to_bits(), Ordering::Relaxed);
+    // rodio 对某些容器会给出 u32::MAX 纳秒哨兵当作"未知时长"，这里识别为 0
+    let duration_secs = source
+        .total_duration()
+        .map(|d| {
+            if d.as_nanos() == u32::MAX as u128 {
+                0.0
+            } else {
+                d.as_secs_f64()
+            }
+        })
+        .unwrap_or(0.0);
+    live_progress
+        .total_duration_secs
+        .store(duration_secs.to_bits(), Ordering::Relaxed);
 
-        let offset = resume_from.unwrap_or(Duration::ZERO);
-        let pre_skip = (offset.as_secs_f64() * rate as f64 * downmixed_lanes as f64).round() as u64;
-        live_progress
-            .samples_played
-            .store(pre_skip, Ordering::Relaxed);
-        if resume_from.is_none() {
-            live_progress.visualizer.reset();
-        }
-
-        let f32_source = source.convert_samples::<f32>();
-        let unified: Box<dyn Source<Item = f32> + Send> = if channels > 2 {
-            crate::player::dolby_bridge::log_bridge(&format!(
-                "多声道流下混: {channels}ch → 2ch @ {rate}Hz"
-            ));
-            Box::new(crate::player::channel_downmix::DownmixSource::new(
-                f32_source, channels,
-            ))
-        } else {
-            Box::new(f32_source)
-        };
-
-        let offset_applied = unified.skip_duration(offset);
-
-        let watched = crate::player::buffered_source::BufferedSource::new_tracked(
-            offset_applied,
-            Some(live_progress.buffered.clone()),
-        );
-
-        let (leveled, handle) = VolumeNormalizer::new(watched, balance_gain, 100);
-        *loudness_slot = Some(handle);
-
-        let shaped = crate::player::equalizer::Equalizer::new(leveled, equalizer_rig);
-
-        let flavored = crate::player::sound_effect::SoundEffectSource::new(shaped, effect_rig);
-
-        let extended = crate::player::plugin_host::wrap(flavored);
-
-        let gain_gated = crate::player::equalizer::UserVolumeSource::new(extended, master_volume);
-
-        let safeguarded = crate::player::equalizer::ClipGuardSource::new(gain_gated);
-
-        let metered = TimedSource::new(
-            safeguarded,
-            live_progress.samples_played.clone(),
-            live_progress.visualizer.clone(),
-        );
-
-        if let Some(sink) = sink_slot {
-            sink.append(metered);
-            sink.set_volume(1.0);
-            sink.play();
-        }
+    let offset = resume_from.unwrap_or(Duration::ZERO);
+    let pre_skip = (offset.as_secs_f64() * rate as f64 * downmixed_lanes as f64).round() as u64;
+    live_progress
+        .samples_played
+        .store(pre_skip, Ordering::Relaxed);
+    live_progress.skipped_samples.store(0, Ordering::Relaxed);
+    if resume_from.is_none() {
+        live_progress.visualizer.reset();
     }
+
+    let f32_source = source.convert_samples::<f32>();
+    let unified: Box<dyn Source<Item = f32> + Send> = if channels > 2 {
+        crate::player::dolby_bridge::log_bridge(&format!(
+            "多声道流下混: {channels}ch → 2ch @ {rate}Hz"
+        ));
+        Box::new(crate::player::channel_downmix::DownmixSource::new(
+            f32_source, channels,
+        ))
+    } else {
+        Box::new(f32_source)
+    };
+
+    let offset_applied = unified.skip_duration(offset);
+
+    // 无缝拼接管线：解码 → 攒块 → 跳过静音 → 队列拼接 → 预读缓冲，
+    // 拼接发生时整条下游 DSP 链与输出流保持存活，只有采样来源切换。
+    let skip_state = Arc::new(crate::player::silence_skip::SkipSilenceState::new(
+        features.skip_silence_enabled,
+        features.skip_threshold_db,
+        features.skip_keep_ms,
+        live_progress.skipped_samples.clone(),
+    ));
+    let slot = crate::player::queue_producer::new_next_slot();
+    let transition = Arc::new(crate::player::queue_producer::TransitionState::new());
+    let blocks =
+        crate::player::buffered_source::SourceBlocks::new(offset_applied);
+    let skipping = crate::player::silence_skip::SilenceSkipProducer::new(
+        blocks,
+        downmixed_lanes as u16,
+        rate,
+        skip_state.clone(),
+    );
+    let queue = crate::player::queue_producer::QueueProducer::new(
+        Box::new(skipping),
+        rate,
+        downmixed_lanes as u16,
+        (duration_secs > 0.0).then(|| Duration::from_secs_f64(duration_secs)),
+        slot.clone(),
+        transition.clone(),
+    );
+    let crossfade_ms = queue.crossfade_handle();
+    crossfade_ms.store(features.crossfade_ms, Ordering::Relaxed);
+
+    let watched = crate::player::buffered_source::BufferedSource::from_producer(
+        Box::new(queue),
+        rate,
+        downmixed_lanes as u16,
+        (duration_secs > 0.0).then(|| Duration::from_secs_f64(duration_secs)),
+        Some(live_progress.buffered.clone()),
+    );
+
+    let (leveled, handle) = VolumeNormalizer::new(watched, balance_gain, 100);
+    *loudness_slot = Some(handle);
+
+    let shaped = crate::player::equalizer::Equalizer::new(leveled, equalizer_rig);
+
+    let flavored = crate::player::sound_effect::SoundEffectSource::new(shaped, effect_rig);
+
+    let extended = crate::player::plugin_host::wrap(flavored);
+
+    let gain_gated = crate::player::equalizer::UserVolumeSource::new(extended, master_volume);
+
+    let safeguarded = crate::player::equalizer::ClipGuardSource::new(gain_gated);
+
+    let metered = TimedSource::new(
+        safeguarded,
+        live_progress.samples_played.clone(),
+        live_progress.visualizer.clone(),
+    );
+
+    if let Some(sink) = sink_slot {
+        sink.append(metered);
+        sink.set_volume(1.0);
+        sink.play();
+    }
+
+    Some(GaplessRig {
+        slot,
+        transition,
+        skip_state,
+        crossfade_ms,
+    })
 }
 
 // 本地轨道的两种打开形态：普通明文 / QMC 加密需边读边解
-enum DiskTrackHandle {
+pub(crate) enum DiskTrackHandle {
     Raw(File),
     Scrambled(crate::player::qmc2::QmcDecryptReader<File>),
 }
@@ -134,7 +187,7 @@ impl Seek for DiskTrackHandle {
     }
 }
 
-fn open_disk_track(track_path: &Path) -> Option<DiskTrackHandle> {
+pub(crate) fn open_disk_track(track_path: &Path) -> Option<DiskTrackHandle> {
     let opened = File::open(track_path).ok()?;
     match crate::player::qmc2::detect_qmc_crypto(track_path) {
         Some(crypto) => Some(DiskTrackHandle::Scrambled(
@@ -220,7 +273,8 @@ pub(crate) fn bridge_streaming_state(
     )
 }
 
-// 起播：记录路径、清簿记，再按来源（本地/WebDAV/流式缓存）接上解码链
+// 起播：记录路径、清簿记，再按来源（本地/WebDAV/流式缓存）接上解码链。
+// 返回本链的无缝播放装备（槽位/过渡/静音跳过状态），换链即作废旧装备。
 #[allow(clippy::too_many_arguments)]
 pub(super) fn handle_play(
     music_source: AudioSource,
@@ -235,7 +289,8 @@ pub(super) fn handle_play(
     equalizer_rig: Arc<crate::player::equalizer::EqualizerHandle>,
     effect_rig: Arc<crate::player::sound_effect::SoundEffectHandle>,
     master_volume: Arc<AtomicU32>,
-) {
+    features: crate::player::types::PlaybackFeatures,
+) -> Option<GaplessRig> {
     *active_file_path = music_source.display_path();
     *audible = true;
     wipe_progress_bookkeeping(live_progress);
@@ -245,7 +300,7 @@ pub(super) fn handle_play(
             *reason = Some("未检测到可用的音频输出设备，请检查扬声器/耳机是否已连接".to_string());
         }
         live_progress.start_failed.store(true, Ordering::Relaxed);
-        return;
+        return None;
     }
 
     if let Some(sink) = sink_slot {
@@ -264,10 +319,11 @@ pub(super) fn handle_play(
         music_source.display_path()
     ));
 
+    let mut rig: Option<GaplessRig> = None;
     match music_source {
         AudioSource::LocalFile(track) => {
             if let Some((wav_reader, codec)) = bridge_local_file(Path::new(&track)) {
-                feed_decoder_chain(
+                rig = feed_decoder_chain(
                     wav_reader,
                     backend,
                     sink_slot,
@@ -279,9 +335,10 @@ pub(super) fn handle_play(
                     effect_rig,
                     master_volume,
                     Some(format!("dolby {} → wav", codec.as_str())),
+                    features,
                 );
             } else if let Some(track_handle) = open_disk_track(Path::new(&track)) {
-                feed_decoder_chain(
+                rig = feed_decoder_chain(
                     track_handle,
                     backend,
                     sink_slot,
@@ -293,6 +350,7 @@ pub(super) fn handle_play(
                     effect_rig,
                     master_volume,
                     None,
+                    features,
                 );
             } else if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
                 *reason = Some("本地音频文件打开失败".to_string());
@@ -300,19 +358,22 @@ pub(super) fn handle_play(
             }
         }
         AudioSource::RemoteWebDav(web_stream) => match RemoteRangeReader::new(web_stream) {
-            Ok(track_handle) => feed_decoder_chain(
-                track_handle,
-                backend,
-                sink_slot,
-                live_progress,
-                resume_from,
-                balance_gain,
-                loudness_slot,
-                equalizer_rig,
-                effect_rig,
-                master_volume,
-                None,
-            ),
+            Ok(track_handle) => {
+                rig = feed_decoder_chain(
+                    track_handle,
+                    backend,
+                    sink_slot,
+                    live_progress,
+                    resume_from,
+                    balance_gain,
+                    loudness_slot,
+                    equalizer_rig,
+                    effect_rig,
+                    master_volume,
+                    None,
+                    features,
+                )
+            }
             Err(err) => {
                 if let Ok(mut reason) = live_progress.start_failed_reason.lock() {
                     *reason = Some(format!("远程流读取器构建失败: {err}"));
@@ -341,7 +402,7 @@ pub(super) fn handle_play(
                     if let Some((wav_reader, codec)) =
                         bridge_streaming_state(&cache_state, &mut *track_handle)
                     {
-                        feed_decoder_chain(
+                        rig = feed_decoder_chain(
                             wav_reader,
                             backend,
                             sink_slot,
@@ -356,9 +417,10 @@ pub(super) fn handle_play(
                                 "dolby {} → wav，已下载 {size} bytes",
                                 codec.as_str()
                             )),
+                            features,
                         );
                     } else {
-                        feed_decoder_chain(
+                        rig = feed_decoder_chain(
                             track_handle,
                             backend,
                             sink_slot,
@@ -370,6 +432,7 @@ pub(super) fn handle_play(
                             effect_rig,
                             master_volume,
                             Some(format!("已下载 {size} bytes，{status}")),
+                            features,
                         );
                     }
                 }
@@ -382,9 +445,11 @@ pub(super) fn handle_play(
             }
         }
     }
+    rig
 }
 
-// seek 失败后的重建路径：按当前来源重新打开并从目标位置续播
+// seek 失败后的重建路径：按当前来源重新打开并从目标位置续播。
+// 返回 Some 表示整条链被重建（新无缝装备）；原地 seek 成功返回 None（装备不变）。
 #[allow(clippy::too_many_arguments)]
 pub(super) fn reposition_playhead(
     requested_time: f64,
@@ -403,12 +468,14 @@ pub(super) fn reposition_playhead(
     master_volume: Arc<AtomicU32>,
     remote_feed: Option<&RemoteStreamSource>,
     temp_file_feed: Option<&crate::player::stream_cache::StreamingTempFileState>,
-) {
+    features: crate::player::types::PlaybackFeatures,
+) -> Option<GaplessRig> {
     let landing = requested_time.max(0.0);
     let jump_target = Duration::from_secs_f64(landing);
     *audible = should_resume;
     live_progress.visualizer.reset();
 
+    let mut rebuilt: Option<GaplessRig> = None;
     if let Some(sink) = sink_slot {
         match sink.try_seek(jump_target) {
             Ok(()) => {
@@ -416,6 +483,8 @@ pub(super) fn reposition_playhead(
                 live_progress
                     .samples_played
                     .store(at_target, Ordering::Relaxed);
+                // 位置换算回原曲时间轴：丢弃计数从零重算
+                live_progress.skipped_samples.store(0, Ordering::Relaxed);
 
                 if should_resume {
                     sink.play();
@@ -434,7 +503,7 @@ pub(super) fn reposition_playhead(
                             if let Some((wav_reader, codec)) =
                                 bridge_streaming_state(cache_state, &mut *track_handle)
                             {
-                                feed_decoder_chain(
+                                rebuilt = feed_decoder_chain(
                                     wav_reader,
                                     backend,
                                     sink_slot,
@@ -446,9 +515,10 @@ pub(super) fn reposition_playhead(
                                     effect_rig,
                                     master_volume,
                                     Some(format!("dolby {} → wav（seek 重建）", codec.as_str())),
+                                    features,
                                 );
                             } else {
-                                feed_decoder_chain(
+                                rebuilt = feed_decoder_chain(
                                     track_handle,
                                     backend,
                                     sink_slot,
@@ -460,6 +530,7 @@ pub(super) fn reposition_playhead(
                                     effect_rig,
                                     master_volume,
                                     None,
+                                    features,
                                 );
                             }
                         }
@@ -467,26 +538,29 @@ pub(super) fn reposition_playhead(
                     }
                 } else if let Some(web_stream) = remote_feed.cloned() {
                     match RemoteRangeReader::new(web_stream) {
-                        Ok(track_handle) => feed_decoder_chain(
-                            track_handle,
-                            backend,
-                            sink_slot,
-                            live_progress,
-                            resume_from,
-                            balance_gain,
-                            loudness_slot,
-                            equalizer_rig,
-                            effect_rig,
-                            master_volume,
-                            None,
-                        ),
+                        Ok(track_handle) => {
+                            rebuilt = feed_decoder_chain(
+                                track_handle,
+                                backend,
+                                sink_slot,
+                                live_progress,
+                                resume_from,
+                                balance_gain,
+                                loudness_slot,
+                                equalizer_rig,
+                                effect_rig,
+                                master_volume,
+                                None,
+                                features,
+                            )
+                        }
                         Err(_) => {}
                     }
                 } else if !active_file_path.is_empty() {
                     if let Some((wav_reader, codec)) =
                         bridge_local_file(Path::new(active_file_path))
                     {
-                        feed_decoder_chain(
+                        rebuilt = feed_decoder_chain(
                             wav_reader,
                             backend,
                             sink_slot,
@@ -498,10 +572,11 @@ pub(super) fn reposition_playhead(
                             effect_rig,
                             master_volume,
                             Some(format!("dolby {} → wav（seek 重建）", codec.as_str())),
+                            features,
                         );
                     } else if let Some(track_handle) = open_disk_track(Path::new(active_file_path))
                     {
-                        feed_decoder_chain(
+                        rebuilt = feed_decoder_chain(
                             track_handle,
                             backend,
                             sink_slot,
@@ -513,6 +588,7 @@ pub(super) fn reposition_playhead(
                             effect_rig,
                             master_volume,
                             None,
+                            features,
                         );
                     }
                 }
@@ -530,6 +606,7 @@ pub(super) fn reposition_playhead(
         live_progress
             .samples_played
             .store(at_target, Ordering::Relaxed);
+        live_progress.skipped_samples.store(0, Ordering::Relaxed);
     }
 
     let _ = app.emit(
@@ -539,6 +616,7 @@ pub(super) fn reposition_playhead(
             time: landing,
         },
     );
+    rebuilt
 }
 
 // 每个轮询节拍巡检一次网络缓冲健康度：断流压停、来数放行、广播缓冲状态
@@ -552,7 +630,7 @@ use rodio::{Decoder, Sink, Source};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};

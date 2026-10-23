@@ -26,7 +26,10 @@ use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Mutex, Arc};
 use core::time::Duration;
 use tauri::{AppHandle, Emitter};
-use super::common::{confine_device_fault, elapsed_playback_time, wipe_progress_bookkeeping};
+use super::common::{
+    confine_device_fault, confine_device_fault_with, elapsed_playback_time,
+    wipe_progress_bookkeeping,
+};
 use super::watchdog::survey_stream_health;
 
 // 播放线程空转时等待命令的节拍
@@ -48,6 +51,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
         channels: Arc::new(AtomicU32::from(2)),
         sample_rate: Arc::new(AtomicU32::from(44_100)),
         samples_played: Arc::new(AtomicU64::default()),
+        skipped_samples: Arc::new(AtomicU64::default()),
     });
     let live_progress = runtime_progress.clone();
     let worker_app = app.clone();
@@ -96,6 +100,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
         let mut watchdog_starve_marker: Option<std::time::Instant> = None;
         let mut watchdog_grace_marker: Option<std::time::Instant> = None;
         let mut stream_over_network = false;
+        // 无缝播放/交叉淡入淡出/跳过静音：运行期特性参数 + 活动链的无缝装备
+        let mut features = crate::player::types::PlaybackFeatures::default();
+        let mut gapless_rig: Option<crate::player::source_pipeline::GaplessRig> = None;
+        let mut transition_watch_seq: u64 = 0;
+        // 预拼接下一首的音量平衡增益，拼接完成时应用到响度归一化句柄
+        let mut pending_splice_gain: Option<f32> = None;
 
         if let Some(backend) = &shared_out {
             sink_slot = backend.create_sink().ok();
@@ -126,33 +136,70 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
             );
 
             #[cfg(target_os = "windows")]
-            {
-                confine_device_fault(|| {
-                    drain_finished_exclusive(
-                        &mut exclusive_session,
-                        &chosen_device,
-                        &mut shared_out,
-                        &audio_host,
-                        &mut sink_slot,
-                        &mut live_device_label,
-                        &mut wanted_mode,
-                        &mut live_mode,
-                        &mut downgrade_note,
-                        &active_file_path,
-                        audible,
-                        &live_progress,
-                        worker_eq.clone(),
-                        worker_se.clone(),
-                        worker_master_volume.clone(),
-                        balance_gain_live,
-                        &mut loudness_slot,
-                        remote_feed.as_ref(),
-                        temp_file_feed.as_ref(),
-                        &worker_app,
-                        &worker_status,
-                        &mut prior_system_default,
+            let drained = confine_device_fault_with(|| {
+                drain_finished_exclusive(
+                    &mut exclusive_session,
+                    &chosen_device,
+                    &mut shared_out,
+                    &audio_host,
+                    &mut sink_slot,
+                    &mut live_device_label,
+                    &mut wanted_mode,
+                    &mut live_mode,
+                    &mut downgrade_note,
+                    &active_file_path,
+                    audible,
+                    &live_progress,
+                    worker_eq.clone(),
+                    worker_se.clone(),
+                    worker_master_volume.clone(),
+                    balance_gain_live,
+                    &mut loudness_slot,
+                    remote_feed.as_ref(),
+                    temp_file_feed.as_ref(),
+                    &worker_app,
+                    &worker_status,
+                    &mut prior_system_default,
+                    features,
+                )
+            })
+            .unwrap_or((false, None));
+            #[cfg(target_os = "windows")]
+            // 独占会话异常断开回落共享：新链就位，换上它的无缝装备
+            if drained.1.is_some() {
+                gapless_rig = drained.1;
+                transition_watch_seq = 0;
+                pending_splice_gain = None;
+            }
+
+            // 无缝拼接/交叉淡入淡出过渡检测：seq 变化说明采样来源已切到下一首。
+            // 此时进度基线归零、时长换新、响度增益切新曲，并广播事件让前端推进队列。
+            if let Some(rig) = &gapless_rig {
+                let seq = rig.transition.seq.load(Ordering::Relaxed);
+                if seq != transition_watch_seq {
+                    transition_watch_seq = seq;
+                    live_progress.samples_played.store(0, Ordering::Relaxed);
+                    live_progress.skipped_samples.store(0, Ordering::Relaxed);
+                    let new_ms = rig.transition.duration_ms.load(Ordering::Relaxed);
+                    if new_ms > 0 {
+                        live_progress
+                            .total_duration_secs
+                            .store((new_ms as f64 / 1000.0).to_bits(), Ordering::Relaxed);
+                    }
+                    if let (Some(leveler), Some(gain)) =
+                        (loudness_slot.as_ref(), pending_splice_gain.take())
+                    {
+                        // 交叉窗内新旧两曲共用外层归一化链，取新曲增益（与移动端一致）
+                        leveler.set_target_gain(gain);
+                    }
+                    let duration_secs = f64::from_bits(
+                        live_progress.total_duration_secs.load(Ordering::Relaxed),
                     );
-                });
+                    let _ = worker_app.emit(
+                        "playback:transitioned",
+                        crate::player::types::PlaybackTransitionedPayload { seq, duration_secs },
+                    );
+                }
             }
 
             match command_rx.recv_timeout(COMMAND_WAIT_TICK) {
@@ -187,6 +234,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 watchdog_buffer_flag = false;
                                 watchdog_starve_marker = None;
                                 watchdog_grace_marker = None;
+                                // 换曲即作废旧无缝装备（新链就位后由前端重新预拼接）
+                                gapless_rig = None;
+                                pending_splice_gain = None;
 
                                 if let Some(sink) = &sink_slot {
                                     sink.stop();
@@ -293,7 +343,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     &downgrade_note,
                                 );
 
-                                handle_play(
+                                gapless_rig = handle_play(
                                     music_source,
                                     &shared_out,
                                     &mut sink_slot,
@@ -306,7 +356,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     worker_eq.clone(),
                                     worker_se.clone(),
                                     worker_master_volume.clone(),
+                                    features,
                                 );
+                                transition_watch_seq = 0;
                                 if tempo_scale != 1.0 {
                                     if let Some(sink) = &sink_slot {
                                         sink.set_speed(tempo_scale);
@@ -315,6 +367,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                             }
                             AudioCommand::Pause => {
                                 audible = false;
+                                gapless_rig = None;
+                                pending_splice_gain = None;
                                 if watchdog_buffer_flag {
                                     watchdog_buffer_flag = false;
                                     let _ = worker_app.emit(
@@ -335,6 +389,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 audible = false;
                                 active_file_path.clear();
                                 wipe_progress_bookkeeping(&live_progress);
+                                gapless_rig = None;
+                                pending_splice_gain = None;
                                 watchdog_held_sink = false;
                                 watchdog_buffer_flag = false;
                                 watchdog_starve_marker = None;
@@ -421,7 +477,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     .as_ref()
                                     .map(|backend| backend.active_device_name().to_string());
                                 live_mode = AudioOutputMode::Shared;
-                                restore_current_playback(
+                                gapless_rig = restore_current_playback(
                                     &shared_out,
                                     &mut sink_slot,
                                     &active_file_path,
@@ -434,7 +490,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     &mut loudness_slot,
                                     remote_feed.as_ref(),
                                     temp_file_feed.as_ref(),
+                                    features,
                                 );
+                                transition_watch_seq = 0;
                                 if tempo_scale != 1.0 {
                                     if let Some(sink) = &sink_slot {
                                         sink.set_speed(tempo_scale);
@@ -475,7 +533,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 watchdog_starve_marker = None;
                                 watchdog_grace_marker = None;
 
-                                reposition_playhead(
+                                let rebuilt_rig = reposition_playhead(
                                     requested_time,
                                     should_resume,
                                     pending_id,
@@ -492,7 +550,15 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     worker_master_volume.clone(),
                                     remote_feed.as_ref(),
                                     temp_file_feed.as_ref(),
-                                )
+                                    features,
+                                );
+                                // 原地 seek 返回 None（装备沿用，跳过静音计数已在链内复位）；
+                                // 重建链返回新装备
+                                if rebuilt_rig.is_some() {
+                                    gapless_rig = rebuilt_rig;
+                                    transition_watch_seq = 0;
+                                    pending_splice_gain = None;
+                                }
                             }
                             AudioCommand::SetVolume(target_bits) => {
                                 speaker_gain = target_bits;
@@ -509,7 +575,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 #[cfg(target_os = "windows")]
                                 teardown_exclusive_session(&mut exclusive_session);
 
-                                confine_device_fault(|| {
+                                let rebuilt_rig = confine_device_fault_with(|| {
                                     rebuild_output_stack(
                                         &chosen_device,
                                         &mut shared_out,
@@ -534,8 +600,15 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                         temp_file_feed.as_ref(),
                                         dsd_passthrough_live,
                                         bit_perfect_live,
-                                    );
-                                });
+                                        features,
+                                    )
+                                })
+                                .unwrap_or(None);
+                                if rebuilt_rig.is_some() {
+                                    gapless_rig = rebuilt_rig;
+                                    transition_watch_seq = 0;
+                                    pending_splice_gain = None;
+                                }
                                 if tempo_scale != 1.0 {
                                     if let Some(sink) = &sink_slot {
                                         sink.set_speed(tempo_scale);
@@ -565,7 +638,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 #[cfg(target_os = "windows")]
                                 teardown_exclusive_session(&mut exclusive_session);
 
-                                confine_device_fault(|| {
+                                let rebuilt_rig = confine_device_fault_with(|| {
                                     rebuild_output_stack(
                                         &chosen_device,
                                         &mut shared_out,
@@ -590,8 +663,15 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                         temp_file_feed.as_ref(),
                                         dsd_passthrough_live,
                                         bit_perfect_live,
-                                    );
-                                });
+                                        features,
+                                    )
+                                })
+                                .unwrap_or(None);
+                                if rebuilt_rig.is_some() {
+                                    gapless_rig = rebuilt_rig;
+                                    transition_watch_seq = 0;
+                                    pending_splice_gain = None;
+                                }
                                 if tempo_scale != 1.0 {
                                     if let Some(sink) = &sink_slot {
                                         sink.set_speed(tempo_scale);
@@ -641,6 +721,70 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     session.set_sound_effect_settings(flavor);
                                 }
                             }
+                            AudioCommand::SetPlaybackFeatures(next_features) => {
+                                features = next_features;
+                                // 运行期直接作用于活动链，不重启管线
+                                if let Some(rig) = &gapless_rig {
+                                    rig.crossfade_ms
+                                        .store(features.crossfade_ms, Ordering::Relaxed);
+                                    rig.skip_state.apply(
+                                        features.skip_silence_enabled,
+                                        features.skip_threshold_db,
+                                        features.skip_keep_ms,
+                                    );
+                                }
+                            }
+                            AudioCommand::PrepareNext(payload) => {
+                                let Some(rig) = &gapless_rig else {
+                                    return;
+                                };
+                                // 会话校验：预拼接针对的曲目必须仍是当前曲目，过期即弃
+                                if payload.for_path != active_file_path {
+                                    return;
+                                }
+                                let prepared =
+                                    crate::player::queue_producer::PreparedSource {
+                                        producer: Box::new(
+                                            crate::player::silence_skip::SilenceSkipProducer::new(
+                                                payload.producer,
+                                                payload.channels,
+                                                payload.sample_rate,
+                                                rig.skip_state.clone(),
+                                            ),
+                                        ),
+                                        sample_rate: payload.sample_rate,
+                                        channels: payload.channels,
+                                        duration: payload.duration,
+                                    };
+                                // 格式与当前流不一致无法拼接：回执拒绝，前端撤回自动切歌抑制
+                                let cur_rate =
+                                    live_progress.sample_rate.load(Ordering::Relaxed);
+                                let cur_channels =
+                                    live_progress.channels.load(Ordering::Relaxed) as u16;
+                                if !crate::player::queue_producer::can_splice(
+                                    cur_rate,
+                                    cur_channels,
+                                    &prepared,
+                                ) {
+                                    let _ = worker_app.emit(
+                                        "playback:prepare-rejected",
+                                        payload.for_path.clone(),
+                                    );
+                                    return;
+                                }
+                                if let Ok(mut slot) = rig.slot.lock() {
+                                    *slot = Some(prepared);
+                                }
+                                pending_splice_gain = Some(payload.balance_gain);
+                            }
+                            AudioCommand::CancelPrepareNext => {
+                                if let Some(rig) = &gapless_rig {
+                                    if let Ok(mut slot) = rig.slot.lock() {
+                                        *slot = None;
+                                    }
+                                }
+                                pending_splice_gain = None;
+                            }
                         }));
                     if outcome.is_err() {
                         eprintln!(
@@ -663,7 +807,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 sink.stop(); // 实现
                             }
                             sink_slot = None;
-                            confine_device_fault(|| {
+                            let salvaged_rig = confine_device_fault_with(|| {
                                 reopen_shared_pipeline(
                                     &chosen_device,
                                     &mut shared_out,
@@ -680,8 +824,15 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     &mut loudness_slot,
                                     remote_feed.as_ref(),
                                     temp_file_feed.as_ref(),
-                                );
-                            });
+                                    features,
+                                )
+                            })
+                            .unwrap_or(None);
+                            if salvaged_rig.is_some() {
+                                gapless_rig = salvaged_rig;
+                                transition_watch_seq = 0;
+                                pending_splice_gain = None;
+                            }
                             if shared_out.is_some() {
                                 downgrade_note = None;
                                 live_progress.start_failed.store(false, Ordering::Relaxed);
@@ -725,7 +876,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                             teardown_exclusive_session(&mut exclusive_session);
 
                             #[cfg(windows)]
-                            confine_device_fault(|| {
+                            let device_change_rig = confine_device_fault_with(|| {
                                 rebuild_output_stack(
                                     &chosen_device,
                                     &mut shared_out,
@@ -749,10 +900,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     temp_file_feed.as_ref(),
                                     dsd_passthrough_live,
                                     bit_perfect_live,
-                                );
-                            });
+                                    features,
+                                )
+                            })
+                            .unwrap_or(None);
                             #[cfg(not(target_os = "windows"))]
-                            confine_device_fault(|| {
+                            let device_change_rig = confine_device_fault_with(|| {
                                 rebuild_output_stack(
                                     &chosen_device,
                                     &mut shared_out,
@@ -775,8 +928,15 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     temp_file_feed.as_ref(),
                                     dsd_passthrough_live,
                                     bit_perfect_live,
-                                );
-                            });
+                                    features,
+                                )
+                            })
+                            .unwrap_or(None);
+                            if device_change_rig.is_some() {
+                                gapless_rig = device_change_rig;
+                                transition_watch_seq = 0;
+                                pending_splice_gain = None;
+                            }
 
                             broadcast_output_state(
                                 &worker_app,

@@ -20,8 +20,20 @@ const { EQ_BANDS, formatBandGain } = useEqBands();
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         均衡器
       </h3>
-      <button class="fx-reset-btn" @click="handleResetEq">重置</button>
+      <div class="flex items-center gap-2">
+        <button
+          class="fx-toggle"
+          :class="{ on: store.eqEnabled }"
+          :title="store.eqEnabled ? '关闭均衡器' : '开启均衡器'"
+          @click="store.eqEnabled = !store.eqEnabled"
+        >
+          <span class="fx-toggle-knob"></span>
+        </button>
+        <button class="fx-reset-btn" @click="handleResetEq">重置</button>
+      </div>
     </div>
+    <!-- 均衡器关闭时推子与预设旁通置灰（增益与自定义预设保留，对齐移动端） -->
+    <div class="space-y-5 transition-opacity" :class="{ 'opacity-45 pointer-events-none': !store.eqEnabled }">
     <div class="space-y-2">
       <div class="text-[12px] font-semibold text-gray-600 dark:text-gray-300">内置预设</div>
       <div class="flex flex-wrap gap-1.5">
@@ -66,6 +78,7 @@ const { EQ_BANDS, formatBandGain } = useEqBands();
       <div v-if="store.customEqPresets.length > 0" class="flex flex-wrap gap-1.5">
         <button v-for="p in store.customEqPresets" :key="p.name" class="fx-preset-btn fx-preset-advanced" @click="store.loadCustomEqPreset(p.name)">{{ p.name }}</button>
       </div>
+    </div>
     </div>
     <div class="grid grid-cols-2 gap-4">
       <section class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">

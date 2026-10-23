@@ -189,6 +189,15 @@ export const resolveCloudDirectLink = async (
   return { url: link.url, headers: link.headers ?? null };
 };
 
+/** 云端歌曲直链缓存作废（播放失败后强制重解析新直链；上下文缺失时静默忽略）。 */
+export const invalidateCloudDirectLink = async (
+  audioFilePath: string,
+  song: Song,
+): Promise<void> => {
+  const ctx = contextOf(audioFilePath, song);
+  if (ctx) DirectLinkCache.instance.invalidate(ctx.path);
+};
+
 /** 网盘曲目直链解析（播放层）：缓存 → getDirectLink/getShareDirectLink → 在线直链。 */
 export const resolveCloudOnlineAudio = async (
   audioFilePath: string,

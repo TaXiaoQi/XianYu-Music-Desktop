@@ -23,6 +23,8 @@ export interface PlaybackRuntimeDeps {
   setPreviewDetectedPath: (path: string) => void;
   onPreviewDetected: (song: Song, duration: number) => void | Promise<void>;
   onAutoNext: () => void;
+  /** 无缝预拼接已入槽：等待后端拼接切换期间抑制自动切歌（否则旧曲刻度越界会误触发换曲） */
+  isGaplessPending?: () => boolean;
   flushStatistics: () => void;
   startStatisticsSession: () => void;
   listen?: typeof tauriListen;
@@ -106,6 +108,10 @@ export function createPlaybackRuntime(deps: PlaybackRuntimeDeps): PlaybackRuntim
       const clip = deps.getActivePreviewClip();
       const song = deps.currentSong.value;
       const endTime = clip ? clip.start + clip.duration : song?.duration ?? 0;
+      if (deps.isGaplessPending?.()) {
+        scheduleUpdate(update);
+        return;
+      }
       if (endTime > 0 && deps.currentTime.value >= endTime - 0.3) {
         deps.onAutoNext();
         return;
@@ -159,6 +165,9 @@ export function createPlaybackRuntime(deps: PlaybackRuntimeDeps): PlaybackRuntim
         });
         stalledProgressTicks = result.stalledProgressTicks;
         if (result.shouldAutoAdvance) {
+          if (deps.isGaplessPending?.()) {
+            return;
+          }
           deps.onAutoNext();
           return;
         }

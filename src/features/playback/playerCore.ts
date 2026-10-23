@@ -330,6 +330,9 @@ function createPlayerCore() {
     addToHistory: song => collectionsActions.addToHistory(song),
     loadLyrics,
     handleAutoNext: playbackActions.handleAutoNext,
+    peekNextTrack: () => playerQueue?.peekNextTrack() ?? null,
+    advanceQueueForSplicedSong: (song, source) =>
+      playerQueue?.advanceQueueForSplicedSong(song, source),
     onBeforePlay: (song, options) => {
       playerQueue.handleBeforePlay(song, options);
     },

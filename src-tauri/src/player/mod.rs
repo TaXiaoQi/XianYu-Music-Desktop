@@ -16,6 +16,8 @@ pub(crate) mod qmc2;
 mod remote_reader;
 mod runtime; // 实现
 mod session;
+pub mod silence_skip;
+pub mod queue_producer;
 pub mod sound_effect; // 音效引擎模块
 mod source_pipeline;
 pub mod cloud_meta;
@@ -27,13 +29,14 @@ pub use cloud_meta::load_cloud_meta_index;
 pub use cloud_meta::log_cloud_meta_diag;
 pub use cloud_meta::probe_cloud_head_meta;
 pub use commands::{ // 实现
-    clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_playback_duration,
-    get_playback_progress, get_playback_ready, get_playback_start_failed,
+    cancel_prepare_next, clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples,
+    get_playback_duration, get_playback_progress, get_playback_ready, get_playback_start_failed,
     get_playback_start_failed_info, get_playback_start_failed_reason, get_stream_cache_dir,
     get_stream_cache_info, get_track_loudness_info, is_stream_cached, pause_audio, play_audio,
-    prefetch_audio_head, probe_cloud_track_meta, resume_audio, seek_audio, set_equalizer_settings,
-    set_sound_effect_settings, set_stream_cache_dir, set_stream_cache_max_size, set_volume,
-    stop_audio, update_loudness_settings, update_playback_metadata,
+    prepare_next_track, prefetch_audio_head, probe_cloud_track_meta, resume_audio, seek_audio,
+    set_equalizer_settings, set_playback_features, set_sound_effect_settings,
+    set_stream_cache_dir, set_stream_cache_max_size, set_volume, stop_audio,
+    update_loudness_settings, update_playback_metadata,
 };
 pub use device::{ // 实现
     get_audio_device_formats, get_current_output_device, get_output_devices, set_audio_output_mode,

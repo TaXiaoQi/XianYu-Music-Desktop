@@ -1,7 +1,6 @@
 use rodio::source::{SeekError};
 use rodio::{Source};
 use std::collections::{VecDeque};
-use std::marker::{PhantomData};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc};
@@ -40,7 +39,66 @@ enum SeekAck { // 定位应答
   Ok(u64),
   Failed(u64),
 } // 定位应答
-pub struct BufferedSource<I> { // BufferedSource
+/// 样本块生产者：被后台预读取线程反复调用以填充缓冲。
+///
+/// 无缝拼接（QueueProducer）与跳过静音（SilenceSkipProducer）都实现此性状，
+/// 经 [`BufferedSource`] 接入预读取机制，无需感知 rodio。
+pub trait BlockProducer {
+  /// 产出最多 `max_samples` 个交错 PCM 样本；返回 `None` 表示已到 EOF。
+  fn produce(&mut self, max_samples: usize) -> Option<Vec<f32>>;
+  /// 跳转到指定播放位置。返回 `Ok(())` 表示成功。
+  fn try_seek(&mut self, pos: Duration) -> Result<(), String>;
+}
+
+/// rodio Source → BlockProducer 适配器：把逐样本拉取的上游攒成块。
+pub struct SourceBlocks<S> {
+  inner: S,
+}
+
+impl<S> SourceBlocks<S>
+where
+  S: Source<Item = f32> + Send + 'static,
+{
+  pub fn new(inner: S) -> Self {
+    Self { inner }
+  }
+}
+
+impl<S> BlockProducer for SourceBlocks<S>
+where
+  S: Source<Item = f32> + Send + 'static,
+{
+  fn produce(&mut self, max_samples: usize) -> Option<Vec<f32>> {
+    let mut block: Vec<f32> = Vec::with_capacity(BLOCK_SAMPLES);
+    for _ in 0..max_samples {
+      match self.inner.next() {
+        Some(s) => block.push(s),
+        None => break,
+      }
+    }
+    if block.is_empty() { None } else { Some(block) }
+  }
+
+  fn try_seek(&mut self, pos: Duration) -> Result<(), String> {
+    self
+      .inner
+      .try_seek(pos)
+      .map_err(|e| e.to_string())
+  }
+}
+
+/// 装箱句柄本身也是块生产者：预拼接载荷经命令通道交接后直接套包装层。
+impl BlockProducer for Box<dyn BlockProducer + Send> {
+  fn produce(&mut self, max_samples: usize) -> Option<Vec<f32>> {
+    (**self).produce(max_samples)
+  }
+
+  fn try_seek(&mut self, pos: Duration) -> Result<(), String> {
+    (**self).try_seek(pos)
+  }
+}
+
+pub struct BufferedSource { // BufferedSource
   sample_rx: Receiver<Vec<f32>>,
   cmd_tx: SyncSender<Command>,
   ack_rx: Receiver<SeekAck>,
@@ -52,29 +110,54 @@ pub struct BufferedSource<I> { // BufferedSource
   exhausted: bool,
   monitor: Option<Arc<crate::player::types::BufferedMonitor>>,
   thread_handle: Option<thread::JoinHandle<()>>,
-  _marker: PhantomData<I>,
 } // BufferedSource
-impl<I> BufferedSource<I> // BufferedSource
-where // 泛型约束
-  I: Source<Item = f32> + Send + 'static,
-{ // 实现体
+impl BufferedSource { // 实现体
   #[inline]
   fn set_starvation(&self, value: bool) {
     if let Some(monitor) = &self.monitor {
       monitor.starved.store(value, Ordering::Relaxed);
     } // set_starvation
   }
-  pub fn new(inner: I) -> Self {
+  /// 把 rodio Source 上游攒块接入预读机制（现仅测试使用，生产走 from_producer）。
+  #[cfg(test)]
+  pub fn new<I>(inner: I) -> Self
+  where
+    I: Source<Item = f32> + Send + 'static,
+  {
     Self::new_tracked(inner, None)
   }
-  pub fn new_tracked(
+  /// 同 [`Self::new`]，附带缓冲监视器（watchdog 观察网络/磁盘饥饿）。
+  #[cfg(test)]
+  pub fn new_tracked<I>(
     inner: I,
     monitor: Option<Arc<crate::player::types::BufferedMonitor>>,
-  ) -> Self {
-    let sample_rate = inner.sample_rate();
+  ) -> Self
+  where
+    I: Source<Item = f32> + Send + 'static,
+  {
+    let rate = inner.sample_rate();
     let channels = inner.channels();
     let total_duration = inner.total_duration();
+    // 上游 rodio Source 攒块后交给生产者线程；拼接/静音跳过层由调用方
+    // 先包好，经 from_producer 以 BlockProducer 形态进入本机制。
+    Self::from_producer(
+      Box::new(SourceBlocks::new(inner)),
+      rate,
+      channels,
+      total_duration,
+      monitor,
+    )
+  }
 
+  /// 块级生产者入口：QueueProducer / SilenceSkipProducer 包装好后从这里接入。
+  /// 元数据（采样率/声道/时长）由调用方显式提供——BlockProducer 无统一元数据接口。
+  pub fn from_producer(
+    producer: Box<dyn BlockProducer + Send>,
+    sample_rate: u32,
+    channels: u16,
+    total_duration: Option<Duration>,
+    monitor: Option<Arc<crate::player::types::BufferedMonitor>>,
+  ) -> Self {
     let (cmd_tx, cmd_rx) = mpsc::sync_channel::<Command>(8);
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(CHANNEL_BLOCKS);
     let (ack_tx, ack_rx) = mpsc::channel::<SeekAck>();
@@ -89,7 +172,7 @@ where // 泛型约束
       .name("xy-buffered-source".to_string())
       .spawn(move || {
         producer_loop(
-          inner,
+          producer,
           cmd_rx,
           sample_tx,
           ack_tx,
@@ -112,7 +195,6 @@ where // 泛型约束
       exhausted: false,
       monitor,
       thread_handle,
-      _marker: PhantomData,
     };
     source.prefill_one_block();
     source
@@ -137,7 +219,7 @@ where // 泛型约束
   }
 } // new_tracked
 fn producer_loop( // 生产者主循环
-  mut inner: impl Source<Item = f32>,
+  mut inner: Box<dyn BlockProducer + Send>,
   cmd_rx: Receiver<Command>,
   sample_tx: SyncSender<Vec<f32>>,
   ack_tx: std::sync::mpsc::Sender<SeekAck>,
@@ -146,7 +228,6 @@ fn producer_loop( // 生产者主循环
   monitor: Option<Arc<crate::player::types::BufferedMonitor>>,
 ) { // 参数表结束
   elevate_thread_priority();
-  let mut eof = false;
   loop { // 生产者主循环
     if stop_flag.load(Ordering::Relaxed) {
       return;
@@ -162,46 +243,18 @@ fn producer_loop( // 生产者主循环
             SeekAck::Failed(gen)
           };
           let _ = ack_tx.send(ack);
-          eof = false;
         } // producer_loop
         continue;
       }
       Err(mpsc::TryRecvError::Empty) => {}
       Err(mpsc::TryRecvError::Disconnected) => return,
     } // 生产者主循环
-    if eof {
-      match cmd_rx.recv_timeout(BACKOFF) {
-        Ok(Command::Stop) => return,
-        Ok(Command::Seek { pos, gen }) => {
-          if gen == seek_epoch.load(Ordering::Acquire) {
-            let result = inner.try_seek(pos);
-            let _ = ack_tx.send(if result.is_ok() {
-              SeekAck::Ok(gen)
-            } else { // 反之
-              SeekAck::Failed(gen)
-            }); // 发送定位应答
-            eof = false;
-          }
-        } // 生产者主循环
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-          if stop_flag.load(Ordering::Relaxed) { // 停机检查
-            return; // 退出生产者
-          }
-        } // producer_loop
-        Err(mpsc::RecvTimeoutError::Disconnected) => return,
-      }
-      continue;
-    } // 生产者主循环
-    let mut block: Vec<f32> = Vec::with_capacity(BLOCK_SAMPLES);
-    for _ in 0..BLOCK_SAMPLES {
-      match inner.next() {
-        Some(s) => block.push(s),
-        None => {
-          eof = true;
-          break;
-        } // producer_loop
-      }
-    } // 生产者主循环
+    // EOF：与旧逐样本语义一致——生产者线程退出，通道断开后消费者即知源耗尽。
+    // （QueueProducer 内部拼接成功时 produce 不会返回 None，线程保持存活。）
+    let mut block = match inner.produce(BLOCK_SAMPLES) {
+      Some(b) => b,
+      None => return,
+    };
     if !block.is_empty() {
       loop { // 等待数据就绪
         if stop_flag.load(Ordering::Relaxed) { // 停机检查
@@ -217,7 +270,6 @@ fn producer_loop( // 生产者主循环
               } else { // 反之
                 SeekAck::Failed(gen)
               });
-              eof = false;
               break;
             } // producer_loop
           }
@@ -239,15 +291,9 @@ fn producer_loop( // 生产者主循环
         } // producer_loop
       }
     } // 生产者主循环
-    if eof {
-      return;
-    } // producer_loop
   }
 } // producer_loop
-impl<I> Iterator for BufferedSource<I> // 迭代器
-where // 泛型约束
-  I: Source<Item = f32> + Send + 'static,
-{ // 实现体
+impl Iterator for BufferedSource { // 迭代器
   type Item = f32; // 样本类型
   #[inline]
   fn next(&mut self) -> Option<Self::Item> {
@@ -283,10 +329,7 @@ where // 泛型约束
     } // next
   }
 } // producer_loop
-impl<I> Source for BufferedSource<I> // 音频源
-where // 泛型约束
-  I: Source<Item = f32> + Send + 'static,
-{ // 实现体
+impl Source for BufferedSource { // 音频源
   #[inline]
   fn channels(&self) -> u16 {
     self.channels
@@ -352,7 +395,7 @@ where // 泛型约束
     Ok(())
   }
 } // producer_loop
-impl<I> Drop for BufferedSource<I> { // 资源释放
+impl Drop for BufferedSource { // 资源释放
   fn drop(&mut self) {
     let _ = self.cmd_tx.try_send(Command::Stop);
     if let Some(handle) = self.thread_handle.take() {

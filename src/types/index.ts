@@ -672,6 +672,15 @@ export interface AudioSettings {
   streamCacheDir?: string;
   fadeInOutEnabled: boolean;
   fadeInOutDurationMs: number;
+  /** 无缝播放：当前曲到头时直接接上预拼接的下一首（仅本地文件生效） */
+  gaplessEnabled: boolean;
+  /** 曲间淡入淡出：两首歌重叠交叉的时长（秒，1~12） */
+  crossfadeEnabled: boolean;
+  crossfadeSeconds: number;
+  /** 跳过静音：把超长静音段压到保留时长 */
+  skipSilenceEnabled: boolean;
+  /** 自动播放：打开软件后自动继续上次的播放 */
+  autoPlayOnLaunch: boolean;
   mvDefaultQuality?: MvQualityKey;
   mvVideoSyncOffsetMs?: number;
 }

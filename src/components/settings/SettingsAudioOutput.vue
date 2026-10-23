@@ -400,7 +400,6 @@ const patchQualityFallback = (value: OnlineQualityFallbackBehavior) => {
 };
 
 // --- 播放设置 ---
-const autoPlay = ref(true);
 const songClickActionEnabled = computed(() => settings.value.songClickAction !== 'single');
 const toggleSongClickAction = () => {
   settings.value.songClickAction = songClickActionEnabled.value ? 'single' : 'double';
@@ -413,6 +412,33 @@ const FADE_DURATION_MIN_MS = 100;
 const FADE_DURATION_MAX_MS = 2000;
 const FADE_DURATION_STEP_MS = 100;
 const FADE_DURATION_DEFAULT_MS = 500;
+
+const CROSSFADE_SECONDS_MIN = 1;
+const CROSSFADE_SECONDS_MAX = 12;
+const CROSSFADE_SECONDS_STEP = 1;
+const CROSSFADE_SECONDS_DEFAULT = 5;
+
+const adjustCrossfadeSeconds = (delta: number) => {
+  const current = settings.value.audio.crossfadeSeconds;
+  const next = Math.round((current + delta) / CROSSFADE_SECONDS_STEP) * CROSSFADE_SECONDS_STEP;
+  settings.value.audio.crossfadeSeconds = Math.max(
+    CROSSFADE_SECONDS_MIN,
+    Math.min(CROSSFADE_SECONDS_MAX, next),
+  );
+};
+
+const handleCrossfadeSecondsInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const parsed = parseFloat(target.value);
+  const next = Number.isNaN(parsed)
+    ? CROSSFADE_SECONDS_DEFAULT
+    : Math.round(parsed / CROSSFADE_SECONDS_STEP) * CROSSFADE_SECONDS_STEP;
+  settings.value.audio.crossfadeSeconds = Math.max(
+    CROSSFADE_SECONDS_MIN,
+    Math.min(CROSSFADE_SECONDS_MAX, next),
+  );
+  target.value = String(settings.value.audio.crossfadeSeconds);
+};
 
 const adjustFadeDuration = (delta: number) => {
   const current = settings.value.audio.fadeInOutDurationMs;
@@ -806,11 +832,111 @@ onScopeDispose(() => {
         </div>
         </Transition>
 
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">无缝播放</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">当前曲目播完时无缝衔接下一首，中间不留缝隙（仅本地文件生效）</div>
+          </div>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.audio.gaplessEnabled }"
+            @click="settings.audio.gaplessEnabled = !settings.audio.gaplessEnabled"
+          ></button>
+        </div>
+
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">曲间淡入淡出</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">两首歌曲在切换时交叉重叠，前一首淡出、后一首淡入</div>
+          </div>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.audio.crossfadeEnabled }"
+            @click="settings.audio.crossfadeEnabled = !settings.audio.crossfadeEnabled"
+          ></button>
+        </div>
+
+        <div
+          v-if="settings.audio.crossfadeEnabled"
+          class="desktop-setting-row pl-8"
+        >
+          <div class="flex-1 space-y-1">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
+              交叉时长
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                {{ settings.audio.crossfadeSeconds }} 秒
+              </span>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              两首歌重叠过渡的时间，范围 1 ~ 12 秒。
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
+              :disabled="settings.audio.crossfadeSeconds <= CROSSFADE_SECONDS_MIN"
+              aria-label="减少 1 秒"
+              @click="adjustCrossfadeSeconds(-CROSSFADE_SECONDS_STEP)"
+            >
+              <Minus class="h-4 w-4" />
+            </button>
+            <RangeSlider
+              v-model="settings.audio.crossfadeSeconds"
+              :min="CROSSFADE_SECONDS_MIN"
+              :max="CROSSFADE_SECONDS_MAX"
+              :step="CROSSFADE_SECONDS_STEP"
+              variant="native"
+              class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer"
+            />
+            <button
+              type="button"
+              class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
+              :disabled="settings.audio.crossfadeSeconds >= CROSSFADE_SECONDS_MAX"
+              aria-label="增加 1 秒"
+              @click="adjustCrossfadeSeconds(CROSSFADE_SECONDS_STEP)"
+            >
+              <Plus class="h-4 w-4" />
+            </button>
+            <input
+              :value="settings.audio.crossfadeSeconds"
+              type="number"
+              :min="CROSSFADE_SECONDS_MIN"
+              :max="CROSSFADE_SECONDS_MAX"
+              :step="CROSSFADE_SECONDS_STEP"
+              class="h-8 w-16 rounded-lg border border-black/10 bg-white/45 px-2 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+              @change="handleCrossfadeSecondsInput"
+            />
+            <button
+              type="button"
+              class="settings-action-button settings-action-button--soft"
+              @click="settings.audio.crossfadeSeconds = CROSSFADE_SECONDS_DEFAULT"
+            >
+              恢复默认
+            </button>
+          </div>
+        </div>
+
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">跳过静音</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">自动压缩曲目中过长的静音段（如现场专辑的段间空白），进度仍按原曲时间轴显示</div>
+          </div>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.audio.skipSilenceEnabled }"
+            @click="settings.audio.skipSilenceEnabled = !settings.audio.skipSilenceEnabled"
+          ></button>
+        </div>
+
         <div
           class="desktop-setting-row"
         >
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">音量平衡</div> 
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">音量平衡</div>
           </div>
           <div class="flex items-center gap-3"> 
             <button
@@ -1269,14 +1395,15 @@ onScopeDispose(() => {
       </h2>
       <div class="settings-playback-group flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
         <div class="desktop-setting-row">
-          <div>
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">自动播放</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">打开软件后自动继续上次的播放进度</div>
           </div>
           <button
             type="button"
             class="glass-switch"
-            :class="{ 'is-checked': autoPlay }"
-            @click="autoPlay = !autoPlay"
+            :class="{ 'is-checked': settings.audio.autoPlayOnLaunch }"
+            @click="settings.audio.autoPlayOnLaunch = !settings.audio.autoPlayOnLaunch"
           ></button>
         </div>
         <div class="desktop-setting-row"> 

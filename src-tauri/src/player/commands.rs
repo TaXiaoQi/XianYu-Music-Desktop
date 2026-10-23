@@ -17,6 +17,7 @@ use crate::remote::repository::{get_source_for_remote_uri};
 use crate::remote::scanner::{song_from_cached_remote_file};
 use crate::remote::types::{RemoteFileEntry};
 use souvlaki::{MediaPlayback, MediaPosition, MediaMetadata};
+use rodio::Source as _;
 use std::path::{Path};
 use std::sync::atomic::{Ordering};
 use core::time::Duration;
@@ -688,7 +689,9 @@ pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 { // get_p
     }
     let per_second = rate as u64 * lanes as u64;
     let played = state.progress.samples_played.load(Ordering::Relaxed);
-    played as f64 / per_second as f64
+    // 跳过静音丢弃的样本加回去：UI 时间轴保持原曲刻度
+    let skipped = state.progress.skipped_samples.load(Ordering::Relaxed);
+    (played + skipped) as f64 / per_second as f64
 }
 
 #[tauri::command] // 实现
@@ -738,6 +741,124 @@ pub fn get_audio_visualizer_samples(state: tauri::State<PlayerState>) -> Vec<f32
     let snapshot = state.progress.visualizer.snapshot();
     let rate = state.progress.sample_rate.load(Ordering::Relaxed); // 实现
     build_frequency_bands(&snapshot, rate, VISUALIZER_BAND_COUNT)
+}
+
+// ---------------------------------------------------------------------------
+// 无缝播放 / 交叉淡入淡出 / 跳过静音
+// ---------------------------------------------------------------------------
+
+/// 运行期更新播放特性（交叉淡入淡出 / 跳过静音），不重启播放管线。
+#[tauri::command]
+pub fn set_playback_features(
+    crossfade_enabled: bool,
+    crossfade_seconds: f32,
+    skip_silence_enabled: bool,
+    skip_threshold_db: Option<f32>,
+    skip_keep_ms: Option<u32>,
+    state: tauri::State<PlayerState>,
+) -> Result<(), String> {
+    let crossfade_ms = if crossfade_enabled {
+        (crossfade_seconds.clamp(1.0, 12.0) * 1000.0).round() as u64
+    } else {
+        0
+    };
+    dispatch(
+        &state,
+        AudioCommand::SetPlaybackFeatures(crate::player::types::PlaybackFeatures {
+            crossfade_ms,
+            skip_silence_enabled,
+            skip_threshold_db: skip_threshold_db.unwrap_or(-45.0),
+            skip_keep_ms: skip_keep_ms.unwrap_or(500),
+        }),
+    )
+}
+
+/// 取消预拼接（手动切歌 / 关闭无缝播放 / 暂停时调用）。
+#[tauri::command]
+pub fn cancel_prepare_next(state: tauri::State<PlayerState>) -> Result<(), String> {
+    dispatch(&state, AudioCommand::CancelPrepareNext)
+}
+
+/// 预拼接下一首：把下一首的解码链提前建好放进交接槽，当前曲到头时无缝接上。
+/// 仅本地文件（含 QMC 加密轨道）支持；远端/流式来源返回 false，由调用方退回普通切歌。
+#[tauri::command]
+pub async fn prepare_next_track(
+    path: String,
+    song_id: Option<i64>,
+    volume_balance_enabled: Option<bool>,
+    gain_offset_db: Option<f32>,
+    prevent_clipping: Option<bool>,
+    db_state: tauri::State<'_, DbState>,
+    state: tauri::State<'_, PlayerState>,
+) -> Result<bool, String> {
+    let playable_path = tidy_playback_path(&path);
+    // 仅本地文件可预拼接：远端/流式来源格式与时序都不可靠
+    if playable_path.starts_with("http://")
+        || playable_path.starts_with("https://")
+        || is_remote_uri(&playable_path)
+    {
+        return Ok(false);
+    }
+
+    // 音量平衡：与 play_audio 相同的建档 + 折算逻辑（内部含按需响度分析）
+    let mut balance_gain = 1.0_f32;
+    if volume_balance_enabled == Some(true) {
+        if let Some(s_id) = song_id {
+            if let Ok(mut conn) = db_state.conn.lock() {
+                balance_gain = linear_balance_gain(
+                    &mut conn,
+                    s_id,
+                    &playable_path,
+                    gain_offset_db.unwrap_or(0.0),
+                    prevent_clipping.unwrap_or(true),
+                );
+            }
+        }
+    }
+
+    // 只走磁盘直读（含 QMC）；Dolby 转封装路径开销大，不做预拼接
+    let Some(track_handle) =
+        crate::player::source_pipeline::open_disk_track(Path::new(&playable_path))
+    else {
+        return Ok(false);
+    };
+
+    let buffered = std::io::BufReader::with_capacity(512 * 1024, track_handle);
+    let Ok(decoded) = rodio::Decoder::new(buffered) else {
+        return Ok(false);
+    };
+    let rate = decoded.sample_rate();
+    let channels = decoded.channels();
+    // rodio 的 u32::MAX 纳秒哨兵视为未知时长
+    let duration = decoded.total_duration().map(|d| {
+        if d.as_nanos() == u32::MAX as u128 {
+            Duration::ZERO
+        } else {
+            d
+        }
+    });
+    let f32_source = decoded.convert_samples::<f32>();
+    let producer: Box<dyn crate::player::buffered_source::BlockProducer + Send> =
+        if channels > 2 {
+            Box::new(crate::player::buffered_source::SourceBlocks::new(
+                crate::player::channel_downmix::DownmixSource::new(f32_source, channels),
+            ))
+        } else {
+            Box::new(crate::player::buffered_source::SourceBlocks::new(f32_source))
+        };
+
+    dispatch(
+        &state,
+        AudioCommand::PrepareNext(Box::new(crate::player::types::PreparedTrackPayload {
+            producer,
+            sample_rate: rate,
+            channels: if channels > 2 { 2 } else { channels },
+            duration,
+            balance_gain,
+            for_path: playable_path,
+        })),
+    )?;
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------

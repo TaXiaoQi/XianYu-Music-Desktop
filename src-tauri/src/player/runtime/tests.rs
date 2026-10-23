@@ -319,6 +319,7 @@
             buffered: Arc::new(BufferedMonitor::new()),
             total_duration_secs: Arc::new(AtomicU64::new(0u64)),
             is_playing: Arc::new(AtomicBool::new(false)),
+            skipped_samples: Arc::new(AtomicU64::new(0u64)),
         })
     }
 
@@ -338,7 +339,7 @@
         )); // 构造完成
         let user_volume = Arc::new(std::sync::atomic::AtomicU32::new(1.0_f32.to_bits())); // 实现
 
-        handle_play( // 实现
+        let rig = handle_play( // 实现
             AudioSource::LocalFile("Z:\\missing\\song.flac".to_string()), // 实现
             &None,
             &mut current_sink, // 实现
@@ -351,7 +352,9 @@
             eq_handle,
             se_handle, // 挂载音效句柄
             user_volume, // 实现
+            crate::player::types::PlaybackFeatures::default(),
         );
+        assert!(rig.is_none(), "无输出后端时不应有链与无缝装备");
 
         assert_eq!(progress.samples_played.load(Ordering::Relaxed), 0); // 实现
     }

@@ -393,6 +393,9 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
     const ssCenterLevel = ref(100);
     // ===== AB 对比旁通 =====
     const bypassAll = ref(false);
+    // 均衡器总开关：关闭后 10 段 EQ 与内置/衍生预设旁通（增益与自定义预设保留），
+    // 对齐移动端「启用均衡器」。不影响动态均衡等其他效果。
+    const eqEnabled = ref(true);
 
     const anyEffectEnabled = computed(
         () =>
@@ -674,7 +677,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         if (eqSyncTimer) clearTimeout(eqSyncTimer);
         eqSyncTimer = setTimeout(() => {
             eqSyncTimer = null;
-            const enabled = !bypassAll.value;
+            const enabled = !bypassAll.value && eqEnabled.value;
             playbackApi
                 .setEqualizerSettings(enabled, 0, buildEqGains())
                 .catch((err) => {
@@ -686,7 +689,9 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         }, 50);
     };
 
-    watch([() => ({ ...eqBands }), bypassAll], () => scheduleEqSync());
+    watch([() => ({ ...eqBands }), bypassAll, eqEnabled], () =>
+        scheduleEqSync(),
+    );
     // ===== 自定义 EQ 预设保存/导入/导出 =====
     const customEqPresets = ref<
         Array<{ name: string; bands: Record<string, number> }>
@@ -945,6 +950,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         ssWidth: ssWidth.value,
         ssCenterLevel: ssCenterLevel.value,
         bypassAll: bypassAll.value,
+        eqEnabled: eqEnabled.value,
         audioBoost: audioBoost.value,
         customEqPresets: customEqPresets.value,
         fullEffectPresets: fullEffectPresets.value,
@@ -1177,6 +1183,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         if (typeof s.ssCenterLevel === "number")
             ssCenterLevel.value = s.ssCenterLevel;
         if (typeof s.bypassAll === "boolean") bypassAll.value = s.bypassAll;
+        if (typeof s.eqEnabled === "boolean") eqEnabled.value = s.eqEnabled;
         if (typeof s.audioBoost === "number") audioBoost.value = s.audioBoost;
         if (Array.isArray(s.customEqPresets))
             customEqPresets.value = s.customEqPresets;
@@ -1319,6 +1326,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
             ssWidth,
             ssCenterLevel,
             bypassAll,
+            eqEnabled,
             audioBoost,
             customEqPresets,
             fullEffectPresets,
@@ -1438,6 +1446,7 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         ssWidth,
         ssCenterLevel,
         bypassAll,
+        eqEnabled,
         audioBoost,
         customEqPresets,
         saveCustomEqPreset,

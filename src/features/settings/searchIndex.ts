@@ -148,6 +148,10 @@ const staticItems: SettingsSearchItem[] = [
 
   ...makeItems('audioOutput', '音频处理', [
     { label: '渐入渐出', keywords: '淡入淡出 爆音 播放 暂停' },
+    { label: '无缝播放', keywords: 'gapless 无缝 衔接 曲间 换歌 不间断' },
+    { label: '曲间淡入淡出', keywords: '交叉淡化 crossfade 重叠 切歌 过渡' },
+    { label: '交叉时长', keywords: 'crossfade 秒 重叠 时长 曲间' },
+    { label: '跳过静音', keywords: '静音 空白 压缩 现场专辑 停顿' },
     { label: '音量平衡', keywords: 'ReplayGain 响度 标准化' },
     { label: '整体增益偏移', keywords: 'ReplayGain dB 音量' },
     { label: '防削波破音保护', keywords: '峰值 clipping 音量增益' },

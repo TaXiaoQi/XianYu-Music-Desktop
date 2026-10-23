@@ -165,7 +165,7 @@ impl Default for BufferedMonitor {
 
 /// 播放线程与命令层共享的进度与状态原子快照。
 pub struct SharedProgress { // SharedProgress
-  pub samples_played: Arc<AtomicU64>,    // 已播采样数
+  pub samples_played: Arc<AtomicU64>,    // 已播采样数（跳过静音压缩后的实播数）
   pub sample_rate: Arc<AtomicU32>,       // 当前采样率
   pub channels: Arc<AtomicU32>,          // 当前声道数
   pub visualizer: Arc<SharedVisualizer>, // 可视化环形窗
@@ -174,6 +174,48 @@ pub struct SharedProgress { // SharedProgress
   pub buffered: Arc<BufferedMonitor>,    // 网络缓冲监视
   pub total_duration_secs: Arc<AtomicU64>, // 总时长（f64 位模式）
   pub is_playing: Arc<AtomicBool>,       // 播放中标志
+  /// 跳过静音累计丢弃的交错样本数：位置上报把它加回去，UI 时间轴保持原曲刻度。
+  pub skipped_samples: Arc<AtomicU64>,
+}
+
+/// 播放特性运行期参数（交叉淡入淡出 + 跳过静音）；无缝拼接由预拼接槽位驱动。
+#[derive(Clone, Copy, Debug)]
+pub struct PlaybackFeatures {
+  /// 交叉淡入淡出时长（毫秒）；0 = 只做无缝拼接。
+  pub crossfade_ms: u64,
+  pub skip_silence_enabled: bool,
+  pub skip_threshold_db: f32,
+  pub skip_keep_ms: u32,
+}
+
+impl Default for PlaybackFeatures {
+  fn default() -> Self {
+    Self {
+      crossfade_ms: 0,
+      skip_silence_enabled: false,
+      skip_threshold_db: -45.0,
+      skip_keep_ms: 500,
+    }
+  }
+}
+
+/// 预拼接下一首的载荷：命令线程解码就绪后经命令通道交给播放线程入槽。
+pub struct PreparedTrackPayload {
+  pub producer: Box<dyn crate::player::buffered_source::BlockProducer + Send>,
+  pub sample_rate: u32,
+  pub channels: u16,
+  pub duration: Option<Duration>,
+  /// 新曲的音量平衡线性增益（拼接完成时应用到响度归一化句柄）。
+  pub balance_gain: f32,
+  /// 预拼接针对的当前曲目路径：播放线程校验会话未变才入槽，防止过期拼接。
+  pub for_path: String,
+}
+
+/// 拼接完成事件负载（字段名冻结）。
+#[derive(Clone, Serialize)]
+pub(crate) struct PlaybackTransitionedPayload {
+  pub seq: u64,        // 过渡序号
+  pub duration_secs: f64, // 新曲总时长（秒）
 }
 
 /// 播放线程消费的控制命令集。
@@ -210,6 +252,12 @@ pub enum AudioCommand { // AudioCommand
   }, // 音效参数
   SetDevice(Option<String>),      // 输出设备切换
   SetOutputMode(AudioOutputMode), // 输出模式切换
+  /// 运行期更新播放特性（交叉淡入淡出/跳过静音），不重启管线。
+  SetPlaybackFeatures(PlaybackFeatures),
+  /// 预拼接下一首到交接槽（无缝播放/交叉淡入淡出的来源）。
+  PrepareNext(Box<PreparedTrackPayload>),
+  /// 取消预拼接（手动切歌/暂停/关闭无缝播放时调用）。
+  CancelPrepareNext,
 }
 
 /// 播放输入的三种落地形态。

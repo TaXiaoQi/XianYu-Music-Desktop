@@ -31,12 +31,33 @@ where
     }
 }
 
-// 由共享进度原子量折算当前播放到的时间点
+// 同上，但保留闭包返回值（panic 时返回 None）
+pub(super) fn confine_device_fault_with<F, R>(device_job: F) -> Option<R>
+where
+    F: FnOnce() -> R,
+{
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(device_job)) {
+        Ok(value) => Some(value),
+        Err(payload) => {
+            let reason = panic_reason_text(payload.as_ref());
+            eprintln!("[Audio][rust] 音频设备相关操作 panic，已隔离（不终止播放线程）: {reason}");
+            None
+        }
+    }
+}
+
+// 由共享进度原子量折算当前播放到的时间点。
+// 跳过静音压缩过样本流：实播数 + 丢弃数 = 原曲时间轴位置，UI 刻度不受影响。
 pub(in crate::player) fn elapsed_playback_time(progress: &Arc<SharedProgress>) -> Duration {
     let played = progress.samples_played.load(Ordering::Relaxed);
+    let skipped = progress.skipped_samples.load(Ordering::Relaxed);
     let hz = progress.sample_rate.load(Ordering::Relaxed);
     let lanes = progress.channels.load(Ordering::Relaxed);
-    Duration::from_secs_f64(progress_seconds_from_samples(played, hz, lanes))
+    Duration::from_secs_f64(progress_seconds_from_samples(
+        played + skipped,
+        hz,
+        lanes,
+    ))
 }
 
 // 把指定秒数换算成声道交织后的采样序号
@@ -50,6 +71,7 @@ pub(in crate::player) fn samples_for_position(at_seconds: f64, progress: &Shared
 pub(in crate::player) fn wipe_progress_bookkeeping(progress: &Arc<SharedProgress>) {
     let loose = Ordering::Relaxed;
     progress.samples_played.store(0, loose);
+    progress.skipped_samples.store(0, loose);
     progress.sample_rate.store(0, loose);
     progress.channels.store(0, loose);
     progress.start_failed.store(false, loose);

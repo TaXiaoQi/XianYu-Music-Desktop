@@ -34,7 +34,7 @@ pub use palette::extract_palette;
 pub use url_resolver::{find_alternative_lx_source, get_lx_cover};
 
 // ---------- 封面缓存 ----------
-pub use covers::{clear_cover_cache, get_song_cover, get_song_cover_thumbnail, run_cache_cleanup}; // 实现
+pub use covers::{clear_cover_cache, get_song_cover, get_song_cover_thumbnail, read_cover_data_url, run_cache_cleanup}; // 实现
 
 // ---------- 歌曲文件与歌词编辑 ----------
 pub use files::{ // 实现
