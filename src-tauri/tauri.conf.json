@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "弦予音乐",
   "mainBinaryName": "弦予音乐",
-  "version": "2.0.6-beta3",
+  "version": "2.0.6-beta4",
   "identifier": "com.xymusic.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -23,8 +23,7 @@
         "decorations": false,
         "transparent": true,
         "visible": false,
-        "center": true,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222"
+        "center": true
       }
     ],
     "security": {

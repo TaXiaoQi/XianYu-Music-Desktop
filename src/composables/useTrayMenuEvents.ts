@@ -1,4 +1,4 @@
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
+﻿import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -55,9 +55,24 @@ const WARMUP_DELAY_MS = 600;
 const READY_GATE_TIMEOUT_MS = 600;
 const CURSOR_NUDGE_X = 12;
 const CURSOR_GAP_Y = 10;
+const STALE_LABEL_RELEASE_TIMEOUT_MS = 1_000;
+// 创建悬挂保护：异常场景下创建 Promise 可能既无 created 也无 error，
+// 悬挂会永久占用创建租约；超时后放弃本次并清理，让下次右键走重建
+const CREATION_TIMEOUT_MS = 10_000;
 
 const findTrayWindow = async () =>
     WebviewWindow.getByLabel(TRAY_MENU_WINDOW_LABEL);
+
+// 僵尸窗口判别：manager 有条目但运行时句柄失效时，取值类消息会快速失败，
+// 而设置类消息被静默丢弃（表现为永不显示、startTrayMouseCapture 报无句柄）。
+const isTrayWindowHealthy = async (target: WebviewWindow) => {
+    try {
+        await target.isVisible();
+        return true;
+    } catch {
+        return false;
+    }
+};
 
 const resetLease = () => {
     lease.creation = null;
@@ -70,7 +85,25 @@ const resetLease = () => {
 
 const openTrayWindow = async (): Promise<WebviewWindow> => {
     const existing = await findTrayWindow();
-    if (existing) return existing;
+    if (existing) {
+        if (await isTrayWindowHealthy(existing)) {
+            return existing;
+        }
+
+        // 残留条目（创建失败或句柄已销毁但 manager 未清干净）：销毁后重建，
+        // 否则设置类消息被静默丢弃，菜单永远无法显示。
+        try {
+            await existing.destroy();
+        } catch (error) {
+        }
+
+        const deadline = Date.now() + STALE_LABEL_RELEASE_TIMEOUT_MS;
+        while (Date.now() < deadline && (await findTrayWindow())) {
+            await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
+        if (await findTrayWindow()) {
+        }
+    }
 
     if (lease.creation) {
         return lease.creation;
@@ -98,8 +131,6 @@ const openTrayWindow = async (): Promise<WebviewWindow> => {
         resizable: false,
         skipTaskbar: true,
         alwaysOnTop: true,
-        focus: false,
-        focusable: true,
         center: false,
     });
 
@@ -112,11 +143,17 @@ const openTrayWindow = async (): Promise<WebviewWindow> => {
     };
 
     lease.creation = new Promise<WebviewWindow>((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+            conclude(() => reject(new Error("tray window creation timeout")));
+        }, CREATION_TIMEOUT_MS);
+
         void candidate.once("tauri://created", () => {
+            window.clearTimeout(timeout);
             conclude(() => resolve(candidate));
         });
 
         void candidate.once("tauri://error", (event) => {
+            window.clearTimeout(timeout);
             conclude(() => reject(event.payload));
         });
     });
@@ -338,6 +375,17 @@ export function useTrayMenuEvents(router: Router) {
             await target.setAlwaysOnTop(true);
         } catch (error) {
             console.warn("Failed to prewarm tray menu window:", error);
+            // 释放悬挂/失败的创建租约，并清掉可能残留的半成品条目，
+            // 让下次右键能走干净的重建路径
+            resetLease();
+            const stale = await findTrayWindow();
+            if (stale) {
+                try {
+                    await stale.destroy();
+                } catch {
+                    // 残留清理失败不阻塞，重建路径有 label 占用自检
+                }
+            }
         }
     };
 
@@ -354,30 +402,35 @@ export function useTrayMenuEvents(router: Router) {
     const presentTrayMenu = async (anchor: TrayMenuAnchor) => {
         if (!theme.value.useCustomTrayMenu) return;
 
-        const target = await openTrayWindow();
-        await awaitTrayReady();
-        await applyTrayMetrics(target);
-        const position = await resolveTrayMenuPosition(anchor);
-        await target.setAlwaysOnTop(true);
-        await target.setPosition(position);
-        await emitTo<TrayMenuStatePayload>(
-            TRAY_MENU_WINDOW_LABEL,
-            TRAY_MENU_STATE_EVENT,
-            buildTraySnapshot(),
-        );
-        await target.show();
-        // 托盘点击授予的前台激活权在异步弹出链路里往往已失效，普通
-        // setFocus 会被系统静默拒绝，菜单窗拿不到焦点时失焦关闭永远不
-        // 触发；由 Rust 侧 AttachThreadInput 强制接管前台
-        await windowApi.forceWindowForeground(TRAY_MENU_WINDOW_LABEL);
-        await nextFrame();
-        await target.setFocus();
-        // 关外点击收起菜单：Win32 低级鼠标钩子，与原生菜单同源的机制，
-        // 不依赖焦点（托盘弹出后进程常拿不到前台，失焦关闭不可靠）
         try {
-            await windowApi.startTrayMouseCapture(TRAY_MENU_WINDOW_LABEL);
+            const target = await openTrayWindow();
+            await awaitTrayReady();
+            await applyTrayMetrics(target);
+            const position = await resolveTrayMenuPosition(anchor);
+            await target.setAlwaysOnTop(true);
+            await target.setPosition(position);
+            await emitTo<TrayMenuStatePayload>(
+                TRAY_MENU_WINDOW_LABEL,
+                TRAY_MENU_STATE_EVENT,
+                buildTraySnapshot(),
+            );
+            await target.show();
+            // 托盘点击授予的前台激活权在异步弹出链路里往往已失效，普通
+            // setFocus 会被系统静默拒绝，菜单窗拿不到焦点时失焦关闭永远不
+            // 触发；由 Rust 侧 AttachThreadInput 强制接管前台
+            await windowApi.forceWindowForeground(TRAY_MENU_WINDOW_LABEL);
+            await nextFrame();
+            await target.setFocus();
+            // 关外点击收起菜单：Win32 低级鼠标钩子，与原生菜单同源的机制，
+            // 不依赖焦点（托盘弹出后进程常拿不到前台，失焦关闭不可靠）
+            try {
+                await windowApi.startTrayMouseCapture(TRAY_MENU_WINDOW_LABEL);
+            } catch (error) {
+                console.warn("Failed to start tray mouse capture:", error);
+            }
         } catch (error) {
-            console.warn("Failed to start tray mouse capture:", error);
+            // 释放悬挂/失败的创建租约，下次右键直接走干净重建
+            resetLease();
         }
     };
 

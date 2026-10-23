@@ -66,12 +66,28 @@ pub(crate) struct PendingDeepLinks(pub(crate) Mutex<Vec<String>>);
 #[derive(Default)]
 pub(crate) struct LaunchedAtStartupState(pub(crate) bool);
 
-#[derive(Default)]
 pub(crate) struct TrayMenuRuntimeState {
     native_menu_enabled: Mutex<bool>,
+    /// 心跳超时导致的降级标记（区别于用户显式配置的原生菜单模式）：
+    /// 心跳恢复后的首次右键据此把托盘切回配置模式，降级不再是单向不可逆
+    degraded_by_heartbeat: Mutex<bool>,
     native_menu_state: Mutex<NativeTrayMenuState>,
     /// 前端心跳（毫秒时间戳）：webview 崩溃/卡死后停跳，托盘右键据此降级原生菜单
     last_heartbeat_ms: AtomicU64,
+    /// 进程启动时刻（毫秒时间戳）：配合心跳识别「前端尚未挂载」的启动期
+    started_at_ms: u64,
+}
+
+impl TrayMenuRuntimeState {
+    fn new(started_at_ms: u64) -> Self {
+        Self {
+            native_menu_enabled: Mutex::new(false),
+            degraded_by_heartbeat: Mutex::new(false),
+            native_menu_state: Mutex::new(NativeTrayMenuState::default()),
+            last_heartbeat_ms: AtomicU64::new(0),
+            started_at_ms,
+        }
+    }
 }
 
 #[derive(Copy, Clone, serde::Serialize)]
@@ -217,6 +233,11 @@ fn frontend_alive_after_ms() -> u64 {
     12_000
 }
 
+/// 前端启动宽限期：进程启动后该时长内，即使尚未收到任何心跳也视为存活。
+/// 前端挂载完成前右键托盘不能触发降级——否则一次启动竞态就会把本次会话
+/// 永久钉在原生菜单（前端未崩溃就不会重推配置，降级无法自愈）。
+const FRONTEND_BOOT_GRACE_MS: u64 = 60_000;
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -224,10 +245,17 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn frontend_last_heartbeat_ms<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> u64 {
-    app.try_state::<TrayMenuRuntimeState>()
-        .map(|state| state.last_heartbeat_ms.load(Ordering::Relaxed))
-        .unwrap_or(0)
+/// 前端是否存活：12 秒内有心跳；或从未上报过心跳但进程仍在启动宽限期内
+/// （前端尚未挂载完成，不能据此降级，见 FRONTEND_BOOT_GRACE_MS）。
+fn frontend_alive<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    let Some(state) = app.try_state::<TrayMenuRuntimeState>() else {
+        return false;
+    };
+    let last = state.last_heartbeat_ms.load(Ordering::Relaxed);
+    if last == 0 {
+        return now_ms().saturating_sub(state.started_at_ms) < FRONTEND_BOOT_GRACE_MS;
+    }
+    last + frontend_alive_after_ms() >= now_ms()
 }
 
 /// 前端心跳上报：托盘右键据此判断 webview 是否可用（见 on_tray_icon_event）。
@@ -240,12 +268,16 @@ pub(crate) fn tray_heartbeat<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
 }
 
 /// 前端不可用时把托盘降级回原生菜单（含退出项，退出在 Rust 端闭环）。
-/// 降级后常驻原生菜单直到进程重启；Tauri 的 TrayIcon 无程序化 popup，
-/// 因此本次右键已错过挂载时机，菜单在下次右键时由系统弹出。
+/// 降级打上 degraded_by_heartbeat 标记：心跳恢复后的首次右键自动切回配置
+/// 模式（见 restore_from_degrade_if_needed）。Tauri 的 TrayIcon 无程序化
+/// popup，因此本次右键已错过挂载时机，菜单在下次右键时由系统弹出。
 fn degrade_to_native_tray_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(state) = app.try_state::<TrayMenuRuntimeState>() {
         if let Ok(mut enabled) = state.native_menu_enabled.lock() {
             *enabled = true;
+        }
+        if let Ok(mut degraded) = state.degraded_by_heartbeat.lock() {
+            *degraded = true;
         }
         let menu_state = state.native_menu_state.lock().ok().map(|value| value.clone());
         if let Some(menu_state) = menu_state {
@@ -256,6 +288,36 @@ fn degrade_to_native_tray_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
             }
         }
     }
+}
+
+/// 心跳恢复后的首次右键：把「心跳降级」状态切回当前配置模式。
+/// 只处理 degraded_by_heartbeat 标记的降级，不覆盖用户显式选择的原生菜单
+/// 模式。返回是否已切回自定义菜单模式（调用方据此放行本次呼出事件）。
+fn restore_from_degrade_if_needed<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    let Some(state) = app.try_state::<TrayMenuRuntimeState>() else {
+        return false;
+    };
+    let was_degraded = state
+        .degraded_by_heartbeat
+        .lock()
+        .map(|mut value| {
+            let was = *value;
+            *value = false;
+            was
+        })
+        .unwrap_or(false);
+    if !was_degraded {
+        return false;
+    }
+    let menu_state = state.native_menu_state.lock().ok().map(|value| value.clone());
+    let Some(menu_state) = menu_state else {
+        return false;
+    };
+    let custom = menu_state.use_custom_tray_menu;
+    if set_native_tray_menu_enabled(app, !custom).is_ok() {
+        let _ = apply_tray_menu(app, &menu_state);
+    }
+    custom
 }
 
 fn is_native_tray_menu_enabled<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
@@ -517,9 +579,16 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 
             {
                 let app = tray.app_handle();
                 if is_native_tray_menu_enabled(&app) {
+                    // 原生菜单挂载中：可能是心跳降级，也可能是用户配置。
+                    // 心跳正常即前端已恢复，先把降级态切回配置模式；若切回了
+                    // 自定义模式则直接放行本次呼出（配置为原生模式时不切换，
+                    // 本次右键仍由系统弹出原生菜单）。
+                    if frontend_alive(&app) && restore_from_degrade_if_needed(&app) {
+                        emit_tray_menu_open(&app, position.x, position.y);
+                    }
                     return;
                 }
-                if frontend_last_heartbeat_ms(&app) + frontend_alive_after_ms() >= now_ms() {
+                if frontend_alive(&app) {
                     emit_tray_menu_open(&app, position.x, position.y);
                     return;
                 }
@@ -590,7 +659,7 @@ pub(crate) fn setup_app( // setup_app
 
     app.manage(PendingOpenPaths::default()); // 实现
     app.manage(PendingDeepLinks::default());
-    app.manage(TrayMenuRuntimeState::default());
+    app.manage(TrayMenuRuntimeState::new(now_ms()));
     app.manage(crate::sleep_timer::SleepTimerState::default());
 
     // 记录本次是否为开机自启拉起：前端据此决定是否直接最小化到托盘。

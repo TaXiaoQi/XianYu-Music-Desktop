@@ -1,7 +1,7 @@
 {
   "name": "xianyu-music",
   "private": true,
-  "version": "2.0.6-beta3",
+  "version": "2.0.6-beta4",
   "license": "XSAL-1.0",
   "type": "module",
   "scripts": {
@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@tanstack/vue-virtual": "^3.13.13",
-    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-global-shortcut": "^2.3.2",
     "@tauri-apps/plugin-opener": "^2.5.4",
@@ -59,7 +59,7 @@
     "@choochmeque/tauri-windows-bundle": "^0.1.29",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.1.18",
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/blueimp-md5": "^2.18.2",
     "@types/crypto-js": "^4.2.2",
     "@types/he": "^1.2.3",

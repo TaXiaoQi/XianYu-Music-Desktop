@@ -417,11 +417,13 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("搜索请求失败"));
+        // 带上状态码：403/503 等形态是百度频控/风控判别的关键证据
+        return Err(biz_err(&format!("搜索请求失败 (HTTP {})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
-    if num_i64(j.get("errno")) != Some(0) {
-        return Err(biz_err("搜索请求失败"));
+    let errno = num_i64(j.get("errno")).unwrap_or(-1);
+    if errno != 0 {
+        return Err(biz_err(&format!("搜索请求失败 (errno={errno})")));
     }
     let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
     let files: Vec<Value> = list.iter().map(file_from_search_item).collect();

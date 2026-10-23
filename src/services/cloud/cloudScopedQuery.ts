@@ -4,14 +4,67 @@
 // 全盘搜索——BFS 完整遍历选定文件夹子树（不设深度/数量/页数上限），
 // 文件名包含关键词（忽略大小写）即收集。
 //
+// 目录间并发遍历（worker 池，上限 DIR_CONCURRENCY）：串行逐目录 listDir
+// 在大目录树下是几十上百次网络往返，是搜索结果页慢的主因；同目录翻页
+// 仍串行（cursor 链式依赖）。并发上限对齐头部元数据探针（4），温和不触
+// 发风控。
+//
 // 路径语义与浏览页/选择器一致：进入子目录取「条目 path 非空且异于
 // 当前目录时用 path，否则用 id」（覆盖 path 型盘与 id 型盘）。
 
 import type { CloudProvider } from './cloudProvider';
 import type { CloudFile } from './cloudTypes';
 
+const DIR_CONCURRENCY = 4;
+
+/** path 是否落在任一 root 子树内（目录边界：路径前缀 + '/'）。
+ * root 本身也命中（filesearch 对目录本身不返回，防御性兜住）。 */
+const isUnderRoots = (path: string, roots: string[]): boolean =>
+  roots.some(r => {
+    const base = r.endsWith('/') ? r : `${r}/`;
+    return path === r || path.startsWith(base);
+  });
+
+/** 百度特化：filesearch 服务端全盘检索一次返回（含 path），1 次 API 替代
+ * 逐目录 listDir 遍历——几十个目录的树即使并发也要多轮往返，是百度范围
+ * 搜索慢的主因。命中按 roots 路径前缀过滤 + 文件名 contains 复核
+ * （filesearch 是服务端分词匹配，可能宽于本地 contains）。
+ * 失败（OAuth 轨无搜索接口等）返回 null，调用方回落通用遍历。
+ * 注意：服务端索引对新建文件有短暂延迟，极新文件可能搜不到（通用遍历无
+ * 此差异）。 */
+const scopedSearchAudioBaidu = async (
+  provider: CloudProvider,
+  cred: Record<string, string>,
+  roots: string[],
+  keyword: string,
+): Promise<CloudFile[] | null> => {
+  try {
+    // 百度 filesearch 无翻页（nextCursor 恒空），一次拉全
+    const all = (await provider.searchFiles(cred, keyword.trim())).files;
+    return all.filter(
+      f =>
+        !f.isDir &&
+        f.isAudio &&
+        f.name.toLowerCase().includes(keyword.trim().toLowerCase()) &&
+        f.path != null &&
+        isUnderRoots(f.path, roots),
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // 网络类失败（频控/断网）不回落 BFS：几十次 listDir 连击会加重百度
+    // 风控（实测连播同域名播放直链一起打到 403/连接重置），风控期返回
+    // 空结果；仅业务不支持（OAuth 轨无搜索接口）回落通用遍历。
+    if (!msg.includes('OAuth') && !msg.includes('不支持')) {
+      console.warn('[scopedSearch] baidu filesearch 失败(网络/风控?)，返回空:', msg);
+      return [];
+    }
+    console.warn('[scopedSearch] baidu filesearch 不支持，回落遍历:', msg);
+    return null;
+  }
+};
+
 /** 在 roots 指定的文件夹范围内搜索文件名含 keyword 的音频。
- * 返回结果按遍历顺序去重（同 id 只留一条）；网络异常的子文件夹跳过。 */
+ * 同 id 只留一条（并发遍历，结果顺序不定）；网络异常的子文件夹跳过。 */
 export async function scopedSearchAudio(
   provider: CloudProvider,
   cred: Record<string, string>,
@@ -20,38 +73,64 @@ export async function scopedSearchAudio(
 ): Promise<CloudFile[]> {
   const kw = keyword.trim().toLowerCase();
   if (!kw) return [];
+  if (provider.id === 'baidu') {
+    const viaApi = await scopedSearchAudioBaidu(provider, cred, roots, keyword);
+    if (viaApi != null) return viaApi;
+    // 回落通用遍历
+  }
   const seen = new Set<string>();
   const out: CloudFile[] = [];
-  for (const root of roots) {
-    const queue: string[] = [root];
-    while (queue.length > 0) {
-      const cur = queue.shift() as string;
-      let cursor: string | null = null; // 首页为 null，有 nextCursor 才翻页
-      for (;;) {
-        let r;
-        try {
-          r = await provider.listDir(cred, cur, cursor);
-        } catch {
-          break; // 单文件夹失败不影响其余范围
-        }
-        for (const f of r.files) {
-          if (f.isDir) {
-            const next =
-              f.path != null && f.path !== '' && f.path !== cur ? f.path : f.id;
-            queue.push(next);
-          } else if (
-            f.isAudio &&
-            f.name.toLowerCase().includes(kw) &&
-            !seen.has(f.id)
-          ) {
-            seen.add(f.id);
-            out.push(f);
-          }
-        }
-        cursor = r.nextCursor;
-        if (cursor == null || cursor === '') break;
+  const queue: string[] = [...roots];
+  let active = 0;
+  // 百度回落遍历用更低并发（2）：百度网页 API 对高频敏感，并发 4 的
+  // listDir 连击实测触发风控（连带播放直链 403）。
+  const dirConcurrency = provider.id === 'baidu' ? 2 : DIR_CONCURRENCY;
+
+  // 单个目录：整页拉完（翻页串行），发现的子目录入共享队列
+  const scanDir = async (cur: string): Promise<void> => {
+    let cursor: string | null = null; // 首页为 null，有 nextCursor 才翻页
+    for (;;) {
+      let r;
+      try {
+        r = await provider.listDir(cred, cur, cursor);
+      } catch {
+        break; // 单文件夹失败不影响其余范围
       }
+      for (const f of r.files) {
+        if (f.isDir) {
+          const next =
+            f.path != null && f.path !== '' && f.path !== cur ? f.path : f.id;
+          queue.push(next);
+        } else if (
+          f.isAudio &&
+          f.name.toLowerCase().includes(kw) &&
+          !seen.has(f.id)
+        ) {
+          seen.add(f.id);
+          out.push(f);
+        }
+      }
+      cursor = r.nextCursor;
+      if (cursor == null || cursor === '') break;
     }
-  }
+  };
+
+  await new Promise<void>((resolve) => {
+    const pump = (): void => {
+      if (active === 0 && queue.length === 0) {
+        resolve();
+        return;
+      }
+      while (active < dirConcurrency && queue.length > 0) {
+        const dir = queue.shift() as string;
+        active++;
+        scanDir(dir).finally(() => {
+          active--;
+          pump();
+        });
+      }
+    };
+    pump();
+  });
   return out;
 }

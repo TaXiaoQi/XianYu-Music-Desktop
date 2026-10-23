@@ -460,7 +460,8 @@ pub fn run() { // run
         builder
     }
         .on_window_event(|window, event| { // 实现
-            let main_window_gone = window.label() == "main";
+            let label = window.label();
+            let main_window_gone = label == "main";
             if main_window_gone && matches!(event, tauri::WindowEvent::Destroyed) {
                 graceful_shutdown(window.app_handle());
             }

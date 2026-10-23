@@ -17,9 +17,8 @@ pub(crate) use kg::build_kugou_cover_url;
 #[cfg(test)]
 use cache::make_search_cache_key;
 #[cfg(test)]
-use common::{decode_name, format_play_time, format_singer_name, size_formate};
-#[cfg(test)]
-use kg::build_kugou_cover_url;
+// decode_name 已在上方 pub(crate) use 导出，测试态不可重复导入
+use common::{format_play_time, format_singer_name, size_formate};
 #[cfg(test)]
 use kw::build_kuwo_cover_url;
 #[cfg(test)]

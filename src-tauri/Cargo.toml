@@ -1,6 +1,6 @@
 [package]
 name = "xianyu_music"
-version = "2.0.6-beta3"
+version = "2.0.6-beta4"
 description = "A beautiful local music player powered by Tauri." 
 authors = ["lyc"] 
 license = "LicenseRef-XSAL-1.0"
@@ -100,11 +100,11 @@ socket2 = "0.6"
 # 托盘守护进程（xianyu_tray_daemon）的托盘与事件循环实现，仅守护进程使用；
 # 与主程序 Tauri 内置的 tray-icon/tao 版本各自独立，互不影响
 tray-icon = { version = "0.24", default-features = false }
-tao = "0.35"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel"] }
+tao = "0.37"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_LibraryLoader"] }
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_Com"] }
-windows-core = "0.61"
-webview2-com = "0.38"
+windows-core = "0.62"
+webview2-com = "0.39"
 wasapi = "0.23" 
 
 # Linux 桌面端依赖（构建前置：libwebkit2gtk-4.1-dev / libssl-dev / libasound2-dev 等，
