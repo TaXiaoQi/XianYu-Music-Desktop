@@ -236,6 +236,11 @@ const pluginUpdateService = createPluginUpdateService({
   reloadPluginInstance,
   pluginApi,
   log,
+  // 懒加载注入：pluginSync 经 pluginEngine barrel 反向依赖本模块，静态引入成环
+  deleteCloudPlugins: async (pluginIds) => {
+    const { deleteCloudPlugins } = await import('./pluginSync');
+    return deleteCloudPlugins(pluginIds);
+  },
 });
 
 export const checkPluginUpdate = pluginUpdateService.checkPluginUpdate;

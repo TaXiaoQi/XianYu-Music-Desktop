@@ -1,6 +1,7 @@
 import type { PluginSource } from '../../types';
 import type { PluginUpdateCheckResult, PluginUpdateServiceDeps } from './pluginUpdateTypes';
 import { readPluginIdAliases, writePluginIdAliases } from './pluginEngineBase';
+import { addDownloadSkipIds, isPluginSynced, removeSyncedPluginIds } from './pluginSyncState';
 
 export function createPluginUpdateExecutor(deps: PluginUpdateServiceDeps) {
   const {
@@ -44,6 +45,14 @@ export function createPluginUpdateExecutor(deps: PluginUpdateServiceDeps) {
         }
         aliases[source.id] = newSource.id;
         writePluginIdAliases(aliases);
+        // 同步记账：更新即换 id，云端仍存的旧脚本会被「先拉后推」的下载
+        // 按 id 原样恢复，旧脚本一跑又自报更新，弹窗因此反复出现（#666888）。
+        // 落"仅删本地"墓碑兜底；已同步过的旧版本从云端移除（删除成功会
+        // 自动解除墓碑，见 pluginSync.deleteCloudPlugins）。
+        const wasSynced = isPluginSynced(source.id);
+        addDownloadSkipIds([source.id]);
+        removeSyncedPluginIds([source.id]);
+        if (wasSynced) await deps.deleteCloudPlugins?.([source.id]);
       }
 
       addPluginSource(newSource);
