@@ -187,6 +187,18 @@ const handleUpdateFromSource = async () => {
     if (added === 0 && removed === 0) {
       showToast('已是最新，与源端一致', 'info');
     } else {
+      // [sourceUpdate] 一次性诊断：复现「已新增但列表/搜索看不到」时在控制台核对数据落点
+      const diagNewPaths = sourceSongs.filter(s => !beforePaths.has(s.path)).map(s => s.path);
+      console.log('[sourceUpdate] applied', {
+        playlistId: playlist.id,
+        before: beforePaths.size,
+        after: playlist.songPaths.length,
+        added,
+        removed,
+        newPaths: diagNewPaths,
+        newPathInSongs: diagNewPaths.every(p => (playlist.songs ?? []).some(s => s.path === p)),
+        lastPath: playlist.songPaths[playlist.songPaths.length - 1],
+      });
       showToast(
         fullSync ? `已完全同步：新增 ${added} 首，移除 ${removed} 首` : `已新增 ${added} 首歌曲`,
         'success',
