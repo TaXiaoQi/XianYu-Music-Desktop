@@ -28,8 +28,9 @@ function toRecord(v: unknown): Record<string, unknown> | null {
 }
 
 /** rotated_cred 回写：rust 刷新的凭据落盘。
- * accountId 定位规则：cred 内冗余的 accountId 键（阿里登录时存入）；
- * 免登录分享直链无凭据，跳过回写。 */
+ * accountId 定位规则：优先 cred 内冗余的 accountId 键（阿里登录时存入）；
+ * 夸克/UC 等凭据不冗余该键，按凭据内容匹配绑定账号（cred 取自存储原样、
+ * 轮换只发生在响应后，全等即同账号）；免登录分享直链无凭据，跳过回写。 */
 async function _applyRotatedCred(
   provider: string,
   cred: Cred,
@@ -37,13 +38,32 @@ async function _applyRotatedCred(
 ): Promise<void> {
   const rotated = toRecord(data['rotated_cred']);
   if (!rotated || Object.keys(rotated).length === 0) return;
-  const accountId = cred['accountId'] ?? '';
-  if (accountId === '' || accountId === '_') return;
+  let accountId = cred['accountId'] ?? '';
+  if (accountId === '' || accountId === '_') {
+    accountId = await matchAccountByCred(provider, cred);
+  }
+  if (accountId === '') return;
   const mapped: Record<string, string> = {};
   for (const [k, v] of Object.entries(rotated)) {
     mapped[k] = v == null ? '' : String(v);
   }
   await CloudCredentialsStore.instance.updateCred(provider, accountId, mapped);
+}
+
+/** 凭据内容匹配账号：逐账号全等比对存储凭据与本次请求凭据。 */
+async function matchAccountByCred(
+  provider: string,
+  cred: Cred,
+): Promise<string> {
+  const keys = Object.keys(cred);
+  if (keys.length === 0) return '';
+  const accounts = await CloudCredentialsStore.instance.accountsFor(provider);
+  for (const a of accounts) {
+    const c = a.cred;
+    if (Object.keys(c).length !== keys.length) continue;
+    if (keys.every((k) => c[k] === cred[k])) return a.accountId;
+  }
+  return '';
 }
 
 /** 公共执行器：构造 reqJson → cloud_proxy → 解包出顶层载荷。
