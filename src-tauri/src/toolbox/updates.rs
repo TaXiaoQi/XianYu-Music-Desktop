@@ -218,9 +218,30 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
 
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         if ext == "msi" {
-            Command::new("msiexec")
-                .args(["/i", &path_str])
+            // /qb-! 被动化：只显示基础进度条（不可取消），不再弹完整安装向导。
+            // MSI 没有 NSIS /R 的装完自动重启语义，用 cmd 链在安装结束后拉起新版应用。
+            let current_exe =
+                std::env::current_exe().map_err(|e| format!("获取应用路径失败: {e}"))?;
+            let exe_str = current_exe.to_string_lossy().to_string();
+            Command::new("cmd")
+                .args([
+                    "/C",
+                    "start",
+                    "/wait",
+                    "",
+                    "msiexec",
+                    "/i",
+                    &path_str,
+                    "/qb-!",
+                    "&&",
+                    "start",
+                    "",
+                    &exe_str,
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
                 .spawn()
                 .map_err(|e| format!("启动 MSI 安装程序失败: {e}"))?;
         } else {
@@ -228,8 +249,6 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
             // ERROR_ELEVATION_REQUIRED (740) 导致更新永远装不上，必须经 cmd start
             // （ShellExecute 语义）触发 UAC 提权。/P 被动模式（仅进度条），/R 安装
             // 成功后自动重启应用。
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             Command::new("cmd")
                 .args(["/C", "start", "", &path_str, "/P", "/R"])
                 .creation_flags(CREATE_NO_WINDOW)
