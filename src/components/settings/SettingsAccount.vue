@@ -727,74 +727,76 @@ function confirmOverwrite() {
             ></button>
           </div>
         </div>
-        <div
-          v-for="item in uploadItems"
-          :key="item.key"
-          class="flex items-center justify-between gap-4 p-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
-        >
-          <div class="upload-copy">
-            <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div>
-          </div>
-          <div class="flex items-center gap-3">
-            <SettingHint :text="item.desc" />
-            <button
-              type="button"
-              class="glass-switch"
-              :class="{ 'is-checked': settingsStore.settings.upload[item.key] }"
-              @click="toggleUpload(item.key)"
-            ></button>
-          </div>
-        </div>
-        <template v-if="settingsStore.settings.autoSync.enabled">
-          <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
-            <div class="text-sm font-medium text-gray-900 dark:text-white/90">同步间隔</div>
-            <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
-              <input
-                :value="Math.round(settingsStore.settings.autoSync.syncIntervalSeconds / 3600)"
-                class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                type="number"
-                min="1"
-                max="168"
-                step="1"
-                inputmode="numeric"
-                @change="updateAutoSyncIntervalSeconds($event)"
-              />
-              <span>小时</span>
+        <transition name="settings-pop-panel">
+          <div v-if="settingsStore.settings.autoSync.enabled" class="pl-4">
+            <div
+              v-for="item in uploadItems"
+              :key="item.key"
+              class="flex items-center justify-between gap-4 p-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+            >
+              <div class="upload-copy">
+                <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div>
+              </div>
+              <div class="flex items-center gap-3">
+                <SettingHint :text="item.desc" />
+                <button
+                  type="button"
+                  class="glass-switch"
+                  :class="{ 'is-checked': settingsStore.settings.upload[item.key] }"
+                  @click="toggleUpload(item.key)"
+                ></button>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+              <div class="text-sm font-medium text-gray-900 dark:text-white/90">同步间隔</div>
+              <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
+                <input
+                  :value="Math.round(settingsStore.settings.autoSync.syncIntervalSeconds / 3600)"
+                  class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                  type="number"
+                  min="1"
+                  max="168"
+                  step="1"
+                  inputmode="numeric"
+                  @change="updateAutoSyncIntervalSeconds($event)"
+                />
+                <span>小时</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+              <div class="text-sm font-medium text-gray-900 dark:text-white/90">最大延迟</div>
+              <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
+                <input
+                  :value="settingsStore.settings.autoSync.maxDelayMinutes"
+                  class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                  type="number"
+                  min="1"
+                  max="720"
+                  step="1"
+                  inputmode="numeric"
+                  @change="updateAutoSyncMaxDelay($event)"
+                />
+                <span>分钟</span>
+              </div>
+            </div>
+            <div class="sync-notice p-4">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>自动同步将仅上传上方开启的同步内容；手动同步不受此限制。</span>
+            </div>
+            <div v-if="playlistSync.autoSyncStatus.value" class="sync-status p-4" :class="{ 'sync-status--active': playlistSync.autoSyncStatus.value.includes('正在'), 'sync-status--error': playlistSync.autoSyncDelayed.value }">
+              <div v-if="playlistSync.autoSyncStatus.value.includes('正在')" class="sync-spinner"></div>
+              <svg v-else-if="playlistSync.autoSyncDelayed.value" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.autoSyncStatus.value }}</span>
+            </div>
+            <div v-if="nextSyncTimeDisplay" class="p-4 text-xs text-gray-500 dark:text-white/50">
+              下次同步：{{ nextSyncTimeDisplay }}
             </div>
           </div>
-          <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
-            <div class="text-sm font-medium text-gray-900 dark:text-white/90">最大延迟</div>
-            <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
-              <input
-                :value="settingsStore.settings.autoSync.maxDelayMinutes"
-                class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                type="number"
-                min="1"
-                max="720"
-                step="1"
-                inputmode="numeric"
-                @change="updateAutoSyncMaxDelay($event)"
-              />
-              <span>分钟</span>
-            </div>
-          </div>
-          <div class="sync-notice p-4">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>自动同步将仅上传上方开启的同步内容；手动同步不受此限制。</span>
-          </div>
-          <div v-if="playlistSync.autoSyncStatus.value" class="sync-status p-4" :class="{ 'sync-status--active': playlistSync.autoSyncStatus.value.includes('正在'), 'sync-status--error': playlistSync.autoSyncDelayed.value }">
-            <div v-if="playlistSync.autoSyncStatus.value.includes('正在')" class="sync-spinner"></div>
-            <svg v-else-if="playlistSync.autoSyncDelayed.value" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.autoSyncStatus.value }}</span>
-          </div>
-          <div v-if="nextSyncTimeDisplay" class="p-4 text-xs text-gray-500 dark:text-white/50">
-            下次同步：{{ nextSyncTimeDisplay }}
-          </div>
-        </template>
+        </transition>
       </div>
     </section>
 
@@ -1044,6 +1046,29 @@ function confirmOverwrite() {
   font-size: 0.72rem; /* 样式 */
   line-height: 1.5; /* 样式 */
 } /* 样式 */
+.settings-pop-panel-enter-active,
+.settings-pop-panel-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 240ms ease,
+    max-height 240ms ease;
+  transform-origin: top center;
+  overflow: hidden;
+}
+
+.settings-pop-panel-enter-from,
+.settings-pop-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.97);
+  max-height: 0;
+}
+
+.settings-pop-panel-enter-to,
+.settings-pop-panel-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  max-height: 800px;
+}
 .logout-confirm-card { /* 样式 */
   width: min(86vw, 360px); /* 样式 */
   background: rgba(255, 255, 255, 0.8);
