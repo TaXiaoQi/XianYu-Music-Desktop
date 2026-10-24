@@ -32,6 +32,12 @@ const syncOffsetCache = new Map<string, number>();
 // 音频是否已交给 MV 自带音轨（true 时组件会取消视频静音并把歌曲音量淡出）。
 const audioTakenOver = ref(false);
 let requestVersion = 0;
+
+// 流式可播守护信号：mvProxyUrl 注册成功 ≠ 可播——Rust 缓存池对不可达 CDN
+// 会长时间无数据，video 元素无限缓冲。notifyPlayable/notifyVideoError 置位
+// 并唤醒守护；超时则逐候选换源重开流（与移动端初始化限时判负对齐）
+let streamWait: { resolve: () => void } | null = null;
+let streamPlayableHit = false;
 let activeSong: Song | null = null;
 
 const lastResolvedSource = ref<Pick<
@@ -341,20 +347,56 @@ async function resolveBilibiliVideoSource(
     if (!cid) throw new Error("Bilibili 视频信息中缺少 CID");
 
     const qn = bilibiliQualityId(quality);
-    const playResponse = await pluginApi.pluginHttpRequest(
-        "GET",
-        `https://api.bilibili.com/x/player/playurl?${identityQuery}&cid=${encodeURIComponent(cid)}&qn=${qn}&fnval=16&fourk=1`,
-        {
-            Referer: `https://www.bilibili.com/video/${identity.bvid || `av${identity.aid}`}`,
-        },
-    );
-    const playData = parseBilibiliResponse(
-        playResponse.body,
-        "Bilibili 视频流解析",
-    );
+    let playData: any;
+    try {
+        const playResponse = await pluginApi.pluginHttpRequest(
+            "GET",
+            `https://api.bilibili.com/x/player/playurl?${identityQuery}&cid=${encodeURIComponent(cid)}&qn=${qn}&fnval=16&fourk=1&try_look=1`,
+            {
+                Referer: `https://www.bilibili.com/video/${identity.bvid || `av${identity.aid}`}`,
+            },
+        );
+        playData = parseBilibiliResponse(
+            playResponse.body,
+            "Bilibili 视频流解析",
+        );
+    } catch {
+        // fnval=16 请求整体失败：退 html5 端点合流（移动端同款第三兜底）
+        return resolveBilibiliHtml5Merged(identityQuery, cid, qn, quality);
+    }
     const dashVideos = Array.isArray(playData.dash?.video)
         ? playData.dash.video
         : [];
+
+    // 合流 MP4（音视频同一文件）优先：B 站对超权限 qn 直接降级返回 durl，
+    // CDN 池比 html5 端点快；dash.video 是无声视频流，选它会导致「歌曲淡出
+    // + MV 静音」，只有响应里没有 durl 时才兜底（并标记 hasAudioTrack=false）。
+    const durls = Array.isArray(playData.durl) ? playData.durl : [];
+    const durlUrl = firstString(durls[0]?.url);
+    if (/^https?:\/\//i.test(durlUrl)) {
+        const durlBackups = [
+            ...(Array.isArray(durls[0]?.backup_url) ? durls[0].backup_url : []),
+            ...(typeof durls[1]?.url === "string" ? [durls[1].url] : []),
+        ].filter(
+            (value): value is string =>
+                typeof value === "string" && /^https?:\/\//i.test(value),
+        );
+        return {
+            url: durlUrl,
+            backupUrls: durlBackups,
+            headers: { Referer: "https://www.bilibili.com/" },
+            videoQuality:
+                BILIBILI_QUALITY_ID_LABELS[Number(playData.quality)] || quality,
+            mimeType: "video/mp4",
+            // 画质菜单按服务端实授档标注（try_look 未登录上限 720P），
+            // 虚标高档会「切不动」：点高档仍返回低档源
+            availableVideoQualities: BILIBILI_QUALITY_PRESETS.filter(
+                ({ qn }) => qn <= (Number(playData.quality) || qn),
+            ).map(({ qn: _qn, ...preset }) => preset),
+            hasAudioTrack: true,
+        };
+    }
+
     const isAvc = (candidate: any) =>
         String(candidate?.codecs || "").startsWith("avc1");
     const qualityId = (candidate: any) => Number(candidate?.id) || 0;
@@ -370,19 +412,15 @@ async function resolveBilibiliVideoSource(
         compatibleVideos[0] ||
         dashVideos.find(isAvc) ||
         dashVideos[0];
-    const directUrl = firstString(
-        video?.baseUrl,
-        video?.base_url,
-        playData.durl?.[0]?.url,
-    );
-    if (!directUrl) return null;
+    const directUrl = firstString(video?.baseUrl, video?.base_url);
+    if (!directUrl) {
+        // 响应既无 durl 也无可用 dash 条目：退 html5 端点合流
+        return resolveBilibiliHtml5Merged(identityQuery, cid, qn, quality);
+    }
 
     const backupUrls = [
         ...(Array.isArray(video?.backupUrl) ? video.backupUrl : []),
         ...(Array.isArray(video?.backup_url) ? video.backup_url : []),
-        ...(Array.isArray(playData.durl?.[0]?.backup_url)
-            ? playData.durl[0].backup_url
-            : []),
     ].filter(
         (value): value is string =>
             typeof value === "string" && /^https?:\/\//i.test(value),
@@ -397,10 +435,52 @@ async function resolveBilibiliVideoSource(
         mimeType: firstString(video?.mimeType, video?.mime_type, "video/mp4"),
         width: Number(video?.width) || undefined,
         height: Number(video?.height) || undefined,
-        availableVideoQualities: BILIBILI_QUALITY_PRESETS.map(
-            ({ qn: _qn, ...preset }) => preset,
-        ),
+        // dash 兜底同样按实授档标注
+        availableVideoQualities: BILIBILI_QUALITY_PRESETS.filter(
+            ({ qn }) => qn <= (Number(playData.quality) || qn),
+        ).map(({ qn: _qn, ...preset }) => preset),
+        hasAudioTrack: false,
     };
+}
+
+/** fnval=16 请求整体失败/字段全空时的第三兜底（移动端 _resolveBiliMergedFallback 同款）：html5 端点要合流 MP4，estg 池慢但可用。 */
+async function resolveBilibiliHtml5Merged(
+    identityQuery: string,
+    cid: string,
+    qn: number,
+    quality: string,
+): Promise<PluginVideoSource | null> {
+    try {
+        const response = await pluginApi.pluginHttpRequest(
+            "GET",
+            `https://api.bilibili.com/x/player/playurl?${identityQuery}&cid=${encodeURIComponent(cid)}&qn=${qn}&platform=html5&high_quality=1&try_look=1`,
+            { Referer: "https://www.bilibili.com/" },
+        );
+        const playData = parseBilibiliResponse(
+            response.body,
+            "Bilibili html5 视频流解析",
+        );
+        const mergedUrl = firstString(playData.durl?.[0]?.url);
+        if (!/^https?:\/\//i.test(mergedUrl)) return null;
+        return {
+            url: mergedUrl,
+            backupUrls: (playData.durl?.[0]?.backup_url || []).filter(
+                (value: unknown): value is string =>
+                    typeof value === "string" && /^https?:\/\//i.test(value),
+            ),
+            headers: { Referer: "https://www.bilibili.com/" },
+            videoQuality:
+                BILIBILI_QUALITY_ID_LABELS[Number(playData.quality)] || quality,
+            mimeType: "video/mp4",
+            // try_look 未登录上限 720P，菜单按实授档标注
+            availableVideoQualities: BILIBILI_QUALITY_PRESETS.filter(
+                ({ qn }) => qn <= (Number(playData.quality) || qn),
+            ).map(({ qn: _qn, ...preset }) => preset),
+            hasAudioTrack: true,
+        };
+    } catch {
+        return null;
+    }
 }
 
 export function isBilibiliPluginSong(song: Song | null | undefined): boolean {
@@ -844,9 +924,55 @@ export function useBilibiliVideoBackground() {
         // 立即接管：画面起播即由 MV 音轨承担——起播位置已按当前偏移环形映射
         // （未分析时 offset=0，与歌曲同刻度），音画天然同步；频谱分析命中后仅
         // 做一次重对齐 seek（组件监听 syncOffsetSec），不存在二次音频切换。
-        audioTakenOver.value = true;
+        // B站 DASH 视频流等无声源（hasAudioTrack=false）不接管：歌曲继续
+        // 出声，画面纯跟时间轴，避免「歌曲淡出 + MV 静音」。
+        audioTakenOver.value = videoSource.hasAudioTrack !== false;
         void runSyncAnalysis(song, isBili, requestId);
+        streamPlayableHit = false;
+        void guardPlayableStream(
+            [videoSource.url, ...(videoSource.backupUrls || [])],
+            headers,
+            requestId,
+        );
         return true;
+    };
+
+    // 可播守护：videoUrl 已落地且 start 已返回（不阻塞调用方）。15s 内未
+    // 收到 notifyPlayable（超时）或收到 notifyVideoError（解码失败）时，
+    // 换下一候选重开流；全部候选耗尽则保持现状（组件侧 error 兜底）。
+    const guardPlayableStream = async (
+        candidates: string[],
+        headers: Record<string, string> | undefined,
+        requestId: number,
+    ) => {
+        for (let index = 0; index < candidates.length; index++) {
+            const wait = new Promise<void>((resolve) => {
+                streamWait = { resolve };
+            });
+            const timer = setTimeout(() => streamWait?.resolve(), 15000);
+            try {
+                await wait;
+            } finally {
+                clearTimeout(timer);
+                streamWait = null;
+            }
+            if (requestId !== requestVersion) return;
+            if (streamPlayableHit) return;
+            const next = candidates[index + 1];
+            if (!next) return;
+            try {
+                const proxyUrl = await pluginApi.mvProxyUrl(next, headers);
+                if (!proxyUrl) return;
+                if (requestId !== requestVersion) return;
+                streamPlayableHit = false;
+                videoUrl.value = proxyUrl;
+                phase.value = "stream";
+                loading.value = true;
+                bufferedSec.value = -1;
+            } catch {
+                return;
+            }
+        }
     };
 
     // video 元素可播：缓冲阶段结束，解除 loading。
@@ -855,6 +981,8 @@ export function useBilibiliVideoBackground() {
         loading.value = false;
         phase.value = "";
         bufferedSec.value = 0;
+        streamPlayableHit = true;
+        streamWait?.resolve();
     };
 
     // video 元素 error：解除 loading，避免 title 卡在「缓冲中」。
@@ -863,6 +991,7 @@ export function useBilibiliVideoBackground() {
         loading.value = false;
         phase.value = "";
         bufferedSec.value = -1;
+        streamWait?.resolve();
     };
 
     // video 元素 @progress：上报相对当前播放位置的可播秒数。
@@ -908,6 +1037,22 @@ export function useBilibiliVideoBackground() {
         return start(song);
     };
 
+    // 播放中停摆自愈：video 长时间无 timeupdate（断流/解码卡死）时重开
+    // 当前源（重解析 + 换流），与移动端 _restartForStall 对齐。8s 内只触发
+    // 一次，避免断网时反复重启刷请求。
+    let lastStallRestartAt = 0;
+    const restartForStall = async () => {
+        if (!activeSong || !requested.value) return;
+        const now = Date.now();
+        if (now - lastStallRestartAt < 8000) return;
+        lastStallRestartAt = now;
+        try {
+            await start(activeSong, activeQuality.value);
+        } catch {
+            /* 重启失败保持现状，等待下次触发 */
+        }
+    };
+
     return {
         active,
         requested,
@@ -927,6 +1072,7 @@ export function useBilibiliVideoBackground() {
         toggle,
         setQuality,
         resolveDownloadSource,
+        restartForStall,
         notifyPlayable,
         notifyVideoError,
         reportBuffered,

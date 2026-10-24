@@ -344,6 +344,8 @@ export interface PluginVideoSource {
   width?: number;
   height?: number;
   backupUrls?: string[];
+  /** 合流 MP4 自带音轨；B站 DASH 视频流等无声源为 false（不接管歌曲）。 */
+  hasAudioTrack?: boolean;
   expiresAt?: number;
   availableVideoQualities?: PluginVideoQuality[];
 }

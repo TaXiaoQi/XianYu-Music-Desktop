@@ -30,6 +30,7 @@ const {
     notifyPlayable: mvNotifyPlayable,
     notifyVideoError: mvNotifyVideoError,
     reportBuffered: mvReportBuffered,
+    restartForStall: mvStallRestart,
 } = useBilibiliVideoBackground();
 const soundEffectStore = useSoundEffectStore();
 const playbackStore = usePlaybackStore();
@@ -310,12 +311,37 @@ const handleVideoProgress = () => {
 
 const handleVideoCanPlay = () => mvNotifyPlayable();
 
+// --- 播放中停摆自愈：断流/解码卡死时 video 不再派发 timeupdate，超过
+// 阈值即重启当前源（重解析 + 换流），与移动端 _restartForStall 对齐 ---
+const STALL_RESTART_MS = 6000;
+let lastTimeUpdateAt = 0;
+const stallTimer = window.setInterval(() => {
+    const video = videoRef.value;
+    if (!video || video.paused || video.ended) {
+        lastTimeUpdateAt = Date.now();
+        return;
+    }
+    if (
+        lastTimeUpdateAt > 0 &&
+        Date.now() - lastTimeUpdateAt >= STALL_RESTART_MS
+    ) {
+        lastTimeUpdateAt = Date.now();
+        void mvStallRestart();
+        return;
+    }
+}, 2000);
+
+const handleVideoTimeUpdate = () => {
+    lastTimeUpdateAt = Date.now();
+};
+
 onMounted(() => {
     window.addEventListener("resize", updateViewportArea);
     updateViewportArea();
 });
 
 onUnmounted(() => {
+    window.clearInterval(stallTimer);
     window.removeEventListener("resize", updateViewportArea);
     if (mvAudioTakenOver.value) mvAudioTakenOver.value = false;
     void playbackApi.setVolume(mvTargetVolume());
@@ -352,6 +378,7 @@ onUnmounted(() => {
                 playsinline
                 preload="auto"
                 @loadedmetadata="handleVideoLoaded"
+                @timeupdate="handleVideoTimeUpdate"
                 @progress="handleVideoProgress"
                 @canplay="handleVideoCanPlay"
                 @error="handleVideoError"
