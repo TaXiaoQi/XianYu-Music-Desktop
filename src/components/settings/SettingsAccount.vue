@@ -265,14 +265,14 @@ type OverwriteAction =
   | 'favorites-upload' | 'favorites-download';
 
 const OVERWRITE_CONFIRM_TEXT: Record<OverwriteAction, { title: string; message: string }> = {
-  'playlist-upload': { title: '覆盖上传歌单', message: '将用本地歌单全量覆盖云端，云端多出的歌单会被移除；本地歌单为空时云端歌单将被全部清空。确定继续吗？' },
-  'playlist-download': { title: '覆盖下载歌单', message: '将用云端歌单全量覆盖本地，本地多出的歌单会被移除。确定继续吗？' },
-  'plugin-upload': { title: '覆盖上传插件', message: '将用本地插件全量覆盖云端，云端多出的插件与订阅会被移除。确定继续吗？' },
-  'plugin-download': { title: '覆盖下载插件', message: '将清空本地插件与订阅，并按云端内容重新安装。确定继续吗？' },
-  'settings-upload': { title: '覆盖上传设置', message: '将用本地设置覆盖云端设置。确定继续吗？' },
-  'settings-download': { title: '覆盖下载设置', message: '将用云端设置覆盖本地设置。确定继续吗？' },
-  'favorites-upload': { title: '覆盖上传收藏', message: '将用本地收藏全量覆盖云端，云端多出的收藏会被移除。确定继续吗？' },
-  'favorites-download': { title: '覆盖下载收藏', message: '将用云端收藏全量覆盖本地，本地多出的收藏会被移除。确定继续吗？' },
+  'playlist-upload': { title: '覆盖上传歌单', message: '将用本地歌单全量覆盖云端，云端多出的歌单会被移除，操作不可逆，确定继续吗？' },
+  'playlist-download': { title: '覆盖下载歌单', message: '将用云端歌单全量覆盖本地，本地多出的歌单会被移除，操作不可逆，确定继续吗？' },
+  'plugin-upload': { title: '覆盖上传插件', message: '将用本地插件全量覆盖云端，云端多出的插件与订阅会被移除，操作不可逆，确定继续吗？' },
+  'plugin-download': { title: '覆盖下载插件', message: '将清空本地插件与订阅，并按云端内容重新安装，操作不可逆，确定继续吗？' },
+  'settings-upload': { title: '覆盖上传设置', message: '将用本地设置覆盖云端设置，操作不可逆，确定继续吗？' },
+  'settings-download': { title: '覆盖下载设置', message: '将用云端设置覆盖本地设置，操作不可逆，确定继续吗？' },
+  'favorites-upload': { title: '覆盖上传收藏', message: '将用本地收藏全量覆盖云端，云端多出的收藏会被移除，操作不可逆，确定继续吗？' },
+  'favorites-download': { title: '覆盖下载收藏', message: '将用云端收藏全量覆盖本地，本地多出的收藏会被移除，操作不可逆，确定继续吗？' },
 };
 
 const showOverwriteConfirm = ref(false);
@@ -300,12 +300,28 @@ const overwriteStats = ref<{ rows: OverwriteStatRow[]; error?: string } | null>(
 const overwriteSourceIsCloud = computed(
   () => pendingOverwriteAction.value?.endsWith('download') ?? false,
 );
-const overwriteSourceEmpty = computed(() => {
+
+/** 数量明细："3 个歌单、120 首歌曲" */
+function statDetail(rows: OverwriteStatRow[], cloudSide: boolean): string {
+  return rows.map(r => `${cloudSide ? r.cloud : r.local} ${r.unit}${r.label}`).join('、');
+}
+
+/** 弹窗正文：取数成功后用「将用云端 N…覆盖本地 M…」带数量的动态描述，
+ * 替换静态文案；取数失败（rows 为空）回退静态文案 */
+const overwriteMessage = computed(() => {
+  const action = pendingOverwriteAction.value;
+  if (!action) return '';
   const rows = overwriteStats.value?.rows ?? [];
-  if (rows.length === 0) return false;
-  return overwriteSourceIsCloud.value
-    ? rows.every(r => r.cloud === 0)
-    : rows.every(r => r.local === 0);
+  if (rows.length === 0 || !OVERWRITE_STAT_ACTIONS.has(action)) {
+    return OVERWRITE_CONFIRM_TEXT[action].message;
+  }
+  const source = overwriteSourceIsCloud.value
+    ? `云端 ${statDetail(rows, true)}`
+    : `本地 ${statDetail(rows, false)}`;
+  const target = overwriteSourceIsCloud.value
+    ? `本地 ${statDetail(rows, false)}`
+    : `云端 ${statDetail(rows, true)}`;
+  return `将用${source}覆盖${target}，操作不可逆，确定继续吗？`;
 });
 
 /** 本地歌单歌曲数：与上传收集口径一致（songs 元数据 ∪ songPaths∩曲库） */
@@ -889,47 +905,17 @@ function confirmOverwrite() {
       @cancel="showOverwriteConfirm = false"
       @confirm="confirmOverwrite"
     >
-      <div>{{ pendingOverwriteAction ? OVERWRITE_CONFIRM_TEXT[pendingOverwriteAction].message : '' }}</div>
-      <!-- 云端 vs 本地数量对比（取数失败仅提示，不阻断覆盖） -->
-      <div
-        v-if="pendingOverwriteAction && OVERWRITE_STAT_ACTIONS.has(pendingOverwriteAction)"
-        class="mt-3 text-xs"
-      >
-        <div
-          v-if="overwriteStatsLoading"
-          class="flex items-center gap-2 text-gray-500 dark:text-gray-400"
-        >
-          <span class="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-[#EC4141]"></span>
+      <!-- 正文：数量对比域取数成功后为带数量的动态描述，其余为静态文案 -->
+      <div class="text-xs">
+        <p v-if="overwriteStatsLoading" class="text-gray-500 dark:text-gray-400">
           正在获取云端与本地数据…
-        </div>
-        <template v-else-if="overwriteStats && overwriteStats.rows.length > 0">
-          <table class="min-w-[180px]">
-            <thead>
-              <tr class="text-gray-500 dark:text-gray-400">
-                <th></th>
-                <th class="px-3 py-0.5 text-left font-normal">云端</th>
-                <th class="px-3 py-0.5 text-left font-normal">本地</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in overwriteStats.rows"
-                :key="row.label"
-                class="text-gray-800 dark:text-gray-200"
-              >
-                <td class="py-0.5 pr-2 text-gray-500 dark:text-gray-400">{{ row.label }}</td>
-                <td class="px-3 py-0.5">{{ row.cloud }} {{ row.unit }}</td>
-                <td class="px-3 py-0.5">{{ row.local }} {{ row.unit }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-if="overwriteSourceEmpty" class="mt-2 font-bold text-[#EC4141]">
-            {{ overwriteSourceIsCloud ? '云端暂无数据，覆盖后本地将被清空' : '本地暂无数据，覆盖后云端将被清空' }}
+        </p>
+        <template v-else>
+          <p class="text-gray-800 dark:text-gray-200">{{ overwriteMessage }}</p>
+          <p v-if="overwriteStats?.error" class="mt-1 text-[#EC4141]">
+            云端与本地数据获取失败：{{ overwriteStats.error }}
           </p>
         </template>
-        <p v-else-if="overwriteStats" class="text-[#EC4141]">
-          数据获取失败，无法展示对比：{{ overwriteStats.error || '未知错误' }}
-        </p>
       </div>
     </PluginConfirmDialog>
   </div>
