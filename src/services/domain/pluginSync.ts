@@ -220,8 +220,86 @@ export async function uploadPlugins(
         `uploadPlugins: 本地用户插件 ${userPlugins.length} 个, 订阅 ${subscriptions.length} 个`,
     );
     if (overwrite) {
-        // 覆盖上传：以本地为准清理云端多余插件/订阅；清理失败则中止，
-        // 否则继续上传会得到既非本地也非云端的混合状态
+        // 批量覆盖上传：一次 plugin_sync_upload_batch 把云端替换为本地全集
+        //（多余项删除广播由服务端处理），取代「清理 + N 次 upload_one」。
+        // 任一脚本读不出来或批量请求失败 → 回退旧两步流程，保证可用性
+        const items: PluginSyncItem[] = [];
+        let readFailed = false;
+        for (const plugin of toUpload) {
+            const script = await getPluginScript(plugin.id);
+            if (!script) {
+                logSync(`uploadPlugins: 跳过 "${plugin.name}" - 无法获取脚本`);
+                result.errors.push(`插件 "${plugin.name}" 脚本读取失败，已跳过`);
+                readFailed = true;
+                continue;
+            }
+            const syncItem: PluginSyncItem = {
+                ...plugin,
+                script: encodeBase64(script),
+                scriptEncoded: true,
+            };
+            const userVars = getPluginUserVariableValues(plugin.id);
+            if (Object.keys(userVars).length > 0) {
+                try {
+                    syncItem.userVariablesEncrypted = await encryptUserVars(
+                        ciyuanxiId,
+                        userVars,
+                    );
+                } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    logSyncError(
+                        `uploadPlugins: 插件 "${plugin.name}" 用户变量加密失败:`,
+                        msg,
+                    );
+                    result.errors.push(
+                        `插件 "${plugin.name}" 用户变量加密失败，变量未同步`,
+                    );
+                }
+            }
+            items.push(syncItem);
+        }
+        if (toUpload.length > 0 && items.length === 0) {
+            // 全部脚本读不出来：中止覆盖（避免把云端清成空集）
+            logSyncError("uploadPlugins(overwrite): 全部插件脚本读取失败，已中止");
+            result.errors.push("全部插件脚本读取失败，覆盖上传已中止");
+            return result;
+        }
+        if (!readFailed && !abortGuard(signal, "uploadPlugins")) {
+            try {
+                logSync(
+                    `uploadPlugins(overwrite): 批量上传 ${items.length} 个插件、${subscriptions.length} 个订阅`,
+                );
+                const data = await signedRequest<{
+                    plugin_count: number;
+                    subscription_count: number;
+                }>(
+                    "plugin_sync_upload_batch",
+                    {
+                        user_id: ciyuanxiId,
+                        plugins: items,
+                        subscriptions,
+                    },
+                    {
+                        fetchTimeoutMs: 115_000,
+                        timeoutMs: 120_000,
+                    },
+                );
+                result.uploadedPlugins = items.length;
+                setSyncedPluginIds(items.map((i) => i.id));
+                logSync(
+                    `uploadPlugins(overwrite): 批量上传成功 (云端共 ${data.plugin_count ?? items.length} 个插件)`,
+                );
+                return result;
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                logSyncError(
+                    "uploadPlugins(overwrite): 批量上传失败，回退逐个上传:",
+                    msg,
+                );
+                result.errors.push(`批量上传失败，已回退逐个上传: ${msg}`);
+            }
+        }
+        // 回退路径：走下方旧两步流程（清理云端多余项 + 逐个上传）
         try {
             const cloud = await signedRequest<PluginSyncDownloadData>(
                 "plugin_sync_download",
