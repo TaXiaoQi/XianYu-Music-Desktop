@@ -126,6 +126,7 @@ import { useRouter } from 'vue-router';
 
 import type { PluginPlaylistSearchResult, PluginSource } from '../types';
 import { getStoredPlugins, pluginGetTopLists, pluginSupportsTopLists, pluginsVersion, lxToplistSourcesOf } from '../services/domain/pluginEngine';
+import { enrichTopListCovers } from '../services/domain/toplistCoverEnrich';
 import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk';
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import { useOnlineDetailStore, openOnlineDetail, type TopListsCache } from '../features/onlineDetail/store';
@@ -232,6 +233,11 @@ async function loadTopLists() {
     if (version !== loadVersion) return;
     topLists.value = results;
     if (results.length > 0) playGridEnterAnimation();
+    // 插件榜单常为静态图标占位（API 无封面），先渲染再后台回填真实封面
+    void enrichTopListCovers(source.source, results).then((enriched) => {
+      if (enriched === results || version !== loadVersion) return;
+      topLists.value = enriched;
+    });
   } catch {
     if (version !== loadVersion) return;
     topLists.value = [];
