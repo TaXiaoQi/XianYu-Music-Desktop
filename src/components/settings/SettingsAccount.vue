@@ -4,12 +4,23 @@ import { Eye, EyeOff } from 'lucide-vue-next';
 
 import { useAuthStore } from '../../features/auth/store';
 import { useSettingsStore } from '../../features/settings/store';
+import { useCollectionsStore } from '../../features/collections/store';
+import { useLibraryStore } from '../../features/library/store';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import { usePlaylistSync } from '../../composables/usePlaylistSync';
 import { showChangePasswordDialog } from '../../composables/useChangePasswordDialog';
 import { showDeleteAccountDialog } from '../../composables/useDeleteAccountDialog';
 import { logout } from '../../services/auth/authService';
+import { signedRequest } from '../../services/auth/authService';
+import { fileSyncDownload } from '../../services/domain/playlistSync';
+import { getCiyuanxiId } from '../../services/domain/playlistSyncSong';
+import { downloadFavorites } from '../../services/domain/favoritesSync';
+import {
+  getStoredPlugins,
+  getSubscriptions,
+  loadPlugins,
+} from '../../services/domain/pluginEngine';
 import {
   DEFAULT_AUTH_BASE_URL,
   getAuthApiSecret,
@@ -26,6 +37,8 @@ const settingsStore = useSettingsStore();
 const { t } = useI18n();
 const { showToast } = useToast();
 const playlistSync = usePlaylistSync();
+const collectionsStore = useCollectionsStore();
+const libraryStore = useLibraryStore();
 
 const pad = (n: number) => n.toString().padStart(2, '0');
 
@@ -265,9 +278,118 @@ const OVERWRITE_CONFIRM_TEXT: Record<OverwriteAction, { title: string; message: 
 const showOverwriteConfirm = ref(false);
 const pendingOverwriteAction = ref<OverwriteAction | null>(null);
 
+// ==================== 手动覆盖同步：云端 vs 本地数量对比 ====================
+// 与移动端 account_settings_page 对齐：弹窗内异步取双端数量做直观对比，
+// 覆盖源数量全为 0 时红字警告，避免云端空数据误覆盖本地（设置域无数值语义不对比）
+interface OverwriteStatRow {
+  label: string;
+  unit: string;
+  cloud: number;
+  local: number;
+}
+
+const OVERWRITE_STAT_ACTIONS = new Set<OverwriteAction>([
+  'playlist-upload', 'playlist-download',
+  'plugin-upload', 'plugin-download',
+  'favorites-upload', 'favorites-download',
+]);
+
+const overwriteStatsLoading = ref(false);
+const overwriteStats = ref<{ rows: OverwriteStatRow[]; error?: string } | null>(null);
+
+const overwriteSourceIsCloud = computed(
+  () => pendingOverwriteAction.value?.endsWith('download') ?? false,
+);
+const overwriteSourceEmpty = computed(() => {
+  const rows = overwriteStats.value?.rows ?? [];
+  if (rows.length === 0) return false;
+  return overwriteSourceIsCloud.value
+    ? rows.every(r => r.cloud === 0)
+    : rows.every(r => r.local === 0);
+});
+
+/** 本地歌单歌曲数：与上传收集口径一致（songs 元数据 ∪ songPaths∩曲库） */
+function countLocalPlaylistSongs(): number {
+  const byPath = new Map(libraryStore.songList.map(s => [s.path, s]));
+  let total = 0;
+  for (const pl of collectionsStore.playlists) {
+    const seen = new Set<string>();
+    for (const s of pl.songs ?? []) seen.add(s.path);
+    for (const p of pl.songPaths) if (byPath.has(p)) seen.add(p);
+    total += seen.size;
+  }
+  return total;
+}
+
+async function fetchOverwriteStats(action: OverwriteAction): Promise<OverwriteStatRow[]> {
+  const ciyuanxiId = getCiyuanxiId();
+  if (!ciyuanxiId) throw new Error('未登录或未获取到弦予号');
+  if (action.startsWith('playlist')) {
+    const data = await fileSyncDownload(ciyuanxiId);
+    const cloudPls = data?.playlists ?? [];
+    return [
+      {
+        label: '歌单', unit: '个',
+        cloud: cloudPls.length,
+        local: collectionsStore.playlists.length,
+      },
+      {
+        label: '歌曲', unit: '首',
+        cloud: cloudPls.reduce((n, pl) => n + (pl.songs?.length ?? 0), 0),
+        local: countLocalPlaylistSongs(),
+      },
+    ];
+  }
+  if (action.startsWith('favorites')) {
+    const cloudSongs = await downloadFavorites(ciyuanxiId);
+    return [{
+      label: '歌曲', unit: '首',
+      cloud: cloudSongs.length,
+      local: collectionsStore.favoritePaths.length,
+    }];
+  }
+  // 插件：云端只读快照（plugin_sync_download 无副作用），本地需先载入插件引擎
+  await loadPlugins();
+  const snapshot = await signedRequest<{ plugins?: unknown[]; subscriptions?: unknown[] }>(
+    'plugin_sync_download',
+    { user_id: ciyuanxiId },
+  );
+  return [
+    {
+      label: '插件', unit: '个',
+      cloud: (snapshot?.plugins ?? []).length,
+      local: getStoredPlugins().filter(p => !p.isBuiltin).length,
+    },
+    {
+      label: '订阅', unit: '条',
+      cloud: (snapshot?.subscriptions ?? []).length,
+      local: getSubscriptions().length,
+    },
+  ];
+}
+
 function requestOverwrite(action: OverwriteAction) {
   pendingOverwriteAction.value = action;
   showOverwriteConfirm.value = true;
+  if (!OVERWRITE_STAT_ACTIONS.has(action)) {
+    overwriteStats.value = null;
+    overwriteStatsLoading.value = false;
+    return;
+  }
+  // 秒开弹窗，取数期间显示 loading；失败仅提示不阻断（覆盖动作自身失败会安全退出）
+  overwriteStatsLoading.value = true;
+  overwriteStats.value = null;
+  fetchOverwriteStats(action)
+    .then(rows => {
+      overwriteStats.value = { rows };
+    })
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      overwriteStats.value = { rows: [], error: msg };
+    })
+    .finally(() => {
+      overwriteStatsLoading.value = false;
+    });
 }
 
 function confirmOverwrite() {
@@ -767,7 +889,48 @@ function confirmOverwrite() {
       @cancel="showOverwriteConfirm = false"
       @confirm="confirmOverwrite"
     >
-      {{ pendingOverwriteAction ? OVERWRITE_CONFIRM_TEXT[pendingOverwriteAction].message : '' }}
+      <div>{{ pendingOverwriteAction ? OVERWRITE_CONFIRM_TEXT[pendingOverwriteAction].message : '' }}</div>
+      <!-- 云端 vs 本地数量对比（取数失败仅提示，不阻断覆盖） -->
+      <div
+        v-if="pendingOverwriteAction && OVERWRITE_STAT_ACTIONS.has(pendingOverwriteAction)"
+        class="mt-3 text-xs"
+      >
+        <div
+          v-if="overwriteStatsLoading"
+          class="flex items-center gap-2 text-gray-500 dark:text-gray-400"
+        >
+          <span class="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-[#EC4141]"></span>
+          正在获取云端与本地数据…
+        </div>
+        <template v-else-if="overwriteStats && overwriteStats.rows.length > 0">
+          <table class="min-w-[180px]">
+            <thead>
+              <tr class="text-gray-500 dark:text-gray-400">
+                <th></th>
+                <th class="px-3 py-0.5 text-left font-normal">云端</th>
+                <th class="px-3 py-0.5 text-left font-normal">本地</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in overwriteStats.rows"
+                :key="row.label"
+                class="text-gray-800 dark:text-gray-200"
+              >
+                <td class="py-0.5 pr-2 text-gray-500 dark:text-gray-400">{{ row.label }}</td>
+                <td class="px-3 py-0.5">{{ row.cloud }} {{ row.unit }}</td>
+                <td class="px-3 py-0.5">{{ row.local }} {{ row.unit }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="overwriteSourceEmpty" class="mt-2 font-bold text-[#EC4141]">
+            {{ overwriteSourceIsCloud ? '云端暂无数据，覆盖后本地将被清空' : '本地暂无数据，覆盖后云端将被清空' }}
+          </p>
+        </template>
+        <p v-else-if="overwriteStats" class="text-[#EC4141]">
+          数据获取失败，无法展示对比：{{ overwriteStats.error || '未知错误' }}
+        </p>
+      </div>
     </PluginConfirmDialog>
   </div>
 </template>
