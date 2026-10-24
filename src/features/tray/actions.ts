@@ -33,6 +33,10 @@ export type TrayMenuAction =
 
 export interface TrayMenuStatePayload {
     currentSong: Song | null;
+    // 主窗口已解析好的当前封面（data:/https: 等托盘窗 CSP 可渲染形态）。
+    // 托盘窗 img-src 不放行外部 http，歌曲自带的原始 http 封面在托盘必碎图，
+    // 因此由主窗口随快照下发可渲染值，托盘侧不再自行解析
+    currentCoverArt: string;
     isPlaying: boolean;
     isDarkTheme: boolean;
     playMode: number;

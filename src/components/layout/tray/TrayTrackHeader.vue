@@ -7,6 +7,7 @@ import type { Song } from '../../../types';
 
 const props = defineProps<{
   track: Song | null;
+  coverArt?: string;
 }>();
 
 const heading = computed(() => {
@@ -17,10 +18,14 @@ const heading = computed(() => {
 
 const byline = computed(() => props.track?.artist || '');
 
+// 托盘窗 CSP 的 img-src 不放行外部 http，歌曲自带的原始 http 封面渲染必碎图；
+// 快照携带的 currentCoverArt 已由主窗口解析为可渲染形态，优先采用
 const artwork = computed(() => {
+  if (props.coverArt) return props.coverArt;
   const path = props.track?.cover_thumb_path;
   if (!path) return '';
-  if (path.startsWith('http') || path.startsWith('asset:') || path.startsWith('data:')) {
+  if (/^http:\/\//i.test(path)) return '';
+  if (path.startsWith('https') || path.startsWith('asset:') || path.startsWith('data:')) {
     return path;
   }
   return convertFileSrc(path);

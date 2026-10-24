@@ -1,4 +1,4 @@
-﻿import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
+import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -265,6 +265,7 @@ export function useTrayMenuEvents(router: Router) {
     const mainWindow = getCurrentWindow();
     const {
         currentSong,
+        currentCover,
         isPlaying,
         prevSong,
         togglePlay,
@@ -287,6 +288,7 @@ export function useTrayMenuEvents(router: Router) {
 
     const buildTraySnapshot = (): TrayMenuStatePayload => ({
         currentSong: currentSong.value,
+        currentCoverArt: currentCover.value || '',
         isPlaying: isPlaying.value,
         isDarkTheme: isDarkTheme.value,
         playMode: playMode.value,

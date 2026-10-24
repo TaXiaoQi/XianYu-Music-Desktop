@@ -19,6 +19,7 @@ const hostWindow = getCurrentWindow();
 
 const panel = reactive({
   track: null as Song | null,
+  coverArt: '',
   spinning: false,
   darkChrome: true,
   loopMode: 0,
@@ -28,6 +29,7 @@ const panel = reactive({
 
 const ingestSnapshot = (snapshot: TrayMenuStatePayload) => {
   panel.track = snapshot.currentSong;
+  panel.coverArt = snapshot.currentCoverArt ?? '';
   panel.spinning = snapshot.isPlaying;
   panel.darkChrome = snapshot.isDarkTheme;
   panel.loopMode = snapshot.playMode;
@@ -136,7 +138,7 @@ onUnmounted(() => {
     @pointerdown.self="hideWindow" 
   >
     <div class="trayCard" @pointerdown.self="hideWindow">
-      <TrayTrackHeader :track="panel.track" @pointerdown="hideWindow" />
+      <TrayTrackHeader :track="panel.track" :cover-art="panel.coverArt" @pointerdown="hideWindow" />
 
       <TrayTransportDock
         :playing="panel.spinning"
