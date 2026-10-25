@@ -385,13 +385,38 @@ fn transfer_mode_for(existing_bytes: u64, status: StatusCode) -> TransferMode {
   }
 }
 
+/// 下载小文件到内存（目录封面图专用）：非 2xx / 超 max_bytes 均返回 None，
+/// 调用方按候选序逐个探测，失败静默跳过。封面图一般几十 KB～1MB。
+pub(crate) async fn download_small_file(
+  source: &RemoteSourceCredentials,
+  remote_path: &str,
+  max_bytes: usize,
+) -> Option<Vec<u8>> {
+  let client = shared_client();
+  let request = client.get(build_url(source, remote_path));
+  let response = with_auth(request, source).send().await.ok()?;
+  if !response.status().is_success() {
+    return None;
+  }
+  if let Some(length) = response.content_length() {
+    if length as usize > max_bytes {
+      return None;
+    }
+  }
+  let bytes = response.bytes().await.ok()?;
+  if bytes.len() > max_bytes {
+    return None;
+  }
+  Some(bytes.to_vec())
+}
+
 /// 下载远程文件到本地路径，边下边回调进度（已下载字节, 总字节）。
-pub(crate) async fn download_file_to_path( 
+pub(crate) async fn download_file_to_path(
   source: &RemoteSourceCredentials,
   remote_path: &str,
   target_path: &Path,
   mut on_progress: impl FnMut(u64, Option<u64>) + Send,
-) -> Result<(), String> { 
+) -> Result<(), String> {
   let client = shared_client();
   let resumed_at = tokio::fs::metadata(target_path)
     .await
