@@ -48,23 +48,89 @@ fn extension_of(path: &str) -> String {
 
 /// 去掉扩展名后的标题候选。
 fn title_stem(name: &str) -> String {
-  match name.rsplit_once('.') {
-    Some((stem, _)) => stem.to_string(),
-    None => name.to_string(),
-  }
+  crate::filename_meta::title_from_name(name)
 }
 
-/// 专辑名回退：取路径倒数第二段（最后一段是文件名）；不足两段时用占位文案。
+/// 前导曲目序号与 feat 清理、文件名切分统一走
+/// `crate::filename_meta` 公共模块（本地曲库/远程/网盘三线共用）。
+
+/// percent-decode（与 cloud http 同语义：'+' 不转空格；解码失败原样返回）。
+/// WebDAV 路径常带 %XX 编码的中文目录名，不解码则专辑名乱码。
+fn percent_decode(s: &str) -> String {
+  let b = s.as_bytes();
+  let mut out: Vec<u8> = Vec::with_capacity(b.len());
+  let mut i = 0;
+  while i < b.len() {
+    if b[i] == b'%' && i + 2 < b.len() {
+      let hi = (b[i + 1] as char).to_digit(16);
+      let lo = (b[i + 2] as char).to_digit(16);
+      if let (Some(h), Some(l)) = (hi, lo) {
+        out.push((h * 16 + l) as u8);
+        i += 3;
+        continue;
+      }
+    }
+    out.push(b[i]);
+    i += 1;
+  }
+  String::from_utf8_lossy(&out).into_owned()
+}
+
+/// 泛音乐目录名（声影同款精选）：歌曲所在目录命中这些名字时没有专辑
+/// 语义，专辑名向上一级回退，避免「专辑=Music」。
+const GENERIC_FOLDER_NAMES: &[&str] = &[
+  "music",
+  "musics",
+  "audios",
+  "audio",
+  "songs",
+  "song",
+  "netdisk",
+  "cloud",
+  "webdav",
+  "temp",
+  "tmp",
+  "download",
+  "downloads",
+  "本地音乐",
+  "我的音乐",
+  "无损音乐",
+  "车载音乐",
+  "音乐",
+  "下载",
+  "资源",
+  "新建文件夹",
+  "未分类",
+  "根目录",
+  "全部",
+];
+
+/// 专辑名回退：路径末段是文件名，歌曲所在目录（URL 解码）优先；命中
+/// 泛音乐目录名时向上一级回退，整条路径都是泛目录则用占位文案。
 fn album_guess(path: &str) -> String {
-  let segments: Vec<&str> = path
+  let mut segments: Vec<&str> = path
     .split('/')
     .map(|segment| segment.trim())
     .filter(|segment| !segment.is_empty())
     .collect();
-  match segments.len() {
-    len if len >= 2 => segments[len - 2].to_string(),
-    _ => UNKNOWN_ALBUM.to_string(),
+  let mut album = UNKNOWN_ALBUM.to_string();
+  if segments.len() >= 2 {
+    segments.pop(); // 末段为文件名，歌曲所在目录及其上一级参与回退
+    for segment in segments.iter().rev().take(2) {
+      let name = percent_decode(segment).trim().to_string();
+      if name.is_empty() {
+        continue;
+      }
+      let is_generic = GENERIC_FOLDER_NAMES
+        .iter()
+        .any(|g| name.eq_ignore_ascii_case(g));
+      if !is_generic {
+        album = name;
+        break;
+      }
+    }
   }
+  album
 }
 
 /// 空串或占位文案都视为“未填写”。
@@ -73,27 +139,19 @@ fn unfilled(value: &str, placeholder: &str) -> bool {
   stripped.is_empty() || stripped == placeholder
 }
 
-/// “标题 - 歌手”类文件名的分隔符候选，按优先级排列。
-const FILENAME_SEPARATORS: [&str; 6] = [" - ", "-", " – ", "–", " — ", "—"];
-
 /// 尝试把文件名拆成 (标题, 歌手)。
 fn split_stem_title_artist(name: &str) -> Option<(String, String)> {
-  let stem = title_stem(name);
-  FILENAME_SEPARATORS
-    .iter()
-    .find_map(|separator| match stem.rsplit_once(separator) {
-      Some((title, artist)) if !title.trim().is_empty() && !artist.trim().is_empty() => {
-        Some((title.trim().to_string(), artist.trim().to_string()))
-      }
-      _ => None,
-    })
+  crate::filename_meta::split_filename_title_artist(name)
 }
 
 /// 用确定的歌手值覆写歌曲的全部歌手相关字段，并重算专辑键。
+/// 多艺人拆分与本地曲库同构（A/B、A、B、A& B、A feat. B → 多歌手），
+/// 主 artist 字段保持整串兼容既有单值消费方。
 fn overwrite_artist_block(song: &mut Song, artist: String) {
+  let names = crate::music::scanner::split_into_artist_names(&artist);
   song.artist = artist.clone();
-  song.artist_names = vec![artist.clone()];
-  song.effective_artist_names = vec![artist.clone()];
+  song.artist_names = names.clone();
+  song.effective_artist_names = names;
   song.album_artist = artist;
   song.album_key = format!(
     "{}::{}",
@@ -621,14 +679,39 @@ pub(crate) async fn sync_source( // 实现
 #[cfg(test)]
 mod tests {
   use super::{
-    apply_name_heuristics, entry_outdated, song_from_cached_remote_file,
+    album_guess, apply_name_heuristics, entry_outdated, song_from_cached_remote_file,
     stub_song_for_remote_entry, IndexedRemoteSong, RemoteFileEntry, RemoteSourceCredentials, Song,
+    UNKNOWN_ALBUM,
   };
   use id3::{Tag, TagLike, Version};
   use std::{
     fs,
     time::{SystemTime, UNIX_EPOCH},
   };
+
+  #[test]
+  fn album_falls_back_past_generic_folders_and_decodes_percent() {
+    // 中文目录 %XX 编码解码
+    assert_eq!(
+      album_guess("/music/%E5%8F%B6%E6%83%A0%E6%95%8F/demo.flac"),
+      "叶惠敏".to_string()
+    );
+    // 泛目录名向上一级回退
+    assert_eq!(
+      album_guess("/音乐/周杰伦/晴天.flac"),
+      "周杰伦".to_string()
+    );
+    // 整条路径都是泛目录 → 未知专辑
+    assert_eq!(
+      album_guess("/music/temp/demo.flac"),
+      UNKNOWN_ALBUM.to_string()
+    );
+    // 普通两级目录行为与旧版一致
+    assert_eq!(
+      album_guess("/叶惠敏/晴天/demo.flac"),
+      "晴天".to_string()
+    );
+  }
 
   fn entry(etag: Option<&str>, size: u64, modified_at: Option<&str>) -> RemoteFileEntry {
     let sample = RemoteFileEntry {

@@ -163,8 +163,35 @@ impl DecodedDraft {
             settled.kbps = average_kbps_guess(settled.bytes_total, settled.duration_secs);
         }
         if settled.title.trim().is_empty() {
-            // 标题缺失时用文件主名兜底；连主名都取不到就整体放弃。
-            settled.title = path.file_stem()?.to_string_lossy().to_string();
+            // 标题缺失时与远程/网盘线同构：文件名反解「歌名 - 歌手」（公共
+            // filename_meta，含前导序号剥离、feat 清理、纯数字段判无效），
+            // 歌手仅在 tag 缺失时回填；拆不中也剥掉序号再当歌名，连主名
+            // 都取不到就整体放弃。
+            let file_name = path
+                .file_name()
+                .map(|value| value.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            match crate::filename_meta::split_filename_title_artist(&file_name) {
+                Some((parsed_title, parsed_artist)) => {
+                    settled.title = parsed_title;
+                    if settled.artist.trim().is_empty()
+                        || settled.artist == super::ARTIST_FALLBACK_TEXT
+                    {
+                        settled.artist = parsed_artist;
+                    }
+                }
+                None => {
+                    let stem = path.file_stem()?;
+                    let stripped = crate::filename_meta::strip_leading_index(
+                        &crate::filename_meta::title_from_name(&stem.to_string_lossy()),
+                    );
+                    settled.title = if stripped.is_empty() {
+                        stem.to_string_lossy().to_string()
+                    } else {
+                        stripped
+                    };
+                }
+            }
         }
         if settled.album_artist.trim().is_empty() {
             settled.album_artist = settled.artist.clone();

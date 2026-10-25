@@ -143,7 +143,7 @@ fn artist_split_pattern() -> &'static Regex {
 
 /// 把 “A; B / feat. C” 一类的合并歌手字段拆成列表：按分隔符切开，
 /// 用小写副本判重（保留首次出现的原始大小写），结果保证非空。
-pub(super) fn split_into_artist_names(joined: &str) -> Vec<String> {
+pub(crate) fn split_into_artist_names(joined: &str) -> Vec<String> {
   let mut seen: HashSet<String> = HashSet::new();
   let mut names: Vec<String> = Vec::new();
 

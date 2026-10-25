@@ -2,7 +2,7 @@
 mod app_runtime; mod audio_convert; mod audio_trim; mod autostart;
 pub mod cloud; // 网盘业务（十盘，TS 经 cloud_proxy command 调用）
 pub(crate) mod control_channel; pub(crate) mod crash_log; mod custom_fonts; mod database; pub(crate) mod dlna;
-pub mod error; mod fallback_host; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
+pub mod error; pub mod filename_meta; mod fallback_host; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
 mod host_crypto; mod install_language; mod music; mod netproxy;
 mod player; mod plugin_host; mod plugins; mod power; mod process_priority;
 mod recognize; mod remote; mod security; mod skin_image;
