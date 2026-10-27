@@ -2,7 +2,7 @@
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
-import { Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
+import { Cloud, Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
 import type { Playlist, Song } from '../../types';
 import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin, importPlaylistFromFavorites } from '../../services/domain/playlistImport';
 import type { PlaylistImportResult, PlaylistSource } from '../../services/domain/playlistImport';
@@ -17,6 +17,12 @@ import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 import { modalDragInterceptActive } from '../../composables/dragState';
 import { pluginsVersion, getStoredPlugins } from '../../services/domain/pluginEngine';
+// 网盘文件夹导入（与移动端同款）：复用指定播放文件夹的选择器 + 网盘遍历
+import CloudFolderBrowser from '../settings/CloudFolderBrowser.vue';
+import { cloudProviderById, cloudProviders } from '../../services/cloud/cloudRegistry';
+import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
+import { listAllCloudAudio } from '../../services/cloud/cloudScopedQuery';
+import { cloudFileToSong } from '../../features/library/cloudFolderTree';
 
 type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 
@@ -68,6 +74,48 @@ const localPlaylistName = ref('');
 const localPlaylistNameRef = ref<HTMLInputElement | null>(null);
 const localFolderPath = ref('');
 const localImportError = ref('');
+
+// 网盘文件夹导入（与移动端同款）：与本地文件夹互斥，后选的生效。
+// 歌曲以 cloud:// 引用入库（不落盘），播放走网盘直链管线
+type CloudFolderPick = {
+  providerId: string;
+  accountId: string;
+  providerName: string;
+  folders: Array<{ key: string; name: string }>;
+};
+const cloudBrowserExpanded = ref(false);
+const cloudPicked = ref<CloudFolderPick | null>(null);
+const hasCloudAccount = ref(false);
+let unsubCloudCreds: (() => void) | null = null;
+
+const refreshCloudBound = async () => {
+  let any = false;
+  for (const p of cloudProviders) {
+    const accs = await CloudCredentialsStore.instance.accountsFor(p.id);
+    if (accs.length > 0) {
+      any = true;
+      break;
+    }
+  }
+  hasCloudAccount.value = any;
+};
+
+const cloudPickedLabel = computed(() => {
+  const picked = cloudPicked.value;
+  if (!picked) return '';
+  if (picked.folders.length === 1) return picked.folders[0].name;
+  return `已选 ${picked.folders.length} 个文件夹`;
+});
+
+const handleCloudPick = (payload: CloudFolderPick) => {
+  if (payload.folders.length === 0) return;
+  cloudPicked.value = payload;
+  localFolderPath.value = ''; // 与本地文件夹互斥
+  cloudBrowserExpanded.value = false; // 选完收起浏览器
+  if (!localPlaylistName.value.trim()) {
+    localPlaylistName.value = payload.folders[0].name;
+  }
+};
 
 const backupFilePath = ref('');
 const backupFileName = ref('');
@@ -154,6 +202,7 @@ async function handleDropPaths(paths: string[]) {
         const isDir = await fileApi.isDirectory(p);
         if (isDir) {
           localFolderPath.value = p;
+          cloudPicked.value = null; // 与网盘文件夹互斥
           localImportError.value = '';
           break;
         }
@@ -183,6 +232,9 @@ watch(
       localPlaylistName.value = '';
       localFolderPath.value = '';
       localImportError.value = '';
+      cloudPicked.value = null;
+      cloudBrowserExpanded.value = false;
+      void refreshCloudBound();
       backupFilePath.value = '';
       backupFileName.value = '';
       backupDetectedFormat.value = '';
@@ -205,6 +257,16 @@ watch(
 
 onUnmounted(() => {
   teardownDragListeners();
+  unsubCloudCreds?.();
+  unsubCloudCreds = null;
+});
+
+// 网盘绑定状态就绪即刷新（登录同步后台导入绑定后无需重开弹窗）
+onMounted(() => {
+  void refreshCloudBound();
+  unsubCloudCreds = CloudCredentialsStore.instance.subscribe(() => {
+    void refreshCloudBound();
+  });
 });
 
 watch(pluginsVersion, () => {
@@ -278,6 +340,7 @@ const handleChooseLocalFolder = async () => {
     });
     if (typeof selected === 'string') {
       localFolderPath.value = selected;
+      cloudPicked.value = null; // 与网盘文件夹互斥
       localImportError.value = '';
     }
   } catch (e: any) {
@@ -407,7 +470,13 @@ const handleConfirm = async () => {
     }, 200);
   } else if (activeTab.value === 'localFolderImport') {
     const name = localPlaylistName.value.trim();
-    if (!name || !localFolderPath.value || importing.value) return;
+    if (!name || importing.value) return;
+    // 网盘文件夹导入：cloud:// 引用入库，播放走网盘直链管线
+    if (cloudPicked.value) {
+      await importFromCloudFolder(name, cloudPicked.value);
+      return;
+    }
+    if (!localFolderPath.value) return;
 
     localImportError.value = '';
     importing.value = true;
@@ -467,6 +536,49 @@ const handleConfirm = async () => {
   }
 };
 
+/** 网盘导入：递归收集所选文件夹（含子目录）音频，歌曲以 cloud:// 引用
+ * 入库（不落盘、不进本地库扫描），播放走网盘直链管线（cloudFileToSong
+ * 同网盘浏览页链路）。大文件夹遍历可能较慢；个别子目录失败会被跳过。 */
+const importFromCloudFolder = async (name: string, picked: CloudFolderPick) => {
+  localImportError.value = '';
+  importing.value = true;
+  try {
+    const provider = cloudProviderById(picked.providerId);
+    if (!provider) throw new Error('网盘服务不存在');
+    const cred =
+      (await CloudCredentialsStore.instance.credFor(picked.providerId, picked.accountId)) ??
+      (await CloudCredentialsStore.instance.soleCredFor(picked.providerId));
+    if (!cred || Object.keys(cred).length === 0) {
+      throw new Error('网盘账号未绑定或已失效');
+    }
+    const files = await listAllCloudAudio(
+      provider,
+      cred,
+      picked.folders.map((f) => f.key),
+    );
+    if (files.length === 0) {
+      localImportError.value = '所选网盘文件夹中没有支持的音乐文件';
+      showToast('所选网盘文件夹中没有支持的音乐文件', 'error');
+      return;
+    }
+    const songs = files.map((f) =>
+      cloudFileToSong(f, provider.id, picked.providerName, picked.accountId),
+    );
+    showToast(`成功读取 ${songs.length} 首歌曲`, 'success');
+    isClosing.value = true;
+    setTimeout(() => {
+      emit('import-local', { name, songs });
+      emit('update:visible', false);
+      isClosing.value = false;
+    }, 200);
+  } catch (e: any) {
+    localImportError.value = `读取网盘文件夹失败: ${e?.message || e}`;
+    showToast(`读取网盘文件夹失败: ${e?.message || e}`, 'error');
+  } finally {
+    importing.value = false;
+  }
+};
+
 const canConfirm = computed(() => {
   if (activeTab.value === 'create') return createName.value.trim().length > 0;
   if (activeTab.value === 'networkImport') {
@@ -475,7 +587,7 @@ const canConfirm = computed(() => {
   }
   if (activeTab.value === 'localFolderImport') {
     return localPlaylistName.value.trim().length > 0
-      && localFolderPath.value.length > 0
+      && (localFolderPath.value.length > 0 || !!cloudPicked.value)
       && !importing.value;
   }
   if (activeTab.value === 'backupImport') {
@@ -744,16 +856,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               </div>
 
               <div class="space-y-1.5 flex-1 flex flex-col">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300"> 
-                  音乐文件夹 <span class="text-[#EC4141]">*</span> 
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                  音乐文件夹 <span class="text-[#EC4141]">*</span>
                 </label>
                 <button
                   type="button"
-                  :disabled="importing" 
-                  class="drop-zone flex-1"
+                  :disabled="importing"
+                  class="drop-zone"
                   :class="{
                     'drop-zone--active': isDragOver,
-                    'drop-zone--filled': localFolderPath.length > 0,
+                    'drop-zone--filled': localFolderPath.length > 0 || !!cloudPicked,
                   }"
                   @click="handleChooseLocalFolder"
                 >
@@ -763,15 +875,49 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                     <p v-if="localFolderPath" class="drop-zone-text filled-text">
                       {{ localFolderPath.split(/[\\/]/).pop() || localFolderPath }}
                     </p>
+                    <p v-else-if="cloudPicked" class="drop-zone-text filled-text">
+                      {{ cloudPickedLabel }}
+                    </p>
                     <p v-else class="drop-zone-text">
                       点击选择文件夹，或拖入文件夹
                     </p>
                   </div>
                 </button>
+
+                <!-- 网盘文件夹（已绑定网盘才显示；与本地文件夹互斥，后选生效） -->
+                <div v-if="hasCloudAccount" class="rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-white/40 dark:hover:bg-white/10"
+                    :aria-expanded="cloudBrowserExpanded"
+                    :disabled="importing"
+                    @click="cloudBrowserExpanded = !cloudBrowserExpanded"
+                  >
+                    <Cloud class="h-4 w-4 shrink-0" :class="cloudPicked ? 'text-[#EC4141]' : 'text-gray-400 dark:text-gray-500'" :stroke-width="2.2" />
+                    <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-800 dark:text-gray-200">
+                      {{ cloudPicked ? cloudPickedLabel : '选择网盘文件夹' }}
+                    </span>
+                    <span v-if="cloudPicked" class="shrink-0 text-xs text-[#EC4141]" @click.stop="cloudPicked = null">
+                      清除
+                    </span>
+                    <svg
+                      class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+                      :class="{ 'rotate-180': cloudBrowserExpanded }"
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <div v-if="cloudBrowserExpanded" class="max-h-64 overflow-y-auto border-t border-black/5 dark:border-white/10">
+                    <CloudFolderBrowser pick-mode @pick="handleCloudPick" />
+                  </div>
+                </div>
               </div>
 
-              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40"> 
-                将递归读取所选文件夹及其子文件夹中的音乐文件，并创建为一个独立歌单。 
+              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
+                {{ cloudPicked
+                  ? '将递归读取所选网盘文件夹及其子文件夹中的音乐文件，并创建为一个独立歌单，歌曲保留网盘引用，播放时在线获取。'
+                  : '将递归读取所选文件夹及其子文件夹中的音乐文件，并创建为一个独立歌单。' }}
               </p>
 
               <div

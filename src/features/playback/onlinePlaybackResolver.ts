@@ -7,6 +7,7 @@ import {
 import {
   parseLxPath,
   resolveLxCachedInfo,
+  getLxPluginDeclaredQualities,
 } from '../../services/domain/lxUrlResolver';
 import { resolveOnlineQualityUrl } from '../../services/domain/downloadService';
 import {
@@ -38,6 +39,8 @@ export interface ResolveOnlineAudioResult {
   cek?: string;
   /** 云端缓存起播：限速直链先缓冲约 15 秒头部再开播，其余流式续传。 */
   fullBuffer?: boolean;
+  /** 稳定流缓存 key（云盘播放传 cloud:// 路径）：直链带签名轮换后仍按 key 命中播放缓存。 */
+  streamCacheKey?: string | null;
   errorMessage?: string;
 }
 
@@ -81,15 +84,14 @@ export const getOnlineAvailableQualities = async (
     const { source: lxSource, songmid } = pathInfo;
 
     const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
-    if (!cachedInfo?._types) {
-      return null;
-    }
-
-    const lxQualities = Array.from(new Set(
-      Object.keys(cachedInfo._types)
-        .map(k => normalizeQualityKey(k))
-        .filter((q): q is QualityKey => !!q),
-    ));
+    const typeQualities = cachedInfo?._types
+      ? Object.keys(cachedInfo._types)
+          .map(k => normalizeQualityKey(k))
+          .filter((q): q is QualityKey => !!q)
+      : [];
+    // LX 协议 _types 仅标准 4 档；合并插件 sources 声明中的扩展档（hires/atmos/master 等）
+    const declaredQualities = getLxPluginDeclaredQualities(lxSource) ?? [];
+    const lxQualities = Array.from(new Set([...typeQualities, ...declaredQualities]));
     return lxQualities.length > 0 ? sortQualities(lxQualities) : null;
   }
 

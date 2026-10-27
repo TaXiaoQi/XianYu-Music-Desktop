@@ -11,11 +11,14 @@ const props = defineProps<{
   active: boolean;
   /** 触发播放的手势：单击或双击 */
   clickMode: 'single' | 'double';
+  /** 拖拽换位中：行浮起反馈 */
+  dragging?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'activate', track: Song): void;
   (e: 'eject', track: Song): void;
+  (e: 'drag-start', event: PointerEvent): void;
 }>();
 
 // 插件 / 远程链路的曲目会在标题旁标注来源
@@ -41,11 +44,18 @@ const onEjectPress = (event: Event) => {
   event.stopPropagation();
   emit('eject', props.track);
 };
+
+// 拖拽手柄：按下即交给面板接管换位；拦住 click/dblclick 防止松手误触播放
+const onHandlePress = (event: PointerEvent) => {
+  event.stopPropagation();
+  emit('drag-start', event);
+};
 </script>
 
 <template>
   <div
     class="group relative flex cursor-default select-none items-center justify-between rounded-xl border border-transparent p-2.5 transition-all duration-200 hover:border-white/80 hover:bg-white/70 dark:hover:border-white/12 dark:hover:bg-white/10"
+    :class="dragging ? 'border-white/80 bg-white/95 shadow-[0_10px_28px_rgba(15,23,42,0.22)] dark:bg-white/15' : ''"
     @click="onTap"
     @dblclick="onDoubleTap"
   >
@@ -70,9 +80,17 @@ const onEjectPress = (event: Event) => {
     </div>
 
     <div class="flex shrink-0 items-center gap-1">
-      <svg class="h-[18px] w-[18px] text-[#52647d] dark:text-white/75" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20 9H4v2h16V9zM4 15h16v-2H4v2z" />
-      </svg>
+      <div
+        class="flex h-6 w-6 cursor-grab touch-none items-center justify-center rounded-full text-[#52647d] transition-colors hover:bg-black/5 active:cursor-grabbing dark:text-white/75 dark:hover:bg-white/10"
+        title="拖动排序"
+        @pointerdown="onHandlePress"
+        @click.stop
+        @dblclick.stop
+      >
+        <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20 9H4v2h16V9zM4 15h16v-2H4v2z" />
+        </svg>
+      </div>
       <button
         class="flex h-6 w-6 items-center justify-center rounded-full text-[#52647d] transition-colors hover:bg-black/5 hover:text-red-500 active:scale-90 dark:text-white/75 dark:hover:bg-white/10"
         title="移出队列"

@@ -25,6 +25,9 @@ import {
   extFromUrl,
 } from './downloadFormat';
 import {
+  parseLxPath,
+} from './lxUrlResolver';
+import {
   fetchLyricText,
   resolveCoverUrl,
 } from './downloadExtras';
@@ -103,6 +106,7 @@ async function downloadFromUrl(
   onProgress?: (percent: number) => void,
   ekey?: string | null,
   headers?: Record<string, string> | null,
+  cek?: string | null,
 ): Promise<string> {
   let unlisten: UnlistenFn | null = null;
   if (onProgress) {
@@ -114,7 +118,7 @@ async function downloadFromUrl(
   }
 
   try {
-    const filePath = await downloadApi.downloadOnlineSong(url, destPath, ekey, headers);
+    const filePath = await downloadApi.downloadOnlineSong(url, destPath, ekey, headers, cek);
     onProgress?.(100);
     return filePath;
   } finally {
@@ -152,13 +156,18 @@ export async function downloadSong(
   let hitQuality: LxQuality | null = null;
   const errors: string[] = [];
 
+  // 汽水流缓存保存的是 CENC 密文（解密在播放读层），复制缓存拿不到 cek，
+  // 跳过缓存复用走正常下载（Rust 侧下载完成后原地解密）
+  const isQsSong = !isPlugin && parseLxPath(song.cue_source_path || song.path || '')?.source === 'qs';
+
   for (const q of candidates) {
     const playbackStore = usePlaybackStore();
     const playingUrl = playbackStore.currentPlayingAudioUrl;
     const playingQuality = playbackStore.currentPlayingQuality;
     const currentSongPath = playbackStore.currentSong?.path;
     if (
-      playingUrl
+      !isQsSong
+      && playingUrl
       && playingQuality === q
       && currentSongPath === song.path
     ) {
@@ -213,7 +222,7 @@ export async function downloadSong(
     const destPath = await resolveDownloadFullPath(song, resolved.url, resolved.quality, options);
 
     try {
-      filePath = await downloadFromUrl(resolved.url, baseName(destPath), options.onProgress, resolved.ekey, resolved.headers);
+      filePath = await downloadFromUrl(resolved.url, baseName(destPath), options.onProgress, resolved.ekey, resolved.headers, resolved.cek);
       hitQuality = resolved.quality;
       break;
     } catch (e: any) {

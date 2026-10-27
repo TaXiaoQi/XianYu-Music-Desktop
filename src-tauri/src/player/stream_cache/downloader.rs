@@ -19,7 +19,7 @@ pub fn start_streaming_download_video(
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
 ) -> Result<StreamingTempFileState, String> {
-    start_streaming_download_inner(url, headers, user_agent, None, None, true)
+    start_streaming_download_inner(url, headers, user_agent, None, None, true, None)
 }
 
 pub fn start_streaming_download(
@@ -28,8 +28,9 @@ pub fn start_streaming_download(
     user_agent: Option<&str>,
     ekey: Option<&str>,
     cek: Option<&str>,
+    cache_key: Option<&str>,
 ) -> Result<StreamingTempFileState, String> {
-    start_streaming_download_inner(url, headers, user_agent, ekey, cek, false)
+    start_streaming_download_inner(url, headers, user_agent, ekey, cek, false, cache_key)
 }
 
 fn start_streaming_download_inner(
@@ -39,10 +40,18 @@ fn start_streaming_download_inner(
     ekey: Option<&str>,
     cek: Option<&str>,
     allow_video: bool,
+    cache_key: Option<&str>,
 ) -> Result<StreamingTempFileState, String> {
     let cleaned_url = sanitize_stream_url(url);
     let url = cleaned_url.as_str();
-    let hash = url_hash(url);
+    // 稳定缓存 key（可选）：网盘直链带签名参数、过期重解析后 URL 变化，
+    // 按 URL hash 会整曲 miss 重新下载。调用方（云盘播放）传入 cloud://
+    // 路径等与直链无关的稳定标识即可跨直链轮换/重启命中缓存；
+    // 命名空间 cloud:: 隔离，避免与普通 URL hash 撞 key。
+    let hash = match cache_key {
+        Some(k) if !k.trim().is_empty() => url_hash(&format!("cloud::{}", k)),
+        _ => url_hash(url),
+    };
     let mut mgr = cache().lock().map_err(|e| e.to_string())?;
 
     if let Some(entry) = mgr.entries.get(&hash) {

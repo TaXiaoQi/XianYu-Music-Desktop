@@ -19,7 +19,7 @@ type SongLinkParams = {
   duration: number;
 };
 
-const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
+const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg', 'qs']);
 
 const LX_SOURCE_NAMES: Record<string, string> = {
   kw: '酷我音乐',
@@ -27,6 +27,7 @@ const LX_SOURCE_NAMES: Record<string, string> = {
   tx: 'QQ音乐',
   wy: '网易云音乐',
   mg: '咪咕音乐',
+  qs: '汽水音乐',
 };
 
 const decodeOnce = (value: string): string => {

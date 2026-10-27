@@ -225,6 +225,7 @@ async fn settle_streaming_source(
     full_buffer: bool,
     duration_secs: u32,
     app: &tauri::AppHandle,
+    cache_key: Option<&str>,
 ) -> Result<(AudioSource, AudioOutputMode), String> {
     crate::security::ssrf::validate_url_ip_literal(path)
         .map_err(|why| format!("播放链接校验失败: {why}"))?;
@@ -235,6 +236,7 @@ async fn settle_streaming_source(
         Some(DEFAULT_STREAM_USER_AGENT),
         ekey,
         cek,
+        cache_key,
     )
     .map_err(|why| format!("在线音频缓存启动失败: {why}"))?;
 
@@ -319,11 +321,15 @@ async fn settle_playback_source(
     duration: u32, // 实现
     requested_mode: AudioOutputMode,
     full_buffer: bool,
+    cache_key: Option<&str>,
 ) -> Result<(AudioSource, AudioOutputMode), String> {
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
 
     if is_http_stream {
-        return settle_streaming_source(path, headers, ekey, cek, full_buffer, duration, app).await;
+        return settle_streaming_source(
+            path, headers, ekey, cek, full_buffer, duration, app, cache_key,
+        )
+        .await;
     }
 
     if is_remote_uri(path) {
@@ -354,6 +360,8 @@ pub async fn play_audio(
     ekey: Option<String>, cek: Option<String>,
     dsd_native_passthrough: Option<bool>, output_bit_perfect: Option<bool>,
     full_buffer: Option<bool>,
+    // 稳定流缓存 key（可选，云盘播放传 cloud:// 路径）：直链轮换后仍按 key 命中缓存
+    cache_key: Option<String>,
     app: tauri::AppHandle, db_state: tauri::State<'_, DbState>, state: tauri::State<'_, PlayerState>,
 ) -> Result<(), String> { // 实现
     let session_seq = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
@@ -372,6 +380,7 @@ pub async fn play_audio(
         duration,
         output_mode,
         full_buffer.unwrap_or(false),
+        cache_key.as_deref(),
     )
     .await?;
 

@@ -12,6 +12,7 @@ const Favorites = () => import('../views/Favorites.vue');
 const Recent = () => import('../views/Recent.vue');
 const Artists = () => import('../views/Artists.vue');
 const Albums = () => import('../views/Albums.vue');
+const CloudDisk = () => import('../views/CloudDisk.vue');
 const Plugins = () => import('../views/Plugins.vue');
 const Settings = () => import('../views/Settings.vue');
 const Auth = () => import('../views/Auth.vue');
@@ -29,6 +30,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/recent', name: 'Recent', component: Recent },
   { path: '/artists', name: 'Artists', component: Artists },
   { path: '/albums', name: 'Albums', component: Albums },
+  { path: '/cloud', name: 'CloudDisk', component: CloudDisk },
   { path: '/plugins', name: 'Plugins', component: Plugins },
   { path: '/settings', name: 'Settings', component: Settings },
   { path: '/auth', name: 'Auth', component: Auth },

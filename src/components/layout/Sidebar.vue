@@ -92,7 +92,7 @@ const handleRemoveFavoriteCollection = (key: string) => {
 const navRouter = useRouter();
 const currentRoute = useRoute();
 const homeNav = useHomeNavigation(navRouter);
-const { openHomeAll, openHomeFolder, openHomePlaylist, openHomeStatistics, openArtists, openAlbums, openFavorites, openRecent, openPlugins, openAuth } = homeNav;
+const { openHomeAll, openHomeFolder, openHomePlaylist, openHomeStatistics, openArtists, openAlbums, openFavorites, openRecent, openCloud, openPlugins, openAuth } = homeNav;
 const { preloadCovers, loadCover, primeCoverPath } = useCoverCache(); // 封面缓存
 
 const playlistsGroupOpen = ref(true);
@@ -189,6 +189,7 @@ const confirmCreatePlaylist = (playlistName: string) => {
 // —— 导航分发：按侧栏键位路由到对应视图 ——
 const viewOpeners: Record<SidebarItemKey, () => void> = {
   localMusic: () => { void openHomeAll(); },
+  cloud: () => { void openCloud(); },
   artists: () => { void openArtists(); },
   albums: () => { void openAlbums(); },
   favorites: () => { void openFavorites(); },

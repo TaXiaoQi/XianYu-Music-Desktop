@@ -214,6 +214,9 @@ export const resolveCloudOnlineAudio = async (
       currentPlayingQuality: null,
       currentPlayingAudioUrl: link.url,
       fullBuffer: true,
+      // 稳定流缓存 key：直链签名轮换/过期重解析后，stream_cache 仍按
+      // cloud:// 路径命中已完成的音频缓存，避免重复消耗下载流量。
+      streamCacheKey: ctx.path,
     };
   } catch (e) {
     lastResolveError = e instanceof Error ? e.message : String(e);

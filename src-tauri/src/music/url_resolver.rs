@@ -391,7 +391,8 @@ pub struct AlternativeSourceResult {
     pub lx_types: Option<HashMap<String, LxTypeEntry>>,
 }
 
-const SOURCE_PRIORITY: &[&str] = &["kw", "tx", "wy", "kg", "mg"];
+/// 平台尝试优先级（kw 优先，与落雪默认顺序一致；qs=汽水为聚合后端解析，置于末位兜底）
+const SOURCE_PRIORITY: &[&str] = &["kw", "tx", "wy", "kg", "mg", "qs"];
 
 const DURATION_TOLERANCE_SEC: f64 = 5.0;
 
@@ -468,6 +469,30 @@ fn is_match(
         }
     }
     true
+}
+
+/// 汽水原生播放取流（lx://qs）：track_v2 → 按品质选档 → PlayAuth→CEK。
+/// 返回 JSON：{"url","quality","bitrate","size","headers":{"User-Agent"},"cek"?}
+/// （cek 解出失败时为 null，上层按普通直链处理/走换源）
+#[tauri::command]
+pub async fn resolve_qs_play(
+    track_id: String,
+    quality: String,
+) -> Result<serde_json::Value, String> {
+    let payload = crate::music::lx_search::qs_resolve_play(&track_id, &quality).await?;
+    let cek = if payload.play_auth.is_empty() {
+        None
+    } else {
+        crate::music::lx_search::qs_play_auth_to_cek(&payload.play_auth).ok()
+    };
+    Ok(serde_json::json!({
+        "url": payload.url,
+        "quality": payload.quality,
+        "bitrate": payload.bitrate,
+        "size": payload.size,
+        "headers": {"User-Agent": crate::music::lx_search::QS_UA},
+        "cek": cek,
+    }))
 }
 
 #[tauri::command]

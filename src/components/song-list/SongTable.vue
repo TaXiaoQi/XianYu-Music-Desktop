@@ -5,7 +5,7 @@ import { dragSession } from '../../composables/dragState';
 import type { Song } from '../../types';
 import { listScrollCache, songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { scheduleCloudHeadMetaBatch } from '../../features/playback/cloudHeadMeta';
+import { scheduleCloudHeadMetaBatch, cloudMetaEntryFor, cloudMetaMap } from '../../features/playback/cloudHeadMeta';
 import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
 import { useSettings } from '../../features/settings/useSettings';
 import { useRoute, useRouter } from 'vue-router';
@@ -154,12 +154,24 @@ const emit = defineEmits<{
 }>();
 
 // 网盘曲目（cloud://）进入任意列表即安排头部元数据预探：
-// 内嵌封面/歌词/时长在播放前就回填（cloud-track-meta-ready 事件）
+// 内嵌封面/歌词/时长在播放前就回填（cloud-track-meta-ready 事件 → cloudMetaMap）
 watch(
   () => props.songs,
   (list) => scheduleCloudHeadMetaBatch(list),
   { immediate: true },
 );
+
+// 行时长：歌曲本体没有（网盘行普遍 0）时回落头部探测结果（响应式，
+// 探测完成该行自动刷新——对齐移动端行组件 watch cloudHeadMetaProvider）
+const rowDuration = (song: Song): number => {
+  if (song.duration > 0 || !song.path?.startsWith('cloud://')) return song.duration;
+  return cloudMetaEntryFor(song.path)?.durationSecs ?? song.duration;
+};
+
+// 探测结果落表后补种可见行封面（行时长由模板响应式自动刷新）
+watch(cloudMetaMap, () => {
+  applyCoverUrls(rowsForRender.value);
+});
 
 const {
   currentViewMode, localSortMode, folderSortMode, activeRootPath, currentFolderFilter,
@@ -450,7 +462,12 @@ const applyCoverUrls = (rows: Song[]) => {
       coverUrlMap.set(p, hit);
       return;
     }
-    const seeded = primeCoverPath(p, song.cover_thumb_path || (song as any).coverUrl);
+    const seeded = primeCoverPath(
+      p,
+      song.cover_thumb_path
+        || cloudMetaEntryFor(p)?.coverPath
+        || (song as any).coverUrl,
+    );
     if (seeded) {
       coverUrlMap.set(p, seeded);
       return;
@@ -1147,7 +1164,7 @@ const rowShiftStyle = (rowIdx: number, rowPath: string): Record<string, string |
                 <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
               </svg>
             </button>
-            <span class="w-10 text-right">{{ formatDuration(song.duration) }}</span> 
+            <span class="w-10 text-right">{{ formatDuration(rowDuration(song)) }}</span>
           </div>
 
           <!-- 来源标签 -->

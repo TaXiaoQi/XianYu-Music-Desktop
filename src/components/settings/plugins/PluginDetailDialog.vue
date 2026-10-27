@@ -168,7 +168,7 @@ watch(() => props.plugin, (plugin) => {
               <span class="plugin-detail-value">{{ plugin.author || '—' }}</span>
             </div>
             <div class="plugin-detail-row">
-              <span class="plugin-detail-label">描述</span>
+              <span class="plugin-detail-label">插件来源</span>
               <span class="plugin-detail-value">{{ plugin.description || '—' }}</span>
             </div>
             <div class="plugin-detail-row">

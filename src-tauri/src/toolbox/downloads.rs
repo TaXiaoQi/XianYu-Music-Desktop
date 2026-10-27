@@ -258,6 +258,7 @@ pub async fn download_online_song(
     file_name: String,
     ekey: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
+    cek: Option<String>,
 ) -> Result<String, String> {
     use std::time::Instant;
     use tauri::Emitter;
@@ -423,6 +424,28 @@ pub async fn download_online_song(
                 Ok(_) => {}
                 Err(e) => {
                     return Err(format!("QMC2 解密失败: {e}"));
+                }
+            }
+        }
+    } else if let Some(ref ck) = cek {
+        // 汽水 CENC 加密流：下载完成后按 moov/senc 元数据原地解密
+        if !ck.is_empty() {
+            let key = crate::player::cenc::cek_to_key(ck)
+                .map_err(|e| format!("CEK 解析失败: {e}"))?;
+            let mut data = tokio::fs::read(&dest)
+                .await
+                .map_err(|e| format!("读取下载文件失败: {e}"))?;
+            match crate::player::cenc::decrypt_cenc_in_place(&mut data, &key) {
+                Ok(true) => {
+                    tokio::fs::write(&dest, &data)
+                        .await
+                        .map_err(|e| format!("写回解密文件失败: {e}"))?;
+                }
+                Ok(false) => {
+                    // 非 CENC（未加密直链），按原样保留
+                }
+                Err(e) => {
+                    return Err(format!("CENC 解密失败: {e}"));
                 }
             }
         }

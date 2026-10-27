@@ -19,6 +19,7 @@ const { icon } = useDesktopTheme();
 
 const sidebarLabelKeys: Record<SidebarItemKey, I18nKey> = {
   localMusic: 'sidebar.localMusic',
+  cloud: 'sidebar.cloud',
   artists: 'sidebar.artists',
   albums: 'sidebar.albums',
   favorites: 'sidebar.favorites',
@@ -80,6 +81,8 @@ const activeKey = computed<SidebarItemKey | null>(() => {
       return 'artists';
     case '/albums':
       return 'albums';
+    case '/cloud':
+      return 'cloud';
     case '/favorites':
       return 'favorites';
     case '/recent':

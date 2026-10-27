@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import type { CSSProperties } from 'vue';
 
 import { usePlayer } from '../../features/playback';
 import { useThemeSettings as useSurfaceTheme } from '../../composables/useThemeSettings';
@@ -12,6 +13,7 @@ import QueueVacantState from './queue/QueueVacantState.vue';
 import QueueTrackRow from './queue/QueueTrackRow.vue';
 import QueueWipeConfirm from './queue/QueueWipeConfirm.vue';
 import { useQueueWindow } from './queue/queueWindowing';
+import type { WindowedRow } from './queue/queueWindowing';
 
 const { settings } = useSettings();
 const clickMode = computed(() => settings.value.songClickAction || 'double');
@@ -26,6 +28,7 @@ const flipPanel = player.togglePlaylist;
 const startPlayback = player.playSong;
 const wipeQueue = player.clearQueue;
 const dropTrack = player.removeSongFromQueue;
+const reorderQueue = player.reorderQueue;
 
 const { theme: surfaceTheme } = useSurfaceTheme();
 
@@ -87,6 +90,110 @@ const performWipe = () => {
 const ejectTrack = (track: Song) => {
   dropTrack(track);
 };
+
+// ── 拖拽换位：手柄按下接管指针，实时位移预览，松手按行号落位 ──
+const ROW_EXTENT = 64; // 与 useQueueWindow 的 rowExtent 保持一致
+
+interface QueueDragState {
+  fromIndex: number;
+  targetIndex: number;
+  pointerDelta: number;
+}
+
+const rowsEl = ref<HTMLElement | null>(null);
+const dragState = ref<QueueDragState | null>(null);
+let dragStartY = 0;
+
+const addDragListeners = (): void => {
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', onDragEnd);
+  window.addEventListener('pointercancel', onDragEnd);
+};
+
+const removeDragListeners = (): void => {
+  window.removeEventListener('pointermove', onDragMove);
+  window.removeEventListener('pointerup', onDragEnd);
+  window.removeEventListener('pointercancel', onDragEnd);
+};
+
+const cancelDrag = (): void => {
+  dragState.value = null;
+  removeDragListeners();
+};
+
+const onRowDragStart = (row: WindowedRow<Song>, event: PointerEvent): void => {
+  if (event.button !== 0 || !rowsEl.value) return;
+  dragStartY = event.clientY;
+  dragState.value = { fromIndex: row.index, targetIndex: row.index, pointerDelta: 0 };
+  addDragListeners();
+};
+
+/** 指针所在内容行号：行中心相对列表容器顶的偏移折算 */
+const targetIndexAt = (clientY: number): number => {
+  const el = rowsEl.value;
+  const total = linedUpTracks.value.length;
+  if (!el || total === 0) return 0;
+  const top = el.getBoundingClientRect().top;
+  return Math.min(total - 1, Math.max(0, Math.floor((clientY - top) / ROW_EXTENT)));
+};
+
+const onDragMove = (event: PointerEvent): void => {
+  const state = dragState.value;
+  if (!state) return;
+  state.pointerDelta = event.clientY - dragStartY;
+  state.targetIndex = targetIndexAt(event.clientY);
+  // 贴近视口上下缘时跟随滚动，便于长队列跨屏拖拽
+  const viewport = viewportEl.value;
+  if (viewport) {
+    const rect = viewport.getBoundingClientRect();
+    if (event.clientY < rect.top + 36) viewport.scrollTop -= 10;
+    else if (event.clientY > rect.bottom - 36) viewport.scrollTop += 10;
+  }
+};
+
+const onDragEnd = (): void => {
+  const state = dragState.value;
+  cancelDrag();
+  if (state && state.targetIndex !== state.fromIndex) {
+    reorderQueue(state.fromIndex, state.targetIndex);
+  }
+};
+
+watch(panelVisible, visible => {
+  if (!visible) cancelDrag();
+});
+
+onBeforeUnmount(cancelDrag);
+
+/** 行定位：无拖拽走窗口化默认；拖拽中被拖行跟指针，途经行让位滑动 */
+const rowPlacement = (row: WindowedRow<Song>): CSSProperties => {
+  const base = placementFor(row);
+  const state = dragState.value;
+  if (!state) return base;
+  let extra = 0;
+  if (row.index === state.fromIndex) {
+    extra = state.pointerDelta;
+  } else if (
+    state.fromIndex < state.targetIndex &&
+    row.index > state.fromIndex &&
+    row.index <= state.targetIndex
+  ) {
+    extra = -ROW_EXTENT;
+  } else if (
+    state.fromIndex > state.targetIndex &&
+    row.index >= state.targetIndex &&
+    row.index < state.fromIndex
+  ) {
+    extra = ROW_EXTENT;
+  }
+  const dragging = row.index === state.fromIndex;
+  return {
+    ...base,
+    transform: `translate3d(0, ${row.start + extra}px, 0)`,
+    zIndex: dragging ? '30' : undefined,
+    transition: dragging ? 'none' : 'transform 160ms ease',
+  };
+};
 </script>
 
 <template>
@@ -109,18 +216,20 @@ const ejectTrack = (track: Song) => {
         <div ref="viewportEl" class="custom-scrollbar flex-1 overflow-y-auto bg-[#eef3f8]/45 p-3 dark:bg-[#262626]/35">
           <QueueVacantState v-if="!hasContent" />
 
-          <div v-else class="relative w-full" :style="{ height: `${contentExtent}px` }">
+          <div v-else ref="rowsEl" class="relative w-full" :style="{ height: `${contentExtent}px` }">
             <div
               v-for="row in renderedRows"
               :key="row.entry.path + row.index"
-              :style="placementFor(row)"
+              :style="rowPlacement(row)"
             >
               <QueueTrackRow
                 :track="row.entry"
                 :active="playingTrack?.path === row.entry.path"
                 :click-mode="clickMode"
+                :dragging="dragState?.fromIndex === row.index"
                 @activate="startPlayback"
                 @eject="ejectTrack"
+                @drag-start="onRowDragStart(row, $event)"
               />
             </div>
           </div>

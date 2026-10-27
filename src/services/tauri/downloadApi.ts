@@ -52,12 +52,14 @@ export const downloadApi = {
     fileName: string,
     ekey?: string | null,
     headers?: Record<string, string> | null,
+    cek?: string | null,
   ) =>
     tauriInvoke('download_online_song', {
       url,
       fileName,
       ekey: ekey || null,
       headers: headers || null,
+      cek: cek || null,
     }) as Promise<string>,
 
   decryptQmcFile: (filePath: string, ekey?: string | null) =>

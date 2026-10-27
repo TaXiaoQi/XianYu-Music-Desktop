@@ -13,14 +13,12 @@ import { ChevronDown } from "lucide-vue-next";
 import { useToast as useToastNotifications } from "../../composables/toast";
 import { remoteLibraryApi as remoteLibraryService } from "../../services/tauri/remoteLibraryApi";
 import type {
-    RemoteCacheUsage as CacheUsageSnapshot,
     RemoteFileEntry,
 } from "../../types";
 import type { RemoteSource, RemoteSyncProgress } from "../../types";
 import { useLibraryRuntimeActions as useRuntimeLibraryActions } from "../../features/library/useLibraryRuntimeActions";
 import { default as RemovalDialog } from "../overlays/ConfirmModal.vue";
 import RemoteBrowserPanel from "./remoteLibrary/RemoteBrowserPanel.vue";
-import RemoteCacheUsage from "./remoteLibrary/RemoteCacheUsage.vue";
 import RemoteSectionHeader from "./remoteLibrary/RemoteSectionHeader.vue";
 import RemoteSourceForm from "./remoteLibrary/RemoteSourceForm.vue";
 import RemoteSourceList from "./remoteLibrary/RemoteSourceList.vue";
@@ -36,8 +34,6 @@ const probing = ref(false);
 const syncingId = shallowRef<string | null>(null);
 const removalCandidate = shallowRef<RemoteSource | null>(null);
 const syncStatus = shallowRef<RemoteSyncProgress | null>(null);
-const cacheMeter = shallowRef<CacheUsageSnapshot | null>(null);
-const wipingCache = ref(false);
 const explorerTargetId = shallowRef<string | null>(null);
 const explorerLocation = ref("/");
 const explorerEntries = shallowRef<RemoteFileEntry[]>([]);
@@ -114,26 +110,6 @@ const refreshSources = async () => {
         sourceList.value = catalog;
     }
     fetchingSources.value = false;
-};
-
-const readCacheMeter = async () => {
-    cacheMeter.value = await remoteLibraryService.getRemoteCacheUsage();
-};
-
-const wipeRemoteCache = async () => {
-    wipingCache.value = true;
-    const snapshot = await remoteLibraryService
-        .clearRemoteCache()
-        .catch((failure: unknown) => {
-            console.error("[remote-library] failed to clear cache", failure);
-            notify("清理远程缓存失败", "error");
-            return null;
-        });
-    if (snapshot !== null) {
-        cacheMeter.value = snapshot;
-        notify("远程缓存已清理", "success");
-    }
-    wipingCache.value = false;
 };
 
 const openExplorerAt = async (source: RemoteSource, target?: string) => {
@@ -290,7 +266,7 @@ const destroyCandidate = async () => {
 let detachSyncListener: UnlistenFn | null = null;
 
 const bootstrapPanel = async () => {
-    await Promise.all([refreshSources(), readCacheMeter()]);
+    await refreshSources();
     detachSyncListener = await listen<RemoteSyncProgress>(
         "remote-sync-progress",
         (envelope) => {
@@ -364,15 +340,6 @@ onBeforeUnmount(() => {
                 @edit="startEditing"
                 @remove="markForRemoval"
                 @sync="startSync"
-            />
-        </section>
-
-        <section class="flex flex-col gap-3">
-            <RemoteSectionHeader>远程缓存</RemoteSectionHeader>
-            <RemoteCacheUsage
-                :busy="wipingCache"
-                :usage="cacheMeter"
-                @clear="wipeRemoteCache"
             />
         </section>
 

@@ -620,6 +620,8 @@ export const useSoundEffectStore = defineStore("soundEffect", () => {
         if (syncTimer) clearTimeout(syncTimer);
         syncTimer = setTimeout(() => {
             syncTimer = null;
+            // 防抖窗口内宿主可能未就绪/被卸载（测试环境为部分 mock），缺函数时静默跳过
+            if (typeof playbackApi.setSoundEffectSettings !== "function") return;
             playbackApi.setSoundEffectSettings(settings).catch((err) => {
                 console.warn(
                     "[soundEffectStore] 同步音效参数到 Rust 失败:",

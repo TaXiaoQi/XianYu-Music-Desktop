@@ -15,6 +15,7 @@ type ShellSection =
   | 'albums'
   | 'favorites'
   | 'recent'
+  | 'cloud'
   | 'plugins'
   | 'settings'
   | 'auth';
@@ -31,6 +32,7 @@ const SECTION_PATHS: Record<Exclude<ShellSection, 'home'>, string> = {
   albums: '/albums',
   favorites: '/favorites',
   recent: '/recent',
+  cloud: '/cloud',
   plugins: '/plugins',
   settings: '/settings',
   auth: '/auth',
@@ -102,6 +104,7 @@ export function useHomeNavigation(router: Router) {
   const openAlbums = sectionOpener('albums');
   const openFavorites = sectionOpener('favorites');
   const openRecent = sectionOpener('recent');
+  const openCloud = sectionOpener('cloud');
   const openPlugins = sectionOpener('plugins');
   const openSettings = sectionOpener('settings');
   const openAuth = sectionOpener('auth');
@@ -119,6 +122,7 @@ export function useHomeNavigation(router: Router) {
     openAlbums,
     openFavorites,
     openRecent,
+    openCloud,
     openPlugins,
     openSettings,
     openAuth,

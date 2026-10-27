@@ -4,6 +4,10 @@
  * 浏览当前账号网盘目录，勾选一个或多个文件夹（当前目录 + 子目录行），
  * 跨目录累积，保存整体覆盖写入 CloudFolderSelectionStore。
  * 文件行只读展示（移动端同款），点播/下载走内嵌封面探针与搜索链路。
+ *
+ * 选取模式（pickMode）：歌单「网盘文件夹导入」等场景内嵌本组件只为
+ * 挑文件夹——确定后 emit('pick') 返回所选 (key, 可读名) + 账号，
+ * 不写播放范围 store（与移动端 ?pick=1 同语义）。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Check, ChevronDown } from 'lucide-vue-next';
@@ -13,14 +17,30 @@ import { useToast } from '../../composables/toast';
 import { cloudProviders } from '../../services/cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
 import { CloudFolderNameCache, CloudFolderSelectionStore } from '../../services/cloud/cloudFolderSelectionStore';
+import { CloudScanCacheStore } from '../../services/cloud/cloudScanCacheStore';
 import { CloudAccount, CloudFile } from '../../services/cloud/cloudTypes';
 import type { CloudProvider } from '../../services/cloud/cloudProvider';
+
+const props = defineProps<{ pickMode?: boolean }>();
+
+const emit = defineEmits<{
+  (
+    event: 'pick',
+    payload: {
+      providerId: string;
+      accountId: string;
+      providerName: string;
+      folders: Array<{ key: string; name: string }>;
+    },
+  ): void;
+}>();
 
 const { t } = useI18n();
 const { showToast } = useToast();
 
 // 行间分隔与设置分区行同色；列表末行无线
-const rowClass = 'flex flex-wrap items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/40 dark:hover:bg-white/10';
+// 首末行自带圆角：根容器不能加 overflow-hidden，否则账号下拉会被卡片裁掉
+const rowClass = 'flex flex-wrap items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/40 dark:hover:bg-white/10 first:rounded-t-xl last:rounded-b-xl';
 const chipClass = 'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all';
 const chipIdleClass = 'border-gray-200/40 bg-white/20 text-gray-700 hover:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200';
 const selectChipClass = (active: boolean) => `${chipClass} ${active ? 'border-[#EC4141] bg-[#EC4141]/8 text-[#EC4141]' : chipIdleClass}`;
@@ -102,14 +122,18 @@ const rememberNames = (entries: Record<string, string>) => {
   void CloudFolderNameCache.instance.remember(sel.provider.id, sel.account.accountId, entries);
 };
 
-/** 恢复已保存选择（换账号时跟随）。 */
+/** 恢复已保存选择（换账号时跟随）；选取模式不还原播放范围，只取名称缓存。 */
 const restoreSelection = async () => {
   const sel = browseSel.value;
   if (!sel) return;
-  const saved = await CloudFolderSelectionStore.instance.pathsFor(sel.provider.id, sel.account.accountId);
   const names = await CloudFolderNameCache.instance.namesFor(sel.provider.id, sel.account.accountId);
-  selectedPaths.value = new Set(saved);
   folderNames.value = { ...names };
+  if (props.pickMode) {
+    selectedPaths.value = new Set();
+    return;
+  }
+  const saved = await CloudFolderSelectionStore.instance.pathsFor(sel.provider.id, sel.account.accountId);
+  selectedPaths.value = new Set(saved);
 };
 
 const openBrowse = () => {
@@ -220,6 +244,19 @@ const removeSelected = (path: string) => {
 const saveSelection = async () => {
   const sel = browseSel.value;
   if (!sel || saving.value) return;
+  // 选取模式：不写播放范围 store，直接把选择交回宿主（歌单导入等）
+  if (props.pickMode) {
+    emit('pick', {
+      providerId: sel.provider.id,
+      accountId: sel.account.accountId,
+      providerName: sel.provider.displayName,
+      folders: [...selectedPaths.value].map((key) => ({
+        key,
+        name: dirNameOf(key),
+      })),
+    });
+    return;
+  }
   saving.value = true;
   try {
     await CloudFolderSelectionStore.instance.setPaths(
@@ -227,6 +264,8 @@ const saveSelection = async () => {
       sel.account.accountId,
       [...selectedPaths.value],
     );
+    // 扫描范围变了：该账号的网盘页全量扫描缓存作废，下次进入重扫
+    CloudScanCacheStore.instance.invalidate(sel.provider.id, sel.account.accountId);
     showToast(`已保存 ${selectedPaths.value.size} 个文件夹`, 'info');
   } finally {
     saving.value = false;
@@ -267,8 +306,9 @@ watch(
   },
 );
 
-// 目录浏览区默认收起（几十个文件夹会把设置页撑爆），点「选择文件夹」行展开
-const folderBrowserExpanded = ref(false);
+// 目录浏览区默认收起（几十个文件夹会把设置页撑爆），点「选择文件夹」行展开；
+// 选取模式（歌单导入弹窗内嵌）默认展开，免二次点击
+const folderBrowserExpanded = ref(props.pickMode === true);
 const toggleFolderBrowser = () => {
   folderBrowserExpanded.value = !folderBrowserExpanded.value;
   // 兜底：账号就绪 watch 已自动 openBrowse，这里覆盖手动提前展开的场景
@@ -291,7 +331,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
+  <div class="rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
     <!-- 标题由宿主（SettingsLibrary 网盘文件夹分组）提供，这里只渲染内容 -->
     <div v-if="boundAccountsFlat.length === 0" :class="rowClass">
       <span class="flex-1 text-xs text-gray-500 dark:text-gray-400">{{ t('cloud.needBindFirst') }}</span>
@@ -497,7 +537,7 @@ onBeforeUnmount(() => {
           :disabled="saving"
           @click="saveSelection"
         >
-          保存
+          {{ props.pickMode ? '确定' : '保存' }}
         </button>
       </div>
       </template>

@@ -1,7 +1,6 @@
 import type { PluginPlaylistSearchResult, PluginSearchResult, PluginSource, QualityKey } from '../../types';
 import { qualityKeyToBakaPluginQuality } from '../../types';
 import { extractNeteasePicId, neteasePicIdToUrl, normalizeKuwoCoverUrl } from '../../utils/coverUrl';
-import { dispatchFallbackModule, dispatchFallbackModuleMany } from '../fallbackModules/registry';
 
 export const stripHtmlTags = (str: unknown): string => {
   if (!str || typeof str !== 'string') return '';
@@ -32,17 +31,11 @@ const extractCoverFromNode = (node: any): string => {
 
 const NESTED_ITEM_KEYS = ['song', 'data', 'music', 'musicInfo', 'detail'];
 
-export const extractCoverUrl = async (item: any): Promise<string> => {
-  return dispatchFallbackModule('lx_cover', 'extractCoverUrl', { item },
-    () => extractCoverUrlBuiltin(item));
-};
+export const extractCoverUrl = async (item: any): Promise<string> => extractCoverUrlBuiltin(item);
 
-// 列表边界批量取封面：一次 fallback_module_call_many，失败项逐项回退内置实现
-export const extractCoverUrls = (items: any[]): Promise<string[]> => {
-  return dispatchFallbackModuleMany('lx_cover', 'extractCoverUrl',
-    items.map(item => ({ item })),
-    (args) => extractCoverUrlBuiltin(args.item));
-};
+// 列表边界批量取封面：内置纯同步实现，逐项执行
+export const extractCoverUrls = async (items: any[]): Promise<string[]> =>
+  items.map(item => extractCoverUrlBuiltin(item));
 
 const extractCoverUrlBuiltin = (item: any): string => {
   if (!item || typeof item !== 'object') return '';

@@ -9,6 +9,8 @@ import { usePlayer } from '../../features/playback';
 import { useToast } from '../../composables/toast';
 import { appApi } from '../../services/tauri/appApi';
 import { playbackApi } from '../../services/tauri/playbackApi';
+import { remoteLibraryApi } from '../../services/tauri/remoteLibraryApi';
+import type { RemoteCacheUsage } from '../../types';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 import SettingHint from './SettingHint.vue';
 import { useI18n } from '../../features/i18n';
@@ -279,6 +281,32 @@ const handleClearStreamCache = async () => {
   }
 };
 
+// --- 远程音乐库（WebDAV）缓存管理（自设置-音乐库页迁入，统一在存储管理区） ---
+const remoteCacheMeter = ref<RemoteCacheUsage | null>(null);
+const isClearingRemoteCache = ref(false);
+
+const refreshRemoteCacheInfo = async () => {
+  try {
+    remoteCacheMeter.value = await remoteLibraryApi.getRemoteCacheUsage();
+  } catch {
+    // 非 Tauri 环境静默忽略
+  }
+};
+
+const handleClearRemoteCache = async () => {
+  if (isClearingRemoteCache.value) return;
+  isClearingRemoteCache.value = true;
+  try {
+    remoteCacheMeter.value = await remoteLibraryApi.clearRemoteCache();
+    showToast('远程缓存已清理', 'success');
+  } catch (error) {
+    console.error('Failed to clear remote cache:', error);
+    showToast('清理远程缓存失败', 'error');
+  } finally {
+    isClearingRemoteCache.value = false;
+  }
+};
+
 const openClearAllDataConfirm = () => {
   if (isClearingAllData.value || isLibraryScanActive.value) {
     return;
@@ -316,6 +344,7 @@ onMounted(() => {
   if (settings.value.audio.streamCacheDir) {
     void playbackApi.setStreamCacheDir(settings.value.audio.streamCacheDir);
   }
+  void refreshRemoteCacheInfo();
 });
 </script>
 
@@ -666,6 +695,31 @@ onMounted(() => {
                 : 'settings-action-button--solid'"
             >
               {{ isClearingStreamCache ? t('general.clearing') : t('general.clear') }} 
+            </button>
+          </div>
+        </div>
+
+        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
+              远程缓存
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                {{ remoteCacheMeter ? `${formatStreamCacheBytes(remoteCacheMeter.bytes)} / ${formatStreamCacheBytes(remoteCacheMeter.limitBytes)}` : '0 B' }}
+              </span>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">远程音乐库（WebDAV）音频缓存</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              :disabled="isClearingRemoteCache || !remoteCacheMeter || remoteCacheMeter.bytes === 0"
+              @click="handleClearRemoteCache"
+              class="settings-action-button shrink-0"
+              :class="isClearingRemoteCache || !remoteCacheMeter || remoteCacheMeter.bytes === 0
+                ? 'settings-action-button--disabled'
+                : 'settings-action-button--solid'"
+            >
+              {{ isClearingRemoteCache ? t('general.clearing') : t('general.clear') }}
             </button>
           </div>
         </div>

@@ -27,6 +27,7 @@ const HEAD_BYTES_BY_QUALITY: Record<QualityKey, number> = {
   vinyl: 3_300_000,
   dolby: 3_300_000,
   atmos: 3_300_000,
+  spatial: 3_300_000,
   atmos_plus: 4_400_000,
   master: 5_800_000,
 };

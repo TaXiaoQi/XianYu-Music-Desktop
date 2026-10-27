@@ -117,9 +117,9 @@ function mockResolveDownloadFullPath(args: any): string {
 }
 
 describe('downloadService: quality candidates', () => {
-  it('maps UI quality to ordered lx candidates with fallback (12档从高到低)', () => {
+  it('maps UI quality to ordered lx candidates with fallback (13档从高到低)', () => {
     expect(qualityToLxCandidates('master')).toEqual([
-      'master', 'atmos_plus', 'atmos', 'dolby', 'vinyl', 'hires',
+      'master', 'atmos_plus', 'spatial', 'atmos', 'dolby', 'vinyl', 'hires',
       'flac24bit', 'flac', '320k', '192k', '128k', 'mgg',
     ]);
     expect(qualityToLxCandidates('320k')).toEqual(['320k', '192k', '128k', 'mgg']);
@@ -417,16 +417,43 @@ describe('downloadService: probeDownloadableQualities', () => {
     expect(result.resolvedUrls.flac).toBeUndefined();
   });
 
-  it('never probes qualities outside the declared list', async () => {
+  it('verifies only the top declared quality and trusts the rest', async () => {
     (lxPluginGetMusicUrl as any).mockImplementation(
       async (_p: unknown, _s: unknown, _info: unknown, q: string) =>
         ({ type: q, url: `https://cdn.example.com/${q}.mp3` }),
     );
 
-    await probeDownloadableQualities(makeOnlineSong(), ['320k', '128k']);
+    const onTrust: QualityKey[][] = [];
+    await probeDownloadableQualities(makeOnlineSong(), ['320k', '128k'], {
+      onTrust: (declared) => onTrust.push(declared),
+    });
 
+    // 顶层单档验证：只实测最高档 1 次，成功即信任全部声明档（不再逐档实测）
     const probed = (mockResolveLxUrlForSingleQuality as any).mock.calls.map((c: any[]) => c[3]);
-    expect(probed.sort()).toEqual(['128k', '320k']);
+    expect(probed).toEqual(['320k']);
+    expect(onTrust).toEqual([['128k', '320k']]);
+  });
+
+  it('trusts only qualities up to the degraded actual quality', async () => {
+    (lxPluginGetMusicUrl as any).mockImplementation(
+      async (_p: unknown, _s: unknown, _info: unknown, q: string) =>
+        q === 'flac24bit'
+          ? { type: 'flac', url: 'https://cdn.example.com/actual.mp3' }
+          : q === 'flac'
+            ? { type: 'flac', url: 'https://cdn.example.com/flac.flac' }
+            : { type: q, url: `https://cdn.example.com/${q}.mp3` },
+    );
+
+    const onTrust: QualityKey[][] = [];
+    const result = await probeDownloadableQualities(makeOnlineSong(), ['320k', 'flac', 'flac24bit'], {
+      onTrust: (declared) => onTrust.push(declared),
+    });
+
+    // 最高档返回 mp3 特征（假无损）→ 顶层验证失败 → 回退逐档实测：
+    // flac24bit 不进菜单，flac/320k 实测通过；信任未生效
+    expect(onTrust).toEqual([]);
+    expect(result.available).toEqual(['320k', 'flac']);
+    expect(result.resolvedUrls.flac24bit).toBeUndefined();
   });
 
   it('does not fallback to probing every quality when declared list is missing', async () => {

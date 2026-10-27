@@ -72,6 +72,8 @@ function makeHarness(options: {
 
   const deps: FavoritesSyncFlowDeps = {
     canSync: () => true,
+    isAuthed: () => true,
+    isSelfSyncing: () => false,
     isUploadEnabled: () => true,
     collections,
     library,

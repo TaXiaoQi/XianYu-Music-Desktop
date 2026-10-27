@@ -102,7 +102,31 @@ export async function probeDownloadableQualities(
     }
   }
 
-  const queue = [...targets];
+  // 通用顶层验证捷径（Baka 已在上面返回）：最高档实测 1 次，成功即信任全部声明档。
+  // 逐档实测是付费源请求量暴增主因，菜单改为信任声明、播放/下载链路逐档验证兜底；
+  // 实际返回档低于请求档（源端降级）时只信任不高于实际档的声明档，更高档仍逐档实测。
+  const topKey = targets.reduce<QualityKey | null>(
+    (acc, k) => (acc === null || ALL_QUALITY_KEYS.indexOf(k) > ALL_QUALITY_KEYS.indexOf(acc) ? k : acc),
+    null,
+  );
+  let queueOverride: QualityKey[] | null = null;
+  if (topKey && !options?.signal?.aborted) {
+    const topResolved = await resolveUrl(topKey).catch(() => null);
+    if (topResolved?.url) {
+      resolvedUrls[topResolved.quality] = topResolved.url;
+      options?.onProgress?.(topResolved.url, topResolved.quality);
+      if (topResolved.quality === topKey) {
+        options?.onTrust?.(targets);
+        return { available: targets, resolvedUrls };
+      }
+      const actualIdx = ALL_QUALITY_KEYS.indexOf(topResolved.quality);
+      options?.onTrust?.(targets.filter(k => ALL_QUALITY_KEYS.indexOf(k) <= actualIdx));
+      queueOverride = targets.filter(k => ALL_QUALITY_KEYS.indexOf(k) > actualIdx);
+    }
+    // 最高档未解析到直链：回退逐档实测（鉴权失效/风控由 worker 内熔断识别）
+  }
+
+  const queue = [...(queueOverride ?? targets)];
   const concurrency = Math.max(1, Math.min(options?.concurrency ?? 2, queue.length));
 
   const worker = async () => {

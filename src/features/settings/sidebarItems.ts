@@ -21,6 +21,13 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
     description: '核心功能 (不可隐藏)',
   },
   {
+    key: 'cloud',
+    label: '网盘音乐',
+    visibilityKey: 'showCloud',
+    iconKind: 'path',
+    iconPath: 'M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z',
+  },
+  {
     key: 'artists',
     label: '歌手',
     visibilityKey: 'showArtists',
@@ -77,11 +84,15 @@ export const DEFAULT_SIDEBAR_ORDER: SidebarItemKey[] = [
   'plugins',
   'account',
   'localMusic',
+  'cloud',
   'recent',
   'favorites',
 ];
 
 const SIDEBAR_ITEM_KEY_SET = new Set<SidebarItemKey>(DEFAULT_SIDEBAR_ORDER);
+const DEFAULT_KEY_RANK = new Map<SidebarItemKey, number>(
+  DEFAULT_SIDEBAR_ORDER.map((key, index) => [key, index]),
+);
 
 export const normalizeSidebarOrder = (value: unknown): SidebarItemKey[] => {
   if (!Array.isArray(value)) {
@@ -99,10 +110,20 @@ export const normalizeSidebarOrder = (value: unknown): SidebarItemKey[] => {
     result.push(key);
   }
 
+  // 缺失项（新版本新增的侧栏项）按默认顺序插到「默认顺序里最近的前驱」之后，
+  // 而非整体追加到末尾——保证新项落在设计的默认位置（如网盘音乐在本地音乐下方）
   for (const key of DEFAULT_SIDEBAR_ORDER) {
-    if (!seen.has(key)) {
-      result.push(key);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rank = DEFAULT_KEY_RANK.get(key) ?? 0;
+    let insertAt = 0;
+    for (let i = result.length - 1; i >= 0; i--) {
+      if ((DEFAULT_KEY_RANK.get(result[i]) ?? 0) < rank) {
+        insertAt = i + 1;
+        break;
+      }
     }
+    result.splice(insertAt, 0, key);
   }
 
   return result;

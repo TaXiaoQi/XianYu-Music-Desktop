@@ -18,14 +18,11 @@ describe('normalizeSidebarOrder', () => {
     expect(normalizeSidebarOrder(custom)).toEqual(custom);
   });
 
-  it('appends missing keys so newly added items are never lost', () => {
+  it('inserts missing keys at their default position so new items land in place', () => {
     const result = normalizeSidebarOrder(['account', 'favorites']);
 
-    expect(result.slice(0, 2)).toEqual(['account', 'favorites']);
+    expect(result).toEqual(DEFAULT_SIDEBAR_ORDER);
     expect(result).toHaveLength(DEFAULT_SIDEBAR_ORDER.length);
-    expect(result.slice(2)).toEqual(
-      DEFAULT_SIDEBAR_ORDER.filter(key => key !== 'account' && key !== 'favorites'),
-    );
   });
 
   it('drops unknown or removed keys', () => {
@@ -35,7 +32,7 @@ describe('normalizeSidebarOrder', () => {
     expect(result).not.toContain('nope');
     expect(result).not.toContain('topLists');
     expect(result).not.toContain('dailyRecommend');
-    expect(result.slice(0, 2)).toEqual(['artists', 'albums']);
+    expect(result).toEqual(DEFAULT_SIDEBAR_ORDER);
     expect(result).toHaveLength(DEFAULT_SIDEBAR_ORDER.length);
   });
 
@@ -50,7 +47,7 @@ describe('normalizeSidebarOrder', () => {
   it('ignores non-string entries', () => {
     const result = normalizeSidebarOrder(['folders', 42, {}, null, 'plugins']);
 
-    expect(result.slice(0, 2)).toEqual(['folders', 'plugins']);
+    expect(result).toEqual(DEFAULT_SIDEBAR_ORDER);
     expect(result).toHaveLength(DEFAULT_SIDEBAR_ORDER.length);
   });
 });

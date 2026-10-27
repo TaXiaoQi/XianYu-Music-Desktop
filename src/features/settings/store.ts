@@ -187,9 +187,9 @@ const defaultThemeSettings: ThemeSettings = {
 };
 
 const defaultSidebarSettings: SidebarSettings = {
-  showLocalMusic: true, showArtists: true, showAlbums: true, showFavorites: true,
-  showRecent: true, showFolders: true, showStatistics: true, showPlugins: true,
-  showAccount: true,
+  showLocalMusic: true, showCloud: true, showArtists: true, showAlbums: true,
+  showFavorites: true, showRecent: true, showFolders: true, showStatistics: true,
+  showPlugins: true, showAccount: true,
   order: DEFAULT_SIDEBAR_ORDER.slice(),
 };
 

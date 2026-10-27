@@ -69,12 +69,16 @@ export async function prepareResolveContext(
   if (!pathInfo) return null;
   const { source: lxSource, songmid } = pathInfo;
 
-  const matchedPlugin = findLxPluginForSource(lxSource);
-  if (!matchedPlugin) {
-    throw new Error('未启用任何落雪音源插件，请先在设置中启用');
-  }
+  // 汽水原生取流不依赖 lx 源脚本（Rust 直取，可能无任何启用的 lx 插件）
+  const matchedPlugin = lxSource === 'qs'
+    ? findLxPluginForSource(lxSource)
+    : ((): PluginSource | null => {
+        const matched = findLxPluginForSource(lxSource);
+        if (matched) return matched;
+        throw new Error('未启用任何落雪音源插件，请先在设置中启用');
+      })();
 
-  await ensureLxPluginInstance(matchedPlugin);
+  if (matchedPlugin) await ensureLxPluginInstance(matchedPlugin);
   const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
   const baseSongInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
 
@@ -107,7 +111,12 @@ export async function resolveLxAudioForQuality(
     console.warn(`[Download] ${q} 命中酷狗蝰蛇音效流（VIPER 编码不可解），跳过该档位`);
     return null;
   }
-  return { quality: resolveActualQuality(reportedQuality, url), url };
+  return {
+    quality: resolveActualQuality(reportedQuality, url),
+    url,
+    headers: resolved.headers ?? null,
+    cek: resolved.cek,
+  };
 }
 
 export interface PluginResolveContext {

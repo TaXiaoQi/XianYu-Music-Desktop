@@ -5,7 +5,8 @@
 // 与播放期探针共用同一事件与回填链路。会话内按 path 去重、串行执行，
 // 避免直链请求风暴。
 
-import { emit } from '@tauri-apps/api/event';
+import { reactive } from 'vue';
+import { emit, listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import type { Song } from '../../types';
 import {
@@ -22,6 +23,39 @@ interface CloudMetaPayload {
   durationSecs: number | null;
 }
 
+/** 响应式元数据表（cloud:// path → 探测/索引结果）。对齐移动端
+ * cloudHeadMetaProvider：列表行渲染直接读本表，探测完成即整行刷新，
+ * 不再依赖各页面自行监听 cloud-track-meta-ready 回填自身数据（旧行为
+ * 只有搜索页/播放器接了事件，网盘页/文件夹页永远拿不到结果）。 */
+export const cloudMetaMap = reactive<Record<string, CloudMetaPayload>>({});
+
+const hydrateMap = (idx: Record<string, CloudMetaPayload>): void => {
+  for (const [k, v] of Object.entries(idx)) {
+    if (v && !cloudMetaMap[k]) cloudMetaMap[k] = v;
+  }
+};
+
+// cloud-track-meta-ready 全局监听（模块级一次）：探测成功/索引回填都进表。
+let eventBound = false;
+const bindEvent = (): void => {
+  if (eventBound) return;
+  eventBound = true;
+  listen<CloudMetaPayload>('cloud-track-meta-ready', (e) => {
+    const p = e.payload;
+    if (p?.cloudPath) cloudMetaMap[p.cloudPath] = p;
+  }).catch(() => {
+    eventBound = false; // 非 tauri 环境（单测）静默
+  });
+};
+
+/** 读某网盘曲目的探测元数据（响应式：渲染期调用即建立依赖）。 */
+export const cloudMetaEntryFor = (path: string): CloudMetaPayload | null => {
+  if (!path.startsWith('cloud://')) return null;
+  bindEvent();
+  void metaIndex();
+  return cloudMetaMap[path] ?? null;
+};
+
 /** 已探测/已入队的网盘曲目（会话级）。 */
 const scheduled = new Set<string>();
 
@@ -30,7 +64,12 @@ let indexPromise: Promise<Record<string, CloudMetaPayload>> | null = null;
 const metaIndex = (): Promise<Record<string, CloudMetaPayload>> => {
   indexPromise ??= invoke<Record<string, CloudMetaPayload>>(
     'load_cloud_meta_index',
-  ).catch(() => ({}) as Record<string, CloudMetaPayload>);
+  )
+    .then((idx) => {
+      hydrateMap(idx);
+      return idx;
+    })
+    .catch(() => ({}) as Record<string, CloudMetaPayload>);
   return indexPromise;
 };
 
@@ -72,6 +111,7 @@ const scheduleCloudHeadMeta = (song: Song): void => {
       const idx = await metaIndex();
       const hit = idx[song.path];
       if (hit) {
+        cloudMetaMap[song.path] ??= hit;
         await emit('cloud-track-meta-ready', hit);
         return;
       }
@@ -108,5 +148,7 @@ export const lookupCloudMeta = async (
 
 /** 批量安排（搜索结果/歌单导入等列表装配点调用）。 */
 export const scheduleCloudHeadMetaBatch = (songs: readonly Song[]): void => {
+  bindEvent();
+  void metaIndex();
   songs.forEach(scheduleCloudHeadMeta);
 };

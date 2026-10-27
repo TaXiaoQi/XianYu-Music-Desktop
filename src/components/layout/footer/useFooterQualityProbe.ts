@@ -3,7 +3,6 @@ import { ref } from 'vue';
 import { isDownloadableOnlineSong } from '../../../services/domain/downloadService';
 import {
   ensureSharedQualityProbe,
-  ensureProbeRequestedUrls,
   onSharedProbeUpdate,
   sharedProbeAvailable,
   getSongKey,
@@ -115,29 +114,26 @@ export const useFooterQualityProbe = ({
       const shown = sharedProbeAvailable(probe);
       footerAvailableQualityKeys.value = shown;
       footerQualityUrls.value = { ...probe.resolvedUrls };
-      const urlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
+      const urlFor = (q: QualityKey) => probe.resolvedUrls[q];
       void probeFooterQualitySizes(song, shown, urlFor);
       if (probe.done) {
         isFooterQualityInfoProbing.value = false;
-        // 主探测已收尾：等补解析与体积探测补齐后再释放订阅，
-        // 避免晚到的直链（主探测失败档位的补解析）没机会补体积
+        // 收尾：对尚无体积的档补一次元数据体积，然后清理菜单。
+        // 信任模型下未实测档没有 HEAD 体积属预期——信任档（插件声明）保留，
+        // 假档由播放/下载链路逐档验证兜底；无体积且非信任档剔除。
         void (async () => {
           try {
-            await ensureProbeRequestedUrls(probe, song, sharedProbeAvailable(probe));
-            const lateUrlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
-            await probeFooterQualitySizes(song, sharedProbeAvailable(probe), lateUrlFor);
-            // 收尾后仍无体积的档位视为假音质，从菜单剔除（保留当前播放档）
+            await probeFooterQualitySizes(song, sharedProbeAvailable(probe), urlFor);
             const keep = getCurrentPlayingQuality();
             footerAvailableQualityKeys.value = sharedProbeAvailable(probe).filter(k =>
               k === keep
+              || (probe.trustedDeclared?.includes(k) ?? false)
               || (typeof footerQualitySizes.value[k] === 'number' && footerQualitySizes.value[k]! > 0),
             );
           } finally {
             releaseFooterSharedProbe();
           }
         })();
-      } else {
-        void ensureProbeRequestedUrls(probe, song, shown);
       }
     };
 

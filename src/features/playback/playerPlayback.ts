@@ -337,6 +337,7 @@ export const createPlayerPlayback = ({
     let pluginEkey: string | undefined = undefined;
     let pluginCek: string | undefined = undefined;
     let pluginFullBuffer = false;
+    let pluginStreamCacheKey: string | null | undefined = undefined;
 
     currentAvailableQualities.value = null;
     playbackStore.currentPlayingQuality = null;
@@ -627,6 +628,7 @@ export const createPlayerPlayback = ({
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;
         pluginFullBuffer = resolvedOnlineAudio.fullBuffer === true;
+        pluginStreamCacheKey = resolvedOnlineAudio.streamCacheKey ?? undefined;
         if (pluginHeaders) {
           song.remote_headers = pluginHeaders;
         }
@@ -797,6 +799,7 @@ export const createPlayerPlayback = ({
             dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
             outputBitPerfect: settingsStore.settings.audio.outputBitPerfect,
             fullBuffer: pluginFullBuffer || undefined,
+            cacheKey: pluginStreamCacheKey,
           });
           onlineStreamFailureCtx = { url: finalAudioPath, song, options, requestId };
         } catch (error) {

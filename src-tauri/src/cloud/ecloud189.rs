@@ -257,10 +257,10 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 /// 文件搜索 URL（纯函数，单测断言）：filename 关键词 + 全盘 folderId=-11
 /// 递归搜索。路径**无 /api 前缀**（cloud.189.cn/open/file/searchFiles.action，
 /// 带 /api 的 open 路径 404，MediaHelp 等同域 Cookie 实现同款），参数含
-/// recursive=1（递归子目录）与 mediaType=0；翻页 pageNum，pageSize=1000。
+/// recursive=1（递归子目录）与 mediaType=0；翻页 pageNum，pageSize=60（1000 超接口上限直接 400）。
 fn search_url(keyword: &str, page: i64) -> String {
     format!(
-        "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum={page}&recursive=1&mediaType=0&filename={}",
+        "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=60&pageNum={page}&recursive=1&mediaType=0&filename={}",
         http::url_encode(keyword)
     )
 }

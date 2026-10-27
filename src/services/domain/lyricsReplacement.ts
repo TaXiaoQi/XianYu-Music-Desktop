@@ -27,6 +27,7 @@ const VALID_LX_SOURCES: ReadonlySet<string> = new Set([
     "tx",
     "wy",
     "mg",
+    "qs",
 ]);
 const ONLINE_PATH_RE = /^[a-z][a-z\d+.-]*:\/\//i; 
 
