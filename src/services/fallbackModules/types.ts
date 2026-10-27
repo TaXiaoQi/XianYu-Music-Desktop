@@ -56,6 +56,15 @@ export interface FallbackModuleConfig {
 export interface FallbackRemoteConfig {
   version: number;
   modules: Record<string, FallbackModuleConfig>;
+  /// 配置有效期（unix 秒，可选）；过期等同验签失败（清缓存回默认），
+  /// 防止服务端长期停摆/密钥轮换后旧配置被无限期沿用。
+  expiresAt?: number;
+}
+
+/// 配置是否已过期（expiresAt 缺失视为永不过期，兼容旧服务端）
+export function isFallbackConfigExpired(config: FallbackRemoteConfig, now: number = Date.now()): boolean {
+  if (!config.expiresAt || config.expiresAt <= 0) return false;
+  return now / 1000 >= config.expiresAt;
 }
 
 const asObject = (value: unknown): Record<string, unknown> | null =>
@@ -108,5 +117,11 @@ export function parseFallbackConfigJson(raw: string): FallbackRemoteConfig | nul
       sources,
     };
   }
-  return { version, modules };
+  return {
+    version,
+    modules,
+    expiresAt: Number.isFinite(Number(root.expiresAt)) && Number(root.expiresAt) > 0
+      ? Number(root.expiresAt)
+      : undefined,
+  };
 }

@@ -7,11 +7,32 @@
 //! 同文件还提供内测资格响应（check_beta_access）的签名校验。
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use serde::Serialize;
 use tauri::command;
 
-/// 客户端内嵌的验签公钥（hex，32 字节），与私钥成对（私钥存于服务端）。
-const FALLBACK_VERIFY_PUBLIC_KEY_HEX: &str =
-    "fd2f887e74adb2009079bc822536d8f09d1404656f748289608592b6a4c974c5";
+/// 三端统一的双公钥槽位 `(keyId, 公钥hex)`（32 字节），与私钥成对（私钥在
+/// 服务端签发侧）。轮换三步走：
+/// 1. T0 预发布：解开下一行注释，填入下一把公钥（keyId 形如 "2026b"）并发版；
+/// 2. 切换：服务端签发槽位切到新 keyId（旧钥在 previous 槽位过渡）；
+/// 3. 收尾：全量覆盖后移除旧槽位。
+/// 验签先按响应 keyId 精确匹配槽位（严格绑定），无 keyId/未知 keyId 则遍历
+/// 全部槽位；签名对某槽位有效但 keyId 不在槽位 → valid + key_unknown
+/// （客户端采纳配置并上报 FallbackConfigKeyUnknown 事件）。
+const FALLBACK_VERIFY_KEYS: &[(&str, &str)] = &[
+    ("2026a", "fd2f887e74adb2009079bc822536d8f09d1404656f748289608592b6a4c974c5"),
+    // 轮换 T0 预发布：解开注释并填入下一把公钥
+    // ("2026b", "<next-public-key-hex>"),
+];
+
+/// 兜底配置验签结果（Tauri 序列化为 { valid, key_unknown }）。
+/// `valid`: 签名对某内嵌公钥有效（可采纳该配置）。
+/// `key_unknown`: 签名有效但响应 keyId 不在已知槽位（疑似新公钥上线或
+/// 密钥降级攻击；采纳的同时应上报事件）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+pub struct FallbackVerifyResult {
+    pub valid: bool,
+    pub key_unknown: bool,
+}
 
 /// 配置签名消息构造（与服务端逐字一致）：
 /// 对配置 JSON 原始字符串（未解析、未重排序）直接签名，避免 JSON 规范化
@@ -41,27 +62,52 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-fn verify_with_public_key(msg: &[u8], signature: &str) -> Result<bool, String> {
-    let pub_bytes = hex_to_bytes(FALLBACK_VERIFY_PUBLIC_KEY_HEX)?;
-    let pub_key = VerifyingKey::from_bytes(
-        pub_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| "内嵌公钥非法".to_string())?,
-    )
-    .map_err(|e| format!("公钥解析失败: {e}"))?;
+fn slot_verifying_key(slot: &(&str, &str)) -> Option<VerifyingKey> {
+    let bytes = hex_to_bytes(slot.1).ok()?;
+    let arr: [u8; 32] = bytes.as_slice().try_into().ok()?;
+    VerifyingKey::from_bytes(&arr).ok()
+}
 
+fn verify_with_public_keys(
+    msg: &[u8],
+    signature: &str,
+    key_id: Option<&str>,
+) -> Result<FallbackVerifyResult, String> {
     let sig_bytes = hex_to_bytes(signature)?;
     if sig_bytes.len() != 64 {
-        return Ok(false);
+        return Ok(FallbackVerifyResult::default());
     }
     let sig = Signature::from_bytes(sig_bytes.as_slice().try_into().unwrap());
 
-    Ok(pub_key.verify(msg, &sig).is_ok())
+    let trimmed_key_id = key_id.map(str::trim).filter(|k| !k.is_empty());
+    if let Some(kid) = trimmed_key_id {
+        if let Some(slot) = FALLBACK_VERIFY_KEYS.iter().find(|(id, _)| *id == kid) {
+            if let Some(vk) = slot_verifying_key(slot) {
+                // 已知 keyId：严格绑定该槽位，失败不回退遍历（防密钥降级）
+                return Ok(FallbackVerifyResult {
+                    valid: vk.verify(msg, &sig).is_ok(),
+                    key_unknown: false,
+                });
+            }
+        }
+    }
+    let mut valid = false;
+    for slot in FALLBACK_VERIFY_KEYS {
+        if let Some(vk) = slot_verifying_key(slot) {
+            if vk.verify(msg, &sig).is_ok() {
+                valid = true;
+                break;
+            }
+        }
+    }
+    Ok(FallbackVerifyResult {
+        valid,
+        key_unknown: valid && trimmed_key_id.is_some(),
+    })
 }
 
-/// 校验服务端 check_beta_access 响应签名（ed25519，绑定 device_id + 过期时间）。
-/// 返回 true 表示响应可信。
+/// 校验服务端 check_beta_access 响应签名（ed25519，绑定 device_id + 过期时间；
+/// 内测协议无 keyId，遍历全部公钥槽位）。返回 true 表示响应可信。
 #[command]
 pub fn verify_beta_access_signature(
     device_id: String,
@@ -70,19 +116,28 @@ pub fn verify_beta_access_signature(
     exp: i64,
     signature: String,
 ) -> Result<bool, String> {
-    verify_with_public_key(
+    Ok(verify_with_public_keys(
         &beta_access_message(&device_id, allowed, pending, exp),
         &signature,
-    )
+        None,
+    )?
+    .valid)
 }
 
-/// 校验服务端下发的兜底配置签名。返回 true 表示签名有效，可采纳该配置。
+/// 校验服务端下发的兜底配置签名（双公钥槽位）。`key_id` 为服务端响应携带的
+/// keyId（可选）：已知 keyId 仅对该槽位严格验签；缺失/未知则遍历全部槽位，
+/// 签名有效且 keyId 未知时返回 `key_unknown = true`（采纳并上报事件）。
 #[command]
 pub fn verify_fallback_config_signature(
     config_json: String,
     signature: String,
-) -> Result<bool, String> {
-    verify_with_public_key(&fallback_config_message(&config_json), &signature)
+    key_id: Option<String>,
+) -> Result<FallbackVerifyResult, String> {
+    verify_with_public_keys(
+        &fallback_config_message(&config_json),
+        &signature,
+        key_id.as_deref(),
+    )
 }
 
 #[cfg(test)]
@@ -145,7 +200,14 @@ mod tests {
 
     #[test]
     fn rejects_malformed_signature() {
-        assert!(verify_fallback_config_signature("{\"version\":1}".into(), "not-hex!!".into()).is_err());
+        assert!(
+            verify_fallback_config_signature("{\"version\":1}".into(), "not-hex!!".into(), None).is_err()
+        );
+        assert!(
+            !verify_fallback_config_signature("{\"version\":1}".into(), "abcd".into(), None)
+                .unwrap()
+                .valid
+        );
     }
 
     #[test]
@@ -154,7 +216,38 @@ mod tests {
             eprintln!("跳过：未设置 XY_FALLBACK_TEST_SEED");
             return;
         };
-        assert!(verify_fallback_config_signature("{\"version\":1}".into(), sig.clone()).unwrap());
-        assert!(!verify_fallback_config_signature("{\"version\":2}".into(), sig).unwrap());
+        assert!(verify_fallback_config_signature("{\"version\":1}".into(), sig.clone(), None)
+            .unwrap()
+            .valid);
+        assert!(!verify_fallback_config_signature("{\"version\":2}".into(), sig, None)
+            .unwrap()
+            .valid);
+    }
+
+    #[test]
+    fn key_id_binding_semantics() {
+        let Some(sig) = sign_of("{\"version\":1}") else {
+            eprintln!("跳过：未设置 XY_FALLBACK_TEST_SEED");
+            return;
+        };
+        // 无 keyId / 空 keyId → 遍历槽位正常采纳
+        let r = verify_fallback_config_signature("{\"version\":1}".into(), sig.clone(), None).unwrap();
+        assert!(r.valid && !r.key_unknown);
+        let r = verify_fallback_config_signature("{\"version\":1}".into(), sig.clone(), Some(String::new())).unwrap();
+        assert!(r.valid && !r.key_unknown);
+        // 已知 keyId（2026a 槽位）→ 严格命中采纳
+        let r = verify_fallback_config_signature("{\"version\":1}".into(), sig.clone(), Some("2026a".into())).unwrap();
+        assert!(r.valid && !r.key_unknown);
+        // keyId 未知（9999 不在槽位）→ 遍历命中 2026a → 采纳并上报 key_unknown
+        let r = verify_fallback_config_signature("{\"version\":1}".into(), sig.clone(), Some("9999".into())).unwrap();
+        assert!(r.valid && r.key_unknown);
+        // 陌生密钥签名 + 已知 keyId → 严格绑定该槽位，直接拒绝（防密钥降级）
+        let rogue = SigningKey::from_bytes(&[7u8; 32]);
+        let rogue_sig = hex::encode(rogue.sign(&fallback_config_message("{\"version\":1}")).to_bytes());
+        let r = verify_fallback_config_signature("{\"version\":1}".into(), rogue_sig.clone(), Some("2026a".into())).unwrap();
+        assert!(!r.valid && !r.key_unknown);
+        // 陌生密钥签名 + 无 keyId → 遍历不命中 → 拒绝
+        let r = verify_fallback_config_signature("{\"version\":1}".into(), rogue_sig, None).unwrap();
+        assert!(!r.valid && !r.key_unknown);
     }
 }

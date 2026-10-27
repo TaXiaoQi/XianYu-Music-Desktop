@@ -247,8 +247,8 @@ export interface TauriCommandMap {
   set_auth_api_secret: { payload: { apiSecret: string }; response: void };
   get_auth_api_secret: { payload: undefined; response: string };
   verify_fallback_config_signature: {
-    payload: { configJson: string; signature: string };
-    response: boolean;
+    payload: { configJson: string; signature: string; keyId?: string | null };
+    response: { valid: boolean; key_unknown: boolean };
   };
   verify_beta_access_signature: {
     payload: { deviceId: string; allowed: boolean; pending: boolean; exp: number; signature: string };

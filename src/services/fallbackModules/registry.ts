@@ -1,7 +1,11 @@
 import { reportError } from '../domain/usageStats';
 import { localStore } from '../storage/localStore';
 import { tauriInvoke } from '../tauri/invoke';
-import { parseFallbackConfigJson, type FallbackRemoteConfig } from './types';
+import {
+  isFallbackConfigExpired,
+  parseFallbackConfigJson,
+  type FallbackRemoteConfig,
+} from './types';
 
 // ==================== 兜底行为配置存取（签名配置下发，无可执行代码） ====================
 // 服务端下发整包配置 JSON + ed25519 签名；验签通过才缓存并应用到内存。
@@ -62,18 +66,27 @@ export function fallbackModuleSourceOrder(moduleKey: string, wanted: string[]): 
 interface FallbackConfigCache {
   config: string;
   signature: string;
+  keyId?: string;
 }
 
 const readCachedConfig = (): FallbackConfigCache | null => {
   const raw = localStore.getJson<Partial<FallbackConfigCache>>(STORAGE_KEY);
   if (!raw || typeof raw.config !== 'string' || !raw.config) return null;
   if (typeof raw.signature !== 'string' || !raw.signature) return null;
-  return { config: raw.config, signature: raw.signature };
+  return {
+    config: raw.config,
+    signature: raw.signature,
+    keyId: typeof raw.keyId === 'string' && raw.keyId ? raw.keyId : undefined,
+  };
 };
 
-const writeCachedConfig = (config: string, signature: string): void => {
+const writeCachedConfig = (config: string, signature: string, keyId?: string): void => {
   try {
-    localStore.setJson(STORAGE_KEY, { config, signature } satisfies FallbackConfigCache);
+    localStore.setJson(STORAGE_KEY, {
+      config,
+      signature,
+      ...(keyId ? { keyId } : {}),
+    } satisfies FallbackConfigCache);
   } catch (e) {
     console.warn('[FallbackConfig] 写入本地缓存失败:', e);
   }
@@ -85,60 +98,88 @@ const clearCachedConfig = (): void => {
   } catch { /* 清理失败不影响主流程 */ }
 };
 
-const verifyConfigSignature = async (configJson: string, signature: string): Promise<boolean> => {
+/// 双公钥槽位验签（Tauri 命令返回 { valid, key_unknown }）。
+/// keyId 已知 → 仅对该槽位严格验签；缺失/未知 → 遍历槽位，
+/// 签名有效且 keyId 未知时 keyUnknown=true（采纳并上报事件）。
+const verifyConfigSignature = async (
+  configJson: string,
+  signature: string,
+  keyId?: string,
+): Promise<{ valid: boolean; keyUnknown: boolean }> => {
   try {
-    const ok = await tauriInvoke('verify_fallback_config_signature', { configJson, signature });
-    return ok === true;
+    const result = await tauriInvoke('verify_fallback_config_signature', {
+      configJson,
+      signature,
+      keyId: keyId ?? null,
+    });
+    return { valid: result?.valid === true, keyUnknown: result?.key_unknown === true };
   } catch (error) {
     console.warn('[FallbackConfig] 验签命令不可用，按未通过处理:', error);
-    return false;
+    return { valid: false, keyUnknown: false };
   }
 };
 
-const applyConfig = (configJson: string): void => {
-  const parsed = parseFallbackConfigJson(configJson);
-  if (!parsed) {
-    console.warn('[FallbackConfig] 配置解析失败，忽略（沿用默认行为）');
-    return;
-  }
+const applyConfig = (parsed: FallbackRemoteConfig): void => {
   _config = parsed;
   console.info(`[FallbackConfig] 应用配置 v${parsed.version}，模块数=${Object.keys(parsed.modules).length}`);
 };
 
-/// 启动/同步前清理：验签不过或解析失败的缓存直接清除（签名密钥轮换、
-/// 拉取失败后调用），回退全部默认行为。
+/// 启动/同步前清理：验签不过、解析失败或已过期的缓存直接清除（签名密钥
+/// 轮换、拉取失败后调用），回退全部默认行为。
 export async function sanitizeFallbackConfigCache(): Promise<void> {
   const cached = readCachedConfig();
   if (!cached) return;
-  if (!(await verifyConfigSignature(cached.config, cached.signature))) {
+  const verify = await verifyConfigSignature(cached.config, cached.signature, cached.keyId);
+  if (!verify.valid) {
     clearCachedConfig();
     _config = null;
     console.warn('[FallbackConfig] 缓存配置验签失败，已清除（回退默认行为）');
     return;
   }
   const parsed = parseFallbackConfigJson(cached.config);
-  if (!parsed) {
+  if (!parsed || isFallbackConfigExpired(parsed)) {
     clearCachedConfig();
     _config = null;
-    console.warn('[FallbackConfig] 缓存配置解析失败，已清除（回退默认行为）');
+    console.warn('[FallbackConfig] 缓存配置解析失败/已过期，已清除（回退默认行为）');
     return;
   }
   _config = parsed;
 }
 
-/// 服务端下发的整包配置（config JSON + 签名）验签后应用并缓存。
-/// 验签失败丢弃并清除旧缓存（fail closed：回退客户端默认行为）。
-export async function applyServerFallbackConfig(configJson: string, signature: string): Promise<void> {
+/// 服务端下发的整包配置（config JSON + 签名 [+ keyId]）验签后应用并缓存。
+/// 验签失败/解析失败/已过期均丢弃并清除旧缓存（fail closed：过期处理等同
+/// 验签失败，回退客户端默认行为）；签名有效但 keyId 不在客户端已知槽位时
+/// 照常采纳，并上报 FallbackConfigKeyUnknown（疑似新公钥上线或密钥降级）。
+export async function applyServerFallbackConfig(
+  configJson: string,
+  signature: string,
+  keyId?: string,
+): Promise<void> {
   if (!configJson || !signature) return;
-  if (!(await verifyConfigSignature(configJson, signature))) {
+  const verify = await verifyConfigSignature(configJson, signature, keyId);
+  if (!verify.valid) {
     console.warn('[FallbackConfig] 服务端配置验签失败，已丢弃（回退默认行为）');
     reportFallbackEvent('FallbackConfigVerifyFail', '配置验签失败已丢弃');
     clearCachedConfig();
     _config = null;
     return;
   }
-  writeCachedConfig(configJson, signature);
-  applyConfig(configJson);
+  if (verify.keyUnknown) {
+    console.warn(
+      `[FallbackConfig] 配置签名有效但 keyId=${keyId ?? ''} 不在客户端已知槽位，已采纳并上报（疑似新公钥上线/密钥降级）`,
+    );
+    reportFallbackEvent('FallbackConfigKeyUnknown', `keyId=${keyId ?? ''} 不在已知槽位`);
+  }
+  const parsed = parseFallbackConfigJson(configJson);
+  if (!parsed || isFallbackConfigExpired(parsed)) {
+    console.warn('[FallbackConfig] 配置解析失败/已过期，已丢弃（回退默认行为）');
+    reportFallbackEvent('FallbackConfigVerifyFail', '配置解析失败/已过期已丢弃');
+    clearCachedConfig();
+    _config = null;
+    return;
+  }
+  writeCachedConfig(configJson, signature, keyId);
+  applyConfig(parsed);
 }
 
 /// 旧版热修模块缓存清理：v1 缓存存的是下发 JS 代码，升级到配置化后不再

@@ -41,6 +41,8 @@ const VALID_CONFIG = JSON.stringify({
 
 const CONFIG_STORAGE_KEY = 'xianyu_fallback_config_v2';
 const SIG = 'a'.repeat(128);
+const VERIFY_OK = { valid: true, key_unknown: false };
+const VERIFY_FAIL = { valid: false, key_unknown: false };
 
 // registry.ts 有模块级内存态（_config），每个用例加载独立实例
 const loadRegistry = async () => {
@@ -65,7 +67,7 @@ describe('默认行为（未同步）', () => {
 describe('applyServerFallbackConfig', () => {
   it('验签通过后应用：禁用方法与来源顺序生效，未知 key/方法忽略', async () => {
     const registry = await loadRegistry();
-    invokeMock.mockResolvedValue(true);
+    invokeMock.mockResolvedValue({ ...VERIFY_OK });
     await registry.applyServerFallbackConfig(VALID_CONFIG, SIG);
 
     expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(true);
@@ -87,11 +89,57 @@ describe('applyServerFallbackConfig', () => {
 
   it('验签失败丢弃并清缓存、上报事件', async () => {
     const registry = await loadRegistry();
-    invokeMock.mockResolvedValue(false);
+    invokeMock.mockResolvedValue({ ...VERIFY_FAIL });
     await registry.applyServerFallbackConfig(VALID_CONFIG, SIG);
     expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(false);
     expect(storeMock.map.has(CONFIG_STORAGE_KEY)).toBe(false);
     expect(reportErrorMock).toHaveBeenCalledWith('FallbackConfigVerifyFail', expect.any(String));
+  });
+
+  it('keyId 透传给验签命令并写入缓存', async () => {
+    const registry = await loadRegistry();
+    invokeMock.mockResolvedValue({ ...VERIFY_OK });
+    await registry.applyServerFallbackConfig(VALID_CONFIG, SIG, '2026a');
+    expect(invokeMock).toHaveBeenCalledWith('verify_fallback_config_signature', {
+      configJson: VALID_CONFIG,
+      signature: SIG,
+      keyId: '2026a',
+    });
+    expect(storeMock.map.get(CONFIG_STORAGE_KEY)).toEqual({
+      config: VALID_CONFIG,
+      signature: SIG,
+      keyId: '2026a',
+    });
+  });
+
+  it('签名有效但 keyId 不在已知槽位：采纳并上报 FallbackConfigKeyUnknown', async () => {
+    const registry = await loadRegistry();
+    invokeMock.mockResolvedValue({ valid: true, key_unknown: true });
+    await registry.applyServerFallbackConfig(VALID_CONFIG, SIG, '9999z');
+    expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(true);
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      'FallbackConfigKeyUnknown',
+      expect.stringContaining('9999z'),
+    );
+    // 照常缓存（含 keyId）
+    expect(storeMock.map.get(CONFIG_STORAGE_KEY)).toEqual({
+      config: VALID_CONFIG,
+      signature: SIG,
+      keyId: '9999z',
+    });
+  });
+
+  it('配置顶层 expiresAt 已过期：等同验签失败（丢弃并清缓存）', async () => {
+    const registry = await loadRegistry();
+    const expired = JSON.stringify({
+      version: 1,
+      expiresAt: Math.floor(Date.now() / 1000) - 60,
+      modules: { lx_lyric: { version: 1, disabledMethods: ['fetchLyric'] } },
+    });
+    invokeMock.mockResolvedValue({ ...VERIFY_OK });
+    await registry.applyServerFallbackConfig(expired, SIG);
+    expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(false);
+    expect(storeMock.map.has(CONFIG_STORAGE_KEY)).toBe(false);
   });
 
   it('验签命令不可用时按未通过处理', async () => {
@@ -113,15 +161,42 @@ describe('applyServerFallbackConfig', () => {
 describe('sanitizeFallbackConfigCache', () => {
   it('有效缓存验签后应用到内存', async () => {
     storeMock.map.set(CONFIG_STORAGE_KEY, { config: VALID_CONFIG, signature: SIG });
-    invokeMock.mockResolvedValue(true);
+    invokeMock.mockResolvedValue({ ...VERIFY_OK });
     const registry = await loadRegistry();
     await registry.sanitizeFallbackConfigCache();
     expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(true);
   });
 
+  it('缓存中的 keyId 透传给验签命令', async () => {
+    storeMock.map.set(CONFIG_STORAGE_KEY, { config: VALID_CONFIG, signature: SIG, keyId: '2026b' });
+    invokeMock.mockResolvedValue({ ...VERIFY_OK });
+    const registry = await loadRegistry();
+    await registry.sanitizeFallbackConfigCache();
+    expect(invokeMock).toHaveBeenCalledWith('verify_fallback_config_signature', {
+      configJson: VALID_CONFIG,
+      signature: SIG,
+      keyId: '2026b',
+    });
+    expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(true);
+  });
+
   it('验签失败清缓存并回退默认', async () => {
     storeMock.map.set(CONFIG_STORAGE_KEY, { config: VALID_CONFIG, signature: SIG });
-    invokeMock.mockResolvedValue(false);
+    invokeMock.mockResolvedValue({ ...VERIFY_FAIL });
+    const registry = await loadRegistry();
+    await registry.sanitizeFallbackConfigCache();
+    expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(false);
+    expect(storeMock.map.has(CONFIG_STORAGE_KEY)).toBe(false);
+  });
+
+  it('缓存配置已过期时清除', async () => {
+    const expired = JSON.stringify({
+      version: 1,
+      expiresAt: Math.floor(Date.now() / 1000) - 60,
+      modules: { lx_lyric: { version: 1, disabledMethods: ['fetchLyric'] } },
+    });
+    storeMock.map.set(CONFIG_STORAGE_KEY, { config: expired, signature: SIG });
+    invokeMock.mockResolvedValue({ ...VERIFY_OK });
     const registry = await loadRegistry();
     await registry.sanitizeFallbackConfigCache();
     expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(false);
@@ -130,7 +205,7 @@ describe('sanitizeFallbackConfigCache', () => {
 
   it('缓存配置损坏时清除', async () => {
     storeMock.map.set(CONFIG_STORAGE_KEY, { config: '{broken', signature: SIG });
-    invokeMock.mockResolvedValue(true);
+    invokeMock.mockResolvedValue({ ...VERIFY_OK });
     const registry = await loadRegistry();
     await registry.sanitizeFallbackConfigCache();
     expect(registry.fallbackMethodDisabled('lx_lyric', 'fetchLyric')).toBe(false);

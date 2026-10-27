@@ -30,13 +30,44 @@ beforeEach(() => {
 });
 
 describe('syncFallbackModules 拉取', () => {
-  it('服务端返回配置时透传给 registry（签名转小写）', async () => {
+  it('服务端返回配置时透传给 registry（签名转小写、keyId 透传）', async () => {
+    const sync = await loadSync();
+    signedRequestMock.mockResolvedValue({
+      config: '{"version":1,"modules":{}}',
+      signature: 'AB12',
+      keyId: '2026a',
+    });
+    await expect(sync.syncFallbackModules()).resolves.toBe(true);
+    expect(registryMock.applyServerFallbackConfig).toHaveBeenCalledWith(
+      '{"version":1,"modules":{}}',
+      'ab12',
+      '2026a',
+    );
+  });
+
+  it('无 keyId 时以 undefined 透传（兼容旧服务端）', async () => {
     const sync = await loadSync();
     signedRequestMock.mockResolvedValue({ config: '{"version":1,"modules":{}}', signature: 'AB12' });
     await expect(sync.syncFallbackModules()).resolves.toBe(true);
     expect(registryMock.applyServerFallbackConfig).toHaveBeenCalledWith(
       '{"version":1,"modules":{}}',
       'ab12',
+      undefined,
+    );
+  });
+
+  it('keyId 空串视为缺失', async () => {
+    const sync = await loadSync();
+    signedRequestMock.mockResolvedValue({
+      config: '{"version":1,"modules":{}}',
+      signature: 'AB12',
+      keyId: '',
+    });
+    await expect(sync.syncFallbackModules()).resolves.toBe(true);
+    expect(registryMock.applyServerFallbackConfig).toHaveBeenCalledWith(
+      '{"version":1,"modules":{}}',
+      'ab12',
+      undefined,
     );
   });
 
@@ -87,7 +118,7 @@ describe('initFallbackModuleSync 启动链路', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(registryMock.removeLegacyFallbackModuleCache).toHaveBeenCalled();
     expect(registryMock.sanitizeFallbackConfigCache).toHaveBeenCalled();
-    expect(registryMock.applyServerFallbackConfig).toHaveBeenCalledWith('c', 's');
+    expect(registryMock.applyServerFallbackConfig).toHaveBeenCalledWith('c', 's', undefined);
     // 重复初始化不再触发新的拉取
     sync.initFallbackModuleSync();
     expect(signedRequestMock).toHaveBeenCalledTimes(1);
