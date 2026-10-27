@@ -14,7 +14,7 @@ export interface LxSearchResultItem {
   albumName: string;
   albumId: string | number;
   songmid: string;
-  source: 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
+  source: 'kw' | 'kg' | 'tx' | 'wy' | 'mg' | 'qs';
   interval: string;
   img: string | null;
   singerAvatars?: Record<string, string>;

@@ -13,13 +13,18 @@ import {
 } from './index';
 
 describe('QUALITY_META / ALL_QUALITY_KEYS', () => {
-  it('覆盖全部 12 档且 rank 为 1..12 唯一递增', () => {
-    expect(ALL_QUALITY_KEYS).toHaveLength(12);
+  it('覆盖全部 13 档且 rank 递增（spatial 与 atmos 同级）', () => {
+    expect(ALL_QUALITY_KEYS).toHaveLength(13);
     const ranks = ALL_QUALITY_KEYS.map(q => QUALITY_META[q].rank);
+    // spatial 与 atmos 同级（rank 均为 10），其余档位 rank 唯一
     expect(new Set(ranks).size).toBe(12);
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
     expect(ranks[0]).toBe(1);
-    expect(ranks[11]).toBe(12);
+    expect(ranks[12]).toBe(12);
+    expect(normalizeQualityKey('spatial')).toBe('spatial');
+    expect(QUALITY_META.spatial.label).toBe('空间音频');
+    // 同级紧邻 atmos 展示（稳定排序保持声明顺序）
+    expect(ALL_QUALITY_KEYS.indexOf('spatial')).toBe(ALL_QUALITY_KEYS.indexOf('atmos') + 1);
   });
 
   it('无损档位标记稳定（flac 起为无损，有损档位数不变）', () => {
@@ -28,7 +33,7 @@ describe('QUALITY_META / ALL_QUALITY_KEYS', () => {
   });
 
   it('BAKA_PLUGIN_QUALITY_KEYS 仅 mgg→96k', () => {
-    expect(BAKA_PLUGIN_QUALITY_KEYS).toHaveLength(12);
+    expect(BAKA_PLUGIN_QUALITY_KEYS).toHaveLength(13);
     expect(BAKA_PLUGIN_QUALITY_KEYS).toContain('96k');
     expect(BAKA_PLUGIN_QUALITY_KEYS).not.toContain('mgg');
   });
@@ -60,6 +65,7 @@ describe('BAKA_TO_LEGACY_QUALITY_MAP / qualityKeyToBakaLegacyQuality', () => {
       vinyl: 'super',
       dolby: 'super',
       atmos: 'super',
+      spatial: 'super',
       atmos_plus: 'super',
       master: 'super',
     });
@@ -82,6 +88,7 @@ describe('qualityKeyToBakaPluginQuality / qualityKeyToLxQuality', () => {
     expect(qualityKeyToLxQuality('mgg')).toBe('128k');
     expect(qualityKeyToLxQuality('320k')).toBe('320k');
     expect(qualityKeyToLxQuality('flac')).toBe('flac');
+    expect(qualityKeyToLxQuality('spatial')).toBe('spatial');
   });
 });
 

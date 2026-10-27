@@ -10,3 +10,4 @@ export {
 } from './lxSearchTx';
 export { searchWy } from './lxSearchWy';
 export { mgCreateSignature, searchMg } from './lxSearchMg';
+export { searchQs } from './lxSearchQs';

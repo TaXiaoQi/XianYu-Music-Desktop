@@ -333,6 +333,7 @@ export interface ThemeSettings {
 
 export type SidebarItemKey =
   | 'localMusic'
+  | 'cloud'
   | 'artists'
   | 'albums'
   | 'favorites'
@@ -343,6 +344,7 @@ export type SidebarItemKey =
 
 export interface SidebarSettings {
   showLocalMusic: boolean;
+  showCloud: boolean;
   showArtists: boolean;
   showAlbums: boolean;
   showFavorites: boolean;
@@ -480,6 +482,7 @@ export type QualityKey =
   | 'vinyl'
   | 'dolby'
   | 'atmos'
+  | 'spatial'
   | 'atmos_plus'
   | 'master';
 export interface QualityMeta {
@@ -500,6 +503,8 @@ export const QUALITY_META: Record<QualityKey, QualityMeta> = {
   vinyl:        { key: 'vinyl',        label: '黑胶',   description: 'vinyl',       isLossless: true,  rank: 8  },
   dolby:        { key: 'dolby',        label: '杜比全景声', description: 'dolby',     isLossless: false, rank: 9  },
   atmos:        { key: 'atmos',        label: '臻品音质', description: 'atmos',       isLossless: false, rank: 10 },
+  // 空间音频（汽水 spatial）：与 atmos 同级展示
+  spatial:      { key: 'spatial',      label: '空间音频', description: 'spatial',     isLossless: false, rank: 10 },
   atmos_plus: { key: 'atmos_plus', label: '臻品全景声', description: 'atmos_plus',  isLossless: false, rank: 11 },
   master:       { key: 'master',       label: '臻品母带', description: 'master',      isLossless: true,  rank: 12 },
 };
@@ -520,6 +525,7 @@ export const BAKA_TO_LEGACY_QUALITY_MAP: Record<QualityKey, 'low' | 'standard' |
   vinyl: 'super',
   dolby: 'super',
   atmos: 'super',
+  spatial: 'super',
   atmos_plus: 'super',
   master: 'super',
 };

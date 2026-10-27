@@ -4,12 +4,14 @@ mod common;
 mod kg;
 mod kw;
 mod mg;
+mod qs;
 mod sign;
 mod tx;
 mod wy;
 
 pub use api::lx_search;
 pub use common::{LxSearchItem, LxTypeTuple};
+pub(crate) use qs::{qs_play_auth_to_cek, qs_resolve_play, QS_UA};
 // lx_recommend_sheets（推荐歌单）复用的底层 helper
 pub(crate) use common::{decode_name, http_get_json, http_get_text, http_post_json};
 pub(crate) use kg::build_kugou_cover_url;

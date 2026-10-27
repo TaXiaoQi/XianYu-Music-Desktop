@@ -13,7 +13,6 @@ import {
 import { buildKugouCoverUrl } from './lxSearchKg';
 import { fetchWySheetAllTracks } from './playlistImportWy';
 import { decodeName, formatSingerName } from '../../utils/musicFormat';
-import { dispatchFallbackModule } from '../fallbackModules/registry';
 import type { LxSourceId } from './lxMusicSdkTypes';
 
 function buildSimpleLxItem(
@@ -90,8 +89,7 @@ export async function lxGetAlbumSongs(
   page = 1,
   limit = 30,
 ): Promise<LxSearchResultItem[]> {
-  return dispatchFallbackModule('lx_album', 'getAlbumSongs', { source, albumRawData, page, limit },
-    () => lxGetAlbumSongsBuiltin(source, albumRawData, page, limit));
+  return lxGetAlbumSongsBuiltin(source, albumRawData, page, limit);
 }
 
 // ==================== 专辑全量分页（移植 QQ/酷我插件加载逻辑） ====================

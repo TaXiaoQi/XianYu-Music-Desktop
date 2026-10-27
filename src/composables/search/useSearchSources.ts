@@ -24,7 +24,7 @@ export type SearchSources = ReturnType<typeof useSearchSources>;
 
 export function useSearchSources() {
   const pluginSourceList = ref<SourceItem[]>([]);
-  const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
+  const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg', 'qs']);
 
   function refreshPluginSourceList() {
     const raw = getStoredPlugins();

@@ -98,9 +98,6 @@ import type {
 } from './contractsPlayback';
 
 import type {
-  FallbackCallManyResultContract,
-  FallbackCallResultContract,
-  FallbackLoadResultContract,
   PluginEngineCallResultContract,
   PluginEngineLoadResultContract,
   PluginHostEditorStateEntry,
@@ -249,8 +246,8 @@ export interface TauriCommandMap {
   get_auth_base_url: { payload: undefined; response: string };
   set_auth_api_secret: { payload: { apiSecret: string }; response: void };
   get_auth_api_secret: { payload: undefined; response: string };
-  verify_fallback_module_signature: {
-    payload: { moduleKey: string; version: number; code: string; signature: string };
+  verify_fallback_config_signature: {
+    payload: { configJson: string; signature: string };
     response: boolean;
   };
   verify_beta_access_signature: {
@@ -532,7 +529,7 @@ export interface TauriCommandMap {
     response: string;
   };
   download_online_song: {
-    payload: { url: string; fileName: string; ekey: string | null; headers: Record<string, string> | null };
+    payload: { url: string; fileName: string; ekey: string | null; headers: Record<string, string> | null; cek: string | null };
     response: string;
   };
   decrypt_qmc_file: {
@@ -635,28 +632,6 @@ export interface TauriCommandMap {
     payload: { domain: string };
     response: string;
   };
-  // ===== 兜底模块宿主命令（Rust fallback_host）=====
-  fallback_module_load: {
-    payload: { moduleKey: string; version: number; code: string; signature: string; appVersion: string };
-    response: FallbackLoadResultContract;
-  };
-  fallback_module_call: {
-    payload: { moduleKey: string; method: string; argsJson: string; timeoutMs?: number | null };
-    response: FallbackCallResultContract;
-  };
-  fallback_module_call_many: {
-    payload: { moduleKey: string; method: string; argsJsonList: string[]; timeoutMs?: number | null };
-    response: FallbackCallManyResultContract;
-  };
-  fallback_module_update_config: {
-    payload: { configJson: string };
-    response: string;
-  };
-  // 启动对账：返回 Rust 已存配置的 sha256-hex（未推送过为空串）
-  fallback_module_config_hash: {
-    payload: undefined;
-    response: string;
-  };
   // ===== LX 推荐歌单（Rust lx_recommend_sheets builtin 后端）=====
   lx_recommend_sheet_tags: {
     payload: { sources: string[] };
@@ -755,6 +730,17 @@ export interface TauriCommandMap {
       failedSources: string[];
     };
     response: AlternativeSourceResultContract | null;
+  };
+  resolve_qs_play: {
+    payload: { trackId: string; quality: string };
+    response: {
+      url: string;
+      quality?: string;
+      bitrate?: number | null;
+      size?: number | string | null;
+      headers?: Record<string, string> | null;
+      cek?: string | null;
+    };
   };
 
   save_playback_session: {

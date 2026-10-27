@@ -1,5 +1,5 @@
 
-export type LxSourceId = 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
+export type LxSourceId = 'kw' | 'kg' | 'tx' | 'wy' | 'mg' | 'qs';
 
 export const LX_SOURCE_NAMES: Record<LxSourceId, string> = {
   kw: '小蜗音乐',
@@ -7,6 +7,7 @@ export const LX_SOURCE_NAMES: Record<LxSourceId, string> = {
   tx: '小秋音乐',
   wy: '小芸音乐',
   mg: '小蜜音乐',
+  qs: '汽水音乐',
 };
 
 export interface LxArtistSearchResult {

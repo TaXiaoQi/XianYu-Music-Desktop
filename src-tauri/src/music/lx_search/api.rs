@@ -3,6 +3,7 @@ use super::LxSearchItem;
 use super::kg::search_kg;
 use super::kw::search_kw;
 use super::mg::search_mg;
+use super::qs::search_qs;
 use super::tx::search_tx;
 use super::wy::search_wy;
 
@@ -28,6 +29,7 @@ pub async fn lx_search(
         "tx" => search_tx(keyword, actual_limit).await,
         "wy" => search_wy(keyword, actual_limit).await,
         "mg" => search_mg(keyword, actual_limit).await,
+        "qs" => search_qs(keyword, actual_limit).await,
         _ => Err(format!("Unknown LX source: {}", source)),
     }?;
 

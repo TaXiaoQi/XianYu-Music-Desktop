@@ -31,7 +31,7 @@ pub use lyric_fetcher::{decrypt_plugin_lyric, fetch_lyric_from_source};
 pub use lx_recommend_sheets::{lx_recommend_sheet_tags, lx_recommend_sheets_by_tag};
 pub use playlist_fetcher::fetch_playlist_from_source;
 pub use palette::extract_palette;
-pub use url_resolver::{find_alternative_lx_source, get_lx_cover};
+pub use url_resolver::{find_alternative_lx_source, get_lx_cover, resolve_qs_play};
 
 // ---------- 封面缓存 ----------
 pub use covers::{clear_cover_cache, get_song_cover, get_song_cover_thumbnail, read_cover_data_url, run_cache_cleanup}; // 实现

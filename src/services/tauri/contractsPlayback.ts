@@ -56,6 +56,8 @@ export interface PlayAudioOptions {
   outputBitPerfect?: boolean;
   /** 云端缓存起播（网盘限速直链：先缓冲约 15 秒头部再开播，其余流式续传）。 */
   fullBuffer?: boolean;
+  /** 稳定流缓存 key（云盘播放传 cloud:// 路径）：直链轮换后仍按 key 命中播放缓存。 */
+  cacheKey?: string | null;
 }
 
 export interface PrefetchAudioHeadOptions {
