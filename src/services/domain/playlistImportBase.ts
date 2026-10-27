@@ -1,4 +1,7 @@
 import { pluginApi } from '../tauri/pluginApi';
+import { playlistImportApi } from '../tauri/playlistImportApi';
+import { fallbackMethodDisabled } from '../fallbackModules/registry';
+import { kFallbackModulePlaylistImport } from '../fallbackModules/types';
 
 
 // ==================== 音源定义 ====================
@@ -50,6 +53,17 @@ export interface WyTrackMetaPatch {
 // ==================== 工具函数 ====================
 
 export function log(_msg: string) {
+}
+
+/// 歌单详情拉取（Rust playlist_fetcher 固定实现，服务端签名配置可关闭）。
+/// 供宿主兜底链 runner 使用：该平台方法被配置关闭时返回 null，runner 跳过。
+export async function hostPlaylistDetailOrNull(
+  source: string,
+  rawId: string,
+): Promise<PlaylistImportResult | null> {
+  const method = `getListDetail${source.charAt(0).toUpperCase()}${source.slice(1)}`;
+  if (fallbackMethodDisabled(kFallbackModulePlaylistImport, method)) return null;
+  return playlistImportApi.fetchPlaylistFromSource(source, rawId);
 }
 
 export function formatPlayTime(seconds: number): string {

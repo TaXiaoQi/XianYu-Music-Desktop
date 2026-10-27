@@ -6,7 +6,8 @@ import {
 } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
 import { parseLink, type PlaylistImportResult, type PlaylistSource } from './playlistImportBase';
-import { dispatchFallbackModule } from '../fallbackModules/registry';
+import { fallbackMethodDisabled } from '../fallbackModules/registry';
+import { kFallbackModulePlaylistImport } from '../fallbackModules/types';
 import { playlistImportApi } from '../tauri/playlistImportApi';
 import { looksLikeSheetLinkOrId, sourceMatchesHostPlatform } from './pluginCatalogSearch';
 import type { PluginSearchResult, PluginSource } from '../../types';
@@ -21,8 +22,16 @@ export { fetchWyTrackMetaByIds } from './playlistImportWy';
 export { fetchQqTrackMetaByIds } from './playlistImportTx';
 export { fetchKwTrackMetaByIds } from './playlistImportKw';
 export { fetchKgTrackMetaByIds } from './playlistImportKg';
-// ==================== 音源定义 ==================== 
+// ==================== 音源定义 ====================
 const SUPPORTED_IMPORT_SOURCES: ReadonlySet<string> = new Set(['wy', 'tx', 'kw', 'kg']);
+
+// playlist_import 链路（固定原生实现）：音源 → 模块方法名
+const IMPORT_METHOD_BY_SOURCE: Record<string, string> = {
+  wy: 'getListDetailWy',
+  tx: 'getListDetailTx',
+  kw: 'getListDetailKw',
+  kg: 'getListDetailKg',
+};
 
 const SOURCE_PLATFORM_NAMES: Record<string, string> = {
   wy: '网易云',
@@ -281,19 +290,24 @@ export async function importPlaylist(
     throw new Error('请选择对应音源后重试，或直接粘贴歌单链接');
   }
   let result: PlaylistImportResult;
+  // 内置实现已下沉 Rust（src-tauri music/playlist_fetcher），前端仅薄壳透传；
+  // 服务端签名配置可关闭单个音源的导入链路
+  const importMethod = IMPORT_METHOD_BY_SOURCE[actualSource];
+  if (importMethod && fallbackMethodDisabled(kFallbackModulePlaylistImport, importMethod)) {
+    throw new Error('该音源歌单导入已被服务端临时关闭，请稍后重试');
+  }
   switch (actualSource) {
-    // 内置实现已下沉 Rust（src-tauri music/playlist_fetcher），前端仅薄壳透传
     case 'wy':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('wy', actualId));
+      result = await playlistImportApi.fetchPlaylistFromSource('wy', actualId);
       break;
     case 'tx':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('tx', actualId));
+      result = await playlistImportApi.fetchPlaylistFromSource('tx', actualId);
       break;
     case 'kw':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('kw', actualId));
+      result = await playlistImportApi.fetchPlaylistFromSource('kw', actualId);
       break;
     case 'kg':
-      result = await dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: actualId }, () => playlistImportApi.fetchPlaylistFromSource('kg', actualId));
+      result = await playlistImportApi.fetchPlaylistFromSource('kg', actualId);
       break;
     default:
       throw new Error(`不支持的音源: ${actualSource}`);

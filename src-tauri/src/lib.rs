@@ -2,7 +2,7 @@
 mod app_runtime; mod audio_convert; mod audio_trim; mod autostart;
 pub mod cloud; // 网盘业务（十盘，TS 经 cloud_proxy command 调用）
 pub(crate) mod control_channel; pub(crate) mod crash_log; mod custom_fonts; mod database; pub(crate) mod dlna;
-pub mod error; pub mod filename_meta; mod fallback_host; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
+pub mod error; pub mod filename_meta; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
 mod host_crypto; mod install_language; mod music; mod netproxy;
 mod player; mod plugin_host; mod plugins; mod power; mod process_priority;
 mod recognize; mod remote; mod security; mod skin_image;
@@ -98,15 +98,8 @@ use custom_fonts::{
     read_lyrics_font_data_url,
 };
 use database::{clear_all_app_data};
-use fallback_verify::verify_fallback_module_signature;
+use fallback_verify::verify_fallback_config_signature;
 use fallback_verify::verify_beta_access_signature;
-use fallback_host::commands::{
-    fallback_module_call,
-    fallback_module_call_many,
-    fallback_module_config_hash,
-    fallback_module_load,
-    fallback_module_update_config,
-};
 use foreground_window::{get_foreground_fullscreen_state};
 use host_crypto::{
     host_kugou_request_key,
@@ -134,6 +127,7 @@ use music::{ // 实现
     fetch_lyric_from_source,
     fetch_playlist_from_source,
     find_alternative_lx_source,
+    resolve_qs_play,
     get_auth_api_secret,
     get_auth_base_url,
     get_auth_credentials,
@@ -673,12 +667,7 @@ pub fn run() { // run
             host_linuxapi_encrypt,
             host_weapi_encrypt,
             host_sha256_hex,
-            verify_fallback_module_signature,
-            fallback_module_load,
-            fallback_module_call,
-            fallback_module_call_many,
-            fallback_module_update_config,
-            fallback_module_config_hash,
+            verify_fallback_config_signature,
             verify_beta_access_signature,
             read_plugin_file,
             save_plugin_script,
@@ -740,6 +729,7 @@ pub fn run() { // run
             decrypt_plugin_lyric,
             get_lx_cover,
             find_alternative_lx_source,
+            resolve_qs_play,
             lx_recommend_sheet_tags,
             lx_recommend_sheets_by_tag,
             save_playback_session,

@@ -18,7 +18,6 @@ import {
   qqHostAlbumSearchFallback,
   qqHostSearchFallback,
 } from './qqHostSearchFallback';
-import { dispatchFallbackModule } from '../fallbackModules/registry';
 import { log, pluginInstanceErrors } from './pluginEngineBase';
 import { ensurePluginInstance } from './pluginEngineInstance';
 import {
@@ -31,9 +30,8 @@ import type {
   PluginAlbumResult,
   PluginArtistResult,
 } from './pluginCatalogShared';
-import type { PlaylistImportResult } from './playlistImportBase';
+import { hostPlaylistDetailOrNull, type PlaylistImportResult } from './playlistImportBase';
 import { isQishuiKeyword, isQishuiSource } from './playlistImportQishui';
-import { playlistImportApi } from '../tauri/playlistImportApi';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -272,14 +270,14 @@ async function hostSheetFallback(
   source: PluginSource,
   keyword: string,
 ): Promise<PluginPlaylistSearchResult | null> {
-  // 内置实现已下沉 Rust（src-tauri music/playlist_fetcher），热修模块双链路保留
-  const runners: [HostPlatform, () => Promise<PlaylistImportResult>][] = [
-    ['kg', () => dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('kg', keyword))],
-    ['qishui', () => dispatchFallbackModule('playlist_import', 'getListDetailQishui', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('qishui', keyword))],
-    ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('wy', keyword))],
-    ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('tx', keyword))],
-    ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('kw', keyword))],
-    ['mg', () => dispatchFallbackModule('playlist_import', 'getListDetailMg', { rawId: keyword }, () => playlistImportApi.fetchPlaylistFromSource('mg', keyword))],
+  // 内置实现已下沉 Rust（src-tauri music/playlist_fetcher），配置化下发可关闭单平台链路
+  const runners: [HostPlatform, () => Promise<PlaylistImportResult | null>][] = [
+    ['kg', () => hostPlaylistDetailOrNull('kg', keyword)],
+    ['qishui', () => hostPlaylistDetailOrNull('qishui', keyword)],
+    ['wy', () => hostPlaylistDetailOrNull('wy', keyword)],
+    ['tx', () => hostPlaylistDetailOrNull('tx', keyword)],
+    ['kw', () => hostPlaylistDetailOrNull('kw', keyword)],
+    ['mg', () => hostPlaylistDetailOrNull('mg', keyword)],
   ];
   for (const [platform, run] of runners) {
     const applicable = isHostPlatformKeyword(platform, keyword) ||
@@ -287,6 +285,7 @@ async function hostSheetFallback(
     if (!applicable) continue;
     try {
       const result = await run();
+      if (!result) continue;
       const wrapped = hostSheetFallbackResult(source, keyword, result);
       if (wrapped) return wrapped;
     } catch (e: any) {

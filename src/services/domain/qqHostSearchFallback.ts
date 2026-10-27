@@ -1,5 +1,6 @@
 import { lxGetAlbumSongs, lxSearch, txBatchTrackInterval, txSearchAlbumsRaw } from './lxMusicSdk';
-import { dispatchFallbackModule } from '../fallbackModules/registry';
+import { fallbackMethodDisabled } from '../fallbackModules/registry';
+import { kFallbackModulePluginFallback } from '../fallbackModules/types';
 import type { LxSearchResult, LxSearchResultItem } from './lxMusicSdk';
 import { resetMediaItem, toPluginSearchResults } from './pluginResultMappers';
 import type { PluginAlbumResult } from './pluginEngine';
@@ -7,12 +8,7 @@ import type { PluginSearchResult, PluginSource } from '../../types';
 
 const QQ_PLATFORM_PATTERN = /qq/i;
 
-export async function isQqMusicPluginSource(source: PluginSource, platform?: string): Promise<boolean> {
-  return dispatchFallbackModule('plugin_fallback', 'isQqMusicPluginSource', { source, platform },
-    () => isQqMusicPluginSourceBuiltin(source, platform));
-}
-
-function isQqMusicPluginSourceBuiltin(source: PluginSource, platform?: string): boolean {
+export function isQqMusicPluginSource(source: PluginSource, platform?: string): boolean {
   const haystack = `${source?.name || ''}|${platform || ''}`;
   return QQ_PLATFORM_PATTERN.test(haystack);
 }
@@ -46,8 +42,9 @@ export async function qqHostSearchFallback(
   page: number,
   limit = 30,
 ): Promise<PluginSearchResult[]> {
-  return dispatchFallbackModule('plugin_fallback', 'hostSearchFallback', { source, keyword, page, limit },
-    () => qqHostSearchFallbackBuiltin(source, keyword, page, limit));
+  // 服务端配置可整体关闭该链路（配置化下发，无可执行代码）
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'hostSearchFallback')) return [];
+  return qqHostSearchFallbackBuiltin(source, keyword, page, limit);
 }
 
 async function qqHostSearchFallbackBuiltin(
@@ -89,8 +86,8 @@ export async function qqHostAlbumSearchFallback(
   page = 1,
   limit = 30,
 ): Promise<PluginAlbumResult[]> {
-  return dispatchFallbackModule('plugin_fallback', 'hostAlbumSearchFallback', { source, keyword, page, limit },
-    () => qqHostAlbumSearchFallbackBuiltin(source, keyword, page, limit));
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'hostAlbumSearchFallback')) return [];
+  return qqHostAlbumSearchFallbackBuiltin(source, keyword, page, limit);
 }
 
 async function qqHostAlbumSearchFallbackBuiltin(
@@ -129,8 +126,8 @@ export async function qqHostAlbumSongsFallback(
   page = 1,
   limit = 30,
 ): Promise<PluginSearchResult[]> {
-  return dispatchFallbackModule('plugin_fallback', 'hostAlbumSongsFallback', { source, albumMid, page, limit },
-    () => qqHostAlbumSongsFallbackBuiltin(source, albumMid, page, limit));
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'hostAlbumSongsFallback')) return [];
+  return qqHostAlbumSongsFallbackBuiltin(source, albumMid, page, limit);
 }
 
 async function qqHostAlbumSongsFallbackBuiltin(
@@ -152,12 +149,7 @@ async function qqHostAlbumSongsFallbackBuiltin(
 }
 
 const QQ_TRIAL_URL_RE = /\/RS0\d[A-Za-z0-9]{8,}\.(mp3|m4a|flac)(?:[?#]|$)/i;
-export async function isQqTrialMediaUrl(url: string | undefined | null): Promise<boolean> {
-  return dispatchFallbackModule('plugin_fallback', 'isQqTrialMediaUrl', { url },
-    () => isQqTrialMediaUrlBuiltin(url));
-}
-
-function isQqTrialMediaUrlBuiltin(url: string | undefined | null): boolean {
+export function isQqTrialMediaUrl(url: string | undefined | null): boolean {
   return typeof url === 'string' && QQ_TRIAL_URL_RE.test(url);
 }
 
@@ -166,8 +158,8 @@ export async function qqFillSongDurations(
   platform: string | undefined,
   results: PluginSearchResult[],
 ): Promise<PluginSearchResult[]> {
-  return dispatchFallbackModule('plugin_fallback', 'fillSongDurations', { source, platform, results },
-    () => qqFillSongDurationsBuiltin(source, platform, results));
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'fillSongDurations')) return results;
+  return qqFillSongDurationsBuiltin(source, platform, results);
 }
 
 async function qqFillSongDurationsBuiltin(

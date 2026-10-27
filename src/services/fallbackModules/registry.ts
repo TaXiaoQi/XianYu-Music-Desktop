@@ -1,29 +1,24 @@
-import { APP_VERSION } from '../../../version';
 import { reportError } from '../domain/usageStats';
 import { localStore } from '../storage/localStore';
 import { tauriInvoke } from '../tauri/invoke';
-import {
-  FALLBACK_MODULE_METHODS,
-  type CachedFallbackModule,
-  type FallbackModuleCache,
-  type FallbackModuleKey,
-  type ServerFallbackModule,
-} from './types';
+import { parseFallbackConfigJson, type FallbackRemoteConfig } from './types';
 
-const STORAGE_KEY = 'xianyu_fallback_modules_v1';
+// ==================== 兜底行为配置存取（签名配置下发，无可执行代码） ====================
+// 服务端下发整包配置 JSON + ed25519 签名；验签通过才缓存并应用到内存。
+// 全部逻辑固定在客户端原生实现（Rust builtin），配置只控制链路开关与平台
+// 来源，因此无需宿主加载/熔断链路：查询直接读内存，未同步前按默认放行。
 
-const MAX_CONSECUTIVE_ERRORS = 3;
+const STORAGE_KEY = 'xianyu_fallback_config_v2';
+// 旧热修模块缓存（含 JS 代码）不再读取，仅做升级清理
+const LEGACY_STORAGE_KEY = 'xianyu_fallback_modules_v1';
 
-// ==================== 降级/熔断事件上报（statistics 通道） ====================
-// 走 reportError → 服务端 error_log，按 error_type 聚合即可量化热修效果；
-// 上报失败静默，且同事件 60s 去重，避免模块故障时刷屏。
+// ==================== 降级/异常事件上报（statistics 通道） ====================
+// 走 reportError → 服务端 error_log，按 error_type 聚合；上报失败静默，
+// 同事件 60s 去重，避免轮询失败时刷屏。
 
 const EVENT_REPORT_DEDUP_MS = 60_000;
 const MAX_RECENT_EVENT_REPORTS = 32;
 const _recentEventReports = new Map<string, number>();
-
-const errorText = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const reportFallbackEvent = (eventType: string, detail: string): void => {
   const now = Date.now();
@@ -43,284 +38,113 @@ const reportFallbackEvent = (eventType: string, detail: string): void => {
   }
 };
 
-// 模块已迁到桌面端 Rust QuickJS 宿主执行：验签 + 编译 + 四条硬校验在
-// fallback_module_load 一体完成，调用走 fallback_module_call / call_many。
-// _loaded 只保存「已加载标记 + 熔断状态」，不再持有 JS impl。
-interface LoadedModule {
-  version: number;
-  consecutiveErrors: number;
-  disabled: boolean;
+// ==================== 内存态配置 ====================
+
+let _config: FallbackRemoteConfig | null = null;
+
+/// 指定方法是否被服务端配置关闭。配置未同步时默认放行。
+export function fallbackMethodDisabled(moduleKey: string, method: string): boolean {
+  return _config?.modules[moduleKey]?.disabledMethods.includes(method) ?? false;
 }
 
-const _loaded = new Map<FallbackModuleKey, LoadedModule>();
+/// 服务端下发的平台来源白名单与顺序（仅榜单/推荐歌单模块）。
+/// 返回 null = 未配置（沿用调用方默认来源）；与调用方来源无交集时也返回
+/// null，避免配置把当前页面打空。
+export function fallbackModuleSourceOrder(moduleKey: string, wanted: string[]): string[] | null {
+  const configured = _config?.modules[moduleKey]?.sources;
+  if (!configured || wanted.length === 0) return null;
+  const filtered = configured.filter(s => wanted.includes(s));
+  return filtered.length > 0 ? filtered : null;
+}
 
-// 防预热/首调竞态（R8）：同 key 的 load 只发一次，其余等待同一 Promise
-const loadPromises = new Map<FallbackModuleKey, Promise<LoadedModule | null>>();
+// ==================== 缓存读写与应用 ====================
 
-const readCache = (): {
-  fetchedAt: number;
-  modules: Partial<Record<FallbackModuleKey, CachedFallbackModule>>;
-} => localStore.getJson<FallbackModuleCache>(STORAGE_KEY) ?? { fetchedAt: 0, modules: {} };
+interface FallbackConfigCache {
+  config: string;
+  signature: string;
+}
 
-const readCacheModules = (): Partial<Record<FallbackModuleKey, CachedFallbackModule>> =>
-  readCache().modules;
-
-const writeCacheModules = (
-  fetchedAt: number,
-  modules: Partial<Record<FallbackModuleKey, CachedFallbackModule>>,
-) => {
-  localStore.setJson(STORAGE_KEY, { fetchedAt, modules });
+const readCachedConfig = (): FallbackConfigCache | null => {
+  const raw = localStore.getJson<Partial<FallbackConfigCache>>(STORAGE_KEY);
+  if (!raw || typeof raw.config !== 'string' || !raw.config) return null;
+  if (typeof raw.signature !== 'string' || !raw.signature) return null;
+  return { config: raw.config, signature: raw.signature };
 };
 
-const verifyCachedSignature = async (
-  moduleKey: FallbackModuleKey,
-  version: number,
-  code: string,
-  signature: string,
-): Promise<boolean> => {
+const writeCachedConfig = (config: string, signature: string): void => {
   try {
-    const ok = await tauriInvoke('verify_fallback_module_signature', {
-      moduleKey,
-      version,
-      code,
-      signature,
-    });
+    localStore.setJson(STORAGE_KEY, { config, signature } satisfies FallbackConfigCache);
+  } catch (e) {
+    console.warn('[FallbackConfig] 写入本地缓存失败:', e);
+  }
+};
+
+const clearCachedConfig = (): void => {
+  try {
+    localStore.remove(STORAGE_KEY);
+  } catch { /* 清理失败不影响主流程 */ }
+};
+
+const verifyConfigSignature = async (configJson: string, signature: string): Promise<boolean> => {
+  try {
+    const ok = await tauriInvoke('verify_fallback_config_signature', { configJson, signature });
     return ok === true;
   } catch (error) {
-    console.warn(`[FallbackModule] ${moduleKey} 缓存验签命令不可用，按未通过处理:`, error);
+    console.warn('[FallbackConfig] 验签命令不可用，按未通过处理:', error);
     return false;
   }
 };
 
-export async function sanitizeFallbackModuleCache(): Promise<{ removed: number }> {
-  const { fetchedAt, modules } = readCache();
-  let removed = 0;
-  const next: Partial<Record<FallbackModuleKey, CachedFallbackModule>> = {};
-  for (const key of Object.keys(modules) as FallbackModuleKey[]) {
-    const m = modules[key];
-    if (
-      !m ||
-      typeof m.code !== 'string' ||
-      !m.code ||
-      typeof m.signature !== 'string' ||
-      !m.signature
-    ) {
-      removed += 1;
-      continue;
-    }
-    if (!(await verifyCachedSignature(key, m.version, m.code, m.signature))) {
-      removed += 1;
-      console.warn(`[FallbackModule] 缓存模块 ${key} v${m.version} 验签失败，已清除（回退内置实现）`);
-      continue;
-    }
-    next[key] = m;
+const applyConfig = (configJson: string): void => {
+  const parsed = parseFallbackConfigJson(configJson);
+  if (!parsed) {
+    console.warn('[FallbackConfig] 配置解析失败，忽略（沿用默认行为）');
+    return;
   }
-  if (removed > 0) {
-    writeCacheModules(fetchedAt, next);
-    _loaded.clear();
-  }
-  return { removed };
-}
-
-const printModuleLogs = (
-  key: FallbackModuleKey,
-  logs?: { level: string; message: string; callId: number }[] | null,
-): void => {
-  if (!Array.isArray(logs)) return;
-  for (const entry of logs) {
-    const line = `[FallbackModule] ${key}: ${entry.message}`;
-    if (entry.level === 'error') console.error(line);
-    else if (entry.level === 'warn') console.warn(line);
-    else console.log(line);
-  }
+  _config = parsed;
+  console.info(`[FallbackConfig] 应用配置 v${parsed.version}，模块数=${Object.keys(parsed.modules).length}`);
 };
 
-const loadModuleFromCache = async (
-  key: FallbackModuleKey,
-): Promise<LoadedModule | null> => {
-  const cached = readCacheModules()[key];
-  if (!cached?.code || typeof cached.signature !== 'string' || !cached.signature) return null;
+/// 启动/同步前清理：验签不过或解析失败的缓存直接清除（签名密钥轮换、
+/// 拉取失败后调用），回退全部默认行为。
+export async function sanitizeFallbackConfigCache(): Promise<void> {
+  const cached = readCachedConfig();
+  if (!cached) return;
+  if (!(await verifyConfigSignature(cached.config, cached.signature))) {
+    clearCachedConfig();
+    _config = null;
+    console.warn('[FallbackConfig] 缓存配置验签失败，已清除（回退默认行为）');
+    return;
+  }
+  const parsed = parseFallbackConfigJson(cached.config);
+  if (!parsed) {
+    clearCachedConfig();
+    _config = null;
+    console.warn('[FallbackConfig] 缓存配置解析失败，已清除（回退默认行为）');
+    return;
+  }
+  _config = parsed;
+}
+
+/// 服务端下发的整包配置（config JSON + 签名）验签后应用并缓存。
+/// 验签失败丢弃并清除旧缓存（fail closed：回退客户端默认行为）。
+export async function applyServerFallbackConfig(configJson: string, signature: string): Promise<void> {
+  if (!configJson || !signature) return;
+  if (!(await verifyConfigSignature(configJson, signature))) {
+    console.warn('[FallbackConfig] 服务端配置验签失败，已丢弃（回退默认行为）');
+    reportFallbackEvent('FallbackConfigVerifyFail', '配置验签失败已丢弃');
+    clearCachedConfig();
+    _config = null;
+    return;
+  }
+  writeCachedConfig(configJson, signature);
+  applyConfig(configJson);
+}
+
+/// 旧版热修模块缓存清理：v1 缓存存的是下发 JS 代码，升级到配置化后不再
+/// 读取，启动时一次性清掉，避免残留可执行代码落盘。
+export function removeLegacyFallbackModuleCache(): void {
   try {
-    const res = await tauriInvoke('fallback_module_load', {
-      moduleKey: key,
-      version: cached.version,
-      code: cached.code,
-      signature: cached.signature,
-      appVersion: APP_VERSION,
-    });
-    printModuleLogs(key, res?.logs);
-    if (res?.ok) {
-      return { version: res.version ?? cached.version, consecutiveErrors: 0, disabled: false };
-    }
-    // 验签/编译失败是确定性错误：本会话禁用，避免每次调用都重试
-    console.warn(`[FallbackModule] 模块 ${key} v${cached.version} 宿主加载失败，本会话回退内置实现:`, res?.error);
-    reportFallbackEvent('FallbackModuleLoadFail', `${key} v${cached.version} 宿主加载失败: ${errorText(res?.error)}`);
-    return { version: cached.version, consecutiveErrors: 0, disabled: true };
-  } catch (error) {
-    // IPC 异常可能是暂时的：不缓存状态，下次调用重试 load
-    console.warn(`[FallbackModule] ${key} 宿主加载命令不可用，本次回退内置实现:`, error);
-    reportFallbackEvent('FallbackModuleLoadFail', `${key} 宿主加载命令不可用: ${errorText(error)}`);
-    return null;
-  }
-};
-
-const ensureModuleLoaded = (key: FallbackModuleKey): Promise<LoadedModule | null> => {
-  const existing = _loaded.get(key);
-  if (existing) return Promise.resolve(existing);
-  let pending = loadPromises.get(key);
-  if (!pending) {
-    pending = loadModuleFromCache(key)
-      .then(loaded => {
-        if (loaded) _loaded.set(key, loaded);
-        return loaded;
-      })
-      .finally(() => {
-        loadPromises.delete(key);
-      });
-    loadPromises.set(key, pending);
-  }
-  return pending;
-};
-
-/// 启动/同步后把缓存中的模块批量加载进 Rust 宿主，消除首次调用的 load 延迟
-export function prewarmFallbackModules(): void {
-  for (const key of Object.keys(readCacheModules()) as FallbackModuleKey[]) {
-    void ensureModuleLoaded(key);
-  }
-}
-
-const reportModuleError = (key: FallbackModuleKey, method: string, error: unknown) => {
-  const loaded = _loaded.get(key);
-  if (!loaded) return;
-  loaded.consecutiveErrors += 1;
-  console.warn(`[FallbackModule] 模块 ${key}.${method} 第 ${loaded.consecutiveErrors} 次执行失败，本次回退内置实现:`, error);
-  reportFallbackEvent('FallbackModuleCallFail', `${key}.${method}: ${errorText(error)}`);
-  if (loaded.consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-    loaded.disabled = true;
-    console.warn(`[FallbackModule] 模块 ${key} 连续失败 ${loaded.consecutiveErrors} 次，本会话内已禁用（等待服务器下发新版本）`);
-    reportFallbackEvent('FallbackModuleCircuitOpen', `${key} 连续失败 ${loaded.consecutiveErrors} 次已熔断（method=${method}）`);
-  }
-};
-
-export async function dispatchFallbackModule<T>(
-  key: FallbackModuleKey,
-  method: string,
-  args: Record<string, unknown>,
-  builtin: () => Promise<T> | T,
-): Promise<T> {
-  const loaded = await ensureModuleLoaded(key);
-  if (loaded && !loaded.disabled) {
-    try {
-      const res = await tauriInvoke('fallback_module_call', {
-        moduleKey: key,
-        method,
-        argsJson: JSON.stringify(args),
-        timeoutMs: null,
-      });
-      printModuleLogs(key, res?.logs);
-      if (res?.ok) {
-        loaded.consecutiveErrors = 0;
-        return res.data as T;
-      }
-      // Rust 侧超时/中断会销毁实例：删掉已加载标记，下次调用重新 load
-      if (typeof res?.error === 'string' && res.error.includes('模块未加载')) {
-        _loaded.delete(key);
-      }
-      reportModuleError(key, method, res?.error || '模块调用失败');
-    } catch (error) {
-      reportModuleError(key, method, error);
-    }
-  }
-  return builtin();
-}
-
-/// 列表边界批量调用：一次 IPC call_many，逐项错误计数（连续失败熔断语义与
-/// 单发一致），失败项逐项回退内置实现
-export async function dispatchFallbackModuleMany<T>(
-  key: FallbackModuleKey,
-  method: string,
-  argsList: Record<string, unknown>[],
-  builtinMany: (args: Record<string, unknown>, index: number) => T,
-): Promise<T[]> {
-  if (argsList.length === 0) return [];
-  const loaded = await ensureModuleLoaded(key);
-  if (loaded && !loaded.disabled) {
-    try {
-      const res = await tauriInvoke('fallback_module_call_many', {
-        moduleKey: key,
-        method,
-        argsJsonList: argsList.map(args => JSON.stringify(args)),
-        timeoutMs: null,
-      });
-      printModuleLogs(key, res?.logs);
-      const results = Array.isArray(res?.results) ? res.results : [];
-      const out: T[] = [];
-      for (let i = 0; i < argsList.length; i++) {
-        const item = results[i];
-        if (item?.ok) {
-          loaded.consecutiveErrors = 0;
-          out.push(item.data as T);
-        } else {
-          reportModuleError(key, method, item?.error || '模块调用失败');
-          out.push(builtinMany(argsList[i], i));
-        }
-      }
-      return out;
-    } catch (error) {
-      reportModuleError(key, method, error);
-    }
-  }
-  return argsList.map((args, i) => builtinMany(args, i));
-}
-
-export function applyServerFallbackModules(modules: ServerFallbackModule[]): {
-  added: number;
-  removed: number;
-} {
-  const next: Partial<Record<FallbackModuleKey, CachedFallbackModule>> = {};
-  let added = 0;
-  let removed = 0;
-
-  const prev = readCacheModules();
-  for (const item of modules) {
-    if (!item?.code || typeof item.code !== 'string') continue;
-    const expectedMethods = FALLBACK_MODULE_METHODS[item.moduleKey];
-    if (!expectedMethods) continue;
-    const cached = prev[item.moduleKey];
-    const sameVerified =
-      cached?.version === item.version &&
-      cached?.digest === item.digest &&
-      cached?.code === item.code &&
-      cached?.signature === item.signature &&
-      !!cached?.signature;
-    if (sameVerified) {
-      next[item.moduleKey] = cached;
-      continue;
-    }
-    next[item.moduleKey] = {
-      version: item.version,
-      digest: item.digest,
-      code: item.code,
-      signature: item.signature,
-      name: item.name,
-      updatedAt: item.updatedAt,
-    };
-    added += 1;
-  }
-
-  for (const key of Object.keys(prev) as FallbackModuleKey[]) {
-    if (!next[key]) removed += 1;
-  }
-
-  if (added > 0 || removed > 0) {
-    writeCacheModules(Date.now(), next);
-    _loaded.clear();
-  }
-
-  return { added, removed };
-}
-
-export function clearFallbackModules(): void {
-  localStore.remove(STORAGE_KEY);
-  _loaded.clear();
+    localStore.remove(LEGACY_STORAGE_KEY);
+  } catch { /* 清理失败不影响主流程 */ }
 }

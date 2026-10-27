@@ -29,8 +29,7 @@ import {
   extractArtistDescription,
   catalogLog,
 } from './pluginCatalogShared';
-import { dispatchFallbackModule } from '../fallbackModules/registry';
-import { playlistImportApi } from '../tauri/playlistImportApi';
+import { hostPlaylistDetailOrNull } from './playlistImportBase';
 import type { PlaylistImportResult } from './playlistImportBase';
 import type {
   PluginAlbumResult,
@@ -418,17 +417,17 @@ async function hostFullSheetIfTruncated(
   if (!sheetId) return null;
   const page1Keys = new Set(page1List.flatMap(sheetSongIdKeys));
 
-  const runners: [string, () => Promise<PlaylistImportResult>][] = [
-    ['kg', () => dispatchFallbackModule('playlist_import', 'getListDetailKg', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('kg', sheetId))],
-    ['wy', () => dispatchFallbackModule('playlist_import', 'getListDetailWy', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('wy', sheetId))],
-    ['tx', () => dispatchFallbackModule('playlist_import', 'getListDetailTx', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('tx', sheetId))],
-    ['kw', () => dispatchFallbackModule('playlist_import', 'getListDetailKw', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('kw', sheetId))],
-    ['mg', () => dispatchFallbackModule('playlist_import', 'getListDetailMg', { rawId: sheetId }, () => playlistImportApi.fetchPlaylistFromSource('mg', sheetId))],
+  const runners: [string, () => Promise<PlaylistImportResult | null>][] = [
+    ['kg', () => hostPlaylistDetailOrNull('kg', sheetId)],
+    ['wy', () => hostPlaylistDetailOrNull('wy', sheetId)],
+    ['tx', () => hostPlaylistDetailOrNull('tx', sheetId)],
+    ['kw', () => hostPlaylistDetailOrNull('kw', sheetId)],
+    ['mg', () => hostPlaylistDetailOrNull('mg', sheetId)],
   ];
   for (const [platform, run] of runners) {
     try {
       const result = await run();
-      if (!result.songs.length || result.songs.length <= page1List.length) continue;
+      if (!result || !result.songs.length || result.songs.length <= page1List.length) continue;
       const overlapped = result.songs.some(s => sheetSongIdKeys(s).some(k => page1Keys.has(k)));
       if (!overlapped) continue;
       log(`[${source.name}] 歌单详情单页截断(${page1List.length}/${result.songs.length})，宿主 ${platform} 全量兜底: ${sheetId}`);

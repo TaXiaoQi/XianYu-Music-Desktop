@@ -3,7 +3,8 @@ import { getStoredPlugins } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric } from './lxPluginEngine';
 import { lyricsApi } from '../tauri/lyricsApi';
 import { buildLxLyricsRaw } from './lxLyricsBuilder';
-import { dispatchFallbackModule } from '../fallbackModules/registry';
+import { fallbackMethodDisabled } from '../fallbackModules/registry';
+import { kFallbackModuleLxLyric } from '../fallbackModules/types';
 // ==================== Types ==================== 
 interface LxLyricResult {
   lyric: string;
@@ -68,8 +69,9 @@ async function fetchLxLyric(
   source: LxDirectSource,
   songInfo: LxSongInfo,
 ): Promise<LxLyricResult | null> {
-  return dispatchFallbackModule('lx_lyric', 'fetchLyric', { source, songInfo },
-    () => fetchLxLyricBuiltin(source, songInfo));
+  // lx_lyric 链路固定原生实现；服务端签名配置可关闭该链路（关闭即返回空）
+  if (fallbackMethodDisabled(kFallbackModuleLxLyric, 'fetchLyric')) return null;
+  return fetchLxLyricBuiltin(source, songInfo);
 }
 
 async function fetchLxLyricBuiltin(
@@ -86,7 +88,7 @@ async function fetchLxLyricBuiltin(
   }
 }
 
-const LX_SOURCES = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
+const LX_SOURCES = new Set(['kw', 'kg', 'tx', 'wy', 'mg', 'qs']);
 
 type LxDirectSource = 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
 

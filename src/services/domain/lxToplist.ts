@@ -5,7 +5,8 @@ import {
   sizeFormate,
   type LxSearchResultItem,
 } from './lxMusicSdkBase';
-import { dispatchFallbackModule } from '../fallbackModules/registry';
+import { fallbackMethodDisabled, fallbackModuleSourceOrder } from '../fallbackModules/registry';
+import { kFallbackModuleLxToplist } from '../fallbackModules/types';
 
 // ==================== lx_toplist 兜底模块（落雪音源榜单） ====================
 // 上游协议与移动端 rust lx_search 输出同构：歌曲条目为 snake_case LxSearchItem；
@@ -436,11 +437,12 @@ async function lxToplistGetTopListDetail(
   return withTimeout(fn(id, page, limit), DETAIL_TIMEOUT_MS);
 }
 
-// ==================== dispatch 封装（优先 Rust QuickJS 宿主下发 JS） ====================
+// ==================== dispatch 封装（固定原生实现，服务端签名配置可关闭/调整来源） ====================
 
 export async function lxToplistFetchTopLists(sources: string[]): Promise<LxToplistGroup[]> {
-  return dispatchFallbackModule('lx_toplist', 'getTopLists', { sources },
-    () => lxToplistGetTopLists(sources));
+  if (fallbackMethodDisabled(kFallbackModuleLxToplist, 'getTopLists')) return [];
+  const ordered = fallbackModuleSourceOrder(kFallbackModuleLxToplist, sources) ?? sources;
+  return lxToplistGetTopLists(ordered);
 }
 
 // snake_case LxSearchItem → 与 lx_search 结果同构的 LxSearchResultItem
@@ -477,8 +479,10 @@ export async function lxToplistFetchTracks(
   page = 1,
   limit = 30,
 ): Promise<{ list: LxSearchResultItem[]; isEnd: boolean }> {
-  const result = await dispatchFallbackModule('lx_toplist', 'getTopListDetail', { source, id, page, limit },
-    () => lxToplistGetTopListDetail(source, id, page, limit));
+  if (fallbackMethodDisabled(kFallbackModuleLxToplist, 'getTopListDetail')) {
+    return { list: [], isEnd: false };
+  }
+  const result = await lxToplistGetTopListDetail(source, id, page, limit);
   const list = Array.isArray(result?.list) ? result.list : [];
   return {
     list: list.map(lxToplistItemToSearchItem).filter((it) => it.songmid && it.name),

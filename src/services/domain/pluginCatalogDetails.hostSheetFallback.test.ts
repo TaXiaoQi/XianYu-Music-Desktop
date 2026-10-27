@@ -23,11 +23,7 @@ vi.mock('./lxToplist', () => ({
   lxToplistFetchTracks: vi.fn(async () => ({ list: [], isEnd: true })),
 }));
 vi.mock('../fallbackModules/registry', () => ({
-  dispatchFallbackModule: vi.fn((_key: string, _method: string, _args: unknown, builtin: () => unknown) => builtin()),
-  dispatchFallbackModuleMany: vi.fn(
-    (_key: string, _method: string, argsList: unknown[], builtinMany: (args: unknown, i: number) => unknown) =>
-      Promise.resolve(argsList.map((args, i) => builtinMany(args, i))),
-  ),
+  fallbackMethodDisabled: vi.fn(() => false),
 }));
 vi.mock('../tauri/playlistImportApi', () => ({
   playlistImportApi: {
