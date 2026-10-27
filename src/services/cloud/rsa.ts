@@ -1,6 +1,7 @@
 // 桌面端 RSA PKCS#1 v1.5 加密（纯 BigInt 实现）。
-// 对照移动端 http_login_support.dart 的 rsaPkcs1Hex（pointycastle
-// PKCS1Encoding）：天翼 logbox 账密登录用，输出 hex。
+// 对照移动端 http_login_support.dart 的 rsaPkcs1Hex / rsaPkcs1B64
+//（pointycastle PKCS1Encoding）：天翼 logbox 账密登录用 hex 输出，
+// 139 mcloud-skey 用 base64 输出。
 
 function hexToBigInt(hex: string): bigint {
   const trimmed = hex.trim();
@@ -36,11 +37,9 @@ function bigIntToHex(v: bigint, byteLen: number): string {
   return hex;
 }
 
-/**
- * RSA PKCS#1 v1.5（type-2 填充）加密，hex 输出（长度 = 模数字节数 × 2）。
- * message 按 UTF-8 编码，与 Dart 端 `utf8.encode(plain)` 语义一致。
- */
-export function rsaEncryptHex(modulusHex: string, exponentHex: string, message: string): string {
+/** RSA PKCS#1 v1.5（type-2 填充）加密，返回密文字节。message 按 UTF-8
+ * 编码，与 Dart 端 `utf8.encode(plain)` 语义一致。 */
+function rsaEncryptBytes(modulusHex: string, exponentHex: string, message: string): Uint8Array {
   const n = hexToBigInt(modulusHex);
   const e = hexToBigInt(exponentHex);
   const k = Math.ceil(n.toString(2).length / 8);
@@ -74,5 +73,24 @@ export function rsaEncryptHex(modulusHex: string, exponentHex: string, message: 
   em.set(msgBytes, 3 + psLen);
 
   const c = modPow(bytesToBigInt(em), e, n);
-  return bigIntToHex(c, k);
+  const hex = bigIntToHex(c, k);
+  const out = new Uint8Array(k);
+  for (let i = 0; i < k; i++) out[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+/** RSA PKCS#1 v1.5 加密，hex 输出（长度 = 模数字节数 × 2）。 */
+export function rsaEncryptHex(modulusHex: string, exponentHex: string, message: string): string {
+  return Array.from(rsaEncryptBytes(modulusHex, exponentHex, message))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/** RSA PKCS#1 v1.5 加密，base64 输出（139 mcloud-skey 用，对齐移动端
+ * rsaPkcs1B64）。 */
+export function rsaEncryptB64(modulusHex: string, exponentHex: string, message: string): string {
+  const bytes = rsaEncryptBytes(modulusHex, exponentHex, message);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
 }

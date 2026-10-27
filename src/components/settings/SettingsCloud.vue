@@ -2,8 +2,9 @@
 /**
  * 网盘设置页：绑定管理 / 网盘浏览 / 分享链接导入 三个子视图。
  * 引擎在 services/cloud（与移动端/手表端同构）；本页只做交互编排与展示。
- * WebView 范式的盘（139/微云/阿里）在桌面端不做网页登录，
- * 提示去手机端绑定，凭据经账号同步自动下发；百度/夸克/UC 走原生扫码。
+ * WebView 范式的盘（微云/阿里）在桌面端不做网页登录，提示去手机端绑定，
+ * 凭据经账号同步自动下发；139 桌面端走自绘短信/服务密码表单（Cookie
+ * 粘贴兜底）；百度/夸克/UC 走原生扫码。
  */
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue';
 import QRCode from 'qrcode';
@@ -21,6 +22,7 @@ import {
   CloudCaptureResult,
   CloudException,
   CloudFile,
+  CloudLoginField,
   CloudLoginKind,
   CloudQrLoginSession,
   CloudShareParse,
@@ -73,7 +75,7 @@ function selectChipClass(active: boolean) {
   return `${chipClass} ${active ? chipActiveClass : chipIdleClass}`;
 }
 
-/** 绑定弹窗主按钮可用性：按登录范式取对应 busy/填写状态。 */
+/** 绑定弹窗主按钮可用性：按登录范式/当前表单通道取对应 busy/填写状态。 */
 const bindSubmitDisabled = computed(() => {
   const p = selectedProvider.value;
   if (!p) return true;
@@ -83,16 +85,19 @@ const bindSubmitDisabled = computed(() => {
     case CloudLoginKind.WebviewCookie:
       return cookieLoginBusy.value || cookieInput.value.trim() === '';
     default:
-      return loginBusy.value;
+      return bindFormMode.value === 'cookie'
+        ? cookieLoginBusy.value || cookieInput.value.trim() === ''
+        : loginBusy.value;
   }
 });
 
-/** 绑定弹窗主按钮动作：按登录范式分发（QR 自动轮询，无主按钮）。 */
+/** 绑定弹窗主按钮动作：按登录范式与当前表单通道分发（QR 自动轮询，无主按钮）。 */
 function bindSubmit() {
   const p = selectedProvider.value;
   if (!p) return;
   if (p.loginKind === CloudLoginKind.WebviewToken) void submitTokenLogin();
   else if (p.loginKind === CloudLoginKind.WebviewCookie) void submitCookieLogin();
+  else if (bindFormMode.value === 'cookie') void submitCookieLogin();
   else void submitLogin();
 }
 
@@ -118,11 +123,14 @@ const smsPromptCode = ref('');
 // 弹窗内「发送验证码」：打开时不自动发码，点击按钮手动触发，60 秒冷却。
 const smsResendCooldown = ref(0);
 const smsResendBusy = ref(false);
+// 弹窗说明文案（139 等主动短信登录盘由 provider 下发 hint，天翼用默认）。
+const smsPromptHint = ref('');
 let smsResendTimer: ReturnType<typeof setInterval> | null = null;
 
 const closeSmsPrompt = () => {
   smsPromptFor.value = '';
   smsPromptCode.value = '';
+  smsPromptHint.value = '';
   if (smsResendTimer) {
     clearInterval(smsResendTimer);
     smsResendTimer = null;
@@ -139,6 +147,19 @@ let smsTimer: ReturnType<typeof setInterval> | null = null;
 let qrPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const selectedProvider = computed<CloudProvider | null>(() => cloudProviderById(selectedProviderId.value));
+
+// 双通道盘（smsPassword/httpPassword 表单 + webviewCookie Cookie 粘贴兜底，
+// 如 139）：绑定弹窗内互相切换；单通道盘按 loginKind 直接渲染。
+const bindFormMode = ref<'fields' | 'cookie'>('fields');
+// optional 字段展开态（多通道二选一，如 139 服务密码；折叠时不参与必填）。
+const loginExpanded = ref<Record<string, boolean>>({});
+const supportsBothBindModes = (p: CloudProvider): boolean => p.loginFields.length > 0 && p.captureRule != null;
+const fieldCollapsed = (f: CloudLoginField): boolean =>
+  !!f.optional && !!f.switchLabel && !loginExpanded.value[f.key];
+const collapseField = (f: CloudLoginField) => {
+  loginValues.value[f.key] = '';
+  loginExpanded.value[f.key] = false;
+};
 
 const refreshAccounts = async () => {
   const map: Record<string, CloudAccount[]> = {};
@@ -249,6 +270,7 @@ const submitLogin = async () => {
       // 风控要求设备短信二次校验：暂存会话，弹窗收码续登；发码由弹窗内按钮手动触发。
       smsPromptFor.value = e.username;
       smsPromptCode.value = '';
+      smsPromptHint.value = e.hint ?? '';
       smsResendCooldown.value = 0;
       smsResendBusy.value = false;
       return;
@@ -308,6 +330,8 @@ const confirmSmsCode = async () => {
 const openBind = (p: CloudProvider) => {
   selectedProviderId.value = p.id;
   loginValues.value = {};
+  loginExpanded.value = {};
+  bindFormMode.value = 'fields';
   qrError.value = '';
   qrDataUrl.value = '';
   qrImageUrl.value = '';
@@ -738,7 +762,7 @@ onBeforeUnmount(() => {
       <div class="flex flex-col items-stretch">
         <div class="flex flex-col gap-2 px-6 pb-4 pt-5">
           <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('cloud.smsPromptTitle') }}</p>
-          <p :class="modalHintClass">{{ t('cloud.smsPromptBody', { u: smsPromptFor }) }}</p>
+          <p :class="modalHintClass">{{ smsPromptHint !== '' ? smsPromptHint : t('cloud.smsPromptBody', { u: smsPromptFor }) }}</p>
           <input
             v-model="smsPromptCode"
             type="text"
@@ -827,30 +851,84 @@ onBeforeUnmount(() => {
             class="flex flex-col gap-3"
             @submit.prevent="submitLogin"
           >
-            <template v-for="f in selectedProvider.loginFields" :key="f.key">
-              <div class="flex flex-col gap-1.5">
-                <label :class="modalLabelClass" :for="`cloud-login-${f.key}`">{{ f.label }}</label>
-                <input
-                  :id="`cloud-login-${f.key}`"
-                  v-model="loginValues[f.key]"
-                  :type="f.obscure ? 'password' : f.isPhone ? 'tel' : 'text'"
-                  :inputmode="f.isSmsCode ? 'numeric' : undefined"
-                  :placeholder="f.label"
-                  :aria-label="f.label"
-                  :class="modalInputClass"
-                  autocomplete="off"
-                >
+            <!-- 双通道切换（表单 + Cookie 粘贴兜底，如 139） -->
+            <div
+              v-if="supportsBothBindModes(selectedProvider)"
+              class="flex gap-2"
+            >
+              <button
+                type="button"
+                :class="selectChipClass(bindFormMode === 'fields')"
+                @click="bindFormMode = 'fields'"
+              >
+                {{ t('cloud.accountLogin') }}
+              </button>
+              <button
+                type="button"
+                :class="selectChipClass(bindFormMode === 'cookie')"
+                @click="bindFormMode = 'cookie'"
+              >
+                {{ t('cloud.cookieLogin') }}
+              </button>
+            </div>
+
+            <!-- 表单通道：按 loginFields 动态渲染；optional 字段默认折叠 -->
+            <template v-if="bindFormMode === 'fields'">
+              <template v-for="f in selectedProvider.loginFields" :key="f.key">
                 <button
-                  v-if="f.isSmsCode"
+                  v-if="fieldCollapsed(f)"
                   type="button"
                   :class="selectChipClass(false)"
-                  class="mt-1 shrink-0 self-start disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="smsCooldown > 0"
-                  @click="sendSms"
+                  class="self-start"
+                  @click="loginExpanded[f.key] = true"
                 >
-                  {{ smsCooldown > 0 ? t('cloud.smsResendIn', { s: smsCooldown }) : t('cloud.sendSms') }}
+                  {{ f.switchLabel }}
                 </button>
-              </div>
+                <div v-else class="flex flex-col gap-1.5">
+                  <label :class="modalLabelClass" :for="`cloud-login-${f.key}`">{{ f.label }}</label>
+                  <input
+                    :id="`cloud-login-${f.key}`"
+                    v-model="loginValues[f.key]"
+                    :type="f.obscure ? 'password' : f.isPhone ? 'tel' : 'text'"
+                    :inputmode="f.isSmsCode ? 'numeric' : undefined"
+                    :placeholder="f.label"
+                    :aria-label="f.label"
+                    :class="modalInputClass"
+                    autocomplete="off"
+                  >
+                  <button
+                    v-if="f.isSmsCode"
+                    type="button"
+                    :class="selectChipClass(false)"
+                    class="mt-1 shrink-0 self-start disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="smsCooldown > 0"
+                    @click="sendSms"
+                  >
+                    {{ smsCooldown > 0 ? t('cloud.smsResendIn', { s: smsCooldown }) : t('cloud.sendSms') }}
+                  </button>
+                  <button
+                    v-if="f.collapseLabel"
+                    type="button"
+                    class="self-start text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    @click="collapseField(f)"
+                  >
+                    {{ f.collapseLabel }}
+                  </button>
+                </div>
+              </template>
+            </template>
+
+            <!-- Cookie 粘贴通道（兜底） -->
+            <template v-else>
+              <p :class="modalHintClass">{{ t('cloud.cookieLoginHint') }}</p>
+              <textarea
+                v-model="cookieInput"
+                :placeholder="t('cloud.cookieLoginPlaceholder')"
+                :aria-label="t('cloud.cookieLoginHint')"
+                :class="modalInputClass"
+                class="h-24 resize-none font-mono break-all"
+                spellcheck="false"
+              ></textarea>
             </template>
           </form>
 

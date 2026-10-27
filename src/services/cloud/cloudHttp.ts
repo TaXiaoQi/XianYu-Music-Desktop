@@ -158,6 +158,16 @@ export function cloudPostForm(
   return cloudRequest('POST', url, { form, headers: opts.headers, timeout: opts.timeout });
 }
 
+/** 原始字符串 body POST（139 auth-rebuild encryptMsg 报文用，body 由
+ * 调用方自行加密拼装）。 */
+export function cloudPostRaw(
+  url: string,
+  rawBody: string,
+  opts: { headers?: Record<string, string>; timeout?: number } = {},
+): Promise<CloudHttpResponse> {
+  return cloudRequest('POST', url, { rawBody, headers: opts.headers, timeout: opts.timeout });
+}
+
 /** Uri.encodeQueryComponent 对应物：空格转 +，保留字全编码。 */
 export function encodeQueryComponent(s: string): string {
   return encodeURIComponent(s)

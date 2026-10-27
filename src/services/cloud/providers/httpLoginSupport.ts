@@ -6,7 +6,7 @@
 // 前后 `recordAttempt` / `recordSuccess|recordFailure`。
 
 import { CloudException } from '../cloudTypes';
-import { rsaEncryptHex } from '../rsa';
+import { rsaEncryptB64, rsaEncryptHex } from '../rsa';
 
 type CryptoJsModule = typeof import('crypto-js');
 
@@ -83,6 +83,23 @@ export async function md5Hex(input: string): Promise<string> {
   return CryptoJS.MD5(input).toString();
 }
 
+/** SHA1 hex 小写（139 服务密码通道 dycPwd 再转大写）。 */
+export async function sha1Hex(input: string): Promise<string> {
+  const CryptoJS = await loadCryptoJs();
+  return CryptoJS.SHA1(input).toString();
+}
+
+/** AES-128-ECB PKCS#7 加密（base64 输出。139 encryptMsg 用，对齐移动端
+ * aesEcbPkcs7B64）。密钥按 UTF-8 字节取用（16 位字母数字 = 128 位）。 */
+export async function aesEcbPkcs7B64(plain: string, key: string): Promise<string> {
+  const CryptoJS = await loadCryptoJs();
+  return CryptoJS.AES.encrypt(
+    CryptoJS.enc.Utf8.parse(plain),
+    CryptoJS.enc.Utf8.parse(key),
+    { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 },
+  ).toString();
+}
+
 /** 随机 UUID v4（小写，带连字符）。多盘设备指纹/请求 id 用。 */
 export function uuidV4(): string {
   const hex = (n: number): string => {
@@ -102,6 +119,11 @@ export function uuidV4(): string {
 /** 天翼 logbox RSA 公钥加密（PKCS#1 v1.5，hex 输出）。 */
 export function rsaPkcs1Hex(plain: string, modulusHex: string, exponentHex: string): string {
   return rsaEncryptHex(modulusHex, exponentHex, plain);
+}
+
+/** RSA 公钥加密（PKCS#1 v1.5，base64 输出。139 mcloud-skey 用）。 */
+export function rsaPkcs1B64(plain: string, modulusHex: string, exponentHex: string): string {
+  return rsaEncryptB64(modulusHex, exponentHex, plain);
 }
 
 /** 解析天翼 encryptConf 返回的 pubKey（base64 编码的 X.509
