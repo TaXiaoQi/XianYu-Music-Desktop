@@ -335,33 +335,6 @@ fn compute_sample_offsets(stsc: &[(u32, u32, u32)], stco: &[u64], stsz: &[u32]) 
     offsets
 }
 
-fn aes_ctr_decrypt(cek: &[u8], iv: &[u8], data: &mut [u8]) {
-    let cipher = match Aes128::new_from_slice(cek) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let mut counter = [0u8; 16];
-    let iv_len = iv.len().min(16);
-    counter[..iv_len].copy_from_slice(&iv[..iv_len]);
-
-    let mut pos = 0usize;
-    while pos < data.len() {
-        let mut keystream = GenericArray::clone_from_slice(&counter);
-        cipher.encrypt_block(&mut keystream);
-        let n = (data.len() - pos).min(16);
-        for i in 0..n {
-            data[pos + i] ^= keystream[i];
-        }
-        for i in (0..16).rev() {
-            counter[i] = counter[i].wrapping_add(1);
-            if counter[i] != 0 {
-                break;
-            }
-        }
-        pos += n;
-    }
-}
-
 pub fn decrypt_cenc_in_place(data: &mut [u8], cek: &[u8]) -> Result<bool, String> {
     if data.len() < 12 || &data[4..8] != b"ftyp" {
         return Ok(false);
@@ -823,8 +796,8 @@ mod tests {
         let iv = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
         let original = b"hello world, this is a test of AES-128-CTR decryption!";
         let mut encrypted = original.to_vec();
-        aes_ctr_decrypt(&cek, &iv, &mut encrypted);
-        aes_ctr_decrypt(&cek, &iv, &mut encrypted);
+        xor_keystream_from(&cek, &iv, &mut encrypted, 0);
+        xor_keystream_from(&cek, &iv, &mut encrypted, 0);
         assert_eq!(&encrypted, original);
     }
 
@@ -1021,7 +994,7 @@ mod tests {
         let mut encrypted_samples: Vec<Vec<u8>> = Vec::new();
         for (i, p) in plain.iter().enumerate() {
             let mut e = p.clone();
-            aes_ctr_decrypt(&cek, &ivs[i], &mut e);
+            xor_keystream_from(&cek, &ivs[i], &mut e, 0);
             encrypted_samples.push(e);
         }
         let mut file = build_cenc_m4a(&encrypted_samples, &ivs);
