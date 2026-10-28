@@ -7,13 +7,17 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
-const DEFAULT_API_SECRET: &str = "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3";
+const DEFAULT_API_SECRET: &str = "a27202b5acbd9b277a15ccbfb9d7b9232599842b7d08d66d";
 
 /// 历史版本内置过的默认密钥。旧版「保存/恢复默认后端连接」会把当时的默认值
 /// 写入 api_secret.txt（set_auth_api_secret('') 落盘的是旧默认），升级换代后
 /// 该残留会一直压住新内置默认值，签名 403 且只能卸载重装恢复。读取时命中
 /// 即视为过期残留：忽略并删除。每次轮换默认密钥时，把上一代默认值追加进来。
-const LEGACY_DEFAULT_API_SECRETS: [&str; 1] = ["bf027fedb4d1b4f969c10495f12f17042bf0de02de128200"];
+/// 2026-10-28 轮换（渗透报告 V-01）：acca7562… 已随源码泄露。
+const LEGACY_DEFAULT_API_SECRETS: [&str; 2] = [
+    "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200",
+    "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3",
+];
 
 /// api_secret.txt 的残留值是否应被忽略（空白、当前默认或历史默认）。
 fn is_stale_saved_secret(saved: &str) -> bool {
