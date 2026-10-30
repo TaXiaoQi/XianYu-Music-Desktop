@@ -91,6 +91,9 @@ if (bundleRoots.length === 0) {
 // 安装包文件扩展名
 const BUNDLE_EXTENSIONS = /\.(exe|msi|appimage|deb|rpm|dmg|app)$/i;
 
+// hdiutil 打包过程挂载的临时 RW 镜像（rw.<序号>.<原名>.dmg）不是最终产物，排除
+const HDIUTIL_TEMP_DMG = /^rw\.\d+\./i;
+
 // 仅移动最近 30 分钟内修改过的文件，避免在 `tauri dev` 退出后误移旧产物
 const FRESH_THRESHOLD_MS = 30 * 60 * 1000;
 const now = Date.now();
@@ -102,7 +105,7 @@ function collectFreshBundles(srcDir, files) {
     const srcPath = path.join(srcDir, entry.name);
     if (entry.isDirectory()) {
       collectFreshBundles(srcPath, files);
-    } else if (BUNDLE_EXTENSIONS.test(entry.name)) {
+    } else if (BUNDLE_EXTENSIONS.test(entry.name) && !HDIUTIL_TEMP_DMG.test(entry.name)) {
       try {
         const stat = fs.statSync(srcPath);
         if (now - stat.mtimeMs <= FRESH_THRESHOLD_MS) {

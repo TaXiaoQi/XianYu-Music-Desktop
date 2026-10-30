@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { storeToRefs } from 'pinia';
 
 import { useAppShell } from '../../composables/useAppShell';
@@ -86,7 +87,48 @@ const {
 const {
   materialTransitionMaskVisible: materialVeilShown,
   materialSwitching: materialVeilActive,
+  activeWindowMaterial,
 } = useWindowMaterial();
+
+// —— macOS 原生窗口圆角：无装饰窗口默认直角，用 CSS 圆角 + 透明窗口实现 ——
+// 原生全屏（isFullscreen）或应用沉浸式全屏时恢复直角，避免全屏露角。
+const IS_MACOS_PLATFORM = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
+const nativeFullscreen = ref(false);
+const { isImmersiveFullscreen: appImmersiveFullscreen } = storeToRefs(useUiStore());
+const shouldRoundWindow = computed(
+  () => IS_MACOS_PLATFORM && !nativeFullscreen.value && !appImmersiveFullscreen.value,
+);
+const materialActive = computed(() => activeWindowMaterial.value !== 'none');
+
+let isUnmountedFlag = false;
+let unlistenWindowResize: (() => void) | null = null;
+const syncNativeFullscreenState = async () => {
+  try {
+    nativeFullscreen.value = await getCurrentWindow().isFullscreen();
+  } catch {
+    // 非 Tauri 环境静默忽略
+  }
+};
+
+onMounted(() => {
+  if (!IS_MACOS_PLATFORM) return;
+  void syncNativeFullscreenState();
+  getCurrentWindow().onResized(() => {
+    void syncNativeFullscreenState();
+  }).then((unlisten) => {
+    if (isUnmountedFlag) {
+      unlisten();
+      return;
+    }
+    unlistenWindowResize = unlisten;
+  });
+});
+
+onUnmounted(() => {
+  isUnmountedFlag = true;
+  unlistenWindowResize?.();
+  unlistenWindowResize = null;
+});
 
 useDesktopLyricsWindowBridge();
 
@@ -205,7 +247,11 @@ onMounted(() => {
 <template>
   <div
     class="relative flex h-screen w-full flex-col overflow-hidden font-sans text-gray-800 dark:text-gray-200"
-    :class="{ 'material-switching': materialVeilActive }"
+    :class="[
+      { 'material-switching': materialVeilActive },
+      shouldRoundWindow ? 'rounded-[10px]' : '',
+      shouldRoundWindow && !materialActive ? 'bg-white dark:bg-[#262626]' : '',
+    ]"
   >
     <template v-if="!sleep">
       <template v-if="showOnboarding">
@@ -236,6 +282,7 @@ onMounted(() => {
           <div
             v-if="materialVeilShown && !isMiniMode"
             class="material-transition-mask pointer-events-none fixed inset-0 z-[9999] bg-white dark:bg-[#262626]"
+            :class="shouldRoundWindow ? 'rounded-[10px]' : ''"
           ></div>
         </transition>
 

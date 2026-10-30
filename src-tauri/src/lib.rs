@@ -360,6 +360,7 @@ use window_fullscreen::{
 use window_material::{
     get_window_material_capabilities,
     refresh_window_material_active_state,
+    set_window_opaque_state,
 };
 use window_foreground::{describe_foreground_window, force_window_foreground};
 use tray_capture::{start_tray_mouse_capture, stop_tray_mouse_capture};
@@ -642,6 +643,7 @@ pub fn run() { // run
             smart_toggle_maximize,
             get_window_material_capabilities, // 实现
             refresh_window_material_active_state, // 窗口材质刷新命令
+            set_window_opaque_state, // 窗口不透明态运行时切换（缩放动画恢复与毛玻璃互切）
             get_foreground_fullscreen_state, // 实现
             set_dark_mode_for_window, // 实现
             force_window_foreground,

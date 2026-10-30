@@ -230,6 +230,9 @@ provide('topBarContext', {
   openColorScheme,
 });
 
+// macOS 使用系统原生红绿灯（titleBarStyle: Overlay），隐藏自绘的 Windows 风格按钮组
+const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
+
 const minimize = () => { void appWindow.minimize(); };
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
 const isMaximizeDisabled = computed(
@@ -263,8 +266,9 @@ onUnmounted(() => {
 
 <template>
   <div
-    data-tauri-drag-region 
+    data-tauri-drag-region
     class="h-16 flex items-center gap-3 px-6 select-none shrink-0 relative z-[60]"
+    :class="IS_MACOS ? 'pl-[88px]' : ''"
   >
     <div class="flex items-center gap-4 relative z-10 shrink-0">
       <TopBarControlItem v-for="key in leftControls" :key="key" :item-key="key" />
@@ -383,12 +387,13 @@ onUnmounted(() => {
 
     <div class="flex items-center gap-2 relative z-10 shrink-0">
       <TopBarControlItem v-for="key in rightControls" :key="key" :item-key="key" />
-      <div class="h-4 w-px bg-gray-400/30 mx-2"></div> 
-      <div class="flex items-center gap-1"> 
-        <button @click.stop="isMiniMode = true" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.miniMode')"> 
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /><rect x="12" y="12" width="6" height="4" rx="1" stroke-width="2" /></svg> 
-        </button>
-        <button @click.stop="minimize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.minimize')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" /></svg></button> 
+      <div class="h-4 w-px bg-gray-400/30 mx-2"></div>
+      <!-- mini 模式入口：mac 的系统红绿灯不提供该功能，需在所有平台保留（Windows 三键仍随下方 v-if 隐藏） -->
+      <button @click.stop="isMiniMode = true" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.miniMode')">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /><rect x="12" y="12" width="6" height="4" rx="1" stroke-width="2" /></svg>
+      </button>
+      <div v-if="!IS_MACOS" class="flex items-center gap-1">
+        <button @click.stop="minimize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.minimize')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" /></svg></button>
         <button
           @click.stop="toggleMaximize"
           :disabled="isMaximizeDisabled"

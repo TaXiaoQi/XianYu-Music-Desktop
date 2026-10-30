@@ -84,6 +84,11 @@ export function useSettingsThemeControls() {
     return caps.isWindows && (caps.windowsBuildNumber ?? 0) >= 22000;
   });
 
+  // 平台是否具备任何可用的窗口材质：Windows 各档，或 macOS 毛玻璃（blur）。
+  const platformHasMaterialSupport = computed(() =>
+    capabilities.value.isWindows || capabilities.value.supportsBlur,
+  );
+
   const hasWindowMaterialSelected = computed(() => readTheme().windowMaterial !== 'none');
 
   const themeBlocksMaterial = computed(
@@ -103,19 +108,20 @@ export function useSettingsThemeControls() {
     if (globalMaterialBlocker.value) {
       return globalMaterialBlocker.value;
     }
-    return capabilities.value.isWindows ? null : 'windows';
+    return platformHasMaterialSupport.value ? null : 'windows';
   });
 
   const isWindowMaterialDisabled = computed(() => Boolean(windowMaterialDisabledReason.value));
 
   const isDynamicBgDisabled = computed(() => colorScheme.value === 'custom' || hasWindowMaterialSelected.value);
 
-  // 单个材质档位的平台门禁：mica/acrylic 仅 Win11，blur 依赖 Windows 模糊支持。
+  // 单个材质档位的平台门禁：mica/acrylic 仅 Win11；
+  // blur 依赖后端上报的毛玻璃能力（Win10 经典模糊 / macOS NSVisualEffectView）。
   const materialModeBlocker = (mode: PickableMaterialMode): MaterialBlockerKind => {
     const requiresWindows11 = mode === 'mica' || mode === 'acrylic';
-    const requiresWindowsBlur = mode === 'blur';
+    const requiresBlurSupport = mode === 'blur';
     const missingPlatformSupport = (requiresWindows11 && !isWindows11.value)
-      || (requiresWindowsBlur && (!capabilities.value.isWindows || !capabilities.value.supportsBlur));
+      || (requiresBlurSupport && !capabilities.value.supportsBlur);
 
     if (missingPlatformSupport) {
       return requiresWindows11 ? 'windows11' : 'windows';
@@ -141,9 +147,9 @@ export function useSettingsThemeControls() {
     if (!materialCapabilitiesReady.value) return false;
     if (capabilities.value.systemTransparencyEnabled === false) return true;
     const requiresWindows11 = mode === 'mica' || mode === 'acrylic';
-    const requiresWindowsBlur = mode === 'blur';
+    const requiresBlurSupport = mode === 'blur';
     return (requiresWindows11 && !isWindows11.value)
-      || (requiresWindowsBlur && (!capabilities.value.isWindows || !capabilities.value.supportsBlur));
+      || (requiresBlurSupport && !capabilities.value.supportsBlur);
   };
 
   // —— 动作入口 ——

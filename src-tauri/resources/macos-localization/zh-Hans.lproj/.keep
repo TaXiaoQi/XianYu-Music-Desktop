@@ -1,0 +1,1 @@
+Localization marker: the lproj directory must exist so macOS maps the system language to the AppKit panel.

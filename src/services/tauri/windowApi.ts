@@ -40,6 +40,15 @@ export const windowApi = {
         ) as Promise<WindowMaterialCapabilities>,
     refreshWindowMaterialActiveState: (keepActive: boolean) =>
         tauriInvoke("refresh_window_material_active_state", { keepActive }),
+    /** macOS 专用：运行时切换窗口不透明态（none=实底+缩放动画 / blur=透明毛玻璃）。
+     *  color 为 0..1 的 sRGB 三元组，仅在 opaque=true 时作为窗口实底色生效。 */
+    setWindowOpaqueState: (opaque: boolean, color: [number, number, number]) =>
+        tauriInvoke("set_window_opaque_state", {
+            opaque,
+            red: color[0],
+            green: color[1],
+            blue: color[2],
+        }),
     getForegroundFullscreenState: () =>
         tauriInvoke(
             "get_foreground_fullscreen_state",

@@ -121,9 +121,20 @@ keyring = { version = "3", features = ["async-secret-service", "crypto-rust"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 core-text = "20"
+# 运行时切换 NSWindow opaque：透明窗口无系统缩放动画，无材质时需切回不透明
+# （wry 已依赖 objc2-app-kit 0.3，此处仅声明特性启用 NSWindow/NSColor 绑定）
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSColor", "NSWindow"] }
+# 同上需同步切 WKWebView 的 drawsBackground（wry 透明窗口的核心透明开关）
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSValue", "NSKeyValueCoding", "NSString"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["WKWebView"] }
 
-[patch.crates-io] 
-rodio = { path = "vendor/rodio-0.20.1" } 
+[patch.crates-io]
+rodio = { path = "vendor/rodio-0.20.1" }
+# 本地补丁：platform_webview_version 改用 bundleForClass 定位 WebKit bundle。
+# 原版 bundleWithIdentifier 在 macOS 27.0.1 上会触发 CFBundle 镜像遍历段错误，
+# 应用启动即崩（详见 vendor/wry-0.57.0/src/wkwebview/mod.rs 内注释）。
+wry = { path = "vendor/wry-0.57.0" }
 
 [dev-dependencies]
 wavicle = { version = "0.1", default-features = false, features = ["decode", "encode"] }

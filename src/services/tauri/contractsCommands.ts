@@ -425,6 +425,11 @@ export interface TauriCommandMap {
     payload: { keepActive: boolean };
     response: void;
   };
+  /** mac 运行时 opaque 切换：none=实底+缩放动画 / blur=透明毛玻璃；颜色为 0..1 sRGB */
+  set_window_opaque_state: {
+    payload: { opaque: boolean; red: number; green: number; blue: number };
+    response: void;
+  };
   get_foreground_fullscreen_state: {
     payload: undefined;
     response: ForegroundFullscreenState;
