@@ -34,6 +34,9 @@ const zhCN = {
   'cloud.cookieLoginPlaceholder': '粘贴 Cookie 串，例如：__kps=…; __pus=…; __puus=…',
   'cloud.tokenLoginHint': '在浏览器登录 {name} 网页版后，按 F12 打开开发者工具，在「应用 → 本地存储」或「控制台」获取登录 Token（阿里云盘为包含 refresh_token 的 JSON 或裸 refresh_token），粘贴到下方完成登录。',
   'cloud.tokenLoginPlaceholder': '粘贴登录 Token（JSON 或裸 refresh_token）',
+  'cloud.webviewLoginButton': '在窗口中登录',
+  'cloud.webviewLoginWaiting': '等待登录完成…',
+  'cloud.webviewLoginDivider': '或在浏览器登录后粘贴凭据',
   'cloud.bindManageHint': '管理各网盘的绑定账号',
   'cloud.sectionTitle': '网盘',
   'cloud.sectionDesc': '绑定网盘后可浏览播放云盘音乐，也支持分享链接导入。',
@@ -58,9 +61,8 @@ const zhCN = {
   'cloud.smsCode': '短信验证码',
   'cloud.cancel': '取消',
   'cloud.confirm': '确定',
-  'cloud.qrHint': '使用网盘 App 扫码登录',
-  'cloud.qrWaiting': '等待扫码确认…',
-  'cloud.refreshQr': '刷新二维码',
+  'cloud.baiduCookieHint': '在浏览器登录百度网盘网页版后，按 F12 复制请求 Cookie 串（需包含 BDUSS），粘贴到下方，点「登录」完成绑定。',
+  'cloud.baiduCookiePlaceholder': '粘贴 Cookie 串，例如：BDUSS=…; STOKEN=…',
   'cloud.bindSuccess': '绑定成功',
   'cloud.unbindSuccess': '已解绑',
   'cloud.back': '返回',
@@ -340,6 +342,11 @@ const zhCN = {
   'stats.deletedSong': '已删除歌曲',
   'stats.loadFailed': '加载失败：',
   'stats.retry': '重试',
+
+  'lyrics.loading': '正在加载歌词...',
+  'lyrics.unavailable': '歌词不可用',
+  'lyrics.noSynchronized': '暂无同步歌词',
+  'lyrics.instrumental': '纯音乐 · 无歌词',
 } as const;
 
 export type I18nKey = keyof typeof zhCN;
@@ -373,6 +380,9 @@ const enUS: Record<I18nKey, string> = {
   'cloud.cookieLoginPlaceholder': 'Paste the Cookie string, e.g. __kps=…; __pus=…; __puus=…',
   'cloud.tokenLoginHint': 'Log in to {name}\'s web version in your browser, open DevTools (F12), get the login token from Application → Local Storage or the console (Aliyun Drive accepts a JSON containing refresh_token or a bare refresh_token), and paste it below.',
   'cloud.tokenLoginPlaceholder': 'Paste the login token (JSON or bare refresh_token)',
+  'cloud.webviewLoginButton': 'Sign in via window',
+  'cloud.webviewLoginWaiting': 'Waiting for sign-in…',
+  'cloud.webviewLoginDivider': 'Or paste credentials after signing in via browser',
   'cloud.bindManageHint': 'Manage bound cloud drive accounts',
   'cloud.sectionTitle': 'Cloud drives',
   'cloud.sectionDesc': 'Bind cloud drives to browse and play cloud music; share link import supported.',
@@ -397,9 +407,8 @@ const enUS: Record<I18nKey, string> = {
   'cloud.smsCode': 'SMS code',
   'cloud.cancel': 'Cancel',
   'cloud.confirm': 'OK',
-  'cloud.qrHint': 'Scan with the drive app to sign in',
-  'cloud.qrWaiting': 'Waiting for confirmation…',
-  'cloud.refreshQr': 'Refresh QR code',
+  'cloud.baiduCookieHint': 'Log in to Baidu Netdisk in your browser, copy the request Cookie string via DevTools (F12) — it must contain BDUSS — then paste it below and click "Sign in".',
+  'cloud.baiduCookiePlaceholder': 'Paste the Cookie string, e.g. BDUSS=…; STOKEN=…',
   'cloud.bindSuccess': 'Bound',
   'cloud.unbindSuccess': 'Unbound',
   'cloud.back': 'Back',
@@ -679,6 +688,11 @@ const enUS: Record<I18nKey, string> = {
   'stats.deletedSong': 'Deleted song',
   'stats.loadFailed': 'Failed to load: ',
   'stats.retry': 'Retry',
+
+  'lyrics.loading': 'Loading lyrics...',
+  'lyrics.unavailable': 'Lyrics unavailable',
+  'lyrics.noSynchronized': 'No synchronized lyrics',
+  'lyrics.instrumental': 'Instrumental / No lyrics',
 };
 
 const messages: Record<AppLanguage, Record<I18nKey, string>> = {

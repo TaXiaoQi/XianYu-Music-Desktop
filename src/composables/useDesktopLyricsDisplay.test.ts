@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
 import { ref } from 'vue';
 
 import { useDesktopLyricsDisplay } from './useDesktopLyricsDisplay';
@@ -88,8 +89,9 @@ function patchStateSettings(patch: Partial<DesktopLyricsStatePayload['settings']
   return { ...base, ...extra, settings: { ...base.settings, ...patch } };
 }
 
-// 新建一个挂起状态干净的显示实例
+// 新建一个挂起状态干净的显示实例（占位文案现在读取 i18n，需要先装好 Pinia）
 function freshDisplay() {
+  setActivePinia(createPinia());
   return useDesktopLyricsDisplay(ref(false));
 }
 

@@ -26,6 +26,7 @@ import { getPlaybackSeekSecondsForLyricLine } from './seekLayout';
 import type { WordLyricLineClickEvent } from './WordLyricPlayer';
 import RangeSlider from '../common/RangeSlider.vue';
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { useI18n } from '../../features/i18n';
 import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
 const props = defineProps<{
@@ -46,6 +47,7 @@ const {
 const { seekTo: performSeek, currentTime: clockSeconds, isPlaying: nowPlaying, currentSongPath: activeSongPath, togglePlay: flipPlayState } = usePlayer();
 const { audioDelay: latency } = storeToRefs(useSettingsStore());
 const { showToast: notify } = useToast();
+const { t: translateUi } = useI18n();
 
 const FONT_SIZE_STEP = 0.05;
 const ROW_GAP_STEP = 0.05;
@@ -103,9 +105,9 @@ const songTimeMs = computed(() => Math.max(0, Math.floor((clockSeconds.value - l
 const mountWordPlayer = computed(() => amlLines.value.length > 0 && !props.disabled);
 
 const idleStateText = computed(() => {
-  if (loadState.value === 'loading') return 'Loading lyrics...';
-  if (loadState.value === 'error') return 'Lyrics unavailable';
-  return 'No synchronized lyrics';
+  if (loadState.value === 'loading') return translateUi('lyrics.loading');
+  if (loadState.value === 'error') return translateUi('lyrics.unavailable');
+  return translateUi('lyrics.noSynchronized');
 });
 
 // 无时间轴的纯文本歌词：逐行 trim 后丢弃空行

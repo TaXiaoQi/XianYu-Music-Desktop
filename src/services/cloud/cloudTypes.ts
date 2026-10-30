@@ -49,6 +49,32 @@ export class CloudCaptureRule {
   /** JS 轮询间隔毫秒数。 */
   readonly pollIntervalMs: number;
 
+  /** 登录态锚 Cookie（原生轮询等齐即认为登录完成，如夸克/UC 的
+   * __kps/__pus——登录成功才签发，未登录恒缺）。 */
+  readonly requiredCookies: string[];
+
+  /** 补签终态 Cookie（如夸克/UC 的 __puus——落地页 init 请求 ~2s 后补
+   * 签发）：驱动 postLoginUrl 后最长等 8s 拿齐，拿不齐也照常回传。 */
+  readonly finalCookies: string[];
+
+  /** 登录完成后驱动一次落地页跳转的 URL（夸克/UC：触发补签发 __puus）。 */
+  readonly postLoginUrl: string | null;
+
+  /** 登录页横向溢出时登录区是否靠右（夸克/UC 右置 true，滚右露出登录
+   * 卡）。桌面登录窗据此决定是否注入滚右脚本。 */
+  readonly scrollToRight: boolean;
+
+  /** 强制解锁根元素滚动（仅 overflow 锁死的页面，如迅雷）；普通页面
+   * 禁用——改写 overflow 会破坏其 resize 布局（夸克实测截断）。 */
+  readonly forceScrollable: boolean;
+
+  /** 登录窗默认宽（物理无关逻辑像素）。0/缺省 = 480 小窗；固定布局
+   * 页面（迅雷营销页不可滚动）需声明更大尺寸完整显示登录区。 */
+  readonly windowWidth: number;
+
+  /** 登录窗默认高（逻辑像素），0/缺省 = 480。 */
+  readonly windowHeight: number;
+
   constructor(
     init: {
       cookieNames?: string[];
@@ -56,6 +82,13 @@ export class CloudCaptureRule {
       doneUrlPattern?: RegExp | null;
       pollScript?: string | null;
       pollIntervalMs?: number;
+      requiredCookies?: string[];
+      finalCookies?: string[];
+      postLoginUrl?: string | null;
+      scrollToRight?: boolean;
+      forceScrollable?: boolean;
+      windowWidth?: number;
+      windowHeight?: number;
     } = {},
   ) {
     this.cookieNames = init.cookieNames ?? [];
@@ -63,6 +96,13 @@ export class CloudCaptureRule {
     this.doneUrlPattern = init.doneUrlPattern ?? null;
     this.pollScript = init.pollScript ?? null;
     this.pollIntervalMs = init.pollIntervalMs ?? 500;
+    this.requiredCookies = init.requiredCookies ?? [];
+    this.finalCookies = init.finalCookies ?? [];
+    this.postLoginUrl = init.postLoginUrl ?? null;
+    this.scrollToRight = init.scrollToRight ?? false;
+    this.forceScrollable = init.forceScrollable ?? false;
+    this.windowWidth = init.windowWidth ?? 0;
+    this.windowHeight = init.windowHeight ?? 0;
   }
 }
 
@@ -130,24 +170,6 @@ export class CloudLoginField {
     this.optional = init.optional ?? false;
     this.switchLabel = init.switchLabel ?? null;
     this.collapseLabel = init.collapseLabel ?? null;
-  }
-}
-
-/** 扫码登录会话。 */
-export class CloudQrLoginSession {
-  /** 渲染成二维码的内容。 */
-  readonly qrContent: string;
-
-  /** 服务方直接下发的二维码图片地址（优先于 qrContent 渲染）。 */
-  readonly qrImageUrl: string | null;
-
-  /** 轮询句柄（qrToken / state；百度为 gid/sign/cookie 的 JSON 串）。 */
-  readonly state: string;
-
-  constructor(init: { qrContent: string; state: string; qrImageUrl?: string | null }) {
-    this.qrContent = init.qrContent;
-    this.qrImageUrl = init.qrImageUrl ?? null;
-    this.state = init.state;
   }
 }
 

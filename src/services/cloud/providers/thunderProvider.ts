@@ -112,6 +112,13 @@ export class ThunderProvider extends CloudProvider {
   } catch (e) { return ""; }
 })()`,
       pollIntervalMs: 500,
+      // pan.xunlei.com 为固定布局营销页（overflow hidden 不可滚动），
+      // 左侧营销区 + 右侧登录面板：开大窗完整显示，并启用强制滚右
+      // （窗口被手动缩小后仍能滚到登录面板）。
+      windowWidth: 1080,
+      windowHeight: 720,
+      scrollToRight: true,
+      forceScrollable: true,
     });
   }
 

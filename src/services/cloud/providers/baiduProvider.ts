@@ -1,9 +1,8 @@
 // 移植自移动端 lib/src/cloud/providers/baidu_provider.dart
-// 百度网盘 provider（原生扫码：passport 下发二维码图 → unicast 轮询 →
-// BDUSS/STOKEN 兑换）。
-//
-// 注意：分享列表/转存接口必须带登录态（BDUSS），故 parseShareLink 内
-// 直接读本地绑定凭据；业务一律经 cloudRemote 桥转发内嵌 Rust。
+// 百度网盘 provider（OAuth 授权登录：内嵌授权窗打开授权页 → 回调跳转
+// 被 rust 侧拦截抽 code → completeLogin 交换凭据；分享列表/转存必须带
+// 登录态，parseShareLink 内直接读本地绑定凭据；业务一律经 cloudRemote
+// 桥转发内嵌 Rust）。
 
 import { CloudCredentialsStore } from '../cloudCredentialsStore';
 import { cloudGet, cookieHeader } from '../cloudHttp';
@@ -17,13 +16,19 @@ import {
   CloudFile,
   CloudListResult,
   CloudLoginKind,
-  CloudQrLoginSession,
   CloudShareParse,
 } from '../cloudTypes';
 import { md5Hex } from './httpLoginSupport';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+// 开放平台 OAuth（pan.baidu.com/union 注册的应用），对齐移动端。
+// redirect_uri 无需真实可达——授权完成后内嵌授权窗跳到
+// `<redirect_uri>?code=xxx`，rust 侧 on_navigation 在加载前拦截抽 code。
+const OAUTH_CLIENT_ID = 'WzEEfe8MMzVlPqzpBB2r1hn0CKPrcDyt';
+const OAUTH_CLIENT_SECRET = 'a4MUtVIlPuQiRPGBFCAHwz2bmLv2bunE';
+const OAUTH_REDIRECT_URI = 'https://xianyu-music.github.io/oauth/baidu';
 
 export class BaiduProvider extends CloudProvider {
   override get id(): string {
@@ -42,6 +47,17 @@ export class BaiduProvider extends CloudProvider {
     return CloudLoginKind.QrCode;
   }
 
+  /** OAuth 网页授权页（授权登录次通道；扫码不可用时的替代）。 */
+  override get oauthAuthorizeUrl(): string {
+    return (
+      'https://openapi.baidu.com/oauth/2.0/authorize' +
+      '?response_type=code' +
+      `&client_id=${encodeURIComponent(OAUTH_CLIENT_ID)}` +
+      `&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT_URI)}` +
+      '&scope=basic,netdisk&display=page'
+    );
+  }
+
   override get directLinkTtl(): number {
     return 8 * 60 * 60 * 1000;
   }
@@ -53,47 +69,21 @@ export class BaiduProvider extends CloudProvider {
     };
   }
 
-  // ── 登录（原生扫码）───────────────────────────────────
+  // ── 登录（OAuth 授权：内嵌授权窗 + 回调拦截，completeLogin 交换）──
 
-  override async createQrLogin(): Promise<CloudQrLoginSession> {
-    const gid = this._randomHex(32);
-    const tt = Date.now();
-    const resp = await cloudGet(
-      'https://passport.baidu.com/v2/api/getqrcode' +
-        `?lp=pc&qrloginfrom=pc&gid=${gid}&clienttype=web&apiver=v3&tt=${tt}` +
-        '&tpl=netdisk',
-      { headers: this._webHeaders },
-    );
-    if (!resp.isOk) throw new CloudException('二维码获取失败');
-    const j = resp.json;
-    if (typeof j['errno'] === 'number' && j['errno'] !== 0) {
-      throw new CloudException('二维码获取失败');
-    }
-    const imgurl = String(j['imgurl'] ?? '');
-    const sign = String(j['sign'] ?? '');
-    if (imgurl === '' || sign === '') throw new CloudException('二维码获取失败');
-    // getqrcode 响应的 Cookie（BAIDUID 等）须串联进后续轮询/兑换请求。
-    const state = JSON.stringify({
-      gid,
-      sign,
-      ck: cookieHeader(resp.setCookiePairs),
-    });
-    return new CloudQrLoginSession({
-      qrContent: '',
-      qrImageUrl: imgurl.startsWith('http') ? imgurl : `https://${imgurl}`,
-      state,
-    });
-  }
-
-  // 手填 Cookie：含 BDUSS 的网页 Cookie 直接落库为 Cookie 轨凭据
-  // （对齐移动端 completeLogin）。昵称/uid 尽力取（网页 getinfo），
-  // 失败则显示名 + BDUSS 哈希兜底。
+  // 手填通道（对齐移动端 completeLogin 分型）：
+  // - Cookie（含 BDUSS）→ Cookie 轨凭据；
+  // - at: 前缀 access_token / token JSON / 授权 code（或含 code= 的完整
+  //   跳转链接）→ OAuth 交换，落 OAuth 轨凭据（rust 侧 is_oauth 双轨）。
+  // 昵称/uid 尽力取，失败则显示名 + 哈希兜底。
   override async completeLogin(captured: CloudCaptureResult): Promise<CloudAccount> {
     const pairs = captured.cookies;
+    const tokenRaw = (captured.token ?? '').trim();
     const bduss = pairs['BDUSS'] ?? '';
-    if (bduss === '') {
+    if (bduss === '' && tokenRaw === '') {
       throw new CloudException('Cookie 中未找到 BDUSS，请重新复制');
     }
+    if (bduss === '') return this._completeOAuthLogin(tokenRaw);
     let nickname = this.displayName;
     let accountId = (await md5Hex(bduss)).substring(0, 12);
     // 昵称尽力取：getinfo 接口现已要求风控参数（errno=2 params error），
@@ -123,81 +113,93 @@ export class BaiduProvider extends CloudProvider {
     });
   }
 
-  override async pollQrLogin(session: CloudQrLoginSession): Promise<CloudAccount | null> {
-    let info: Record<string, unknown>;
-    try {
-      const parsed: unknown = JSON.parse(session.state);
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new Error('bad state');
-      }
-      info = parsed as Record<string, unknown>;
-    } catch {
-      throw new CloudException('二维码已失效，请刷新');
+  // OAuth 通道：授权 code（或含 code= 的完整跳转链接）/ token JSON /
+  // at: 前缀 access_token → 换发 OAuth 轨凭据。token 接口只从 URL query
+  // 取参（POST form 会报 unsupported_grant_type，移动端 2026-10-29 实测
+  // 同款问题），参数全部拼 query 走 GET（百度官方文档形态）。
+  private async _completeOAuthLogin(raw: string): Promise<CloudAccount> {
+    let token = raw;
+    // 粘贴的是授权后跳转 URL（GitHub Pages 404 链接）→ 抽 code
+    const m = /[?&#]code=([0-9a-zA-Z._-]{10,})/.exec(token);
+    if (m) token = m[1];
+    if (token === '') {
+      throw new CloudException('未识别到授权凭据，请粘贴授权后地址栏的完整链接');
     }
-    const ck = String(info['ck'] ?? '');
-    const headers: Record<string, string> = { ...this._webHeaders };
-    if (ck !== '') headers['Cookie'] = ck;
-    const tt = Date.now();
-    const resp = await cloudGet(
-      'https://passport.baidu.com/channel/unicast' +
-        `?channel_id=${encodeURIComponent(String(info['sign'] ?? ''))}` +
-        `&gid=${encodeURIComponent(String(info['gid'] ?? ''))}` +
-        `&tpl=netdisk&_sdkFrom=1&apiver=v3&tt=${tt}`,
-      { headers },
-    );
-    if (!resp.isOk) return null; // 瞬时错误，保持轮询
-    const j = resp.json;
-    const errno = typeof j['errno'] === 'number' ? j['errno'] : -1;
-    if (errno === 1) return null; // 待扫码/待确认
-    if (errno !== 0) throw new CloudException('二维码已失效，请刷新');
-    // channel_v 为 JSON 字符串；status=0 表示已在手机端确认。
-    const cvRaw: unknown = j['channel_v'];
-    let cv: Record<string, unknown> | null = null;
-    if (typeof cvRaw === 'string') {
+    let accessToken = '';
+    let refreshToken = '';
+    if (token.startsWith('at:')) {
+      accessToken = token.slice(3);
+    } else if (token.startsWith('{')) {
       try {
-        const parsed: unknown = JSON.parse(cvRaw);
-        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-          cv = parsed as Record<string, unknown>;
+        const j: unknown = JSON.parse(token);
+        if (typeof j === 'object' && j !== null && !Array.isArray(j)) {
+          const obj = j as Record<string, unknown>;
+          accessToken = String(obj['access_token'] ?? '');
+          refreshToken = String(obj['refresh_token'] ?? '');
         }
       } catch {
-        cv = null;
+        // 非 JSON 裸串，按 code 交换
       }
-    } else if (typeof cvRaw === 'object' && cvRaw !== null && !Array.isArray(cvRaw)) {
-      cv = cvRaw as Record<string, unknown>;
     }
-    if (cv == null || cv['status'] !== 0) return null;
-    const v = String(cv['v'] ?? '');
-    const u = String(cv['u'] ?? '');
-    if (v === '') throw new CloudException('二维码已失效，请刷新');
-    // 兑换 BDUSS/STOKEN（Set-Cookie 下发）。
-    const ts = Date.now();
-    const resp2 = await cloudGet(
-      `https://passport.baidu.com/v3/login/main/qrbdusslogin?v=${ts}` +
-        `&bduss=${encodeURIComponent(v)}` +
-        `&u=${encodeURIComponent(u)}` +
-        '&loginVersion=v5&qrcode=1&tpl=netdisk',
-      { headers },
-    );
-    const cookies = resp2.setCookiePairs;
-    const bduss = cookies['BDUSS'] ?? '';
-    if (bduss === '') throw new CloudException('登录失败，请重试');
-    const cred: Record<string, string> = { BDUSS: bduss };
-    if ((cookies['STOKEN'] ?? '') !== '') cred['STOKEN'] = cookies['STOKEN'] as string;
+
+    if (accessToken === '') {
+      const q =
+        refreshToken !== ''
+          ? `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}` +
+            `&client_id=${encodeURIComponent(OAUTH_CLIENT_ID)}` +
+            `&client_secret=${encodeURIComponent(OAUTH_CLIENT_SECRET)}`
+          : `grant_type=authorization_code&code=${encodeURIComponent(token)}` +
+            `&client_id=${encodeURIComponent(OAUTH_CLIENT_ID)}` +
+            `&client_secret=${encodeURIComponent(OAUTH_CLIENT_SECRET)}` +
+            `&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT_URI)}`;
+      let resp: Awaited<ReturnType<typeof cloudGet>>;
+      try {
+        resp = await cloudGet(`https://openapi.baidu.com/oauth/2.0/token?${q}`);
+      } catch {
+        throw new CloudException('授权凭据交换失败，请重试');
+      }
+      const j = resp.isOk ? resp.json : null;
+      if (j == null || j['access_token'] == null) {
+        // 带上百度返回的 error_description（如 invalid_grant），用户反馈
+        // 截图即含真实原因，免再导日志定位
+        const reason = String(j?.['error_description'] ?? j?.['error'] ?? '');
+        throw new CloudException(
+          `授权凭据无效或已过期${reason === '' ? '' : `（${reason}）`}，请重新登录`,
+        );
+      }
+      accessToken = String(j['access_token']);
+      refreshToken = String(j['refresh_token'] ?? refreshToken);
+    }
+
+    // uinfo：昵称 + 百度数字 uid（账号标识；refresh_token 每次授权
+    // 会轮换，不能当 accountId）。
+    let uid = '';
+    let nickname = '';
+    try {
+      const info = await cloudGet(
+        'https://pan.baidu.com/rest/2.0/xpan/nas?method=uinfo' +
+          `&access_token=${encodeURIComponent(accessToken)}`,
+        { headers: this._webHeaders },
+      );
+      if (info.isOk) {
+        const j = info.json;
+        uid = String(j['baidu_id'] ?? j['uk'] ?? '');
+        nickname = String(j['netdisk_name'] ?? j['name'] ?? '');
+      }
+    } catch {
+      // 昵称拿不到不影响绑定。
+    }
     return new CloudAccount({
       provider: this.id,
-      accountId: (await md5Hex(bduss)).substring(0, 12),
-      nickname: u === '' ? '百度账号' : u,
-      cred,
+      accountId: uid !== '' ? uid : (await md5Hex(accessToken)).substring(0, 12),
+      nickname: nickname !== '' ? nickname : this.displayName,
+      cred: {
+        accessToken,
+        ...(refreshToken !== '' ? { refreshToken } : {}),
+        accessExpireMs: String(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
       boundAt: new Date(),
     });
-  }
-
-  private _randomHex(len: number): string {
-    let out = '';
-    for (let i = 0; i < len; i++) {
-      out += Math.floor(Math.random() * 16).toString(16);
-    }
-    return out;
   }
 
   // ── 业务（rust 桥转发）─────────────────────────────────

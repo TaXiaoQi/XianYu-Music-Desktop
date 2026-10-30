@@ -15,7 +15,6 @@ import {
   CloudListResult,
   CloudLoginField,
   CloudLoginKind,
-  CloudQrLoginSession,
   CloudShareParse,
   CloudFile,
 } from './cloudTypes';
@@ -36,6 +35,12 @@ export abstract class CloudProvider {
 
   /** WebView 捕获规则（webview 组；非 WebView 登录盘为 null）。 */
   get captureRule(): CloudCaptureRule | null {
+    return null;
+  }
+
+  /** OAuth 网页授权页 URL（非 null 时绑定弹窗提供「授权登录」次通道：
+   * 浏览器打开授权页 → 用户粘贴跳转链接 → completeLogin 抽 code 交换）。 */
+  get oauthAuthorizeUrl(): string | null {
     return null;
   }
 
@@ -79,16 +84,6 @@ export abstract class CloudProvider {
   /** 重发设备校验验证码（收到 [CloudSmsRequiredException] 后由 UI 弹窗内的「发送验证码」按钮调用；弹窗打开时不自动发码）。 */
   async resendDeviceSms(_username: string): Promise<void> {
     throw new Error('该盘不支持短信验证码');
-  }
-
-  /** 创建扫码会话（qrCode）。 */
-  async createQrLogin(): Promise<CloudQrLoginSession> {
-    throw new Error('该盘不支持扫码登录');
-  }
-
-  /** 轮询扫码结果：null=未确认；返回=成功；抛 CloudException=过期/取消。 */
-  async pollQrLogin(_session: CloudQrLoginSession): Promise<CloudAccount | null> {
-    throw new Error('该盘不支持扫码登录');
   }
 
   // ── 能力 ──────────────────────────────────────────────

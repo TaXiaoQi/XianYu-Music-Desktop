@@ -214,6 +214,10 @@ commands.allow = [
   "plugin_http_request", # 插件 HTTP
   "plugin_http_request_binary", # 插件二进制请求
   "cloud_proxy", # 网盘业务代理（十盘业务下沉 Rust）
+  "open_oauth_login_window", # OAuth 授权登录窗（内嵌 WebView 拦截回调抽 code）
+  "close_oauth_login_window", # 关闭 OAuth 授权登录窗（绑定完成后前端调用）
+  "open_webview_login_window", # WebView 网页登录窗（token/cookie 双范式捕获）
+  "close_webview_login_window", # 关闭 WebView 网页登录窗（绑定完成后前端调用）
   "plugin_engine_load_musicfree",
   "plugin_engine_load_lx",
   "plugin_engine_call",

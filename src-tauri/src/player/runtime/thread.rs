@@ -735,11 +735,21 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 }
                             }
                             AudioCommand::PrepareNext(payload) => {
+                                // 任何拒绝路径都必须回执：前端靠 prepare-rejected 撤回
+                                // 自动切歌抑制，静默丢弃会让前端永久卡在当前曲。
+                                let reject = |app: &AppHandle, path: &str| {
+                                    let _ = app.emit(
+                                        "playback:prepare-rejected",
+                                        path.to_string(),
+                                    );
+                                };
                                 let Some(rig) = &gapless_rig else {
+                                    reject(&worker_app, &payload.for_path);
                                     return;
                                 };
                                 // 会话校验：预拼接针对的曲目必须仍是当前曲目，过期即弃
                                 if payload.for_path != active_file_path {
+                                    reject(&worker_app, &payload.for_path);
                                     return;
                                 }
                                 let prepared =

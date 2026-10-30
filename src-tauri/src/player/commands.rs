@@ -790,9 +790,12 @@ pub fn cancel_prepare_next(state: tauri::State<PlayerState>) -> Result<(), Strin
 
 /// 预拼接下一首：把下一首的解码链提前建好放进交接槽，当前曲到头时无缝接上。
 /// 仅本地文件（含 QMC 加密轨道）支持；远端/流式来源返回 false，由调用方退回普通切歌。
+/// `for_path` 为当前正在播放的曲目路径：播放线程用它做会话校验（预拼接期间的
+/// 当前曲必须未变）。缺省时无法通过校验，直接返回 false 避免前端空等拼接。
 #[tauri::command]
 pub async fn prepare_next_track(
     path: String,
+    for_path: Option<String>,
     song_id: Option<i64>,
     volume_balance_enabled: Option<bool>,
     gain_offset_db: Option<f32>,
@@ -801,6 +804,12 @@ pub async fn prepare_next_track(
     state: tauri::State<'_, PlayerState>,
 ) -> Result<bool, String> {
     let playable_path = tidy_playback_path(&path);
+    let Some(current_path) = for_path.as_deref().map(tidy_playback_path) else {
+        return Ok(false);
+    };
+    if current_path.is_empty() {
+        return Ok(false);
+    }
     // 仅本地文件可预拼接：远端/流式来源格式与时序都不可靠
     if playable_path.starts_with("http://")
         || playable_path.starts_with("https://")
@@ -864,7 +873,7 @@ pub async fn prepare_next_track(
             channels: if channels > 2 { 2 } else { channels },
             duration,
             balance_gain,
-            for_path: playable_path,
+            for_path: current_path,
         })),
     )?;
     Ok(true)

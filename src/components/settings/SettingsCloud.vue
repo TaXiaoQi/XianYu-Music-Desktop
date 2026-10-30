@@ -2,29 +2,30 @@
 /**
  * 网盘设置页：绑定管理 / 网盘浏览 / 分享链接导入 三个子视图。
  * 引擎在 services/cloud（与移动端/手表端同构）；本页只做交互编排与展示。
- * WebView 范式的盘（微云/阿里）在桌面端不做网页登录，提示去手机端绑定，
- * 凭据经账号同步自动下发；139 桌面端走自绘短信/服务密码表单（Cookie
- * 粘贴兜底）；百度/夸克/UC 走原生扫码。
+ * WebView 范式的盘在桌面端走内嵌 WebView 登录窗（阿里/迅雷 token 型注入
+ * pollScript 轮询、夸克/UC cookie 型原生 Cookie 轮询，命中自动完成绑定），
+ * 凭据粘贴框保留兜底；微云捕获规则不可靠仍引导去手机端绑定；139 桌面端
+ * 走自绘短信/服务密码表单（Cookie 粘贴兜底）；百度走内嵌 OAuth 授权窗
+ * （回调 code 自动回传）。
  */
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue';
-import QRCode from 'qrcode';
 import DialogSurface from '../common/modal/DialogSurface.vue';
 
 const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
 
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { tauriInvoke } from '../../services/tauri/invoke';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { cloudProviders, cloudProviderById } from '../../services/cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
 import {
   CloudAccount,
   CloudCaptureResult,
-  CloudException,
   CloudFile,
   CloudLoginField,
   CloudLoginKind,
-  CloudQrLoginSession,
   CloudShareParse,
 } from '../../services/cloud/cloudTypes';
 import type { CloudProvider } from '../../services/cloud/cloudProvider';
@@ -75,7 +76,8 @@ function selectChipClass(active: boolean) {
   return `${chipClass} ${active ? chipActiveClass : chipIdleClass}`;
 }
 
-/** 绑定弹窗主按钮可用性：按登录范式/当前表单通道取对应 busy/填写状态。 */
+/** 绑定弹窗主按钮可用性：按登录范式/当前表单通道取对应 busy/填写状态。
+ *  QrCode 盘（百度）双通道：任一通道忙碌即禁用。 */
 const bindSubmitDisabled = computed(() => {
   const p = selectedProvider.value;
   if (!p) return true;
@@ -84,6 +86,9 @@ const bindSubmitDisabled = computed(() => {
       return tokenLoginBusy.value || tokenInput.value.trim() === '';
     case CloudLoginKind.WebviewCookie:
       return cookieLoginBusy.value || cookieInput.value.trim() === '';
+    case CloudLoginKind.QrCode:
+      // 底部「登录」只提交 Cookie 粘贴轨；授权窗由顶部主按钮自管 busy
+      return cookieLoginBusy.value || cookieInput.value.trim() === '';
     default:
       return bindFormMode.value === 'cookie'
         ? cookieLoginBusy.value || cookieInput.value.trim() === ''
@@ -91,12 +96,14 @@ const bindSubmitDisabled = computed(() => {
   }
 });
 
-/** 绑定弹窗主按钮动作：按登录范式与当前表单通道分发（QR 自动轮询，无主按钮）。 */
+/** 绑定弹窗主按钮动作：按登录范式分发（QrCode 盘底部「登录」固定走
+ *  Cookie 粘贴轨；授权窗由弹窗顶部主按钮直开）。 */
 function bindSubmit() {
   const p = selectedProvider.value;
   if (!p) return;
   if (p.loginKind === CloudLoginKind.WebviewToken) void submitTokenLogin();
   else if (p.loginKind === CloudLoginKind.WebviewCookie) void submitCookieLogin();
+  else if (p.loginKind === CloudLoginKind.QrCode) void submitCookieLogin();
   else if (bindFormMode.value === 'cookie') void submitCookieLogin();
   else void submitLogin();
 }
@@ -126,6 +133,7 @@ const smsResendBusy = ref(false);
 // 弹窗说明文案（139 等主动短信登录盘由 provider 下发 hint，天翼用默认）。
 const smsPromptHint = ref('');
 let smsResendTimer: ReturnType<typeof setInterval> | null = null;
+let smsTimer: ReturnType<typeof setInterval> | null = null;
 
 const closeSmsPrompt = () => {
   smsPromptFor.value = '';
@@ -138,13 +146,6 @@ const closeSmsPrompt = () => {
   smsResendCooldown.value = 0;
   smsResendBusy.value = false;
 };
-const qrDataUrl = ref('');
-const qrImageUrl = ref('');
-const qrWaiting = ref(false);
-const qrError = ref('');
-
-let smsTimer: ReturnType<typeof setInterval> | null = null;
-let qrPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const selectedProvider = computed<CloudProvider | null>(() => cloudProviderById(selectedProviderId.value));
 
@@ -180,59 +181,6 @@ const boundAccountsFlat = computed(() => {
 });
 
 const boundCountOf = (providerId: string) => (accountsMap.value[providerId] ?? []).length;
-
-const stopQrPoll = () => {
-  if (qrPollTimer) {
-    clearInterval(qrPollTimer);
-    qrPollTimer = null;
-  }
-  qrWaiting.value = false;
-};
-
-const startQrLogin = async () => {
-  const provider = selectedProvider.value;
-  if (!provider) return;
-  qrError.value = '';
-  qrDataUrl.value = '';
-  qrImageUrl.value = '';
-  stopQrPoll();
-  try {
-    const session = await provider.createQrLogin();
-    // 服务方直接下发二维码图片（百度）：直接展示，无需本地渲染。
-    if (session.qrImageUrl != null && session.qrImageUrl !== '') {
-      qrImageUrl.value = session.qrImageUrl;
-    } else {
-      qrDataUrl.value = await QRCode.toDataURL(session.qrContent);
-    }
-    qrWaiting.value = true;
-    qrPollTimer = setInterval(() => {
-      void pollQrLogin(session);
-    }, 2000);
-  } catch (e) {
-    qrError.value = errorMessage(e);
-  }
-};
-
-const pollQrLogin = async (session: CloudQrLoginSession) => {
-  const provider = selectedProvider.value;
-  if (!provider || !qrPollTimer) return;
-  try {
-    const account = await provider.pollQrLogin(session);
-    if (!account) return; // 未确认，继续轮询
-    stopQrPoll();
-    await CloudCredentialsStore.instance.saveAccount(account);
-    showToast(t('cloud.bindSuccess'), 'success');
-    selectedProviderId.value = '';
-    await refreshAccounts();
-  } catch (e) {
-    if (e instanceof CloudException) {
-      // 过期/取消：停止轮询，展示刷新入口
-      stopQrPoll();
-      qrError.value = e.message;
-    }
-    // 其他异常（网络抖动）保持轮询
-  }
-};
 
 const sendSms = async () => {
   const provider = selectedProvider.value;
@@ -332,14 +280,7 @@ const openBind = (p: CloudProvider) => {
   loginValues.value = {};
   loginExpanded.value = {};
   bindFormMode.value = 'fields';
-  qrError.value = '';
-  qrDataUrl.value = '';
-  qrImageUrl.value = '';
-  stopQrPoll();
   bindDialogLeaving.value = false;
-  if (p.loginKind === CloudLoginKind.QrCode) {
-    void startQrLogin();
-  }
 };
 
 // 绑定弹窗（DialogSurface）：关闭走 200ms 退场动画，与 ModernModal 一致
@@ -349,10 +290,16 @@ let bindDialogSettleTimer: ReturnType<typeof setTimeout> | null = null;
 const closeBindDialog = () => {
   if (bindDialogLeaving.value) return;
   bindDialogLeaving.value = true;
+  closeOauthCodeListener();
+  closeWebviewLoginListener();
+  // 登录窗还开着（等待捕获中）就一并关掉（窗口不存在时 no-op）
+  if (webviewLoginBusy.value) {
+    webviewLoginBusy.value = false;
+    void tauriInvoke('close_webview_login_window').catch(() => {});
+  }
   if (bindDialogSettleTimer) clearTimeout(bindDialogSettleTimer);
   bindDialogSettleTimer = setTimeout(() => {
     selectedProviderId.value = '';
-    stopQrPoll();
     bindDialogLeaving.value = false;
     bindDialogSettleTimer = null;
   }, 200);
@@ -448,6 +395,147 @@ const submitTokenLogin = async () => {
     showToast(errorMessage(e), 'error');
   } finally {
     tokenLoginBusy.value = false;
+  }
+};
+
+// ── OAuth 授权登录（QrCode 范式盘当前唯一登录通道，如百度） ──────
+// 点主按钮直接打开内嵌授权窗（rust open_oauth_login_window）：独立
+// WebView 加载 provider.oauthAuthorizeUrl，授权完成 302 到注册回调
+// （github.io，页面不可达）时 rust 侧 on_navigation 在加载前拦截抽 code
+// emit 回来，自动完成绑定并关窗——用户全程看不到 404，零复制粘贴。
+
+const oauthBusy = ref(false);
+
+const OAUTH_CODE_EVENT = 'oauth-login-code';
+let oauthCodeUnlisten: UnlistenFn | null = null;
+
+const closeOauthCodeListener = () => {
+  if (oauthCodeUnlisten) {
+    oauthCodeUnlisten();
+    oauthCodeUnlisten = null;
+  }
+};
+
+const openAuthorizePage = async () => {
+  const provider = selectedProvider.value;
+  if (!provider?.oauthAuthorizeUrl || oauthBusy.value) return;
+  // 先注册监听再开窗，避免 code 早于监听就绪的竞态
+  closeOauthCodeListener();
+  oauthBusy.value = true;
+  try {
+    oauthCodeUnlisten = await listen<string>(OAUTH_CODE_EVENT, (e) => {
+      closeOauthCodeListener();
+      oauthBusy.value = false;
+      const code = (e.payload ?? '').trim();
+      if (code === '') return;
+      // rust 侧不在导航回调栈里关窗（防主线程卡死），由这里收尾
+      void tauriInvoke('close_oauth_login_window').catch(() => {});
+      tokenInput.value = code;
+      void submitTokenLogin();
+    });
+    await tauriInvoke('open_oauth_login_window', {
+      url: provider.oauthAuthorizeUrl,
+      event: OAUTH_CODE_EVENT,
+    });
+  } catch (e) {
+    closeOauthCodeListener();
+    showToast(errorMessage(e), 'error');
+  } finally {
+    oauthBusy.value = false;
+  }
+};
+
+// ── WebView 窗口登录（webviewToken/webviewCookie 范式盘的桌面直连通道）──
+// rust open_webview_login_window：独立 WebView 打开 provider.webviewLoginUrl。
+// token 型盘注入 pollScript 轮询登录凭据；cookie 型盘后台轮询原生 Cookie
+// 等齐登录态锚（httpOnly 也能拿到，夸克/UC 命中后驱动落地页补签发
+// __puus）。命中即 emit {providerId, kind, value}——校验 providerId 后走
+// completeLogin 完成绑定并关窗，粘贴框保留兜底。微云规则不可靠（无
+// pollScript/cookie 域）不展示该通道。
+
+const WEBVIEW_LOGIN_EVENT = 'webview-login-capture';
+const webviewLoginBusy = ref(false);
+let webviewLoginUnlisten: UnlistenFn | null = null;
+
+/** 是否具备窗口登录通道：有登录 URL 且规则可判定完成（token 型有
+ * pollScript / cookie 型有轮询域+登录态锚）。 */
+const supportsWebviewLogin = (p: CloudProvider): boolean => {
+  const rule = p.captureRule;
+  if (p.webviewLoginUrl === '' || !rule) return false;
+  if (rule.pollScript != null && rule.pollScript !== '') return true;
+  return rule.cookieDomains.length > 0 && rule.requiredCookies.length > 0;
+};
+
+const closeWebviewLoginListener = () => {
+  if (webviewLoginUnlisten) {
+    webviewLoginUnlisten();
+    webviewLoginUnlisten = null;
+  }
+};
+
+/** 打开内嵌 WebView 登录窗。capture 为 CloudCaptureRule 的 JSON 投影。 */
+const openWebviewLoginWindow = async () => {
+  const provider = selectedProvider.value;
+  if (!provider || webviewLoginBusy.value || !supportsWebviewLogin(provider)) return;
+  const rule = provider.captureRule!;
+  // 先注册监听再开窗，避免凭据早于监听就绪的竞态
+  closeWebviewLoginListener();
+  webviewLoginBusy.value = true;
+  try {
+    webviewLoginUnlisten = await listen<{ providerId: string; kind: 'token' | 'cookies'; value: string }>(
+      WEBVIEW_LOGIN_EVENT,
+      (e) => {
+        const payload = e.payload;
+        if (!payload || payload.providerId !== selectedProviderId.value) return;
+        closeWebviewLoginListener();
+        webviewLoginBusy.value = false;
+        // rust 侧不在导航/轮询栈里关窗，由这里收尾
+        void tauriInvoke('close_webview_login_window').catch(() => {});
+        void (async () => {
+          try {
+            const target = selectedProvider.value;
+            if (!target) return;
+            const captured =
+              payload.kind === 'token'
+                ? new CloudCaptureResult({ token: payload.value })
+                : new CloudCaptureResult({ cookies: JSON.parse(payload.value) as Record<string, string> });
+            const account = await target.completeLogin(captured);
+            await CloudCredentialsStore.instance.saveAccount(account);
+            showToast(t('cloud.bindSuccess'), 'success');
+            tokenInput.value = '';
+            cookieInput.value = '';
+            selectedProviderId.value = '';
+            await refreshAccounts();
+          } catch (err) {
+            showToast(errorMessage(err), 'error');
+          }
+        })();
+      },
+    );
+    await tauriInvoke('open_webview_login_window', {
+      providerId: provider.id,
+      url: provider.webviewLoginUrl,
+      event: WEBVIEW_LOGIN_EVENT,
+      // null 归一：rust 侧字段是 String/Vec 非 Option，null 会拒收
+      // （token 型盘的 postLoginUrl/requiredCookies 等默认 null/缺省）。
+      captureJson: JSON.stringify({
+        pollScript: rule.pollScript ?? '',
+        pollIntervalMs: rule.pollIntervalMs ?? 500,
+        cookieDomains: rule.cookieDomains ?? [],
+        requiredCookies: rule.requiredCookies ?? [],
+        finalCookies: rule.finalCookies ?? [],
+        postLoginUrl: rule.postLoginUrl ?? '',
+        scrollToRight: rule.scrollToRight === true,
+        forceScrollable: rule.forceScrollable === true,
+        windowWidth: rule.windowWidth ?? 0,
+        windowHeight: rule.windowHeight ?? 0,
+      }),
+    });
+  } catch (e) {
+    closeWebviewLoginListener();
+    showToast(errorMessage(e), 'error');
+  } finally {
+    webviewLoginBusy.value = false;
   }
 };
 
@@ -587,7 +675,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   unsubCreds?.();
   if (smsTimer) clearInterval(smsTimer);
-  stopQrPoll();
+  closeOauthCodeListener();
+  closeWebviewLoginListener();
   if (bindDialogSettleTimer) clearTimeout(bindDialogSettleTimer);
 });
 </script>
@@ -811,11 +900,27 @@ onBeforeUnmount(() => {
         <div class="flex flex-col gap-3 px-6 pb-4 pt-5">
           <p :class="modalLabelClass">{{ t('cloud.bindAction') }} · {{ selectedProvider.displayName }}</p>
 
-          <!-- webviewToken 范式：粘贴登录 Token（JSON 或裸 token） -->
+          <!-- webviewToken 范式：窗口登录直连（阿里/迅雷），粘贴兜底 -->
           <div
             v-if="selectedProvider.loginKind === CloudLoginKind.WebviewToken"
             class="flex flex-col gap-2"
           >
+            <button
+              v-if="supportsWebviewLogin(selectedProvider)"
+              type="button"
+              :class="modalPrimaryBtnClass"
+              :disabled="webviewLoginBusy"
+              @click="openWebviewLoginWindow"
+            >
+              {{ webviewLoginBusy ? t('cloud.webviewLoginWaiting') : t('cloud.webviewLoginButton') }}
+            </button>
+            <p
+              v-if="supportsWebviewLogin(selectedProvider)"
+              :class="modalHintClass"
+              class="text-center"
+            >
+              {{ t('cloud.webviewLoginDivider') }}
+            </p>
             <p :class="modalHintClass">
               {{ t('cloud.tokenLoginHint', { name: selectedProvider.displayName }) }}
             </p>
@@ -829,11 +934,27 @@ onBeforeUnmount(() => {
             ></textarea>
           </div>
 
-          <!-- webviewCookie 范式：粘贴 Cookie 登录 -->
+          <!-- webviewCookie 范式：窗口登录直连（夸克/UC），粘贴兜底 -->
           <div
             v-else-if="selectedProvider.loginKind === CloudLoginKind.WebviewCookie"
             class="flex flex-col gap-2"
           >
+            <button
+              v-if="supportsWebviewLogin(selectedProvider)"
+              type="button"
+              :class="modalPrimaryBtnClass"
+              :disabled="webviewLoginBusy"
+              @click="openWebviewLoginWindow"
+            >
+              {{ webviewLoginBusy ? t('cloud.webviewLoginWaiting') : t('cloud.webviewLoginButton') }}
+            </button>
+            <p
+              v-if="supportsWebviewLogin(selectedProvider)"
+              :class="modalHintClass"
+              class="text-center"
+            >
+              {{ t('cloud.webviewLoginDivider') }}
+            </p>
             <p :class="modalHintClass">{{ t('cloud.cookieLoginHint') }}</p>
             <textarea
               v-model="cookieInput"
@@ -932,38 +1053,33 @@ onBeforeUnmount(() => {
             </template>
           </form>
 
-          <!-- 扫码登录 -->
-          <div v-else-if="selectedProvider.loginKind === CloudLoginKind.QrCode" class="flex flex-col items-center gap-3 py-1">
-            <p :class="modalHintClass">{{ t('cloud.qrHint') }}</p>
-            <img
-              v-if="qrImageUrl"
-              :src="qrImageUrl"
-              :alt="t('cloud.qrHint')"
-              class="h-40 w-40 rounded-xl bg-white p-2"
-            >
-            <img
-              v-else-if="qrDataUrl"
-              :src="qrDataUrl"
-              :alt="t('cloud.qrHint')"
-              class="h-40 w-40 rounded-xl bg-white p-2"
-            >
-            <p v-if="qrWaiting" :class="modalHintClass">{{ t('cloud.qrWaiting') }}</p>
-            <p v-if="qrError" class="text-xs text-red-500 dark:text-red-400">{{ qrError }}</p>
+          <!-- OAuth 授权登录（如百度）：与其他盘统一双通道结构——
+               顶部主按钮开内嵌授权窗（回调 code 自动回传），Cookie
+               粘贴为兜底通道（底部「登录」提交） -->
+          <div v-else-if="selectedProvider.loginKind === CloudLoginKind.QrCode" class="flex flex-col gap-2">
             <button
-              v-if="qrError || !qrWaiting"
               type="button"
-              :class="selectChipClass(false)"
-              class="shrink-0"
-              @click="startQrLogin"
+              :class="modalPrimaryBtnClass"
+              :disabled="oauthBusy"
+              @click="openAuthorizePage"
             >
-              {{ t('cloud.refreshQr') }}
+              {{ oauthBusy ? t('cloud.webviewLoginWaiting') : t('cloud.webviewLoginButton') }}
             </button>
+            <p :class="modalHintClass" class="text-center">{{ t('cloud.webviewLoginDivider') }}</p>
+            <p :class="modalHintClass">{{ t('cloud.baiduCookieHint') }}</p>
+            <textarea
+              v-model="cookieInput"
+              :placeholder="t('cloud.baiduCookiePlaceholder')"
+              :aria-label="t('cloud.baiduCookieHint')"
+              :class="modalInputClass"
+              class="h-20 resize-none font-mono break-all"
+              spellcheck="false"
+            ></textarea>
           </div>
         </div>
 
         <div class="flex flex-col gap-3 px-4 py-3 sm:flex-row-reverse bg-gray-50/50 dark:bg-white/5">
           <button
-            v-if="selectedProvider.loginKind !== CloudLoginKind.QrCode"
             type="button"
             :class="modalPrimaryBtnClass"
             :disabled="bindSubmitDisabled"

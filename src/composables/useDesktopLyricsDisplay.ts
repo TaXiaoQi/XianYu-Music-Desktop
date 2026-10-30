@@ -3,6 +3,7 @@ import { emitTo } from "@tauri-apps/api/event";
 import { computed, ref, type CSSProperties, type Ref } from "vue";
 
 import type { ImportedLyricsFont } from "../types";
+import { useI18n } from "../features/i18n";
 import {
     DESKTOP_LYRICS_ACTION_EVENT,
     type DesktopLyricsAction,
@@ -90,12 +91,14 @@ interface DisplayLine {
 }
 
 export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
+    // 占位文案跟随界面语言；主窗口推送的 fallbackText 也已在源头按语言翻译
+    const { t } = useI18n();
     const playClock = ref(0);
     const playing = ref(false);
     const latencySeconds = ref(0);
     const lyricTimeline = ref<LyricLine[]>([]);
     const status = ref<LyricsStatus>("idle");
-    const placeholderText = ref("Instrumental / No lyrics");
+    const placeholderText = ref(t("lyrics.instrumental"));
     const extractedPalette = ref<string[]>([]);
     const importedFonts = ref<ImportedLyricsFont[]>([]);
     const trackDuration = ref<number | null>(null);
@@ -541,8 +544,8 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
             normalizeLyricsFontPreset(widgetPrefs.value.playerFontPreset),
     );
     const fallbackStateText = computed(() => {
-        if (status.value === "loading") return "Loading lyrics...";
-        if (status.value === "error") return "Lyrics unavailable";
+        if (status.value === "loading") return t("lyrics.loading");
+        if (status.value === "error") return t("lyrics.unavailable");
         return placeholderText.value;
     });
     const lyricsPlayerStyle = computed(() => ({

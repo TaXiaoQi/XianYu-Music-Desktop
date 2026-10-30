@@ -136,9 +136,10 @@ export const playbackApi = {
     }): Promise<void> {
         return tauriInvoke("set_playback_features", payload);
     },
-    /** 预拼接下一首（仅本地文件可成功），返回是否成功入槽。 */
+    /** 预拼接下一首（仅本地文件可成功），返回是否成功入槽。forPath 为当前曲路径，供后端会话校验。 */
     prepareNextTrack(payload: {
         path: string;
+        forPath: string;
         songId?: number | null;
         volumeBalanceEnabled?: boolean;
         gainOffsetDb?: number;

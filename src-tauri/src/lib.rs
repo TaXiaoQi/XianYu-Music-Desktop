@@ -245,8 +245,12 @@ use plugin_host::commands::{
 };
 use plugins::{
     cloud_proxy,
+    close_oauth_login_window,
+    close_webview_login_window,
     download_audio_to_temp,
     download_video_to_cache,
+    open_oauth_login_window,
+    open_webview_login_window,
     plugin_http_request,
     plugin_http_request_binary,
     proxy_image,
@@ -461,6 +465,25 @@ pub fn run() { // run
         .on_window_event(|window, event| { // 实现
             let label = window.label();
             let main_window_gone = label == "main";
+            // 诊断（主窗被缩根因排查）：记录主窗每次尺寸变化的时刻/新尺寸/
+            // 最大化态，与登录窗建窗/关窗日志对时，钉住触发源后移除
+            if main_window_gone {
+                if let tauri::WindowEvent::Resized(size) = event {
+                    let maxed = window.is_maximized().unwrap_or(false);
+                    eprintln!(
+                        "[main-size] t={} resized to {}x{} maximized={maxed}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or(0),
+                        size.width,
+                        size.height,
+                    );
+                    // 主窗尺寸守护：登录窗存活期（含关窗宽限）内被 WebView2
+                    // 重置回创建尺寸时还原（见 cloud.rs MAIN_SIZE_GUARD）
+                    plugins::enforce_main_size_on_resize(window);
+                }
+            }
             if main_window_gone && matches!(event, tauri::WindowEvent::Destroyed) {
                 graceful_shutdown(window.app_handle());
             }
@@ -656,6 +679,10 @@ pub fn run() { // run
             plugin_http_request,
             plugin_http_request_binary,
             cloud_proxy,
+            open_oauth_login_window,
+            close_oauth_login_window,
+            open_webview_login_window,
+            close_webview_login_window,
             plugin_engine_load_musicfree,
             plugin_engine_load_lx,
             plugin_engine_call,
