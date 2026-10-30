@@ -109,6 +109,12 @@ impl PluginEngine {
     }
 
     async fn destroy(&self, plugin_id: &str) {
-        self.instances.lock().await.remove(plugin_id);
+        if let Some(inst) = self.instances.lock().await.remove(plugin_id) {
+            // 运行时释放也路由到 JS 线程：深堆 free 链在小栈线程上有溢出风险，
+            // 且与栈预算按执行线程划定的语义保持一致。
+            let _ = runtime::js_thread().spawn(async move {
+                drop(inst);
+            });
+        }
     }
 }

@@ -5,6 +5,7 @@ use rquickjs::function::This;
 use rquickjs::{Function, Promise};
 
 use super::misc::{engine_error_message, now_ms, promise_to_json, take_logs};
+use super::runtime::drive_js;
 use super::{EngineCallResult, EngineLog, PluginEngine, PluginKind};
 
 fn call_err(error: String, logs: Vec<EngineLog>) -> EngineCallResult {
@@ -66,12 +67,16 @@ impl PluginEngine {
         let args_owned = args_json.to_string();
         let user_vars_owned = user_vars_json.map(|s| s.to_string());
         let kind = instance.kind;
+        let ctx = instance.ctx.clone();
+        let deadline = instance.deadline_ms.clone();
 
+        // JS 驱动路由到插件 JS 专用大栈线程（见 runtime.rs js_thread 注释）。
+        // WithFuture 借用 ctx，须在 'static async 块内持有 ctx 本体再驱动。
+        // 层级：timeout(Elapsed) → drive_js(桥接错误) → JS 执行 Result<String,String>。
         let outcome = tokio::time::timeout(
             Duration::from_millis(timeout_ms + 2000),
-            instance
-                .ctx
-                .async_with(async |ctx| -> Result<String, String> {
+            drive_js(async move {
+                ctx.async_with(async |ctx| -> Result<String, String> {
                     let globals = ctx.globals();
                     let inner: rquickjs::Result<Promise> = (|| match kind {
                         PluginKind::MusicFree => {
@@ -99,40 +104,56 @@ impl PluginEngine {
                     promise_to_json(&ctx, chained)
                         .await
                         .map_err(|e| engine_error_message(&ctx, &e))
-                }),
+                })
+                .await
+            }),
         )
         .await;
-
-        instance.deadline_ms.store(0, Ordering::Relaxed);
-        instance.current_call.store(0, Ordering::Relaxed);
 
         let logs = take_logs(&instance.logs, call_id);
 
         match outcome {
             Err(_) => {
+                // 外层超时：池内任务仍持有 ctx 在跑 JS，置过期 deadline 让中断
+                // 处理器尽快掐断；随后销毁实例（运行时随引用归零释放）。
+                deadline.store(1, Ordering::Relaxed);
+                instance.current_call.store(0, Ordering::Relaxed);
                 self.destroy(plugin_id).await;
                 call_err(format!("方法调用超时: {} ({}ms)", method, timeout_ms), logs)
             }
-            Ok(Err(e)) => call_err(format!("引擎调用失败: {}", e), logs),
-            Ok(Ok(json)) => match serde_json::from_str::<serde_json::Value>(&json) {
-                Ok(v) if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) => {
-                    EngineCallResult {
-                        ok: true,
-                        error: None,
-                        data: v.get("data").cloned(),
-                        logs,
+            Ok(Err(e)) => {
+                deadline.store(0, Ordering::Relaxed);
+                instance.current_call.store(0, Ordering::Relaxed);
+                call_err(format!("JS 线程错误: {}", e), logs)
+            }
+            Ok(Ok(Err(e))) => {
+                deadline.store(0, Ordering::Relaxed);
+                instance.current_call.store(0, Ordering::Relaxed);
+                call_err(format!("引擎调用失败: {}", e), logs)
+            }
+            Ok(Ok(Ok(json))) => {
+                deadline.store(0, Ordering::Relaxed);
+                instance.current_call.store(0, Ordering::Relaxed);
+                match serde_json::from_str::<serde_json::Value>(&json) {
+                    Ok(v) if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) => {
+                        EngineCallResult {
+                            ok: true,
+                            error: None,
+                            data: v.get("data").cloned(),
+                            logs,
+                        }
                     }
+                    Ok(v) => {
+                        let error = v
+                            .get("error")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("方法调用失败")
+                            .to_string();
+                        call_err(error, logs)
+                    }
+                    Err(e) => call_err(format!("调用结果解析失败: {}", e), logs),
                 }
-                Ok(v) => {
-                    let error = v
-                        .get("error")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("方法调用失败")
-                        .to_string();
-                    call_err(error, logs)
-                }
-                Err(e) => call_err(format!("调用结果解析失败: {}", e), logs),
-            },
+            }
         }
     }
 }
