@@ -166,6 +166,7 @@ export const createPlayerPlayback = ({
     const currentPath = current.path;
     void playbackApi.prepareNextTrack({
       path: peeked.song.cue_source_path || peeked.song.path,
+      forPath: current.cue_source_path || current.path,
       songId: peeked.song.id ?? null,
       volumeBalanceEnabled: balance?.enabled ?? false,
       gainOffsetDb: balance?.gainOffsetDb ?? 0,
@@ -1120,6 +1121,7 @@ export const createPlayerPlayback = ({
     onPreviewDetected: handlePreviewClipDetected,
     onAutoNext: handleAutoNext,
     isGaplessPending: () => pendingGapless !== null,
+    onGaplessStuck: () => { pendingGapless = null; },
     flushStatistics: flushPlaySession,
     startStatisticsSession,
   });
@@ -1217,9 +1219,17 @@ export const createPlayerPlayback = ({
     maybePrepareNextTrack();
   }).catch(() => {});
 
-  // 后端判定无法拼接（采样率/声道不一致）：撤回抑制，曲终回落普通自动切歌
+  // 后端判定无法拼接（装备缺失/会话不符/采样率声道不一致）：撤回抑制，曲终回落普通自动切歌。
+  // 回执路径按后端语义为「被拒预拼接所属的当前曲」；兼容匹配下一首路径以防语义回退。
   listen<string>('playback:prepare-rejected', (event) => {
     const rejectedPath = event.payload;
+    const currentKey = currentSong.value
+      ? (currentSong.value.cue_source_path || currentSong.value.path)
+      : '';
+    if (rejectedPath && currentKey && rejectedPath === currentKey) {
+      pendingGapless = null;
+      return;
+    }
     if (pendingGapless
       && (pendingGapless.song.cue_source_path || pendingGapless.song.path) === rejectedPath) {
       pendingGapless = null;

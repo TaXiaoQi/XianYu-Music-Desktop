@@ -601,6 +601,30 @@ export interface TauriCommandMap {
     payload: { reqJson: string };
     response: string;
   };
+  // OAuth 授权登录窗：内嵌 WebView 打开授权页，回调跳转被 rust 侧
+  // on_navigation 拦截抽 code 并 emit(event)；前端绑定完成后调
+  // close_oauth_login_window 关窗。
+  open_oauth_login_window: {
+    payload: { url: string; event: string };
+    response: void;
+  };
+  close_oauth_login_window: {
+    payload: null;
+    response: void;
+  };
+  // WebView 网页登录窗：内嵌 WebView 打开 provider.webviewLoginUrl。
+  // token 型注入 pollScript 轮询；cookie 型后台轮询原生 Cookie 等登录态
+  // 锚。命中即 emit(event, {providerId, kind, value})；前端完成绑定后调
+  // close_webview_login_window 关窗。capture 为 CloudCaptureRule 的 JSON
+  // 投影（pollScript/cookieDomains/requiredCookies/finalCookies/postLoginUrl）。
+  open_webview_login_window: {
+    payload: { providerId: string; url: string; event: string; captureJson: string };
+    response: void;
+  };
+  close_webview_login_window: {
+    payload: null;
+    response: void;
+  };
   // ===== QuickJS 插件引擎命令（插件脚本在 Rust 后端隔离执行）=====
   plugin_engine_load_musicfree: {
     payload: { pluginId: string; script: string; userVarsJson: string };

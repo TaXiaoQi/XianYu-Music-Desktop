@@ -1,10 +1,10 @@
 // 移植自移动端 lib/src/cloud/providers/quark_uc_base.dart
 // 夸克 / UC 网盘共用实现（两家同为阿里系 XCloud 架构，接口同构）。
 //
-// 登录：WebView 范式（移动端在官方网盘页捕获 kps/sign Cookie）——原
-// 原生扫码链路的 st 兑换接口 /1/clouddrive/login 已被官方下线（404），
-// 无替代兑换端点；桌面端不做网页登录，completeLogin 仅供手机端绑定后
-// 凭据云同步。业务经 cloudRemote 桥转发内嵌 Rust
+// 登录：WebView 范式（捕获 kps/sign Cookie）——原原生扫码链路的 st 兑换
+// 接口 /1/clouddrive/login 已被官方下线（404），无替代兑换端点；桌面端
+// 走内嵌 WebView 登录窗（原生 Cookie 轮询等 __kps/__pus，落地页补签发
+// __puus），凭据粘贴框保留兜底。业务经 cloudRemote 桥转发内嵌 Rust
 // （src-tauri/src/cloud/quark_uc.rs）；子类只声明品牌常量。
 
 import { cloudGet, cookieHeader } from '../cloudHttp';
@@ -13,6 +13,7 @@ import { rustDirectLink, rustListDir, rustParseShare, rustSearchFiles, rustShare
 import {
   CloudAccount,
   CloudCaptureResult,
+  CloudCaptureRule,
   CloudDirectLink,
   CloudException,
   CloudFile,
@@ -63,6 +64,33 @@ export abstract class QuarkUcBase extends CloudProvider {
 
   override get loginKind(): CloudLoginKind {
     return CloudLoginKind.WebviewCookie;
+  }
+
+  /** Cookie 轮询域（夸克 quark.cn/pan.quark.cn/pl.quark.cn；UC
+   * uc.cn/drive.uc.cn/pc.uc.cn/passport.uc.cn），逐域原生读取。 */
+  abstract get captureCookieDomains(): string[];
+
+  /** 登录页横向溢出时登录区是否靠右：夸克/UC 营销页登录区都在右侧
+   * 视口外（子类声明 true），窗口内滚到最右直接露出登录卡。 */
+  get alignLoginRight(): boolean {
+    return false;
+  }
+
+  override get webviewLoginUrl(): string {
+    return `https://${this.webHost}/`;
+  }
+
+  /** 窗口登录捕获规则（cookie 型）：原生轮询等 __kps/__pus 齐活（登录
+   * 成功才签发，未登录恒缺）→ 驱动落地页补签发 __puus（稳定锚，落地页
+   * init 请求 ~2s 后签发）→ 全量 Cookie 交回 completeLogin。 */
+  override get captureRule(): CloudCaptureRule {
+    return new CloudCaptureRule({
+      cookieDomains: this.captureCookieDomains,
+      requiredCookies: ['__kps', '__pus'],
+      finalCookies: ['__puus'],
+      postLoginUrl: `https://${this.webHost}/`,
+      scrollToRight: this.alignLoginRight,
+    });
   }
 
   override get directLinkTtl(): number {

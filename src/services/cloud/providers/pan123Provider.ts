@@ -1,18 +1,11 @@
 // 移植自移动端 lib/src/cloud/providers/pan123_provider.dart
-// 123 云盘 provider（qrCode 主通道 + 账密兜底；分享免转存直链
+// 123 云盘 provider（httpPassword 账密登录，对齐移动端；分享免转存直链
 // directPlayable=true）。
 //
-// 登录链（扫码/账密）留在 TS；业务经 cloudRemote 桥转发内嵌 Rust
+// 登录链（账密）留在 TS；业务经 cloudRemote 桥转发内嵌 Rust
 //（src-tauri/src/cloud/pan123.rs）。
 
-import {
-  asInt,
-  asRecord,
-  asString,
-  cloudGet,
-  cloudPostJson,
-  encodeQueryComponent,
-} from '../cloudHttp';
+import { asInt, asRecord, asString, cloudPostJson } from '../cloudHttp';
 import { CloudProvider } from '../cloudProvider';
 import { rustDirectLink, rustListDir, rustParseShare, rustSearchFiles, rustShareDirectLink, rustTransferShare, rustValidate } from '../cloudRemote';
 import {
@@ -23,7 +16,6 @@ import {
   CloudListResult,
   CloudLoginField,
   CloudLoginKind,
-  CloudQrLoginSession,
   CloudShareParse,
 } from '../cloudTypes';
 import { HttpLoginGate, md5Hex } from './httpLoginSupport';
@@ -45,7 +37,7 @@ export class Pan123Provider extends CloudProvider {
   }
 
   override get loginKind(): CloudLoginKind {
-    return CloudLoginKind.QrCode;
+    return CloudLoginKind.HttpPassword;
   }
 
   override get directLinkTtl(): number {
@@ -59,50 +51,7 @@ export class Pan123Provider extends CloudProvider {
     ];
   }
 
-  // ── 登录 ──────────────────────────────────────────────
-
-  override async createQrLogin(): Promise<CloudQrLoginSession> {
-    const resp = await cloudGet('https://login.123pan.com/api/user/qr-code/generate', {
-      headers: { 'User-Agent': UA },
-    });
-    if (!resp.isOk) throw new CloudException('二维码获取失败');
-    const data = asRecord(resp.json['data']);
-    if (!data) throw new CloudException('二维码获取失败');
-    // 接口返回二维码跳转 URL（data.url，123pan App 扫码用）与 uniID；
-    // 旧字段 qr 兼容保留。
-    const qr = asString(data['url'] ?? data['qr'] ?? '');
-    const uniId = asString(data['uniID'] ?? '');
-    if (qr === '' || uniId === '') throw new CloudException('二维码获取失败');
-    return new CloudQrLoginSession({ qrContent: qr, state: uniId });
-  }
-
-  override async pollQrLogin(session: CloudQrLoginSession): Promise<CloudAccount | null> {
-    const resp = await cloudGet(
-      'https://login.123pan.com/api/user/qr-code/result' +
-        '?uniID=' +
-        encodeQueryComponent(session.state),
-      { headers: { 'User-Agent': UA } },
-    );
-    if (!resp.isOk) return null;
-    const data = asRecord(resp.json['data']);
-    if (!data) return null;
-    // 现接口字段为 loginStatus（旧 status 兼容）：2=已确认，4=已失效。
-    const status = asInt(data['loginStatus'] ?? data['status']) ?? 0;
-    if (status === 4) throw new CloudException('二维码已过期，请刷新');
-    if (status !== 2) return null; // 未确认。
-    const token = asString(data['token'] ?? data['accessToken'] ?? '');
-    if (token === '') throw new CloudException('二维码已过期，请刷新');
-    const user = asRecord(data['user']);
-    const uid = asString(user?.['id'] ?? '');
-    const nick = asString(user?.['nickname'] ?? user?.['Passport'] ?? '');
-    return new CloudAccount({
-      provider: this.id,
-      accountId: uid === '' ? (await md5Hex(token)).substring(0, 12) : uid,
-      nickname: nick === '' ? '123云盘' : nick,
-      cred: { 'token': token },
-      boundAt: new Date(),
-    });
-  }
+  // ── 登录（账密）─────────────────────────────────────────
 
   override async loginWithFields(fields: Record<string, string>): Promise<CloudAccount> {
     const passport = (fields['passport'] ?? '').trim();

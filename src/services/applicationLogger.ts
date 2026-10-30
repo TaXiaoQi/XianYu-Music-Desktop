@@ -5,7 +5,9 @@ import type { LogLevel, LogSettings } from "../types";
 const APPLICATION_LOG_STORAGE_KEY = "xianyu_application_logs_v1";
 const LOG_LEVELS: LogLevel[] = ["debug", "info", "warn", "error"];
 const MAX_LOG_ENTRIES = 300;
-const MAX_ERROR_LOG_ENTRIES = 10;
+// error 保底留存（防海量 warn/info 把错误线索挤出 300 条池）。此前 10 条
+// 过苛：网盘批量失败等场景一下就刷掉更早的错误现场
+const MAX_ERROR_LOG_ENTRIES = 100;
 
 export interface ApplicationLogEntry {
     id: string;
@@ -117,10 +119,58 @@ const persistEntries = () => {
     }
 };
 
-export function installApplicationLogger(_scope = "main") {
-    // 已移除对 console.* 的劫持/过滤/截断，恢复浏览器控制台原生完整输出。
-    // 保留空函数签名以兼容 main.ts 调用点。
+export function installApplicationLogger(scope = "main") {
+    // 劫持 console.warn/error 进日志缓冲：先原样调原生实现（devtools
+    // 控制台输出与调试体验不变），再写入缓冲；logger 内部不经 console
+    // 回写，无递归。背景：核心链路（播放/网盘/插件/下载）的既有打点
+    // 全是 console.*（316 处/100 文件），此前被有意解除劫持后全部只进
+    // devtools——日志缓冲仅剩 sync/auth 少数显式埋点，用户导出常为空。
+    // console.log/info 属高频调试噪音，不收，避免挤掉关键 warn/error。
+    if (typeof console === "undefined") return;
+    const nativeWarn = console.warn.bind(console);
+    const nativeError = console.error.bind(console);
+    console.warn = (...args: unknown[]) => {
+        nativeWarn(...args);
+        logApplicationEvent(
+            "warn",
+            "console",
+            scope,
+            serializeConsoleArgs(args),
+        );
+    };
+    console.error = (...args: unknown[]) => {
+        nativeError(...args);
+        logApplicationEvent(
+            "error",
+            "console",
+            scope,
+            serializeConsoleArgs(args),
+        );
+    };
 }
+
+const MAX_CONSOLE_MESSAGE_LENGTH = 600;
+
+const serializeConsoleArg = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (value instanceof Error)
+        return value.stack ?? `${value.name}: ${value.message}`;
+    if (typeof value === "object" && value !== null) {
+        try {
+            return JSON.stringify(value) ?? String(value);
+        } catch {
+            return String(value);
+        }
+    }
+    return String(value);
+};
+
+const serializeConsoleArgs = (args: unknown[]): string => {
+    const text = args.map(serializeConsoleArg).join(" ");
+    return text.length > MAX_CONSOLE_MESSAGE_LENGTH
+        ? `${text.slice(0, MAX_CONSOLE_MESSAGE_LENGTH)}…(截断)`
+        : text;
+};
 
 export function configureApplicationLogger(config: LogSettings) {
     activeConfig = {
@@ -254,6 +304,7 @@ export function formatApplicationLogExport(
         `导出时间：${new Date().toISOString()}`,
         `日志数量：${selected.length}`,
         `自动分析：${analysis.headline}`,
+        `日志级别：debug=${analysis.counts.debug} info=${analysis.counts.info} warn=${analysis.counts.warn} error=${analysis.counts.error}`,
         ...analysis.findings.map((finding) => `分析提示：${finding}`),
         "",
     ];

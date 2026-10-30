@@ -15,6 +15,7 @@ import { fetchOnlineLyricsRaw } from '../../features/playback/onlineLyrics';
 import { useSettingsStore } from '../../features/settings/store';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
 import { toTraditional } from '../../features/i18n/traditional';
+import { useI18n } from '../../features/i18n';
 import { lyricsApi } from '../../services/tauri/lyricsApi';
 import { getCurrentLyricDisplayLines } from './converters'; // 歌词行计算
 import type {
@@ -343,11 +344,13 @@ function placeholderState(text: string): CurrentLyricDisplayState {
 }
 
 const currentLyricLine = computed<CurrentLyricDisplayState>(() => {
-  if (lyricsStatus.value === 'loading') return placeholderState('Loading lyrics...');
-  if (lyricsStatus.value === 'error') return placeholderState('Lyrics unavailable');
+  // 占位文案跟随界面语言：t 内部读取设置里的语言，语言切换会触发本计算属性重算
+  const { t } = useI18n();
+  if (lyricsStatus.value === 'loading') return placeholderState(t('lyrics.loading'));
+  if (lyricsStatus.value === 'error') return placeholderState(t('lyrics.unavailable'));
 
   if (parsedLyrics.value.length === 0) {
-    const fallback = rawLyrics.value.trim() ? 'No synchronized lyrics' : 'Instrumental / No lyrics';
+    const fallback = rawLyrics.value.trim() ? t('lyrics.noSynchronized') : t('lyrics.instrumental');
     return placeholderState(fallback);
   }
 

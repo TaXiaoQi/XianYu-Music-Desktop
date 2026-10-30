@@ -4,6 +4,9 @@ import type {Song} from '../../types';
 import {evaluateStallAutoNext, LOW_POWER_PROGRESS_UPDATE_MS, type PlaybackProgressPayload} from './playbackTiming';
 import type {PreviewClipInfo} from './onlineFailover';
 
+/** 拼接失联保险丝：刻度越过曲尾该秒数仍未见拼接生效，即视为后端拼接链路失联。 */
+export const GAPLESS_STUCK_GRACE_SEC = 3;
+
 export interface PlaybackRuntimeDeps {
   currentSong: Ref<Song | null>;
   currentTime: Ref<number>;
@@ -25,6 +28,8 @@ export interface PlaybackRuntimeDeps {
   onAutoNext: () => void;
   /** 无缝预拼接已入槽：等待后端拼接切换期间抑制自动切歌（否则旧曲刻度越界会误触发换曲） */
   isGaplessPending?: () => boolean;
+  /** 拼接失联保险丝：刻度越过曲尾宽限期仍未见拼接生效时，先撤回抑制再自动切歌 */
+  onGaplessStuck?: () => void;
   flushStatistics: () => void;
   startStatisticsSession: () => void;
   listen?: typeof tauriListen;
@@ -109,6 +114,14 @@ export function createPlaybackRuntime(deps: PlaybackRuntimeDeps): PlaybackRuntim
       const song = deps.currentSong.value;
       const endTime = clip ? clip.start + clip.duration : song?.duration ?? 0;
       if (deps.isGaplessPending?.()) {
+        // 拼接失联保险丝：正常拼接会在曲尾即刻生效并把刻度归零；若刻度已越过
+        // 曲尾宽限期（后端从未拼接/事件丢失），撤回抑制回退普通自动切歌，
+        // 避免永久停在当前曲（表现为进度越过时长仍显示播放中）。
+        if (endTime > 0 && deps.currentTime.value >= endTime + GAPLESS_STUCK_GRACE_SEC) {
+          deps.onGaplessStuck?.();
+          deps.onAutoNext();
+          return;
+        }
         scheduleUpdate(update);
         return;
       }

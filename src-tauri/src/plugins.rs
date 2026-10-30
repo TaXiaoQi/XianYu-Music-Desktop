@@ -10,7 +10,10 @@ mod http;
 #[path = "plugin_commands/images.rs"]
 mod images;
 
-pub(crate) use cloud::cloud_proxy;
+pub(crate) use cloud::{
+    close_oauth_login_window, close_webview_login_window, cloud_proxy,
+    enforce_main_size_on_resize, open_oauth_login_window, open_webview_login_window,
+};
 pub(crate) use downloads::{
     download_audio_to_temp, download_video_to_cache, remove_cached_background_video,
 };
