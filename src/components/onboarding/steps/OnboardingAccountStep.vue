@@ -1,19 +1,27 @@
 <script setup lang="ts">
 // 引导流程账号步：登录/注册 UI（搬自 Auth.vue）、人机验证与用户协议弹窗。
+// 登录方式与 Auth.vue 同步：账号密码 / 邮箱验证码 / 扫码。
 // 登录/注册成功后发出 authorized 事件，由主组件延迟结算完成逻辑。
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
+import QRCode from 'qrcode';
 
 import { useToast } from '../../../composables/toast';
 import { useAuthStore } from '../../../features/auth/store';
+import type { LoginMethod } from '../../../composables/auth/useAuthFlow';
 import HumanCaptchaModal from '../../common/HumanCaptchaModal.vue';
+import QrLoginPanel from '../../auth/QrLoginPanel.vue';
 import {
   login,
+  loginByEmail,
   register,
   sendEmailCode,
+  createQrLoginCode,
+  pollQrLoginStatus,
   getUserAgreement,
   type AuthMode,
   type HumanCaptchaPayload,
+  type QrPollResult,
   type VerifyCodeType,
 } from '../../../services/auth/authService';
 
@@ -99,13 +107,114 @@ const handleCaptchaCancel = () => {
   resolveHumanCaptcha(null);
 };
 
+// --- 登录方式（与 Auth.vue 同步）：账号密码 / 邮箱验证码 / 扫码 ---
+const loginMethod = ref<LoginMethod>('password');
+const isQrLogin = computed(() => authMode.value === 'login' && loginMethod.value === 'qr');
+const LOGIN_METHOD_TABS: Array<{ method: LoginMethod; label: string }> = [
+  { method: 'password', label: '账号密码登录' },
+  { method: 'email', label: '邮箱验证码登录' },
+  { method: 'qr', label: '扫码登录' },
+];
+
+// --- 扫码登录（搬自 useAuthFlow）：生成二维码并轮询，成功后走 authorized 结算 ---
+const qrStatus = ref<'loading' | 'pending' | 'scanned' | 'expired' | 'error' | 'logged'>('loading');
+const qrCode = ref('');
+const qrImage = ref('');
+const qrExpireAt = ref(0);
+const qrError = ref('');
+
+let qrPollTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopQrPolling() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer);
+    qrPollTimer = null;
+  }
+}
+
+async function startQrLogin() {
+  stopQrPolling();
+  qrStatus.value = 'loading';
+  qrCode.value = '';
+  qrImage.value = '';
+  qrError.value = '';
+  try {
+    const { code, expireSeconds } = await createQrLoginCode();
+    if (!code) throw new Error('二维码内容为空');
+    qrCode.value = code;
+    qrExpireAt.value = Date.now() + expireSeconds * 1000;
+    qrImage.value = await QRCode.toDataURL(`xianyumusic://tvlogin/${code}`, {
+      width: 320,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    });
+    qrStatus.value = 'pending';
+    startQrPolling();
+  } catch (error) {
+    qrStatus.value = 'error';
+    qrError.value = error instanceof Error ? error.message : '二维码获取失败，请重试';
+  }
+}
+
+function startQrPolling() {
+  stopQrPolling();
+  qrPollTimer = setInterval(async () => {
+    if (qrStatus.value === 'logged') return;
+    if (Date.now() > qrExpireAt.value) {
+      qrStatus.value = 'expired';
+      stopQrPolling();
+      return;
+    }
+    if (!qrCode.value) return;
+    let result: QrPollResult;
+    try {
+      result = await pollQrLoginStatus(qrCode.value);
+    } catch {
+      return;
+    }
+    if (result.status === 'logged_in' && result.token) {
+      await handleQrLoggedIn(result);
+    } else if (result.status === 'scanned' && qrStatus.value === 'pending') {
+      qrStatus.value = 'scanned';
+    } else if (result.status === 'invalid') {
+      qrStatus.value = 'expired';
+      stopQrPolling();
+    }
+  }, 2000);
+}
+
+async function handleQrLoggedIn(result: QrPollResult) {
+  stopQrPolling();
+  qrStatus.value = 'logged';
+  const token = result.token || '';
+  const user = result.user ?? { id: '', username: '', nickname: '', email: '', avatar: '', ciyuanxi_id: undefined };
+  authStore.setAuth({ token, user });
+  showAuthMessage('登录成功', 'success');
+  showToast('登录成功', 'success');
+  // 扫码登录成功：延迟结算由主组件的 authorized 处理器完成
+  emit('authorized');
+}
+
+// 方式/模式切换：进入「登录 + 扫码」组合时启动扫码，其余情况停止轮询并清提示。
+watch([authMode, loginMethod], () => {
+  authMessage.value = '';
+  if (authMode.value === 'login' && loginMethod.value === 'qr') {
+    void startQrLogin();
+  } else {
+    stopQrPolling();
+  }
+});
+
+onUnmounted(stopQrPolling);
+
 const handleSendCode = async () => {
+  const isEmailLogin = authMode.value === 'login' && loginMethod.value === 'email';
   const email = authForm.value.email;
   if (!email) {
     showAuthMessage('请先填写邮箱');
     return;
   }
-  const type: VerifyCodeType = 'register';
+  const type: VerifyCodeType = isEmailLogin ? 'login' : 'register';
   const captchaPayload = await requestHumanCaptcha(
     '发送验证码前验证',
     '完成验证后将向邮箱发送验证码。',
@@ -114,7 +223,9 @@ const handleSendCode = async () => {
   codeLoading.value = true;
   authMessage.value = '';
   try {
-    const result = await sendEmailCode(email, type, captchaPayload, authForm.value.account.trim() || undefined);
+    // 邮箱验证码登录不带弦予号（账号可能尚未填写），注册时携带以做占用校验
+    const ciyuanxiId = isEmailLogin ? undefined : authForm.value.account.trim() || undefined;
+    const result = await sendEmailCode(email, type, captchaPayload, ciyuanxiId);
     showAuthMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
     startCodeCountdown();
@@ -132,6 +243,8 @@ const handleAuthSubmit = async () => {
     showAuthMessage('请先阅读并同意用户协议');
     return;
   }
+  // 扫码登录无表单提交：轮询命中后自动登录
+  if (authMode.value === 'login' && loginMethod.value === 'qr') return;
   if (authMode.value === 'register') {
     const ciyuanxi = authForm.value.account.trim();
     if (!ciyuanxi) {
@@ -163,7 +276,9 @@ const handleAuthSubmit = async () => {
   try {
     const result =
       authMode.value === 'login'
-        ? await login(authForm.value.account, authForm.value.password, captchaPayload)
+        ? (loginMethod.value === 'email'
+            ? await loginByEmail(authForm.value.email.trim(), authForm.value.code.trim(), captchaPayload)
+            : await login(authForm.value.account, authForm.value.password, captchaPayload))
         : await register(
             authForm.value.account.trim(),
             authForm.value.nickname.trim(),
@@ -427,13 +542,42 @@ onMounted(() => {
           </div>
         </nav>
 
+        <!-- 登录方式切换：与 Auth.vue 一致（仅登录模式） -->
+        <div
+          v-if="authMode === 'login'"
+          class="mb-6 flex w-fit gap-1 p-1 rounded-full bg-black/5 dark:bg-white/10"
+        >
+          <button
+            v-for="tab in LOGIN_METHOD_TABS"
+            :key="tab.method"
+            type="button"
+            class="rounded-full px-4 py-2 font-medium transition cursor-pointer"
+            :class="loginMethod === tab.method
+              ? 'bg-[#EC4141] text-white shadow-sm'
+              : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
+            style="font-size: clamp(13px, 1vw, 15px);"
+            @click="loginMethod = tab.method"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
         <Transition name="auth-mode" mode="out-in">
           <form
             :key="authMode"
             class="grid gap-7 max-w-xl"
             @submit.prevent="handleAuthSubmit"
           >
-            <label class="grid gap-3">
+            <!-- 扫码登录：二维码面板，无表单字段 -->
+            <QrLoginPanel
+              v-if="isQrLogin"
+              :qr-image="qrImage"
+              :qr-status="qrStatus"
+              :qr-error="qrError"
+              @refresh="startQrLogin"
+            />
+
+            <label v-if="authMode === 'register' || loginMethod === 'password'" class="grid gap-3">
               <span
                 class="text-black/70 dark:text-white/70 font-light tracking-wider"
                 style="font-size: clamp(13px, 1.1vw, 16px);"
@@ -448,6 +592,52 @@ onMounted(() => {
                 style="font-size: clamp(15px, 1.3vw, 18px);"
               />
             </label>
+
+            <!-- 邮箱验证码登录：邮箱 + 验证码（免密） -->
+            <template v-if="authMode === 'login' && loginMethod === 'email'">
+              <label class="grid gap-3">
+                <span
+                  class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                  style="font-size: clamp(13px, 1.1vw, 16px);"
+                >邮箱</span>
+                <input
+                  v-model="authForm.email"
+                  type="email"
+                  placeholder="name@example.com"
+                  autocomplete="email"
+                  required
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  style="font-size: clamp(15px, 1.3vw, 18px);"
+                />
+              </label>
+
+              <div class="grid grid-cols-[1fr_auto] items-end gap-4">
+                <label class="grid gap-3">
+                  <span
+                    class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                    style="font-size: clamp(13px, 1.1vw, 16px);"
+                  >邮箱验证码</span>
+                  <input
+                    v-model="authForm.code"
+                    type="text"
+                    placeholder="填写验证码"
+                    autocomplete="one-time-code"
+                    required
+                    class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                    style="font-size: clamp(15px, 1.3vw, 18px);"
+                  />
+                </label>
+                <button
+                  type="button"
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] px-6 whitespace-nowrap font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  style="font-size: clamp(14px, 1.1vw, 16px);"
+                  :disabled="codeLoading || codeCountdown > 0"
+                  @click="handleSendCode"
+                >
+                  {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
+                </button>
+              </div>
+            </template>
 
             <template v-if="authMode === 'register'">
               <label class="grid gap-3">
@@ -508,7 +698,7 @@ onMounted(() => {
               </div>
             </template>
 
-            <label class="grid gap-3">
+            <label v-if="loginMethod !== 'email' || authMode === 'register'" class="grid gap-3">
               <span
                 class="text-black/70 dark:text-white/70 font-light tracking-wider"
                 style="font-size: clamp(13px, 1.1vw, 16px);"
@@ -566,7 +756,7 @@ onMounted(() => {
               </div>
             </label>
 
-            <div class="flex items-start gap-3 text-black/60 dark:text-white/60 select-none" style="font-size: clamp(12px, 1vw, 14px);">
+            <div v-if="!isQrLogin" class="flex items-start gap-3 text-black/60 dark:text-white/60 select-none" style="font-size: clamp(12px, 1vw, 14px);">
               <input
                 v-model="agreementAccepted"
                 type="checkbox"
@@ -597,7 +787,7 @@ onMounted(() => {
               {{ authMessage }}
             </div>
 
-            <div class="pt-2 flex items-center gap-5 flex-wrap">
+            <div class="pt-2 flex items-center gap-5 flex-wrap" :class="isQrLogin ? 'hidden' : ''">
               <button
                 type="submit"
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
