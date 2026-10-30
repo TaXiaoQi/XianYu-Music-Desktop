@@ -228,14 +228,21 @@ use super::*;
             .await;
         assert!(result.ok, "lx load failed: {:?}", result.error);
 
-        // load 返回后 executor 无人驱动，依赖 load_lx spawn 的后台 settle 驱动
-        tokio::time::sleep(Duration::from_millis(2000)).await;
-        let events = captured.lock().unwrap();
+        // load 返回后 executor 无人驱动，依赖 load_lx spawn 的后台 settle 驱动。
+        // 并行测试下 js_thread 泵可能被其它测试挤占，轮询等待最多 10s。
+        let mut events: Vec<(String, serde_json::Value)> = Vec::new();
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            events = captured.lock().unwrap().clone();
+            if events.len() >= 1 {
+                break;
+            }
+        }
         assert_eq!(
             events.len(),
             1,
             "expected settle-driven updateAlert: {:?}",
-            *events
+            events
         );
         assert_eq!(events[0].1["pluginId"], "test-lx-alert-async");
         assert_eq!(events[0].1["log"], "异步更新提醒");
@@ -688,4 +695,59 @@ use super::*;
             .logs
             .iter()
             .any(|l| l.level == "error" && l.message.contains("boom")));
+    }
+
+    // 深递归插件必须以可捕获的 JS 异常优雅失败，而非原生栈溢出杀死整个
+    // 进程（回归：HelloWorld 混淆 VM 更新即崩客户端）。旧实现里 JS 栈上限
+    // (2MB) ≥ 执行线程原生栈 (2MB)，QuickJS 栈检查来不及触发。
+    #[tokio::test]
+    async fn deep_recursion_fails_gracefully() {
+        let script = r#"
+            'use strict';
+            function deep(n) { return n <= 0 ? 0 : deep(n - 1) + 1; }
+            deep(1e9);
+        "#;
+        let engine = engine();
+        let result = engine
+            .load_lx("deep-test", script, r#"{"name":"deep","version":"1.0.0"}"#)
+            .await;
+        assert!(!result.ok, "deep recursion should fail gracefully");
+        let err = result.error.unwrap_or_default().to_lowercase();
+        assert!(
+            err.contains("stack") || err.contains("栈"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    // 真实 HelloWorld 插件（jsjiami v7 混淆 VM）端到端验证：更新后能正常
+    // 初始化而非崩进程。插件文件缺失（如 CI）时跳过；本机验证：
+    // HELLOWORLD_PLUGIN_PATH 指向插件文件后 cargo test real_world
+    #[tokio::test]
+    async fn real_world_helloworld_lx_plugin_loads() {
+        let path = std::env::var("HELLOWORLD_PLUGIN_PATH")
+            .unwrap_or_else(|_| r"c:\Users\小奇\Downloads\HelloWorld261018.js".to_string());
+        let Ok(script) = std::fs::read_to_string(&path) else {
+            println!("[SKIP] 插件文件不存在: {}", path);
+            return;
+        };
+        println!("[PLUGIN] bytes={}", script.len());
+        let engine = engine();
+        let result = engine
+            .load_lx(
+                "helloworld-test",
+                &script,
+                r#"{"name":"HelloWorld","version":"261018"}"#,
+            )
+            .await;
+        println!(
+            "[PLUGIN LOAD] ok={} error={:?} logs={}",
+            result.ok,
+            result.error,
+            result.logs.len()
+        );
+        for log in result.logs.iter().take(40) {
+            println!("[LOG {}] {}", log.level, log.message);
+        }
+        assert!(result.ok, "load failed: {:?}", result.error);
     }
