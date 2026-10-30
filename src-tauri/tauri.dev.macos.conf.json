@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "com.xymusic.desktop.dev",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "弦予音乐",
+        "width": 960,
+        "height": 635,
+        "minWidth": 960,
+        "minHeight": 635,
+        "center": true,
+        "visible": false,
+        "transparent": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  }
+}

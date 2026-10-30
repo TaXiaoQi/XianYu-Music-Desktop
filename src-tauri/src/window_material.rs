@@ -1,6 +1,7 @@
 //! 窗口材质能力探测与激活态同步。
 //!
 //! 按 Windows 构建号判定亚克力/Mica/模糊材质的可用性，并读取系统透明效果开关；
+//! macOS 依赖系统 NSVisualEffectView，恒定上报毛玻璃（blur）可用；
 //! 窗口前后台切换时重发 WM_NCACTIVATE，让材质绘制状态与前台状态保持一致。
 
 use serde::{Serialize};
@@ -32,6 +33,103 @@ pub fn refresh_window_material_active_state(app: tauri::AppHandle, keep_active: 
   let _ = (app, keep_active);
 }
 
+/// 运行时切换窗口不透明态（仅 macOS 有实际行为）。
+///
+/// macOS 上透明窗口（transparent: true）不具备系统缩放动画：放大时 WebView
+/// 层不跟随 live resize，只会在放大结束后“跳一下”。因此采用智能切换——
+/// 无材质（none）时把 NSWindow 切回不透明 + 实底色，恢复系统缩放动画；
+/// 毛玻璃（blur）时再切回透明以透出 NSVisualEffectView。
+#[tauri::command] // 实现
+pub fn set_window_opaque_state(
+  app: tauri::AppHandle,
+  opaque: bool,
+  red: f64,
+  green: f64,
+  blue: f64,
+) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  return set_ns_window_opaque(&app, opaque, red, green, blue);
+
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (app, opaque, red, green, blue);
+    Ok(())
+  }
+}
+
+/// macOS 实现：同步切换 NSWindow 与 WKWebView 两层的不透明状态。
+///
+/// 透明窗口实际由两层透明叠加构成（见 vendor/wry-0.57.0/src/wkwebview/mod.rs）：
+/// 1. NSWindow：tao 因 transparent:true 创建时 setOpaque(false)；
+/// 2. WKWebView：wry 以私有 KVC 键 drawsBackground 关掉内容底色（含 config 与实例层）。
+/// 只切 NSWindow 不够——WebView 层 live resize 仍走透明合成路径，缩放动画依旧缺失。
+/// 颜色参数为 0..1 的 sRGB 分量（opaque=false 时背景固定为全透明）。
+#[cfg(target_os = "macos")]
+fn set_ns_window_opaque(
+  app: &tauri::AppHandle,
+  opaque: bool,
+  red: f64,
+  green: f64,
+  blue: f64,
+) -> Result<(), String> {
+  use objc2::msg_send;
+  use objc2::rc::Retained;
+  use objc2::runtime::NSObjectProtocol;
+  use objc2::ClassType;
+  use objc2_app_kit::{NSColor, NSView, NSWindow};
+  use objc2_foundation::{NSArray, NSObjectNSKeyValueCoding, NSNumber, ns_string};
+  use objc2_web_kit::WKWebView;
+  use tauri::Manager;
+
+  let Some(window) = app.get_webview_window("main") else {
+    return Err("main 窗口不存在".into());
+  };
+
+  let background = if opaque {
+    unsafe {
+      NSColor::colorWithSRGBRed_green_blue_alpha(
+        red.clamp(0.0, 1.0),
+        green.clamp(0.0, 1.0),
+        blue.clamp(0.0, 1.0),
+        1.0,
+      )
+    }
+  } else {
+    unsafe { NSColor::clearColor() }
+  };
+
+  // 第 1 层：NSWindow（tao 层）
+  let ns_window_ptr = window.ns_window().map_err(|error| error.to_string())? as *mut NSWindow;
+  // SAFETY: ns_window 指针由 tauri 返回、指向当前存活的 NSWindow；
+  // 此处仅同步调用 setter，不把引用保存到事件循环之外。
+  let ns_window = unsafe { ns_window_ptr.as_ref() }.ok_or("ns_window 指针为空")?;
+  ns_window.setOpaque(opaque);
+  ns_window.setBackgroundColor(Some(&background));
+
+  // 第 2 层：WKWebView（wry 层，drawsBackground 与 wry 运行时 set_background_color 用同一私有 KVC 键）。
+  // 注意 tauri 的 ns_view() 返回的是 wry 的父容器视图（WryWebViewParent），
+  // 直接对它 KVC 写 drawsBackground 会抛 NSUnknownKeyException 导致启动崩溃
+  // （见 2026-10-30 崩溃日志），因此先在子视图里按类型找到真正的 WKWebView。
+  let parent_ptr = window.ns_view().map_err(|error| error.to_string())? as *mut NSView;
+  // SAFETY: ns_view 指针由 tauri 返回、指向当前存活的父容器视图，仅同步读取。
+  let parent = unsafe { parent_ptr.as_ref() }.ok_or("ns_view 指针为空")?;
+  // SAFETY: subviews 是 NSView 的标准属性，返回值由调用方 retain。
+  let subviews: Retained<NSArray<NSView>> = unsafe { msg_send![parent, subviews] };
+  let webview = subviews
+    .iter()
+    .find(|view| view.isKindOfClass(WKWebView::class()))
+    .ok_or("父容器视图中未找到 WKWebView")?;
+  // SAFETY: isKindOfClass 已确认对象确实是 WKWebView，借用周期不超出 parent。
+  let webview: &WKWebView = unsafe { &*(std::ptr::from_ref(&*webview) as *const WKWebView) };
+  unsafe {
+    let draws_background = NSNumber::numberWithBool(opaque);
+    webview.setValue_forKey(Some(&draws_background), ns_string!("drawsBackground"));
+    // overscroll 区域底色（macOS 12+ 公开 API），不透明时与窗口实底保持一致
+    webview.setUnderPageBackgroundColor(opaque.then_some(&background));
+  }
+  Ok(())
+}
+
 #[cfg(windows)]
 fn platform_capabilities() -> WindowMaterialCapabilities { // platform_capabilities
   let build = probe_build_number();
@@ -48,7 +146,21 @@ fn platform_capabilities() -> WindowMaterialCapabilities { // platform_capabilit
   }
 }
 
-#[cfg(not(windows))]
+/// macOS：无 mica / acrylic，但可通过 NSVisualEffectView 提供系统级毛玻璃
+/// （前端 blur 档映射为 underWindowBackground 材质），故上报 supports_blur。
+#[cfg(target_os = "macos")]
+fn platform_capabilities() -> WindowMaterialCapabilities { // platform_capabilities
+  WindowMaterialCapabilities {
+    is_windows: false,
+    supports_acrylic: false,
+    supports_mica: false,
+    supports_blur: true,
+    system_transparency_enabled: None,
+    windows_build_number: None,
+  }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn platform_capabilities() -> WindowMaterialCapabilities { // platform_capabilities
   WindowMaterialCapabilities {
     is_windows: false,

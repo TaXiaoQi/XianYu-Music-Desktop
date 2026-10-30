@@ -2,7 +2,7 @@
 // mica / acrylic / blur / none 四种归宿的实际下发。材质切换涉及合成器
 // 时序，因此这里的每一步都围绕「先铺底色 → 再挂特效 → 最后修阴影」
 // 的顺序展开；从材质退回 none 时用过渡遮罩抑制 CSS 过渡抖动。
-import { type Color, Effect, getCurrentWindow } from '@tauri-apps/api/window';
+import { type Color, Effect, EffectState, getCurrentWindow } from '@tauri-apps/api/window';
 import { ref, nextTick } from 'vue';
 import { windowApi } from '../services/tauri/windowApi';
 import type { WindowMaterialCapabilities as TauriWindowMaterialCapabilities } from '../services/tauri/windowApi';
@@ -21,6 +21,9 @@ export type WindowMaterialMode = 'none' | 'mica' | 'acrylic' | 'blur';
 export type ResolvedWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur';
 
 export type { WindowMaterialCapabilities } from './windowMaterialPalette';
+
+/** macOS 检测（WKWebView UA 含 Macintosh）；窗口圆角与透明背景策略依赖此判定 */
+const IS_MACOS_PLATFORM = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
 
 /** 无材质可用的统一归宿值 */
 const INERT_MATERIAL: ResolvedWindowMaterial = 'none';
@@ -44,11 +47,12 @@ let capabilityQueryInFlight: Promise<WindowMaterialCapabilities> | null = null;
 /** 等待 Vue 完成本轮渲染冲刷后再继续操作原生窗口 */
 const flushVueRenderPass = nextTick;
 
-/** 各模式对平台能力的资格判定；未列出的模式一律不放行 */
+/** 各模式对平台能力的资格判定；未列出的模式一律不放行。
+ *  blur 的可用性完全由后端能力快照决定：Win10 为经典高斯模糊，macOS 为 NSVisualEffectView 毛玻璃。 */
 const eligibilityTests: Partial<Record<WindowMaterialMode, (snapshot: WindowMaterialCapabilities) => boolean>> = {
   mica: (snapshot) => runsOnWindows11(snapshot.isWindows, snapshot.windowsBuildNumber) && snapshot.supportsMica,
   acrylic: (snapshot) => runsOnWindows11(snapshot.isWindows, snapshot.windowsBuildNumber) && snapshot.supportsAcrylic,
-  blur: (snapshot) => snapshot.isWindows && snapshot.supportsBlur,
+  blur: (snapshot) => snapshot.supportsBlur,
 };
 
 const isSystemTransparencyDisabled = (snapshot: WindowMaterialCapabilities) =>
@@ -69,9 +73,33 @@ export function resolveWindowMaterial(mode: WindowMaterialMode, value: WindowMat
 
 // ---- 原生窗口的基础写入（失败仅告警，不中断编排） ----
 
+// macOS 主窗口走 CSS 圆角 + 透明窗口：窗口背景色必须保持全透明，
+// 实底由前端 GlobalBackground / 根容器负责；Windows 仍用原生背景色承载实底。
+// mac 的不透明实底（含缩放动画恢复）由 setWindowOpaqueState 原生命令全权管理。
+const TRANSPARENT_WINDOW_COLOR: Color = [0, 0, 0, 0];
+
+/** 把 0-255 的 RGBA 色转为 0..1 的 sRGB 三元组（mac 原生 opaque 命令入参） */
+function toUnitSRGBTriple(color: Color): [number, number, number] {
+  if (!Array.isArray(color)) {
+    throw new Error('unexpected non-array window color');
+  }
+  const [r, g, b] = color;
+  return [r / 255, g / 255, b / 255];
+}
+
+/**
+ * mac opaque 切换仅允许主窗口触发：原生命令按 label 定位 main 窗口，
+ * mini 播放器等子窗口共用本编排，若不拦会把主窗口误切透明/不透明。
+ * 子窗口保持创建时的透明态即可（mac 毛玻璃与自绘圆角都依赖它）。
+ */
+function canToggleOpaqueOnMac(hostWindow: { label: string }): boolean {
+  return IS_MACOS_PLATFORM && hostWindow.label === 'main';
+}
+
 async function paintWindowBackgroundSafely(color: Color): Promise<void> {
+  const effectiveColor = IS_MACOS_PLATFORM ? TRANSPARENT_WINDOW_COLOR : color;
   try {
-    await getCurrentWindow().setBackgroundColor(color);
+    await getCurrentWindow().setBackgroundColor(effectiveColor);
   } catch (error) {
     console.warn('Failed to set window background color:', error);
   }
@@ -186,20 +214,34 @@ export async function applyWindowMaterial(mode: WindowMaterialMode, isDark: bool
     } else if (resolved === 'blur') {
       await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
       await windowApi.setDarkModeForWindow(isDark);
-      await hostWindow.setEffects({ effects: [Effect.Blur], color: buildBlurTint(isDark, blurTint) });
+      if (snapshot.isWindows) {
+        await hostWindow.setEffects({ effects: [Effect.Blur], color: buildBlurTint(isDark, blurTint) });
+      } else {
+        // macOS：blur 档映射为 NSVisualEffectView 毛玻璃（underWindowBackground），
+        // 外观跟随窗口明暗；经典 blur 与着色参数均为 Windows 专属，在此不可用。
+        // 挂特效前先恢复透明窗口（透出毛玻璃）；代价是透明态无系统缩放动画。
+        if (canToggleOpaqueOnMac(hostWindow)) {
+          await windowApi.setWindowOpaqueState(false, [0, 0, 0]);
+        }
+        await hostWindow.setEffects({
+          effects: [Effect.UnderWindowBackground],
+          state: EffectState.FollowsWindowActiveState,
+        });
+      }
       await toggleWindowShadowSafely(false);
     } else {
       const surfaceColor = buildOpaqueSurfaceColor(isDark);
       const previousMaterial = activeMaterialState.value;
       const needsTransitionMask = previousMaterial !== INERT_MATERIAL;
 
-      // 退回 none：先用旧特效兜住底色过渡，再统一清干净特效
-      if (previousMaterial === 'acrylic' || previousMaterial === 'blur') {
+      // 退回 none：先用旧特效兜住底色过渡，再统一清干净特效。
+      // macOS 毛玻璃无着色兜底能力，与 mica 一样改为先铺实底色再清特效。
+      if (snapshot.isWindows && (previousMaterial === 'acrylic' || previousMaterial === 'blur')) {
         const staleEffect = previousMaterial === 'acrylic' ? Effect.Acrylic : Effect.Blur;
         await hostWindow.setEffects({ effects: [staleEffect], color: surfaceColor });
         await awaitNextCompositorFrame();
         await paintWindowBackgroundSafely(surfaceColor);
-      } else if (previousMaterial === 'mica') {
+      } else if (previousMaterial !== INERT_MATERIAL) {
         await paintWindowBackgroundSafely(surfaceColor);
         await awaitNextCompositorFrame();
       }
@@ -217,6 +259,11 @@ export async function applyWindowMaterial(mode: WindowMaterialMode, isDark: bool
       try {
         activeMaterialState.value = INERT_MATERIAL;
         await flushVueRenderPass();
+        // macOS：先切回不透明窗口（铺实底色并恢复系统缩放动画），再清毛玻璃特效，
+        // 避免出现「特效已撤、窗口仍透明」的闪烁间隙。子窗口（mini 等）不触发。
+        if (canToggleOpaqueOnMac(hostWindow)) {
+          await windowApi.setWindowOpaqueState(true, toUnitSRGBTriple(surfaceColor));
+        }
         await hostWindow.clearEffects();
         await toggleWindowShadowSafely(true);
         await awaitNextCompositorFrame();

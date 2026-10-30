@@ -213,8 +213,10 @@ mod imp {
     pub fn get_system_fonts() -> Result<Vec<String>, String> { // get_system_fonts
         let collection = core_text::font_collection::create_for_all_families();
         let mut sink = BTreeSet::new();
-        for descriptor in collection.font_descriptors() {
-            collect_family_names(&descriptor.family_name(), &mut sink);
+        if let Some(descriptors) = collection.get_descriptors() {
+            for descriptor in descriptors.iter() {
+                collect_family_names(&descriptor.family_name(), &mut sink);
+            }
         }
         Ok(sink.into_iter().collect())
     }

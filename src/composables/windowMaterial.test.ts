@@ -68,6 +68,30 @@ describe('resolveWindowMaterial 材质降级解析', () => {
     expect(resolveWindowMaterial('mica', win11)).toBe('mica');
   });
 
+  it('Win11 22H2 起经典模糊被移除，blur 回退 none', () => {
+    const win1122h2 = withCapabilities({
+      supportsBlur: false,
+      windowsBuildNumber: 22631,
+    });
+
+    expect(resolveWindowMaterial('blur', win1122h2)).toBe('none');
+  });
+
+  it('macOS 仅放行 blur（NSVisualEffectView 毛玻璃），mica 与 acrylic 不放行', () => {
+    const macos: WindowMaterialCapabilities = {
+      isWindows: false,
+      supportsAcrylic: false,
+      supportsMica: false,
+      supportsBlur: true,
+      systemTransparencyEnabled: null,
+      windowsBuildNumber: null,
+    };
+
+    expect(resolveWindowMaterial('blur', macos)).toBe('blur');
+    expect(resolveWindowMaterial('mica', macos)).toBe('none');
+    expect(resolveWindowMaterial('acrylic', macos)).toBe('none');
+  });
+
   it('系统透明度被关闭时，所有材质全部回退 none', () => {
     const transparencyOff = withCapabilities({
       systemTransparencyEnabled: false,

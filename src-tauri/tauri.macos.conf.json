@@ -1,9 +1,34 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "弦予音乐",
+        "width": 960,
+        "height": 635,
+        "minWidth": 960,
+        "minHeight": 635,
+        "center": true,
+        "visible": false,
+        "transparent": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
   "bundle": {
     "targets": ["app", "dmg"],
+    "resources": {
+      "resources/macos-localization/zh-Hans.lproj/.keep": "zh-Hans.lproj/.keep",
+      "resources/macos-localization/en.lproj/.keep": "en.lproj/.keep",
+      "resources/macos-localization/zh-Hans.lproj/InfoPlist.strings": "zh-Hans.lproj/InfoPlist.strings",
+      "resources/macos-localization/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings"
+    },
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": "-"
     }
   }
 }
