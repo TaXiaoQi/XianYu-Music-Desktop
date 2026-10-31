@@ -264,6 +264,21 @@ export function createOnlinePlaybackFailureController(
     return false;
   };
 
+  /** 云端直链自愈去重：path → 上次自愈时刻，窗口内不重复自愈（防循环）。 */
+  const cloudSelfHealAt = new Map<string, number>();
+  const CLOUD_SELF_HEAL_INTERVAL_MS = 60_000;
+  const CLOUD_SELF_HEAL_KEEP = 64;
+  const pruneCloudSelfHealAt = (now: number) => {
+    for (const [p, t] of cloudSelfHealAt) {
+      if (now - t > CLOUD_SELF_HEAL_INTERVAL_MS * 4) cloudSelfHealAt.delete(p);
+    }
+    while (cloudSelfHealAt.size > CLOUD_SELF_HEAL_KEEP) {
+      const oldest = cloudSelfHealAt.keys().next().value;
+      if (oldest == null) break;
+      cloudSelfHealAt.delete(oldest);
+    }
+  };
+
   const handleFailure = async (
     song: Song,
     options: PlaySongOptions,
@@ -305,6 +320,33 @@ export function createOnlinePlaybackFailureController(
     if (isSharePlayback && song.path.startsWith('lx://') && shareFailureBehavior === 'pause') {
       deps.showToast('分享歌曲播放失败，已暂停', 'error');
       return;
+    }
+
+    // 云端直链自愈（对齐移动端「重取重播」）：直链失效/风控（31326/
+    // hitcode:104 同直链复用 403）是网盘源最常见的瞬时失败，重播必走
+    // 新链解析，换链即恢复。60s 窗口内每 path 只自愈一次，防「失败↔
+    // 自愈」循环；自愈发起后把失败记录时间前移出 3s duplicate 窗口——
+    // 同请求事件重放仍被 requestId 相等条件拦截，而重播后 3s 内的新
+    // 失败（如新链仍被风控秒报 403）能正常落入 stop/autoswitch 策略。
+    if (
+      !duplicate
+      && !isSharePlayback
+      && song.path.startsWith('cloud://')
+      && now - (cloudSelfHealAt.get(song.path) ?? 0) > CLOUD_SELF_HEAL_INTERVAL_MS
+    ) {
+      cloudSelfHealAt.set(song.path, now);
+      pruneCloudSelfHealAt(now);
+      try {
+        await deps.playSong(song, {
+          preserveQueue: true,
+          _sourceSwitchCtx: options._sourceSwitchCtx,
+        });
+        lastHandledFailure = {path: song.path, requestId, handledAt: now - 3000};
+        console.info('[Audio] 云端直链已重取，重播自愈');
+        return;
+      } catch (error) {
+        console.warn(`[Audio] 云端直链自愈重播失败: ${getErrorMessage(error)}`);
+      }
     }
 
     if (
