@@ -703,6 +703,54 @@ fn is_rate_limited(host: &str) -> bool {
     host.contains("d2-ant") || host.contains("speed-limited")
 }
 
+/// dlink 重定向归一：手动跟随 3xx（最多 5 跳），失败原样返回（对齐
+/// Mobile/ecloud189 同名实现）。播放器直连终态 baidupcs 边缘可省一跳
+/// d.pcs 下载网关连接（网关不可达时直连边缘仍有机会通），且 d2-ant 限速
+/// 判定只有在终态 host 上才准。请求腿带 Range: bytes=0-1——http::request
+/// 会整读 body，万一网关不 302 而直接回 200 文件体，把读取压到 2 字节。
+async fn resolve_final_url(url: &str, headers: &[(String, String)]) -> String {
+    let mut headers = headers.to_vec();
+    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("range")) {
+        headers.push(("Range".into(), "bytes=0-1".into()));
+    }
+    let mut current = url.to_string();
+    for _ in 0..=5 {
+        let resp = match http::get(&current, &headers).await {
+            Ok(r) => r,
+            Err(_) => return url.to_string(),
+        };
+        if !(300..400).contains(&resp.status) {
+            return current;
+        }
+        let loc = match resp.location() {
+            Some(l) if !l.is_empty() => l,
+            _ => return url.to_string(),
+        };
+        match absolute_url(&current, &loc) {
+            Some(next) => current = next,
+            None => return url.to_string(),
+        }
+    }
+    url.to_string()
+}
+
+/// 相对 Location → 绝对 URL（仅覆盖绝对/协议相对/根相对三种，足够直链跳转）。
+fn absolute_url(base: &str, loc: &str) -> Option<String> {
+    if loc.starts_with("http://") || loc.starts_with("https://") {
+        return Some(loc.to_string());
+    }
+    if let Some(rest) = loc.strip_prefix("//") {
+        let scheme = base.split("://").next()?;
+        return Some(format!("{scheme}://{rest}"));
+    }
+    if loc.starts_with('/') {
+        let idx = base.find("://")? + 3;
+        let host_end = base[idx..].find('/').map(|i| idx + i).unwrap_or(base.len());
+        return Some(format!("{}{loc}", &base[..host_end]));
+    }
+    None
+}
+
 /// Cookie 轨签名三元组缓存：sign1/sign3/timestamp 由 gettemplatevariable
 /// 下发（账号 session 派生、长期稳定），按账号缓存后每首歌省 1 个 API
 /// 往返。errno=113（签名过期）时调用方清除，重试链路自动重拉。
@@ -818,7 +866,10 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         if dlink.is_empty() {
             return Err(biz_err("直链获取失败"));
         }
-        // dlink 下载校验 UA 为 netdisk 系（302 跟随由播放器/探针自动完成）。
+        // dlink 下载校验 UA 为 netdisk 系；跟随 302 归一到下载边缘终态，
+        // 播放器直连 baidupcs 边缘省一跳 d.pcs 网关往返，限速判定也准。
+        let dlink =
+            resolve_final_url(&dlink, &[("User-Agent".into(), NETDISK_UA.into())]).await;
         if is_rate_limited(&host_of(&dlink)) {
             return Err(biz_err("该文件被限速，暂无法播放"));
         }
@@ -927,6 +978,16 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if dlink.is_empty() {
         return Err(biz_err("直链获取失败"));
     }
+    // 跟随 302 归一到下载边缘终态（失败原样返回，行为退化为归一前，
+    // 302 由播放器/探针自动跟随）。
+    let dlink = resolve_final_url(
+        &dlink,
+        &[
+            ("User-Agent".into(), NETDISK_UA.into()),
+            ("Cookie".into(), http::cookie_header(&cred_pairs(&req.cred))),
+        ],
+    )
+    .await;
     if is_rate_limited(&host_of(&dlink)) {
         return Err(biz_err("该文件被限速，暂无法播放"));
     }
