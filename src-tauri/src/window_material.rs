@@ -130,6 +130,36 @@ fn set_ns_window_opaque(
   Ok(())
 }
 
+/// mac 兜底：强制把主窗口补成 Overlay 原生标题栏（系统红绿灯）。
+///
+/// `tauri build --config` 对 app.windows 的合并并未可靠编进二进制（dev 正常、
+/// 打包产物退回基础配置的 decorations:false）；窗口状态插件的 decorated 回写
+/// 已通过排除 DECORATIONS 修复（见 app_runtime::WINDOW_STATE_FLAGS）。此处
+/// 运行时直接补齐 NSWindow styleMask：Titled/Closable/Miniaturizable/Resizable/
+/// FullSizeContentView + 透明标题栏 + 隐藏标题，恢复系统红绿灯、原生圆角与
+/// 系统缩放动画。对已处 Overlay 的窗口是幂等空操作。
+#[cfg(target_os = "macos")]
+pub fn ensure_macos_native_title_bar(window: &tauri::WebviewWindow) -> Result<(), String> {
+  use objc2_app_kit::{NSWindow, NSWindowTitleVisibility, NSWindowStyleMask};
+
+  let ns_window_ptr = window.ns_window().map_err(|error| error.to_string())? as *mut NSWindow;
+  // SAFETY: ns_window 指针由 tauri 返回、指向当前存活的 NSWindow；setter 绑定为 safe，
+  // 但仍要求主线程调用（setup 阶段满足）。
+  let ns_window = unsafe { ns_window_ptr.as_ref() }.ok_or("ns_window 指针为空")?;
+  let mut mask = ns_window.styleMask();
+  // 无边框窗口带 Borderless 位，与 Titled 并存时标题栏行为异常，先摘掉。
+  mask.remove(NSWindowStyleMask::Borderless);
+  mask |= NSWindowStyleMask::Titled
+    | NSWindowStyleMask::Closable
+    | NSWindowStyleMask::Miniaturizable
+    | NSWindowStyleMask::Resizable
+    | NSWindowStyleMask::FullSizeContentView;
+  ns_window.setStyleMask(mask);
+  ns_window.setTitlebarAppearsTransparent(true);
+  ns_window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
+  Ok(())
+}
+
 #[cfg(windows)]
 fn platform_capabilities() -> WindowMaterialCapabilities { // platform_capabilities
   let build = probe_build_number();
