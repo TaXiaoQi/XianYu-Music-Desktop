@@ -37,6 +37,12 @@ const TRAY_MENU_MINI_PLAYER_ID: &str = "show-mini-player";
 const TRAY_MENU_SETTINGS_ID: &str = "open-settings";
 const TRAY_MENU_QUIT_ID: &str = "quit";
 
+/// 窗口状态插件的保存/恢复范围，刻意排除 DECORATIONS：窗口装饰必须永远跟随
+/// 当前平台配置（mac 的 Overlay 红绿灯 / Windows 的自绘无边框）。打包版曾把
+/// 旧版保存的 decorated:false 回写，升级后把 mac 红绿灯标题栏盖回无边框，
+/// 连带丢失原生圆角与系统缩放动画。
+pub(crate) const WINDOW_STATE_FLAGS: StateFlags = StateFlags::all().difference(StateFlags::DECORATIONS);
+
 #[derive(serde::Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")] // 实现
 pub(crate) struct NativeTrayMenuSong {
@@ -693,7 +699,18 @@ pub(crate) fn setup_app( // setup_app
             // 状态文件里持续是用户当次手动调整值）。插件 setup 阶段已把磁盘
             // 状态载入缓存，此处直接恢复一次，与延迟钩子幂等并存，不再依赖
             // 钩子时序
-            let _ = main.restore_state(StateFlags::all());
+            let _ = main.restore_state(WINDOW_STATE_FLAGS);
+        }
+    }
+
+    // mac 兜底：确保主窗口为 Overlay 原生标题栏。配置层（tauri.macos.conf.json）
+    // 的 windows 覆盖在 `tauri build --config` 链路中可能未编进二进制（dev 正常、
+    // 打包退回 decorations:false），此处运行时直接补齐 NSWindow 样式，
+    // 恢复系统红绿灯、原生圆角与缩放动画；对已处 Overlay 的窗口幂等。
+    #[cfg(target_os = "macos")]
+    if let Some(main) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if let Err(error) = crate::window_material::ensure_macos_native_title_bar(&main) {
+            eprintln!("[窗口] 应用 mac 原生标题栏失败: {error}");
         }
     }
 

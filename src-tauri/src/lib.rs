@@ -447,6 +447,7 @@ pub fn run() { // run
         handle_single_instance(relaunch_app, argv);
     });
     let window_state_plugin = tauri_plugin_window_state::Builder::default()
+        .with_state_flags(app_runtime::WINDOW_STATE_FLAGS)
         .with_denylist(&["desktop-lyrics", "mini-player", "taskbar-player", "tray-menu"])
         .build();
     let dialog_plugin = tauri_plugin_dialog::init();
