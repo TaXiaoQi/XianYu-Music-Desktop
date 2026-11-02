@@ -34,7 +34,7 @@ use dpi::{LogicalPosition, LogicalSize};
 use objc2::runtime::Bool;
 use objc2::{
   rc::Retained,
-  runtime::{AnyObject, NSObject, ProtocolObject},
+  runtime::{AnyObject, ProtocolObject},
   AllocAnyThread, DeclaredClass, MainThreadOnly, Message,
 };
 #[cfg(target_os = "macos")]
@@ -540,7 +540,7 @@ impl InnerWebView {
         // Available: macOS 13.3+, iOS 16.4+
         // Enables debugging via Safari's Web Inspector, NOT via in-webview devtools.
         let has_inspectable_property: bool =
-          NSObject::respondsToSelector(&webview, objc2::sel!(setInspectable:));
+          objc2::runtime::NSObject::respondsToSelector(&webview, objc2::sel!(setInspectable:));
         if has_inspectable_property {
           webview.setInspectable(true);
         }

@@ -100,6 +100,8 @@ pub(crate) fn download_did_finish(this: &WryDownloadDelegate, download: &WKDownl
   }
 }
 
+// `error` 仅在 debug 构建的断言日志中使用，release 下保持签名但静默未用告警。
+#[cfg_attr(not(debug_assertions), allow(unused_variables))]
 pub(crate) fn download_did_fail(
   this: &WryDownloadDelegate,
   download: &WKDownload,

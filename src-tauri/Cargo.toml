@@ -66,7 +66,7 @@ hex = "0.4.3"
 tokio = { version = "1.48.0", features = ["full"] } 
 # 媒体控制跨平台库（Windows=SMTC / Linux=MPRIS / macOS=MPNowPlaying）。
 # 关闭 default（use_dbus 需系统 libdbus）；Linux 通过下方 target 段启用 use_zbus（纯 Rust）。
-souvlaki = { version = "0.7", default-features = false }
+souvlaki = { version = "0.9", default-features = false }
 raw-window-handle = "0.6" 
 regex = "1"
 thiserror = "2" 
@@ -111,7 +111,7 @@ wasapi = "0.23"
 # 见 README「Linux 构建」）。MPRIS 走 souvlaki use_zbus（纯 Rust D-Bus，免 libdbus）；
 # 凭据存取走 Secret Service（GNOME Keyring/KWallet），async-secret-service 同为纯 Rust。
 [target.'cfg(target_os = "linux")'.dependencies]
-souvlaki = { version = "0.7", default-features = false, features = ["use_zbus"] }
+souvlaki = { version = "0.9", default-features = false, features = ["use_zbus"] }
 keyring = { version = "3", features = ["async-secret-service", "crypto-rust"] }
 
 # macOS 桌面端依赖（仅能在 macOS 上构建，无法交叉编译）。
