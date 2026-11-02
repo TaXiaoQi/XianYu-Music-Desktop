@@ -28,6 +28,9 @@ const emit = defineEmits<{
   (e: 'toggle-maximize'): void;
   (e: 'close-window'): void;
 }>();
+
+// macOS 全部窗口控制交给系统红绿灯（绿键即全屏），自绘的窗口控制与全屏按钮仅 Windows 显示。
+const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
 </script>
 
 <template>
@@ -36,6 +39,7 @@ const emit = defineEmits<{
     :class="[
       revealed ? 'bar-track--shown' : 'bar-track--veiled',
       shown ? 'bar-track--live' : 'bar-track--ghost',
+      IS_MACOS ? 'bar-track--mac' : '',
     ]"
   >
     <div class="bar-drag" data-tauri-drag-region></div>
@@ -67,6 +71,7 @@ const emit = defineEmits<{
 
     <div class="bar-wing bar-wing--right">
       <button
+        v-if="!IS_MACOS"
         :title="fullscreenOn ? '退出全屏' : '全屏'"
         :aria-label="fullscreenOn ? '退出全屏' : '全屏'"
         :aria-pressed="fullscreenOn"
@@ -76,15 +81,17 @@ const emit = defineEmits<{
         <Minimize2 v-if="fullscreenOn" :size="16" :stroke-width="2" />
         <Maximize2 v-else :size="16" :stroke-width="2" />
       </button>
-      <button title="最小化" aria-label="最小化" class="bar-btn" @click="emit('minimize')">
-        <Minus :size="16" :stroke-width="2" />
-      </button>
-      <button class="bar-btn" @click="emit('toggle-maximize')">
-        <Square :size="16" :stroke-width="2" />
-      </button>
-      <button class="bar-btn bar-btn--danger" @click="emit('close-window')">
-        <X :size="16" :stroke-width="2" />
-      </button>
+      <template v-if="!IS_MACOS">
+        <button title="最小化" aria-label="最小化" class="bar-btn" @click="emit('minimize')">
+          <Minus :size="16" :stroke-width="2" />
+        </button>
+        <button class="bar-btn" @click="emit('toggle-maximize')">
+          <Square :size="16" :stroke-width="2" />
+        </button>
+        <button class="bar-btn bar-btn--danger" @click="emit('close-window')">
+          <X :size="16" :stroke-width="2" />
+        </button>
+      </template>
     </div>
   </div>
 </template>
@@ -117,6 +124,11 @@ const emit = defineEmits<{
 .bar-track--ghost {
   visibility: hidden;
   pointer-events: none;
+}
+
+.bar-track--mac {
+  /* 避让 macOS 原生红绿灯（与主 TitleBar 的 pl-[88px] 同一避让宽度） */
+  padding-left: 88px;
 }
 
 .bar-drag {
