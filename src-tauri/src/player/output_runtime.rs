@@ -11,14 +11,14 @@ pub(super) fn should_restore_for_default_device_change(
     }
 }
 
-#[cfg(target_os = "windows")]
-pub(super) fn teardown_exclusive_session(session_slot: &mut Option<WasapiExclusivePlayback>) {
+#[cfg(any(windows, target_os = "macos"))]
+pub(super) fn teardown_exclusive_session(session_slot: &mut Option<ExclusivePlayback>) {
     if let Some(mut session) = session_slot.take() {
         session.stop();
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(windows, target_os = "macos"))]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn launch_exclusive_session(
     track_path: String,
@@ -33,8 +33,8 @@ pub(super) fn launch_exclusive_session(
     master_volume: Arc<AtomicU32>,
     dsd_passthrough: bool,
     bit_perfect: bool,
-) -> Result<WasapiExclusivePlayback, String> {
-    WasapiExclusivePlayback::start(ExclusivePlayRequest {
+) -> Result<ExclusivePlayback, String> {
+    ExclusivePlayback::start(ExclusivePlayRequest {
         path: track_path,
         device_name: chosen_device,
         volume: speaker_gain,
@@ -80,7 +80,7 @@ pub(super) fn rebuild_output_stack(
     shared_out: &mut Option<SharedOutputBackend>,
     audio_host: &cpal::Host,
     sink_slot: &mut Option<Sink>,
-    #[cfg(target_os = "windows")] exclusive_session: &mut Option<WasapiExclusivePlayback>,
+    #[cfg(any(windows, target_os = "macos"))] exclusive_session: &mut Option<ExclusivePlayback>,
     live_device_label: &mut Option<String>,
     live_mode: &mut AudioOutputMode,
     downgrade_note: &mut Option<String>,
@@ -107,7 +107,7 @@ pub(super) fn rebuild_output_stack(
         .as_ref()
         .map(|backend| backend.active_device_name().to_string());
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(windows, target_os = "macos"))]
     if wanted_mode == AudioOutputMode::WasapiExclusive && !active_file_path.is_empty() {
         match launch_exclusive_session(
             active_file_path.to_string(),
@@ -141,11 +141,11 @@ pub(super) fn rebuild_output_stack(
         *downgrade_note = None;
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         *live_mode = AudioOutputMode::Shared;
         *downgrade_note = if wanted_mode == AudioOutputMode::WasapiExclusive {
-            Some("WASAPI exclusive mode is only available on Windows".to_string())
+            Some("Exclusive output mode is only available on Windows and macOS".to_string())
         } else {
             None
         };
@@ -210,10 +210,10 @@ pub(super) fn reopen_shared_pipeline(
 }
 
 // 独占会话结束后做收尾：正常结束直接清场，异常断开则回落共享并广播
-#[cfg(target_os = "windows")]
+#[cfg(any(windows, target_os = "macos"))]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn drain_finished_exclusive(
-    exclusive_session: &mut Option<WasapiExclusivePlayback>,
+    exclusive_session: &mut Option<ExclusivePlayback>,
     chosen_device: &Option<String>,
     shared_out: &mut Option<SharedOutputBackend>,
     audio_host: &cpal::Host,
@@ -363,8 +363,10 @@ pub(super) fn boot_media_key_hub(app: &AppHandle) -> Arc<Mutex<Option<MediaContr
 use crate::player::device::{default_output_device_name, emit_output_status};
 use crate::player::loudness::VolumeNormalizerHandle;
 use crate::player::output::shared::{restore_current_playback, SharedOutputBackend};
-#[cfg(target_os = "windows")]
-use crate::player::output::wasapi_exclusive::{ExclusivePlayRequest, WasapiExclusivePlayback};
+#[cfg(any(windows, target_os = "macos"))]
+use crate::player::output::exclusive_common::ExclusivePlayRequest;
+#[cfg(any(windows, target_os = "macos"))]
+use crate::player::output::ExclusivePlayback;
 use crate::player::output::OutputBackend;
 use crate::player::types::{AudioOutputMode, AudioOutputStatus, SharedProgress};
 use crate::remote::cache::RemoteStreamSource;

@@ -241,7 +241,7 @@ const zhCN = {
 
   'pluginHost.effectsRack': '效果插件机架',
   'pluginHost.enableRack': '音效插件机架',
-  'pluginHost.rackDesc': '音效插件机架在最终音量前按机架顺序串联处理音频，当前支持 VST3 与 CLAP 格式。开启期间会自动禁用 WASAPI 独占、原生 DSD 直通与 Bit-perfect 直出（它们会绕过机架），并锁定全局均衡器；音量与音质切换仍可正常使用。',
+  'pluginHost.rackDesc': '音效插件机架在最终音量前按机架顺序串联处理音频，当前支持 VST3 与 CLAP 格式。开启期间会自动禁用独占输出（WASAPI/Core Audio）、原生 DSD 直通与 Bit-perfect 直出（它们会绕过机架），并锁定全局均衡器；音量与音质切换仍可正常使用。',
   'pluginHost.customScanDirs': '自定义扫描目录',
   'pluginHost.count': '{count} 个',
   'pluginHost.scanDirsHint': '添加后自动重新扫描，插件将自动加入机架（默认停用）。目录类别按目录名或内容自动识别 VST3 / CLAP。',
@@ -587,7 +587,7 @@ const enUS: Record<I18nKey, string> = {
 
   'pluginHost.effectsRack': 'Effects Plugin Rack',
   'pluginHost.enableRack': 'Audio Effect Rack',
-  'pluginHost.rackDesc': 'Chains audio plugins in rack order right before the final volume stage. Currently supports VST3 and CLAP formats. While enabled, WASAPI exclusive mode, native DSD passthrough and Bit-perfect output are disabled (they bypass the rack) and the global EQ is locked; volume and quality switching remain available.',
+  'pluginHost.rackDesc': 'Chains audio plugins in rack order right before the final volume stage. Currently supports VST3 and CLAP formats. While enabled, exclusive output (WASAPI/Core Audio), native DSD passthrough and Bit-perfect output are disabled (they bypass the rack) and the global EQ is locked; volume and quality switching remain available.',
   'pluginHost.customScanDirs': 'Custom scan directories',
   'pluginHost.count': '{count} items',
   'pluginHost.scanDirsHint': 'Plugins auto-rescan after adding and are added to the rack (disabled by default). The directory type (VST3 / CLAP) is detected automatically by name or content.',

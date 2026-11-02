@@ -3,8 +3,19 @@
 
 pub(crate) mod shared; // 共享混音后端
 
+pub(crate) mod exclusive_common; // 独占输出跨平台共享层（请求/控制/编码/喂送）
+
 #[cfg(windows)]
 pub(crate) mod wasapi_exclusive; // WASAPI 独占后端
+
+#[cfg(target_os = "macos")]
+pub(crate) mod coreaudio_exclusive; // Core Audio hog mode 独占后端
+
+/// 各平台独占播放会话的统一别名：Windows 走 WASAPI，macOS 走 Core Audio。
+#[cfg(windows)]
+pub(crate) use wasapi_exclusive::WasapiExclusivePlayback as ExclusivePlayback;
+#[cfg(target_os = "macos")]
+pub(crate) use coreaudio_exclusive::CoreAudioExclusivePlayback as ExclusivePlayback;
 
 use rodio::{Sink};
 
@@ -14,7 +25,7 @@ pub(crate) enum OutputError { // 实现
   DeviceUnavailable, // 系统当前没有可用输出设备
   Stream(String),    // 共享流打开失败
   Sink(String),      // 共享 Sink 创建失败
-  Exclusive(String), // WASAPI 独占流失败
+  Exclusive(String), // 独占输出流失败（Windows: WASAPI / macOS: Core Audio）
 }
 
 impl core::fmt::Display for OutputError {
@@ -23,7 +34,7 @@ impl core::fmt::Display for OutputError {
       Self::DeviceUnavailable => "No output device is available".to_string(),
       Self::Stream(cause) => format!("Failed to open shared output stream: {cause}"),
       Self::Sink(cause) => format!("Failed to create shared output sink: {cause}"),
-      Self::Exclusive(cause) => format!("Failed to open WASAPI exclusive output: {cause}"),
+      Self::Exclusive(cause) => format!("Failed to open exclusive output: {cause}"),
     };
     f.write_str(&text)
   }

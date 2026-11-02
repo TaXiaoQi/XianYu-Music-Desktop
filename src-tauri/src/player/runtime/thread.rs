@@ -2,7 +2,7 @@ use crate::player::output_runtime::{
     boot_media_key_hub, broadcast_output_state, rebuild_output_stack, reopen_shared_pipeline,
     should_restore_for_default_device_change,
 };
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use crate::player::output_runtime::{
     drain_finished_exclusive, launch_exclusive_session, teardown_exclusive_session,
 };
@@ -10,8 +10,8 @@ use crate::player::source_pipeline::{handle_play, reposition_playhead};
 use crate::player::device::default_output_device_name;
 use crate::player::loudness::VolumeNormalizerHandle;
 use crate::player::output::shared::{restore_current_playback, SharedOutputBackend};
-#[cfg(windows)]
-use crate::player::output::wasapi_exclusive::WasapiExclusivePlayback;
+#[cfg(any(windows, target_os = "macos"))]
+use crate::player::output::ExclusivePlayback;
 use crate::player::output::{OutputBackend};
 use crate::player::types::{ // 实现
     AudioCommand, AudioOutputMode, AudioOutputStatus, AudioSource, BufferedMonitor,
@@ -74,8 +74,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
         let mut chosen_device: Option<String> = None;
         let mut shared_out = SharedOutputBackend::open(&audio_host, None).ok();
         let mut sink_slot: Option<Sink> = None;
-        #[cfg(windows)]
-        let mut exclusive_session: Option<WasapiExclusivePlayback> = None;
+        #[cfg(any(windows, target_os = "macos"))]
+        let mut exclusive_session: Option<ExclusivePlayback> = None;
         let mut active_file_path = String::new();
         let mut speaker_gain = 1.0_f32;
         let tempo_scale = 1.0_f32;
@@ -135,7 +135,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                 &mut watchdog_grace_marker,
             );
 
-            #[cfg(target_os = "windows")]
+            #[cfg(any(windows, target_os = "macos"))]
             let drained = confine_device_fault_with(|| {
                 drain_finished_exclusive(
                     &mut exclusive_session,
@@ -164,7 +164,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                 )
             })
             .unwrap_or((false, None));
-            #[cfg(target_os = "windows")]
+            #[cfg(any(windows, target_os = "macos"))]
             // 独占会话异常断开回落共享：新链就位，换上它的无缝装备
             if drained.1.is_some() {
                 gapless_rig = drained.1;
@@ -242,10 +242,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     sink.stop();
                                 }
                                 sink_slot = None;
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 teardown_exclusive_session(&mut exclusive_session);
 
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 if requested_mode == AudioOutputMode::WasapiExclusive
                                     && !stream_backed
                                 {
@@ -298,7 +298,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                         }
                                     }
                                 }
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 if requested_mode == AudioOutputMode::WasapiExclusive
                                     && stream_backed
                                 {
@@ -307,11 +307,11 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                         Some("网络音频使用共享模式缓冲播放".to_string());
                                 }
 
-                                #[cfg(not(target_os = "windows"))]
+                                #[cfg(not(any(windows, target_os = "macos")))]
                                 if requested_mode == AudioOutputMode::WasapiExclusive {
                                     live_mode = AudioOutputMode::Shared;
                                     downgrade_note = Some(
-                                        "WASAPI exclusive mode is only available on Windows"
+                                        "Exclusive output mode is only available on Windows and macOS"
                                             .to_string(),
                                     );
                                 }
@@ -382,7 +382,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 sink_slot = None;
                                 loudness_slot = None;
                                 shared_out = None;
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 teardown_exclusive_session(&mut exclusive_session);
                             }
                             AudioCommand::Stop => {
@@ -405,7 +405,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 sink_slot = None;
                                 loudness_slot = None;
                                 shared_out = None;
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 teardown_exclusive_session(&mut exclusive_session);
                             }
                             AudioCommand::Resume => {
@@ -413,9 +413,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 if active_file_path.is_empty() {
                                     return;
                                 }
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 let stream_backed = stream_over_network;
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 if wanted_mode == AudioOutputMode::WasapiExclusive && !stream_backed
                                 {
                                     teardown_exclusive_session(&mut exclusive_session);
@@ -513,7 +513,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 is_playing: should_resume,
                                 request_id: pending_id,
                             } => {
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 if let Some(session) = &exclusive_session {
                                     let landing = requested_time.max(0.0);
                                     audible = should_resume;
@@ -572,7 +572,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     sink.stop();
                                 }
                                 sink_slot = None;
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 teardown_exclusive_session(&mut exclusive_session);
 
                                 let rebuilt_rig = confine_device_fault_with(|| {
@@ -581,7 +581,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                         &mut shared_out,
                                         &audio_host,
                                         &mut sink_slot,
-                                        #[cfg(target_os = "windows")]
+                                        #[cfg(any(windows, target_os = "macos"))]
                                         &mut exclusive_session,
                                         &mut live_device_label,
                                         &mut live_mode,
@@ -635,7 +635,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     sink.stop();
                                 }
                                 sink_slot = None;
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 teardown_exclusive_session(&mut exclusive_session);
 
                                 let rebuilt_rig = confine_device_fault_with(|| {
@@ -644,7 +644,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                         &mut shared_out,
                                         &audio_host,
                                         &mut sink_slot,
-                                        #[cfg(target_os = "windows")]
+                                        #[cfg(any(windows, target_os = "macos"))]
                                         &mut exclusive_session,
                                         &mut live_device_label,
                                         &mut live_mode,
@@ -702,21 +702,21 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                     leveler.set_target_gain(effective_gain);
                                 }
 
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 if let Some(ref session) = exclusive_session {
                                     session.set_volume_balance(balance_on, requested_gain);
                                 }
                             }
                             AudioCommand::SetEqualizerSettings { settings: curve } => {
                                 worker_eq.set_settings(curve.clone());
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 if let Some(ref session) = exclusive_session {
                                     session.set_equalizer_settings(curve);
                                 }
                             }
                             AudioCommand::SetSoundEffectSettings { settings: flavor } => {
                                 worker_se.set_settings(flavor.clone());
-                                #[cfg(target_os = "windows")]
+                                #[cfg(any(windows, target_os = "macos"))]
                                 if let Some(ref session) = exclusive_session {
                                     session.set_sound_effect_settings(flavor);
                                 }
@@ -882,10 +882,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                             }
                             sink_slot = None;
                             shared_out = None;
-                            #[cfg(windows)]
+                            #[cfg(any(windows, target_os = "macos"))]
                             teardown_exclusive_session(&mut exclusive_session);
 
-                            #[cfg(windows)]
+                            #[cfg(any(windows, target_os = "macos"))]
                             let device_change_rig = confine_device_fault_with(|| {
                                 rebuild_output_stack(
                                     &chosen_device,
@@ -914,7 +914,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState { // init_player
                                 )
                             })
                             .unwrap_or(None);
-                            #[cfg(not(target_os = "windows"))]
+                            #[cfg(not(any(windows, target_os = "macos")))]
                             let device_change_rig = confine_device_fault_with(|| {
                                 rebuild_output_stack(
                                     &chosen_device,

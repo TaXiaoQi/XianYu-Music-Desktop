@@ -72,6 +72,20 @@ pub fn standard_scan_directories() -> Vec<PathBuf> {
             dirs.push(default_clap);
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            let user_plugins = PathBuf::from(home)
+                .join("Library")
+                .join("Audio")
+                .join("Plug-Ins");
+            dirs.push(user_plugins.join("VST3"));
+            dirs.push(user_plugins.join("CLAP"));
+        }
+        let system_plugins = PathBuf::from("/Library/Audio/Plug-Ins");
+        dirs.push(system_plugins.join("VST3"));
+        dirs.push(system_plugins.join("CLAP"));
+    }
     dirs
 }
 

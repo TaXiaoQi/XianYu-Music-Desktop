@@ -172,7 +172,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '双击播放歌曲', keywords: '单击 双击 播放 触发' },
     { label: '播放时阻止电脑睡眠', keywords: '防休眠 保持唤醒 电源' },
     { label: '播放设备', keywords: '输出设备 声卡 扬声器 耳机' },
-    { label: 'WASAPI 独占模式', keywords: 'Windows 声卡 输出 独占' },
+    { label: typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh') ? '独占模式（Core Audio）' : 'WASAPI 独占模式', keywords: 'Windows macOS Core Audio 声卡 输出 独占' },
     { label: '原生 DSD 直通', keywords: 'DSD DoP 直通 独占 无损' },
     { label: 'Bit-perfect 输出', keywords: '位完美 直出 采样率 独占 无损' },
     { label: '歌词同步补偿', keywords: '延迟 偏移 ms 输出设备' },

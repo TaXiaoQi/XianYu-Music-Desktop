@@ -469,6 +469,12 @@ const audioOutputStatus = ref<AudioOutputStatus | null>(null);
 const audioOutputDevices = ref<AudioDevice[]>([]);
 const selectedOutputDeviceId = ref<string>('');
 const isChangingOutputDevice = ref(false);
+/** macOS 检测（同 windowMaterial 模式）：Mac 上独占输出走 Core Audio hog mode */
+const IS_MACOS_PLATFORM = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
+const exclusiveModeLabel = IS_MACOS_PLATFORM ? '独占模式（Core Audio）' : 'WASAPI 独占模式';
+const exclusiveModeLabelEn = IS_MACOS_PLATFORM ? 'Exclusive mode (Core Audio)' : 'WASAPI exclusive mode';
+/** 中文句内拼接：标签以拉丁词开头（Windows）时补前导空格，中文开头（Mac）则紧贴 */
+const exclusiveLabelInline = IS_MACOS_PLATFORM ? exclusiveModeLabel : ` ${exclusiveModeLabel}`;
 const wasapiExclusiveSideEffectTip = '开启后会独占播放设备：其他软件可能无声；设备断开或被占用时会自动回退默认播放。';
 let unlistenAudioOutput: UnlistenFn | null = null;
 
@@ -605,8 +611,8 @@ const isDsdNativePassthroughEnabled = computed(
   () => settings.value.audio.dsdNativePassthrough === true,
 );
 const dsdNativePassthroughTip = isEnglish.value
-  ? 'When enabled, DSF (DSD) files are streamed via DoP 1.0 (1-bit DSD packed into 24-bit PCM frames) directly to a DSD-DAC. Only works with .dsf files + WASAPI exclusive mode (DSD64→353kHz / DSD128→705kHz). Opening this switch automatically enables WASAPI exclusive mode. Falls back to PCM if the device does not support DoP rates.'
-  : '开启后，播放 DSF (DSD) 文件时以 DoP 1.0 协议将 1-bit DSD 原生码流封装进 24-bit PCM，直接交给支持 DoP 的 DSD-DAC 逐位解码输出。仅对 .dsf 文件 + WASAPI 独占模式生效（DSD64→353kHz / DSD128→705kHz），开启时会自动切到 WASAPI 独占模式。当前设备不支持 DoP 采样率时仍会自动回退到 PCM。';
+  ? `When enabled, DSF (DSD) files are streamed via DoP 1.0 (1-bit DSD packed into 24-bit PCM frames) directly to a DSD-DAC. Only works with .dsf files + ${exclusiveModeLabelEn} (DSD64→353kHz / DSD128→705kHz). Opening this switch automatically enables ${exclusiveModeLabelEn}. Falls back to PCM if the device does not support DoP rates.`
+  : `开启后，播放 DSF (DSD) 文件时以 DoP 1.0 协议将 1-bit DSD 原生码流封装进 24-bit PCM，直接交给支持 DoP 的 DSD-DAC 逐位解码输出。仅对 .dsf 文件 +${exclusiveLabelInline}生效（DSD64→353kHz / DSD128→705kHz），开启时会自动切到${exclusiveLabelInline}。当前设备不支持 DoP 采样率时仍会自动回退到 PCM。`;
 
 const toggleDsdNativePassthrough = async () => {
   if (rackMasterEnabled.value) return;
@@ -616,8 +622,8 @@ const toggleDsdNativePassthrough = async () => {
     if (!exclusiveOk) {
       showToast(
         isEnglish.value
-          ? 'Could not enable WASAPI exclusive mode; DSD passthrough stays off'
-          : '无法开启 WASAPI 独占模式，原生 DSD 直通未启用',
+          ? `Could not enable ${exclusiveModeLabelEn}; DSD passthrough stays off`
+          : `无法开启${exclusiveLabelInline}，原生 DSD 直通未启用`,
         'error',
       );
       return;
@@ -625,8 +631,8 @@ const toggleDsdNativePassthrough = async () => {
     settings.value.audio.dsdNativePassthrough = true;
     showToast(
       isEnglish.value
-        ? 'DSD passthrough enabled: audio output switched to WASAPI exclusive mode'
-        : '已开启原生 DSD 直通：音频输出已切换为 WASAPI 独占模式',
+        ? `DSD passthrough enabled: audio output switched to ${exclusiveModeLabelEn}`
+        : `已开启原生 DSD 直通：音频输出已切换为${exclusiveLabelInline}`,
       'info',
     );
   } else {
@@ -635,8 +641,8 @@ const toggleDsdNativePassthrough = async () => {
 };
 const audioDeviceFormats = ref<AudioDeviceFormats[]>([]);
 const bitPerfectTip = isEnglish.value
-  ? 'Forces WASAPI exclusive output: samples are output at the source sample rate (no resampling); lossless FLAC/WAV/AIFF are output as native integer depth, others as Float32. Enabling this switch automatically turns off all sound effects (including EQ); your volume is left untouched. Only works when the source sample rate is natively supported by the device; otherwise the exclusive request fails and falls back automatically.'
-  : '强制使用 WASAPI 独占输出：解码样本按源采样率(不重采样)直接输出；对 FLAC/WAV/AIFF 无损会按源原生位深以整数直出，其余按 Float32。开启时会自动关闭所有音效（含均衡器），不修改你的音量。仅当源采样率被设备原生支持时才可实现；设备不支持该采样率时独占会请求失败并自动回退。';
+  ? `Forces ${exclusiveModeLabelEn} output: samples are output at the source sample rate (no resampling); lossless FLAC/WAV/AIFF are output as native integer depth, others as Float32. Enabling this switch automatically turns off all sound effects (including EQ); your volume is left untouched. Only works when the source sample rate is natively supported by the device; otherwise the exclusive request fails and falls back automatically.`
+  : `强制使用${exclusiveLabelInline}输出：解码样本按源采样率(不重采样)直接输出；对 FLAC/WAV/AIFF 无损会按源原生位深以整数直出，其余按 Float32。开启时会自动关闭所有音效（含均衡器），不修改你的音量。仅当源采样率被设备原生支持时才可实现；设备不支持该采样率时独占会请求失败并自动回退。`;
 
 const summaryDeviceFormats = computed(() => {
   const id = selectedOutputDeviceId.value || audioOutputStatus.value?.selected_device_id || '';
@@ -681,8 +687,8 @@ const toggleBitPerfect = async () => {
     if (!exclusiveOk) {
       showToast(
         isEnglish.value
-          ? 'Could not enable WASAPI exclusive mode; Bit-perfect stays off'
-          : '无法开启 WASAPI 独占模式，Bit-perfect 未启用',
+          ? `Could not enable ${exclusiveModeLabelEn}; Bit-perfect stays off`
+          : `无法开启${exclusiveLabelInline}，Bit-perfect 未启用`,
         'error',
       );
       return;
@@ -1533,7 +1539,7 @@ onScopeDispose(() => {
         </div>
         <div class="desktop-setting-row"> 
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ exclusiveModeLabel }}</div>
           </div>
           <div class="flex items-center gap-3"> 
             <SettingHint severity="warning" :text="wasapiExclusiveSideEffectTip" />
