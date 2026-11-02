@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { useWindowMaterial } from '../../composables/windowMaterial';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -233,6 +234,12 @@ provide('topBarContext', {
 // macOS 使用系统原生红绿灯（titleBarStyle: Overlay），隐藏自绘的 Windows 风格按钮组
 const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
 
+// mac + 窗口材质（毛玻璃）开启时，整条顶栏升级为磨砂玻璃条：比内容区深
+// 一档 + 模糊，搜索框以「略浅胶囊」浮在上面——对齐原生工具栏的分层逻辑
+// （moonlight / 系统设置的观感来自「深玻璃底 + 浅控件」，而非控件本身）。
+const { activeWindowMaterial } = useWindowMaterial();
+const glassTopbar = computed(() => IS_MACOS && activeWindowMaterial.value !== 'none');
+
 const minimize = () => { void appWindow.minimize(); };
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
 const isMaximizeDisabled = computed(
@@ -268,13 +275,13 @@ onUnmounted(() => {
   <div
     data-tauri-drag-region
     class="h-16 flex items-center gap-3 px-6 select-none shrink-0 relative z-[60]"
-    :class="IS_MACOS ? 'pl-[88px]' : ''"
+    :class="[IS_MACOS ? 'pl-[88px]' : '', glassTopbar ? 'mac-topbar-glass' : '']"
   >
     <div class="flex items-center gap-4 relative z-10 shrink-0">
       <TopBarControlItem v-for="key in leftControls" :key="key" :item-key="key" />
     </div>
 
-    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border z-10 relative focus-within:ring-2 focus-within:ring-[#EC4141]/20" :class="IS_MACOS ? 'mac-glass' : 'bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 border-black/10 dark:border-white/20'" :style="surfaceStyle('search.box')">
+    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border z-10 relative focus-within:ring-2 focus-within:ring-[#EC4141]/20" :class="glassTopbar ? 'mac-glass' : 'bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 border-black/10 dark:border-white/20'" :style="surfaceStyle('search.box')">
       <TopBarControlIcon item-key="search" class="h-5 w-5 shrink-0 text-gray-900 dark:text-gray-100 mr-3 group-focus-within:text-[#EC4141]" />
       <input
         ref="searchInputRef"
@@ -437,51 +444,68 @@ onUnmounted(() => {
   transform: translateY(-4px);
 }
 
-/* --- mac 搜索框：玻璃凹槽（对齐 moonlight-macos-enhanced 实拍）---
-   嵌进玻璃里的浅灰凹槽：比周围深一档的中性填充 + 发丝描边 +
-   顶部内阴影，轻外投影分离底面；backdrop-filter 借窗口材质
-   （毛玻璃）透出系统模糊。mac 分支不挂 Tailwind 底色类，底色
-   由此接管；主题包 surfaceStyle('search.box') 行内样式优先级更高。 */
+/* --- mac 磨砂顶栏：液态玻璃的主体是「深一档的玻璃条」 ---
+   moonlight / 系统设置观感的来源：工具栏条比内容区深一档且模糊，
+   控件以略浅色浮在上面。仅在 mac + 窗口材质开启时挂载；底色不写
+   死透明度，保持系统材质透过。底部半像素发丝线分隔工具栏与内容。 */
+.mac-topbar-glass {
+  background-color: rgba(0, 0, 0, 0.045);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  box-shadow: inset 0 -0.5px 0 rgba(0, 0, 0, 0.08);
+}
+
+.dark .mac-topbar-glass {
+  background-color: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 -0.5px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* --- mac 搜索框：复用 glass-switch 的玻璃配方（用户认可的质感） ---
+   与开关同一套公式：白低透填充 + 白色半透描边 + 「顶部白高光 /
+   底部暗影」成对内阴影（玻璃厚度感的关键）+ 大模糊高饱和背景。 */
 .mac-glass {
-  border-color: rgba(0, 0, 0, 0.09);
-  background-color: rgba(120, 120, 128, 0.1);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  backdrop-filter: blur(20px) saturate(160%);
+  border-width: 1.5px;
+  border-color: rgba(255, 255, 255, 0.18);
+  background-color: rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
   box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.06),
-    0 1px 2px rgba(0, 0, 0, 0.04);
+    0 3px 10px rgba(0, 0, 0, 0.1),
+    inset 0 2px 3.5px rgba(255, 255, 255, 0.4),
+    inset 0 -1.5px 3px rgba(0, 0, 0, 0.18);
 }
 
 .mac-glass:hover {
-  background-color: rgba(120, 120, 128, 0.14);
+  background-color: rgba(255, 255, 255, 0.14);
 }
 
 .mac-glass:focus-within {
-  background-color: rgba(120, 120, 128, 0.08);
+  background-color: rgba(255, 255, 255, 0.16);
   box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.05),
-    0 1px 2px rgba(0, 0, 0, 0.04);
+    0 3px 12px rgba(0, 0, 0, 0.12),
+    inset 0 2px 3.5px rgba(255, 255, 255, 0.45),
+    inset 0 -1.5px 3px rgba(0, 0, 0, 0.16);
 }
 
-/* 暗色：暗压暗场景靠「提亮填充 + 亮发丝边 + 顶缘光泽」撑出玻璃感 */
+/* 暗色：与 .dark .glass-switch:not(.is-checked) 同参 */
 .dark .mac-glass {
-  border-color: rgba(255, 255, 255, 0.16);
-  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.06);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 1px 2px rgba(0, 0, 0, 0.4),
-    0 4px 14px rgba(0, 0, 0, 0.35);
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    inset 0 1.5px 3px rgba(255, 255, 255, 0.22),
+    inset 0 -1.5px 3px rgba(0, 0, 0, 0.35);
 }
 
 .dark .mac-glass:hover {
-  background-color: rgba(255, 255, 255, 0.16);
+  background-color: rgba(255, 255, 255, 0.09);
 }
 
 .dark .mac-glass:focus-within {
-  background-color: rgba(255, 255, 255, 0.18);
+  background-color: rgba(255, 255, 255, 0.1);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 1px 2px rgba(0, 0, 0, 0.4),
-    0 4px 16px rgba(0, 0, 0, 0.4);
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    inset 0 1.5px 3px rgba(255, 255, 255, 0.26),
+    inset 0 -1.5px 3px rgba(0, 0, 0, 0.32);
 }
 </style>
