@@ -15,6 +15,8 @@ fn main() {
   // TODO: Remove in objc2 0.7.0, ref <https://github.com/madsmtm/objc2/issues/645>
   #[cfg(target_os = "macos")]
   {
+    // 向 rustc 声明本包自定义 cfg，避免 unexpected_cfgs 警告
+    println!("cargo:rustc-check-cfg=cfg(macos_12_unavailable)");
     if std::env::var("CARGO_CFG_DEBUG_ASSERTIONS").is_ok() {
       let os = util::operating_system_version();
       if os.0 < 12 {
