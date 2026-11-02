@@ -1,8 +1,6 @@
 // 轨道层：把解析行按时间邻近度聚成簇，再以贪心打分把簇生长成轨道，
 // 最后为主轨/译文轨/罗马音轨分工并装配出 LyricDocument。
 
-use std::f64::NEG_INFINITY;
-
 use super::model::{
     bounded01, mean_of, source_index_order, AlignedPair, ClassificationConfidence, DominantScript,
     ExplicitLineRole, LyricDocument, LyricDocumentMetadata, LyricIssue, LyricTimingMode,
@@ -388,7 +386,7 @@ fn extension_score(
     };
 
     if last_line.cluster_index == Some(cluster_index) || candidate.start_ms <= last_line.start_ms {
-        return NEG_INFINITY;
+        return f64::NEG_INFINITY;
     }
 
     let track_hint = role_hint_of(track);
@@ -398,7 +396,7 @@ fn extension_score(
         None => None,
     };
     if track_hint.is_some() && candidate_hint.is_some() && track_hint != candidate_hint {
-        return NEG_INFINITY;
+        return f64::NEG_INFINITY;
     }
 
     let mut score = 0.0;
@@ -453,7 +451,7 @@ fn grow_tracks(groups: Vec<Vec<LyricTrackLine>>) -> Vec<LyricTrack> {
 
         for (slot_index, candidate) in group.into_iter().enumerate() {
             let mut best_track_index = None;
-            let mut best_score = NEG_INFINITY;
+            let mut best_score = f64::NEG_INFINITY;
 
             for (track_index, track) in tracks.iter().enumerate() {
                 if used_track_ids.iter().any(|id| id == &track.id) {
@@ -878,7 +876,7 @@ fn template_japanese_with_pair(
         .collect::<Vec<_>>();
 
     let mut best_resolution = None;
-    let mut best_score = NEG_INFINITY;
+    let mut best_score = f64::NEG_INFINITY;
 
     for japanese_index in japanese_candidates {
         for han_index in &han_candidates {
@@ -943,7 +941,7 @@ fn template_main_with_translation(
         .collect::<Vec<_>>();
 
     let mut best_resolution = None;
-    let mut best_score = NEG_INFINITY;
+    let mut best_score = f64::NEG_INFINITY;
 
     for (main_index, main_track) in tracks.iter().enumerate() {
         let has_japanese_like_sibling = tracks.iter().enumerate().any(|(other_index, track)| {
@@ -1047,7 +1045,7 @@ pub fn build_lyric_document(parsed_lines: &[ParsedLine]) -> Option<LyricDocument
         .map(|resolution| resolution.display_index)
         .unwrap_or_else(|| {
             let mut best_track_index = 0usize;
-            let mut best_track_score = NEG_INFINITY;
+            let mut best_track_score = f64::NEG_INFINITY;
 
             for (track_index, track) in tracks.iter().enumerate() {
                 let score = main_track_score(track, &tracks, &alignments, track_index);

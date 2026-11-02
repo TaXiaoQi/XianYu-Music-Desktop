@@ -45,6 +45,8 @@ fn save_authorized_programs(
 pub fn register_external_program(app_handle: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
 
+    // Windows 分支会追加 exe 过滤器（需要 mut）；其余平台只读使用。
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut dialog = app_handle.dialog().file();
     #[cfg(windows)]
     {

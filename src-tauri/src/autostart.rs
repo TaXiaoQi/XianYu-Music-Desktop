@@ -23,7 +23,8 @@ fn autostart_arg() -> &'static str {
 }
 
 /// .desktop / plist 中展示的应用名。
-#[cfg(any(test, unix))]
+// Linux .desktop 模板与单测引用；mac 生产代码不使用，编译期裁剪。
+#[cfg(any(test, target_os = "linux"))]
 const APP_NAME: &str = "XianYu Music";
 
 // ---- Windows：注册表 Run 键 ----

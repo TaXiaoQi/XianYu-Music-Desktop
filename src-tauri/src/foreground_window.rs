@@ -153,6 +153,8 @@ fn query_class_name(hwnd: windows_sys::Win32::Foundation::HWND) -> Option<String
 }
 
 /// 需要从“全屏判定”中排除的 Shell/资源管理器窗口类名。
+// 仅 Windows 全屏判定与单测引用；非 Windows 平台编译期裁剪。
+#[cfg(any(target_os = "windows", test))]
 fn is_shell_excluded_class(class_name: &str) -> bool {
     matches!(
         class_name,

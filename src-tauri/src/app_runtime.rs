@@ -523,6 +523,8 @@ fn apply_tray_menu<R: tauri::Runtime>(
     Ok(())
 }
 
+// Windows 块才消费 app 参数；非 Windows 平台的实现为空。
+#[cfg_attr(not(windows), allow(unused_variables))]
 fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) { // 实现
     #[cfg(windows)]
     {

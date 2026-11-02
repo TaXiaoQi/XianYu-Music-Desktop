@@ -5,7 +5,7 @@
 //! - [`get_taskbar_tray_geometry`]：探测任务栏与托盘通知区的物理矩形，供前端定位；
 //! - 置顶看护：系统前台切换时保持迷你播放器窗口 TOPMOST。
 
-use std::sync::atomic::{Ordering, AtomicIsize};
+use std::sync::atomic::AtomicIsize;
 
 /// 最近一次成功绑定的任务栏（Shell_TrayWnd）窗口句柄；0 表示尚未绑定。
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))] // 仅 Windows 读写
@@ -59,6 +59,8 @@ pub struct TaskbarTrayGeometry { // TaskbarTrayGeometry
 
 /// 把任务栏迷你播放器窗口绑定为任务栏子窗口，并追加工具窗口样式。
 #[tauri::command] // 实现
+// Windows 块才消费 app 参数；非 Windows 平台的实现为占位返回。
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 pub fn setup_taskbar_window(app: tauri::AppHandle) -> OwnerBindingState {
   #[cfg(target_os = "windows")]
   {
@@ -96,6 +98,8 @@ pub fn setup_taskbar_window(app: tauri::AppHandle) -> OwnerBindingState {
 
 /// 查询任务栏与托盘通知区的物理几何信息。
 #[tauri::command] // 实现
+// Windows 块才消费 app 参数；非 Windows 平台的实现为占位返回。
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 pub fn get_taskbar_tray_geometry(app: tauri::AppHandle) -> Result<TaskbarTrayGeometry, String> {
   #[cfg(target_os = "windows")]
   {

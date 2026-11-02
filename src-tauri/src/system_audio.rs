@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 // ==================== Windows 实现（WASAPI Loopback） ====================
 #[cfg(target_os = "windows")]
 mod windows_impl {

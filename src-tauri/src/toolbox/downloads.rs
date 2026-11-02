@@ -1,4 +1,3 @@
-use super::common::APP_IDENTIFIER;
 use super::qmc::{decrypt_qmc_file_inplace, try_extract_ekey_from_file};
 use crate::security::{path_validator, ssrf};
 use std::fs;

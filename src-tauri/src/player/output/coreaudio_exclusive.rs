@@ -4,8 +4,12 @@
 // 实现要点：Core Audio C API 手写 FFI（零新依赖）；直接注册 AudioDeviceIOProc
 // 写设备物理格式缓冲（不经 AudioUnit/混音器）；喂送线程 + 环形缓冲对接实时回调。
 
+// kAudioObject... 等四字符码常量刻意镜像 Core Audio C 头文件命名，
+// 便于与 Apple 文档逐名核对，不做 Rust 大写改名，模块内整体豁免。
+#![allow(non_upper_case_globals)]
+
 use super::exclusive_common::{
-  encode_sample_into, ExclusiveAudioFeed, ExclusiveControl, ExclusiveEncoding, ExclusivePlayRequest,
+  ExclusiveAudioFeed, ExclusiveControl, ExclusiveEncoding, ExclusivePlayRequest,
 };
 use crate::player::dsd_dop::{dop_pcm_rate, parse_dsd_info, DopStreamSource};
 use crate::player::equalizer::{EqualizerHandle, EqualizerSettings};
@@ -823,7 +827,7 @@ unsafe extern "C" fn exclusive_io_proc(
     std::ptr::write_bytes(scratch[got..].as_mut_ptr(), 0, interleaved_bytes - got);
   }
 
-  let channels = shared.channels as usize;
+  let _channels = shared.channels as usize;
   for channel in 0..list.mNumberBuffers as usize {
     let plane = &mut *list.mBuffers.as_mut_ptr().add(channel);
     let plane_out = std::slice::from_raw_parts_mut(plane.mData as *mut u8, plane_bytes);
@@ -882,7 +886,7 @@ struct FeederContext {
 fn run_feeder(
   shared: Arc<ExclusiveShared>,
   context: FeederContext,
-  start_time: Duration,
+  _start_time: Duration,
   encoding: ExclusiveEncoding,
   bytes_per_frame: usize,
   kind: FeedKind,

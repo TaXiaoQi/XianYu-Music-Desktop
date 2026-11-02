@@ -86,16 +86,14 @@ fn set_ns_window_opaque(
   };
 
   let background = if opaque {
-    unsafe {
-      NSColor::colorWithSRGBRed_green_blue_alpha(
-        red.clamp(0.0, 1.0),
-        green.clamp(0.0, 1.0),
-        blue.clamp(0.0, 1.0),
-        1.0,
-      )
-    }
+    NSColor::colorWithSRGBRed_green_blue_alpha(
+      red.clamp(0.0, 1.0),
+      green.clamp(0.0, 1.0),
+      blue.clamp(0.0, 1.0),
+      1.0,
+    )
   } else {
-    unsafe { NSColor::clearColor() }
+    NSColor::clearColor()
   };
 
   // 第 1 层：NSWindow（tao 层）

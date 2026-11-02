@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
-use tauri::{Emitter, Manager};
 use truce_rack::core::info::ParameterFlags;
 use truce_rack::core::plugin::Plugin;
 
 use super::scanner::{load_instance, scan_directories_with_extra, PluginScanEntry};
 use super::{rack_handle, RackConfig};
 
+// 事件名仅 Windows 插件编辑器实现 emit（mac 无编辑器窗口，编译期裁剪）。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub const EDITOR_CLOSED_EVENT: &str = "plugin-host-editor-closed";
 
 #[derive(Clone, Debug, Serialize)]
@@ -302,6 +303,8 @@ pub async fn plugin_host_open_editor(
     unique_id: String,
     title: String,
 ) -> Result<(), String> {
+    // Windows 实现专用：get_webview_window（Manager）与 emit（Emitter）的 trait 在此引入。
+    use tauri::{Emitter, Manager};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     if !cfg!(target_os = "windows") {

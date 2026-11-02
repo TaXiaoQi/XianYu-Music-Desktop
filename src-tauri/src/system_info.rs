@@ -368,6 +368,8 @@ fn smbios_string(idx: u8, strings: &[String]) -> String {
     strings.get(idx as usize - 1).cloned().unwrap_or_default()
 }
 
+// 仅 Windows (SMBIOS) 与 Linux (/sys) 实现引用；mac 无来源，编译期整体裁剪。
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn plausible_serial(v: &str) -> bool {
     let t = v.trim();
     if t.chars().count() < 3 {
