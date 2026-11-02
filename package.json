@@ -20,6 +20,8 @@
     "tauri:build:store": "node scripts/sync-version.js && tauri build --config src-tauri/tauri.microsoftstore.conf.json --features store-build && node scripts/move-bundles.js --force && node scripts/rename-store-msi.js",
     "posttauri": "node scripts/move-bundles.js",
     "lint": "eslint .",
+    "clean": "bash scripts/clean.sh",
+    "clean:linux": "bash scripts/clean-linux.sh",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
