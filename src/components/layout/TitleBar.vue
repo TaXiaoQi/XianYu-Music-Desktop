@@ -274,7 +274,7 @@ onUnmounted(() => {
       <TopBarControlItem v-for="key in leftControls" :key="key" :item-key="key" />
     </div>
 
-    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 focus-within:ring-2 focus-within:ring-[#EC4141]/20 pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border border-black/10 dark:border-white/20 z-10 relative" :style="surfaceStyle('search.box')">
+    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border z-10 relative focus-within:ring-2 focus-within:ring-[#EC4141]/20" :class="IS_MACOS ? 'mac-glass' : 'bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 border-black/10 dark:border-white/20'" :style="surfaceStyle('search.box')">
       <TopBarControlIcon item-key="search" class="h-5 w-5 shrink-0 text-gray-900 dark:text-gray-100 mr-3 group-focus-within:text-[#EC4141]" />
       <input
         ref="searchInputRef"
@@ -435,5 +435,53 @@ onUnmounted(() => {
 .hot-reveal-enter-from {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* --- mac 搜索框：玻璃凹槽（对齐 moonlight-macos-enhanced 实拍）---
+   嵌进玻璃里的浅灰凹槽：比周围深一档的中性填充 + 发丝描边 +
+   顶部内阴影，轻外投影分离底面；backdrop-filter 借窗口材质
+   （毛玻璃）透出系统模糊。mac 分支不挂 Tailwind 底色类，底色
+   由此接管；主题包 surfaceStyle('search.box') 行内样式优先级更高。 */
+.mac-glass {
+  border-color: rgba(0, 0, 0, 0.09);
+  background-color: rgba(120, 120, 128, 0.1);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.mac-glass:hover {
+  background-color: rgba(120, 120, 128, 0.14);
+}
+
+.mac-glass:focus-within {
+  background-color: rgba(120, 120, 128, 0.08);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* 暗色：暗压暗场景靠「提亮填充 + 亮发丝边 + 顶缘光泽」撑出玻璃感 */
+.dark .mac-glass {
+  border-color: rgba(255, 255, 255, 0.16);
+  background-color: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.dark .mac-glass:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.dark .mac-glass:focus-within {
+  background-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 4px 16px rgba(0, 0, 0, 0.4);
 }
 </style>
