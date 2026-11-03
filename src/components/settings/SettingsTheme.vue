@@ -57,6 +57,8 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailMeshBackgroundLabel: 'Use polygon flow background',
   playerDetailMeshAntiAliasLabel: 'Smooth polygon edges',
   playerDetailMeshAntiAliasHint: 'Anti-alias polygon edges and render at a higher resolution: smoother, crisper edges at a higher GPU cost',
+  lyricBlurLabel: 'Lyric Blur Effect',
+  lyricBlurHint: 'Blur inactive lyric lines like Apple Music. Turn off to keep all lyrics sharp.',
   dynamicTitle: 'Dynamic Background',
   dynamicHint: 'Changes with the album cover',
   dynamicOff: 'Off',
@@ -130,6 +132,8 @@ const TEXT = computed(() => isEnglish.value ? {
   playerDetailMeshBackgroundLabel: '使用多边形流光背景',
   playerDetailMeshAntiAliasLabel: '边缘抗锯齿',
   playerDetailMeshAntiAliasHint: '平滑多边形边界并按更高分辨率渲染：边缘更顺滑锐利，GPU 占用更高',
+  lyricBlurLabel: '歌词模糊效果',
+  lyricBlurHint: '非活跃歌词行呈 Apple Music 式模糊；关闭后歌词保持清晰。',
   dynamicTitle: '动态背景',
   dynamicHint: '跟随封面变化',
   dynamicOff: '关闭',
@@ -253,6 +257,8 @@ const {
   setWindowBlurTint,
   setKeepWindowMaterialOnBlur,
   setUseCustomTrayMenu,
+  lyricBlur,
+  setLyricBlur,
   useGlassSwitch,
   setUseGlassSwitch,
   setShowLeaderboard,
@@ -1237,10 +1243,22 @@ onUnmounted(() => {
           @click="setPlayerDetailMeshAntiAlias(!playerDetailMeshAntiAlias)"
         ></button>
       </div>
+      <div class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+        <span class="min-w-0">
+          <span class="block text-sm font-medium text-gray-800 dark:text-gray-200">{{ TEXT.lyricBlurLabel }}</span>
+          <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{{ TEXT.lyricBlurHint }}</span>
+        </span>
+        <button
+          type="button"
+          class="glass-switch"
+          :class="{ 'is-checked': lyricBlur }"
+          @click="setLyricBlur(!lyricBlur)"
+        ></button>
+      </div>
       </div>
     </section>
 
-    <section class="space-y-3"> 
+    <section class="space-y-3">
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>

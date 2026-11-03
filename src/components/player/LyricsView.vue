@@ -1112,7 +1112,7 @@ watch(() => props.coverHidden, async () => {
           align-anchor="center" 
           :align-position="0.42" 
           :enable-spring="true" 
-          :enable-blur="true" 
+          :enable-blur="themeState?.lyricBlur !== false"
           :enable-scale="true" 
           :hide-passed-lines="false" 
           :word-fade-width="fadeWidth"

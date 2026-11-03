@@ -124,7 +124,7 @@ core-text = "20"
 # 运行时切换 NSWindow opaque：透明窗口无系统缩放动画，无材质时需切回不透明
 # （wry 已依赖 objc2-app-kit 0.3，此处仅声明特性启用 NSWindow/NSColor 绑定）
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSColor", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSColor", "NSWindow", "NSWorkspace", "NSRunningApplication", "libc"] }
 # 同上需同步切 WKWebView 的 drawsBackground（wry 透明窗口的核心透明开关）
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSValue", "NSKeyValueCoding", "NSString"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["WKWebView"] }

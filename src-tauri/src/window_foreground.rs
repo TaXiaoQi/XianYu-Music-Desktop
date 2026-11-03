@@ -55,7 +55,13 @@ pub fn describe_foreground_window(app: tauri::AppHandle) -> ForegroundWindowInfo
     #[cfg(target_os = "windows")]
     return imp::describe(&app);
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        return imp::describe();
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = app;
         ForegroundWindowInfo { hwnd: 0, owned_by_app: true }
@@ -135,6 +141,27 @@ mod imp {
                     attach(target_thread, false);
                 }
             }
+        }
+    }
+}
+
+/// mac 前台快照：用 NSWorkspace 前台应用判定归属。
+/// 弹出的托盘菜单窗口不主动获焦，前台仍是之前的应用（owned=false，
+/// 作为关外守卫的基准 pid）；用户点回本应用任一窗口后 owned=true，
+/// 点去其它应用则 pid 变化 —— 前端守卫据此收起菜单。
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::ForegroundWindowInfo;
+    use objc2_app_kit::NSWorkspace;
+
+    pub(super) fn describe() -> ForegroundWindowInfo {
+        let frontmost_pid = NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|application| application.processIdentifier());
+        let owned_by_app = frontmost_pid == Some(std::process::id() as i32);
+        ForegroundWindowInfo {
+            hwnd: frontmost_pid.unwrap_or(0) as isize,
+            owned_by_app,
         }
     }
 }

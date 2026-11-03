@@ -102,6 +102,15 @@ onMounted(async () => {
   }
 
   await hostWindow.setAlwaysOnTop(true);
+  // mac：托盘点击不授予焦点（Windows 由关外守卫轮询兜底，不抢焦），
+  // 这里主动把菜单窗设为 key window，失焦隐藏（onFocusChanged）才会触发。
+  if (navigator.userAgent.includes('Macintosh')) {
+    try {
+      await hostWindow.setFocus();
+    } catch (error) {
+      console.warn('Failed to focus tray menu window on macOS:', error);
+    }
+  }
   window.addEventListener('keydown', onKeydown);
 
   releaseHooks.push(await listen<TrayMenuStatePayload>(TRAY_MENU_STATE_EVENT, (event) => {
@@ -129,13 +138,17 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
   releaseHooks.splice(0).forEach((off) => off());
 });
+
+// mac 玻璃模式：窗口层挂了系统液态玻璃材质（见 useTrayMenuEvents 创建处），
+// 面板转为轻罩色。Windows 不受影响。
+const TRAY_GLASS = navigator.userAgent.includes('Macintosh');
 </script>
 
 <template>
   <div
     class="trayStage"
-    :class="{ 'trayStage--daylight': !panel.darkChrome }"
-    @pointerdown.self="hideWindow" 
+    :class="{ 'trayStage--daylight': !panel.darkChrome, 'trayStage--glass': TRAY_GLASS }"
+    @pointerdown.self="hideWindow"
   >
     <div class="trayCard" @pointerdown.self="hideWindow">
       <TrayTrackHeader :track="panel.track" :cover-art="panel.coverArt" @pointerdown="hideWindow" />
@@ -192,6 +205,23 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px var(--trayEdge);
   backdrop-filter: blur(18px); display: flex; flex-direction: column;
 }
+
+/* mac：窗口层已挂系统液态玻璃（Liquid Glass / 旧系统 menu 材质），
+   面板底色减为轻罩色让玻璃透出，并停用 CSS 模糊（避免把系统玻璃糊掉）。
+   圆角与创建窗口时的 effects.radius 对齐，由系统裁切同款圆角。 */
+.trayStage--glass {
+  --trayPanelBg: rgba(39, 40, 52, 0.4);
+  --trayRule: rgba(255, 255, 255, 0.14);
+  --trayHover: rgba(255, 255, 255, 0.12);
+}
+
+.trayStage--glass.trayStage--daylight {
+  --trayPanelBg: rgba(248, 249, 252, 0.45);
+  --trayRule: rgba(20, 24, 36, 0.12);
+  --trayHover: rgba(20, 24, 36, 0.08);
+}
+
+.trayStage--glass .trayCard { backdrop-filter: none; }
 
 .trayStretch { flex: 1 1 auto; min-height: 0; }
 </style>

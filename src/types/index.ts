@@ -304,6 +304,8 @@ export interface ThemeSettings {
   keepWindowMaterialOnBlur: boolean;
   useCustomTrayMenu: boolean;
   useGlassSwitch: boolean;
+  /** 歌词页非活跃行模糊效果（Apple Music 风），关闭后歌词保持清晰 */
+  lyricBlur: boolean;
   showLeaderboard: boolean;
   flowColorBoost: number;
   flowDepth: number;

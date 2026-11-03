@@ -383,12 +383,30 @@ fn device_display_name(device: AudioDeviceID) -> String {
 fn find_device(device_name: Option<&str>) -> Result<(AudioDeviceID, String), String> {
   match device_name {
     Some(name) => {
-      for device in output_devices() {
-        if device_display_name(device) == name {
-          return Ok((device, name.to_string()));
+      // 先精确匹配，再包含匹配；枚举/名称偶发抖动时回退系统默认输出，
+      // 避免整条独占链路因名字对不上而误报 not found。
+      let devices = output_devices();
+      for device in &devices {
+        if device_display_name(*device) == name {
+          return Ok((*device, name.to_string()));
         }
       }
-      Err(format!("Exclusive output device not found: {name}"))
+      for device in &devices {
+        let display = device_display_name(*device);
+        if display.contains(name) || name.contains(&display) {
+          return Ok((*device, display));
+        }
+      }
+      eprintln!(
+        "Core Audio exclusive: device \"{name}\" not found in enumeration, falling back to default output"
+      );
+      let device: AudioDeviceID = get_fixed(
+        kAudioObjectSystemObject,
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+      )?;
+      let display = device_display_name(device);
+      Ok((device, display))
     }
     None => {
       let device: AudioDeviceID = get_fixed(
@@ -405,8 +423,17 @@ fn find_device(device_name: Option<&str>) -> Result<(AudioDeviceID, String), Str
 /// 请求 hog mode 独占设备；成功后系统混音器不再向该设备送音。
 fn acquire_hog_mode(device: AudioDeviceID) -> Result<(), String> {
   let pid = std::process::id() as i32;
-  set_data(device, kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal, &pid)
-    .map_err(|error| format!("无法独占音频设备（可能被其他独占播放器占用）：{error}"))?;
+  set_data(device, kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal, &pid).map_err(
+    |error| {
+      // 'who?'（2003332927）：设备不暴露 HogMode 属性 —— 内置扬声器等
+      // 系统音频设备不支持独占，只有 USB DAC / 外置声卡等才支持。
+      if error.contains("2003332927") {
+        "此设备不支持独占模式（Hog Mode 不受支持；内置扬声器等系统设备无法独占，请改用 USB DAC / 外置声卡）".to_string()
+      } else {
+        format!("无法独占音频设备（可能被其他独占播放器占用）：{error}")
+      }
+    },
+  )?;
   // 回读确认确实持有。
   match get_fixed::<i32>(device, kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal) {
     Ok(held) if held == pid => Ok(()),

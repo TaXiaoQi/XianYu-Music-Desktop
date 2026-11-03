@@ -175,7 +175,7 @@ const defaultThemeSettings: ThemeSettings = {
   playerDetailStyle: 'classic', playerDetailMeshBackground: true, playerDetailMeshAntiAlias: true,
   playerDetailMeshSpeed: 1, playerDetailVinylMaterial: 'light', playerDetailVinylPlatterStyle: 'metal',
   dynamicBgType: 'none', windowMaterial: 'none', keepWindowMaterialOnBlur: true,
-  useCustomTrayMenu: true, useGlassSwitch: false, showLeaderboard: true,
+  useCustomTrayMenu: true, useGlassSwitch: false, lyricBlur: true, showLeaderboard: true,
   flowColorBoost: 25, flowDepth: 30, flowSpeed: 52, flowTexture: 34, windowBlurTint: 50,
   customBgPath: '', opacity: 0.8, blur: 20,
   customBackground: {

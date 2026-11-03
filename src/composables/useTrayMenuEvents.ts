@@ -2,7 +2,7 @@ import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
+import { availableMonitors, Effect, getCurrentWindow } from "@tauri-apps/api/window";
 import { storeToRefs } from "pinia";
 import { nextTick, onMounted, onUnmounted, watch } from "vue";
 import type { Router } from "vue-router";
@@ -131,6 +131,12 @@ const openTrayWindow = async (): Promise<WebviewWindow> => {
         resizable: false,
         skipTaskbar: true,
         alwaysOnTop: true,
+        // mac：挂系统级液态玻璃（macOS 26+ Liquid Glass），旧系统自动回退 menu
+        // 材质（NSVisualEffectView）。CSS 侧同步减淡面板底色让玻璃透出
+        // （TrayMenuWindow 的 trayStage--glass 分支），radius 与 CSS 圆角对齐。
+        ...(navigator.userAgent.includes("Macintosh")
+            ? { windowEffects: { effects: [Effect.LiquidGlassRegular, Effect.Menu], radius: 10 } }
+            : {}),
         center: false,
     });
 

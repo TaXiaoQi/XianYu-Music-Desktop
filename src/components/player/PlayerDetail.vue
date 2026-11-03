@@ -144,6 +144,10 @@ watch(isCinemaMode, (filmOn) => {
 const hostWindow = locateHostWindow();
 const FS_MORPH_MS = 320;
 
+// macOS 走系统原生红绿灯（titleBarStyle: Overlay），绿键触发的系统全屏
+// 不经过下方按钮的沉浸状态机，需监听窗口全屏变化把两侧状态拉齐。
+const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
+
 const doMinimize = () => hostWindow.minimize();
 
 const applyImmersive = async (enter: boolean) => {
@@ -203,6 +207,29 @@ const shutdownApp = async () => {
   if (settings.value.closeToTray) return hostWindow.hide();
   return hostWindow.close();
 };
+
+// —— mac 红绿灯绿键 ⇆ 沉浸模式的状态拉齐 ——
+// 绿键进出系统全屏时不走 toggleFullscreen 的动画链，这里检测到
+// 原生全屏态与沉浸态不一致时补走一次 toggleFullscreen（幂等），
+// 使隐藏光标、顶栏联动、Esc 退出与按钮路径完全一致。
+let trafficLightSyncing = false;
+const syncImmersiveWithTrafficLight = async () => {
+  if (trafficLightSyncing || fullscreenAnimState.value) return;
+  let nativeFullscreen: boolean;
+  try {
+    nativeFullscreen = await hostWindow.isFullscreen();
+  } catch {
+    return;
+  }
+  if (nativeFullscreen === isFullscreen.value) return;
+  trafficLightSyncing = true;
+  try {
+    await toggleFullscreen();
+  } finally {
+    trafficLightSyncing = false;
+  }
+};
+let unlistenTrafficLight: (() => void) | null = null;
 
 // —— 播放详情页皮肤：电影模式优先级更高，视频模式下不启用黑胶 ——
 const preferVinylStage = computed(
@@ -290,11 +317,18 @@ const handleKeydown = (e: KeyboardEvent) => {
   dismissDetail();
 };
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('keydown', handleKeydown);
+  if (IS_MACOS) {
+    unlistenTrafficLight = await hostWindow.onResized(() => {
+      void syncImmersiveWithTrafficLight();
+    });
+  }
 });
 
 onBeforeUnmount(() => {
+  unlistenTrafficLight?.();
+  unlistenTrafficLight = null;
   if (heavyRafId !== null) {
     cancelAnimationFrame(heavyRafId);
     heavyRafId = null;
@@ -318,8 +352,10 @@ onBeforeUnmount(() => {
       class="detail-shell"
       :class="[
         detailShown && (isFullscreen || fullscreenAnimState) ? 'shell-flush' : 'shell-raised',
-        fullscreenAnimState === 'entering' ? 'fs-entering' : '',
-        fullscreenAnimState === 'exiting' ? 'fs-exiting' : '',
+        // mac 全屏动画交给系统原生（Space 切换）；前端再叠 CSS 缩放动画会在
+        // 动画结束回收合成层时于透明窗口上闪一帧，故 mac 不挂动画 class。
+        !IS_MACOS && fullscreenAnimState === 'entering' ? 'fs-entering' : '',
+        !IS_MACOS && fullscreenAnimState === 'exiting' ? 'fs-exiting' : '',
       ]"
     >
       <DetailBackdrop :ready="heavyMounted" :active="detailShown" :mesh-on="settings.theme.playerDetailMeshBackground && !isCinemaMode" />

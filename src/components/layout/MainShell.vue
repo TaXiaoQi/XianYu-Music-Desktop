@@ -309,8 +309,10 @@ onMounted(() => {
           class="relative z-10 flex flex-1 overflow-hidden transition-colors duration-500"
           :class="[
             mainContainerClass,
-            routeSwapMotion === 'entering' ? 'fs-entering' : '',
-            routeSwapMotion === 'exiting' ? 'fs-exiting' : '',
+            // 与 PlayerDetail 同理：mac 全屏动画交给系统原生，前端不再叠
+            // CSS 合成层动画（透明窗口上动画结束回收层会闪一帧）。
+            !IS_MACOS_PLATFORM && routeSwapMotion === 'entering' ? 'fs-entering' : '',
+            !IS_MACOS_PLATFORM && routeSwapMotion === 'exiting' ? 'fs-exiting' : '',
           ]"
           :style="mainSurfaceStyle"
         >

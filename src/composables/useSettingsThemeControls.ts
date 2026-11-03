@@ -54,6 +54,7 @@ export function useSettingsThemeControls() {
   const keepWindowMaterialOnBlur = bindThemeField('keepWindowMaterialOnBlur');
   const useCustomTrayMenu = bindThemeField('useCustomTrayMenu');
   const useGlassSwitch = bindThemeField('useGlassSwitch', false);
+  const lyricBlur = bindThemeField('lyricBlur', true);
   const showLeaderboard = bindThemeField('showLeaderboard');
   const playerDetailCoverBehavior = bindThemeField('playerDetailCoverBehavior');
   const playerDetailStyle = bindThemeField('playerDetailStyle');
@@ -226,6 +227,7 @@ export function useSettingsThemeControls() {
   const setKeepWindowMaterialOnBlur = (value: boolean) => { keepWindowMaterialOnBlur.value = value; };
   const setUseCustomTrayMenu = (value: boolean) => { useCustomTrayMenu.value = value; };
   const setUseGlassSwitch = (value: boolean) => { useGlassSwitch.value = value; };
+  const setLyricBlur = (value: boolean) => { lyricBlur.value = value; };
   const setShowLeaderboard = (value: boolean) => { showLeaderboard.value = value; };
   const setPlayerDetailCoverBehavior = (value: 'show' | 'hide' | 'remember') => { playerDetailCoverBehavior.value = value; };
   const setPlayerDetailStyle = (value: 'classic' | 'vinyl') => { playerDetailStyle.value = value; };
@@ -245,6 +247,7 @@ export function useSettingsThemeControls() {
     showCustomModal,
     colorScheme, materialMode,
     keepWindowMaterialOnBlur, useCustomTrayMenu, useGlassSwitch,
+    lyricBlur,
     showLeaderboard,
     playerDetailCoverBehavior, playerDetailStyle, playerDetailVinylMaterial, playerDetailVinylPlatterStyle,
     playerDetailMeshBackground, playerDetailMeshAntiAlias,
@@ -259,6 +262,7 @@ export function useSettingsThemeControls() {
     toggleWindowMaterial, openCustomModal, toggleFlowTuning, toggleBlurTuning: toggleBlurPanel,
     setFlowColorBoost, setFlowDepth, setFlowSpeed, setFlowTexture, setWindowBlurTint,
     setKeepWindowMaterialOnBlur, setUseCustomTrayMenu, setShowLeaderboard,
+    setLyricBlur,
     setPlayerDetailCoverBehavior, setPlayerDetailStyle,
     setPlayerDetailMeshBackground, setPlayerDetailMeshAntiAlias, setPlayerDetailVinylMaterial,
     setPlayerDetailVinylPlatterStyle,
