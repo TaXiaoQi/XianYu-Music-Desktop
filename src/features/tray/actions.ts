@@ -44,7 +44,7 @@ export interface TrayMenuStatePayload {
     isFavorite: boolean;
     isMiniMode: boolean;
     useCustomTrayMenu: boolean;
-    windowMaterial: "none" | "mica" | "acrylic" | "blur";
+    windowMaterial: "none" | "mica" | "acrylic" | "blur" | "sidebar" | "hud" | "liquid";
     windowBlurTint: number;
 }
 

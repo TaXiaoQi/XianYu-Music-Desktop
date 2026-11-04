@@ -12,7 +12,7 @@ import {
   type ThemeSnapshotReader,
 } from './themeControlBindings';
 import { useThemeSettings as withThemeSettingsStore } from './useThemeSettings';
-import { type WindowMaterialMode, useWindowMaterial } from './windowMaterial';
+import { IS_MACOS_PLATFORM, type WindowMaterialMode, useWindowMaterial } from './windowMaterial';
 
 /** 用户可直接点选的窗口材质档位；none 由「关闭材质」语义独占 */
 type PickableMaterialMode = Exclude<WindowMaterialMode, 'none'>;
@@ -117,12 +117,15 @@ export function useSettingsThemeControls() {
   const isDynamicBgDisabled = computed(() => colorScheme.value === 'custom' || hasWindowMaterialSelected.value);
 
   // 单个材质档位的平台门禁：mica/acrylic 仅 Win11；
-  // blur 依赖后端上报的毛玻璃能力（Win10 经典模糊 / macOS NSVisualEffectView）。
+  // blur 依赖后端上报的毛玻璃能力（Win10 经典模糊 / macOS NSVisualEffectView）；
+  // sidebar/hud/liquid 为 macOS 专属，其他平台一律拦截（下拉也不会展示）。
   const materialModeBlocker = (mode: PickableMaterialMode): MaterialBlockerKind => {
     const requiresWindows11 = mode === 'mica' || mode === 'acrylic';
     const requiresBlurSupport = mode === 'blur';
+    const requiresMacos = mode === 'sidebar' || mode === 'hud' || mode === 'liquid';
     const missingPlatformSupport = (requiresWindows11 && !isWindows11.value)
-      || (requiresBlurSupport && !capabilities.value.supportsBlur);
+      || (requiresBlurSupport && !capabilities.value.supportsBlur)
+      || (requiresMacos && !IS_MACOS_PLATFORM);
 
     if (missingPlatformSupport) {
       return requiresWindows11 ? 'windows11' : 'windows';
@@ -149,8 +152,10 @@ export function useSettingsThemeControls() {
     if (capabilities.value.systemTransparencyEnabled === false) return true;
     const requiresWindows11 = mode === 'mica' || mode === 'acrylic';
     const requiresBlurSupport = mode === 'blur';
+    const requiresMacos = mode === 'sidebar' || mode === 'hud' || mode === 'liquid';
     return (requiresWindows11 && !isWindows11.value)
-      || (requiresBlurSupport && !capabilities.value.supportsBlur);
+      || (requiresBlurSupport && !capabilities.value.supportsBlur)
+      || (requiresMacos && !IS_MACOS_PLATFORM);
   };
 
   // —— 动作入口 ——

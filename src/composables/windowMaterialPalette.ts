@@ -22,6 +22,14 @@ export const NATIVE_MICA_EFFECT_BY_DARKNESS: Record<'dark' | 'light', Effect> = 
   light: 'micaLight' as Effect,
 };
 
+/** mac 专属材质档位对应的系统特效标识（仅 macOS 放行，Windows/Linux 资格恒不成立）。
+ *  liquid 同传 underWindowBackground 兜底：macOS 26 以下系统不识别液态玻璃时自动降级为毛玻璃。 */
+export const MAC_MATERIAL_EFFECTS: Record<'sidebar' | 'hud' | 'liquid', Effect[]> = {
+  sidebar: [Effect.Sidebar],
+  hud: [Effect.HudWindow],
+  liquid: [Effect.LiquidGlassRegular, Effect.UnderWindowBackground],
+};
+
 /** Windows 11 最低 build 号：mica / acrylic 仅在该版本及以上放行 */
 const WINDOWS11_MIN_BUILD = 22000;
 

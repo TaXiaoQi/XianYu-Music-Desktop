@@ -234,11 +234,14 @@ provide('topBarContext', {
 // macOS 使用系统原生红绿灯（titleBarStyle: Overlay），隐藏自绘的 Windows 风格按钮组
 const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
 
-// mac + 窗口材质（毛玻璃）开启时，整条顶栏升级为磨砂玻璃条：比内容区深
-// 一档 + 模糊，搜索框以「略浅胶囊」浮在上面——对齐原生工具栏的分层逻辑
-// （moonlight / 系统设置的观感来自「深玻璃底 + 浅控件」，而非控件本身）。
+// mac + 窗口材质（毛玻璃）开启时，搜索框可升级为玻璃胶囊（mac-glass 配方）。
+// 但是否真用液态玻璃跟随「组件样式」设置（useGlassSwitch，缺省 true）：
+// 经典扁平档回退到历史扁平配方，与开关等扁平组件保持同一样式。
+// 顶栏条本身不再自带上色/模糊：它位于主内容容器（统一磨砂表面）内部，
+// 任何独立底色都会形成一条割裂的横条，直接继承容器色系即可。
 const { activeWindowMaterial } = useWindowMaterial();
 const glassTopbar = computed(() => IS_MACOS && activeWindowMaterial.value !== 'none');
+const glassSearchBox = computed(() => glassTopbar.value && theme.value.useGlassSwitch !== false);
 
 const minimize = () => { void appWindow.minimize(); };
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
@@ -275,13 +278,13 @@ onUnmounted(() => {
   <div
     data-tauri-drag-region
     class="h-16 flex items-center gap-3 px-6 select-none shrink-0 relative z-[60]"
-    :class="[IS_MACOS ? 'pl-[88px]' : '', glassTopbar ? 'mac-topbar-glass' : '']"
+    :class="[IS_MACOS ? 'pl-[88px]' : '']"
   >
     <div class="flex items-center gap-4 relative z-10 shrink-0">
       <TopBarControlItem v-for="key in leftControls" :key="key" :item-key="key" />
     </div>
 
-    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border z-10 relative focus-within:ring-2 focus-within:ring-[#EC4141]/20" :class="glassTopbar ? 'mac-glass' : 'bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 border-black/10 dark:border-white/20'" :style="surfaceStyle('search.box')">
+    <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border z-10 relative focus-within:ring-2 focus-within:ring-[#EC4141]/20" :class="glassSearchBox ? 'mac-glass' : 'bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 border-black/10 dark:border-white/20'" :style="surfaceStyle('search.box')">
       <TopBarControlIcon item-key="search" class="h-5 w-5 shrink-0 text-gray-900 dark:text-gray-100 mr-3 group-focus-within:text-[#EC4141]" />
       <input
         ref="searchInputRef"
@@ -444,25 +447,10 @@ onUnmounted(() => {
   transform: translateY(-4px);
 }
 
-/* --- mac 磨砂顶栏：液态玻璃的主体是「深一档的玻璃条」 ---
-   moonlight / 系统设置观感的来源：工具栏条比内容区深一档且模糊，
-   控件以略浅色浮在上面。仅在 mac + 窗口材质开启时挂载；底色不写
-   死透明度，保持系统材质透过。底部半像素发丝线分隔工具栏与内容。 */
-.mac-topbar-glass {
-  background-color: rgba(0, 0, 0, 0.045);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  backdrop-filter: blur(24px) saturate(150%);
-  box-shadow: inset 0 -0.5px 0 rgba(0, 0, 0, 0.08);
-}
-
-.dark .mac-topbar-glass {
-  background-color: rgba(255, 255, 255, 0.045);
-  box-shadow: inset 0 -0.5px 0 rgba(255, 255, 255, 0.08);
-}
-
 /* --- mac 搜索框：复用 glass-switch 的玻璃配方（用户认可的质感） ---
    与开关同一套公式：白低透填充 + 白色半透描边 + 「顶部白高光 /
-   底部暗影」成对内阴影（玻璃厚度感的关键）+ 大模糊高饱和背景。 */
+   底部暗影」成对内阴影（玻璃厚度感的关键）+ 大模糊高饱和背景。
+   顶栏条底色不再单独处理：统一继承主内容容器的磨砂表面。 */
 .mac-glass {
   border-width: 1.5px;
   border-color: rgba(255, 255, 255, 0.18);

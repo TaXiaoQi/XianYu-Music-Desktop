@@ -43,7 +43,7 @@ export interface MiniPlayerStatePayload {
     volume: number;
     queue: Song[];
     lyricText: string;
-    windowMaterial: "none" | "mica" | "acrylic" | "blur";
+    windowMaterial: "none" | "mica" | "acrylic" | "blur" | "sidebar" | "hud" | "liquid";
     windowBlurTint: number;
     currentTime: number;
     duration: number;

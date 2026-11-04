@@ -11,19 +11,21 @@ import {
   buildAcrylicTint,
   buildBlurTint,
   buildOpaqueSurfaceColor,
+  MAC_MATERIAL_EFFECTS,
   NATIVE_MICA_EFFECT_BY_DARKNESS,
   runsOnWindows11,
   TRANSLUCENT_SURFACE_COLOR,
   type WindowMaterialCapabilities,
 } from './windowMaterialPalette';
 
-export type WindowMaterialMode = 'none' | 'mica' | 'acrylic' | 'blur';
-export type ResolvedWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur';
+export type WindowMaterialMode = 'none' | 'mica' | 'acrylic' | 'blur' | 'sidebar' | 'hud' | 'liquid';
+export type ResolvedWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur' | 'sidebar' | 'hud' | 'liquid';
 
 export type { WindowMaterialCapabilities } from './windowMaterialPalette';
 
-/** macOS 检测（WKWebView UA 含 Macintosh）；窗口圆角与透明背景策略依赖此判定 */
-const IS_MACOS_PLATFORM = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
+/** macOS 检测（WKWebView UA 含 Macintosh）；窗口圆角与透明背景策略依赖此判定。
+ *  导出供设置页做 mac 专属材质档位的平台分支，Windows/Linux 不展示也不放行。 */
+export const IS_MACOS_PLATFORM = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
 
 /** 无材质可用的统一归宿值 */
 const INERT_MATERIAL: ResolvedWindowMaterial = 'none';
@@ -48,11 +50,16 @@ let capabilityQueryInFlight: Promise<WindowMaterialCapabilities> | null = null;
 const flushVueRenderPass = nextTick;
 
 /** 各模式对平台能力的资格判定；未列出的模式一律不放行。
- *  blur 的可用性完全由后端能力快照决定：Win10 为经典高斯模糊，macOS 为 NSVisualEffectView 毛玻璃。 */
+ *  blur 的可用性完全由后端能力快照决定：Win10 为经典高斯模糊，macOS 为 NSVisualEffectView 毛玻璃。
+ *  sidebar / hud / liquid 为 macOS 专属档位：仅 mac 平台放行，Windows/Linux 资格恒不成立，
+ *  解析后统一回退 none，原生行为与旧版本完全一致。 */
 const eligibilityTests: Partial<Record<WindowMaterialMode, (snapshot: WindowMaterialCapabilities) => boolean>> = {
   mica: (snapshot) => runsOnWindows11(snapshot.isWindows, snapshot.windowsBuildNumber) && snapshot.supportsMica,
   acrylic: (snapshot) => runsOnWindows11(snapshot.isWindows, snapshot.windowsBuildNumber) && snapshot.supportsAcrylic,
   blur: (snapshot) => snapshot.supportsBlur,
+  sidebar: () => IS_MACOS_PLATFORM,
+  hud: () => IS_MACOS_PLATFORM,
+  liquid: () => IS_MACOS_PLATFORM,
 };
 
 const isSystemTransparencyDisabled = (snapshot: WindowMaterialCapabilities) =>
@@ -228,6 +235,20 @@ export async function applyWindowMaterial(mode: WindowMaterialMode, isDark: bool
           state: EffectState.FollowsWindowActiveState,
         });
       }
+      await toggleWindowShadowSafely(false);
+    } else if (resolved === 'sidebar' || resolved === 'hud' || resolved === 'liquid') {
+      // macOS 专属材质：与 blur 档同为「透明窗口 + NSVisualEffectView」路线，
+      // mac 特效不支持 color 着色，明暗外观由系统与窗口激活态接管。
+      // liquid 同传普通毛玻璃兜底：macOS 26 以下不识别液态玻璃时自动降级。
+      await paintWindowBackgroundSafely(TRANSLUCENT_SURFACE_COLOR);
+      await windowApi.setDarkModeForWindow(isDark);
+      if (canToggleOpaqueOnMac(hostWindow)) {
+        await windowApi.setWindowOpaqueState(false, [0, 0, 0]);
+      }
+      await hostWindow.setEffects({
+        effects: MAC_MATERIAL_EFFECTS[resolved],
+        state: EffectState.FollowsWindowActiveState,
+      });
       await toggleWindowShadowSafely(false);
     } else {
       const surfaceColor = buildOpaqueSurfaceColor(isDark);

@@ -58,8 +58,8 @@ function collectLegacyLyricsPatch(
   return legacyPatch;
 }
 
-/** 窗口材质只接受这四个值；旧数据中的其它字符串一律回落到当前默认值 */
-const ALLOWED_WINDOW_MATERIALS: readonly string[] = ['none', 'mica', 'acrylic', 'blur'];
+/** 窗口材质可接受的档位白名单（含 macOS 专属三档）；旧数据中的其它字符串一律回落到当前默认值 */
+const ALLOWED_WINDOW_MATERIALS: readonly string[] = ['none', 'mica', 'acrylic', 'blur', 'sidebar', 'hud', 'liquid'];
 
 // 存量主题快照可能携带早已废弃的旧字段（enableDynamicBg），动态背景等字段历史上是宽泛字符串
 type StoredThemeSnapshot = Partial<AppSettings['theme']> & {

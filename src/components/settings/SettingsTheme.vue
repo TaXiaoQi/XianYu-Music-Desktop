@@ -2,6 +2,7 @@
 import { Check, ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
+import { IS_MACOS_PLATFORM } from '../../composables/windowMaterial';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
 import { useInlineSelectDropdown } from '../../composables/useInlineSelectDropdown';
 import { useI18n } from '../../features/i18n';
@@ -72,11 +73,15 @@ const TEXT = computed(() => isEnglish.value ? {
   materialAcrylic: 'Acrylic',
   materialMica: 'Mica',
   materialFrosted: 'Frosted Glass',
+  materialSidebar: 'Sidebar Glass',
+  materialHud: 'HUD Glass',
+  materialLiquid: 'Liquid Glass',
   windowMaterialBlur: 'Acrylic Blur',
   windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.',
   windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.',
   windowMaterialConflictHint: 'Available after turning off the dynamic background or custom skin.',
   windowMaterialWin11Only: 'Windows 11 only',
+  windowMaterialMacOnly: 'macOS only. Liquid Glass requires macOS 26 or later and falls back automatically on older versions.',
   keepWindowMaterialOnBlur: 'Keep Material When Unfocused',
   keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.',
   trayMenuTitle: 'Tray Menu',
@@ -147,11 +152,15 @@ const TEXT = computed(() => isEnglish.value ? {
   materialAcrylic: '亚克力',
   materialMica: '云母',
   materialFrosted: '毛玻璃',
+  materialSidebar: '侧栏玻璃',
+  materialHud: 'HUD 深色玻璃',
+  materialLiquid: '液态玻璃',
   windowMaterialBlur: '毛玻璃',
   windowMaterialUnsupportedHint: '仅 Windows 10 / 11 支持。',
   windowMaterialTransparencyHint: '需在系统设置中开启透明效果后才可用。',
   windowMaterialConflictHint: '关闭动态背景或自定义皮肤后可用。',
   windowMaterialWin11Only: '仅 Windows 11 支持',
+  windowMaterialMacOnly: '仅 macOS 支持；液态玻璃需 macOS 26 及以上，旧版本会自动降级为毛玻璃。',
   keepWindowMaterialOnBlur: '失焦保持材质',
   keepWindowMaterialOnBlurHint: '开启后窗口失焦时仍会尝试保持当前材质效果。',
   trayMenuTitle: '托盘菜单',
@@ -358,8 +367,10 @@ const selectSwitchStyle = (value: boolean) => {
   closeStyleDropdown();
 };
 
-// ---- 主题材质行内下拉（动态背景三档 + 原生窗口材质三档合并） ----
-type MaterialPresetValue = 'off' | 'dynamic-flow' | 'dynamic-blur' | 'material-acrylic' | 'material-mica' | 'material-blur';
+// ---- 主题材质行内下拉（动态背景三档 + 原生窗口材质档位合并） ----
+type MaterialPresetValue = 'off' | 'dynamic-flow' | 'dynamic-blur' | 'material-acrylic' | 'material-mica' | 'material-blur' | 'material-sidebar' | 'material-hud' | 'material-liquid';
+/** 材质档位去掉 material- 前缀后的原生模式名 */
+type PickableMaterialName = 'mica' | 'acrylic' | 'blur' | 'sidebar' | 'hud' | 'liquid';
 
 const {
   openId: materialDropdownId,
@@ -379,12 +390,20 @@ const MATERIAL_OPTIONS = computed<Array<{ value: MaterialPresetValue; label: str
     { value: 'material-mica', label: TEXT.value.materialMica },
     { value: 'material-blur', label: TEXT.value.materialFrosted },
   ];
+  // macOS 专属三档只在 mac 平台追加；Windows/Linux 下拉保持原样不受影响
+  if (IS_MACOS_PLATFORM) {
+    all.push(
+      { value: 'material-sidebar', label: TEXT.value.materialSidebar },
+      { value: 'material-hud', label: TEXT.value.materialHud },
+      { value: 'material-liquid', label: TEXT.value.materialLiquid },
+    );
+  }
   // 当前系统不支持的材质档位直接不显示（避免用户困惑），但当前生效中的档位保留，
   // 防止「下拉显示关闭、实际材质仍在运行」的状态错乱。
   return all.filter((option) => {
     if (option.value === 'off' || option.value.startsWith('dynamic-')) return true;
     if (option.value === currentMaterialPreset.value) return true;
-    return !isMaterialModeEnvironmentBlocked(option.value.replace('material-', '') as 'mica' | 'acrylic' | 'blur');
+    return !isMaterialModeEnvironmentBlocked(option.value.replace('material-', '') as PickableMaterialName);
   });
 });
 
@@ -424,21 +443,22 @@ const selectTrayStyle = (value: boolean) => {
 };
 
 // 下拉档位禁用判定：流光两档只受自定义配色阻断（材质冲突在选择时自动互斥消化）；
-// 原生材质三档只看环境/平台门禁。
+// 原生材质档位只看环境/平台门禁。
 const isMaterialPresetDisabled = (value: MaterialPresetValue) => {
   if (value === 'off') return false;
   if (value.startsWith('dynamic-')) return colorScheme.value === 'custom';
-  return isMaterialModeEnvironmentBlocked(value.replace('material-', '') as 'mica' | 'acrylic' | 'blur');
+  return isMaterialModeEnvironmentBlocked(value.replace('material-', '') as PickableMaterialName);
 };
 
 const materialPresetHint = (value: MaterialPresetValue): string => {
   if (value === 'off' || value.startsWith('dynamic-')) {
     return colorScheme.value === 'custom' ? TEXT.value.dynamicDisabledHint : '';
   }
-  const mode = value.replace('material-', '') as 'mica' | 'acrylic' | 'blur';
+  const mode = value.replace('material-', '') as PickableMaterialName;
   if (!isMaterialModeEnvironmentBlocked(mode)) return '';
   if (windowMaterialDisabledReason.value === 'transparency') return TEXT.value.windowMaterialTransparencyHint;
   if (mode === 'mica' || mode === 'acrylic') return TEXT.value.windowMaterialWin11Only;
+  if (mode === 'sidebar' || mode === 'hud' || mode === 'liquid') return TEXT.value.windowMaterialMacOnly;
   return TEXT.value.windowMaterialUnsupportedHint;
 };
 
@@ -454,7 +474,7 @@ const selectMaterialPreset = (value: MaterialPresetValue) => {
     applyDynamicBgType(value === 'dynamic-flow' ? 'flow' : 'blur');
     showFlowTuning.value = value === 'dynamic-flow';
   } else {
-    const mode = value.replace('material-', '') as 'mica' | 'acrylic' | 'blur';
+    const mode = value.replace('material-', '') as PickableMaterialName;
     applyDynamicBgType('none');
     applyMaterialSetting(mode);
     showFlowTuning.value = false;
