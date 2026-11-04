@@ -559,7 +559,16 @@ export class WordLyricPlayerCore {
         : this.estimateLineHeight(entry.line);
       entry.positionedHeight = Math.max(MIN_LAYOUT_HEIGHT, entry.layoutHeight) * this.lineGap;
       for (const word of entry.words) {
-        word.width = word.wrapper.offsetWidth;
+        // 0 会连带清掉逐字遮罩（applyWordMask 的 width<=0 分支），
+        // mac 全屏转场中间帧可能量到空布局，这里不让 0 覆盖上一次的好值
+        const width = word.wrapper.offsetWidth;
+        if (width > 0 && width !== word.width) {
+          word.width = width;
+          // 宽度变了，按旧宽度画的遮罩边界全部失效；把进度缓存置脏，
+          // 强制 updateWordMasks 下一帧重画（已唱词 progress 冻结在 1，
+          // 不置脏就永远轮不到重画——进全屏后唱过的字只剩前半截亮）
+          word.progress = -1;
+        }
       }
     }
     if (this.dotsEl) this.dotsFlowHeight = this.dotsEl.offsetHeight;
@@ -650,6 +659,14 @@ export class WordLyricPlayerCore {
       entry.el.style.setProperty(SUB_LINE_PROGRESS_VAR, resolveSubLineProgressValue(this.currentTimeMs, entry.line));
 
       for (const word of entry.words) {
+        // 宽度若在转场空布局帧没能量到，就地重测；变化则置脏强制重画遮罩
+        if (word.width <= 0) {
+          const measured = word.wrapper.offsetWidth;
+          if (measured > 0) {
+            word.width = measured;
+            word.progress = -1;
+          }
+        }
         const progress = wordProgress(word.word, this.currentTimeMs);
         if (Math.abs(progress - word.progress) < 0.0005) continue;
         word.progress = progress;

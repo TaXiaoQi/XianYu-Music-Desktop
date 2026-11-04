@@ -1202,11 +1202,11 @@ watch(() => props.coverHidden, async () => {
 
 .word-lyric-host { min-width: 0; min-height: 0; }
 
-/* 位移层：偏移设置通过 CSS 变量生效 */
+/* 位移层：偏移设置通过 CSS 变量生效（不加 will-change：mac 全屏缩放时
+   持久层缓存旧栅格，暂停态不重绘会挂出重影；180ms 过渡本身开销极小） */
 .lyrics-position-frame { /* 样式 */
   transform: translate3d(var(--lyrics-offset-x, 0%), var(--lyrics-offset-y, 0%), 0); /* 样式 */
   transition: transform 180ms ease; /* 样式 */
-  will-change: transform; /* 样式 */
 }
 
 .lyrics-align-left { --lyrics-text-align: left; --lyrics-line-transform-origin: 0%; }

@@ -282,6 +282,14 @@ onBeforeUnmount(() => {
   stopAnimationLoop();
   stopSeekBurst();
 
+  // 临时诊断角标清理
+  const dbgHost = wrapperRef.value as (HTMLDivElement | null) & { __dbgTimer?: number };
+  if (dbgHost?.__dbgTimer) {
+    clearInterval(dbgHost.__dbgTimer);
+    delete dbgHost.__dbgTimer;
+  }
+  document.querySelectorAll('div[style*="z-index:99999"]').forEach((el) => el.remove());
+
   if (resizeSettleTimer !== null) {
     clearTimeout(resizeSettleTimer);
     resizeSettleTimer = null;
@@ -414,6 +422,10 @@ watch(() => props.currentTime, (value) => {
   color: rgba(255, 255, 255, 0.95);
   mix-blend-mode: plus-lighter;
   font-weight: 700;
+  /* 自定义歌词字体常缺真实 Bold 字重，WebKit 会用「偏移双描」合成粗体，
+     在大字号（全屏）下呈现为每个字左上角挂一块灰色重描副本。
+     禁止合成：有真 Bold 的字体照常加粗，缺字重的字体回落常规字重。 */
+  font-synthesis: none;
   line-height: 1.35em;
   font-size: calc(max(max(5vh, 2.5vw), 12px) * var(--lyrics-font-scale, 1));
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
@@ -440,7 +452,8 @@ watch(() => props.currentTime, (value) => {
   padding: 0.35em 1em;
   border-radius: 0.25em;
   text-align: var(--lyrics-text-align, left);
-  backface-visibility: hidden;
+  /* 不加 backface-visibility / will-change：translate3d 已足够定位，
+     持久合成层在 mac 原生全屏缩放时缓存旧栅格，暂停态不重绘就会挂出重影 */
   cursor: pointer;
   transition: background-color 0.25s;
 }
@@ -475,7 +488,7 @@ watch(() => props.currentTime, (value) => {
 
 /* 唱毕词的余晖辉光（对齐移动端 Shadow α0.35 / blur10，按字号等比换算） */
 :deep(.wlp-word--glow .wlp-word__text) {
-  text-shadow: 0 0 0.36em rgba(255, 255, 255, 0.35);
+  text-shadow: none !important; /* 临时诊断：验证残影是否为辉光 text-shadow */
 }
 
 :deep(.wlp-word__text) {
