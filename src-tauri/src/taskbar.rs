@@ -6,6 +6,8 @@
 //! - 置顶看护：系统前台切换时保持迷你播放器窗口 TOPMOST。
 
 use std::sync::atomic::AtomicIsize;
+#[cfg(target_os = "windows")] // 仅 Windows 块读写句柄原子量
+use std::sync::atomic::Ordering;
 
 /// 最近一次成功绑定的任务栏（Shell_TrayWnd）窗口句柄；0 表示尚未绑定。
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))] // 仅 Windows 读写

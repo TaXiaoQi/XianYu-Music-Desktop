@@ -1,4 +1,6 @@
 use std::sync::atomic::AtomicBool;
+#[cfg(target_os = "windows")] // 仅 windows_impl 捕获循环使用（mac 实现 loopback 轮询无原子序）
+use std::sync::atomic::Ordering;
 // ==================== Windows 实现（WASAPI Loopback） ====================
 #[cfg(target_os = "windows")]
 mod windows_impl {

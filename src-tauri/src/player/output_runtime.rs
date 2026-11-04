@@ -370,9 +370,13 @@ use crate::player::output::ExclusivePlayback;
 use crate::player::output::OutputBackend;
 use crate::player::types::{AudioOutputMode, AudioOutputStatus, SharedProgress};
 use crate::remote::cache::RemoteStreamSource;
+#[cfg(target_os = "windows")] // Windows 媒体键 hub 需要 hwnd（非 Windows 用 DBus，见下）
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use rodio::Sink;
 use souvlaki::{MediaControlEvent, MediaControls, PlatformConfig};
 use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+#[cfg(target_os = "windows")] // get_webview_window 仅 Windows hub 使用
+use tauri::Manager;

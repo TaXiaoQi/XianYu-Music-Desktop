@@ -553,6 +553,8 @@ fn macos_tray_template_icon() -> tauri::Result<tauri::image::Image<'static>> {
 }
 
 fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 实现
+    // mac 分支会重建 builder（template 图标）；Windows/Linux 不再变更
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(
             app.default_window_icon()
@@ -872,6 +874,8 @@ pub(crate) fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 /// mac 应用菜单「控制」子菜单重建时读取最近一次前端推送的托盘状态
+// 仅 app_menu.rs 的 macOS 菜单构建消费；Windows/Linux 走窗口内 UI 无此需求
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn current_native_tray_menu_state<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> NativeTrayMenuState {

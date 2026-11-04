@@ -3,13 +3,12 @@
 // DoP 失败回退 PCM、seek 重建音源失败时保留当前播放。
 
 use crate::player::dsd_dop::{dop_pcm_rate, parse_dsd_info, DopStreamSource};
+use crate::player::equalizer::EqualizerSettings;
 use crate::player::output::{OutputError};
-use super::exclusive_common::{
-  encode_sample_into, ExclusiveAudioFeed, ExclusiveControl, ExclusiveEncoding, ExclusivePlayRequest,
-};
+use crate::player::sound_effect::SoundEffectSettings;
+use super::exclusive_common::{ExclusiveAudioFeed, ExclusiveControl, ExclusiveEncoding, ExclusivePlayRequest};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{TryRecvError, Sender, RecvTimeoutError, Receiver, sync_channel, channel};
-use std::sync::{Arc};
 use std::thread::{JoinHandle, self};
 use core::time::Duration;
 

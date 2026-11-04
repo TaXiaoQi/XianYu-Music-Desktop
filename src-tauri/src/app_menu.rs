@@ -13,6 +13,9 @@
 //!
 //! 仅 macOS 挂菜单：Windows/Linux 的窗口菜单会渲染进窗口内容区，不适用。
 
+// 非 macOS 平台仅编译跨平台 stub，主体（菜单构建/文案表）无消费者属预期
+#![cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+
 use std::sync::Mutex;
 
 use tauri::{
@@ -20,6 +23,8 @@ use tauri::{
     AppHandle, Runtime,
 };
 
+// 控制子菜单 action id 与托盘原生菜单共用；相关条目仅 macOS 菜单构建消费
+#[cfg(target_os = "macos")]
 use crate::app_runtime::{
     current_native_tray_menu_state, NativeTrayMenuState, TRAY_MENU_DESKTOP_LYRICS_ID,
     TRAY_MENU_FAVORITE_ID, TRAY_MENU_MINI_PLAYER_ID, TRAY_MENU_NEXT_ID, TRAY_MENU_PLAY_ID,
