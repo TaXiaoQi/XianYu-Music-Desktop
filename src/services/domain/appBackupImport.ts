@@ -2,6 +2,7 @@
 import type { Song, AppSettings, LibrarySong } from '../../types';
 import { getStoredPlugins, addPluginSource, loadPluginFromScript, persistPluginScriptToDataDir, pluginsVersion, setPluginUserVariableValues } from './pluginEngine';
 import { playerStorage } from '../storage/playerStorage';
+import { markSectionsChanged } from '../../features/settings/sectionChangeTracker';
 import { classifySong, classifyPlaylist } from './appBackupTypes';
 import { historyApi } from '../tauri/historyApi';
 import type { AppBackup, AppBackupImportResult, AppBackupSummary, BackupPlaylistEntry } from './appBackupTypes';
@@ -251,6 +252,8 @@ export async function importAppBackup(
       try {
         settingsStore.replaceSettings(selfSettings);
         playerStorage.writeSettings(selfSettings);
+        // 导入是用户主动的本地变更：全部分节打新时间戳，随自动同步推上云端
+        markSectionsChanged(Object.keys(selfSettings));
         settingsApplied = true;
       } catch (e: any) {
         errors.push(`设置导入失败: ${e?.message || e}`);

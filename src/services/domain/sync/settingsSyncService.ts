@@ -3,7 +3,12 @@ import { mergeAppSettings, createDefaultAppSettings } from '../../../features/se
 import { playerStorage } from '../../storage/playerStorage';
 import {
   areSettingsEqual,
+  buildFullSectionTs,
   downloadSettings,
+  mergeSettingsBySection,
+  parseUploadedAtMs,
+  readLocalSectionTs,
+  resolveCloudSectionTs,
   uploadSettings,
   type SettingsSyncResult,
 } from '../settingsSync';
@@ -34,6 +39,8 @@ export interface SettingsSyncPorts {
   isPluginUploadEnabled(): boolean;
   getSettings(): AppSettings;
   replaceSettings(settings: AppSettings): void;
+  /** 同步后按映射写回分节时间戳账本（覆盖语义，供 LWW 对齐） */
+  applySectionTimestamps(timestamps: Record<string, number>): void;
   onProgress(msg: string): void;
   notify(msg: string, kind: ToastKind): void;
   setSyncing(v: boolean): void;
@@ -65,6 +72,23 @@ function applyCloudSettingsLocally(
   return merged;
 }
 
+/** 设备本地字段恒以本端为准（下载路径/整理根目录/上传开关/自动同步运行时计数） */
+function withDeviceLocalFields(current: AppSettings, merged: AppSettings): AppSettings {
+  return {
+    ...merged,
+    organizeRoot: current.organizeRoot,
+    upload: current.upload,
+    download: { ...merged.download, downloadPath: current.download.downloadPath },
+    autoSync: {
+      ...merged.autoSync,
+      delayedCount: current.autoSync.delayedCount,
+      lastSyncAttemptAt: current.autoSync.lastSyncAttemptAt,
+      lastSyncSuccessAt: current.autoSync.lastSyncSuccessAt,
+      nextSyncAt: current.autoSync.nextSyncAt,
+    },
+  };
+}
+
 export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
   async function uploadSettingsOnly(options?: { silent?: boolean }): Promise<void> {
     const notify = (msg: string, kind: ToastKind) => { if (!options?.silent) ports.notify(msg, kind); };
@@ -87,20 +111,109 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
     }
 
     ports.setSyncing(true);
-    ports.onProgress('正在上传设置到云端...');
+    ports.onProgress('正在同步设置...');
 
     try {
-      const result = await uploadSettings(ports.getSettings());
-      ports.setLastTime(Date.now());
-      ports.setLastResult(result);
-      ports.log(`uploadSettingsOnly 完成: uploaded=${result.uploaded}, errors=${result.errors.length}`);
+      const localSettings = ports.getSettings();
+      ports.onProgress('正在从云端获取设置...');
+      const { settings: cloudSettings, uploadedAt, sectionTs: cloudSectionTs, result: downloadResult } = await downloadSettings();
 
-      if (result.errors.length > 0) {
-        notify(`设置上传完成（${result.errors.length} 个错误）`, 'error');
-      } else if (result.uploaded) {
+      if (downloadResult.errors.length > 0) {
+        // 下载失败不能当作「云端无数据」，否则会把本地全量推上去覆盖云端
+        ports.setLastResult(downloadResult);
+        ports.setLastTime(Date.now());
+        ports.log(`uploadSettingsOnly: 下载云端设置失败，中止本次同步: ${downloadResult.errors[0]}`);
+        notify(`设置同步失败：${downloadResult.errors[0]}`, 'error');
+        return;
+      }
+
+      if (!cloudSettings) {
+        // 云端无数据：全量上传并携带分节时间戳账本
+        const sectionTs = buildFullSectionTs(localSettings);
+        const uploadResult = await uploadSettings(localSettings, { sectionTs });
+        ports.applySectionTimestamps(sectionTs);
+        ports.setLastTime(Date.now());
+        ports.setLastResult(uploadResult);
+        ports.log(`uploadSettingsOnly 完成: uploaded=${uploadResult.uploaded}, errors=${uploadResult.errors.length}`);
+        if (uploadResult.errors.length > 0) {
+          notify(`设置上传完成（${uploadResult.errors.length} 个错误）`, 'error');
+        } else if (uploadResult.uploaded) {
+          notify('设置已上传到云端', 'success');
+        } else {
+          notify('设置上传失败', 'info');
+        }
+        return;
+      }
+
+      if (!cloudSectionTs) {
+        // 云端快照未携带分节账本（旧版端上传）：无法判定分节新旧，
+        // 维持旧行为以上传为准，并落一份本端账本供新版端后续 LWW
+        ports.log('uploadSettingsOnly: 云端无分节账本（旧版端上传），整体上传');
+        const sectionTs = buildFullSectionTs(localSettings);
+        const uploadResult = await uploadSettings(localSettings, { sectionTs });
+        ports.applySectionTimestamps(sectionTs);
+        ports.setLastTime(Date.now());
+        ports.setLastResult(uploadResult);
+        ports.log(`uploadSettingsOnly 完成: uploaded=${uploadResult.uploaded}, errors=${uploadResult.errors.length}`);
+        if (uploadResult.errors.length > 0) {
+          notify(`设置上传完成（${uploadResult.errors.length} 个错误）`, 'error');
+        } else if (uploadResult.uploaded) {
+          notify('设置已上传到云端', 'success');
+        } else {
+          notify('设置上传失败', 'info');
+        }
+        return;
+      }
+
+      // 云端有分节账本：按分节 LWW 合并（云端较新落地本地，本地较新上传云端）
+      const cloudTs = resolveCloudSectionTs(cloudSettings, cloudSectionTs, parseUploadedAtMs(uploadedAt));
+      const merge = mergeSettingsBySection(localSettings, cloudSettings, readLocalSectionTs(), cloudTs);
+      ports.log(`uploadSettingsOnly: 云端较新=[${merge.cloudWonSections.join(',') || '无'}], 本地较新=[${merge.localWonSections.join(',') || '无'}]`);
+
+      if (merge.cloudWonSections.length === 0 && merge.localWonSections.length === 0
+        && !areSettingsEqual(localSettings, cloudSettings)) {
+        // 时间戳持平但内容有差异（多见于账本刚启用）：以本端为准整体上传并重新打点，避免永久停滞
+        ports.log('uploadSettingsOnly: 时间戳持平但内容有差异，整体上传');
+        merge.localWonSections.push(...Object.keys(merge.mergedSectionTs));
+        const now = Date.now();
+        for (const key of Object.keys(merge.mergedSectionTs)) {
+          merge.mergedSectionTs[key] = now;
+        }
+      }
+
+      let uploaded = false;
+      const errors: string[] = [];
+
+      if (merge.cloudWonSections.length > 0) {
+        ports.onProgress('正在应用云端较新的设置...');
+        const applied = withDeviceLocalFields(localSettings, merge.merged);
+        ports.replaceSettings(applied);
+        playerStorage.writeSettings(applied);
+      }
+      // 账本全量对齐（云端较新分节记云端时刻，其余保持本地时刻）
+      ports.applySectionTimestamps(merge.mergedSectionTs);
+
+      if (merge.localWonSections.length > 0) {
+        ports.onProgress('正在上传本地较新的设置...');
+        const payload = withDeviceLocalFields(localSettings, merge.merged);
+        const uploadResult = await uploadSettings(payload, { sectionTs: merge.mergedSectionTs });
+        uploaded = uploadResult.uploaded;
+        errors.push(...uploadResult.errors);
+      }
+
+      ports.setLastTime(Date.now());
+      ports.setLastResult({ uploaded, downloaded: merge.cloudWonSections.length > 0, errors });
+      ports.log(`uploadSettingsOnly 完成: uploaded=${uploaded}, cloudWon=${merge.cloudWonSections.length}, errors=${errors.length}`);
+      if (errors.length > 0) {
+        notify(`设置同步完成（${errors.length} 个错误）`, 'error');
+      } else if (uploaded && merge.cloudWonSections.length > 0) {
+        notify('设置已双向合并同步', 'success');
+      } else if (uploaded) {
         notify('设置已上传到云端', 'success');
+      } else if (merge.cloudWonSections.length > 0) {
+        notify('设置已从云端更新', 'success');
       } else {
-        notify('设置上传失败', 'info');
+        notify('本地与云端设置一致，无需同步', 'info');
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -129,7 +242,7 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
     ports.onProgress('正在从云端下载设置...');
 
     try {
-      const { settings: cloudSettings, result } = await downloadSettings();
+      const { settings: cloudSettings, uploadedAt, sectionTs, result } = await downloadSettings();
       ports.setLastTime(Date.now());
       ports.setLastResult(result);
       ports.log(`downloadSettingsOnly 完成: downloaded=${result.downloaded}, errors=${result.errors.length}`);
@@ -138,6 +251,10 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
         ports.notify(`设置下载完成（${result.errors.length} 个错误）`, 'error');
       } else if (cloudSettings) {
         applyCloudSettingsLocally(ports, cloudSettings);
+        // 全量落地：全部分节记云端时刻，避免下次自动同步把云端内容又推回去
+        ports.applySectionTimestamps(
+          resolveCloudSectionTs(cloudSettings, sectionTs, parseUploadedAtMs(uploadedAt)),
+        );
         ports.notify('设置已从云端恢复', 'success');
       } else {
         ports.notify('云端暂无设置数据', 'info');
@@ -172,14 +289,16 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
     try {
       ports.log('syncSettings: 步骤 1/2 - 下载云端设置进行比较');
       ports.onProgress('正在从云端获取设置...');
-      const { settings: cloudSettings, uploadedAt, result: downloadResult } = await downloadSettings();
+      const { settings: cloudSettings, uploadedAt, sectionTs, result: downloadResult } = await downloadSettings();
       ports.log('syncSettings: 步骤 1/2 - 云端设置下载完成', downloadResult);
 
       if (!cloudSettings) {
         if (ports.isSettingsUploadEnabled()) {
           ports.log('syncSettings: 云端无数据，上传本地设置');
           ports.onProgress('正在上传本地设置到云端...');
-          const uploadResult = await uploadSettings(ports.getSettings());
+          const sectionTs = buildFullSectionTs(ports.getSettings());
+          ports.applySectionTimestamps(sectionTs);
+          const uploadResult = await uploadSettings(ports.getSettings(), { sectionTs });
           ports.setLastResult(uploadResult);
           ports.setLastTime(Date.now());
           if (uploadResult.errors.length > 0) {
@@ -232,7 +351,10 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
         if (ports.isSettingsUploadEnabled()) {
           ports.log('syncSettings: 设置 → 保留本地，上传覆盖云端');
           ports.onProgress('正在上传本地设置到云端...');
-          const r = await uploadSettings(localSettings);
+          // 保留本地 = 本端成为全部分节的最新持有者，先对齐账本再上传
+          const sectionTs = buildFullSectionTs(localSettings);
+          ports.applySectionTimestamps(sectionTs);
+          const r = await uploadSettings(localSettings, { sectionTs });
           uploaded = r.uploaded;
           errors.push(...r.errors);
         } else {
@@ -242,6 +364,9 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
         ports.log('syncSettings: 设置 → 保留云端，下载覆盖本地');
         ports.onProgress('正在从云端恢复设置...');
         applyCloudSettingsLocally(ports, cloudSettings);
+        ports.applySectionTimestamps(
+          resolveCloudSectionTs(cloudSettings, sectionTs, parseUploadedAtMs(uploadedAt)),
+        );
         downloaded = true;
         errors.push(...downloadResult.errors);
       }

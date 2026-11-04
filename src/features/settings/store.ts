@@ -28,6 +28,7 @@ import { normalizeFooterLayout, DEFAULT_FOOTER_LAYOUT } from './footerItems';
 import { normalizeTopBarLayout, DEFAULT_TOPBAR_LAYOUT } from './topBarItems';
 import { normalizeLyricsSyncOffsetSeconds } from './lyricsSyncOffset';
 import { playerStorage } from '../../services/storage/playerStorage';
+import { markSectionsChanged } from './sectionChangeTracker';
 
 /**
  * 设置域合并的核心约定：patch 中值为 undefined 视为「不覆盖」，其余值需通过
@@ -817,17 +818,23 @@ export const useSettingsStore = defineStore(
   'settings',
   () => {
     const settingsState = ref<AppSettings>(createDefaultAppSettings());
+    // 以下 set*State 是 theme/sidebar/footerLayout/topBarLayout 的全部写入口
+    // （含 patch* 与 computed setter），在此统一打分节变更时间戳
     const setThemeState = (next: ThemeSettings) => {
       settingsState.value = { ...settingsState.value, theme: next };
+      markSectionsChanged(['theme']);
     };
     const setSidebarState = (next: SidebarSettings) => {
       settingsState.value = { ...settingsState.value, sidebar: next };
+      markSectionsChanged(['sidebar']);
     };
     const setFooterLayoutState = (next: FooterLayoutSettings) => {
       settingsState.value = { ...settingsState.value, footerLayout: next };
+      markSectionsChanged(['footerLayout']);
     };
     const setTopBarLayoutState = (next: TopBarLayoutSettings) => {
       settingsState.value = { ...settingsState.value, topBarLayout: next };
+      markSectionsChanged(['topBarLayout']);
     };
 
     const audioDelay = computed(() => settingsState.value.lyricsSyncOffset);
@@ -849,16 +856,20 @@ export const useSettingsStore = defineStore(
       set: incoming => setTopBarLayoutState(mergeTopBarLayoutSettings(createDefaultTopBarLayoutSettings(), incoming)),
     });
 
+    // 不在此处打时间戳：启动恢复（restore.ts）与云端落地都走 replaceSettings，
+    // 分节时间戳归属由各调用方显式决定，避免每次启动把全部分节标成「本地新改」
     const replaceSettings = (incoming: AppSettings) => {
       settingsState.value = mergeAppSettings(createDefaultAppSettings(), incoming);
     };
 
     const patchSettings = (partial: AppSettingsPatch) => {
+      markSectionsChanged(Object.keys(partial));
       settingsState.value = mergeAppSettings(settingsState.value, partial);
     };
 
     function resetSettings() {
       settingsState.value = createDefaultAppSettings();
+      markSectionsChanged(Object.keys(settingsState.value));
     }
 
     const replaceTheme = (incoming: ThemeSettings) => {
