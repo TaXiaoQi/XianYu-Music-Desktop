@@ -7,6 +7,7 @@ import { useLibraryStore } from '../library/store';
 import { isPluginSong } from '../../utils/pluginSong';
 import { isRemoteSong } from '../../utils/remoteSong';
 import { reportDailyLikeSignals } from '../../services/domain/dailyRecommendFeedback';
+import { addHistorySkipPaths, removeHistorySkipPaths } from '../../services/domain/historySync';
 import router from '../../router';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useAddToPlaylistDialog } from './addToPlaylistDialog';
@@ -152,6 +153,8 @@ export function useLibraryCollections() {
 
   const addToHistory = async (song: Song): Promise<void> => {
     store.addRecentSong(song);
+    // 重新播放会解除同步墓碑：该条目恢复参与历史同步
+    removeHistorySkipPaths([song.path]);
     purgeLegacyHistoryStorage();
 
     if (isOnlineSong(song)) {
@@ -172,6 +175,9 @@ export function useLibraryCollections() {
     // 记下需要同步清理曲库补挂的在线歌曲路径（后续还要判断收藏占用）。
     const onlineMetaPaths = targetPaths.filter(path => path in store.recentSongMeta);
 
+    // 写同步墓碑：自动同步「先下载」不把云端仍存的条目补回本地
+    addHistorySkipPaths(targetPaths);
+
     store.removeRecentSongs(targetPaths);
     purgeLegacyHistoryStorage();
 
@@ -190,7 +196,11 @@ export function useLibraryCollections() {
   };
 
   const clearHistory = async (): Promise<void> => {
+    const clearedPaths = store.recentSongs.map((item) => item.path).filter(Boolean);
     const clearedOnlinePaths = Object.keys(store.recentSongMeta);
+
+    // 清空写墓碑：自动同步「先下载」不把云端仍存的历史补回本地
+    addHistorySkipPaths(clearedPaths);
 
     store.clearRecentSongs();
     purgeLegacyHistoryStorage();

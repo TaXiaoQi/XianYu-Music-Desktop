@@ -452,6 +452,19 @@ async function confirmDeleteScope(scope: SyncDeleteScope) {
     if (scope === "local") {
         addCloudKeepPaths(paths);
     }
+    if (scope === "all") {
+        // 删除全部 = 本机与云端一起删：先真删云端（产生删除广播账本，其他端会跟进裁剪），
+        // 否则下一轮自动同步「先下载」会把云端仍存在的歌曲合并回本机，造成删除回弹
+        const ok = await deleteCloudFavoritePaths(paths);
+        if (!ok) {
+            // 云端删除失败：退化为仅删本地，写「仅保留云端」墓碑防止下载合并复活
+            addCloudKeepPaths(paths);
+            favoritePaths.value = favoritePaths.value.filter((p) => !pathSet.has(p));
+            if (isClearAll) clearFavorites();
+            showToast("云端删除失败，已仅从本机移除，可稍后重试", "error");
+            return;
+        }
+    }
     favoritePaths.value = favoritePaths.value.filter((p) => !pathSet.has(p));
     if (isClearAll) clearFavorites();
     showToast(

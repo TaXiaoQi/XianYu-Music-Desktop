@@ -25,6 +25,7 @@ export function buildPlaylistUploadItem(params: {
     cloudCoverUrl: params.cloudCoverUrl,
     isFavorite: pl.isFavorite,
     createdAt: pl.createdAt,
+    ...(pl.renamedAt !== undefined ? { renamedAt: pl.renamedAt } : {}),
     songs: params.payloadSongs,
     ...(pl.sourcePluginId ? { sourcePluginId: pl.sourcePluginId } : {}),
     ...(pl.sourceUrl ? { sourceUrl: pl.sourceUrl } : {}),

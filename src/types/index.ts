@@ -115,6 +115,8 @@ export interface Playlist {
   sourceUrl?: string;
   /** 来源歌单原始数据（插件搜索结果的 rawData），用于从源端更新 */
   sourceRaw?: any;
+  /** 最近一次改名的本地毫秒时间戳；跨端同步按新者优先采纳 name，旧快照缺省视为 0 */
+  renamedAt?: number;
 }
 
 export interface LibraryFolder {
@@ -300,7 +302,8 @@ export interface ThemeSettings {
   /** 黑胶模式外圈转盘样式（金属光泽 / 经典黑胶） */
   playerDetailVinylPlatterStyle: VinylPlatterStyle;
   dynamicBgType: 'none' | 'flow' | 'blur';
-  windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
+  /** 窗口材质档位；sidebar / hud / liquid 为 macOS 专属，其他平台自动回退 none */
+  windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur' | 'sidebar' | 'hud' | 'liquid';
   keepWindowMaterialOnBlur: boolean;
   useCustomTrayMenu: boolean;
   useGlassSwitch: boolean;
@@ -880,6 +883,8 @@ export interface PluginSource {
   sourceUrl?: string;
   importedAt: number;
   enabled: boolean;
+  /** 最近一次启/禁用时间戳（本地毫秒），同步时按新者优先合并 enabled，旧快照缺省视为 0 */
+  enabledUpdatedAt?: number;
   sources: string[];
   isBuiltin?: boolean;
   updateAvailable?: boolean;

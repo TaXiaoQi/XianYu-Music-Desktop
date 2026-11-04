@@ -3,6 +3,7 @@ import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { useAuthStore } from '../features/auth/store';
 import { useSettingsStore } from '../features/settings/store';
+import { writeSectionTimestamps } from '../features/settings/sectionChangeTracker';
 import { useStatisticsStore } from '../features/statistics/store';
 import { useToast } from './toast';
 import { showSettingsConflict } from './useSettingsConflict';
@@ -190,6 +191,7 @@ export function usePlaylistSync() {
     isPluginUploadEnabled,
     getSettings: () => settingsStore.settings,
     replaceSettings: next => settingsStore.replaceSettings(next),
+    applySectionTimestamps: timestamps => writeSectionTimestamps(timestamps),
     onProgress: msg => { settingsSyncProgress.value = msg; emitSyncProgress(msg); },
     notify: showToast,
     setSyncing: v => { settingsSyncing.value = v; },

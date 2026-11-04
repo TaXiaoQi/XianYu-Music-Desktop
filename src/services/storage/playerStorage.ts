@@ -41,6 +41,8 @@ export const playerStorageKeys = {
   consumedInstallLanguage: 'player_consumed_install_language',
   /** 已应用过的设置迁移 id（JSON 数组），见 features/settings/migrations.ts */
   settingsMigrations: 'player_settings_migrations',
+  /** 设置分节（顶层字段）最近一次本地变更时间戳账本，设置分节 LWW 同步用 */
+  settingsSectionTs: 'player_settings_section_ts',
 } as const;
 
 /** 判断任意值是否具备 Song 的最小形态（带字符串 path 的对象）。 */

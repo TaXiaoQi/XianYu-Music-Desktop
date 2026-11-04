@@ -121,7 +121,14 @@ export function useSidebarPlaylistContextMenu(options: UseSidebarPlaylistContext
       }
       if (scope === 'all') {
         if (synced) {
-          await deleteCloudPlaylist(id);
+          const ok = await deleteCloudPlaylist(id);
+          if (!ok) {
+            // 云端删除失败：仍删本地，但写「仅删本地」墓碑，
+            // 防止下一轮先下载把云端仍存在的歌单 create 回来（删除回弹）
+            if (cloudId) addDownloadSkipPlaylistIds([cloudId]);
+            deletePlaylist(id);
+            continue;
+          }
         }
         if (cloudId) removeDownloadSkipPlaylistIds([cloudId]);
         deletePlaylist(id);

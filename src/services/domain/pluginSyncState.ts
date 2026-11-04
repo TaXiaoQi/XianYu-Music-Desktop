@@ -2,6 +2,7 @@
 const SYNCED_KEY = 'plugin_synced_ids';
 const DOWNLOAD_SKIP_KEY = 'plugin_sync_download_skip_ids';
 const UPLOAD_SKIP_KEY = 'plugin_sync_upload_skip_ids';
+const DOWNLOAD_SKIP_SUB_KEY = 'plugin_sync_download_skip_sub_urls';
 
 function readSet(key: string): Set<string> {
   try {
@@ -112,4 +113,32 @@ export function clearPluginSyncTombstones(ids: string[]) {
     if (s.delete(id)) changed = true;
   }
   if (changed) writeSet(UPLOAD_SKIP_KEY, s);
+}
+
+// ==================== 订阅级「仅删本地」墓碑（按 url） ====================
+
+export function getDownloadSkipSubUrls(): Set<string> {
+  return readSet(DOWNLOAD_SKIP_SUB_KEY);
+}
+
+export function addDownloadSkipSubUrls(urls: string[]) {
+  if (urls.length === 0) return;
+  const s = readSet(DOWNLOAD_SKIP_SUB_KEY);
+  let changed = false;
+  for (const url of urls) {
+    if (url && !s.has(url)) {
+      s.add(url);
+      changed = true;
+    }
+  }
+  if (changed) writeSet(DOWNLOAD_SKIP_SUB_KEY, s);
+}
+
+export function removeDownloadSkipSubUrls(urls: Iterable<string>) {
+  const s = readSet(DOWNLOAD_SKIP_SUB_KEY);
+  let changed = false;
+  for (const url of urls) {
+    if (s.delete(url)) changed = true;
+  }
+  if (changed) writeSet(DOWNLOAD_SKIP_SUB_KEY, s);
 }

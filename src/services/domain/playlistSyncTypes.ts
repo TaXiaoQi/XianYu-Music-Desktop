@@ -36,6 +36,8 @@ export interface FileSyncPlaylistData {
   cloudCoverUrl?: string;
   isFavorite?: boolean;
   createdAt?: string;
+  /** 最近一次改名时间戳（本地毫秒），改名 LWW 合并用；旧端缺省视为 0 */
+  renamedAt?: number;
   sourcePluginId?: string;
   sourceUrl?: string;
   sourceRaw?: any;
@@ -59,6 +61,8 @@ export interface FileSyncDownloadData {
     cloudCoverUrl?: string;
     isFavorite?: boolean;
     createdAt?: string;
+    /** 最近一次改名时间戳（本地毫秒），改名 LWW 合并用；旧端缺省视为 0 */
+    renamedAt?: number;
     sourcePluginId?: string;
     sourceUrl?: string;
     sourceRaw?: any;
@@ -100,11 +104,17 @@ interface SyncOpRemoveSongs {
   paths: string[];
 }
 
-/** 仅差异字段 patch（cloudCoverUrl/sourcePluginId/sourceUrl，与今日下载合并一致）。 */
+/**
+ * 仅差异字段 patch（与今日下载合并一致）。
+ * name/renamedAt 为改名 LWW 的前向兼容字段：服务端 sync_diff 下发后即生效，
+ * 旧服务端不下发时客户端按缺省 0 处理、不覆盖本地改名。
+ */
 interface SyncOpUpdatePlaylistMeta {
   type: 'update_playlist_meta';
   cloudId: string;
   id?: string;
+  name?: string;
+  renamedAt?: number;
   cloudCoverUrl?: string;
   sourcePluginId?: string;
   sourceUrl?: string;

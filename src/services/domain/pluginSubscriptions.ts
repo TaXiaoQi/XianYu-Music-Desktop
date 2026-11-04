@@ -1,6 +1,7 @@
 import type { PluginSource, PluginSubscription } from '../../types';
 import { pluginApi } from '../tauri/pluginApi';
 import { fetchWithTimeout } from './pluginFetch';
+import { getDownloadSkipSubUrls } from './pluginSyncState';
 
 const PLUGIN_SUBSCRIPTIONS_KEY = 'xianyu_plugin_subscriptions';
 
@@ -109,9 +110,11 @@ export const createPluginSubscriptionService = ({
     const list = getSubscriptions();
     const knownUrls = new Set(list.map(s => s.url));
     let added = 0;
+    // 「仅删本地」墓碑中的订阅 URL 不参与合并（本机删除时云端删除失败留下的）
+    const skipUrls = getDownloadSkipSubUrls();
     for (const raw of cloud) {
       const url = typeof raw.url === 'string' ? raw.url.trim() : '';
-      if (!url || knownUrls.has(url)) continue;
+      if (!url || knownUrls.has(url) || skipUrls.has(url)) continue;
       let name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : '';
       if (!name) {
         try {

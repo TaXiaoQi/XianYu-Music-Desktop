@@ -200,7 +200,12 @@ export const useCollectionsStore = defineStore('collections', () => {
     if (!target || nextName === '') {
       return false;
     }
+    if (target.name === nextName) {
+      return true;
+    }
     target.name = nextName;
+    // 改名打点：同步时按新者优先决定 name 归属（旧快照缺省视为 0）
+    target.renamedAt = Date.now();
     return true;
   };
 

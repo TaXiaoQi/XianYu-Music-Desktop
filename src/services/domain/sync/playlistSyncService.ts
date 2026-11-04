@@ -325,6 +325,8 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
         pl.songPaths = next.songPaths;
         pl.songs = next.songs;
         const meta = next.meta;
+        if (meta.name !== undefined) pl.name = meta.name;
+        if (meta.renamedAt !== undefined) pl.renamedAt = meta.renamedAt;
         if (meta.cloudCoverUrl !== undefined) pl.cloudCoverUrl = meta.cloudCoverUrl;
         if (meta.sourcePluginId !== undefined) pl.sourcePluginId = meta.sourcePluginId;
         if (meta.sourceUrl !== undefined) pl.sourceUrl = meta.sourceUrl;
@@ -473,6 +475,12 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
         if (cloudPl.sourceRaw) existing.sourceRaw = cloudPl.sourceRaw;
         existing.isCloud = true;
         if (cloudPl.cloudId) existing.cloudId = cloudPl.cloudId;
+        // 改名 LWW：云端改名时间戳不小于本地才采纳（旧端快照缺省视为 0，不覆盖本地改名）
+        const cloudRenamedAt = cloudPl.renamedAt ?? 0;
+        if (cloudRenamedAt >= (existing.renamedAt ?? 0)) {
+          existing.name = cloudPl.name;
+          existing.renamedAt = cloudRenamedAt;
+        }
 
         result.downloadedPlaylists++;
         result.downloadedSongs += localSongs.length;
@@ -490,6 +498,7 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
           cloudCoverUrl: cloudPl.cloudCoverUrl || '',
           isFavorite: cloudPl.isFavorite,
           createdAt: cloudPl.createdAt,
+          ...(cloudPl.renamedAt !== undefined ? { renamedAt: cloudPl.renamedAt } : {}),
           ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
           ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
           ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
@@ -552,6 +561,7 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
         cloudCoverUrl: cloudPl.cloudCoverUrl || '',
         isFavorite: cloudPl.isFavorite,
         createdAt: cloudPl.createdAt,
+        ...(cloudPl.renamedAt !== undefined ? { renamedAt: cloudPl.renamedAt } : {}),
         ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
         ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
         ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),

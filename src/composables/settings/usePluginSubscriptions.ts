@@ -11,6 +11,7 @@ import {
   updateSubscription,
 } from '../../services/domain/pluginEngine';
 import { deleteCloudSubscriptions } from '../../services/domain/pluginSync';
+import { addDownloadSkipSubUrls, removeDownloadSkipSubUrls } from '../../services/domain/pluginSyncState';
 import { useToast } from '../toast';
 import { validatePluginUrl } from './usePluginInstall';
 
@@ -53,6 +54,8 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
       showToast('该订阅已存在或 URL 无效', 'error');
       return;
     }
+    // 重新添加解除「仅删本地」墓碑，恢复云端合并
+    removeDownloadSkipSubUrls([url]);
     subscriptions.value = getSubscriptions();
     newSubscriptionUrl.value = '';
     showAddSubscriptionInput.value = false;
@@ -167,13 +170,22 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
   async function confirmRemoveSubscription() {
     const sub = pendingRemoveSubscription.value;
     if (!sub) return;
-    // 云端订阅为各端并集，本地移除前先显式删云端；失败（未登录/离线）仅删本地
-    await deleteCloudSubscriptions([sub.url]);
+    // 云端订阅为各端并集，本地移除前先显式删云端；失败（未登录/离线）时写
+    // 「仅删本地」墓碑，防止下一轮插件同步合并把已删订阅加回（删除回弹）
+    const ok = await deleteCloudSubscriptions([sub.url]);
+    if (ok) {
+      removeDownloadSkipSubUrls([sub.url]);
+    } else {
+      addDownloadSkipSubUrls([sub.url]);
+    }
     removeSubscription(sub.id);
     subscriptions.value = getSubscriptions();
     showRemoveSubscriptionConfirm.value = false;
     pendingRemoveSubscription.value = null;
-    showToast(`已移除订阅 ${sub.name}`, 'success');
+    showToast(
+      ok ? `已移除订阅 ${sub.name}` : `云端移除失败，已仅从本机移除订阅 ${sub.name}`,
+      ok ? 'success' : 'error',
+    );
   }
 
   return {

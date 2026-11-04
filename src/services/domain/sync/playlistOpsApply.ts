@@ -9,12 +9,29 @@ import { resolveLocalPath, type LibraryMatchIndex } from './libraryMatch';
 // 匹配既有歌单时 cloudId 优先、云端快照 id 兜底（消除跨设备重复建单）。
 
 export interface PlaylistMetaPatch {
+  name?: string;
+  renamedAt?: number;
   cloudCoverUrl?: string;
   sourcePluginId?: string;
   sourceUrl?: string;
   sourceRaw?: unknown;
   cloudId?: string;
   isCloud?: boolean;
+}
+
+/**
+ * 改名 LWW：云端 renamedAt 不小于本地时才采纳云端 name；
+ * 旧端/旧服务端快照缺省视为 0，不会覆盖本端未同步的改名。
+ */
+function applyRenameLww(
+  meta: PlaylistMetaPatch,
+  existing: Playlist,
+  cloudName: string | undefined,
+  cloudRenamedAt: number | undefined,
+): void {
+  if (cloudRenamedAt === undefined || cloudRenamedAt < (existing.renamedAt ?? 0)) return;
+  if (cloudName !== undefined) meta.name = cloudName;
+  meta.renamedAt = cloudRenamedAt;
 }
 
 /** 写回既有歌单的完整状态（songPaths/songs 由本模块算好，实现方只负责落 store）。 */
@@ -158,6 +175,7 @@ function buildNewPlaylist(cloudPl: {
   sourcePluginId?: string;
   sourceUrl?: string;
   sourceRaw?: any;
+  renamedAt?: number;
 }, localSongs: Song[]): Playlist {
   return {
     id: cloudPl.id,
@@ -169,6 +187,7 @@ function buildNewPlaylist(cloudPl: {
     cloudCoverUrl: cloudPl.cloudCoverUrl || '',
     isFavorite: cloudPl.isFavorite,
     createdAt: cloudPl.createdAt,
+    ...(cloudPl.renamedAt !== undefined ? { renamedAt: cloudPl.renamedAt } : {}),
     ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
     ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
     ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
@@ -192,21 +211,16 @@ export function applySyncOps(ops: SyncOp[], target: SyncOpsTarget): SyncOpsOutco
 
         if (existing) {
           // 跨设备重复建单防护：cloudId/id 已匹配到本地歌单 → 走合并语义
-          mergeIntoExisting(
-            existing,
-            localSongs,
-            pathRemap,
-            expandedDeleted,
-            {
-              ...(cloudPl.cloudCoverUrl ? { cloudCoverUrl: cloudPl.cloudCoverUrl } : {}),
-              ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
-              ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
-              ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
-              isCloud: true,
-              ...(cloudPl.cloudId ? { cloudId: cloudPl.cloudId } : {}),
-            },
-            target,
-          );
+          const meta: PlaylistMetaPatch = {
+            ...(cloudPl.cloudCoverUrl ? { cloudCoverUrl: cloudPl.cloudCoverUrl } : {}),
+            ...(cloudPl.sourcePluginId ? { sourcePluginId: cloudPl.sourcePluginId } : {}),
+            ...(cloudPl.sourceUrl ? { sourceUrl: cloudPl.sourceUrl } : {}),
+            ...(cloudPl.sourceRaw ? { sourceRaw: cloudPl.sourceRaw } : {}),
+            isCloud: true,
+            ...(cloudPl.cloudId ? { cloudId: cloudPl.cloudId } : {}),
+          };
+          applyRenameLww(meta, existing, cloudPl.name, cloudPl.renamedAt);
+          mergeIntoExisting(existing, localSongs, pathRemap, expandedDeleted, meta, target);
           outcome.mergedPlaylists++;
           outcome.addedSongs += localSongs.length;
         } else {
@@ -265,6 +279,7 @@ export function applySyncOps(ops: SyncOp[], target: SyncOpsTarget): SyncOpsOutco
         if (op.cloudCoverUrl !== undefined) meta.cloudCoverUrl = op.cloudCoverUrl;
         if (op.sourcePluginId !== undefined) meta.sourcePluginId = op.sourcePluginId;
         if (op.sourceUrl !== undefined) meta.sourceUrl = op.sourceUrl;
+        applyRenameLww(meta, existing, op.name, op.renamedAt);
         target.writePlaylist(existing.id, {
           songPaths: existing.songPaths,
           songs: existing.songs,

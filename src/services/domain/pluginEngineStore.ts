@@ -89,7 +89,7 @@ export async function togglePlugin(id: string): Promise<{ success: boolean; enab
 
   const source = plugins[idx];
   const newEnabled = !source.enabled;
-  const updatedSource = { ...source, enabled: newEnabled };
+  const updatedSource = { ...source, enabled: newEnabled, enabledUpdatedAt: Date.now() };
 
   const stored = readPluginsFromLocalStorage();
   const sIdx = stored.findIndex(p => p.id === id);
@@ -317,12 +317,19 @@ export async function restorePluginFromSync(
 
     const existing = getStoredPlugins().find(p => p.id === source.id);
     if (existing) {
+      // enabled 按时间戳新者优先合并：本机刚切换的开关（enabledUpdatedAt 较新）
+      // 不被「先下载」阶段的云端旧快照冲掉，同时仍能接收其他端更新的开关状态
+      const cloudToggleNewer =
+        (source.enabledUpdatedAt ?? 0) >= (existing.enabledUpdatedAt ?? 0);
       const updates: Partial<PluginSource> = {
-        enabled: source.enabled,
         sortOrder: source.sortOrder,
         name: source.name,
         version: source.version,
       };
+      if (cloudToggleNewer) {
+        updates.enabled = source.enabled;
+        updates.enabledUpdatedAt = source.enabledUpdatedAt;
+      }
       const savedPath = await persistPluginScriptToDataDir(existing, script);
       if (savedPath) {
         updates.filePath = savedPath;
@@ -352,6 +359,7 @@ export async function restorePluginFromSync(
     const merged: PluginSource = {
       ...loadedSource,
       enabled: source.enabled,
+      enabledUpdatedAt: source.enabledUpdatedAt,
       sortOrder: source.sortOrder ?? loadedSource.sortOrder,
       importedAt: source.importedAt || loadedSource.importedAt,
       // 云端插件快照携带的原始安装 URL（含 key=/source=）透传给本地
