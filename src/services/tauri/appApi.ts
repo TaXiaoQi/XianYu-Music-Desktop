@@ -13,6 +13,9 @@ export const appApi = {
   getInstallLanguage: () => tauriInvoke('get_install_language'),
   setInstallLanguage: (language: string) =>
     tauriInvoke('set_install_language', { language }),
+  /** mac 应用菜单栏按应用语言重建（其它平台后端 no-op） */
+  setAppMenuLanguage: (language: string) =>
+    tauriInvoke('set_app_menu_language', { language }),
   setLaunchOnStartup: (enabled: boolean) => tauriInvoke('set_launch_on_startup', { enabled }),
   getLaunchOnStartup: () => tauriInvoke('get_launch_on_startup'),
   setAudioFileAssociations: (enabled: string[], disabled: string[]) =>

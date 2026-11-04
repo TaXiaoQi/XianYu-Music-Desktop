@@ -202,6 +202,7 @@ commands.allow = [
   "delete_theme_wallpaper",
   "get_install_language",
   "set_install_language",
+  "set_app_menu_language",
   "get_launch_on_startup",
   "set_launch_on_startup",
   "get_audio_file_associations",

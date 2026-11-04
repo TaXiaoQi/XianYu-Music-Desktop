@@ -1,5 +1,5 @@
 // 模块布局：按「运行时骨架 → 音频/媒体 → 窗口体系 → 工具与系统」的顺序登记。
-mod app_runtime; mod audio_convert; mod audio_trim; mod autostart;
+mod app_runtime; mod app_menu; mod audio_convert; mod audio_trim; mod autostart;
 pub mod cloud; // 网盘业务（十盘，TS 经 cloud_proxy command 调用）
 pub(crate) mod control_channel; pub(crate) mod crash_log; mod custom_fonts; mod database; pub(crate) mod dlna;
 pub mod error; pub mod filename_meta; mod fallback_verify; mod ffmpeg_bin; mod file_assoc; mod foreground_window;
@@ -12,6 +12,7 @@ mod window_boundary; mod window_foreground; mod window_fullscreen; mod window_ma
 mod window_z_order; // 实现
 
 // ---- 命令导入：运行时与应用生命周期 ----
+use app_menu::set_app_menu_language;
 use app_runtime::{
     consume_pending_deep_links,
     consume_pending_open_paths,
@@ -495,6 +496,10 @@ pub fn run() { // run
         .plugin(opener_plugin)
         .plugin(http_plugin)
         .setup(|ctx| setup_app(ctx))
+        // 应用菜单栏事件（mac 控制子菜单等）：与托盘原生菜单同一条前端通路
+        .on_menu_event(|app, event| {
+            crate::app_runtime::handle_app_menu_event(app, event.id().as_ref());
+        })
         .invoke_handler(tauri::generate_handler![ // 实现
             convert_audio,
             detect_ffmpeg,
@@ -769,6 +774,7 @@ pub fn run() { // run
             flush_playback_session,
             get_install_language,
             set_install_language,
+            set_app_menu_language,
             get_launch_on_startup,
             set_launch_on_startup,
             was_launched_at_startup,

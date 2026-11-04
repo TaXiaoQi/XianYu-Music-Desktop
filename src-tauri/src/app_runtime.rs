@@ -27,14 +27,14 @@ const MINI_PLAYER_WINDOW_LABEL: &str = "mini-player"; // 实现
 const TRAY_ID: &str = "tray";
 const TRAY_MENU_TRACK_TITLE_ID: &str = "track-title";
 const TRAY_MENU_TRACK_ARTIST_ID: &str = "track-artist";
-const TRAY_MENU_FAVORITE_ID: &str = "toggle-favorite";
-const TRAY_MENU_PREV_ID: &str = "prev-song";
-const TRAY_MENU_PLAY_ID: &str = "toggle-play";
-const TRAY_MENU_NEXT_ID: &str = "next-song";
-const TRAY_MENU_PLAY_MODE_ID: &str = "cycle-play-mode";
-const TRAY_MENU_DESKTOP_LYRICS_ID: &str = "open-desktop-lyrics";
-const TRAY_MENU_MINI_PLAYER_ID: &str = "show-mini-player";
-const TRAY_MENU_SETTINGS_ID: &str = "open-settings";
+pub(crate) const TRAY_MENU_FAVORITE_ID: &str = "toggle-favorite";
+pub(crate) const TRAY_MENU_PREV_ID: &str = "prev-song";
+pub(crate) const TRAY_MENU_PLAY_ID: &str = "toggle-play";
+pub(crate) const TRAY_MENU_NEXT_ID: &str = "next-song";
+pub(crate) const TRAY_MENU_PLAY_MODE_ID: &str = "cycle-play-mode";
+pub(crate) const TRAY_MENU_DESKTOP_LYRICS_ID: &str = "open-desktop-lyrics";
+pub(crate) const TRAY_MENU_MINI_PLAYER_ID: &str = "show-mini-player";
+pub(crate) const TRAY_MENU_SETTINGS_ID: &str = "open-settings";
 const TRAY_MENU_QUIT_ID: &str = "quit";
 
 /// 窗口状态插件的保存/恢复范围，刻意排除 DECORATIONS：窗口装饰必须永远跟随
@@ -55,11 +55,11 @@ pub(crate) struct NativeTrayMenuSong {
 #[serde(rename_all = "camelCase")] // 实现
 pub(crate) struct NativeTrayMenuState {
     current_song: Option<NativeTrayMenuSong>,
-    is_playing: bool,
-    play_mode: i32,
-    show_desktop_lyrics: bool,
-    is_favorite: bool,
-    is_mini_mode: bool,
+    pub(crate) is_playing: bool,
+    pub(crate) play_mode: i32,
+    pub(crate) show_desktop_lyrics: bool,
+    pub(crate) is_favorite: bool,
+    pub(crate) is_mini_mode: bool,
     use_custom_tray_menu: bool,
 }
 
@@ -227,7 +227,7 @@ fn reveal_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) { // 实现
     }
 }
 
-fn emit_tray_action<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: &str) {
+pub(crate) fn emit_tray_action<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: &str) {
     let _ = app.emit(APP_TRAY_MENU_EVENT, action);
 }
 
@@ -540,15 +540,37 @@ fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) { // 实现
     }
 }
 
+/// mac 菜单栏模板图标：纯黑+alpha 字形（icons/tray-template.png，由 logo.png
+/// 取 alpha 染黑生成），配合 icon_as_template 由系统按菜单栏深浅自动着色，
+/// 与其它 app 的单色状态栏图标观感一致（应用图标本身的彩色不进菜单栏）。
+#[cfg(target_os = "macos")]
+fn macos_tray_template_icon() -> tauri::Result<tauri::image::Image<'static>> {
+    let decoded = image::load_from_memory(include_bytes!("../icons/tray-template.png"))
+        .map_err(|error| std::io::Error::other(error.to_string()))?
+        .to_rgba8();
+    let (width, height) = (decoded.width(), decoded.height());
+    Ok(tauri::image::Image::new_owned(decoded.into_raw(), width, height))
+}
+
 fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 实现
-    let _tray = TrayIconBuilder::with_id(TRAY_ID)
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(
             app.default_window_icon()
                 .ok_or_else(|| std::io::Error::other("no default window icon"))?
                 .clone(),
         )
         .tooltip("弦予音乐")
-        .show_menu_on_left_click(false) // 实现
+        .show_menu_on_left_click(false); // 实现
+
+    // mac：菜单栏图标走单色 template（彩色应用图标直接进菜单栏不符合系统观感）
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .icon(macos_tray_template_icon()?)
+            .icon_as_template(true);
+    }
+
+    let _tray = builder
         .on_menu_event(|app, event| {
             let action = event.id().as_ref();
             match action {
@@ -716,6 +738,13 @@ pub(crate) fn setup_app( // setup_app
         }
     }
 
+    // mac 应用菜单栏：启动期先按系统语言建本地化标准菜单（默认菜单是英文硬编码），
+    // 前端就绪后会按应用内语言设置经 set_app_menu_language 校正。
+    #[cfg(target_os = "macos")]
+    if let Err(error) = crate::app_menu::apply_app_menu(app.handle(), &crate::app_menu::system_menu_language()) {
+        eprintln!("[菜单] 应用 mac 应用菜单失败: {error}");
+    }
+
     let db_state = DbState::new(app.handle())?; // 实现
 
     let playback_session = PlaybackSessionState::new();
@@ -842,6 +871,30 @@ pub(crate) fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
     app.restart()
 }
 
+/// mac 应用菜单「控制」子菜单重建时读取最近一次前端推送的托盘状态
+pub(crate) fn current_native_tray_menu_state<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> NativeTrayMenuState {
+    app.try_state::<TrayMenuRuntimeState>()
+        .and_then(|runtime| runtime.native_menu_state.lock().ok().map(|value| value.clone()))
+        .unwrap_or_default()
+}
+
+/// mac 应用菜单事件：把「控制」菜单的 action 复用托盘同一条事件通路转发前端
+pub(crate) fn handle_app_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: &str) {
+    match action {
+        TRAY_MENU_FAVORITE_ID
+        | TRAY_MENU_PREV_ID
+        | TRAY_MENU_PLAY_ID
+        | TRAY_MENU_NEXT_ID
+        | TRAY_MENU_PLAY_MODE_ID
+        | TRAY_MENU_DESKTOP_LYRICS_ID
+        | TRAY_MENU_MINI_PLAYER_ID
+        | TRAY_MENU_SETTINGS_ID => emit_tray_action(app, action),
+        _ => {}
+    }
+}
+
 #[tauri::command] // 实现
 pub(crate) fn update_native_tray_menu(
     app: tauri::AppHandle,
@@ -849,7 +902,14 @@ pub(crate) fn update_native_tray_menu(
 ) -> Result<(), String> {
     set_native_tray_menu_state(&app, state.clone())?;
     set_native_tray_menu_enabled(&app, !state.use_custom_tray_menu)?;
-    apply_tray_menu(&app, &state).map_err(|error| error.to_string())
+    apply_tray_menu(&app, &state).map_err(|error| error.to_string())?;
+    // mac：应用菜单栏「控制」子菜单的动态项（播放/暂停、收藏、桌面歌词等）
+    // 依赖同一份状态，状态变化时一并重建
+    #[cfg(target_os = "macos")]
+    if let Err(error) = crate::app_menu::refresh_app_menu(&app) {
+        eprintln!("[菜单] 刷新 mac 应用菜单失败: {error}");
+    }
+    Ok(())
 }
 
 #[cfg(any(feature = "devtools", debug_assertions))]

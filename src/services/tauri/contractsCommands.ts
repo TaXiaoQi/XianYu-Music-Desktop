@@ -830,6 +830,8 @@ export interface TauriCommandMap {
   // ============ 安装语言 ============
   get_install_language: { payload: undefined; response: string | null };
   set_install_language: { payload: { language: string }; response: boolean };
+  // ============ mac 应用菜单栏语言 ============
+  set_app_menu_language: { payload: { language: string }; response: void };
   // ============ 歌词字体 ============
   read_lyrics_font_data_url: { payload: { fontPath: string }; response: string };
   import_lyrics_font: { payload: { sourcePath: string }; response: ImportedLyricsFont };

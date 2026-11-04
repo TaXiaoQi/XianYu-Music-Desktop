@@ -100,6 +100,11 @@ if (currentWindowLabel === 'main') {
     void syncLanguageToInstaller(value);
   });
 
+  // mac 应用菜单栏跟随应用内语言（后端启动期已按系统语言建过一份，此处校正）
+  watch(language, (value) => {
+    void appApi.setAppMenuLanguage(value).catch(() => undefined);
+  }, { immediate: true });
+
   let handleDevtoolsKeyDown: ((event: KeyboardEvent) => void) | null = null;
   let unlistenCloseRequested: (() => void) | null = null;
   let unlistenFocusChanged: (() => void) | null = null;
