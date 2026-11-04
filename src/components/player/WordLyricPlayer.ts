@@ -164,6 +164,10 @@ const FLOW_STIFFNESS = 90;
 const FLOW_DAMPING = 19;
 /** 拖拽浏览的指数趋近时间常数（ms）：滞后 ≈ 拖动速度 × τ，跟手但保留一点柔。 */
 const DRAG_CHASE_TAU_MS = 40;
+/** 滚轮跟手的指数趋近时间常数：与拖拽同款，远快于行切换弹簧，消除触控板惯性下的滞后感。 */
+const WHEEL_CHASE_TAU_MS = 40;
+/** 最后一次滚轮事件后的跟手宽限期：覆盖触控板惯性事件流，不掉回慢速弹簧。 */
+const WHEEL_CHASE_GRACE_MS = 160;
 const MIN_LAYOUT_HEIGHT = 36;
 /** 非活动行模糊上限（CSS px）；移动端 σ≤8，按 σ→CSS 2σ 换算。 */
 const MAX_BLUR_PX = 16;
@@ -236,6 +240,8 @@ export class WordLyricPlayerCore {
   private dragStartClientY = 0;
   private dragStartScrollY = 0;
   private dragMoved = false;
+  /** 滚轮跟手截止时刻：期间行 / 呼吸点改用指数趋近（WHEEL_CHASE_TAU_MS），停手后交还弹簧。 */
+  private wheelChaseUntil = Number.NEGATIVE_INFINITY;
   /** 拖拽进行中：update() 对行 / 呼吸点位置改用指数趋近（DRAG_CHASE_TAU_MS），跟手带柔。 */
   private dragScrolling = false;
 
@@ -583,14 +589,20 @@ export class WordLyricPlayerCore {
       this.refreshActiveAndLayout(false);
     }
 
+    const wheelChasing = performance.now() < this.wheelChaseUntil;
     for (const entry of this.lineEntries) {
-      // 拖拽期间级联延迟不排队，否则部分行冻结、破坏跟手
-      if (entry.delayMs > 0 && !this.dragScrolling) {
+      // 拖拽 / 滚轮期间级联延迟不排队，否则部分行冻结、破坏跟手
+      if (entry.delayMs > 0 && !this.dragScrolling && !wheelChasing) {
         entry.delayMs = Math.max(0, entry.delayMs - deltaMs);
       } else if (this.enableSpring) {
         if (this.dragScrolling) {
           // 拖拽跟手：指数趋近（帧率无关、无条件稳定），滞后 ≈ 速度 × τ，带一点柔
           const chase = 1 - Math.exp(-deltaMs / DRAG_CHASE_TAU_MS);
+          entry.spring.position += (entry.pendingY - entry.spring.position) * chase;
+          entry.spring.velocity = 0;
+        } else if (wheelChasing) {
+          // 滚轮跟手：同款指数趋近（略柔），消除触控板惯性下的弹簧滞后
+          const chase = 1 - Math.exp(-deltaMs / WHEEL_CHASE_TAU_MS);
           entry.spring.position += (entry.pendingY - entry.spring.position) * chase;
           entry.spring.velocity = 0;
         } else {
@@ -738,9 +750,15 @@ export class WordLyricPlayerCore {
     }
 
     if (this.enableSpring) {
+      const wheelChasing = performance.now() < this.wheelChaseUntil;
       if (this.dragScrolling) {
         // 与行同步的拖拽指数趋近，避免呼吸点与歌词流脱节
         const chase = 1 - Math.exp(-deltaMs / DRAG_CHASE_TAU_MS);
+        this.dotsSpring.position += (this.dotsPendingY - this.dotsSpring.position) * chase;
+        this.dotsSpring.velocity = 0;
+      } else if (wheelChasing) {
+        // 与行同步的滚轮跟手趋近，避免呼吸点滞后于歌词流
+        const chase = 1 - Math.exp(-deltaMs / WHEEL_CHASE_TAU_MS);
         this.dotsSpring.position += (this.dotsPendingY - this.dotsSpring.position) * chase;
         this.dotsSpring.velocity = 0;
       } else {
@@ -898,6 +916,8 @@ export class WordLyricPlayerCore {
   private handleWheel = (event: WheelEvent) => {
     if (!this.allowScroll || this.disposed) return;
     const unit = event.deltaMode === 0 ? 1 : 50;
+    // 事件活跃期走快速跟手通道；停手宽限期过后由弹簧无缝接管（位置已几乎到位）
+    this.wheelChaseUntil = performance.now() + WHEEL_CHASE_GRACE_MS;
     // 滚轮向下 = 向后浏览（内容上移），向上 = 回看（内容下移）
     this.applyUserScroll(this.userScrollY - event.deltaY * unit);
   };
@@ -964,6 +984,27 @@ export class WordLyricPlayerCore {
     this.layoutDirty = true;
     this.refreshActiveAndLayout(true);
     this.update(0);
+  }
+
+  /**
+   * 只标脏不落位：连续窗口变化（如 mac 原生全屏动画逐帧改写视口）时，
+   * 逐帧 recoverLayout 的 sync 吸附会让歌词上下跳变；改由动画循环在
+   * 下一帧 calcLayout(false) 重算目标，弹簧平滑追赶，尺寸稳定后再落位。
+   */
+  markLayoutDirty() {
+    if (this.disposed) return;
+    this.layoutDirty = true;
+  }
+
+  /**
+   * 平滑重排：强制重测并重算弹簧目标（calcLayout(false)），既不吸附也不落位。
+   * 供窗口 / 字号变化后的暂停态使用——update() 在暂停时不重排，需要显式重算
+   * 目标，再由突发帧驱动弹簧平滑收敛到新布局，避免 sync 吸附造成上下跳变。
+   */
+  refreshLayoutTargets() {
+    if (this.disposed) return;
+    this.layoutDirty = true;
+    this.refreshActiveAndLayout(false);
   }
 
   private refreshActiveAndLayout(isSeek: boolean) {

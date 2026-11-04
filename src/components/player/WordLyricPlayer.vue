@@ -62,6 +62,8 @@ let resizeObserver: ResizeObserver | null = null;
 let frameId = 0;
 let recoveryFrameId = 0;
 let seekBurstFrameId = 0;
+/** 突发帧上一帧时间戳；跨滚动事件保持（突发帧复用，不随事件重启归零）。 */
+let burstLastTime = -1;
 
 function stopAnimationLoop() {
   if (frameId !== 0) {
@@ -75,27 +77,33 @@ function stopSeekBurst() {
     cancelAnimationFrame(seekBurstFrameId);
     seekBurstFrameId = 0;
   }
+  burstLastTime = -1;
 }
 
 /** 暂停态下渲染器没有常驻循环，seek / 手动滚动后用突发帧把动画收敛到位。 */
 function runSeekBurst() {
-  stopSeekBurst();
+  // 已在收敛中的突发帧直接复用：它在逐帧追赶最新目标，无需也不可重启。
+  // 旧实现每个滚动事件都 stop + 重建，而触控板惯性事件（~10ms 一个）比帧间隔密，
+  // 导致执行到的每帧都是 lastTime 归零的首帧（delta=0），暂停态滚动全程冻结、
+  // 手势结束后才一次性追上——表现为滑完约 1s 才到位（播放态常驻循环不受影响）。
+  if (seekBurstFrameId !== 0) return;
   // 收敛驱动：跑到渲染器无待定动画为止（级联延迟 / 弹簧 / 明暗），上限约 10s 兜底
   let remaining = 600;
-  let lastTime = -1;
   const onFrame = (time: number) => {
-    if (!core) {
+    if (!core || props.disabled) {
       seekBurstFrameId = 0;
+      burstLastTime = -1;
       return;
     }
-    if (lastTime === -1) lastTime = time;
-    core.update(time - lastTime);
-    lastTime = time;
+    if (burstLastTime === -1) burstLastTime = time;
+    core.update(time - burstLastTime);
+    burstLastTime = time;
     remaining -= 1;
     if (remaining > 0 && core.hasPendingMotion()) {
       seekBurstFrameId = requestAnimationFrame(onFrame);
     } else {
       seekBurstFrameId = 0;
+      burstLastTime = -1;
     }
   };
   seekBurstFrameId = requestAnimationFrame(onFrame);
@@ -157,6 +165,10 @@ function attachCore(nextCore: WordLyricPlayerCore) {
   });
   core = nextCore;
   applyCoreProps();
+  // 内核默认 playing=true，而 playing 的 watch 只响应变化；
+  // 暂停态下挂载（热更新 / 重挂载）若不同步，resize 突发帧会
+  // 按“播放中”逐帧推进时间，表现为暂停态缩放后歌词自动前进一行。
+  nextCore.setPlaying(props.playing);
   core.setLyricLines(props.lyricLines, Math.trunc(props.currentTime));
   core.recoverLayout();
 }
@@ -200,6 +212,30 @@ function queueRecovery(_reason: string) {
   recoveryFrameId = requestAnimationFrame(runRecovery);
 }
 
+/** 连续窗口变化（mac 原生全屏动画逐帧改写视口）视为结束的静默期 */
+const RESIZE_SETTLE_MS = 160;
+let resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 连续 resize 的结算入口：尺寸停止变化后重算一次弹簧目标并驱动收敛。
+ * 播放态由动画循环逐帧追赶、暂停态由突发帧收敛到无待定动画为止；
+ * 全程不做 sync 吸附（瞬移会造成上下跳变），与页面其它部分的
+ * 「同一次重排、同刻切换」保持一致（对齐 Windows 的瞬时 resize 观感）。
+ */
+function scheduleResizeSettle() {
+  if (resizeSettleTimer !== null) {
+    clearTimeout(resizeSettleTimer);
+  }
+  resizeSettleTimer = setTimeout(() => {
+    resizeSettleTimer = null;
+    if (!core) return;
+    core.refreshLayoutTargets();
+    if (!props.playing) {
+      runSeekBurst();
+    }
+  }, RESIZE_SETTLE_MS);
+}
+
 function handleLineClick(event: WordLyricLineClickEvent) {
   emit('line-click', event);
 }
@@ -229,10 +265,15 @@ onMounted(() => {
   }
 
   resizeObserver = new ResizeObserver(() => {
-    queueRecovery('resize');
+    if (!core) return;
+    // mac 原生全屏动画会逐帧改写视口尺寸：逐帧同步吸附（queueRecovery）
+    // 会让歌词上下跳变。这里只标脏、由动画循环 / 暂停态突发帧平滑追赶，
+    // 待尺寸停止变化后再一次性落位对齐。
+    core.markLayoutDirty();
     if (!props.playing) {
       runSeekBurst();
     }
+    scheduleResizeSettle();
   });
   resizeObserver.observe(wrapper);
 });
@@ -241,9 +282,19 @@ onBeforeUnmount(() => {
   stopAnimationLoop();
   stopSeekBurst();
 
+  if (resizeSettleTimer !== null) {
+    clearTimeout(resizeSettleTimer);
+    resizeSettleTimer = null;
+  }
+
   if (recoveryFrameId !== 0) {
     cancelAnimationFrame(recoveryFrameId);
     recoveryFrameId = 0;
+  }
+
+  if (resizeSettleTimer !== null) {
+    clearTimeout(resizeSettleTimer);
+    resizeSettleTimer = null;
   }
 
   resizeObserver?.disconnect();
@@ -390,7 +441,6 @@ watch(() => props.currentTime, (value) => {
   border-radius: 0.25em;
   text-align: var(--lyrics-text-align, left);
   backface-visibility: hidden;
-  will-change: transform, filter, opacity;
   cursor: pointer;
   transition: background-color 0.25s;
 }
@@ -421,7 +471,6 @@ watch(() => props.currentTime, (value) => {
   flex-direction: column;
   align-items: center;
   vertical-align: top;
-  will-change: transform;
 }
 
 /* 唱毕词的余晖辉光（对齐移动端 Shadow α0.35 / blur10，按字号等比换算） */

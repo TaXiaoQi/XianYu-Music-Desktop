@@ -482,6 +482,13 @@ onBeforeUnmount(() => {
   padding-top: 0;
 }
 
+/* mac 原生全屏动画逐帧改写视口尺寸：封面形变的 700ms 过渡会滞后于实时
+   缩放、并在动画收尾突进落位造成跳变，故全屏链路内暂停形变过渡，让
+   尺寸与主页一样逐帧跟随；页面展开/收起的形变动画在非全屏时不受影响。 */
+.shell-flush :deep(.morph-stage) {
+  transition: none !important;
+}
+
 .shell-raised {
   padding-top: calc(100vh - 100%);
 }

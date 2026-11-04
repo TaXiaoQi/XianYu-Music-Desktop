@@ -80,7 +80,7 @@ const onCoverActivate = (event: MouseEvent) => {
   <div class="cover-host">
     <div
       ref="detailCoverRef" 
-      class="cover-stage"
+      class="cover-stage morph-stage"
       :class="[stageMode, stageModeExtra]"
       :style="{ boxShadow: frameShadow, transform: 'scale(1)' }"
       @click="onCoverActivate"
