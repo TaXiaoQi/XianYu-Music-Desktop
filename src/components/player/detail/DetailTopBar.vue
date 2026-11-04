@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
+import { createMacDragRegionZoomToggle } from '../../../composables/macDragRegionZoomToggle';
 
-defineProps<{
+const props = defineProps<{
   /** 顶栏当前是否处于显现态 */
   revealed?: boolean;
   /** 详情页是否展开（控制命中与可见性） */
@@ -31,6 +32,12 @@ const emit = defineEmits<{
 
 // macOS 全部窗口控制交给系统红绿灯（绿键即全屏），自绘的窗口控制与全屏按钮仅 Windows 显示。
 const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
+
+// macOS：顶栏拖拽条双击改走带绿灯同款缩放动画的 smart_toggle_maximize
+// （Tauri 内置路径为瞬时硬切），沉浸式全屏中不接管。
+const { onMacDblMouseDown, onMacDblMouseUp } = createMacDragRegionZoomToggle(
+  () => props.fullscreenOn === true,
+);
 </script>
 
 <template>
@@ -42,7 +49,12 @@ const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.include
       IS_MACOS ? 'bar-track--mac' : '',
     ]"
   >
-    <div class="bar-drag" data-tauri-drag-region></div>
+    <div
+      class="bar-drag"
+      data-tauri-drag-region
+      @mousedown.capture="onMacDblMouseDown"
+      @mouseup.capture="onMacDblMouseUp"
+    ></div>
 
     <div class="bar-wing bar-wing--left">
       <button title="收起详情页" class="bar-btn" @click="emit('collapse')">

@@ -6,6 +6,7 @@ import { storeToRefs } from 'pinia';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useWindowMaterial } from '../../composables/windowMaterial';
+import { createMacDragRegionZoomToggle } from '../../composables/macDragRegionZoomToggle';
 import { useDesktopTheme } from '../../composables/useDesktopTheme';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -252,6 +253,12 @@ const toggleMaximize = () => {
   if (isMaximizeDisabled.value) return;
   void windowApi.smartToggleMaximize();
 };
+
+// macOS：拦截标题栏（data-tauri-drag-region）双击，改走带绿灯同款缩放动画的
+// smart_toggle_maximize（Tauri 内置路径为瞬时硬切），见 macDragRegionZoomToggle。
+const { onMacDblMouseDown, onMacDblMouseUp } = createMacDragRegionZoomToggle(
+  () => isMaximizeDisabled.value,
+);
 const closeWindow = async () => {
   if (settings.value.closeToTray) {
     await appWindow.hide();
@@ -279,6 +286,8 @@ onUnmounted(() => {
     data-tauri-drag-region
     class="h-16 flex items-center gap-3 px-6 select-none shrink-0 relative z-[60]"
     :class="[IS_MACOS ? 'pl-[88px]' : '']"
+    @mousedown.capture="onMacDblMouseDown"
+    @mouseup.capture="onMacDblMouseUp"
   >
     <div class="flex items-center gap-4 relative z-10 shrink-0">
       <TopBarControlItem v-for="key in leftControls" :key="key" :item-key="key" />

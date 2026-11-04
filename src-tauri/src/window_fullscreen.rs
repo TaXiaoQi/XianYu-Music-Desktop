@@ -242,7 +242,33 @@ pub fn smart_toggle_maximize(window: tauri::Window) -> Result<bool, String> {
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
+    // macOS：绿灯同款缩放动画。Tauri 内置的拖拽区双击最大化最终调 tao 的
+    // `NSWindow zoom:`，而程序化裸调 zoom: 是瞬时硬切（实测 frame 0 帧过渡，
+    // 与绿灯行为不一致）；需在 NSAnimationContext 分组 + allowsImplicitAnimation
+    // 包裹下调用 zoom: 才有与绿灯一致的约 0.25s 系统缩放动画。前端在标题栏
+    // 双击时改走本命令（见 TitleBar.vue 的 capture 拦截）。
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::rc::Retained;
+        use objc2::runtime::AnyObject;
+        use objc2_app_kit::{NSAnimationContext, NSWindow};
+
+        let ns_window_ptr =
+            window.ns_window().map_err(|error| error.to_string())? as *mut NSWindow;
+        // SAFETY: ns_window 指针由 tauri 返回、指向当前存活的 NSWindow。
+        let ns_window = unsafe { ns_window_ptr.as_ref() }.ok_or("ns_window 指针为空")?;
+        let was_zoomed = ns_window.isZoomed();
+        // SAFETY: beginGrouping/currentContext/zoom 要求主线程，tauri 非异步命令
+        // 在主线程执行；grouping 在同一调用栈内配对闭合，无泄漏。
+        NSAnimationContext::beginGrouping();
+        let context: Retained<NSAnimationContext> = NSAnimationContext::currentContext();
+        context.setAllowsImplicitAnimation(true);
+        ns_window.zoom(None::<&AnyObject>);
+        NSAnimationContext::endGrouping();
+        Ok(!was_zoomed)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let was_maximized = window.is_maximized().unwrap_or(false);
         if was_maximized {
