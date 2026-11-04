@@ -45,19 +45,20 @@ const hideWindow = () => {
 
 // —— 关外守卫：不依赖焦点的兜底关闭 ——
 // 托盘点击后进程常拿不到前台激活权，失焦事件不可靠；这里轮询前台
-// 窗口归属：前台不属于本应用且离开了弹出瞬间的基准窗口（说明用户
-// 点去了别处），就收起菜单。窗口内部点击、本应用其他窗口聚焦都不算。
+// 窗口归属：前台变为不属于本应用的外部窗口（说明用户点去了别处），
+// 就收起菜单。首次采样无条件记基准（mac 弹出后本应用即前台），窗口
+// 内部点击、本应用其他窗口聚焦都不算。
 let foregroundBaseline: number | null = null;
 
 const pollForegroundGuard = async () => {
   try {
     if (!(await hostWindow.isVisible())) return;
     const info = await windowApi.describeForegroundWindow();
-    if (info.owned_by_app) return;
     if (foregroundBaseline === null) {
       foregroundBaseline = info.hwnd;
       return;
     }
+    if (info.owned_by_app) return;
     if (info.hwnd === foregroundBaseline) return;
     hideWindow();
   } catch {

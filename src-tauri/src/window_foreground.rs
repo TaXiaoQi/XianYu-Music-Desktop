@@ -146,9 +146,9 @@ mod imp {
 }
 
 /// mac 前台快照：用 NSWorkspace 前台应用判定归属。
-/// 弹出的托盘菜单窗口不主动获焦，前台仍是之前的应用（owned=false，
-/// 作为关外守卫的基准 pid）；用户点回本应用任一窗口后 owned=true，
-/// 点去其它应用则 pid 变化 —— 前端守卫据此收起菜单。
+/// 弹出的托盘菜单窗会主动 setFocus（见 TrayMenuWindow onMounted），弹出后
+/// 前台通常是本应用（owned=true，作为关外守卫的基准 pid）；用户点去其它
+/// 应用则 owned=false 且 pid 变化 —— 前端守卫据此收起菜单。
 #[cfg(target_os = "macos")]
 mod imp {
     use super::ForegroundWindowInfo;
