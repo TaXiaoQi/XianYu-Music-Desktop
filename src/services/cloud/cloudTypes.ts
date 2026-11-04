@@ -75,6 +75,11 @@ export class CloudCaptureRule {
   /** 登录窗默认高（逻辑像素），0/缺省 = 480。 */
   readonly windowHeight: number;
 
+  /** 登录窗自定义 User-Agent（百度实验通道：百度网页会话与签发环境
+   * UA 绑定，rust 侧实测移动 UA 对 WebView 与浏览器 Cookie 均兼容——
+   * 见 src-tauri cloud/baidu.rs 头注释）。null/空 = 默认 UA。 */
+  readonly userAgent: string | null;
+
   constructor(
     init: {
       cookieNames?: string[];
@@ -89,6 +94,7 @@ export class CloudCaptureRule {
       forceScrollable?: boolean;
       windowWidth?: number;
       windowHeight?: number;
+      userAgent?: string | null;
     } = {},
   ) {
     this.cookieNames = init.cookieNames ?? [];
@@ -103,6 +109,7 @@ export class CloudCaptureRule {
     this.forceScrollable = init.forceScrollable ?? false;
     this.windowWidth = init.windowWidth ?? 0;
     this.windowHeight = init.windowHeight ?? 0;
+    this.userAgent = init.userAgent ?? null;
   }
 }
 

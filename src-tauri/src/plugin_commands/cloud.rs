@@ -280,6 +280,10 @@ struct WebviewCaptureSpec {
     /// 营销页不可滚动）声明更大尺寸完整显示登录区。
     window_width: u64,
     window_height: u64,
+    /// 登录窗自定义 User-Agent（百度实验通道：百度网页会话与签发环境
+    /// UA 绑定——移动 UA 对 WebView/浏览器种下的 Cookie 均兼容，见
+    /// cloud/baidu.rs 头注释实测记录）。空 = 默认 UA。
+    user_agent: String,
 }
 
 /// 登录页横向溢出且登录区靠右（夸克/UC 营销页）：常驻脚本周期性把文
@@ -413,6 +417,13 @@ pub async fn open_webview_login_window(
         .min_inner_size(480.0, 480.0)
         .center()
         .devtools(true);
+    // 移动 UA 实验（百度）：UA 与 Cookie 签发环境绑定，窗内 UA 必须与
+    // 后续网页通道请求 UA（cloud/baidu.rs UA 常量）一致才会话有效
+    let builder = if spec.user_agent.is_empty() {
+        builder
+    } else {
+        builder.user_agent(&spec.user_agent)
+    };
     let builder = if spec.force_scrollable {
         builder.initialization_script(FORCE_SCROLL_RIGHT_INIT_JS)
     } else if spec.scroll_to_right {

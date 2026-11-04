@@ -529,6 +529,7 @@ const openWebviewLoginWindow = async () => {
         forceScrollable: rule.forceScrollable === true,
         windowWidth: rule.windowWidth ?? 0,
         windowHeight: rule.windowHeight ?? 0,
+        userAgent: rule.userAgent ?? '',
       }),
     });
   } catch (e) {
@@ -1064,6 +1065,18 @@ onBeforeUnmount(() => {
               @click="openAuthorizePage"
             >
               {{ oauthBusy ? t('cloud.webviewLoginWaiting') : t('cloud.webviewLoginButton') }}
+            </button>
+            <!-- 内置网页登录（实验）：移动 UA 窗内登录网页版，原生抓
+                 BDUSS 走 Cookie 轨——绕开 OAuth 轨的沙箱下载限制 -->
+            <button
+              v-if="supportsWebviewLogin(selectedProvider)"
+              type="button"
+              :class="selectChipClass(false)"
+              class="self-start"
+              :disabled="webviewLoginBusy"
+              @click="openWebviewLoginWindow"
+            >
+              {{ webviewLoginBusy ? t('cloud.webviewLoginWaiting') : t('cloud.baiduWebviewLoginButton') }}
             </button>
             <p :class="modalHintClass" class="text-center">{{ t('cloud.webviewLoginDivider') }}</p>
             <p :class="modalHintClass">{{ t('cloud.baiduCookieHint') }}</p>

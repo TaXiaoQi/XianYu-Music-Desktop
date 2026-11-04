@@ -11,6 +11,7 @@ import { rustDirectLink, rustListDir, rustParseShare, rustSearchFiles, rustTrans
 import {
   CloudAccount,
   CloudCaptureResult,
+  CloudCaptureRule,
   CloudDirectLink,
   CloudException,
   CloudFile,
@@ -24,10 +25,11 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 // 开放平台 OAuth（pan.baidu.com/union 注册的应用），对齐移动端。
-// redirect_uri 无需真实可达——授权完成后内嵌授权窗跳到
-// `<redirect_uri>?code=xxx`，rust 侧 on_navigation 在加载前拦截抽 code。
-const OAUTH_CLIENT_ID = 'WzEEfe8MMzVlPqzpBB2r1hn0CKPrcDyt';
-const OAUTH_CLIENT_SECRET = 'a4MUtVIlPuQiRPGBFCAHwz2bmLv2bunE';
+// 2026-11-04 换发为公开发布类型应用（AppID 124618998）：旧个人使用
+// 应用仅沙箱权限（filemetas 拿不到全盘 dlink），公开发布应用才有资格
+// 申请全盘/下载能力。redirect_uri 与应用后台安全设置一致。
+const OAUTH_CLIENT_ID = 'JjhLTPweQ6XbEwzwXCWc1jrMcbJRXG5v';
+const OAUTH_CLIENT_SECRET = 'PG5YoxcztBCtzf6ZgFuBazTcjcQc3K6a';
 const OAUTH_REDIRECT_URI = 'https://xianyu-music.github.io/oauth/baidu';
 
 export class BaiduProvider extends CloudProvider {
@@ -60,6 +62,32 @@ export class BaiduProvider extends CloudProvider {
 
   override get directLinkTtl(): number {
     return 8 * 60 * 60 * 1000;
+  }
+
+  // 内置网页登录（实验通道，2026-11-04）：移动 UA WebView 打开网页版
+  // 网盘，原生抓 BDUSS 走 Cookie 轨——绕开 OAuth 轨的沙箱下载限制。
+  // 依据 baidu.rs 实测规律「移动 UA 对 WebView 与浏览器种下的 Cookie 均
+  // 兼容」；旧结论「WebView 会话 BDUSS 系统性拒绝(-6)」是否仍然成立，
+  // 由绑定后 validate/列表实测判定。UA 必须与 rust 网页通道 UA 一致。
+  private static readonly WEB_LOGIN_UA =
+    'Mozilla/5.0 (Linux; Android 13; M2102K1C) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+  override get webviewLoginUrl(): string {
+    return 'https://pan.baidu.com/';
+  }
+
+  override get captureRule(): CloudCaptureRule {
+    return new CloudCaptureRule({
+      // BDUSS/STOKEN 种在 .baidu.com，经 pan.baidu.com 域即可原生读取
+      cookieDomains: ['pan.baidu.com', 'wappass.baidu.com'],
+      // 登录态锚：一次性登录 profile 里 BDUSS 出现即登录完成
+      requiredCookies: ['BDUSS'],
+      finalCookies: ['STOKEN'],
+      userAgent: BaiduProvider.WEB_LOGIN_UA,
+      // 移动版页面竖排，480 宽窗足够；高 680 容纳登录表单/二维码
+      windowWidth: 480,
+      windowHeight: 680,
+    });
   }
 
   private get _webHeaders(): Record<string, string> {
