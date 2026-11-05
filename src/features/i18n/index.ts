@@ -310,7 +310,7 @@ const zhCN = {
   'dlna.settings.running': '运行中 · 端口 {port}',
   'dlna.settings.notRunning': '未运行（需与投送端在同一局域网）',
   'dlna.settings.name': '设备名称（投送端看到的名字）',
-  'dlna.settings.namePlaceholder': '弦予音乐',
+  'dlna.settings.namePlaceholder': '弦予音乐-桌面端',
   'dlna.settings.firewallHint': '首次开启时 Windows 可能弹出防火墙授权，请允许「专用网络」访问，否则设备将无法被发现。',
 
   'stats.rangeLabel': '时间范围',
@@ -657,7 +657,7 @@ const enUS: Record<I18nKey, string> = {
   'dlna.settings.running': 'Running · Port {port}',
   'dlna.settings.notRunning': 'Not running (must be on the same network as casting device)',
   'dlna.settings.name': 'Device name (as seen by casting devices)',
-  'dlna.settings.namePlaceholder': 'XianYu Music',
+  'dlna.settings.namePlaceholder': 'XianYu Music (Desktop)',
   'dlna.settings.firewallHint': 'Windows may show a firewall prompt when first enabled. Allow "Private networks" access, otherwise the device may not be discoverable.',
 
   'stats.rangeLabel': 'Time range',

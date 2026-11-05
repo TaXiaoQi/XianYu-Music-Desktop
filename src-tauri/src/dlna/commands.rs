@@ -59,14 +59,8 @@ impl DmrHost for PlayerDmrHost {
 }
 
 fn fallback_friendly_name() -> String {
-    let host = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_default();
-    if host.trim().is_empty() {
-        "弦予音乐".to_string()
-    } else {
-        format!("弦予音乐 · {}", host.trim())
-    }
+    // 用户未自定义时的默认设备名；移动端同款逻辑用「弦予音乐-移动端」
+    "弦予音乐-桌面端".to_string()
 }
 
 // ---------------- 发送端（DMC） ----------------

@@ -58,7 +58,7 @@ onMounted(() => {
             v-model="settings.dlnaRendererName"
             type="text"
             maxlength="40"
-            placeholder="弦予音乐"
+            placeholder="弦予音乐-桌面端"
             class="mt-2 w-full rounded-lg border border-black/10 bg-white/45 px-3 py-2 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/30 dark:focus:bg-white/10"
             @change="onRendererNameChanged"
           />
