@@ -465,22 +465,9 @@ pub fn run() { // run
         builder
     }
         .on_window_event(|window, event| { // 实现
-            let label = window.label();
-            let main_window_gone = label == "main";
-            // 诊断（主窗被缩根因排查）：记录主窗每次尺寸变化的时刻/新尺寸/
-            // 最大化态，与登录窗建窗/关窗日志对时，钉住触发源后移除
+            let main_window_gone = window.label() == "main";
             if main_window_gone {
-                if let tauri::WindowEvent::Resized(size) = event {
-                    let maxed = window.is_maximized().unwrap_or(false);
-                    eprintln!(
-                        "[main-size] t={} resized to {}x{} maximized={maxed}",
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_millis())
-                            .unwrap_or(0),
-                        size.width,
-                        size.height,
-                    );
+                if let tauri::WindowEvent::Resized(_) = event {
                     // 主窗尺寸守护：登录窗存活期（含关窗宽限）内被 WebView2
                     // 重置回创建尺寸时还原（见 cloud.rs MAIN_SIZE_GUARD）
                     plugins::enforce_main_size_on_resize(window);
