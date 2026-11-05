@@ -284,6 +284,13 @@ function flipMeshBackground() {
   applyThemePatch({ playerDetailMeshBackground: !meshBackdropOn.value });
 }
 
+// 歌词模糊效果（与设置 → 外观 → 播放页设置中的开关同源，themeState.lyricBlur）
+const lyricBlurOn = computed(() => themeState.value?.lyricBlur !== false);
+
+function flipLyricBlur() {
+  applyThemePatch({ lyricBlur: !lyricBlurOn.value });
+}
+
 /** 流动速度倍率的滑块范围（渲染侧 PlayerDetailMeshBackground 还会夹取一次兜底） */
 const MESH_SPEED_MIN = 0;
 const MESH_SPEED_MAX = 3;
@@ -835,20 +842,50 @@ watch(() => props.coverHidden, async () => {
             </button>
           </div>
 
-          <div class="mt-6 mb-3"> 
+          <div class="mt-6 mb-3">
+            <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Effect</div>
+            <div class="mt-1.5 flex items-center justify-between gap-3">
+              <span class="text-[13px] text-white/85 font-medium">歌词效果</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition"
+              :class="!stylePrefs.enableWordEffect
+                ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
+                : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
+              @click="flipWordEffect"
+            >
+              逐字歌词效果
+            </button>
+            <button
+              type="button"
+              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition"
+              :class="!lyricBlurOn
+                ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
+                : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
+              @click="flipLyricBlur"
+            >
+              歌词模糊效果
+            </button>
+          </div>
+
+          <div class="mt-6 mb-3">
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Subtitles</div>
-            <div class="mt-1.5 flex items-center justify-between gap-3"> 
+            <div class="mt-1.5 flex items-center justify-between gap-3">
               <span class="text-[13px] text-white/85 font-medium">副行显示</span>
-              <span class="text-[11px] font-medium text-white/42"> 
+              <span class="text-[11px] font-medium text-white/42">
                 {{ activeSubtitleCount }}/2
               </span>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2"> 
+          <div class="grid grid-cols-2 gap-2">
             <button
-              type="button" 
-              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition" 
+              type="button"
+              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition"
               :class="!stylePrefs.showTranslation
                 ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
@@ -858,8 +895,8 @@ watch(() => props.coverHidden, async () => {
             </button>
 
             <button
-              type="button" 
-              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition" 
+              type="button"
+              class="flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition"
               :class="!stylePrefs.showRomaji
                 ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
@@ -868,20 +905,7 @@ watch(() => props.coverHidden, async () => {
               显示罗马音
             </button>
           </div>
-
-          <div class="mt-4"> 
-            <button 
-              type="button" 
-              class="flex h-10 w-full items-center justify-center rounded-2xl border px-3 text-sm font-medium transition" 
-              :class="!stylePrefs.enableWordEffect
-                ? 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
-                : 'border-white/25 bg-white/14 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)]'"
-              @click="flipWordEffect"
-            > 
-              逐字歌词效果 
-            </button> 
-          </div> 
-          <div class="mt-6 mb-3"> 
+          <div class="mt-6 mb-3">
             <div class="text-[9px] font-semibold uppercase text-white/30 tracking-[0.3em]">Alignment</div>
             <div class="mt-1.5 flex items-center justify-between gap-3"> 
               <span class="text-[13px] text-white/85 font-medium">歌词位置</span>
