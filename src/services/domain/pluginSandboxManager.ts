@@ -225,7 +225,14 @@ function isPluginAuthBanned(pluginId: string): boolean {
   return true;
 }
 
+// 能力型报错（账号/卡密不支持某平台或音质）：与鉴权无关，不计入鉴权熔断，
+// 否则「卡密不支持该平台或音质」会把卡密实际可用的平台也一并熔断（与移动端/手表端一致）
+function isCapabilityError(msg: string): boolean {
+  return /不支持该平台|不支持.{0,8}音质|音质.{0,8}不支持|无此音质|未开放平台/i.test(msg);
+}
+
 function markAuthFailure(pluginId: string, msg: string): void {
+  if (isCapabilityError(msg)) return;
   // 熔断期间被挡住的重试会再次走到这里（错误同样含鉴权关键词），
   // 不刷新熔断截止时间，否则「一直点播放就永远熔断」。
   if (isPluginAuthBanned(pluginId)) return;
