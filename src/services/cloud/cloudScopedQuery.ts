@@ -26,6 +26,18 @@ const isUnderRoots = (path: string, roots: string[]): boolean =>
     return path === r || path.startsWith(base);
   });
 
+/** 范围搜索结果：authoritative 表示结果已等价于全盘权威搜索（百度
+ * filesearch 服务端一次拉全，含按 roots 过滤后的空结果）——调用方据此
+ * 跳过后续重复的全盘 searchFiles 请求。walkedFiles 为回落 BFS 遍历时
+ * 的无关键词全量收集结果（遍历网络成本与关键词过滤完全相同，过滤发生
+ * 在本地）——调用方在无既有索引时把它 save 进扫描索引，慢路径一次即
+ * 建立索引。 */
+export interface ScopedSearchOutcome {
+  files: CloudFile[];
+  authoritative: boolean;
+  walkedFiles?: CloudFile[];
+}
+
 /** 百度特化：filesearch 服务端全盘检索一次返回（含 path），1 次 API 替代
  * 逐目录 listDir 遍历——几十个目录的树即使并发也要多轮往返，是百度范围
  * 搜索慢的主因。命中按 roots 路径前缀过滤 + 文件名 contains 复核
@@ -38,18 +50,21 @@ const scopedSearchAudioBaidu = async (
   cred: Record<string, string>,
   roots: string[],
   keyword: string,
-): Promise<CloudFile[] | null> => {
+): Promise<ScopedSearchOutcome | null> => {
   try {
     // 百度 filesearch 无翻页（nextCursor 恒空），一次拉全
     const all = (await provider.searchFiles(cred, keyword.trim())).files;
-    return all.filter(
-      f =>
-        !f.isDir &&
-        f.isAudio &&
-        f.name.toLowerCase().includes(keyword.trim().toLowerCase()) &&
-        f.path != null &&
-        isUnderRoots(f.path, roots),
-    );
+    return {
+      files: all.filter(
+        f =>
+          !f.isDir &&
+          f.isAudio &&
+          f.name.toLowerCase().includes(keyword.trim().toLowerCase()) &&
+          f.path != null &&
+          isUnderRoots(f.path, roots),
+      ),
+      authoritative: true,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // 网络类失败（频控/断网）不回落 BFS：几十次 listDir 连击会加重百度
@@ -57,11 +72,24 @@ const scopedSearchAudioBaidu = async (
     // 空结果；仅业务不支持（OAuth 轨无搜索接口）回落通用遍历。
     if (!msg.includes('OAuth') && !msg.includes('不支持')) {
       console.warn('[scopedSearch] baidu filesearch 失败(网络/风控?)，返回空:', msg);
-      return [];
+      return { files: [], authoritative: true };
     }
     console.warn('[scopedSearch] baidu filesearch 不支持，回落遍历:', msg);
     return null;
   }
+};
+
+/** 缓存索引条目的本地关键词过滤（与搜索链路判据一致：非目录、音频、
+ * 文件名 contains 忽略大小写）。供搜索 cache-first 与慢路径回填后过滤。 */
+export const filterCachedAudio = (
+  files: CloudFile[],
+  keyword: string,
+): CloudFile[] => {
+  const kw = keyword.trim().toLowerCase();
+  if (!kw) return [];
+  return files.filter(
+    f => !f.isDir && f.isAudio && f.name.toLowerCase().includes(kw),
+  );
 };
 
 /** 目录树 BFS 遍历收集音频：keyword 非空时按文件名 contains 过滤
@@ -181,21 +209,37 @@ const walkAudioDirs = async (
 
 /** 在 roots 指定的文件夹范围内搜索文件名含 keyword 的音频。
  * 同 id 只留一条（并发遍历，结果顺序不定）；网络异常的子文件夹跳过。 */
+export async function scopedSearchAudioDetailed(
+  provider: CloudProvider,
+  cred: Record<string, string>,
+  roots: string[],
+  keyword: string,
+): Promise<ScopedSearchOutcome> {
+  if (!keyword.trim()) return { files: [], authoritative: false };
+  if (provider.id === 'baidu') {
+    const viaApi = await scopedSearchAudioBaidu(provider, cred, roots, keyword);
+    if (viaApi != null) return viaApi;
+    // 回落通用遍历
+  }
+  // 回落 BFS 无关键词全量收集（遍历网络成本与关键词过滤相同），本地
+  // 过滤出命中；全量结果经 walkedFiles 带回给调用方建立扫描索引。
+  const outcome = await walkAudioDirs(provider, cred, roots, null);
+  return {
+    files: filterCachedAudio(outcome.files, keyword),
+    authoritative: false,
+    walkedFiles: outcome.files,
+  };
+}
+
+/** scopedSearchAudioDetailed 的薄包装（日推等只需结果列表的调用方）。 */
 export async function scopedSearchAudio(
   provider: CloudProvider,
   cred: Record<string, string>,
   roots: string[],
   keyword: string,
 ): Promise<CloudFile[]> {
-  const kw = keyword.trim().toLowerCase();
-  if (!kw) return [];
-  if (provider.id === 'baidu') {
-    const viaApi = await scopedSearchAudioBaidu(provider, cred, roots, keyword);
-    if (viaApi != null) return viaApi;
-    // 回落通用遍历
-  }
-  const outcome = await walkAudioDirs(provider, cred, roots, kw);
-  return outcome.files;
+  return (await scopedSearchAudioDetailed(provider, cred, roots, keyword))
+    .files;
 }
 
 /** 网盘页全量音频列举：遍历 selectedRoots（空 = 从全盘根目录起）收集

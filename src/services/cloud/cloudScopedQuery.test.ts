@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scopedSearchAudio } from './cloudScopedQuery';
+import { filterCachedAudio, scopedSearchAudio, scopedSearchAudioDetailed } from './cloudScopedQuery';
 import type { CloudProvider } from './cloudProvider';
 import { CloudFile, CloudListResult } from './cloudTypes';
 
@@ -173,5 +173,78 @@ describe('scopedSearchAudio', () => {
     } as unknown as CloudProvider;
     const out = await scopedSearchAudio(provider, {}, ['r1'], 'song');
     expect(out).toEqual([]);
+  });
+});
+
+describe('scopedSearchAudioDetailed', () => {
+  it('baidu filesearch 命中：authoritative=true', async () => {
+    const provider = {
+      id: 'baidu',
+      listDir: async () => {
+        throw new Error('不应触发目录遍历');
+      },
+      searchFiles: async () =>
+        new CloudListResult({ files: [audio('s1', 'song.mp3', '/r/song.mp3')] }),
+    } as unknown as CloudProvider;
+    const out = await scopedSearchAudioDetailed(provider, {}, ['/r'], 'song');
+    expect(out.authoritative).toBe(true);
+    expect(out.files.map(f => f.id)).toEqual(['s1']);
+  });
+
+  it('baidu OAuth 报错回落 BFS：authoritative=false', async () => {
+    const provider = {
+      id: 'baidu',
+      listDir: async (_cred: unknown, path: string) =>
+        new CloudListResult({ files: [audio(`f-${path}`, `song ${path}.mp3`)] }),
+      searchFiles: async () => {
+        throw new Error('OAuth 账号暂不支持全盘搜索');
+      },
+    } as unknown as CloudProvider;
+    const out = await scopedSearchAudioDetailed(provider, {}, ['r1'], 'song');
+    expect(out.authoritative).toBe(false);
+    expect(out.files.map(f => f.id)).toEqual(['f-r1']);
+  });
+
+  it('baidu 风控/网络类失败返回空：authoritative=true（全盘权威空结果）', async () => {
+    const provider = {
+      id: 'baidu',
+      listDir: async () => {
+        throw new Error('不应触发目录遍历');
+      },
+      searchFiles: async () => {
+        throw new Error('搜索请求失败 (HTTP 403)');
+      },
+    } as unknown as CloudProvider;
+    const out = await scopedSearchAudioDetailed(provider, {}, ['r1'], 'song');
+    expect(out.authoritative).toBe(true);
+    expect(out.files).toEqual([]);
+  });
+
+  it('非 baidu 走通用遍历：authoritative=false', async () => {
+    const provider = fakeProvider(async (_cred, path) =>
+      new CloudListResult({ files: [audio(`f-${path}`, `song ${path}.mp3`)] }),
+    );
+    const out = await scopedSearchAudioDetailed(provider, {}, ['r1'], 'song');
+    expect(out.authoritative).toBe(false);
+    expect(out.files.map(f => f.id)).toEqual(['f-r1']);
+  });
+});
+
+describe('filterCachedAudio', () => {
+  it('大小写不敏感且排除目录/非音频', () => {
+    const files = [
+      audio('a', 'Song One.mp3'),
+      audio('b', 'song two.FLAC'),
+      dir('c', 'song dir'),
+      audio('d', 'note.txt'),
+      audio('e', 'unrelated.mp3'),
+    ];
+    const out = filterCachedAudio(files, 'SONG');
+    expect(out.map(f => f.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('关键词为空返回空', () => {
+    const files = [audio('a', 'song.mp3')];
+    expect(filterCachedAudio(files, '  ')).toEqual([]);
   });
 });

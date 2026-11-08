@@ -23,7 +23,12 @@ import { reportSearch, reportInputStats } from '../../services/domain/usageStats
 import { cloudProviderById } from '../../services/cloud/cloudRegistry';
 import { CloudCredentialsStore } from '../../services/cloud/cloudCredentialsStore';
 import { CloudFolderSelectionStore } from '../../services/cloud/cloudFolderSelectionStore';
-import { scopedSearchAudio } from '../../services/cloud/cloudScopedQuery';
+import { CloudScanCacheStore } from '../../services/cloud/cloudScanCacheStore';
+import {
+  filterCachedAudio,
+  listAllCloudAudio,
+  scopedSearchAudioDetailed,
+} from '../../services/cloud/cloudScopedQuery';
 import { scheduleCloudHeadMetaBatch } from '../../features/playback/cloudHeadMeta';
 import type { CloudFile } from '../../services/cloud/cloudTypes';
 import type { SearchSources } from './useSearchSources';
@@ -280,6 +285,25 @@ export function useSearchQuery(options: {
         const cred = accounts[0]?.cred ?? {};
         const provider = cloudProviderById(source.cloudProviderId)!;
         const accountId = accounts[0]?.accountId ?? '_';
+        // cache-first：24h 全量扫描索引（网盘页与搜索慢路径共用）命中 ≥1 条
+        // 直接本地过滤上屏（毫秒级）；0 命中照旧走网络——0 命中可能是缓存
+        // 没收录新上传的文件，不能只信缓存。
+        const cached = CloudScanCacheStore.instance.loadFresh(
+          source.cloudProviderId,
+          accountId,
+        );
+        if (cached) {
+          const hits = filterCachedAudio(cached.files, query);
+          if (hits.length > 0 && !activeController.signal.aborted) {
+            cloudSearchResults.value = hits.map(f =>
+              cloudFileToSong(f, source.cloudProviderId!, source.name, accountId),
+            );
+            scheduleCloudHeadMetaBatch(cloudSearchResults.value);
+            hasMore.value = false;
+            nextCloudCursor.value = null;
+            return;
+          }
+        }
         // 有已选文件夹的账号只遍历选定范围，避免全盘搜索（与移动端语义一致）
         const roots = await CloudFolderSelectionStore.instance.pathsFor(
           source.cloudProviderId,
@@ -287,19 +311,43 @@ export function useSearchQuery(options: {
         );
         let files: CloudFile[] = [];
         let nextCursor: string | null = null;
+        let authoritative = false;
         if (roots.length > 0) {
-          files = await scopedSearchAudio(provider, cred, roots, query);
+          const scoped = await scopedSearchAudioDetailed(provider, cred, roots, query);
+          files = scoped.files;
+          authoritative = scoped.authoritative;
+          // 范围 BFS 遍历（authoritative=false 即发生了遍历）：无既有索引
+          // 时把全量收集结果 save 进扫描索引——本次遍历的网络成本已经
+          // 花掉，存下来之后 24h 内搜索全部毫秒级。已有索引时 0 命中才
+          // 会走到这，此时不强刷（0 命中是关键词没命中，索引本身有效）。
+          if (
+            !authoritative &&
+            !cached &&
+            !activeController.signal.aborted &&
+            scoped.walkedFiles &&
+            scoped.walkedFiles.length > 0
+          ) {
+            CloudScanCacheStore.instance.save(provider.id, accountId, scoped.walkedFiles);
+          }
         }
         // 范围内无命中则自动扩大到全盘（搜索是全局动作，勾选范围只是
-        // 加速——勾选的文件夹未必包含目标文件）；未选目录走同一链路
-        if (roots.length === 0 || !files || files.length === 0) {
+        // 加速——勾选的文件夹未必包含目标文件）；未选目录走同一链路。
+        // authoritative（百度 filesearch 已一次拉全）0 命中时全盘结果
+        // 同样为空，跳过重复请求。
+        if (roots.length === 0 || (!authoritative && files.length === 0)) {
           try {
             const res = await provider.searchFiles(cred, query);
             files = res.files;
             nextCursor = res.nextCursor;
           } catch (e) {
             console.warn(`[cloud] ${provider.id} 盘侧搜索失败，回退全盘遍历:`, e);
-            files = await scopedSearchAudio(provider, cred, [provider.rootPath], query);
+            // 全盘遍历改无关键词全量收集：同样慢一次，但结果反哺 24h
+            // 扫描索引，之后搜索全部走 cache-first 毫秒级。
+            const full = await listAllCloudAudio(provider, cred, []);
+            if (!activeController.signal.aborted) {
+              CloudScanCacheStore.instance.save(provider.id, accountId, full);
+            }
+            files = full;
           }
         }
         if (activeController.signal.aborted) return;

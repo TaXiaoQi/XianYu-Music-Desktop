@@ -552,17 +552,38 @@ fn macos_tray_template_icon() -> tauri::Result<tauri::image::Image<'static>> {
     Ok(tauri::image::Image::new_owned(decoded.into_raw(), width, height))
 }
 
+/// Windows/Linux 托盘图标：彩色 glyph 满幅版（icons/tray-app.png，由 logo.png
+/// 直接缩放生成）。应用图标自带白色圆角底与四周留白，缩到 16px 托盘尺寸后
+/// 只剩一块看不清的白底，因此与 mac 一样使用独立的托盘资源。
+#[cfg(not(target_os = "macos"))]
+fn desktop_tray_icon() -> tauri::Result<tauri::image::Image<'static>> {
+    let decoded = image::load_from_memory(include_bytes!("../icons/tray-app.png"))
+        .map_err(|error| std::io::Error::other(error.to_string()))?
+        .to_rgba8();
+    let (width, height) = (decoded.width(), decoded.height());
+    Ok(tauri::image::Image::new_owned(decoded.into_raw(), width, height))
+}
+
 fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> { // 实现
-    // mac 分支会重建 builder（template 图标）；Windows/Linux 不再变更
+    // mac 分支会覆盖为 template 图标；Windows/Linux 用专用 glyph 托盘图标
     #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .icon(
-            app.default_window_icon()
-                .ok_or_else(|| std::io::Error::other("no default window icon"))?
-                .clone(),
-        )
-        .tooltip("弦予音乐")
-        .show_menu_on_left_click(false); // 实现
+    let mut builder = {
+        #[cfg(target_os = "macos")]
+        {
+            TrayIconBuilder::with_id(TRAY_ID)
+                .icon(
+                    app.default_window_icon()
+                        .ok_or_else(|| std::io::Error::other("no default window icon"))?
+                        .clone(),
+                )
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            TrayIconBuilder::with_id(TRAY_ID).icon(desktop_tray_icon()?)
+        }
+    }
+    .tooltip("弦予音乐")
+    .show_menu_on_left_click(false); // 实现
 
     // mac：菜单栏图标走单色 template（彩色应用图标直接进菜单栏不符合系统观感）
     #[cfg(target_os = "macos")]

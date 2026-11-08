@@ -201,7 +201,9 @@ mod imp {
     }
 
     fn load_app_icon() -> Option<Icon> {
-        const ICON_PNG: &[u8] = include_bytes!("../../icons/32x32.png");
+        // 托盘专用 glyph 图标：32x32.png 现为白色圆角底应用图标，缩进托盘
+        // 后只剩白块无法辨认，故用满幅 glyph 的 tray-app.png
+        const ICON_PNG: &[u8] = include_bytes!("../../icons/tray-app.png");
         let image = image::load_from_memory(ICON_PNG).ok()?;
         let rgba = image.to_rgba8();
         Icon::from_rgba(rgba.into_raw(), image.width(), image.height()).ok()
