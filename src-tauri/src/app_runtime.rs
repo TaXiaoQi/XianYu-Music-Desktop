@@ -540,6 +540,43 @@ fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) { // 实现
     }
 }
 
+/// Windows 任务栏按钮需要窗口的 ICON_BIG，而 tao 只通过 WM_SETICON 设置了
+/// 16px 的 ICON_SMALL；任务栏拿不到大图标时会把 16px 小图标拉伸放大，
+/// glyph 因此发虚显满，看起来像「顶满的旧图标」。这里显式加载 32px 应用
+/// 图标（白底描边 mac 版）并设置为大图标，任务栏即按原比例渲染。
+#[cfg(windows)]
+fn set_taskbar_icon_big(hwnd: isize) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn CreateIconFromResourceEx(
+            data: *const u8,
+            size: u32,
+            is_icon: i32,
+            version: u32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> isize;
+        fn SendMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize;
+        fn GetAncestor(hwnd: isize, flags: u32) -> isize;
+    }
+
+    const WM_SETICON: u32 = 0x0080;
+    const ICON_BIG: usize = 1;
+    const GA_ROOT: u32 = 2;
+    unsafe {
+        // raw_window_handle 给到的可能是 WebView2 子窗口，任务栏图标必须设在顶层框架窗口上
+        let root = GetAncestor(hwnd, GA_ROOT);
+        let target = if root != 0 { root } else { hwnd };
+        // LoadImageW 不支持 PNG 文件，直接从内存中的 PNG 字节创建 HICON
+        let png = include_bytes!("../icons/32x32.png");
+        let hicon = CreateIconFromResourceEx(png.as_ptr(), png.len() as u32, 1, 0x0003_0000, 0, 0, 0);
+        if hicon != 0 {
+            SendMessageW(target, WM_SETICON, ICON_BIG, hicon);
+        }
+    }
+}
+
 /// mac 菜单栏模板图标：纯黑+alpha 字形（icons/tray-template.png，由 logo.png
 /// 取 alpha 染黑生成），配合 icon_as_template 由系统按菜单栏深浅自动着色，
 /// 与其它 app 的单色状态栏图标观感一致（应用图标本身的彩色不进菜单栏）。
@@ -802,6 +839,16 @@ pub(crate) fn setup_app( // setup_app
     queue_deep_links(app.handle(), initial_deep_links);
 
     install_window_boundary(app); // 实现
+    #[cfg(windows)]
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        use raw_window_handle::HasWindowHandle;
+
+        if let Ok(handle) = window.as_ref().window().window_handle() {
+            if let raw_window_handle::RawWindowHandle::Win32(win32) = handle.as_raw() {
+                set_taskbar_icon_big(win32.hwnd.get() as isize); // 实现
+            }
+        }
+    }
     build_tray(app)?; // 实现
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) { // 实现
