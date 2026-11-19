@@ -694,14 +694,29 @@ watch(
   { immediate: true },
 );
 
-// 视口行变化 → 同步封面 / 预取 / 预热 / 下载标记
+// 视口行变化 → 封面同步立即执行；预取/预热/下载标记推迟到可见区间稳定后一次，
+// 避免滚动中每个中间区间都朝冷缓存发一轮并发 burst（各列表首滚卡顿 2s 的主因）
+const VIEWPORT_PREFETCH_IDLE_MS = 150;
+let viewportPrefetchIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+const runViewportPrefetch = () => {
+  const items = viewportData.value.items;
+  preloadPriorityCovers(items.map(song => song.path));
+  prefetchComments(items);
+  void refreshSavedDownloads(items);
+};
+
 watch(
   () => viewportData.value.items,
   (items) => {
     applyCoverUrls(items);
-    preloadPriorityCovers(items.map(song => song.path));
-    prefetchComments(items);
-    void refreshSavedDownloads(items);
+    if (viewportPrefetchIdleTimer !== null) {
+      clearTimeout(viewportPrefetchIdleTimer);
+    }
+    viewportPrefetchIdleTimer = setTimeout(() => {
+      viewportPrefetchIdleTimer = null;
+      runViewportPrefetch();
+    }, VIEWPORT_PREFETCH_IDLE_MS);
   },
   { immediate: true },
 );
@@ -912,6 +927,10 @@ onBeforeUnmount(() => {
 
 onUnmounted(() => {
   clearTimeout(enterTimer);
+  if (viewportPrefetchIdleTimer !== null) {
+    clearTimeout(viewportPrefetchIdleTimer);
+    viewportPrefetchIdleTimer = null;
+  }
   disposeWindowResize?.();
 });
 

@@ -2,9 +2,10 @@ import { libraryApi } from "../services/tauri/libraryApi";
 import type { SongDetail } from "../types";
 import { MemoryCache } from "../utils/MemoryCache";
 
-// 曲目详情缓存参数：有效期 5 分钟，最多保留 8 条记录
+// 曲目详情缓存参数：有效期 5 分钟。容量必须覆盖一屏可见行（~30）+ 上下过扫区，
+// 否则滚动时缓存不断逐出，每轮回热都重新发全量 getSongDetail IPC（首滚卡顿放大器）。
 const DETAIL_TTL_MS = 5 * 60 * 1000;
-const DETAIL_MAX_ENTRIES = 8;
+const DETAIL_MAX_ENTRIES = 96;
 
 const detailCache = new MemoryCache<string, SongDetail>({
     ttlMs: DETAIL_TTL_MS,
