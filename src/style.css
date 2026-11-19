@@ -189,6 +189,20 @@ html.theme-transitioning * {
   }
 }
 
+/* 窗口拖拽缩放期间：临时关闭毛玻璃与过渡，保证帧率。
+   底层安全：GlobalBackground 常驻 fixed inset-0 实底 + 材质模式下 OS acrylic 仍在，
+   关闭 CSS 模糊不会露出桌面。 */
+html.is-window-resizing *,
+html.is-window-resizing *::before,
+html.is-window-resizing *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.is-window-resizing *:not(svg):not(svg *):not(.material-transition-mask) {
+  transition-duration: 0ms !important;
+}
+
 .modal-pop-enter-active,
 .modal-pop-leave-active {
   transition: opacity 200ms ease;
