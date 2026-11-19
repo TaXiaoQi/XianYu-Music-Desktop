@@ -121,11 +121,12 @@ function formatRelativeTime(ts: number | undefined): string {
               />
               <div
                 v-else
-                class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate cursor-text hover:text-[#EC4141] transition-colors"
-                :title="`点击编辑「${sub.name}」名称`"
+                class="text-sm font-medium truncate cursor-text transition-colors"
+                :class="sub.name ? 'text-gray-800 dark:text-gray-100 hover:text-[#EC4141]' : 'text-gray-400 dark:text-white/40 hover:text-[#EC4141] dark:hover:text-[#EC4141]'"
+                :title="sub.name ? `点击编辑「${sub.name}」备注` : '点击设置订阅备注'"
                 @click="$emit('edit-name', sub)"
               >
-                {{ sub.name || sub.url }}
+                {{ sub.name || '未命名订阅（点击设置备注）' }}
               </div>
               <div class="text-xs text-gray-500 dark:text-white/50 truncate">{{ sub.url }}</div>
               <div

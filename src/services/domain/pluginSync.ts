@@ -1,5 +1,7 @@
 import type { PluginSource } from "../../types";
 import { signedRequest } from "../auth/authService";
+import { pluginApi } from "../tauri/pluginApi";
+import { fetchWithTimeout } from "./pluginFetch";
 import { getCiyuanxiId } from "./playlistSync";
 import {
     getStoredPlugins,
@@ -23,11 +25,62 @@ import {
     removeDownloadSkipIds,
     getUploadSkipIds,
     clearPluginSyncTombstones,
+    getUploadedScriptHashes,
+    recordUploadedScriptHashes,
 } from "./pluginSyncState";
 const LOG = "[PluginSync]";
 function logSync(_msg: string, ..._args: unknown[]) {}
 function logSyncError(msg: string, ...args: unknown[]) {
     console.error(`${LOG} ${msg}`, ...args);
+}
+/** 链接型插件判定：导入来源为 http(s) URL（sourceUrl 优先，兼容未转正的 URL filePath）。
+ * 这类插件云同步只传链接元数据不传脚本本体，云端恢复时从源链接现拉脚本 */
+function pluginHasHttpSource(plugin: PluginSource): boolean {
+    return (
+        /^https?:\/\//i.test(plugin.sourceUrl || "") ||
+        /^https?:\/\//i.test(plugin.filePath || "")
+    );
+}
+/** 从源链接拉取脚本：先走浏览器 fetch，失败回退带 UA 的 Tauri 通道（蓝奏云等） */
+async function fetchScriptFromUrl(url: string): Promise<string> {
+    try {
+        const resp = await fetchWithTimeout(url, 10000);
+        if (resp.ok) return await resp.text();
+    } catch {
+        /* 尝试带 UA 的通道 */
+    }
+    try {
+        return await pluginApi.fetchPluginUrl(url);
+    } catch {
+        return "";
+    }
+}
+/** 插件内容指纹：脚本全文 + 用户变量（键排序）联合哈希，用于增量同步跳过判定 */
+async function contentHash(
+    script: string,
+    userVars: Record<string, string>,
+): Promise<string> {
+    const keys = Object.keys(userVars).sort();
+    const payload = `${script}\u0000${keys.map((k) => `${k}=${userVars[k]}`).join("\u0001")}`;
+    try {
+        const digest = await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(payload),
+        );
+        return Array.from(new Uint8Array(digest))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+    } catch {
+        // subtle 不可用（非安全上下文）时退化为轻量双哈希，仅用于变更检测
+        let h1 = 0x811c9dc5;
+        let h2 = 0x01000193;
+        for (let i = 0; i < payload.length; i++) {
+            const c = payload.charCodeAt(i);
+            h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+            h2 = (Math.imul(h2 + c, 31) + i) >>> 0;
+        }
+        return `f${h1.toString(16)}${h2.toString(16)}`;
+    }
 }
 function encodeBase64(str: string): string {
     try {
@@ -224,19 +277,33 @@ export async function uploadPlugins(
         //（多余项删除广播由服务端处理），取代「清理 + N 次 upload_one」。
         // 任一脚本读不出来或批量请求失败 → 回退旧两步流程，保证可用性
         const items: PluginSyncItem[] = [];
+        const batchHashes: Record<string, string> = {};
         let readFailed = false;
         for (const plugin of toUpload) {
-            const script = await getPluginScript(plugin.id);
-            if (!script) {
-                logSync(`uploadPlugins: 跳过 "${plugin.name}" - 无法获取脚本`);
-                result.errors.push(`插件 "${plugin.name}" 脚本读取失败，已跳过`);
-                readFailed = true;
-                continue;
+            // 链接型插件只同步链接元数据；仅本地文件导入的插件同步脚本本体
+            const isLinkOnly = pluginHasHttpSource(plugin);
+            let script = "";
+            if (!isLinkOnly) {
+                script = (await getPluginScript(plugin.id)) || "";
+                if (!script) {
+                    logSync(`uploadPlugins: 跳过 "${plugin.name}" - 无法获取脚本`);
+                    result.errors.push(`插件 "${plugin.name}" 脚本读取失败，已跳过`);
+                    readFailed = true;
+                    continue;
+                }
+                batchHashes[plugin.id] = await contentHash(
+                    script,
+                    getPluginUserVariableValues(plugin.id),
+                );
+            } else {
+                logSync(
+                    `uploadPlugins(overwrite): "${plugin.name}" 为链接型插件，仅同步链接元数据`,
+                );
             }
             const syncItem: PluginSyncItem = {
                 ...plugin,
-                script: encodeBase64(script),
-                scriptEncoded: true,
+                script: isLinkOnly ? "" : encodeBase64(script),
+                scriptEncoded: !isLinkOnly,
             };
             const userVars = getPluginUserVariableValues(plugin.id);
             if (Object.keys(userVars).length > 0) {
@@ -286,6 +353,7 @@ export async function uploadPlugins(
                 );
                 result.uploadedPlugins = items.length;
                 setSyncedPluginIds(items.map((i) => i.id));
+                recordUploadedScriptHashes(batchHashes);
                 logSync(
                     `uploadPlugins(overwrite): 批量上传成功 (云端共 ${data.plugin_count ?? items.length} 个插件)`,
                 );
@@ -376,6 +444,8 @@ export async function uploadPlugins(
         return result;
     }
     const uploadedIds: string[] = [];
+    const uploadedHashes = getUploadedScriptHashes();
+    const newHashes: Record<string, string> = {};
     for (let i = 0; i < toUpload.length; i++) {
         if (abortGuard(signal, "uploadPlugins")) break;
         const plugin = toUpload[i];
@@ -384,21 +454,39 @@ export async function uploadPlugins(
             `uploadPlugins: [${i + 1}/${toUpload.length}] 上传插件 "${plugin.name}"`,
         );
         try {
-            const script = await getPluginScript(plugin.id);
-            if (!script) {
-                logSync(`uploadPlugins: 跳过 "${plugin.name}" - 无法获取脚本`);
-                result.errors.push(
-                    `插件 "${plugin.name}" 脚本读取失败，已跳过`,
+            // 链接型插件只同步链接元数据；仅本地文件导入的插件同步脚本本体
+            const isLinkOnly = pluginHasHttpSource(plugin);
+            const userVars = getPluginUserVariableValues(plugin.id);
+            let script = "";
+            let hash: string | undefined;
+            if (isLinkOnly) {
+                logSync(
+                    `uploadPlugins: [${i + 1}/${toUpload.length}] "${plugin.name}" 为链接型插件，仅同步链接元数据`,
                 );
-                continue;
+            } else {
+                script = (await getPluginScript(plugin.id)) || "";
+                if (!script) {
+                    logSync(`uploadPlugins: 跳过 "${plugin.name}" - 无法获取脚本`);
+                    result.errors.push(
+                        `插件 "${plugin.name}" 脚本读取失败，已跳过`,
+                    );
+                    continue;
+                }
+                // 增量跳过：脚本与用户变量均未变化（与上次成功上传一致）则不再重传
+                hash = await contentHash(script, userVars);
+                if (uploadedHashes[plugin.id] === hash) {
+                    logSync(
+                        `uploadPlugins: [${i + 1}/${toUpload.length}] 跳过 "${plugin.name}" - 内容与上次上传一致`,
+                    );
+                    uploadedIds.push(plugin.id);
+                    continue;
+                }
             }
             const syncItem: PluginSyncItem = {
                 ...plugin,
-                script: encodeBase64(script),
-                scriptEncoded: true,
+                script: isLinkOnly ? "" : encodeBase64(script),
+                scriptEncoded: !isLinkOnly,
             };
-
-            const userVars = getPluginUserVariableValues(plugin.id);
             if (Object.keys(userVars).length > 0) {
                 try {
                     syncItem.userVariablesEncrypted = await encryptUserVars(
@@ -432,6 +520,7 @@ export async function uploadPlugins(
 
             result.uploadedPlugins++;
             uploadedIds.push(plugin.id);
+            if (hash) newHashes[plugin.id] = hash;
             logSync(
                 `uploadPlugins: [${i + 1}/${toUpload.length}] "${plugin.name}" 上传成功 (云端共 ${data.plugin_count ?? "?"} 个)`,
             );
@@ -441,6 +530,7 @@ export async function uploadPlugins(
             result.errors.push(`插件 "${plugin.name}" 上传失败: ${msg}`);
         }
     }
+    recordUploadedScriptHashes(newHashes);
     setSyncedPluginIds(uploadedIds);
     logSync(
         `uploadPlugins ← 完成: 成功 ${result.uploadedPlugins}/${toUpload.length} 个, ${result.errors.length} 个错误`,
@@ -624,6 +714,7 @@ export async function downloadPlugins(
 
         const downloadSkip = overwrite ? new Set<string>() : getDownloadSkipIds();
         const restoredIds: string[] = [];
+        const restoredHashes: Record<string, string> = {};
         for (let i = 0; i < cloudPlugins.length; i++) {
             if (abortGuard(signal, "downloadPlugins")) break;
             const item = cloudPlugins[i];
@@ -639,9 +730,25 @@ export async function downloadPlugins(
             onStep?.(i + 1, cloudPlugins.length, item.name);
 
             try {
-                const script = item.scriptEncoded
+                let script = item.scriptEncoded
                     ? decodeBase64(item.script)
-                    : item.script;
+                    : item.script || "";
+                // 链接型插件（云端只存链接元数据）：从源链接现拉脚本
+                if (!script.trim()) {
+                    const srcUrl = item.sourceUrl || item.filePath || "";
+                    if (/^https?:\/\//i.test(srcUrl)) {
+                        logSync(
+                            `downloadPlugins: [${i + 1}/${cloudPlugins.length}] "${item.name}" 为链接型插件，从源链接拉取脚本`,
+                        );
+                        script = await fetchScriptFromUrl(srcUrl);
+                    }
+                    if (!script.trim()) {
+                        result.errors.push(
+                            `插件 "${item.name}" 为链接型且源链接拉取失败（源可能已失效）`,
+                        );
+                        continue;
+                    }
+                }
                 const ok = await restorePluginFromSync(item, script);
                 if (ok) {
                     if (item.userVariablesEncrypted) {
@@ -659,6 +766,12 @@ export async function downloadPlugins(
                     }
                     result.downloadedPlugins++;
                     restoredIds.push(item.id);
+                    // 登记内容指纹：本机刚从云端恢复的内容与云端一致，
+                    // 下次自动同步无需将其再回传（增量跳过）
+                    restoredHashes[item.id] = await contentHash(
+                        script,
+                        getPluginUserVariableValues(item.id),
+                    );
                 } else {
                     result.errors.push(`插件 "${item.name}" 恢复失败`);
                 }
@@ -671,6 +784,7 @@ export async function downloadPlugins(
                 result.errors.push(`插件 "${item.name}" 恢复失败: ${msg}`);
             }
         }
+        recordUploadedScriptHashes(restoredHashes);
         if (overwrite && signal?.aborted) {
             // 取消中断：整体回滚——移除已恢复的云端插件/订阅，把缓存的原有
             // 插件/订阅/同步账本写回，本地完全回到覆盖前状态

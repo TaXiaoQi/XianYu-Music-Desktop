@@ -97,6 +97,8 @@ tokio-util = { version = "0.7", default-features = false, features = ["io"] }
 socket2 = "0.6"
 
 [target.'cfg(windows)'.dependencies]
+# 系统代理读取（WinInet 注册表设置，与浏览器同源）。仅静态代理；PAC/AutoConfigURL 不解析。
+winreg = "0.55"
 # 托盘守护进程（xianyu_tray_daemon）的托盘与事件循环实现，仅守护进程使用；
 # 与主程序 Tauri 内置的 tray-icon/tao 版本各自独立，互不影响
 tray-icon = { version = "0.24", default-features = false }

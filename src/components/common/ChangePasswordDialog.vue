@@ -127,8 +127,10 @@ async function handleSendCode() {
 }
 
 async function submit() {
-  if (!oldPassword.value || !newPassword.value || !confirmPassword.value) {
-    showToast('请填写完整的密码信息', 'error');
+  // 当前密码可留空：忘记原密码时凭注册邮箱验证码即可改密（服务端
+  // 以 change_password 类型验证码验证身份），不想起密码不再被锁死
+  if (!newPassword.value || !confirmPassword.value) {
+    showToast('请填写完整的新密码', 'error');
     return;
   }
   if (newPassword.value !== confirmPassword.value) {
@@ -163,16 +165,16 @@ async function submit() {
       >
         <div class="change-pwd-card">
           <h3 class="change-pwd-title">修改密码</h3>
-          <p class="change-pwd-desc">修改成功后需要重新登录，验证码将发送到注册邮箱：{{ authStore.user?.email || '未知邮箱' }}</p>
+          <p class="change-pwd-desc">修改成功后需要重新登录。忘记原密码可留空当前密码，用邮箱验证码验证身份。验证码发送到注册邮箱：{{ authStore.user?.email || '未知邮箱' }}</p>
 
           <div class="change-pwd-form">
             <label class="change-pwd-field">
-              <span class="change-pwd-label">当前密码</span>
+              <span class="change-pwd-label">当前密码（忘记可留空）</span>
               <div class="relative" @focusin="pwdFocused.oldPassword = true" @focusout="pwdFocused.oldPassword = false; pwdVisible.oldPassword = false">
                 <input
                   v-model="oldPassword"
                   :type="pwdVisible.oldPassword ? 'text' : 'password'"
-                  placeholder="输入当前密码"
+                  placeholder="忘记可留空"
                   autocomplete="current-password"
                   class="change-pwd-input pr-9"
                 />

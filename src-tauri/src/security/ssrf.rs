@@ -140,9 +140,40 @@ impl Resolve for OutboundDnsResolver {
         Box::pin(async move {
             let ips: Vec<IpAddr> = match pinned_anchor(&host) {
                 Some(ips) if !ips.is_empty() => ips,
-                _ => resolve_allowed_ips(&host, 443)
-                    .await
-                    .map_err(boxed_io_err)?,
+                _ => {
+                    // 系统 DNS 原始解析（去重、不过滤）。
+                    let mut raw: Vec<IpAddr> = Vec::new();
+                    if let Ok(addrs) = tokio::net::lookup_host((host.as_str(), 443)).await {
+                        for sa in addrs {
+                            let ip = sa.ip();
+                            if !raw.contains(&ip) {
+                                raw.push(ip);
+                            }
+                        }
+                    }
+                    // fake-ip 环境（系统 DNS 被代理接管返回 198.18.0.0/15 假地址，且本应用
+                    // 被代理分应用排除、未走其隧道时，直连假地址必然黑洞直至超时——
+                    // 表现为「其他软件正常、唯独本应用连不上网」）：用 DoH 独立解析真实
+                    // IP 替换，TLS/SNI 仍按域名、SSRF 过滤不放松。与 validate_outbound_url
+                    // 的兜底语义一致，覆盖官方 API（auth.rs）等未经过 validate 的请求路径。
+                    if !raw.is_empty() && raw.iter().all(is_fake_ipv4) {
+                        if let Ok(real) = resolve_real_ips_via_doh(&host).await {
+                            raw = real;
+                        }
+                    }
+                    // SSRF 过滤语义与 resolve_allowed_ips 相同：命中内网/保留段直接拒绝。
+                    if raw.is_empty() {
+                        return Err(boxed_io_err(format!("域名未解析到任何地址: {host}")));
+                    }
+                    for ip in &raw {
+                        if forbidden_ip(*ip) {
+                            return Err(boxed_io_err(format!(
+                                "目标地址被禁止（内网/保留地址）: {ip}"
+                            )));
+                        }
+                    }
+                    raw
+                }
             };
             let addrs: Box<dyn Iterator<Item = SocketAddr> + Send> =
                 Box::new(ips.into_iter().map(|ip| SocketAddr::new(ip, 0)));

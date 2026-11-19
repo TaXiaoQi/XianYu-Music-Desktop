@@ -15,6 +15,11 @@ const updateVisible = ref(false);
 const latestUpdate = ref<ServerUpdateInfo | null>(null);
 const isCheckingUpdate = ref(false);
 function installerMatchesPlatform(url: string): boolean {
+    // 服务端外链代理（蓝奏云/移动云盘改写出的 /api/dl 端点）URL 不含扩展名，
+    // 由服务端校验分享链接并 302 直链，属可信渠道；真实文件名由下载侧按响应头推断
+    if (/\/api\/dl\?/i.test(url)) {
+        return true;
+    }
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
     if (/Macintosh|Mac OS X/.test(ua)) {
         return /\.(dmg|app)(?:[?#]|$)/i.test(url);
@@ -38,12 +43,14 @@ const downloadProgress = ref<DownloadProgressData>({
     speed: 0,
 });
 const isSimulatedUpdate = ref(false);
+// 商店版（MSIX）同样参与检测更新，但点击更新时跳转商店页，由商店接管安装
+const isStoreEdition = ref(false);
 let simulateTimer: ReturnType<typeof setInterval> | null = null;
 export function useUpdateCheck() {
     const { showToast } = useToast();
     const checkUpdateOnStartup = async () => {
         if (import.meta.env.DEV) return;
-        if (await updateApi.isStoreBuild()) return;
+        isStoreEdition.value = await updateApi.isStoreBuild();
         if (isCheckingUpdate.value) return;
         isCheckingUpdate.value = true;
         try {
@@ -64,10 +71,7 @@ export function useUpdateCheck() {
             showToast("开发环境不检查更新", "info");
             return;
         }
-        if (await updateApi.isStoreBuild()) {
-            showToast("商店版请通过 Microsoft Store 更新", "info");
-            return;
-        }
+        isStoreEdition.value = await updateApi.isStoreBuild();
         if (isCheckingUpdate.value) return;
         isCheckingUpdate.value = true;
         try {
@@ -179,6 +183,20 @@ export function useUpdateCheck() {
             return;
         }
 
+        // 商店版：不应用内下载安装，跳转商店页（管理端 storeUrl，未配置回退官网）由商店接管
+        if (isStoreEdition.value) {
+            const store =
+                latestUpdate.value?.storeUrl ||
+                aboutConfig.value.officialSiteUrl;
+            if (store) {
+                await openUrl(store);
+            } else {
+                showToast("暂未配置商店页地址，请前往官网更新", "info");
+            }
+            updateVisible.value = false;
+            return;
+        }
+
         if (!latestUpdate.value?.downloadUrl) {
             showToast("下载地址不可用", "error");
             return;
@@ -240,6 +258,7 @@ export function useUpdateCheck() {
         isCheckingUpdate,
         isDownloading,
         downloadProgress,
+        isStoreEdition,
         checkUpdateOnStartup,
         checkUpdateManual,
         closeUpdate,

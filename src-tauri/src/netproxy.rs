@@ -145,12 +145,101 @@ fn current_proxy() -> Option<reqwest::Proxy> {
     guard.as_ref().map(|resolved| resolved.proxy.clone())
 }
 
+/// 无应用内代理时的系统代理回退（仅 Windows；其他平台保持 reqwest 默认行为）。
+fn apply_system_proxy(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    #[cfg(windows)]
+    if let Some(proxy) = windows_system_proxy() {
+        return builder.proxy(proxy);
+    }
+    builder
+}
+
+/// 无应用内代理时的系统代理回退（阻塞 client 版）。
+fn apply_system_proxy_blocking(
+    builder: reqwest::blocking::ClientBuilder,
+) -> reqwest::blocking::ClientBuilder {
+    #[cfg(windows)]
+    if let Some(proxy) = windows_system_proxy() {
+        return builder.proxy(proxy);
+    }
+    builder
+}
+
+/// 回退读取 Windows 系统代理（WinInet 注册表设置，即浏览器「设置 → 代理」同一套）。
+///
+/// 背景：reqwest 只认 `HTTP(S)_PROXY` 环境变量，不读 Windows 系统代理——依赖系统代理
+/// 出网的环境会出现「浏览器正常、本应用直连失败」（症状与 fake-ip 断网一致：其他软件
+/// 都正常、唯独本应用连不上）。应用内显式配置的代理优先级更高（`client_builder` 分支）。
+/// 仅支持静态代理（ProxyServer）；PAC/AutoConfigURL 需引入 COM 解析脚本，保持跳过
+/// （回退直连）。绕过名单沿用 [`NO_PROXY`]，LAN/localhost 流量不进代理。
+#[cfg(windows)]
+fn windows_system_proxy() -> Option<reqwest::Proxy> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let settings = hkcu
+        .open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            KEY_READ,
+        )
+        .ok()?;
+    let enabled: u32 = settings.get_value("ProxyEnable").ok()?;
+    if enabled == 0 {
+        return None;
+    }
+    let server: String = settings.get_value("ProxyServer").ok()?;
+    let url = parse_wininet_proxy_server(&server)?;
+    let proxy = reqwest::Proxy::all(&url).ok()?;
+    Some(proxy.no_proxy(reqwest::NoProxy::from_string(NO_PROXY)))
+}
+
+/// 解析 WinInet `ProxyServer` 值，返回 reqwest 可用的代理 URL。
+///
+/// 两种形态：
+/// - `host:port`：对所有协议生效；
+/// - `http=host:port;https=host:port;socks=host:port`：按协议区分，取 https → http
+///   优先（https 流量占绝对多数，二者端口通常一致）。reqwest 未启用 socks feature，
+///   仅配置了 socks 条目时无法使用，返回 `None` 回退直连。
+#[cfg(windows)]
+fn parse_wininet_proxy_server(server: &str) -> Option<String> {
+    let server = server.trim();
+    if server.is_empty() {
+        return None;
+    }
+    if !server.contains('=') {
+        // 单一 host:port；端口缺失的写法无法确定代理端口，视为无效交回直连。
+        return if server.contains(':') {
+            Some(format!("http://{server}"))
+        } else {
+            None
+        };
+    }
+    let mut https = None;
+    let mut http = None;
+    for part in server.split(';') {
+        let Some((proto, addr)) = part.split_once('=') else {
+            continue;
+        };
+        let addr = addr.trim();
+        if addr.is_empty() || !addr.contains(':') {
+            continue;
+        }
+        match proto.trim().to_ascii_lowercase().as_str() {
+            "https" => https = Some(addr),
+            "http" => http = Some(addr),
+            _ => {}
+        }
+    }
+    https.or(http).map(|addr| format!("http://{addr}"))
+}
+
 /// 构造异步 client 的统一入口：业务模块不要直接写 `reqwest::Client::builder()`。
 pub fn client_builder() -> reqwest::ClientBuilder {
     let builder = reqwest::Client::builder();
     match current_proxy() {
         Some(proxy) => builder.proxy(proxy),
-        None => builder,
+        None => apply_system_proxy(builder),
     }
 }
 
@@ -159,7 +248,7 @@ pub fn blocking_client_builder() -> reqwest::blocking::ClientBuilder {
     let builder = reqwest::blocking::Client::builder();
     match current_proxy() {
         Some(proxy) => builder.proxy(proxy),
-        None => builder,
+        None => apply_system_proxy_blocking(builder),
     }
 }
 
@@ -434,5 +523,33 @@ mod tests {
             );
         }
         assert!(reqwest::NoProxy::from_string(NO_PROXY).is_some());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parses_wininet_proxy_server_forms() {
+        use super::parse_wininet_proxy_server as parse;
+        // 单一 host:port：对所有协议生效
+        assert_eq!(
+            parse("127.0.0.1:7890").as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        // 空值 / 无端口写法：无效，回退直连
+        assert_eq!(parse("  "), None);
+        assert_eq!(parse("proxy.local"), None);
+        // 按协议区分：https 优先于 http
+        assert_eq!(
+            parse("http=10.0.0.1:8080;https=10.0.0.1:8443").as_deref(),
+            Some("http://10.0.0.1:8443")
+        );
+        // 仅 http 条目也可用
+        assert_eq!(
+            parse("http=10.0.0.1:8080;ftp=10.0.0.1:21").as_deref(),
+            Some("http://10.0.0.1:8080")
+        );
+        // 仅 socks 条目：reqwest 未启用 socks feature，回退直连
+        assert_eq!(parse("socks=127.0.0.1:7891"), None);
+        // 条目缺失端口时跳过该条目
+        assert_eq!(parse("https=proxy.local"), None);
     }
 }

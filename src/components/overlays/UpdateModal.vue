@@ -8,6 +8,7 @@ defineProps<{
     update: ServerUpdateInfo | null;
     isDownloading?: boolean;
     progress?: DownloadProgressData;
+    isStore?: boolean;
 }>();
 const emit = defineEmits(["close", "download"]);
 // --- 淡出动画 ---
@@ -127,7 +128,7 @@ const formatSpeed = (speed: number) => {
                             class="update-btn update-btn--primary"
                             @click="emit('download')"
                         >
-                            立即更新
+                            {{ isStore ? "前往商店更新" : "立即更新" }}
                         </button>
                     </div>
                 </div>

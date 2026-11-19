@@ -1,5 +1,6 @@
 
 const SYNCED_KEY = 'plugin_synced_ids';
+const SCRIPT_HASH_KEY = 'plugin_sync_script_hashes';
 const DOWNLOAD_SKIP_KEY = 'plugin_sync_download_skip_ids';
 const UPLOAD_SKIP_KEY = 'plugin_sync_upload_skip_ids';
 const DOWNLOAD_SKIP_SUB_KEY = 'plugin_sync_download_skip_sub_urls';
@@ -56,6 +57,35 @@ export function removeSyncedPluginIds(ids: string[]) {
     if (s.delete(id)) changed = true;
   }
   if (changed) writeSet(SYNCED_KEY, s);
+}
+
+// ==================== 已上传内容哈希账本 ====================
+// 记录每个插件最近一次成功上传到云端的内容指纹（脚本+用户变量），
+// 自动同步时内容未变化的插件直接跳过上传，避免全量重传浪费带宽
+
+export function getUploadedScriptHashes(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SCRIPT_HASH_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'string' && v) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function recordUploadedScriptHashes(entries: Record<string, string>) {
+  const keys = Object.keys(entries).filter((k) => k && entries[k]);
+  if (keys.length === 0) return;
+  try {
+    const merged = { ...getUploadedScriptHashes() };
+    for (const k of keys) merged[k] = entries[k];
+    localStorage.setItem(SCRIPT_HASH_KEY, JSON.stringify(merged));
+  } catch { /* 存储不可用时静默降级：仅影响增量跳过，下次仍全量上传 */ }
 }
 
 // ==================== 墓碑 ====================

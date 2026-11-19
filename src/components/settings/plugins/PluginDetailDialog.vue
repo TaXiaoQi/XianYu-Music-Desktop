@@ -90,9 +90,11 @@ function closePluginDetail() {
 }
 
 async function copyPluginLink() {
-  if (!props.plugin?.filePath) return;
+  if (!props.plugin) return;
+  const link = props.plugin.sourceUrl || props.plugin.filePath;
+  if (!link) return;
   try {
-    await navigator.clipboard.writeText(props.plugin.filePath);
+    await navigator.clipboard.writeText(link);
     showToast('插件链接已复制', 'success');
   } catch {
     showToast('复制失败，请手动选择复制', 'error');
@@ -168,7 +170,7 @@ watch(() => props.plugin, (plugin) => {
               <span class="plugin-detail-value">{{ plugin.author || '—' }}</span>
             </div>
             <div class="plugin-detail-row">
-              <span class="plugin-detail-label">插件来源</span>
+              <span class="plugin-detail-label">插件描述</span>
               <span class="plugin-detail-value">{{ plugin.description || '—' }}</span>
             </div>
             <div class="plugin-detail-row">
@@ -182,16 +184,19 @@ watch(() => props.plugin, (plugin) => {
                 <span v-if="plugin.sources.length === 0" class="plugin-detail-value">—</span>
               </div>
             </div>
+          </div>
+
+          <div class="plugin-detail-link-section">
             <div class="plugin-detail-row">
               <span class="plugin-detail-label">插件链接</span>
               <button
                 type="button"
                 class="plugin-detail-link"
-                :title="plugin.filePath || ''"
+                :title="plugin.sourceUrl || plugin.filePath || ''"
                 @click="copyPluginLink"
               >
                 <Copy class="h-3.5 w-3.5 shrink-0" />
-                <span class="truncate">{{ plugin.filePath || '—' }}</span>
+                <span class="truncate">{{ plugin.sourceUrl || plugin.filePath || '—' }}</span>
               </button>
             </div>
           </div>
@@ -284,6 +289,11 @@ watch(() => props.plugin, (plugin) => {
 </template>
 
 <style scoped>
+.plugin-detail-link-section {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 12px 20px;
+}
+
 .plugin-detail-user-vars {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   padding: 16px 20px;

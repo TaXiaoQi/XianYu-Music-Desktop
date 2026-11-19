@@ -115,6 +115,7 @@ export interface ServerUpdateInfo {
     downloadUrl: string;
     updateContent: string;
     updatedAt?: string;
+    storeUrl?: string;
 }
 export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
     try {
@@ -137,6 +138,7 @@ export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
             ),
             updatedAt:
                 typeof data.updatedAt === "string" ? data.updatedAt : undefined,
+            storeUrl: String(data.storeUrl ?? data.store_url ?? "") || undefined,
         };
     } catch (error) {
         console.error("[Update] 获取版本信息失败:", error);

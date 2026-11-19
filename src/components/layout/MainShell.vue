@@ -176,6 +176,7 @@ const { // 解构更新状态
   closeUpdate: dismissUpgrade,
   isDownloading, // 下载中标记
   downloadProgress, // 下载进度
+  isStoreEdition, // 商店版：更新走商店跳转
   downloadAndInstall, // 下载安装
   checkUpdateOnStartup: pollUpgradeOnStartup,
 } = useUpdateCheck(); // 解构结束
@@ -408,6 +409,7 @@ onMounted(() => {
           :update="upgradeInfo"
           :is-downloading="isDownloading"
           :progress="downloadProgress"
+          :is-store="isStoreEdition"
           @close="dismissUpgrade"
           @download="downloadAndInstall"
         />

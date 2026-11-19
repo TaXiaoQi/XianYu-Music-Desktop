@@ -34,6 +34,21 @@ pub struct DownloadProgress { // DownloadProgress
     pub speed: f64, // 实现
 }
 
+/// 从 Content-Disposition 或 URL（含最终重定向地址）推断安装包扩展名。
+/// 外链代理（/api/dl）场景原始 URL 不含扩展名，需借响应头识别真实文件类型。
+fn detected_installer_ext(content_disposition: &str, url_haystack: &str) -> Option<&'static str> {
+    const ALLOWED: [&str; 6] = ["msi", "exe", "deb", "rpm", "appimage", "dmg"];
+    let cd = content_disposition.to_lowercase();
+    ALLOWED
+        .into_iter()
+        .find(|e| cd.contains(&format!(".{e}")))
+        .or_else(|| {
+            ALLOWED
+                .into_iter()
+                .find(|e| url_haystack.contains(&format!(".{e}")))
+        })
+}
+
 #[tauri::command] // 实现
 pub async fn download_update_file( // 实现
     app_handle: tauri::AppHandle, // 实现
@@ -71,34 +86,33 @@ pub async fn download_update_file( // 实现
     }
 
     let total_size = response.content_length().unwrap_or(0); // 实现
+    let content_disposition = response
+        .headers()
+        .get(reqwest::header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
     let download_dir = app_handle
         .path()
         .download_dir()
         .map_err(|e| e.to_string())?;
 
+    // 外链代理 URL 无扩展名：优先按响应头 Content-Disposition 推断真实扩展名，
+    // 再退回最终重定向 URL / 原始 URL，最后沿用默认 .msi 兜底
     let url_lower = url.to_lowercase();
-    let filename = if url_lower.contains(".msi") {
-        if url_lower.contains("portable") {
-            "XianYu.Player_Setup_Portable.msi"
-        } else {
-            "XianYu.Player_Setup_Standard.msi"
-        }
-    } else if url_lower.contains(".exe") {
-        if url_lower.contains("portable") {
-            "XianYu.Player_Setup_Portable.exe"
-        } else {
-            "XianYu.Player_Setup_Standard.exe"
-        }
-    } else if url_lower.contains(".deb") {
-        "XianYu.Player_Setup.deb"
-    } else if url_lower.contains(".rpm") {
-        "XianYu.Player_Setup.rpm"
-    } else if url_lower.contains(".appimage") {
-        "XianYu.Player_Setup.AppImage"
-    } else if url_lower.contains(".dmg") {
-        "XianYu.Player_Setup.dmg"
-    } else {
-        "XianYu.Player_Setup.msi"
+    let final_url_lower = response.url().to_string().to_lowercase();
+    let url_haystack = format!("{url_lower} {final_url_lower}");
+    let portable = url_lower.contains("portable");
+    let filename = match detected_installer_ext(&content_disposition, &url_haystack) {
+        Some("msi") if portable => "XianYu.Player_Setup_Portable.msi",
+        Some("msi") => "XianYu.Player_Setup_Standard.msi",
+        Some("exe") if portable => "XianYu.Player_Setup_Portable.exe",
+        Some("exe") => "XianYu.Player_Setup_Standard.exe",
+        Some("deb") => "XianYu.Player_Setup.deb",
+        Some("rpm") => "XianYu.Player_Setup.rpm",
+        Some("appimage") => "XianYu.Player_Setup.AppImage",
+        Some("dmg") => "XianYu.Player_Setup.dmg",
+        _ => "XianYu.Player_Setup.msi",
     };
     let dest_path = download_dir.join(filename); // 实现
 
