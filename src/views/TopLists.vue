@@ -131,6 +131,7 @@ import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk'
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import { useOnlineDetailStore, openOnlineDetail, type TopListsCache } from '../features/onlineDetail/store';
 import { useDragScrollX } from '../composables/useDragScrollX';
+import { subscribeWindowResizeSettled } from '../composables/windowResizeCoordinator';
 
 const router = useRouter();
 const onlineDetailStore = useOnlineDetailStore();
@@ -538,6 +539,8 @@ const handleWindowResize = () => {
   windowWidth.value = window.innerWidth;
 };
 
+let disposeWindowResize: (() => void) | null = null;
+
 function restoreFromCache(cached: TopListsCache) {
   restoringFromCache = true;
   sourceList.value = cached.sourceList;
@@ -555,7 +558,7 @@ function restoreFromCache(cached: TopListsCache) {
 }
 
 onMounted(() => {
-  window.addEventListener('resize', handleWindowResize);
+  disposeWindowResize = subscribeWindowResizeSettled(handleWindowResize);
   const cached = onlineDetailStore.consumeTopListsCache();
   if (cached) {
     restoreFromCache(cached);
@@ -569,7 +572,7 @@ watch(pluginsVersion, () => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleWindowResize);
+  disposeWindowResize?.();
   loadVersion += 1;
   clearTimeout(gridEnterTimer);
   scrollResizeObserver?.disconnect();

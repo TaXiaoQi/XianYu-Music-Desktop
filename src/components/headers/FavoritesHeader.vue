@@ -3,6 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useSearchTitleSuffix } from '../../composables/useSearchAwareTitle';
+import { subscribeWindowResizeSettled } from '../../composables/windowResizeCoordinator';
 import SortModeButton from '../common/SortModeButton.vue';
 
 const props = defineProps<{
@@ -52,12 +53,15 @@ watch(favTab, () => {
   void repositionIndicator();
 });
 
+let disposeWindowResize: (() => void) | null = null;
+
 onMounted(() => {
-  window.addEventListener('resize', repositionIndicator);
+  // tab 指示器位置只需最终布局正确：缩放静止后重定位一次
+  disposeWindowResize = subscribeWindowResizeSettled(repositionIndicator);
   void repositionIndicator();
 });
 
-onUnmounted(() => window.removeEventListener('resize', repositionIndicator));
+onUnmounted(() => disposeWindowResize?.());
 
 const tabToneClass = (key: string) =>
   key === favTab.value

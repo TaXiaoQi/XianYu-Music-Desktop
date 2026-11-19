@@ -8,6 +8,7 @@ import { useSettings } from '../../features/settings/useSettings';
 
 import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useRenderingPower } from '../../composables/renderingPower';
+import { subscribeWindowResize } from '../../composables/windowResizeCoordinator';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
@@ -587,12 +588,15 @@ provide('footerContext', {
   togglePin,
 });
 
+let disposeWindowResize: (() => void) | null = null;
+
 onMounted(async () => {
   window.addEventListener('pointermove', onGlobalPointerMove);
   window.addEventListener('pointerup', onGlobalPointerUp);
   window.addEventListener('pointercancel', onGlobalPointerCancel);
   window.addEventListener('click', handleWindowClick);
-  window.addEventListener('resize', checkMarquee);
+  // 跑马灯需跟随宽度变化：走协调器每帧合并派发（checkMarquee 内部保留下一帧测量）
+  disposeWindowResize = subscribeWindowResize(checkMarquee);
   await nextTick();
   setupMarqueeObserver();
   startIdleTimer();
@@ -605,7 +609,7 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', onGlobalPointerUp);
   window.removeEventListener('pointercancel', onGlobalPointerCancel);
   window.removeEventListener('click', handleWindowClick);
-  window.removeEventListener('resize', checkMarquee);
+  disposeWindowResize?.();
   disposeMarquee();
   disposeIdle();
   abortFooterQualityInfoProbe();

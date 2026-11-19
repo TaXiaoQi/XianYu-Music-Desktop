@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useDragScrollX } from '../../composables/useDragScrollX';
+import { coalesceWindowResize } from '../../composables/windowResizeCoordinator';
 import type { SearchTypeKey } from '../../composables/search/useSearchQuery';
 import type { SourceItem } from '../../composables/search/useSearchSources';
 
@@ -41,7 +42,7 @@ watch(() => props.selectedSourceId, () => {
   nextTick(() => scrollSelectedSourceIntoView());
 });
 
-const sourceResizeObserver = new ResizeObserver(() => {
+const sourceResizeObserver = new ResizeObserver(coalesceWindowResize(() => {
   const container = sourceScrollRef.value;
   if (!container) return;
   const active = container.querySelector<HTMLElement>('[data-active="true"]');
@@ -53,7 +54,7 @@ const sourceResizeObserver = new ResizeObserver(() => {
   if (left < viewLeft || right > viewRight) {
     scrollSelectedSourceIntoView();
   }
-});
+}));
 watch(sourceScrollRef, (el) => {
   sourceResizeObserver.disconnect();
   if (el) sourceResizeObserver.observe(el);

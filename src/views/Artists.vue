@@ -14,6 +14,7 @@ import { dragSession as pointerDragState } from '../composables/dragState';
 import { useCoverCache as createCoverManager } from '../composables/useCoverCache';
 import { useHomeNavigation as createHomeNavigator } from '../composables/useHomeNavigation';
 import { useListScrollMemory as rememberScrollPosition } from '../composables/useListScrollMemory';
+import { coalesceWindowResize, subscribeWindowResizeSettled } from '../composables/windowResizeCoordinator';
 import { useLibraryBrowse as createLibraryBrowser } from '../features/library/useLibraryBrowse';
 import { type ArtistListItem } from '../features/library/playerLibraryViewShared';
 import { getAlphabetIndexKey as letterKeyOf } from '../utils/alphabetIndex';
@@ -46,6 +47,7 @@ const coverUrlMap = reactive(new Map<string, string>());
 
 let coverWatcher: IntersectionObserver | null = null;
 let layoutResizeObserver: ResizeObserver | null = null;
+let disposeWindowResize: (() => void) | null = null;
 let trackedCoverPaths = new Set<string>();
 
 const SNAPSHOT_CACHE_KEY = 'artists-current';
@@ -521,11 +523,11 @@ onMounted(() => {
   window.addEventListener('pointerup', onWindowPointerUp);
   window.addEventListener('pointercancel', onWindowPointerCancel);
   window.addEventListener('click', onDocClick);
-  window.addEventListener('resize', syncLayoutMetrics);
+  disposeWindowResize = subscribeWindowResizeSettled(syncLayoutMetrics);
 
   const box = scrollBoxRef.value;
   if (box) {
-    layoutResizeObserver = new ResizeObserver(() => { syncLayoutMetrics(); });
+    layoutResizeObserver = new ResizeObserver(coalesceWindowResize(() => { syncLayoutMetrics(); }));
     layoutResizeObserver.observe(box);
   }
 
@@ -540,7 +542,7 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', onWindowPointerUp);
   window.removeEventListener('pointercancel', onWindowPointerCancel);
   window.removeEventListener('click', onDocClick);
-  window.removeEventListener('resize', syncLayoutMetrics);
+  disposeWindowResize?.();
 
   layoutResizeObserver?.disconnect();
   layoutResizeObserver = null;

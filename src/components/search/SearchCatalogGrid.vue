@@ -6,6 +6,7 @@ import type { CatalogGridEntry } from '../../composables/search/useSearchResults
 import type { SearchTypeKey } from '../../composables/search/useSearchQuery';
 import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
 import { useLibraryStore } from '../../features/library/store';
+import { coalesceWindowResize, subscribeWindowResizeSettled } from '../../composables/windowResizeCoordinator';
 
 const props = defineProps<{
   items: CatalogGridEntry[];
@@ -92,6 +93,8 @@ const handleWindowResize = () => {
   windowWidth.value = window.innerWidth;
 };
 
+let disposeWindowResize: (() => void) | null = null;
+
 // ==================== 入场逐行动画（对齐榜单/歌手/专辑页手法） ====================
 const ROW_ENTER_BASE_DELAY = 200;
 const ROW_ENTER_STAGGER = 140;
@@ -146,14 +149,14 @@ const setupScrollResizeObserver = () => {
   scrollResizeObserver?.disconnect();
   const el = resultsScrollRef.value;
   if (!el) return;
-  scrollResizeObserver = new ResizeObserver(() => {
+  scrollResizeObserver = new ResizeObserver(coalesceWindowResize(() => {
     syncCatalogGridVirtualScrollState();
-  });
+  }));
   scrollResizeObserver.observe(el);
 };
 
 onMounted(() => {
-  window.addEventListener('resize', handleWindowResize);
+  disposeWindowResize = subscribeWindowResizeSettled(handleWindowResize);
   playRowEnterAnimation();
 });
 
@@ -161,7 +164,7 @@ watch(resultsScrollRef, () => setupScrollResizeObserver());
 
 onBeforeUnmount(() => {
   clearTimeout(enterTimer);
-  window.removeEventListener('resize', handleWindowResize);
+  disposeWindowResize?.();
   scrollResizeObserver?.disconnect();
   scrollResizeObserver = null;
 });

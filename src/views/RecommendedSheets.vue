@@ -107,6 +107,7 @@ import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk'
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import { openOnlineDetail } from '../features/onlineDetail/store';
 import { useDragScrollX } from '../composables/useDragScrollX';
+import { subscribeWindowResizeSettled } from '../composables/windowResizeCoordinator';
 // ==================== 来源列表 ====================
 type SourceItem = {
   id: string;
@@ -318,8 +319,10 @@ const handleWindowResize = () => {
   windowWidth.value = window.innerWidth;
 };
 
+let disposeWindowResize: (() => void) | null = null;
+
 onMounted(() => {
-  window.addEventListener('resize', handleWindowResize);
+  disposeWindowResize = subscribeWindowResizeSettled(handleWindowResize);
   void refreshSourceList();
 });
 
@@ -328,7 +331,7 @@ watch(pluginsVersion, () => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleWindowResize);
+  disposeWindowResize?.();
   loadVersion += 1;
 });
 </script>

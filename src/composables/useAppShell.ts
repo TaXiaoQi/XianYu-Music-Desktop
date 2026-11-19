@@ -23,6 +23,7 @@ import { usePerformanceMode } from "./usePerformanceMode";
 import { usePlayerViewState } from "./usePlayerViewState";
 import { useTaskbarPlayerBridge } from "./useTaskbarPlayerBridge";
 import { useTrayMenuEvents } from "./useTrayMenuEvents";
+import { useWindowResizeCoordinator } from "./windowResizeCoordinator";
 
 /**
  * 外壳装配根：把播放器、主题材质、启动揭示、外部路径、
@@ -125,6 +126,7 @@ export function useAppShell() {
     useKeyboardShortcuts();
     useTrayMenuEvents(router);
     useDeepLinkBridge();
+    useWindowResizeCoordinator();
 
     bootstrapPlayer();
 

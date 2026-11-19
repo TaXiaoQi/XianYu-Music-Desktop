@@ -19,6 +19,7 @@ import { resolveLocalCoverDataUrl } from "../../utils/coverProxy";
 import { useWindowMaterial } from "../../composables/windowMaterial";
 import { getPreblurredBackgroundUrl } from "../../composables/preblurredBackgroundCache";
 import { useRenderingPower } from "../../composables/renderingPower";
+import { subscribeWindowResizeSettled } from "../../composables/windowResizeCoordinator";
 import { usePerformanceMode } from "../../composables/usePerformanceMode";
 import { calculateCoverGeometry } from "../../composables/useThemeBackgroundGeometry";
 
@@ -82,13 +83,16 @@ watch(isMiniMode, async (mini, wasMini) => {
     setTimeout(syncViewport, 100);
 });
 
+let disposeWindowResize: (() => void) | null = null;
+
 onMounted(() => {
     syncViewport();
-    window.addEventListener("resize", syncViewport);
+    // 背景层 fixed inset-0 由 CSS 自身跟随窗口；JS 测量只在缩放静止后校准
+    disposeWindowResize = subscribeWindowResizeSettled(syncViewport);
 });
 
 onBeforeUnmount(() => {
-    window.removeEventListener("resize", syncViewport);
+    disposeWindowResize?.();
 });
 
 /* ------------------------------------------------------------------ */

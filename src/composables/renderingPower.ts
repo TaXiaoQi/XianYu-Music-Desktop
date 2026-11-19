@@ -5,6 +5,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { storeToRefs } from "pinia";
 
 import { useUiStore } from "../shared/stores/ui";
+import {
+    notifyWindowResize,
+    subscribeWindowResizeSettled,
+} from "./windowResizeCoordinator";
+
+/** 缩放静止后兜底刷新窗口状态的延时，覆盖「拖拽期间最小化/还原」等极端路径 */
+const RESIZE_STATE_REFRESH_MS = 300;
 
 /** 主窗口渲染状态快照，各字段由事件与轮询共同维护 */
 export type MainWindowRenderingSnapshot = {
@@ -109,9 +116,31 @@ export function useMainWindowRenderingPower() {
         );
         trackDisposer(
             await appWindow.onResized(() => {
-                void pullWindowState();
+                // 缩放事件只汇入共享调度队列；焦点/可见性/最小化不因尺寸改变，
+                // 不再逐事件 pullWindowState（每事件 3 次 IPC → 每次拖拽 0 次）
+                notifyWindowResize();
             }),
         );
+
+        let resizeStateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+        trackDisposer(
+            subscribeWindowResizeSettled(() => {
+                // 兜底：拖拽期间可能发生最小化/还原等状态跳变，静止后统一校正一次
+                if (resizeStateRefreshTimer !== null) {
+                    clearTimeout(resizeStateRefreshTimer);
+                }
+                resizeStateRefreshTimer = setTimeout(() => {
+                    resizeStateRefreshTimer = null;
+                    void pullWindowState();
+                }, RESIZE_STATE_REFRESH_MS);
+            }),
+        );
+        trackDisposer(() => {
+            if (resizeStateRefreshTimer !== null) {
+                clearTimeout(resizeStateRefreshTimer);
+                resizeStateRefreshTimer = null;
+            }
+        });
 
         void pullWindowState();
 

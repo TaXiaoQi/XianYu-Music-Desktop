@@ -18,6 +18,7 @@ import { usePlaybackController } from '../../features/playback/usePlaybackContro
 import { usePlayerLibraryView } from '../../features/library/usePlayerLibraryView';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useListScrollMemory } from '../../composables/useListScrollMemory';
+import { subscribeWindowResizeSettled } from '../../composables/windowResizeCoordinator';
 import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabetIndex';
 import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState';
 import { useLibraryStore } from '../../features/library/store';
@@ -873,8 +874,11 @@ const titleTextOf = (song: Song) => song.title || song.name.replace(/\.[^/.]+$/,
 const padRowIndex = (idx: number) => (idx + 1 < 10 ? `0${idx + 1}` : idx + 1);
 
 // ==================== 生命周期 ====================
+let disposeWindowResize: (() => void) | null = null;
+
 onMounted(() => {
-  window.addEventListener('resize', measureViewport);
+  // 虚拟列表可见区间在拖拽中不必逐帧精确：缩放静止后一次性重测
+  disposeWindowResize = subscribeWindowResizeSettled(measureViewport);
   measureViewport();
   fillSegmentFloor();
   void resumeViewportState();
@@ -908,7 +912,7 @@ onBeforeUnmount(() => {
 
 onUnmounted(() => {
   clearTimeout(enterTimer);
-  window.removeEventListener('resize', measureViewport);
+  disposeWindowResize?.();
 });
 
 defineExpose({ containerRef: scrollBodyEl });
