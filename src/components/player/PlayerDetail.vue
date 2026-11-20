@@ -63,10 +63,8 @@ const { enterShift } = useDetailEntrance(detailShown, staggerPhase);
 // × WebGL 背景）是 AMLL 下动画卡顿与封面"停留数秒"（700ms 过渡被掉帧拖长）的主因。
 // 不冻结 fluid canvas——WebGL 默认不保留绘制缓冲，过渡期停绘会闪黑。
 const detailTransitioning = ref(false);
-const detailTransitionDirection = ref<'enter' | 'exit'>('exit');
 let settlingTimer: ReturnType<typeof setTimeout> | null = null;
-watch(detailShown, (open) => {
-  detailTransitionDirection.value = open ? 'enter' : 'exit';
+watch(detailShown, () => {
   detailTransitioning.value = true;
   if (settlingTimer) clearTimeout(settlingTimer);
   settlingTimer = setTimeout(() => {
@@ -430,9 +428,6 @@ onBeforeUnmount(() => {
         v-if="!preferVinylStage && (coverReady || heavyMounted)"
         :is-expanded="detailShown"
         :cover-hidden="coverHidden"
-        :amll="isAmllSkin"
-        :genie-active="detailTransitioning"
-        :genie-direction="detailTransitionDirection"
         @toggle-cover="handleToggleCover"
       />
       <PlayerDetailVinyl

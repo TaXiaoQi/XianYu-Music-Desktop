@@ -1,70 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { usePlaybackController as useStageControl } from '../../features/playback/usePlaybackController';
 import { useDetailCover } from '../../composables/useDetailCover';
-import CoverGenieCanvas from './detail/CoverGenieCanvas.vue';
 import CoverReflection from './detail/CoverReflection.vue';
-import type { GenieRect } from './detail/coverGenie';
 
-const props = defineProps<{
-  isExpanded?: boolean;
-  coverHidden?: boolean;
-  /** AMLL 皮肤：genie 进出形变层仅在该皮肤挂载 */
-  amll?: boolean;
-  /** 进出过渡静置窗开启（与 detail-root--settling 同源） */
-  genieActive?: boolean;
-  genieDirection?: 'enter' | 'exit';
-}>();
+const props = defineProps<{ isExpanded?: boolean; coverHidden?: boolean }>();
 
 const emit = defineEmits<{ (e: 'toggle-cover'): void }>();
-
-// 临时构建标记开关（仅 DEV）；复验 genie 后移除
-const isDev = import.meta.env.DEV;
-
-// —— genie 屏幕空间形变层（C7）状态 ——
-// 静置窗内冻结容器自身 CSS 过渡（cover-stage--genie-frozen），画布以视口坐标
-// 接管展开 rect ↔ dock rect 的整段漏斗飞行；isExpanded 翻转前预拾起点矩形。
-const genieDone = ref(false);
-const genieCycle = ref(0);
-const genieFromRect = ref<GenieRect | null>(null);
-const genieCovering = computed(
-  () =>
-    Boolean(props.amll) &&
-    Boolean(props.genieActive) &&
-    !genieDone.value &&
-    Boolean(displayedLocalCoverUrl.value) &&
-    genieFromRect.value !== null,
-);
-watch(
-  () => props.isExpanded,
-  () => {
-    if (!props.amll) {
-      return;
-    }
-    const el = detailCoverRef.value;
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      genieFromRect.value = { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
-    } else {
-      genieFromRect.value = null;
-    }
-    if (props.genieActive) {
-      genieDone.value = false;
-      genieCycle.value += 1;
-    }
-  },
-);
-watch(
-  () => props.genieActive,
-  (active) => {
-    genieDone.value = false;
-    if (active) {
-      genieCycle.value += 1;
-    } else {
-      genieFromRect.value = null;
-    }
-  },
-);
 
 const { isPlaying, dominantColors } = useStageControl();
 const expandFlag = computed(() => Boolean(props.isExpanded));
@@ -139,14 +81,13 @@ const onCoverActivate = (event: MouseEvent) => {
     <div
       ref="detailCoverRef" 
       class="cover-stage morph-stage"
-      :class="[stageMode, stageModeExtra, genieCovering ? 'cover-stage--genie-frozen' : '']"
+      :class="[stageMode, stageModeExtra]"
       :style="{ boxShadow: frameShadow, transform: 'scale(1)' }"
       @click="onCoverActivate"
     >
       <div class="art-frame">
         <img
           v-if="displayedLocalCoverUrl"
-          v-show="!genieCovering"
           :key="`thumb:${currentSongPath}:${displayedLocalCoverUrl}`"
           :src="displayedLocalCoverUrl"
           class="art-thumb"
@@ -158,7 +99,6 @@ const onCoverActivate = (event: MouseEvent) => {
         />
         <img
           v-if="currentBigCoverUrl"
-          v-show="!genieCovering"
           :key="`big:${currentSongPath}:${currentBigCoverUrl}`"
           :src="currentBigCoverUrl"
           class="art-full"
@@ -183,23 +123,10 @@ const onCoverActivate = (event: MouseEvent) => {
             <path stroke-linecap="round" stroke-linejoin="round" :stroke-width="props.isExpanded ? 1 : 1.7" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
         </div>
-
-        <CoverGenieCanvas
-          v-if="genieCovering"
-          :key="`genie:${genieCycle}:${currentSongPath}:${displayedLocalCoverUrl}`"
-          :src="displayedLocalCoverUrl"
-          :direction="genieDirection ?? 'exit'"
-          :from-rect="genieFromRect"
-          :to-el="() => detailCoverRef"
-          @done="genieDone = true"
-        />
       </div>
 
       <CoverReflection :visible="props.isExpanded" :source="reflectionSource" />
     </div>
-
-    <!-- 临时构建标记（仅 DEV+AMLL）：复验 genie 时代码是否已加载；定位后移除 -->
-    <div v-if="amll && isDev" class="genie-dev-badge">genie·C7.1</div>
   </div>
 </template>
 
@@ -214,25 +141,6 @@ const onCoverActivate = (event: MouseEvent) => {
   z-index: 70;
   transition: all 700ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
-}
-
-/* genie 窗内冻结容器自身过渡：飞行完全交给屏幕空间画布，防止双重收缩稀释漏斗 */
-.cover-stage--genie-frozen {
-  transition: none !important;
-  box-shadow: none !important;
-}
-
-/* 临时构建标记：DEV+AMLL 下右下角小字，确认窗口加载的是 genie C7.1 代码 */
-.genie-dev-badge {
-  position: fixed;
-  right: 10px;
-  bottom: 10px;
-  z-index: 90;
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  color: rgba(120, 220, 160, 0.55);
-  pointer-events: none;
 }
 
 .cover-stage--open {
