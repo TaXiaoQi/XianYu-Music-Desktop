@@ -520,21 +520,21 @@ html.no-glass-switch .glass-switch::after {
   color: var(--skin-text);
 }
 
-/* 封面：对齐 AMLL 经典页的尺寸比例与圆角（高度由既有 aspect-ratio 决定） */
-.detail-root--amll .cover-stage--open {
-  width: var(--skin-cover-size);
-  border-radius: var(--skin-cover-radius);
-}
-
 /* 左列坐标：封面与控制簇共用同一中心线，控制簇紧贴封面下方 */
 .detail-root--amll {
   --amll-col-left: calc(75px + 18%);
   --amll-col-top: 34%;
 }
 
-.detail-root--amll .cover-stage--open {
+/* 封面锚点与尺寸：必须用双作用域类提升特异性（0,3,0）——
+   PlayerDetailLeft 的 scoped 规则编译为 .cover-stage--open[data-v-*]（0,2,0），
+   且组件样式在 style.css 之后注入，单类前缀的同特异性覆盖会被其反压，
+   导致封面停留在 base 的 top:45%、信息行叠进封面卡片（布局回退 bug） */
+.detail-root--amll.detail-root--amll .cover-stage--open {
   top: var(--amll-col-top);
   left: var(--amll-col-left);
+  width: var(--skin-cover-size);
+  border-radius: var(--skin-cover-radius);
 }
 
 /* 曲目信息行：沉浸白下用 plus-lighter 提亮，浅色主题自动退化为 normal */
