@@ -18,6 +18,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'toggle-cover'): void }>();
 
+// 临时构建标记开关（仅 DEV）；复验 genie 后移除
+const isDev = import.meta.env.DEV;
+
 // —— genie 屏幕空间形变层（C7）状态 ——
 // 静置窗内冻结容器自身 CSS 过渡（cover-stage--genie-frozen），画布以视口坐标
 // 接管展开 rect ↔ dock rect 的整段漏斗飞行；isExpanded 翻转前预拾起点矩形。
@@ -194,6 +197,9 @@ const onCoverActivate = (event: MouseEvent) => {
 
       <CoverReflection :visible="props.isExpanded" :source="reflectionSource" />
     </div>
+
+    <!-- 临时构建标记（仅 DEV+AMLL）：复验 genie 时代码是否已加载；定位后移除 -->
+    <div v-if="amll && isDev" class="genie-dev-badge">genie·C7.1</div>
   </div>
 </template>
 
@@ -214,6 +220,19 @@ const onCoverActivate = (event: MouseEvent) => {
 .cover-stage--genie-frozen {
   transition: none !important;
   box-shadow: none !important;
+}
+
+/* 临时构建标记：DEV+AMLL 下右下角小字，确认窗口加载的是 genie C7.1 代码 */
+.genie-dev-badge {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  z-index: 90;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: rgba(120, 220, 160, 0.55);
+  pointer-events: none;
 }
 
 .cover-stage--open {

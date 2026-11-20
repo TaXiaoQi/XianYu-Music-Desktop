@@ -28,16 +28,22 @@ const emit = defineEmits<{ (e: 'done'): void }>();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const visible = ref(true);
+// 临时诊断（仅 DEV 构建）：定位用户侧「看不到效果」时 genie 是否激活、
+// 为何回退。复验通过后移除。
+const isDev = import.meta.env.DEV;
 
 let rafId = 0;
 let running = false;
 let finished = false;
 
-function finish() {
+function finish(reason: string) {
   if (finished) return;
   finished = true;
   running = false;
   visible.value = false;
+  if (isDev) {
+    console.info(`[genie] finish: ${reason}`);
+  }
   emit('done');
 }
 
@@ -63,14 +69,22 @@ function start() {
   const canvas = canvasRef.value;
   const from = props.fromRect;
   const el = props.toEl();
-  if (!canvas || !from || !el) {
-    finish();
+  if (!canvas) {
+    finish('no-canvas');
+    return;
+  }
+  if (!from) {
+    finish('no-from-rect');
+    return;
+  }
+  if (!el) {
+    finish('no-target-el');
     return;
   }
   const box = el.getBoundingClientRect();
   const to: GenieRect = { x: box.x, y: box.y, w: box.width, h: box.height };
   if (from.w <= 0 || from.h <= 0 || to.w <= 0 || to.h <= 0) {
-    finish();
+    finish('zero-rect');
     return;
   }
   const radiusRaw = Number.parseFloat(getComputedStyle(el).borderRadius || '0');
@@ -80,7 +94,7 @@ function start() {
   canvas.height = Math.round(window.innerHeight * dpr);
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    finish();
+    finish('no-2d-context');
     return;
   }
   const slices = genieSliceCount(Math.max(from.h, to.h) * dpr);
@@ -124,6 +138,11 @@ function start() {
 
   image.onload = () => {
     if (!running) return;
+    if (isDev) {
+      console.info(
+        `[genie] fly ${props.direction}: from=${JSON.stringify(from)} to=${JSON.stringify(to)}`,
+      );
+    }
     const startedAt = performance.now();
     const step = () => {
       if (!running) return;
@@ -133,12 +152,12 @@ function start() {
         const t = props.direction === 'exit' ? eased : 1 - eased;
         try {
           draw(t);
-        } catch {
-          finish();
+        } catch (error) {
+          finish(`draw-error: ${String(error)}`);
           return;
         }
         if (raw >= 1) {
-          finish();
+          finish('complete');
           return;
         }
       }
@@ -146,7 +165,7 @@ function start() {
     };
     rafId = requestAnimationFrame(step);
   };
-  image.onerror = () => finish();
+  image.onerror = () => finish('image-error');
   running = true;
   image.src = props.src;
 }
