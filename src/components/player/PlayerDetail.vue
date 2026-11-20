@@ -31,6 +31,7 @@ const LyricsReplacementModal = defineAsyncComponent(() => import('../overlays/Ly
 const {
   showPlayerDetail: detailShown,
   showQueue: queueOpen,
+  showComment: commentOpen,
   currentSong: activeTrack,
   closePlayerDetail: dismissDetail,
 } = useStageControl();
@@ -383,6 +384,7 @@ onBeforeUnmount(() => {
           :revealed="barRevealed"
           :shown="detailShown"
           :cinema="isCinemaMode"
+          :amll="isAmllSkin"
           :mask-cover="coverHidden"
           :fullscreen-on="isFullscreen"
           :has-track="Boolean(activeTrack)"
@@ -427,6 +429,28 @@ onBeforeUnmount(() => {
         :meta-rows="metaRows"
         :enter-style="enterShift(2, 'x', 20)"
       />
+
+      <!-- AMLL 皮肤：右下浮钮（队列 / 评论），对齐参考图位置 -->
+      <div v-if="isAmllSkin && detailShown" class="amll-float-actions">
+        <button
+          class="amll-float-btn"
+          :class="queueOpen ? 'amll-float-btn--on' : ''"
+          title="播放队列"
+          aria-label="播放队列"
+          @click="queueOpen = !queueOpen"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="amll-float-icon"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+        </button>
+        <button
+          class="amll-float-btn"
+          :class="commentOpen ? 'amll-float-btn--on' : ''"
+          title="评论"
+          aria-label="评论"
+          @click="commentOpen = !commentOpen"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="amll-float-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+        </button>
+      </div>
     </div>
 
     <PlayerDetailContextMenu 
@@ -538,5 +562,44 @@ onBeforeUnmount(() => {
     opacity: 1;
     transform: translate(0, 0);
   }
+}
+/* AMLL 皮肤：右下浮钮（队列/评论），颜色走皮肤变量 */
+.amll-float-actions {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  display: flex;
+  gap: 12px;
+}
+
+.amll-float-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4em;
+  height: 4em;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--skin-text, #fff) 10%, transparent);
+  color: var(--skin-text, #fff);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.amll-float-btn:hover {
+  background: color-mix(in srgb, var(--skin-text, #fff) 18%, transparent);
+  transform: translateY(-2px);
+}
+
+.amll-float-btn--on {
+  background: color-mix(in srgb, var(--skin-accent, #ec4141) 26%, transparent);
+  color: var(--skin-text, #fff);
+}
+
+.amll-float-icon {
+  width: 1.4em;
+  height: 1.4em;
 }
 </style>

@@ -7,6 +7,7 @@ import { useAppShell } from '../../composables/useAppShell';
 import { useWindowMaterial } from '../../composables/windowMaterial';
 import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
 import { useUiStore } from '../../shared/stores/ui';
+import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useFeedbackNotification } from '../../composables/useFeedbackNotification';
 import { useNicknameChangeNotification } from '../../composables/useNicknameChangeNotification';
@@ -95,6 +96,12 @@ const {
 const IS_MACOS_PLATFORM = typeof navigator !== 'undefined' && navigator.userAgent.includes('Macintosh');
 const nativeFullscreen = ref(false);
 const { isImmersiveFullscreen: appImmersiveFullscreen } = storeToRefs(useUiStore());
+// AMLL 皮肤：详情页展开时隐藏全局底栏（控制区移入详情页左列）
+const { showPlayerDetail: playerDetailOpen } = storeToRefs(useUiStore());
+const { theme: shellTheme } = useThemeSettings();
+const amllDetailHidesFooter = computed(
+  () => playerDetailOpen.value === true && shellTheme.value?.playerDetailStyle === 'amll',
+);
 const shouldRoundWindow = computed(
   () => IS_MACOS_PLATFORM && !nativeFullscreen.value && !appImmersiveFullscreen.value,
 );
@@ -345,7 +352,7 @@ onMounted(() => {
           <LazyPlayerDetail />
 
           <transition name="footer-slide">
-            <PlayerFooter />
+            <PlayerFooter v-if="!amllDetailHidesFooter" />
           </transition>
         </div>
 

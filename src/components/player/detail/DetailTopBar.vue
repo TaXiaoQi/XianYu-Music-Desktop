@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
 import { createMacDragRegionZoomToggle } from '../../../composables/macDragRegionZoomToggle';
+import { resolveThumbDrag, resolveThumbTap } from './amllThumb';
 
 const props = defineProps<{
   /** 顶栏当前是否处于显现态 */
@@ -19,6 +21,8 @@ const props = defineProps<{
   trackTitle?: string;
   /** 歌手文案 */
   trackArtist?: string;
+  /** AMLL 皮肤：隐藏左收起钮与标题区，改渲染顶部拖拽拇指条 */
+  amll?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -38,6 +42,36 @@ const IS_MACOS = typeof navigator !== 'undefined' && navigator.userAgent.include
 const { onMacDblMouseDown, onMacDblMouseUp } = createMacDragRegionZoomToggle(
   () => props.fullscreenOn === true,
 );
+
+// —— AMLL 拇指条手势：拖拽过阈值即时收起；未触发拖拽的抬手视为轻点收起 ——
+const thumbStartY = ref<number | null>(null);
+let thumbCollapseFired = false;
+
+const onThumbPointerDown = (event: PointerEvent) => {
+  thumbStartY.value = event.clientY;
+  thumbCollapseFired = false;
+  (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+};
+
+const onThumbPointerMove = (event: PointerEvent) => {
+  if (thumbStartY.value === null || thumbCollapseFired) return;
+  if (resolveThumbDrag(event.clientY - thumbStartY.value) === 'collapse') {
+    thumbCollapseFired = true;
+    emit('collapse');
+  }
+};
+
+const onThumbPointerUp = (event: PointerEvent) => {
+  const start = thumbStartY.value;
+  thumbStartY.value = null;
+  if (thumbCollapseFired || start === null) return;
+  if (resolveThumbTap(event.clientY - start)) emit('collapse');
+};
+
+const onThumbPointerCancel = () => {
+  thumbStartY.value = null;
+  thumbCollapseFired = false;
+};
 </script>
 
 <template>
@@ -57,7 +91,7 @@ const { onMacDblMouseDown, onMacDblMouseUp } = createMacDragRegionZoomToggle(
     ></div>
 
     <div class="bar-wing bar-wing--left">
-      <button title="收起详情页" class="bar-btn" @click="emit('collapse')">
+      <button v-if="!amll" title="收起详情页" class="bar-btn" @click="emit('collapse')">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="bar-icon-lg">
           <path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
@@ -71,7 +105,19 @@ const { onMacDblMouseDown, onMacDblMouseUp } = createMacDragRegionZoomToggle(
       </button>
     </div>
 
-    <div v-if="cinema && hasTrack" class="bar-heading">
+    <div v-if="amll" class="amll-thumb-zone">
+      <button
+        class="amll-thumb"
+        title="收起详情页"
+        @pointerdown="onThumbPointerDown"
+        @pointermove="onThumbPointerMove"
+        @pointerup="onThumbPointerUp"
+        @pointercancel="onThumbPointerCancel"
+      >
+        <span class="amll-thumb-bar"></span>
+      </button>
+    </div>
+    <div v-else-if="cinema && hasTrack" class="bar-heading">
       <span class="truncate text-[clamp(15px,2vh,21px)] font-semibold tracking-wide text-white drop-shadow-md">
         {{ trackTitle }}
       </span>
@@ -212,5 +258,38 @@ const { onMacDblMouseDown, onMacDblMouseUp } = createMacDragRegionZoomToggle(
 .bar-heading-gap {
   flex: 1 1 0%;
   pointer-events: none;
+}
+/* AMLL 拇指条：顶部居中的下拉收起把手，颜色走皮肤变量 */
+.amll-thumb-zone {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+}
+
+.amll-thumb {
+  padding: 12px 28px;
+  background: transparent;
+  border: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.amll-thumb:active {
+  cursor: grabbing;
+}
+
+.amll-thumb-bar {
+  display: block;
+  width: 44px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--skin-text-faint, rgba(255, 255, 255, 0.28));
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.amll-thumb:hover .amll-thumb-bar {
+  background: var(--skin-text-dim, rgba(255, 255, 255, 0.62));
+  transform: scaleX(1.15);
 }
 </style>
