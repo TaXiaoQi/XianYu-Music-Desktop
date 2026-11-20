@@ -73,7 +73,7 @@ function toCustomModePatch(
 }
 
 export const useCustomThemeModal = () => {
-    const { theme, patchTheme, replaceTheme } = useThemeSettings();
+    const { theme, patchTheme } = useThemeSettings();
     const previewDraft: Ref<ThemeSettings["customBackground"]> = ref(
         snapshotThemePreview(theme.value),
     );
@@ -113,7 +113,15 @@ export const useCustomThemeModal = () => {
     const restoreSavedTheme = () => {
         const savedTheme = skinModalOriginalTheme.value;
         if (savedTheme) {
-            replaceTheme(savedTheme);
+            // 取消只回滚本弹窗自己写入的预览字段（CUSTOM_MODE_BASE + customBackground）。
+            // 不得整包 replaceTheme：用户在弹窗期间经主题中心改掉的详情页皮肤
+            // （playerDetailStyle）等其他设置会被开窗时的陈旧快照吞掉（回跳根因）
+            patchTheme({
+                mode: savedTheme.mode,
+                dynamicBgType: savedTheme.dynamicBgType,
+                windowMaterial: savedTheme.windowMaterial,
+                customBackground: { ...savedTheme.customBackground },
+            });
             skinModalOriginalTheme.value = null;
         }
     };

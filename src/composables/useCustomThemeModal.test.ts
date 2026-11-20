@@ -136,6 +136,43 @@ describe("useCustomThemeModal", () => {
         expect(skinModalOriginalTheme.value).toBeNull();
     });
 
+    it("keeps the detail skin chosen from the theme center when the modal is cancelled", async () => {
+        const settingsStore = useSettingsStore();
+        settingsStore.patchTheme({
+            mode: "light",
+            dynamicBgType: "flow",
+            playerDetailStyle: "vinyl",
+            customBackground: {
+                imagePath: "/covers/original.jpg",
+                blur: 20,
+                foregroundStyle: "light",
+            },
+        });
+
+        // 打开自定义皮肤窗口：先存快照，再立即进入 custom 预览（标题栏/设置页入口的行为）
+        // (Open the custom skin window: snapshot first, then immediately enter custom preview — title bar / settings entry behavior)
+        skinModalOriginalTheme.value = { ...settingsStore.theme };
+        settingsStore.patchTheme({
+            mode: "custom",
+            dynamicBgType: "none",
+            windowMaterial: "none",
+        });
+
+        // 用户在窗口内打开主题中心，切换详情页皮肤为 AMLL
+        // (User opens the theme center inside the modal and switches the detail skin to AMLL)
+        settingsStore.patchTheme({ playerDetailStyle: "amll" });
+
+        const modal = launchModal();
+        modal.handleCancel();
+
+        // 详情页皮肤必须保留 amll：取消只回滚预览字段，不得用快照吞掉弹窗期间的其他改动
+        // (Detail skin must stay amll: cancel rolls back preview fields only, the snapshot must not swallow other changes made while the modal was open)
+        expect(settingsStore.theme.playerDetailStyle).toBe("amll");
+        expect(settingsStore.theme.mode).toBe("light");
+        expect(settingsStore.theme.dynamicBgType).toBe("flow");
+        expect(skinModalOriginalTheme.value).toBeNull();
+    });
+
     it("forgets the saved original theme after the custom skin is saved", async () => {
         const settingsStore = useSettingsStore();
         settingsStore.patchTheme({
