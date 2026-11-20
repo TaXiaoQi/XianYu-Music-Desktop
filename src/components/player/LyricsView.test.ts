@@ -19,8 +19,10 @@ describe('LyricsView', () => {
     expectSourceContains(source, ':playing="nowPlaying"');
   });
 
-  it('uses lyricsSettings.playerLineGap directly for line-gap', () => {
-    expectSourceContains(source, ':line-gap="stylePrefs.playerLineGap"');
+  it('line-gap 走 effectiveLineGap（用户设置之上，AMLL 皮肤叠行距加宽）', () => {
+    expectSourceContains(source, ':line-gap="effectiveLineGap"');
+    expectSourceContains(source, 'const effectiveLineGap = computed');
+    expectSourceContains(source, 'AMLL_LINE_GAP_BOOST');
   });
 
   it('uses seekTo from usePlayer for line click seeking', () => {

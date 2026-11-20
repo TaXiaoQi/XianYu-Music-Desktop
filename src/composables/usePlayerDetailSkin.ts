@@ -22,6 +22,19 @@ export type PlayerDetailSkinClass =
 export const AMLL_WORD_FADE_WIDTH = 0.66;
 
 /**
+ * AMLL 皮肤封面中线的视口高度比例——与 style.css 的 --amll-col-top: 34% 同源：
+ * 封面以 translate(-50%,-50%) 居中于该坐标，歌词活动行锚定同一比例即可对齐封面中线，
+ * 无需 ResizeObserver 测量。
+ */
+export const AMLL_COVER_CENTER_RATIO = 0.34;
+
+/** AMLL 皮肤歌词字号相对用户设置的提升倍率（参考图字号明显大于默认） */
+export const AMLL_FONT_SCALE_BOOST = 1.15;
+
+/** AMLL 皮肤歌词行距相对用户设置的加宽量 */
+export const AMLL_LINE_GAP_BOOST = 0.3;
+
+/**
  * 内置详情页皮肤清单：主题中心「本地」页签顶部的切换入口。
  * AMLL 皮肤**只**在这里切换（设置页不提供该选项），classic/vinyl 同时保留在设置页。
  */

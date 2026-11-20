@@ -26,7 +26,7 @@ import { getPlaybackSeekSecondsForLyricLine } from './seekLayout';
 import type { WordLyricLineClickEvent } from './WordLyricPlayer';
 import RangeSlider from '../common/RangeSlider.vue';
 import { useThemeSettings } from '../../composables/useThemeSettings';
-import { AMLL_WORD_FADE_WIDTH, usePlayerDetailSkin } from '../../composables/usePlayerDetailSkin';
+import { AMLL_COVER_CENTER_RATIO, AMLL_FONT_SCALE_BOOST, AMLL_LINE_GAP_BOOST, AMLL_WORD_FADE_WIDTH, usePlayerDetailSkin } from '../../composables/usePlayerDetailSkin';
 import { useI18n } from '../../features/i18n';
 import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
@@ -158,7 +158,9 @@ const rowGapProgress = computed(() => ratioToPercent(stylePrefs.playerLineGap, M
 const shiftXProgress = computed(() => ratioToPercent(stylePrefs.playerOffsetX, MIN_PLAYER_OFFSET_X, MAX_PLAYER_OFFSET_X));
 const shiftYProgress = computed(() => ratioToPercent(stylePrefs.playerOffsetY, MIN_PLAYER_OFFSET_Y, MAX_PLAYER_OFFSET_Y));
 
-const alignClass = computed(() => `lyrics-align-${stylePrefs.playerAlignment}`);
+const alignClass = computed(() =>
+  isAmllSkin.value ? 'lyrics-align-left' : `lyrics-align-${stylePrefs.playerAlignment}`,
+);
 
 // AMLL 皮肤沿用经典页的逐字软边宽度（0.66），其余皮肤保持既有 0.5；
 // isAmllSkin 在下方主题区声明，computed 惰性求值，闭包引用安全。
@@ -167,6 +169,19 @@ const fadeWidth = computed(() =>
     ? (isAmllSkin.value ? AMLL_WORD_FADE_WIDTH : 0.5)
     : 0,
 );
+
+// AMLL 皮肤排版：字号提升、行距加宽（在用户设置之上叠加，不改用户设置本身）
+const effectiveFontScale = computed(() =>
+  stylePrefs.playerFontScale * (isAmllSkin.value ? AMLL_FONT_SCALE_BOOST : 1),
+);
+const effectiveLineGap = computed(() =>
+  stylePrefs.playerLineGap + (isAmllSkin.value ? AMLL_LINE_GAP_BOOST : 0),
+);
+// AMLL 皮肤歌词活动行锚定封面中线（封面隐藏时居中）；其余皮肤保持 0.42
+const effectiveAlignPosition = computed(() => {
+  if (!isAmllSkin.value) return 0.42;
+  return props.coverHidden ? 0.5 : AMLL_COVER_CENTER_RATIO;
+});
 
 // 中西文分拆时，从字体栈里裁掉通用族，再以系统字体兜底拼接
 const GENERIC_FAMILY_TAIL = /,\s*(system-ui|sans-serif|ui-sans-serif).*$/i;
@@ -180,7 +195,7 @@ const playerVars = computed(() => {
     familyStack = getLyricsFontFamily(stylePrefs.playerFontPreset);
   }
   return {
-    '--lyrics-font-scale': stylePrefs.playerFontScale.toString(),
+    '--lyrics-font-scale': effectiveFontScale.value.toFixed(2),
     '--lyrics-font-family': familyStack,
     '--lyrics-offset-x': `${stylePrefs.playerOffsetX}%`,
     '--lyrics-offset-y': `${stylePrefs.playerOffsetY}%`,
@@ -1145,13 +1160,13 @@ watch(() => props.coverHidden, async () => {
           :disabled="props.disabled"
           :layout-version="stylePrefs.playerFontPreset"
           align-anchor="center" 
-          :align-position="0.42" 
+          :align-position="effectiveAlignPosition"
           :enable-spring="true" 
           :enable-blur="themeState?.lyricBlur !== false"
           :enable-scale="true" 
           :hide-passed-lines="false" 
           :word-fade-width="fadeWidth"
-          :line-gap="stylePrefs.playerLineGap"
+          :line-gap="effectiveLineGap"
           @line-click="onLyricLineClick"
         />
       </div>
