@@ -30,6 +30,16 @@ vi.mock('../tauri/playlistImportApi', () => ({
     fetchPlaylistFromSource: vi.fn(),
   },
 }));
+// 内置 lx 兜底需对应平台有启用插件：提供 wy/tx/kw/kg/mg 全量启用的 lx 插件
+vi.mock('./pluginEngine', () => ({
+  getStoredPlugins: vi.fn(() => [
+    { id: 'lx-kg', name: '酷狗音乐', format: 'lx', enabled: true, sources: ['kg'] },
+    { id: 'lx-wy', name: '网易云', format: 'lx', enabled: true, sources: ['wy'] },
+    { id: 'lx-tx', name: 'QQ音乐', format: 'lx', enabled: true, sources: ['tx'] },
+    { id: 'lx-kw', name: '酷我音乐', format: 'lx', enabled: true, sources: ['kw'] },
+    { id: 'lx-mg', name: '咪咕音乐', format: 'lx', enabled: true, sources: ['mg'] },
+  ]),
+}));
 
 import { ensurePluginInstance } from './pluginEngineInstance';
 import { playlistImportApi } from '../tauri/playlistImportApi';

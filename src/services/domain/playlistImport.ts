@@ -10,6 +10,7 @@ import { fallbackMethodDisabled } from '../fallbackModules/registry';
 import { kFallbackModulePlaylistImport } from '../fallbackModules/types';
 import { playlistImportApi } from '../tauri/playlistImportApi';
 import { looksLikeSheetLinkOrId, sourceMatchesHostPlatform } from './pluginCatalogSearch';
+import { hasEnabledLxPluginFor, type HostDirectPlatform } from './lxPluginGate';
 import type { PluginSearchResult, PluginSource } from '../../types';
 
 // ==================== Re-export（向后兼容入口） ====================
@@ -295,6 +296,12 @@ export async function importPlaylist(
   const importMethod = IMPORT_METHOD_BY_SOURCE[actualSource];
   if (importMethod && fallbackMethodDisabled(kFallbackModulePlaylistImport, importMethod)) {
     throw new Error('该音源歌单导入已被服务端临时关闭，请稍后重试');
+  }
+  // 内置 lx 直连导入仅在对应平台有启用插件时可用
+  if (!hasEnabledLxPluginFor(actualSource as HostDirectPlatform)) {
+    throw new Error(
+      `${SOURCE_PLATFORM_NAMES[actualSource]}未启用对应音源插件，请先在「音源管理」开启后重试`,
+    );
   }
   switch (actualSource) {
     case 'wy':

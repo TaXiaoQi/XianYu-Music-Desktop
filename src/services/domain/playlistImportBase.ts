@@ -2,6 +2,7 @@ import { pluginApi } from '../tauri/pluginApi';
 import { playlistImportApi } from '../tauri/playlistImportApi';
 import { fallbackMethodDisabled } from '../fallbackModules/registry';
 import { kFallbackModulePlaylistImport } from '../fallbackModules/types';
+import { hasEnabledLxPluginFor, type HostDirectPlatform } from './lxPluginGate';
 
 
 // ==================== 音源定义 ====================
@@ -56,13 +57,15 @@ export function log(_msg: string) {
 }
 
 /// 歌单详情拉取（Rust playlist_fetcher 固定实现，服务端签名配置可关闭）。
-/// 供宿主兜底链 runner 使用：该平台方法被配置关闭时返回 null，runner 跳过。
+/// 供宿主兜底链 runner 使用：该平台方法被配置关闭或无启用插件时返回 null，runner 跳过。
 export async function hostPlaylistDetailOrNull(
   source: string,
   rawId: string,
 ): Promise<PlaylistImportResult | null> {
   const method = `getListDetail${source.charAt(0).toUpperCase()}${source.slice(1)}`;
   if (fallbackMethodDisabled(kFallbackModulePlaylistImport, method)) return null;
+  // 内置 lx 直连兜底仅在对应平台有启用插件时可用
+  if (!hasEnabledLxPluginFor(source as HostDirectPlatform)) return null;
   return playlistImportApi.fetchPlaylistFromSource(source, rawId);
 }
 
