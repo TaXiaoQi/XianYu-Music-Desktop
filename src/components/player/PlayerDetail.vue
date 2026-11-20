@@ -38,7 +38,7 @@ const {
 const { settings, patchTheme } = useSettings();
 const { isImmersiveFullscreen: isFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
 // 详情页皮肤：类名 + 主题派生 CSS 变量（amll 皮肤的全部配色都走这组变量）
-const { skinClass, skinVars } = usePlayerDetailSkin();
+const { skinClass, skinVars, isAmllSkin } = usePlayerDetailSkin();
 const { showToast } = useNotifier();
 const {
   requested: filmRequested,
@@ -363,7 +363,12 @@ onBeforeUnmount(() => {
         !IS_MACOS && fullscreenAnimState === 'exiting' ? 'fs-exiting' : '',
       ]"
     >
-      <DetailBackdrop :ready="heavyMounted" :active="detailShown" :mesh-on="settings.theme.playerDetailMeshBackground && !isCinemaMode" />
+      <DetailBackdrop
+        :ready="heavyMounted"
+        :active="detailShown"
+        :mesh-on="(isAmllSkin || settings.theme.playerDetailMeshBackground) && !isCinemaMode"
+        :mesh-mode="isAmllSkin ? 'fluid' : 'polygon'"
+      />
 
       <div
         class="chrome-row"

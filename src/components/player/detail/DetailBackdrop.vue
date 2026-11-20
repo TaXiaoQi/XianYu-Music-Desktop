@@ -11,6 +11,8 @@ defineProps<{
   active?: boolean;
   /** 多边形流光背景开关（电影模式下让位给背景视频） */
   meshOn?: boolean;
+  /** 背景渲染模式：polygon 多边形流光 / fluid 流体网格 */
+  meshMode?: 'polygon' | 'fluid';
 }>();
 </script>
 
@@ -23,7 +25,7 @@ defineProps<{
       transform: active ? 'translateY(0)' : 'translateY(100%)',
     }"
   >
-    <PlayerDetailMeshBackground v-if="ready && meshOn" :active="Boolean(active)" />
+    <PlayerDetailMeshBackground v-if="ready && meshOn" :active="Boolean(active)" :mode="meshMode ?? 'polygon'" />
     <PlayerDetailBackground v-else-if="ready" :bg-opacity="1" :active="Boolean(active)" />
     <div class="backdrop-base"></div>
   </div>

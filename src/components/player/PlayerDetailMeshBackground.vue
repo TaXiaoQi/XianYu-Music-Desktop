@@ -16,10 +16,21 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { isWindowResizing } from '../../composables/windowResizeCoordinator';
+import {
+  buildCoverFieldFromPixels,
+  FLUID_FIELD_PRESET,
+  POLYGON_FIELD_PRESET,
+  type CoverFieldPreset,
+} from './meshFieldMath';
+
+export type MeshBackgroundMode = 'polygon' | 'fluid';
 
 const props = defineProps<{
   /** 详情页是否可见：不可见时暂停渲染 */
   active?: boolean;
+  /** polygon=Voronoi 多边形流光；fluid=AMLL 式平滑流体网格 */
+  mode?: MeshBackgroundMode;
 }>();
 
 const playbackStore = usePlaybackStore();
@@ -66,8 +77,6 @@ const RENDER_SCALE = 0.45;
 const RENDER_SCALE_AA = 0.8;
 /** 换歌交叉淡化时长（ms） */
 const FADE_MS = 900;
-/** 封面色场采样分辨率（低频色场；越低，相邻多边形颜色越接近、整体越柔和） */
-const COLORFIELD_SIZE = 14;
 
 const VERT_SRC = `#version 300 es
 in vec2 aPos;
@@ -201,9 +210,69 @@ void main() {
   fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }`;
 
+/**
+ * 流体网格片元：对同一张 64×64 色场纹理做两层反向旋转的正弦映射采样，
+ * 再以慢速正弦混合两层色域，得到平滑连续的"流体"观感（净室实现）。
+ * 采样 uv 恒在 [0.04, 0.96]，不会触到纹理硬边界。
+ */
+const FRAG_FLUID_SRC = `#version 300 es
+precision highp float;
+
+uniform vec2 uResolution;
+uniform float uTime;
+uniform float uFlowSpeed;
+uniform sampler2D uColorFieldA;
+uniform sampler2D uColorFieldB;
+uniform float uFade;
+
+out vec4 fragColor;
+
+vec2 rot2(vec2 v, float a) {
+  float c = cos(a);
+  float s = sin(a);
+  return mat2(c, -s, s, c) * v;
+}
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 sampleField(vec2 uv) {
+  vec2 clamped = clamp(uv, vec2(0.04), vec2(0.96));
+  return mix(texture(uColorFieldA, clamped).rgb, texture(uColorFieldB, clamped).rgb, uFade);
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uResolution;
+  vec2 p = (uv - 0.5) * 2.4;
+  float t = uTime * uFlowSpeed;
+
+  vec2 q1 = rot2(p, t * 0.075);
+  vec2 q2 = rot2(p, -t * 0.055 + 2.1);
+  vec2 uv1 = 0.5 + 0.46 * sin(q1 * 1.7 + vec2(t * 0.09, -t * 0.07));
+  vec2 uv2 = 0.5 + 0.46 * sin(q2 * 1.3 + vec2(-t * 0.06, t * 0.08));
+
+  vec3 c1 = sampleField(uv1);
+  vec3 c2 = sampleField(uv2);
+  float blend = clamp(0.5 + 0.28 * sin(t * 0.11 + p.x * 0.9 + p.y * 0.7), 0.0, 1.0);
+  vec3 color = mix(c1, c2, blend);
+
+  float vig = smoothstep(1.25, 0.30, length(p) * 0.75);
+  color *= mix(0.88, 1.03, vig);
+  color = max(color, vec3(0.06));
+
+  // 8bit 色场 + 大面积平滑渐变易出 banding：加确定性抖动打散色阶
+  float dither = (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
+  fragColor = vec4(clamp(color + dither, 0.0, 1.0), 1.0);
+}`;
+
 let gl: WebGL2RenderingContext | null = null;
 let program: WebGLProgram | null = null;
+let programMode: MeshBackgroundMode | null = null;
 let vao: WebGLVertexArrayObject | null = null;
+let vertexBuffer: WebGLBuffer | null = null;
 let canvas: HTMLCanvasElement | null = null;
 let uniformLoc: Record<string, WebGLUniformLocation | null> = {};
 
@@ -249,8 +318,50 @@ function initGl(): boolean {
     return false;
   }
 
+  gl = context;
+  canvas = target;
+
+  // 全屏三角形
+  vao = context.createVertexArray();
+  context.bindVertexArray(vao);
+  vertexBuffer = context.createBuffer();
+  context.bindBuffer(context.ARRAY_BUFFER, vertexBuffer);
+  context.bufferData(
+    context.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 3, -1, -1, 3]),
+    context.STATIC_DRAW,
+  );
+  // attrib 指针与 program 的 attrib 位置相关，统一在 ensureProgram 里绑定
+
+  texA = createTexture(context);
+  texB = createTexture(context);
+
+  return true;
+}
+
+const UNIFORM_NAMES = [
+  'uResolution', 'uTime', 'uDensity', 'uSeedJitter', 'uDriftSpeed',
+  'uSeamDepth', 'uSeamWidth', 'uGradientBlend', 'uSaturation', 'uBrightness', 'uAntiAlias',
+  'uColorFieldA', 'uColorFieldB', 'uFade', 'uFlowSpeed',
+];
+
+/** 按模式编译/切换 program（模式切换低频：仅皮肤切换时发生） */
+function ensureProgram(mode: MeshBackgroundMode): boolean {
+  if (!gl) return false;
+  if (programMode === mode && program) return true;
+
+  const context = gl;
+  if (program) {
+    context.deleteProgram(program);
+    program = null;
+  }
+
   const vs = compile(context, context.VERTEX_SHADER, VERT_SRC);
-  const fs = compile(context, context.FRAGMENT_SHADER, FRAG_SRC);
+  const fs = compile(
+    context,
+    context.FRAGMENT_SHADER,
+    mode === 'fluid' ? FRAG_FLUID_SRC : FRAG_SRC,
+  );
   if (!vs || !fs) return false;
 
   const prog = context.createProgram();
@@ -263,38 +374,23 @@ function initGl(): boolean {
     return false;
   }
 
-  gl = context;
   program = prog;
-  canvas = target;
-
-  // 全屏三角形
-  vao = context.createVertexArray();
-  context.bindVertexArray(vao);
-  const buffer = context.createBuffer();
-  context.bindBuffer(context.ARRAY_BUFFER, buffer);
-  context.bufferData(
-    context.ARRAY_BUFFER,
-    new Float32Array([-1, -1, 3, -1, -1, 3]),
-    context.STATIC_DRAW,
-  );
-  const posLoc = context.getAttribLocation(prog, 'aPos');
-  context.enableVertexAttribArray(posLoc);
-  context.vertexAttribPointer(posLoc, 2, context.FLOAT, false, 0, 0);
-
-  for (const name of [
-    'uResolution', 'uTime', 'uDensity', 'uSeedJitter', 'uDriftSpeed',
-    'uSeamDepth', 'uSeamWidth', 'uGradientBlend', 'uSaturation', 'uBrightness', 'uAntiAlias',
-    'uColorFieldA', 'uColorFieldB', 'uFade',
-  ]) {
+  programMode = mode;
+  uniformLoc = {};
+  for (const name of UNIFORM_NAMES) {
     uniformLoc[name] = context.getUniformLocation(prog, name);
   }
-
-  texA = createTexture(context);
-  texB = createTexture(context);
 
   context.useProgram(prog);
   context.uniform1i(uniformLoc.uColorFieldA ?? null, 0);
   context.uniform1i(uniformLoc.uColorFieldB ?? null, 1);
+
+  // VAO 的 attrib 指向与 program 绑定，切换 program 后重新绑定一次
+  context.bindVertexArray(vao);
+  if (vertexBuffer) context.bindBuffer(context.ARRAY_BUFFER, vertexBuffer);
+  const posLoc = context.getAttribLocation(prog, 'aPos');
+  context.enableVertexAttribArray(posLoc);
+  context.vertexAttribPointer(posLoc, 2, context.FLOAT, false, 0, 0);
 
   return true;
 }
@@ -326,23 +422,36 @@ function resize() {
   gl.viewport(0, 0, w, h);
 }
 
+/** 流体模式速度：复用同一滑块倍率（0-3），直接作用于着色器时间 */
+function resolveFlowMultiplier(multiplier: unknown): number {
+  const value = typeof multiplier === 'number' && Number.isFinite(multiplier) ? multiplier : 1;
+  return Math.min(DRIFT_SPEED_MAX_MULTIPLIER, Math.max(DRIFT_SPEED_MIN_MULTIPLIER, value));
+}
+
 function renderFrame() {
-  if (!gl || !program || !canvas) return;
+  if (!gl || !canvas) return;
+  const mode = props.mode ?? 'polygon';
+  if (!ensureProgram(mode) || !program) return;
   const now = performance.now();
   const time = now / 1000;
 
   gl.useProgram(program);
   gl.uniform2f(uniformLoc.uResolution ?? null, canvas.width, canvas.height);
   gl.uniform1f(uniformLoc.uTime ?? null, time);
-  gl.uniform1f(uniformLoc.uDensity ?? null, CELL_DENSITY);
-  gl.uniform1f(uniformLoc.uSeedJitter ?? null, SEED_JITTER);
-  gl.uniform1f(uniformLoc.uDriftSpeed ?? null, resolveDriftSpeed(theme.value?.playerDetailMeshSpeed));
-  gl.uniform1f(uniformLoc.uSeamDepth ?? null, SEAM_DEPTH);
-  gl.uniform1f(uniformLoc.uSeamWidth ?? null, SEAM_WIDTH);
-  gl.uniform1f(uniformLoc.uGradientBlend ?? null, GRADIENT_BLEND);
-  gl.uniform1f(uniformLoc.uSaturation ?? null, SATURATION);
-  gl.uniform1f(uniformLoc.uBrightness ?? null, BRIGHTNESS);
-  gl.uniform1f(uniformLoc.uAntiAlias ?? null, antiAliasEnabled.value ? 1 : 0);
+
+  if (mode === 'polygon') {
+    gl.uniform1f(uniformLoc.uDensity ?? null, CELL_DENSITY);
+    gl.uniform1f(uniformLoc.uSeedJitter ?? null, SEED_JITTER);
+    gl.uniform1f(uniformLoc.uDriftSpeed ?? null, resolveDriftSpeed(theme.value?.playerDetailMeshSpeed));
+    gl.uniform1f(uniformLoc.uSeamDepth ?? null, SEAM_DEPTH);
+    gl.uniform1f(uniformLoc.uSeamWidth ?? null, SEAM_WIDTH);
+    gl.uniform1f(uniformLoc.uGradientBlend ?? null, GRADIENT_BLEND);
+    gl.uniform1f(uniformLoc.uSaturation ?? null, SATURATION);
+    gl.uniform1f(uniformLoc.uBrightness ?? null, BRIGHTNESS);
+    gl.uniform1f(uniformLoc.uAntiAlias ?? null, antiAliasEnabled.value ? 1 : 0);
+  } else {
+    gl.uniform1f(uniformLoc.uFlowSpeed ?? null, resolveFlowMultiplier(theme.value?.playerDetailMeshSpeed));
+  }
 
   // 交叉淡化进度
   const fade = hasPrev ? Math.min(1, (now - fadeStart) / FADE_MS) : 1;
@@ -368,6 +477,8 @@ function tick() {
   if (!running) return;
 
   resize();
+  // 窗口拖拽缩放期间暂停逐帧渲染，避免与缩放合成开销叠加
+  if (isWindowResizing.value) return;
   // 背景漂移缓慢，30fps 足够顺滑且显著省电
   const now = performance.now();
   if (now - lastTime < 33) return;
@@ -392,12 +503,18 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+const fieldPreset = computed<CoverFieldPreset>(() =>
+  (props.mode ?? 'polygon') === 'fluid' ? FLUID_FIELD_PRESET : POLYGON_FIELD_PRESET,
+);
+
 /**
- * 把封面降采样成低频色场（保留色相与大致明暗分布），
- * 供着色器按多边形种子位置取样。
+ * 把封面降采样成低频色场（保留色相与大致明暗分布）。
+ * 调色/模糊参数由 meshFieldMath 预设提供：polygon=14×14 无模糊，
+ * fluid=64×64 + 两轮盒式模糊（平滑可连续采样）。
  */
 function buildColorField(image: HTMLImageElement): Uint8Array | null {
-  const size = COLORFIELD_SIZE;
+  const preset = fieldPreset.value;
+  const size = preset.size;
   const off = document.createElement('canvas');
   off.width = size;
   off.height = size;
@@ -421,29 +538,15 @@ function buildColorField(image: HTMLImageElement): Uint8Array | null {
   offCtx.drawImage(image, sx, sy, sw, sh, 0, 0, size, size);
 
   const data = offCtx.getImageData(0, 0, size, size).data;
-  const out = new Uint8Array(size * size * 4);
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    // 低频色场先做柔化：降低饱和度并明显抬升暗部，
-    // 避免黑色封面区域直接变成吞没主体的大块黑色多边形。
-    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const sat = 0.64;
-    const lift = 26; // 抬高暗部，给正文和控件保留背景对比
-    out[i] = Math.max(0, Math.min(255, luma + (r - luma) * sat + lift));
-    out[i + 1] = Math.max(0, Math.min(255, luma + (g - luma) * sat + lift));
-    out[i + 2] = Math.max(0, Math.min(255, luma + (b - luma) * sat + lift));
-    out[i + 3] = 255;
-  }
-  return out;
+  return buildCoverFieldFromPixels(data, preset);
 }
 
 function uploadField(pixels: Uint8Array, texture: WebGLTexture | null) {
   if (!gl || !texture) return;
+  const size = fieldPreset.value.size;
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texImage2D(
-    gl.TEXTURE_2D, 0, gl.RGBA, COLORFIELD_SIZE, COLORFIELD_SIZE, 0,
+    gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0,
     gl.RGBA, gl.UNSIGNED_BYTE, pixels,
   );
 }
@@ -481,6 +584,11 @@ watch([currentCover, currentCoverFull], () => {
   coverUrl.value = next;
   void rebuildColorField();
 }, { immediate: true });
+
+watch(() => props.mode ?? 'polygon', () => {
+  // 模式切换：色场分辨率与着色器都不同，重建色场并重绘
+  void rebuildColorField();
+});
 
 watch(() => props.active ?? true, (active) => {
   running = active;
@@ -523,7 +631,9 @@ onBeforeUnmount(() => {
   }
   gl = null;
   program = null;
+  programMode = null;
   vao = null;
+  vertexBuffer = null;
   texA = null;
   texB = null;
   canvas = null;
