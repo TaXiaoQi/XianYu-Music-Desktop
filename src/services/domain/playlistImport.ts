@@ -263,6 +263,31 @@ async function importPlaylistExactFromPlugins(
   throw new Error('无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接');
 }
 
+/// 解析出具体音源后的插件优先导入：已启用的 musicfree/anime 插件中
+/// 匹配该宿主平台的，先走插件自带导入链（importPlaylist/importMusicSheet
+/// 经 pluginPlaylistSearch 精确导入），命中即返回；全部未命中返回 null，
+/// 交回内置 lx 直连兜底（仍受 lx 插件开关门槛控制）。
+async function importPlaylistFromMatchingPlugins(
+  source: string,
+  keyword: string,
+): Promise<PlaylistImportResult | null> {
+  const plugins = getStoredPlugins().filter(
+    p =>
+      p.enabled &&
+      (p.format === 'musicfree' || p.format === 'anime') &&
+      sourceMatchesHostPlatform(p, source as Parameters<typeof sourceMatchesHostPlatform>[1]),
+  );
+  for (const p of plugins) {
+    try {
+      const result = await importPlaylistFromMusicFreePlugin(p, keyword);
+      if (result.songs.length > 0) return result;
+    } catch (e: any) {
+      console.warn(`[${p.name}] ${source} 音源歌单导入失败:`, e?.message || e);
+    }
+  }
+  return null;
+}
+
 export async function importPlaylist(
   source: string,
   idOrUrl: string,
@@ -291,13 +316,17 @@ export async function importPlaylist(
     throw new Error('请选择对应音源后重试，或直接粘贴歌单链接');
   }
   let result: PlaylistImportResult;
-  // 内置实现已下沉 Rust（src-tauri music/playlist_fetcher），前端仅薄壳透传；
-  // 服务端签名配置可关闭单个音源的导入链路
+  // 插件自带导入 API 优先：已启用且匹配该平台的 musicfree/anime 插件
+  // 先走自己的导入链，命中即用；内置 lx 直连退为兜底（服务端签名配置
+  // 只控制内置链路，不影响插件自带导入）
+  const pluginResult = await importPlaylistFromMatchingPlugins(actualSource, input);
+  if (pluginResult) return pluginResult;
+  // 内置 lx 直连兜底：服务端可关闭单音源链路
   const importMethod = IMPORT_METHOD_BY_SOURCE[actualSource];
   if (importMethod && fallbackMethodDisabled(kFallbackModulePlaylistImport, importMethod)) {
     throw new Error('该音源歌单导入已被服务端临时关闭，请稍后重试');
   }
-  // 内置 lx 直连导入仅在对应平台有启用插件时可用
+  // 内置 lx 直连兜底仅在对应平台有启用插件时可用
   if (!hasEnabledLxPluginFor(actualSource as HostDirectPlatform)) {
     throw new Error(
       `${SOURCE_PLATFORM_NAMES[actualSource]}未启用对应音源插件，请先在「音源管理」开启后重试`,

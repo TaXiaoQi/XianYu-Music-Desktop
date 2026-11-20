@@ -22,11 +22,17 @@ vi.mock('./pluginCatalogSearch', () => ({
 }));
 
 import { playlistImportApi } from '../tauri/playlistImportApi';
+import { pluginPlaylistSearch, pluginGetPlaylistDetailWithEnd } from './pluginEngine';
+import { sourceMatchesHostPlatform } from './pluginCatalogSearch';
 import { importPlaylist } from './playlistImport';
 
 beforeEach(() => {
   state.plugins = [];
   (playlistImportApi.fetchPlaylistFromSource as ReturnType<typeof vi.fn>).mockReset();
+  (pluginPlaylistSearch as ReturnType<typeof vi.fn>).mockReset();
+  (pluginGetPlaylistDetailWithEnd as ReturnType<typeof vi.fn>).mockReset();
+  (sourceMatchesHostPlatform as ReturnType<typeof vi.fn>).mockReset();
+  (sourceMatchesHostPlatform as ReturnType<typeof vi.fn>).mockImplementation(() => false);
 });
 
 describe('importPlaylist 内置直连的插件启用 gate', () => {
@@ -64,5 +70,60 @@ describe('importPlaylist 内置直连的插件启用 gate', () => {
     ];
     await expect(importPlaylist('tx', '8012590246')).rejects.toThrow('QQ音乐未启用对应音源插件');
     expect(playlistImportApi.fetchPlaylistFromSource).not.toHaveBeenCalled();
+  });
+});
+
+describe('importPlaylist 插件自带导入 API 优先', () => {
+  it('已启用匹配平台的 musicfree 插件 → 优先走插件导入，不调内置直连', async () => {
+    const mfPlugin = {
+      id: 'mf-tx', name: 'QQ音乐MF', format: 'musicfree', enabled: true, sources: ['tx'],
+    };
+    state.plugins = [mfPlugin];
+    (sourceMatchesHostPlatform as ReturnType<typeof vi.fn>).mockImplementation(
+      (p: any, platform: string) => platform === 'tx' && p.id === 'mf-tx',
+    );
+    (pluginPlaylistSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: '8012590246', title: 'MF歌单', coverUrl: '', trackCount: 1,
+        artist: '', platform: 'QQ音乐MF', platformId: '8012590246',
+        pluginId: 'mf-tx', rawData: { id: '8012590246' },
+      },
+    ]);
+    (pluginGetPlaylistDetailWithEnd as ReturnType<typeof vi.fn>).mockResolvedValue({
+      songs: [{
+        id: '1', title: '晴天', artist: '周杰伦', album: '', coverUrl: '',
+        duration: 0, platform: 'tx', platformId: '1', pluginId: 'mf-tx', rawData: {},
+      }],
+      isEnd: true,
+    });
+
+    const result = await importPlaylist('tx', '8012590246');
+    expect(result.source).toBe('QQ音乐MF');
+    expect(result.songs).toHaveLength(1);
+    expect(pluginPlaylistSearch).toHaveBeenCalled();
+    expect(playlistImportApi.fetchPlaylistFromSource).not.toHaveBeenCalled();
+  });
+
+  it('musicfree 插件导入失败且对应 lx 插件启用 → 退回内置直连兜底', async () => {
+    state.plugins = [
+      { id: 'mf-tx', name: 'QQ音乐MF', format: 'musicfree', enabled: true, sources: ['tx'] },
+      { id: 'lx-tx', name: 'QQ音乐', format: 'lx', enabled: true, sources: ['tx'] },
+    ];
+    (sourceMatchesHostPlatform as ReturnType<typeof vi.fn>).mockImplementation(
+      (p: any, platform: string) => platform === 'tx' && p.id === 'mf-tx',
+    );
+    (pluginPlaylistSearch as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('插件导入失败'),
+    );
+    (playlistImportApi.fetchPlaylistFromSource as ReturnType<typeof vi.fn>).mockResolvedValue({
+      source: 'tx',
+      songs: [{ id: '003MUv3q2XfUvE', title: '晴天' }],
+      total: 1,
+      info: { name: '测试歌单', img: '', desc: '', author: '', playCount: '0' },
+    });
+
+    const result = await importPlaylist('tx', '8012590246');
+    expect(result.songs).toHaveLength(1);
+    expect(playlistImportApi.fetchPlaylistFromSource).toHaveBeenCalledWith('tx', '8012590246');
   });
 });
