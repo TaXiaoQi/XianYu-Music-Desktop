@@ -188,8 +188,12 @@ describe('settings store', () => {
       store.patchTheme({ playerDetailStyle: 'vinyl' });
       expect(store.theme.playerDetailStyle).toBe('vinyl');
 
+      // AMLL 皮肤是第三个合法值
+      store.patchTheme({ playerDetailStyle: 'amll' });
+      expect(store.theme.playerDetailStyle).toBe('amll');
+
       store.patchTheme({ playerDetailStyle: 'invalid' as 'classic' });
-      expect(store.theme.playerDetailStyle).toBe('vinyl');
+      expect(store.theme.playerDetailStyle).toBe('amll');
     });
 
     it('normalizes vinyl plinth material values and ignores unknown ones', () => {

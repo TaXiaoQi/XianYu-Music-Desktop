@@ -235,7 +235,7 @@ export function useSettingsThemeControls() {
   const setLyricBlur = (value: boolean) => { lyricBlur.value = value; };
   const setShowLeaderboard = (value: boolean) => { showLeaderboard.value = value; };
   const setPlayerDetailCoverBehavior = (value: 'show' | 'hide' | 'remember') => { playerDetailCoverBehavior.value = value; };
-  const setPlayerDetailStyle = (value: 'classic' | 'vinyl') => { playerDetailStyle.value = value; };
+  const setPlayerDetailStyle = (value: 'classic' | 'vinyl' | 'amll') => { playerDetailStyle.value = value; };
   const setPlayerDetailMeshBackground = (value: boolean) => { playerDetailMeshBackground.value = value; };
   const setPlayerDetailMeshAntiAlias = (value: boolean) => { playerDetailMeshAntiAlias.value = value; };
   const setPlayerDetailVinylMaterial = (value: VinylPlinthMaterial) => { playerDetailVinylMaterial.value = value; };

@@ -9,6 +9,7 @@ import { useToast as useNotifier } from '../../composables/toast';
 import { useBilibiliVideoBackground } from '../../composables/useBilibiliVideoBackground';
 import { usePlaybackController as useStageControl } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
+import { usePlayerDetailSkin } from '../../composables/usePlayerDetailSkin';
 import { useUiStore } from '../../shared/stores/ui';
 import { windowApi } from '../../services/tauri/windowApi';
 import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
@@ -36,6 +37,8 @@ const {
 
 const { settings, patchTheme } = useSettings();
 const { isImmersiveFullscreen: isFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
+// 详情页皮肤：类名 + 主题派生 CSS 变量（amll 皮肤的全部配色都走这组变量）
+const { skinClass, skinVars } = usePlayerDetailSkin();
 const { showToast } = useNotifier();
 const {
   requested: filmRequested,
@@ -343,9 +346,11 @@ onBeforeUnmount(() => {
   <div
     class="detail-root"
     :class="[
+      skinClass,
       detailShown ? 'detail-root--live' : 'detail-root--idle',
       detailShown && pointerAsleep ? 'detail-root--asleep' : '',
     ]"
+    :style="skinVars"
     @contextmenu.prevent="openTrackMenu"
   >
     <div

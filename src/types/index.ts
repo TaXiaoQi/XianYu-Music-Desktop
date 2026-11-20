@@ -289,8 +289,8 @@ export interface ThemeSettings {
   desktopTheme: DesktopThemeVisuals;
   playerDetailCoverBehavior: 'show' | 'hide' | 'remember';
   lastPlayerDetailCoverVisible: boolean;
-  /** 播放详情页皮肤：classic=经典方形封面，vinyl=黑胶唱片（UI 移植自 mozarta-nexus/music-web-player） */
-  playerDetailStyle: 'classic' | 'vinyl';
+  /** 播放详情页皮肤：classic=经典方形封面，vinyl=黑胶唱片（UI 移植自 mozarta-nexus/music-web-player），amll=AMLL 经典风格（沉浸式封面 + 逐字歌词排版） */
+  playerDetailStyle: 'classic' | 'vinyl' | 'amll';
   /** 播放详情页多边形流光背景（Voronoi 网格：随机边数多边形缓慢漂移） */
   playerDetailMeshBackground: boolean;
   /** 多边形流光背景的边缘抗锯齿：片元内做屏幕空间平滑，并提高渲染分辨率 */

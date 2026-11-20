@@ -26,6 +26,7 @@ import { getPlaybackSeekSecondsForLyricLine } from './seekLayout';
 import type { WordLyricLineClickEvent } from './WordLyricPlayer';
 import RangeSlider from '../common/RangeSlider.vue';
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { AMLL_WORD_FADE_WIDTH, usePlayerDetailSkin } from '../../composables/usePlayerDetailSkin';
 import { useI18n } from '../../features/i18n';
 import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
@@ -159,7 +160,13 @@ const shiftYProgress = computed(() => ratioToPercent(stylePrefs.playerOffsetY, M
 
 const alignClass = computed(() => `lyrics-align-${stylePrefs.playerAlignment}`);
 
-const fadeWidth = computed(() => stylePrefs.enableWordEffect ? 0.5 : 0);
+// AMLL 皮肤沿用经典页的逐字软边宽度（0.66），其余皮肤保持既有 0.5；
+// isAmllSkin 在下方主题区声明，computed 惰性求值，闭包引用安全。
+const fadeWidth = computed(() =>
+  stylePrefs.enableWordEffect
+    ? (isAmllSkin.value ? AMLL_WORD_FADE_WIDTH : 0.5)
+    : 0,
+);
 
 // 中西文分拆时，从字体栈里裁掉通用族，再以系统字体兜底拼接
 const GENERIC_FAMILY_TAIL = /,\s*(system-ui|sans-serif|ui-sans-serif).*$/i;
@@ -275,9 +282,13 @@ function clearCustomBackgroundImage() {
 const { theme: themeState, patchTheme: applyThemePatch } = useThemeSettings();
 const vinylStyleOn = computed(() => themeState.value?.playerDetailStyle === 'vinyl');
 const meshBackdropOn = computed(() => themeState.value?.playerDetailMeshBackground === true);
+const { isAmllSkin } = usePlayerDetailSkin();
 
 function flipVinylStyle() {
-  applyThemePatch({ playerDetailStyle: vinylStyleOn.value ? 'classic' : 'vinyl' });
+  // 三态皮肤里快捷切换键只翻转 classic ↔ vinyl；amll 皮肤下按下即回到 classic
+  applyThemePatch({
+    playerDetailStyle: themeState.value?.playerDetailStyle === 'classic' ? 'vinyl' : 'classic',
+  });
 }
 
 function flipMeshBackground() {

@@ -507,3 +507,41 @@ html.no-glass-switch .glass-switch::after {
   opacity: 0;
   transform: translateY(-4px);
 }
+
+/* ------------------------------------------------------------------ */
+/* 播放详情页皮肤：AMLL 风格（playerDetailStyle: amll）                 */
+/* 配色/混合/尺寸全部来自 usePlayerDetailSkin 注入的 --skin-* 变量，      */
+/* 由 theme.accentColor + 已解析明暗派生，故换主题、换明暗即时生效。     */
+/* 所有规则限定在 .detail-root--amll 作用域，classic / vinyl 不受影响。 */
+/* ------------------------------------------------------------------ */
+
+.detail-root--amll {
+  font-family: var(--skin-font);
+  color: var(--skin-text);
+}
+
+/* 封面：对齐 AMLL 经典页的尺寸比例与圆角（高度由既有 aspect-ratio 决定） */
+.detail-root--amll .cover-stage--open {
+  width: var(--skin-cover-size);
+  border-radius: var(--skin-cover-radius);
+}
+
+/* 曲目信息行：沉浸白下用 plus-lighter 提亮，浅色主题自动退化为 normal */
+.detail-root--amll .marquee-dock {
+  mix-blend-mode: var(--skin-blend);
+}
+
+.detail-root--amll .marquee-dock > span:first-child {
+  color: var(--skin-text);
+  font-size: var(--skin-title-size);
+}
+
+.detail-root--amll .marquee-dock > span + span {
+  color: var(--skin-text-dim);
+  font-size: var(--skin-meta-size);
+}
+
+/* 歌词区：与曲目信息同一混合策略；上下渐隐沿用组件自带 mask */
+.detail-root--amll .lyrics-mask-shell {
+  mix-blend-mode: var(--skin-blend);
+}

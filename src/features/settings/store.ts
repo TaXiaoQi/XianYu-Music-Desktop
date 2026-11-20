@@ -435,7 +435,7 @@ const mergeDownloadSettings = (base: DownloadSettings, patch: DownloadSettingsPa
 /* ---------------------------------------------------------------------- */
 
 const COVER_BEHAVIOR_OPTIONS: readonly ThemeSettings['playerDetailCoverBehavior'][] = ['remember', 'hide', 'show'];
-const DETAIL_STYLE_OPTIONS: readonly ThemeSettings['playerDetailStyle'][] = ['vinyl', 'classic'];
+const DETAIL_STYLE_OPTIONS: readonly ThemeSettings['playerDetailStyle'][] = ['vinyl', 'classic', 'amll'];
 const VINYL_MATERIAL_OPTIONS: readonly ThemeSettings['playerDetailVinylMaterial'][] = ['marble', 'oak', 'matte', 'light'];
 const VINYL_PLATTER_STYLE_OPTIONS: readonly ThemeSettings['playerDetailVinylPlatterStyle'][] = ['metal', 'vinyl'];
 

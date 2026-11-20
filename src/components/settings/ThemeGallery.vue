@@ -7,6 +7,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { BUILTIN_DETAIL_SKINS } from '../../composables/usePlayerDetailSkin';
+import type { ThemeSettings } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
@@ -30,9 +32,20 @@ import {
 const emit = defineEmits<{ (event: 'close'): void; }>();
 
 const { isEnglish } = useI18n();
-const { theme } = useThemeSettings();
+const { theme, patchTheme } = useThemeSettings();
 const { replaceTheme } = useSettings();
 const { showToast } = useToast();
+
+// —— 内置详情页皮肤：主题中心「本地」页签顶部切换，只 patch 皮肤字段、不整包替换主题 ——
+const currentDetailSkin = computed<ThemeSettings['playerDetailStyle']>(
+  () => theme.value?.playerDetailStyle ?? 'classic',
+);
+
+const applyDetailSkin = (value: ThemeSettings['playerDetailStyle']) => {
+  if (currentDetailSkin.value === value) return;
+  patchTheme({ playerDetailStyle: value });
+  showToast(isEnglish.value ? 'Now Playing page skin applied' : '详情页皮肤已切换', 'success');
+};
 
 // —— 关闭淡出动画：先播动画再卸载（与 WallpaperGallery 一致）——
 const isClosing = ref(false);
@@ -58,7 +71,9 @@ onBeforeUnmount(() => {
 
 // —— Tab 切换 ——
 type GalleryTab = 'local' | 'square' | 'mine' | 'downloads';
-const activeTab = ref<GalleryTab>('square');
+// 默认落在「本地」：内置详情页皮肤组与已导入主题包都在这里，打开即可见、可切换；
+// 广场为线上市场（可能为空），不作为首屏。
+const activeTab = ref<GalleryTab>('local');
 
 const switchTab = (tab: GalleryTab) => {
   activeTab.value = tab;
@@ -330,6 +345,25 @@ const applyMyTheme = async (item: MyThemeItem) => {
                 <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 {{ isEnglish ? 'Import' : '导入' }}
               </button>
+            </div>
+            <!-- 内置详情页皮肤：AMLL 的唯一切换入口（设置页不提供该选项） -->
+            <div class="mb-5">
+              <div class="mb-2 text-xs font-semibold text-white/60">{{ isEnglish ? 'Now Playing page skin (built-in)' : '详情页皮肤（内置）' }}</div>
+              <div class="grid grid-cols-3 gap-3">
+                <button
+                  v-for="skin in BUILTIN_DETAIL_SKINS"
+                  :key="skin.value"
+                  type="button"
+                  class="flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition"
+                  :class="currentDetailSkin === skin.value
+                    ? 'border-[#EC4141]/60 bg-[#EC4141]/15 text-white'
+                    : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10'"
+                  @click="applyDetailSkin(skin.value)"
+                >
+                  <span class="truncate">{{ isEnglish ? skin.en : skin.zh }}</span>
+                  <svg v-if="currentDetailSkin === skin.value" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-[#EC4141]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </button>
+              </div>
             </div>
             <div v-if="library.length === 0" class="py-16 text-center text-xs text-white/45">还没有导入主题</div>
             <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-4">
