@@ -114,9 +114,12 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
     ports.onProgress('正在同步设置...');
 
     try {
-      const localSettings = ports.getSettings();
       ports.onProgress('正在从云端获取设置...');
       const { settings: cloudSettings, uploadedAt, sectionTs: cloudSectionTs, result: downloadResult } = await downloadSettings();
+      // 快照必须在 await 返回后读取：网络等待期间发生的本地设置变更
+      // （如用户切换详情页皮肤）否则会被陈旧快照在写回时覆盖，
+      // 或被 localWon 分支当作「本地最新」上传污染云端（amll 被回写成 vinyl 的根因）
+      const localSettings = ports.getSettings();
 
       if (downloadResult.errors.length > 0) {
         // 下载失败不能当作「云端无数据」，否则会把本地全量推上去覆盖云端
@@ -352,9 +355,11 @@ export function createSettingsSyncFlow(ports: SettingsSyncPorts) {
           ports.log('syncSettings: 设置 → 保留本地，上传覆盖云端');
           ports.onProgress('正在上传本地设置到云端...');
           // 保留本地 = 本端成为全部分节的最新持有者，先对齐账本再上传
-          const sectionTs = buildFullSectionTs(localSettings);
+          // 冲突弹窗等待可能很长，上传前重读鲜活快照，避免把弹窗前的陈旧内容当「最新」上传
+          const freshLocal = ports.getSettings();
+          const sectionTs = buildFullSectionTs(freshLocal);
           ports.applySectionTimestamps(sectionTs);
-          const r = await uploadSettings(localSettings, { sectionTs });
+          const r = await uploadSettings(freshLocal, { sectionTs });
           uploaded = r.uploaded;
           errors.push(...r.errors);
         } else {
