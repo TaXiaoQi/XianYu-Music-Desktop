@@ -290,6 +290,7 @@ export const exactEnglishTranslations: Record<string, string> = {
   '启用均衡器': 'Enable equalizer',
   '音量': 'Volume',
   '静音': 'Mute',
+  '静音/恢复': 'Mute / Unmute',
   '音量加': 'Volume up',
   '音量减': 'Volume down',
   '居中': 'Center',
