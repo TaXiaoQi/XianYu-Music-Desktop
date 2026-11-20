@@ -1,160 +1,182 @@
 <script setup lang="ts">
-// AMLL 封面 genie 式形变绘制层：过渡窗口内覆盖在 .art-frame 上，
-// 逐行 drawImage 切片实现曲线收缩/展开；首帧就绪 emit ready（父层才隐藏原生
-// img 防双绘），任何前置条件不满足（无尺寸/加载失败/画布被污染）emit ready+done
-// 回退为现有 CSS morph。
+// AMLL genie 屏幕空间形变层（C7）：Teleport 到 body 的视口固定画布。
+// 静置窗内容器被冻结（cover-stage--genie-frozen），本层以屏幕坐标逐行切片，
+// 把封面从展开 rect 漏斗式吸进 dock rect（或反向展开），飞行完全由此层提供。
+// 前置条件不满足（无起点/终点矩形、无 ctx、加载失败、绘制异常）一律 finish
+// 立即回退普通 morph。
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   GENIE_DURATION_MS,
-  computeGenieSlices,
+  computeGenieRectSlices,
   genieEase,
+  genieRectAt,
   genieSliceCount,
+  genieSourceCrop,
+  type GenieRect,
 } from './coverGenie';
 
 const props = defineProps<{
   src: string;
   direction: 'enter' | 'exit';
+  /** 翻转前预拾的起点矩形（视口坐标）；缺失则不启用 genie */
+  fromRect: GenieRect | null;
+  /** 终点元素取值器：冻结后的最终几何即目标 rect */
+  toEl: () => HTMLElement | null;
 }>();
 
-const emit = defineEmits<{
-  (e: 'ready'): void;
-  (e: 'done'): void;
-}>();
+const emit = defineEmits<{ (e: 'done'): void }>();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
-
-// 模块级图片缓存：同一封面反复进出不重复解码
-const imageCache = new Map<string, Promise<HTMLImageElement>>();
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  let pending = imageCache.get(src);
-  if (!pending) {
-    pending = new Promise((resolve, reject) => {
-      const img = new Image();
-      img.referrerPolicy = 'no-referrer';
-      img.decoding = 'async';
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('genie cover load failed'));
-      img.src = src;
-    });
-    imageCache.set(src, pending);
-  }
-  return pending;
-}
+const visible = ref(true);
 
 let rafId = 0;
-let disposed = false;
-let firstFrameDone = false;
+let running = false;
+let finished = false;
 
-function failOpen() {
-  if (firstFrameDone) return;
-  firstFrameDone = true;
-  emit('ready');
+function finish() {
+  if (finished) return;
+  finished = true;
+  running = false;
+  visible.value = false;
   emit('done');
 }
 
-function drawFrame(
-  t: number,
-  img: HTMLImageElement,
+function roundClipPath(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
 ) {
-  ctx.clearRect(0, 0, width, height);
-  const slices = genieSliceCount(height);
-  const rows = computeGenieSlices(t, slices);
-  const srcRow = img.naturalHeight / rows.length;
-  for (let i = 0; i < rows.length; i += 1) {
-    const slice = rows[i];
-    ctx.drawImage(
-      img,
-      0,
-      i * srcRow,
-      img.naturalWidth,
-      srcRow,
-      slice.dstX * width,
-      slice.dstY * height,
-      slice.dstW * width,
-      Math.max(slice.dstH * height, 1),
-    );
-  }
+  const radius = Math.min(Math.max(r, 0), w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
 }
 
 function start() {
   const canvas = canvasRef.value;
-  const host = canvas?.parentElement;
-  if (!canvas || !host || disposed) {
-    failOpen();
+  const from = props.fromRect;
+  const el = props.toEl();
+  if (!canvas || !from || !el) {
+    finish();
     return;
   }
-  const boxWidth = host.clientWidth;
-  const boxHeight = host.clientHeight;
-  if (boxWidth <= 0 || boxHeight <= 0) {
-    failOpen();
+  const box = el.getBoundingClientRect();
+  const to: GenieRect = { x: box.x, y: box.y, w: box.width, h: box.height };
+  if (from.w <= 0 || from.h <= 0 || to.w <= 0 || to.h <= 0) {
+    finish();
     return;
   }
+  const radiusRaw = Number.parseFloat(getComputedStyle(el).borderRadius || '0');
+  const radius = Number.isFinite(radiusRaw) && radiusRaw > 0 ? radiusRaw : 14;
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(boxWidth * dpr);
-  canvas.height = Math.round(boxHeight * dpr);
+  canvas.width = Math.round(window.innerWidth * dpr);
+  canvas.height = Math.round(window.innerHeight * dpr);
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    failOpen();
+    finish();
     return;
   }
-  loadImage(props.src)
-    .then((img) => {
-      if (disposed) return;
-      const startedAt = performance.now();
-      const step = () => {
-        if (disposed) return;
-        if (document.hidden) {
-          rafId = requestAnimationFrame(step);
-          return;
-        }
+  const slices = genieSliceCount(Math.max(from.h, to.h) * dpr);
+  const image = new Image();
+  image.referrerPolicy = 'no-referrer';
+  image.decoding = 'async';
+
+  const draw = (t: number) => {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    const outer = genieRectAt(t, from, to);
+    ctx.save();
+    roundClipPath(ctx, outer.x, outer.y, outer.w, outer.h, radius);
+    ctx.clip();
+    const crop = genieSourceCrop(
+      image.naturalWidth,
+      image.naturalHeight,
+      outer.w,
+      outer.h,
+    );
+    const rows = computeGenieRectSlices(t, slices, from, to);
+    const srcX = crop.sx * image.naturalWidth;
+    const srcW = Math.max(crop.sw * image.naturalWidth, 1);
+    const rowSrcH = Math.max((crop.sh / rows.length) * image.naturalHeight, 1);
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i];
+      ctx.drawImage(
+        image,
+        srcX,
+        (crop.sy + (i / rows.length) * crop.sh) * image.naturalHeight,
+        srcW,
+        rowSrcH,
+        row.x,
+        row.y,
+        row.w,
+        row.h + 0.6,
+      );
+    }
+    ctx.restore();
+  };
+
+  image.onload = () => {
+    if (!running) return;
+    const startedAt = performance.now();
+    const step = () => {
+      if (!running) return;
+      if (!document.hidden) {
         const raw = Math.min(1, (performance.now() - startedAt) / GENIE_DURATION_MS);
         const eased = genieEase(raw);
         const t = props.direction === 'exit' ? eased : 1 - eased;
         try {
-          drawFrame(t, img, ctx, canvas.width, canvas.height);
+          draw(t);
         } catch {
-          // 画布被跨源封面污染等异常：回退普通 morph
-          failOpen();
+          finish();
           return;
-        }
-        if (!firstFrameDone) {
-          firstFrameDone = true;
-          emit('ready');
         }
         if (raw >= 1) {
-          emit('done');
+          finish();
           return;
         }
-        rafId = requestAnimationFrame(step);
-      };
+      }
       rafId = requestAnimationFrame(step);
-    })
-    .catch(() => failOpen());
+    };
+    rafId = requestAnimationFrame(step);
+  };
+  image.onerror = () => finish();
+  running = true;
+  image.src = props.src;
 }
 
 onMounted(start);
 
 onBeforeUnmount(() => {
-  disposed = true;
+  running = false;
   if (rafId) cancelAnimationFrame(rafId);
 });
 </script>
 
 <template>
-  <canvas ref="canvasRef" class="genie-canvas" aria-hidden="true"></canvas>
+  <Teleport to="body">
+    <canvas
+      v-show="visible"
+      ref="canvasRef"
+      class="genie-canvas"
+      aria-hidden="true"
+    ></canvas>
+  </Teleport>
 </template>
 
 <style scoped>
 .genie-canvas {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
+  z-index: 88;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
 }
 </style>

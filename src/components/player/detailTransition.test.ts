@@ -48,7 +48,7 @@ describe("AMLL 进出过渡静置窗", () => {
     });
 });
 
-describe("genie 形变层接线", () => {
+describe("genie 屏幕空间接线（C7）", () => {
     it("PlayerDetail 记录方向并把静置窗/方向/amll 门控传给 PlayerDetailLeft", () => {
         expect(playerDetailSource).toContain(
             "const detailTransitionDirection = ref<'enter' | 'exit'>('exit');",
@@ -58,16 +58,17 @@ describe("genie 形变层接线", () => {
         expect(playerDetailSource).toContain(':amll="isAmllSkin"');
     });
 
-    it("PlayerDetailLeft 仅在 amll+静置窗+有封面时挂 genie 画布，首帧就绪才隐藏原生 img", () => {
+    it("genie 窗内冻结容器过渡，飞行交给视口画布（起点预拾/终点实测）", () => {
         expect(playerDetailLeftSource).toContain(
             "import CoverGenieCanvas from './detail/CoverGenieCanvas.vue';",
         );
         expect(playerDetailLeftSource).toContain(
-            'v-if="amll && genieActive && displayedLocalCoverUrl"',
+            "genieCovering ? 'cover-stage--genie-frozen' : ''",
         );
-        expect(playerDetailLeftSource).toContain('v-show="!genieCovering"');
-        expect(playerDetailLeftSource).toContain(
-            "Boolean(props.amll && props.genieActive && genieReady.value && !genieDone.value)",
-        );
+        expect(playerDetailLeftSource).toContain("transition: none !important;");
+        expect(playerDetailLeftSource).toContain('v-if="genieCovering"');
+        expect(playerDetailLeftSource).toContain(':from-rect="genieFromRect"');
+        expect(playerDetailLeftSource).toContain(':to-el="() => detailCoverRef"');
+        expect(playerDetailLeftSource).toContain("genieFromRect.value !== null");
     });
 });

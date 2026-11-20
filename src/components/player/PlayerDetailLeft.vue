@@ -4,6 +4,7 @@ import { usePlaybackController as useStageControl } from '../../features/playbac
 import { useDetailCover } from '../../composables/useDetailCover';
 import CoverGenieCanvas from './detail/CoverGenieCanvas.vue';
 import CoverReflection from './detail/CoverReflection.vue';
+import type { GenieRect } from './detail/coverGenie';
 
 const props = defineProps<{
   isExpanded?: boolean;
@@ -17,17 +18,48 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'toggle-cover'): void }>();
 
-// —— genie 形变层状态：首帧就绪后才隐藏原生 img（防黑帧/双绘）；静置窗每次开合复位 ——
-const genieReady = ref(false);
+// —— genie 屏幕空间形变层（C7）状态 ——
+// 静置窗内冻结容器自身 CSS 过渡（cover-stage--genie-frozen），画布以视口坐标
+// 接管展开 rect ↔ dock rect 的整段漏斗飞行；isExpanded 翻转前预拾起点矩形。
 const genieDone = ref(false);
+const genieCycle = ref(0);
+const genieFromRect = ref<GenieRect | null>(null);
 const genieCovering = computed(
-  () => Boolean(props.amll && props.genieActive && genieReady.value && !genieDone.value),
+  () =>
+    Boolean(props.amll) &&
+    Boolean(props.genieActive) &&
+    !genieDone.value &&
+    Boolean(displayedLocalCoverUrl.value) &&
+    genieFromRect.value !== null,
+);
+watch(
+  () => props.isExpanded,
+  () => {
+    if (!props.amll) {
+      return;
+    }
+    const el = detailCoverRef.value;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      genieFromRect.value = { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
+    } else {
+      genieFromRect.value = null;
+    }
+    if (props.genieActive) {
+      genieDone.value = false;
+      genieCycle.value += 1;
+    }
+  },
 );
 watch(
   () => props.genieActive,
-  () => {
-    genieReady.value = false;
+  (active) => {
     genieDone.value = false;
+    if (active) {
+      genieCycle.value += 1;
+    } else {
+      genieFromRect.value = null;
+    }
   },
 );
 
@@ -104,7 +136,7 @@ const onCoverActivate = (event: MouseEvent) => {
     <div
       ref="detailCoverRef" 
       class="cover-stage morph-stage"
-      :class="[stageMode, stageModeExtra]"
+      :class="[stageMode, stageModeExtra, genieCovering ? 'cover-stage--genie-frozen' : '']"
       :style="{ boxShadow: frameShadow, transform: 'scale(1)' }"
       @click="onCoverActivate"
     >
@@ -150,11 +182,12 @@ const onCoverActivate = (event: MouseEvent) => {
         </div>
 
         <CoverGenieCanvas
-          v-if="amll && genieActive && displayedLocalCoverUrl"
-          :key="`genie:${currentSongPath}:${displayedLocalCoverUrl}`"
+          v-if="genieCovering"
+          :key="`genie:${genieCycle}:${currentSongPath}:${displayedLocalCoverUrl}`"
           :src="displayedLocalCoverUrl"
           :direction="genieDirection ?? 'exit'"
-          @ready="genieReady = true"
+          :from-rect="genieFromRect"
+          :to-el="() => detailCoverRef"
           @done="genieDone = true"
         />
       </div>
@@ -175,6 +208,12 @@ const onCoverActivate = (event: MouseEvent) => {
   z-index: 70;
   transition: all 700ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
+}
+
+/* genie 窗内冻结容器自身过渡：飞行完全交给屏幕空间画布，防止双重收缩稀释漏斗 */
+.cover-stage--genie-frozen {
+  transition: none !important;
+  box-shadow: none !important;
 }
 
 .cover-stage--open {
