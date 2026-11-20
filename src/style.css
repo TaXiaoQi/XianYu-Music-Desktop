@@ -526,6 +526,17 @@ html.no-glass-switch .glass-switch::after {
   border-radius: var(--skin-cover-radius);
 }
 
+/* 左列坐标：封面与控制簇共用同一中心线，控制簇紧贴封面下方 */
+.detail-root--amll {
+  --amll-col-left: calc(75px + 18%);
+  --amll-col-top: 34%;
+}
+
+.detail-root--amll .cover-stage--open {
+  top: var(--amll-col-top);
+  left: var(--amll-col-left);
+}
+
 /* 曲目信息行：沉浸白下用 plus-lighter 提亮，浅色主题自动退化为 normal */
 .detail-root--amll .marquee-dock {
   mix-blend-mode: var(--skin-blend);

@@ -14,6 +14,7 @@ import { useUiStore } from '../../shared/stores/ui';
 import { windowApi } from '../../services/tauri/windowApi';
 import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
 import DetailBackdrop from './detail/DetailBackdrop.vue';
+import DetailAmllControls from './detail/DetailAmllControls.vue';
 import DetailLyricsStage from './detail/DetailLyricsStage.vue';
 import DetailNowPlaying from './detail/DetailNowPlaying.vue';
 import DetailTopBar from './detail/DetailTopBar.vue';
@@ -418,6 +419,15 @@ onBeforeUnmount(() => {
         :is-expanded="detailShown"
         :cover-hidden="coverHidden"
         @toggle-cover="handleToggleCover"
+      />
+
+      <!-- AMLL 皮肤：控制簇竖排在封面下方左列（全局底栏此时隐藏） -->
+      <DetailAmllControls
+        v-if="isAmllSkin && detailShown && !isCinemaMode"
+        :title="marqueeTitle"
+        :artist="marqueeArtist"
+        :album="activeTrack?.album"
+        @more="openTrackMenu"
       />
 
       <DetailLyricsStage
