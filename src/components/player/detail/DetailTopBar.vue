@@ -21,7 +21,7 @@ const props = defineProps<{
   trackTitle?: string;
   /** 歌手文案 */
   trackArtist?: string;
-  /** AMLL 皮肤：隐藏左收起钮与标题区，改渲染顶部拖拽拇指条 */
+  /** AMLL 皮肤：额外渲染顶部拖拽拇指条（左收起钮全皮肤保留，保证退出入口可发现） */
   amll?: boolean;
 }>();
 
@@ -91,7 +91,9 @@ const onThumbPointerCancel = () => {
     ></div>
 
     <div class="bar-wing bar-wing--left">
-      <button v-if="!amll" title="收起详情页" class="bar-btn" @click="emit('collapse')">
+      <!-- 收起按钮全皮肤保留：AMLL 拇指条虽在，但 44px 小药丸可发现性差，
+           用户实测两轮找不到退出入口 → 左上角 chevron 与拇指条并存 -->
+      <button title="收起详情页" class="bar-btn" @click="emit('collapse')">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="bar-icon-lg">
           <path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
@@ -265,6 +267,10 @@ const onThumbPointerCancel = () => {
   justify-content: center;
   align-items: center;
   min-width: 0;
+  /* 必须与 .bar-wing 同层抬升：否则 absolute 的 .bar-drag（tauri 拖拽层）
+     绘制在无定位的拇指区之上，吞掉 pointer 事件 → 点拇指条只会拖窗口，无法收起 */
+  position: relative;
+  z-index: 10;
 }
 
 .amll-thumb {
