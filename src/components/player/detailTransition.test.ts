@@ -1,11 +1,15 @@
-// AMLL 进出过渡静置窗接线断言：detailShown 翻转 → 750ms settling class → blend 临时关闭。
-// 与 usePlayerDetailSkin.test.ts 同源风格：断言关键接线存在，防止三处（script/模板/CSS）脱钩。
+// AMLL 进出过渡静置窗 + genie 形变层接线断言：
+// 与 usePlayerDetailSkin.test.ts 同源风格，断言关键接线存在，防止多处脱钩。
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const playerDetailSource = readFileSync(
     resolve(process.cwd(), "src/components/player/PlayerDetail.vue"),
+    "utf8",
+);
+const playerDetailLeftSource = readFileSync(
+    resolve(process.cwd(), "src/components/player/PlayerDetailLeft.vue"),
     "utf8",
 );
 const styleSource = readFileSync(
@@ -19,7 +23,7 @@ describe("AMLL 进出过渡静置窗", () => {
             "const detailTransitioning = ref(false);",
         );
         expect(playerDetailSource).toMatch(
-            /watch\(detailShown, \(\) => \{\s*detailTransitioning\.value = true;/,
+            /watch\(detailShown, \(open\) => \{\s*detailTransitionDirection\.value = open \? 'enter' : 'exit';\s*detailTransitioning\.value = true;/,
         );
         expect(playerDetailSource).toContain("}, 750);");
     });
@@ -40,6 +44,30 @@ describe("AMLL 进出过渡静置窗", () => {
         }
         expect(styleSource).toMatch(
             /\.detail-root--amll\.detail-root--settling \.amll-controls \{\s*mix-blend-mode: normal;\s*\}/,
+        );
+    });
+});
+
+describe("genie 形变层接线", () => {
+    it("PlayerDetail 记录方向并把静置窗/方向/amll 门控传给 PlayerDetailLeft", () => {
+        expect(playerDetailSource).toContain(
+            "const detailTransitionDirection = ref<'enter' | 'exit'>('exit');",
+        );
+        expect(playerDetailSource).toContain(':genie-active="detailTransitioning"');
+        expect(playerDetailSource).toContain(':genie-direction="detailTransitionDirection"');
+        expect(playerDetailSource).toContain(':amll="isAmllSkin"');
+    });
+
+    it("PlayerDetailLeft 仅在 amll+静置窗+有封面时挂 genie 画布，首帧就绪才隐藏原生 img", () => {
+        expect(playerDetailLeftSource).toContain(
+            "import CoverGenieCanvas from './detail/CoverGenieCanvas.vue';",
+        );
+        expect(playerDetailLeftSource).toContain(
+            'v-if="amll && genieActive && displayedLocalCoverUrl"',
+        );
+        expect(playerDetailLeftSource).toContain('v-show="!genieCovering"');
+        expect(playerDetailLeftSource).toContain(
+            "Boolean(props.amll && props.genieActive && genieReady.value && !genieDone.value)",
         );
     });
 });

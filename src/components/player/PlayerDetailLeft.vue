@@ -1,12 +1,35 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { usePlaybackController as useStageControl } from '../../features/playback/usePlaybackController';
 import { useDetailCover } from '../../composables/useDetailCover';
+import CoverGenieCanvas from './detail/CoverGenieCanvas.vue';
 import CoverReflection from './detail/CoverReflection.vue';
 
-const props = defineProps<{ isExpanded?: boolean; coverHidden?: boolean }>();
+const props = defineProps<{
+  isExpanded?: boolean;
+  coverHidden?: boolean;
+  /** AMLL 皮肤：genie 进出形变层仅在该皮肤挂载 */
+  amll?: boolean;
+  /** 进出过渡静置窗开启（与 detail-root--settling 同源） */
+  genieActive?: boolean;
+  genieDirection?: 'enter' | 'exit';
+}>();
 
 const emit = defineEmits<{ (e: 'toggle-cover'): void }>();
+
+// —— genie 形变层状态：首帧就绪后才隐藏原生 img（防黑帧/双绘）；静置窗每次开合复位 ——
+const genieReady = ref(false);
+const genieDone = ref(false);
+const genieCovering = computed(
+  () => Boolean(props.amll && props.genieActive && genieReady.value && !genieDone.value),
+);
+watch(
+  () => props.genieActive,
+  () => {
+    genieReady.value = false;
+    genieDone.value = false;
+  },
+);
 
 const { isPlaying, dominantColors } = useStageControl();
 const expandFlag = computed(() => Boolean(props.isExpanded));
@@ -88,6 +111,7 @@ const onCoverActivate = (event: MouseEvent) => {
       <div class="art-frame">
         <img
           v-if="displayedLocalCoverUrl"
+          v-show="!genieCovering"
           :key="`thumb:${currentSongPath}:${displayedLocalCoverUrl}`"
           :src="displayedLocalCoverUrl"
           class="art-thumb"
@@ -99,6 +123,7 @@ const onCoverActivate = (event: MouseEvent) => {
         />
         <img
           v-if="currentBigCoverUrl"
+          v-show="!genieCovering"
           :key="`big:${currentSongPath}:${currentBigCoverUrl}`"
           :src="currentBigCoverUrl"
           class="art-full"
@@ -123,6 +148,15 @@ const onCoverActivate = (event: MouseEvent) => {
             <path stroke-linecap="round" stroke-linejoin="round" :stroke-width="props.isExpanded ? 1 : 1.7" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
         </div>
+
+        <CoverGenieCanvas
+          v-if="amll && genieActive && displayedLocalCoverUrl"
+          :key="`genie:${currentSongPath}:${displayedLocalCoverUrl}`"
+          :src="displayedLocalCoverUrl"
+          :direction="genieDirection ?? 'exit'"
+          @ready="genieReady = true"
+          @done="genieDone = true"
+        />
       </div>
 
       <CoverReflection :visible="props.isExpanded" :source="reflectionSource" />
