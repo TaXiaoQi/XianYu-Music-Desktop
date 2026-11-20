@@ -58,6 +58,21 @@ const { napping: pointerAsleep, engage: engagePointerSentry, release: releasePoi
 const { staggerPhase } = useEntranceSync();
 const { enterShift } = useDetailEntrance(detailShown, staggerPhase);
 
+// —— 进出过渡静置窗 ——
+// morph/slide 动画期间临时关闭 plus-lighter blend：全屏重混合（歌词/信息/控制簇
+// × WebGL 背景）是 AMLL 下动画卡顿与封面"停留数秒"（700ms 过渡被掉帧拖长）的主因。
+// 不冻结 fluid canvas——WebGL 默认不保留绘制缓冲，过渡期停绘会闪黑。
+const detailTransitioning = ref(false);
+let settlingTimer: ReturnType<typeof setTimeout> | null = null;
+watch(detailShown, () => {
+  detailTransitioning.value = true;
+  if (settlingTimer) clearTimeout(settlingTimer);
+  settlingTimer = setTimeout(() => {
+    detailTransitioning.value = false;
+    settlingTimer = null;
+  }, 750);
+});
+
 const activeTrackPath = computed(() => activeTrack.value?.path ?? '');
 const { detail: currentSongDetail, reset: forgetDetail } = useSongDetailLookup(detailShown, activeTrackPath);
 const { rows: metaRows } = useTrackMeta(activeTrack, currentSongDetail);
@@ -351,6 +366,7 @@ onBeforeUnmount(() => {
       skinClass,
       detailShown ? 'detail-root--live' : 'detail-root--idle',
       detailShown && pointerAsleep ? 'detail-root--asleep' : '',
+      detailTransitioning ? 'detail-root--settling' : '',
     ]"
     :style="skinVars"
     @contextmenu.prevent="openTrackMenu"

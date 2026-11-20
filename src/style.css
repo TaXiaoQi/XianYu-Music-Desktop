@@ -556,3 +556,12 @@ html.no-glass-switch .glass-switch::after {
 .detail-root--amll .lyrics-mask-shell {
   mix-blend-mode: var(--skin-blend);
 }
+
+/* 进出过渡静置窗：morph/slide 期间临时关闭 plus-lighter，
+   避免全屏逐帧重混合拖垮动画（与 PlayerDetail 的 detail-root--settling 联动；
+   双类特异性 0,3,0，同时压过 .amll-controls 的 scoped blend 规则） */
+.detail-root--amll.detail-root--settling .lyrics-mask-shell,
+.detail-root--amll.detail-root--settling .marquee-dock,
+.detail-root--amll.detail-root--settling .amll-controls {
+  mix-blend-mode: normal;
+}
