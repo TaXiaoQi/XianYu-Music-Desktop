@@ -13,6 +13,8 @@ defineProps<{
   meshOn?: boolean;
   /** 背景渲染模式：polygon 多边形流光 / fluid 流体网格 */
   meshMode?: 'polygon' | 'fluid';
+  /** 进出过渡静置窗：mesh 背景首帧后暂停逐帧渲染 */
+  settling?: boolean;
 }>();
 </script>
 
@@ -25,7 +27,7 @@ defineProps<{
       transform: active ? 'translateY(0)' : 'translateY(100%)',
     }"
   >
-    <PlayerDetailMeshBackground v-if="ready && meshOn" :active="Boolean(active)" :mode="meshMode ?? 'polygon'" />
+    <PlayerDetailMeshBackground v-if="ready && meshOn" :active="Boolean(active)" :mode="meshMode ?? 'polygon'" :settling="Boolean(settling)" />
     <PlayerDetailBackground v-else-if="ready" :bg-opacity="1" :active="Boolean(active)" />
     <div class="backdrop-base"></div>
   </div>

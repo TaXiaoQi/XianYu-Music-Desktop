@@ -1,13 +1,22 @@
 // AMLL 进出过渡静置窗接线断言：
 // 与 usePlayerDetailSkin.test.ts 同源风格，断言关键接线存在，防止多处脱钩。
 // （genie 封面过渡已按用户决定整体移除，恢复原始 CSS morph 退出动画；
-//  静置窗保留——它修复的是动画期间 plus-lighter 全屏重混合导致的卡顿。）
+//  静置窗保留并扩展：morph 期间临时关闭 plus-lighter 混合 + 降级
+//  backdrop-filter 玻璃层 + mesh 背景首帧后跳帧，三者同窗同落。）
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const playerDetailSource = readFileSync(
     resolve(process.cwd(), "src/components/player/PlayerDetail.vue"),
+    "utf8",
+);
+const backdropSource = readFileSync(
+    resolve(process.cwd(), "src/components/player/detail/DetailBackdrop.vue"),
+    "utf8",
+);
+const meshSource = readFileSync(
+    resolve(process.cwd(), "src/components/player/PlayerDetailMeshBackground.vue"),
     "utf8",
 );
 const styleSource = readFileSync(
@@ -43,5 +52,27 @@ describe("AMLL 进出过渡静置窗", () => {
         expect(styleSource).toMatch(
             /\.detail-root--amll\.detail-root--settling \.amll-controls \{\s*mix-blend-mode: normal;\s*\}/,
         );
+    });
+
+    it("settling 期间 backdrop-filter 玻璃层降级（controls/float-btn/queue-shell）", () => {
+        for (const target of [
+            ".detail-root--amll.detail-root--settling .amll-controls",
+            ".detail-root--amll.detail-root--settling .amll-float-btn",
+            ".detail-root--amll.detail-root--settling .queue-shell",
+        ]) {
+            expect(styleSource).toContain(target);
+        }
+        expect(styleSource).toMatch(
+            /\.detail-root--amll\.detail-root--settling \.queue-shell \{\s*backdrop-filter: none;\s*-webkit-backdrop-filter: none;\s*\}/,
+        );
+    });
+
+    it("settling 状态三段接线到 mesh 背景：PlayerDetail→DetailBackdrop→mesh 首帧后跳帧", () => {
+        expect(playerDetailSource).toContain(':settling="detailTransitioning"');
+        expect(backdropSource).toContain(':settling="Boolean(settling)"');
+        expect(meshSource).toContain(
+            "if ((props.settling ?? false) && hasRendered) return;",
+        );
+        expect(meshSource).toContain("hasRendered = true;");
     });
 });

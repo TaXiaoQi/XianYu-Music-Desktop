@@ -31,6 +31,8 @@ const props = defineProps<{
   active?: boolean;
   /** polygon=Voronoi 多边形流光；fluid=AMLL 式平滑流体网格 */
   mode?: MeshBackgroundMode;
+  /** 进出过渡静置窗：首帧后跳过逐帧渲染，把 GPU/合成预算让给 morph 动画 */
+  settling?: boolean;
 }>();
 
 const playbackStore = usePlaybackStore();
@@ -286,6 +288,7 @@ let rafId = 0;
 let disposed = false;
 let lastTime = 0;
 let running = false;
+let hasRendered = false;
 
 function compile(glc: WebGL2RenderingContext, type: number, src: string) {
   const shader = glc.createShader(type);
@@ -464,6 +467,7 @@ function renderFrame() {
 
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  hasRendered = true;
 
   if (hasPrev && fade >= 1) {
     // 淡化完成：把上一张纹理槽归还（下次换歌复用）
@@ -479,6 +483,9 @@ function tick() {
   resize();
   // 窗口拖拽缩放期间暂停逐帧渲染，避免与缩放合成开销叠加
   if (isWindowResizing.value) return;
+  // 进出过渡静置窗内：首帧渲染后跳过逐帧渲染（先例同 resize 暂停，
+  // 合成器保留最后一帧，不会黑屏），把开销让给封面 morph 动画
+  if ((props.settling ?? false) && hasRendered) return;
   // 背景漂移缓慢，30fps 足够顺滑且显著省电
   const now = performance.now();
   if (now - lastTime < 33) return;

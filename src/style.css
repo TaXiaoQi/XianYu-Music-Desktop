@@ -565,3 +565,14 @@ html.no-glass-switch .glass-switch::after {
 .detail-root--amll.detail-root--settling .amll-controls {
   mix-blend-mode: normal;
 }
+
+/* 静置窗同时降级 AMLL 毛玻璃层：morph 期间封面逐帧位移/缩放、fluid 背景逐帧
+   漂移，backdrop-filter 每帧都要对变化中的底图整层重采样+模糊，与布局动画
+   叠加是 AMLL 下进出卡顿的主因（特异性 0,3,0 压过各组件 scoped 规则；
+   750ms 后自动恢复玻璃质感） */
+.detail-root--amll.detail-root--settling .amll-controls,
+.detail-root--amll.detail-root--settling .amll-float-btn,
+.detail-root--amll.detail-root--settling .queue-shell {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

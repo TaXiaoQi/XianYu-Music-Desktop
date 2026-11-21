@@ -384,6 +384,7 @@ onBeforeUnmount(() => {
       <DetailBackdrop
         :ready="heavyMounted"
         :active="detailShown"
+        :settling="detailTransitioning"
         :mesh-on="(isAmllSkin || settings.theme.playerDetailMeshBackground) && !isCinemaMode"
         :mesh-mode="isAmllSkin ? 'fluid' : 'polygon'"
       />
