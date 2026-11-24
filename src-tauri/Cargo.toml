@@ -41,6 +41,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-http = "2" # HTTP 插件
 serde = { version = "1", features = ["derive"] } 
 serde_json = "1" 
+# 共享纯逻辑核心（git submodule：core → XianYu-Music-Core）
+xianyu_core = { path = "core" }
 walkdir = "2" 
 lofty = "0.21" 
 id3 = "1.14" 
