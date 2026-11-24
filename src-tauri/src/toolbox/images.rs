@@ -240,7 +240,13 @@ pub async fn finalize_download_extras(
                 }
             }
             let meta = meta.clone();
-            match tokio::task::spawn_blocking(move || write_metadata_to_file(&meta)).await {
+            // 路径校验保留在端侧（Core 版 write_metadata_to_file 不含安全校验）
+            match tokio::task::spawn_blocking(move || {
+                path_validator::validate_path(&meta.file_path, None)?;
+                write_metadata_to_file(&meta)
+            })
+            .await
+            {
                 Ok(Ok(())) => result.metadata_embedded = true,
                 Ok(Err(e)) => {
                     result.metadata_error = Some(e);

@@ -2,7 +2,6 @@
 // （xianyu_core::music::playlist_fetcher），端侧仅保留 Tauri 命令包装
 // （#[tauri::command] 宏要求命令定义在端侧）。
 pub(crate) use xianyu_core::music::playlist_fetcher::PlaylistImportResult;
-pub use xianyu_core::music::playlist_fetcher::qishui;
 
 mod orchestrator;
 

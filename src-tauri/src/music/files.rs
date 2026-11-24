@@ -9,7 +9,7 @@ pub(crate) mod tag_editing;
 pub(crate) mod transfer;
 
 // 供 tags 模块复用的歌词文件解码能力。
-pub(crate) use lyrics_codec::{decode_lyrics_file_bytes, is_cjk_char};
+pub(crate) use lyrics_codec::decode_lyrics_file_bytes;
 
 pub use avatar_writer::save_artist_avatar;
 pub use backgrounds::{clear_song_background, get_song_background, save_song_background};
