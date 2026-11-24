@@ -22,8 +22,5 @@ pub fn refresh_folder_songs( // refresh_folder_songs
 
 #[tauri::command]
 pub fn file_exists(path: String) -> bool { // file_exists
-    if path_validator::validate_path(&path, None).is_err() {
-        return false;
-    }
-    std::path::Path::new(&path).is_file()
+    xianyu_core::toolbox::file_exists(path)
 }

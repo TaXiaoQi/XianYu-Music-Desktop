@@ -44,13 +44,9 @@ pub use images::{
 };
 pub use qmc::decrypt_qmc_file;
 #[allow(unused_imports)]
-pub use rename::{
-    apply_rename,
-    preview_rename,
-    RenameConfig,
-    RenameOperation,
-    RenamePreview,
-};
+pub use rename::{apply_rename, preview_rename};
+#[allow(unused_imports)]
+pub use xianyu_core::toolbox::{RenameConfig, RenameOperation, RenamePreview};
 #[allow(unused_imports)]
 pub use state_files::{
     gpu_config_path,
