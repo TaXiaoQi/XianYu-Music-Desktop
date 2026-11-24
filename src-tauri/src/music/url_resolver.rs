@@ -29,12 +29,9 @@ pub struct LxUrlSongInfo {
     pub types: Option<HashMap<String, LxTypeEntry>>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct LxTypeEntry {
-    pub size: Option<String>,
-    pub hash: Option<String>,
-}
+// LX 音质条目（size/hash）：契约统一在共享 core，端侧 re-export 保持路径不变
+// （Core 的 LxSearchItem.lx_types 携带 Core 版类型）。
+pub use xianyu_core::music::url_resolver::LxTypeEntry;
 
 // ==================== URL Cache ====================
 
