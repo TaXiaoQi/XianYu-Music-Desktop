@@ -1,13 +1,9 @@
-// 歌单导入域模块入口：内置实现自前端 playlistImport*.ts 下沉而来（对齐 lyric_fetcher 范式）。
-// 平台文件只暴露 get_list_detail_*；命令入口 fetch_playlist_from_source 见 orchestrator。
+// 歌单导入域 shim：平台实现（wy/tx/kw/kg/mg/qishui）与分发编排统一在共享 core
+// （xianyu_core::music::playlist_fetcher），端侧仅保留 Tauri 命令包装
+// （#[tauri::command] 宏要求命令定义在端侧）。
+pub(crate) use xianyu_core::music::playlist_fetcher::PlaylistImportResult;
+pub use xianyu_core::music::playlist_fetcher::qishui;
 
-mod common;
-mod kg;
-mod kw;
-mod mg;
 mod orchestrator;
-pub(crate) mod qishui;
-mod tx;
-mod wy;
 
 pub use orchestrator::fetch_playlist_from_source;

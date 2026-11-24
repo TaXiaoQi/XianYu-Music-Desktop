@@ -12,15 +12,16 @@ mod wy;
 pub use api::lx_search;
 pub use common::{LxSearchItem, LxTypeTuple};
 pub(crate) use qs::{qs_play_auth_to_cek, qs_resolve_play, QS_UA};
-// lx_recommend_sheets（推荐歌单）复用的底层 helper
-pub(crate) use common::{decode_name, http_get_json, http_get_text, http_post_json};
-pub(crate) use kg::build_kugou_cover_url;
 
 #[cfg(test)]
 use cache::make_search_cache_key;
 #[cfg(test)]
-// decode_name 已在上方 pub(crate) use 导出，测试态不可重复导入
+// decode_name / build_kugou_cover_url 仅测试使用（推荐歌单 helper 已统一在共享 core）
+use common::decode_name;
+#[cfg(test)]
 use common::{format_play_time, format_singer_name, size_formate};
+#[cfg(test)]
+use kg::build_kugou_cover_url;
 #[cfg(test)]
 use kw::build_kuwo_cover_url;
 #[cfg(test)]

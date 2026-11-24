@@ -1,7 +1,7 @@
-// 编排入口：按音源分发到对应平台实现（对齐前端 importPlaylist 的 switch）。
-// source 取值 wy|tx|kw|kg|mg|qishui，raw_id 为歌单 ID / 链接 / 短码原文。
+// 编排入口 shim：音源分发逻辑统一在共享 core（xianyu_core::music::playlist_fetcher），
+// 端侧仅暴露 Tauri 命令包装。
 
-use super::common::PlaylistImportResult;
+use super::PlaylistImportResult;
 
 // ==================== Tauri Command ====================
 
@@ -10,13 +10,5 @@ pub async fn fetch_playlist_from_source(
     source: String,
     raw_id: String,
 ) -> Result<PlaylistImportResult, String> {
-    match source.as_str() {
-        "wy" => super::wy::get_list_detail_wy(&raw_id).await,
-        "tx" => super::tx::get_list_detail_tx(&raw_id).await,
-        "kw" => super::kw::get_list_detail_kw(&raw_id).await,
-        "kg" => super::kg::get_list_detail_kg(&raw_id).await,
-        "mg" => super::mg::get_list_detail_mg(&raw_id).await,
-        "qishui" => super::qishui::get_list_detail_qishui(&raw_id).await,
-        _ => Err(format!("不支持的音源: {source}")),
-    }
+    xianyu_core::music::playlist_fetcher::fetch_playlist_from_source(source, raw_id).await
 }
