@@ -739,6 +739,10 @@ pub(crate) fn setup_app( // setup_app
     // 网络代理必须在构造任何 HTTP client 之前确定，故放在 setup 的第一步。
     crate::netproxy::load(app.handle());
 
+    // 远程曲库运行时注入：keyring 凭据存储 + 带代理支持的 WebDAV 共享客户端
+    // （依赖上一步的 netproxy 配置，须在其后执行）。
+    crate::remote::init_remote_runtime();
+
     // 高占用保命：提升主进程调度优先级并退出 EcoQoS 节流，负载打满时保住
     // 音频与界面响应（仅 Windows，其它平台保持默认调度）。
     crate::process_priority::boost();

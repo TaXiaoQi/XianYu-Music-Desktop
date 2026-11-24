@@ -21,3 +21,4 @@ pub(crate) use commands::{ // 实现
   list_remote_directory, precache_remote_song, remove_remote_source, sync_remote_source,
   test_remote_source, update_remote_source,
 };
+pub(crate) use repository::init_remote_runtime;
