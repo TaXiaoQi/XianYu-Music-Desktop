@@ -1,4 +1,3 @@
-use crate::database::{DbState};
 use crate::music::{ // 实现
     run_cache_cleanup, FullCoverImageConcurrencyLimit, ThumbnailImageConcurrencyLimit, // 实现
     FULL_COVER_IMAGE_CONCURRENCY_LIMIT, THUMBNAIL_IMAGE_CONCURRENCY_LIMIT, // 实现
@@ -805,7 +804,7 @@ pub(crate) fn setup_app( // setup_app
         eprintln!("[菜单] 应用 mac 应用菜单失败: {error}");
     }
 
-    let db_state = DbState::new(app.handle())?; // 实现
+    let db_state = crate::database::open_app_db(app.handle())?; // 实现
 
     let playback_session = PlaybackSessionState::new();
     if let Err(e) = playback_session.load_from_db(&db_state) {
