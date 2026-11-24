@@ -776,6 +776,8 @@ export interface AppSettings {
   showSongComments: boolean;
   enableScrollToTopButton: boolean;
   libraryMinDurationSeconds: number;
+  /** 扫描时低于该大小（MB）的音频不入库，0 表示不过滤。 */
+  libraryMinFileSizeMb: number;
   linkFoldersToLibrary: boolean;
   lyricsSyncOffset: number;
   organizeRoot: string;

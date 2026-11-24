@@ -363,6 +363,9 @@ pub(super) fn parse_given_paths(paths: Vec<String>, options: ScanOptions) -> Vec
         if options.min_duration_secs > 0 && song.duration < options.min_duration_secs {
             continue;
         }
+        if options.min_file_size_bytes > 0 && song.file_size < options.min_file_size_bytes {
+            continue;
+        }
 
         accepted.push(song);
     }

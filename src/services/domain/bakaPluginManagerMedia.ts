@@ -49,7 +49,7 @@ import {
 import { isSongLevelError } from './lxPluginEngine';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/mediaUrl';
 import { pluginApi } from '../tauri/pluginApi';
-import { isQqTrialMediaUrl } from './qqHostSearchFallback';
+import { isQqMusicPluginSource, isQqTrialMediaUrl, qqHostResolveMediaUrl } from './qqHostSearchFallback';
 
 export class BakaPluginMedia extends BakaPluginCore {
   // ==================== 播放 URL 获取（核心方法）====================
@@ -309,6 +309,24 @@ export class BakaPluginMedia extends BakaPluginCore {
     }
 
     if (!result || typeof result !== 'object') {
+      // QQ 系插件后端挂掉时（musicUrl 全档 E_API_500），宿主用 song_id 走签名
+      // vkey 接口直接取免费档直链，保证能播；失败再走原有换源逻辑。
+      if (isQqMusicPluginSource(source, item.platform)) {
+        const hostMedia = await qqHostResolveMediaUrl({
+          id: musicItem.id,
+          songmid: musicItem.songmid,
+          mediaMid: (musicItem as any).media_mid || (musicItem as any).strMediaMid || (musicItem as any).str_media_mid,
+          quality,
+        }).catch(() => null);
+        if (hostMedia) {
+          log(`[getMediaSource] ${source.name} 插件取链失败，宿主 QQ 兜底成功: quality=${hostMedia.quality}, url=${hostMedia.url.substring(0, 100)}`);
+          return {
+            url: hostMedia.url,
+            headers: {},
+            actualQuality: hostMedia.quality as QualityKey,
+          };
+        }
+      }
       const errMsg = lastError ? `异常: ${lastError.message}` : (result === null ? '返回null' : `非对象(${typeof result})`);
       log(`[getMediaSource] ${source.name} 失败: ${errMsg}`);
       (globalThis as any).__lastPluginError = `[${source.name}] ${errMsg}`;

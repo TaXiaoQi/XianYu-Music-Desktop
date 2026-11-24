@@ -164,7 +164,11 @@ export interface TauriCommandMap {
   list_remote_directory: { payload: { sourceId: string; path: string }; response: RemoteFileEntry[] };
   create_folder: { payload: { parentPath: string; folderName: string }; response: string };
   refresh_folder_songs: {
-    payload: { folderPath: string; minimumDurationSeconds?: number };
+    payload: {
+      folderPath: string;
+      minimumDurationSeconds?: number;
+      minimumFileSizeBytes?: number;
+    };
     response: void;
   };
   delete_folder: { payload: { path: string }; response: void };
@@ -181,7 +185,11 @@ export interface TauriCommandMap {
     response: string | null;
   };
   scan_music_folder: {
-    payload: { folderPath: string; minimumDurationSeconds?: number };
+    payload: {
+      folderPath: string;
+      minimumDurationSeconds?: number;
+      minimumFileSizeBytes?: number;
+    };
     response: Song[];
   };
   move_music_file: { payload: { oldPath: string; newPath: string }; response: void };
@@ -189,11 +197,19 @@ export interface TauriCommandMap {
   delete_music_file: { payload: { path: string }; response: void };
   is_directory: { payload: { path: string }; response: boolean };
   parse_audio_files: {
-    payload: { paths: string[]; minimumDurationSeconds?: number };
+    payload: {
+      paths: string[];
+      minimumDurationSeconds?: number;
+      minimumFileSizeBytes?: number;
+    };
     response: Song[];
   };
   parse_music_folder: {
-    payload: { folderPath: string; minimumDurationSeconds?: number };
+    payload: {
+      folderPath: string;
+      minimumDurationSeconds?: number;
+      minimumFileSizeBytes?: number;
+    };
     response: Song[];
   };
   set_volume: { payload: { volume: number }; response: void };
@@ -857,12 +873,19 @@ export interface TauriCommandMap {
   reset_local_statistics: { payload: undefined; response: void };
   // ============ 曲库扫描 ============
   scan_folder_as_playlists: {
-    payload: { rootPath: string; minimumDurationSeconds?: number | null };
+    payload: {
+      rootPath: string;
+      minimumDurationSeconds?: number | null;
+      minimumFileSizeBytes?: number | null;
+    };
     response: GeneratedFolder[];
   };
   get_library_songs_cached: { payload: undefined; response: LibrarySong[] };
   scan_library: {
-    payload: { minimumDurationSeconds?: number | null };
+    payload: {
+      minimumDurationSeconds?: number | null;
+      minimumFileSizeBytes?: number | null;
+    };
     response: LibrarySong[];
   };
   // ============ 重命名工具 ============

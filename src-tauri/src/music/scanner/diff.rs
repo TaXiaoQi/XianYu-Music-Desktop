@@ -96,9 +96,12 @@ fn walk_disk_files(root: &str) -> impl Iterator<Item = walkdir::DirEntry> {
     .filter(|entry| entry.file_type().is_file())
 }
 
-/// 是否通过最短时长门槛（门槛为 0 表示不过滤）。
+/// 是否通过时长与体积门槛（门槛为 0 表示该维度不过滤）。
 fn within_duration_floor(entry: &Song, options: ScanOptions) -> bool {
-  options.min_duration_secs == 0 || entry.duration >= options.min_duration_secs
+  let duration_ok = options.min_duration_secs == 0 || entry.duration >= options.min_duration_secs;
+  let size_ok =
+    options.min_file_size_bytes == 0 || entry.file_size >= options.min_file_size_bytes;
+  duration_ok && size_ok
 }
 
 /// 统一裁决一个解码结果：

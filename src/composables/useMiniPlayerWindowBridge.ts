@@ -45,6 +45,7 @@ export function useMiniPlayerWindowBridge() {
     const ui = useUiStore();
     const {
         currentSong,
+        currentCover,
         currentTime,
         isFavorite,
         isMiniMode,
@@ -82,9 +83,12 @@ export function useMiniPlayerWindowBridge() {
         const playbackMode = playMode.value;
         const lyricsOnDesktop = showDesktopLyrics.value;
         const lyricLineText = activeLyricLine.value?.text ?? "";
+        // 在线曲目（lx://、plugin:// 等）无法走本地封面提取，回退到主窗口
+        // 正在展示的封面地址，避免迷你窗只剩占位图
         const fetchedCover = activeSong?.path
             ? await fetchCover(activeSong.path).catch(() => "")
             : "";
+        const resolvedCover = fetchedCover || currentCover.value || "";
         const queuedSongs =
             playQueue.value.length + tempQueue.value.length > 0
                 ? [...tempQueue.value, ...playQueue.value]
@@ -92,7 +96,7 @@ export function useMiniPlayerWindowBridge() {
 
         return {
             currentSong: activeSong,
-            coverUrl: fetchedCover || "",
+            coverUrl: resolvedCover,
             isPlaying: playingNow,
             isDarkTheme: darkMode,
             volume: currentVolume,
@@ -316,6 +320,7 @@ export function useMiniPlayerWindowBridge() {
         [
             isPlaying,
             currentSong,
+            currentCover,
             volume,
             songList,
             playQueue,

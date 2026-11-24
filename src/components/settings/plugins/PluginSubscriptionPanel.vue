@@ -13,11 +13,13 @@ const props = defineProps<{
   editingSubId: string | null;
   editingSubName: string;
   newSubscriptionUrl: string;
+  newSubscriptionName: string;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:editingSubName', value: string): void;
   (e: 'update:newSubscriptionUrl', value: string): void;
+  (e: 'update:newSubscriptionName', value: string): void;
   (e: 'sync-all'): void;
   (e: 'toggle-add'): void;
   (e: 'confirm-add'): void;
@@ -36,6 +38,11 @@ const editingSubName = computed({
 const newSubscriptionUrl = computed({
   get: () => props.newSubscriptionUrl,
   set: (value: string) => emit('update:newSubscriptionUrl', value),
+});
+
+const newSubscriptionName = computed({
+  get: () => props.newSubscriptionName,
+  set: (value: string) => emit('update:newSubscriptionName', value),
 });
 
 function formatRelativeTime(ts: number | undefined): string {
@@ -79,7 +86,7 @@ function formatRelativeTime(ts: number | undefined): string {
         </div>
 
         <Transition name="settings-pop-panel">
-          <div v-if="showAddSubscriptionInput" class="mb-3">
+          <div v-if="showAddSubscriptionInput" class="mb-3 flex flex-col gap-2">
             <div class="flex items-center gap-3">
               <input
                 v-model="newSubscriptionUrl"
@@ -97,6 +104,13 @@ function formatRelativeTime(ts: number | undefined): string {
                 添加
               </button>
             </div>
+            <input
+              v-model="newSubscriptionName"
+              type="text"
+              placeholder="备注（可选）：说明这个链接是什么，如「小奇自建插件源」"
+              class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+              @keydown.enter="$emit('confirm-add')"
+            />
           </div>
         </Transition>
 

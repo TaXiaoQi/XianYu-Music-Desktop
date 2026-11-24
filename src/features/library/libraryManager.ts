@@ -5,7 +5,7 @@ import { fileApi } from '../../services/tauri/fileApi';
 import { libraryApi } from '../../services/tauri/libraryApi';
 import { useLibraryStore } from './store';
 import { usePlaybackStore } from '../playback/store';
-import { useSettingsStore } from '../settings/store';
+import { libraryMinFileSizeBytes, useSettingsStore } from '../settings/store';
 import { normalizePath } from '../../utils/path';
 
 interface ProcessExternalPathsOptions {
@@ -156,6 +156,7 @@ export const createLibraryManager = ({
       ? await fileApi.parseAudioFiles(
         filePaths,
         settingsStore.settings.libraryMinDurationSeconds,
+        libraryMinFileSizeBytes(settingsStore.settings.libraryMinFileSizeMb),
       ).catch(error => {
         console.error('Failed to parse external audio files:', error);
         return [];

@@ -6,7 +6,7 @@ import { useCollectionsStore } from '../collections/store';
 import { useLibraryStore } from '../library/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { usePlaybackStore } from './store';
-import { useSettingsStore } from '../settings/store';
+import { libraryMinFileSizeBytes, useSettingsStore } from '../settings/store';
 import { useLibraryAllSongPathCache } from '../../composables/useLibraryAllSongPathCache';
 import { useLibraryCollectionSongPathCache } from '../../composables/useLibraryCollectionSongPathCache';
 import { useLibraryDetailSongPathCache } from '../../composables/useLibraryDetailSongPathCache';
@@ -303,6 +303,7 @@ export const createPlayerFileManager = ({
     const newSongs = await fileApi.scanMusicFolder(
       folderPath,
       settingsStore.settings.libraryMinDurationSeconds,
+      libraryMinFileSizeBytes(settingsStore.settings.libraryMinFileSizeMb),
     );
     const oldSongsInScope = canonicalSongs.value.filter(song =>
       isSongInFolderScope(folderPath, song.path),

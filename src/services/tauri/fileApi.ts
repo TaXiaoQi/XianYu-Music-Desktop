@@ -19,10 +19,15 @@ function getFolderFirstSong(folderPath: string) {
     return tauriInvoke("get_folder_first_song", { folderPath });
 }
 
-function scanMusicFolder(folderPath: string, minimumDurationSeconds = 0) {
+function scanMusicFolder(
+    folderPath: string,
+    minimumDurationSeconds = 0,
+    minimumFileSizeBytes = 0,
+) {
     return tauriInvoke("scan_music_folder", {
         folderPath,
         minimumDurationSeconds,
+        minimumFileSizeBytes,
     });
 }
 
@@ -45,17 +50,24 @@ function isDirectory(path: string): Promise<boolean> {
 function parseAudioFiles(
     paths: string[],
     minimumDurationSeconds = 0,
+    minimumFileSizeBytes = 0,
 ): Promise<Song[]> {
-    return tauriInvoke("parse_audio_files", { paths, minimumDurationSeconds });
+    return tauriInvoke("parse_audio_files", {
+        paths,
+        minimumDurationSeconds,
+        minimumFileSizeBytes,
+    });
 }
 
 function parseMusicFolder(
     folderPath: string,
     minimumDurationSeconds = 0,
+    minimumFileSizeBytes = 0,
 ): Promise<Song[]> {
     return tauriInvoke("parse_music_folder", {
         folderPath,
         minimumDurationSeconds,
+        minimumFileSizeBytes,
     });
 }
 

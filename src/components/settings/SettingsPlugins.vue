@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, provide, ref, watch, onMounted, onUnmounted } from 'vue';
-import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, FileCode2 } from 'lucide-vue-next';
+import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, FileCode2, Power, PowerOff, ListChecks } from 'lucide-vue-next';
 import { useToast } from '../../composables/toast';
 import type { PluginSource } from '../../types';
-import { getStoredPlugins, loadPlugins, removePluginSource, togglePlugin, log, pluginsVersion } from '../../services/domain/pluginEngine';
+import { getStoredPlugins, loadPlugins, removePluginSource, togglePlugin, log, pluginsVersion, checkPluginUpdate, performPluginUpdate } from '../../services/domain/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { cloudProviders } from '../../services/cloud/cloudRegistry';
@@ -104,8 +104,6 @@ const {
   filteredPlugins,
   refreshPluginList,
   pluginStatsLabel,
-  allPluginsEnabled,
-  handleToggleAllPlugins,
   subBrandLabelById,
 } = usePluginList();
 
@@ -275,6 +273,7 @@ const {
   subscriptions,
   showAddSubscriptionInput,
   newSubscriptionUrl,
+  newSubscriptionName,
   syncingAll,
   editingSubId,
   editingSubName,
@@ -298,6 +297,133 @@ const {
   handleUpdatePlugin,
   handleCheckAllUpdates,
 } = usePluginUpdates({ refreshPluginList });
+
+// ==================== 批量操作 ====================
+const selectionMode = ref(false);
+const selectedPluginIds = ref<Set<string>>(new Set());
+const selectedPlugins = computed(() =>
+  plugins.value.filter(p => selectedPluginIds.value.has(p.id)));
+const selectedCount = computed(() => selectedPlugins.value.length);
+const allFilteredSelected = computed(() =>
+  filteredPlugins.value.length > 0
+  && filteredPlugins.value.every(p => selectedPluginIds.value.has(p.id)));
+const batchUpdating = ref(false);
+const batchToggling = ref(false);
+
+function enterSelectionMode() {
+  selectionMode.value = true;
+  selectedPluginIds.value = new Set();
+}
+
+function exitSelectionMode() {
+  selectionMode.value = false;
+  selectedPluginIds.value = new Set();
+}
+
+function togglePluginSelected(plugin: PluginSource) {
+  const next = new Set(selectedPluginIds.value);
+  if (next.has(plugin.id)) next.delete(plugin.id);
+  else next.add(plugin.id);
+  selectedPluginIds.value = next;
+}
+
+// 全选只作用于当前搜索结果，避免搜索状态下误选不可见的插件
+function toggleSelectAll() {
+  const next = new Set(selectedPluginIds.value);
+  if (allFilteredSelected.value) {
+    for (const p of filteredPlugins.value) next.delete(p.id);
+  } else {
+    for (const p of filteredPlugins.value) next.add(p.id);
+  }
+  selectedPluginIds.value = next;
+}
+
+function handleBatchDelete() {
+  const ids = selectedPlugins.value.map(p => p.id);
+  if (ids.length === 0 || batchUpdating.value) return;
+  pluginDeleteScopeIds.value = ids;
+  showPluginDeleteScope.value = true;
+}
+
+async function handleBatchUpdate() {
+  const targets = [...selectedPlugins.value];
+  if (targets.length === 0 || batchUpdating.value) return;
+  batchUpdating.value = true;
+  let updated = 0;
+  let latest = 0;
+  let failed = 0;
+  try {
+    for (const plugin of targets) {
+      try {
+        let result = updateCheckResults.value.get(plugin.id);
+        if (!result || !result.hasUpdate) {
+          result = (await checkPluginUpdate(plugin)) ?? undefined;
+        }
+        if (!result) {
+          failed += 1;
+          continue;
+        }
+        updateCheckResults.value.set(plugin.id, result);
+        if (!result.hasUpdate) {
+          latest += 1;
+          continue;
+        }
+        const updateResult = await performPluginUpdate(plugin, result);
+        if (updateResult.success) {
+          updated += 1;
+          updateCheckResults.value.delete(plugin.id);
+        } else {
+          failed += 1;
+        }
+      } catch (e: any) {
+        failed += 1;
+        log(`[SettingsPlugins] 批量更新失败: ${e?.message || e}`);
+      }
+    }
+  } finally {
+    batchUpdating.value = false;
+  }
+  await refreshPluginList();
+  const parts = [`已更新 ${updated} 个`];
+  if (latest > 0) parts.push(`${latest} 个已是最新`);
+  if (failed > 0) parts.push(`${failed} 个失败`);
+  showToast(parts.join('，'), failed > 0 ? 'error' : 'success');
+}
+
+// 一键启用/关闭选中的插件（批量工具栏入口）
+async function handleBatchSetEnabled(enabled: boolean) {
+  if (batchToggling.value || batchUpdating.value) return;
+  const targets = selectedPlugins.value.filter(p => p.enabled !== enabled);
+  if (targets.length === 0) {
+    if (selectedCount.value > 0) {
+      showToast(enabled ? '选中插件均已启用' : '选中插件均已关闭', 'info');
+    }
+    return;
+  }
+  batchToggling.value = true;
+  let ok = 0;
+  let failed = 0;
+  try {
+    for (const plugin of targets) {
+      try {
+        const res = await togglePlugin(plugin.id);
+        if (res.success) ok += 1;
+        else failed += 1;
+      } catch (e: any) {
+        failed += 1;
+        log(`[SettingsPlugins] 批量${enabled ? '启用' : '关闭'}失败: ${e?.message || e}`);
+      }
+    }
+  } finally {
+    batchToggling.value = false;
+  }
+  await refreshPluginList();
+  const action = enabled ? '启用' : '关闭';
+  showToast(
+    failed > 0 ? `${action}完成 ${ok} 个，失败 ${failed} 个` : `已${action} ${ok} 个插件`,
+    failed > 0 ? 'error' : 'success',
+  );
+}
 
 onMounted(async () => {
   await loadPlugins(pluginSettings.value.lazyLoad);
@@ -387,6 +513,7 @@ async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
   const ids = [...pluginDeleteScopeIds.value];
   showPluginDeleteScope.value = false;
   pluginDeleteScopeIds.value = [];
+  if (selectionMode.value) exitSelectionMode();
   if (ids.length === 0) return;
   const syncedIds = ids.filter(id => getSyncedPluginIds().has(id));
 
@@ -523,6 +650,7 @@ function openPluginDetail(plugin: PluginSource) {
         <PluginSubscriptionPanel
           v-model:editing-sub-name="editingSubName"
           v-model:new-subscription-url="newSubscriptionUrl"
+          v-model:new-subscription-name="newSubscriptionName"
           :visible="showSubscriptionPanel"
           :subscriptions="subscriptions"
           :show-add-subscription-input="showAddSubscriptionInput"
@@ -603,27 +731,90 @@ function openPluginDetail(plugin: PluginSource) {
         </h2>
         <div class="flex items-center gap-3">
           <div class="text-xs text-gray-500 dark:text-white/55">
-            {{ pluginStatsLabel }}
+            {{ selectionMode ? `已选 ${selectedCount} 个` : pluginStatsLabel }}
           </div>
-          <button
-            type="button"
-            class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
-            :disabled="plugins.length === 0 || isPluginBusy"
-            :class="{ 'settings-plugin-button--disabled': plugins.length === 0 || isPluginBusy }"
-            @click="handleToggleAllPlugins"
-          >
-            {{ allPluginsEnabled ? '全部禁用' : '全部启用' }}
-          </button>
-          <button
-            type="button"
-            class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
-            :disabled="checkingUpdates || plugins.length === 0"
-            :class="{ 'settings-plugin-button--disabled': checkingUpdates || plugins.length === 0 }"
-            @click="handleCheckAllUpdates"
-          >
-            <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': checkingUpdates }" />
-            {{ checkingUpdates ? '检查中...' : '检查全部更新' }}
-          </button>
+
+          <template v-if="!selectionMode">
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+              :disabled="checkingUpdates || plugins.length === 0"
+              :class="{ 'settings-plugin-button--disabled': checkingUpdates || plugins.length === 0 }"
+              @click="handleCheckAllUpdates"
+            >
+              <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': checkingUpdates }" />
+              {{ checkingUpdates ? '检查中...' : '检查全部更新' }}
+            </button>
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+              :disabled="plugins.length === 0"
+              :class="{ 'settings-plugin-button--disabled': plugins.length === 0 }"
+              @click="enterSelectionMode"
+            >
+              <ListChecks class="h-3.5 w-3.5" />
+              批量操作
+            </button>
+          </template>
+
+          <template v-else>
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+              :disabled="filteredPlugins.length === 0"
+              :class="{ 'settings-plugin-button--disabled': filteredPlugins.length === 0 }"
+              @click="toggleSelectAll"
+            >
+              {{ allFilteredSelected ? '取消全选' : '全选' }}
+            </button>
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+              :disabled="selectedCount === 0 || batchToggling || batchUpdating"
+              :class="{ 'settings-plugin-button--disabled': selectedCount === 0 || batchToggling || batchUpdating }"
+              @click="handleBatchSetEnabled(true)"
+            >
+              <Power class="h-3.5 w-3.5" />
+              {{ batchToggling ? '处理中...' : '启用选中' }}
+            </button>
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+              :disabled="selectedCount === 0 || batchToggling || batchUpdating"
+              :class="{ 'settings-plugin-button--disabled': selectedCount === 0 || batchToggling || batchUpdating }"
+              @click="handleBatchSetEnabled(false)"
+            >
+              <PowerOff class="h-3.5 w-3.5" />
+              关闭选中
+            </button>
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+              :disabled="selectedCount === 0 || batchUpdating || batchToggling"
+              :class="{ 'settings-plugin-button--disabled': selectedCount === 0 || batchUpdating || batchToggling }"
+              @click="handleBatchUpdate"
+            >
+              <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': batchUpdating }" />
+              {{ batchUpdating ? '处理中...' : '检测并更新' }}
+            </button>
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--danger settings-plugin-button--sm"
+              :disabled="selectedCount === 0 || batchUpdating || batchToggling"
+              :class="{ 'settings-plugin-button--disabled': selectedCount === 0 || batchUpdating || batchToggling }"
+              @click="handleBatchDelete"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+              删除
+            </button>
+            <button
+              type="button"
+              class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+              @click="exitSelectionMode"
+            >
+              取消
+            </button>
+          </template>
         </div>
       </div>
 
@@ -669,6 +860,7 @@ function openPluginDetail(plugin: PluginSource) {
             :index="index"
             :dragging="draggingIndex === index"
             :search-query="searchQuery"
+            :selectable="selectionMode"
             :name="cloudNameFor(row.cloud.providerId)"
             :description="cloudDescriptionFor(row.cloud.providerId)"
             :enabled="cloudEnabledFor(row.cloud.providerId)"
@@ -687,11 +879,14 @@ function openPluginDetail(plugin: PluginSource) {
             :sub-brand-label="subBrandLabelById.get(row.plugin.id)"
             :update-check="updateCheckResults.get(row.plugin.id)"
             :updating="updatingPluginId === row.plugin.id"
+            :selectable="selectionMode"
+            :selected="selectedPluginIds.has(row.plugin.id)"
             @drag-start="startDragging"
             @open-detail="openPluginDetail"
             @update="handleUpdatePlugin"
             @uninstall="handleUninstallPlugin"
             @toggle="handleTogglePlugin"
+            @select="togglePluginSelected"
           />
         </SortableRow>
       </TransitionGroup>
@@ -852,6 +1047,54 @@ function openPluginDetail(plugin: PluginSource) {
   cursor: not-allowed;
   box-shadow: none;
   transform: none;
+}
+
+.settings-plugin-menu {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(12px);
+}
+
+.settings-plugin-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(55, 65, 81, 0.9);
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease;
+  cursor: pointer;
+}
+
+.settings-plugin-menu-item:hover:not(:disabled) {
+  background: rgba(236, 65, 65, 0.1);
+  color: #c42f2f;
+}
+
+.settings-plugin-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dark .settings-plugin-menu {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(32, 32, 34, 0.95);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.dark .settings-plugin-menu-item {
+  color: rgba(229, 231, 235, 0.9);
+}
+
+.dark .settings-plugin-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
 .settings-plugin-icon-button {

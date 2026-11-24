@@ -120,6 +120,7 @@ npm run tauri:build:msix         # Windows 微软商店版（MSIX x64，与官�
 npm run tauri:build:msix:arm64   # Windows 微软商店版（MSIX ARM64）
 npm run tauri:build:linux        # Linux（.deb / .rpm / .AppImage）
 npm run tauri:build:mac          # macOS Intel（.app / .dmg，x86_64）
+
 npm run tauri:build:mac:arm64    # macOS Apple Silicon（.app / .dmg，aarch64）
 ```
 

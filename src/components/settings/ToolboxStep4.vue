@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useToast as makeToast } from '../../composables/toast';
-import { useSettingsStore as usePrefsStore } from '../../features/settings/store';
+import { libraryMinFileSizeBytes, useSettingsStore as usePrefsStore } from '../../features/settings/store';
 import { libraryApi as libraryBridge } from '../../services/tauri/libraryApi';
 import WizardAction from './toolbox/WizardAction.vue';
 import WizardFooter from './toolbox/WizardFooter.vue';
@@ -37,7 +37,11 @@ const refreshNow = async () => {
   await withBusyFlag(refreshing, async () => {
     try {
       const minSeconds = store.settings.libraryMinDurationSeconds;
-      await libraryBridge.refreshFolderSongs(props.targetPath, minSeconds);
+      await libraryBridge.refreshFolderSongs(
+        props.targetPath,
+        minSeconds,
+        libraryMinFileSizeBytes(store.settings.libraryMinFileSizeMb),
+      );
       notify.showToast(
         '歌曲信息已刷新',
         'success',

@@ -31,10 +31,12 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
   const subscriptions = ref<PluginSubscription[]>(getSubscriptions());
   const showAddSubscriptionInput = ref(false);
   const newSubscriptionUrl = ref('');
+  const newSubscriptionName = ref('');
 
   function handleAddSubscription() {
     showAddSubscriptionInput.value = !showAddSubscriptionInput.value;
     newSubscriptionUrl.value = '';
+    newSubscriptionName.value = '';
   }
 
   function confirmAddSubscription() {
@@ -49,7 +51,7 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
       return;
     }
 
-    const sub = addSubscription({ name: '', url });
+    const sub = addSubscription({ name: newSubscriptionName.value.trim(), url });
     if (!sub) {
       showToast('该订阅已存在或 URL 无效', 'error');
       return;
@@ -58,6 +60,7 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
     removeDownloadSkipSubUrls([url]);
     subscriptions.value = getSubscriptions();
     newSubscriptionUrl.value = '';
+    newSubscriptionName.value = '';
     showAddSubscriptionInput.value = false;
     showToast(`已添加订阅: ${sub.name}`, 'success');
   }
@@ -192,6 +195,7 @@ export function usePluginSubscriptions(options: UsePluginSubscriptionsOptions) {
     subscriptions,
     showAddSubscriptionInput,
     newSubscriptionUrl,
+    newSubscriptionName,
     syncingAll,
     editingSubId,
     editingSubName,

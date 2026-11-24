@@ -33,9 +33,17 @@ export function addPluginSource(source: PluginSource) {
   const plugins = readPluginsFromLocalStorage();
   const existing = plugins.findIndex(p => p.id === source.id);
   if (existing >= 0) {
+    // 更新（同 id 覆盖）不改变排序位，避免列表顺序被更新操作打乱
+    if (typeof source.sortOrder !== 'number') {
+      source.sortOrder = plugins[existing].sortOrder;
+    }
     plugins[existing] = source;
   } else {
-    source.sortOrder = plugins.length;
+    // 已带排序位（如更新后 id 变更、云端同步）时保留，仅新安装追加到末尾；
+    // 顺序只由手动拖拽（reorderPlugins）调整
+    if (typeof source.sortOrder !== 'number') {
+      source.sortOrder = plugins.length;
+    }
     plugins.push(source);
   }
   setStoredPlugins(plugins);

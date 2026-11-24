@@ -45,25 +45,49 @@
                 </div>
             </button>
 
-            <div class="short-audio-filter">
-                <div class="short-audio-copy">
-                    <div class="short-audio-title">排除短音频</div>
-                    <div class="short-audio-desc">
-                        低于指定秒数的音频不会加入音乐库，0 表示关闭。
+            <div class="short-audio-filter short-audio-filter--panel">
+                <div class="short-audio-row">
+                    <div class="short-audio-copy">
+                        <div class="short-audio-title">排除短音频</div>
+                        <div class="short-audio-desc">
+                            低于指定秒数的音频不会加入音乐库，0 表示关闭。
+                        </div>
                     </div>
+                    <label class="short-audio-input-wrap">
+                        <input
+                            :value="minDurationSeconds"
+                            @change="onMinDurationInput"
+                            class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputmode="numeric"
+                        />
+                        <span>秒</span>
+                    </label>
                 </div>
-                <label class="short-audio-input-wrap">
-                    <input
-                        :value="minDurationSeconds"
-                        @change="onMinDurationInput"
-                        class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                        type="number"
-                        min="0"
-                        step="1"
-                        inputmode="numeric"
-                    />
-                    <span>秒</span>
-                </label>
+
+                <div class="short-audio-row">
+                    <div class="short-audio-copy">
+                        <div class="short-audio-title">排除小文件</div>
+                        <div class="short-audio-desc">
+                            低于指定大小的音频不会加入音乐库，0 表示关闭。
+                        </div>
+                    </div>
+                    <label class="short-audio-input-wrap">
+                        <input
+                            :value="minFileSizeMb"
+                            @change="onMinFileSizeInput"
+                            class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                            type="number"
+                            min="0"
+                            max="500"
+                            step="0.1"
+                            inputmode="decimal"
+                        />
+                        <span>MB</span>
+                    </label>
+                </div>
             </div>
 
             <!-- 本地文件夹：点击展开/收起文件夹列表 -->
@@ -244,6 +268,7 @@ import CloudFolderBrowser from "./CloudFolderBrowser.vue";
 import { useLibraryStore } from "../../features/library/store";
 import {
     normalizeLibraryMinDurationSeconds,
+    normalizeLibraryMinFileSizeMb,
     useSettingsStore,
 } from "../../features/settings/store";
 import { usePlayer } from "../../features/playback";
@@ -297,6 +322,24 @@ const onMinDurationInput = (event: Event) => {
     );
     input.value = `${normalized}`;
     minDurationSeconds.value = normalized;
+};
+
+// 小文件体积阈值的双向绑定（单位 MB）
+const minFileSizeMb = computed({
+    get: () => settings.value.libraryMinFileSizeMb,
+    set: (next) => {
+        settings.value.libraryMinFileSizeMb =
+            normalizeLibraryMinFileSizeMb(next);
+    },
+});
+
+const onMinFileSizeInput = (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    const normalized = normalizeLibraryMinFileSizeMb(
+        Number.parseFloat(input.value),
+    );
+    input.value = `${normalized}`;
+    minFileSizeMb.value = normalized;
 };
 
 // 扫描阶段 -> 提示文案
@@ -558,6 +601,24 @@ const finalizeRemove = async () => {
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 两个扫描过滤项合成一块面板，中间用分隔线区分 */
+.short-audio-filter--panel {
+    display: block;
+    padding: 4px 14px;
+}
+
+.short-audio-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 0;
+}
+
+.short-audio-row + .short-audio-row {
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .short-audio-copy {

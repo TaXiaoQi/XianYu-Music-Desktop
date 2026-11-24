@@ -932,10 +932,14 @@ fn download_thread(
                 }
             }
         } else {
+            // 无 URL 可提取：把请求 URL 与非音频正文前段一并落日志，
+            // 便于定位是哪条音源链路返回了 JSON/HTML 错误页。
+            let url_head: String = url.chars().take(180).collect();
+            let body_head: String = body_text.chars().take(240).collect();
             fail_download(
                 &format!(
-                    "服务器返回非音频内容 (Content-Type: {})，URL提取失败",
-                    content_type
+                    "服务器返回非音频内容 (Content-Type: {})，URL提取失败，url={}，body={}",
+                    content_type, url_head, body_head
                 ),
                 0,
             );

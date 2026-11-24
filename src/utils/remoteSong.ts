@@ -1,4 +1,4 @@
-import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk';
+import type { LxSourceId } from '../services/domain/lxMusicSdk';
 import { getStoredPlugins, pluginsVersion, readPluginIdAliases } from '../services/domain/pluginEngine';
 import type { PluginSource } from '../types';
 
@@ -14,15 +14,22 @@ export const parseIntervalToSeconds = (interval?: string | null): number => {
 
 let pluginCacheVersion = -1;
 let pluginCache = new Map<string, PluginSource>();
+let pluginCacheList: PluginSource[] = [];
 
-function getStoredPluginById(pluginId: string): PluginSource | null {
+function getCachedPlugins(): PluginSource[] {
   if (pluginCacheVersion !== pluginsVersion.value) {
     pluginCacheVersion = pluginsVersion.value;
+    pluginCacheList = getStoredPlugins();
     pluginCache = new Map();
-    for (const p of getStoredPlugins()) {
+    for (const p of pluginCacheList) {
       pluginCache.set(p.id, p);
     }
   }
+  return pluginCacheList;
+}
+
+function getStoredPluginById(pluginId: string): PluginSource | null {
+  getCachedPlugins();
   const direct = pluginCache.get(pluginId);
   if (direct) return direct;
   // 插件更新即换 id（脚本哈希）并删旧条目，行内存的旧 pluginId 沿别名
@@ -177,6 +184,14 @@ const pluginSubTag = (p: PluginSource): SongSourceTagInfo | null => {
 export const getPluginSubTag = (p: PluginSource): SongSourceTagInfo | null =>
   pluginSubTag(p);
 
+// LX 源的实际播放插件：与 lxUrlResolver 定位规则一致——声明支持该源的启用插件
+// 优先，否则取任一启用的 lx 插件；均无（LX 已关闭）时返回 null
+const findEnabledLxPluginForSource = (lxSource: string): PluginSource | null => {
+  const lxPlugins = getCachedPlugins().filter(p => p.enabled && p.format === 'lx');
+  if (lxPlugins.length === 0) return null;
+  return lxPlugins.find(p => p.sources?.includes(lxSource)) ?? lxPlugins[0] ?? null;
+};
+
 export const getSongSourceTag = (
   song: { path?: string; source_type?: string; plugin_id?: string; rawData?: any } | null | undefined,
 ): SongSourceTagInfo => {
@@ -188,7 +203,13 @@ export const getSongSourceTag = (
   }
   if (path?.startsWith('lx://')) {
     const sourceId = path.slice('lx://'.length).split('/')[0] as LxSourceId;
-    return { label: LX_SOURCE_NAMES[sourceId] ?? '在线' };
+    // 标签跟随真正承接播放的插件（关闭 LX 后不再显示小秋/小蜗等化名）
+    const lxPlugin = findEnabledLxPluginForSource(sourceId);
+    if (lxPlugin) {
+      const subTag = pluginSubTag(lxPlugin);
+      return subTag ?? { label: lxPlugin.name };
+    }
+    return { label: '在线' };
   }
 
   if (path?.startsWith('plugin://')) {

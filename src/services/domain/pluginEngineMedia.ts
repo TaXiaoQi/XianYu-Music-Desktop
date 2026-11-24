@@ -22,6 +22,7 @@ import { isSongLevelError } from './lxPluginEngine';
 import { buildBakaMfLyricsRaw, decryptPluginLyricText, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/mediaUrl';
 import { BakaPluginManager } from './bakaPluginManager';
+import { isQqMusicPluginSource, qqHostResolveMediaUrl } from './qqHostSearchFallback';
 import { fetchPlatformMusicComments } from './platformComments';
 import { pluginApi } from '../tauri/pluginApi';
 
@@ -222,6 +223,25 @@ async function runPluginGetMusicInfo(
   }
 
   if (!result || typeof result !== 'object') {
+    // QQ 系插件取链后端不可用时（musicUrl 全档 E_API_500 / 歌曲级错误），
+    // 宿主直接用 song_id 走签名 vkey 取免费档直链，保证能播。
+    if (isQqMusicPluginSource(source, musicItem.platform)) {
+      const hostMedia = await qqHostResolveMediaUrl({
+        id: musicItem.id,
+        songmid: musicItem.songmid,
+        mediaMid: (musicItem as any).media_mid || (musicItem as any).strMediaMid || (musicItem as any).str_media_mid,
+        quality,
+      }).catch(() => null);
+      if (hostMedia) {
+        log(`[getMediaSource] ${source.name} 插件取链失败，宿主 QQ 兜底成功: quality=${hostMedia.quality}, url=${hostMedia.url.substring(0, 100)}`);
+        return {
+          url: hostMedia.url,
+          headers: {},
+          actualQuality: hostMedia.quality as QualityKey,
+          coverUrl: typeof musicItem.artwork === 'string' ? musicItem.artwork : '',
+        };
+      }
+    }
     const lastErrorText = lastError?.message || (typeof lastError === 'string' ? lastError : String(lastError || ''));
     const errMsg = lastError ? `异常: ${lastErrorText}` : (result === null ? '返回null' : `非对象(${typeof result})`);
     log(`[getMediaSource] ${source.name} 失败: ${errMsg}`);

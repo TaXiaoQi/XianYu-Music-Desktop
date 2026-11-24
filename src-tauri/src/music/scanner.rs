@@ -49,20 +49,31 @@ pub(super) const ARTIST_FALLBACK_TEXT: &str = "未知歌手";
 /// 专辑标签缺失时的兜底文案。
 pub(super) const ALBUM_FALLBACK_TEXT: &str = "未知专辑";
 
-/// 一次扫描任务的可调开关。当前只有“最短时长门槛”（单位秒），0 表示不过滤。
+/// 一次扫描任务的可调开关：最短时长门槛（秒）与单文件体积门槛（字节），
+/// 任一为 0 表示该维度不过滤。
 #[derive(Default, Debug, Copy, Clone)]
 pub(crate) struct ScanOptions { // 实现
   pub(crate) min_duration_secs: u32,
+  pub(crate) min_file_size_bytes: u64,
 }
 
 impl ScanOptions { // ScanOptions
-  /// 命令层传入的可选门槛；不给就按 0 处理。
+  /// 命令层传入的可选时长门槛；不给就按 0 处理。
   pub(crate) fn from_minimum_duration_seconds(limit: Option<u32>) -> Self {
     let min_duration_secs = match limit {
       Some(secs) => secs,
       None => 0,
     };
-    Self { min_duration_secs }
+    Self {
+      min_duration_secs,
+      min_file_size_bytes: 0,
+    }
+  }
+
+  /// 追加单文件体积门槛；不给就按 0（不过滤）处理。
+  pub(crate) fn with_minimum_file_size_bytes(mut self, limit: Option<u64>) -> Self {
+    self.min_file_size_bytes = limit.unwrap_or(0);
+    self
   }
 }
 
@@ -487,6 +498,7 @@ pub(super) fn fold_tag_text_into_fields(
       None,
       ScanOptions {
         min_duration_secs: 10,
+        ..ScanOptions::default()
       },
     )
     .expect("collect diff");

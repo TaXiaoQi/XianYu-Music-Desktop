@@ -523,6 +523,8 @@ export const exactEnglishTranslations: Record<string, string> = {
   '排除短音频': 'Exclude short audio',
   '最短时长': 'Minimum duration',
   '秒': 'seconds',
+  '排除小文件': 'Exclude small files',
+  '低于指定大小的音频不会加入音乐库，0 表示关闭。': 'Audio smaller than the given size will not be added to the library. 0 disables this.',
   'MusicTag 路径': 'MusicTag path',
   '选择 MusicTag 可执行文件': 'Choose MusicTag executable',
 

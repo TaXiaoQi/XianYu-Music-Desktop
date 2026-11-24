@@ -14,7 +14,7 @@ import { useLibraryAllSongPathCache } from '../../composables/useLibraryAllSongP
 import { useLibraryCollectionSongPathCache } from '../../composables/useLibraryCollectionSongPathCache';
 import { useLibraryDetailSongPathCache } from '../../composables/useLibraryDetailSongPathCache';
 import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolderSongPathCache';
-import { useSettingsStore } from '../settings/store';
+import { libraryMinFileSizeBytes, useSettingsStore } from '../settings/store';
 import { useLibraryStore } from './store';
 import { useStatisticsStore } from '../statistics/store';
 
@@ -177,7 +177,10 @@ export const createLibraryRuntime = ({
 
     libraryRefreshPromise = (async () => {
       try {
-        const songs = await libraryApi.scanLibrary(settingsStore.settings.libraryMinDurationSeconds);
+        const songs = await libraryApi.scanLibrary(
+          settingsStore.settings.libraryMinDurationSeconds,
+          libraryMinFileSizeBytes(settingsStore.settings.libraryMinFileSizeMb),
+        );
 
         libraryStore.patchLibrarySongs({ songs, deleted_paths: [] });
 

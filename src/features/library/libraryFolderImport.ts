@@ -5,7 +5,7 @@ import { fileApi } from '../../services/tauri/fileApi';
 import { libraryApi } from '../../services/tauri/libraryApi';
 import type { Song } from '../../types';
 import { useLibraryStore } from './store';
-import { useSettingsStore } from '../settings/store';
+import { libraryMinFileSizeBytes, useSettingsStore } from '../settings/store';
 
 interface CreateLibraryFolderImportDeps {
   showToast: (message: string, type: 'success' | 'info' | 'error') => void;
@@ -41,6 +41,7 @@ export const createLibraryFolderImport = ({
       const newFolders = await libraryApi.scanFolderAsPlaylists(
         selectedPath,
         settingsStore.settings.libraryMinDurationSeconds,
+        libraryMinFileSizeBytes(settingsStore.settings.libraryMinFileSizeMb),
       );
 
       if (newFolders.length === 0) {
@@ -84,6 +85,7 @@ export const createLibraryFolderImport = ({
       const newFolders = await libraryApi.scanFolderAsPlaylists(
         selected,
         settingsStore.settings.libraryMinDurationSeconds,
+        libraryMinFileSizeBytes(settingsStore.settings.libraryMinFileSizeMb),
       );
 
       if (newFolders.length === 0) {
@@ -94,6 +96,7 @@ export const createLibraryFolderImport = ({
         const songs = await fileApi.scanMusicFolder(
           selected,
           settingsStore.settings.libraryMinDurationSeconds,
+          libraryMinFileSizeBytes(settingsStore.settings.libraryMinFileSizeMb),
         );
         const existingPaths = new Set(songList.value.map(song => song.path));
         const uniqueSongs = songs.filter(song => !existingPaths.has(song.path));

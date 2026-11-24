@@ -8,6 +8,7 @@ defineProps<{
   name: string;
   description: string;
   enabled: boolean;
+  selectable?: boolean;
 }>();
 
 defineEmits<{
@@ -26,6 +27,12 @@ defineEmits<{
     }"
   >
     <div
+      v-if="selectable"
+      class="plugin-select-box plugin-select-box--disabled"
+      title="网盘音源暂不支持批量操作，请单独删除"
+    ></div>
+    <div
+      v-else
       class="plugin-drag-handle touch-none select-none"
       :class="{
         'plugin-drag-handle--disabled': !!searchQuery.trim(),
@@ -55,7 +62,7 @@ defineEmits<{
       </div>
     </div>
 
-    <div class="flex items-center gap-1.5 shrink-0">
+    <div v-if="!selectable" class="flex items-center gap-1.5 shrink-0">
       <button
         type="button"
         class="settings-plugin-icon-button settings-plugin-icon-button--danger"
@@ -116,6 +123,21 @@ defineEmits<{
 } /* 样式 */
 .plugin-drag-handle--disabled { /* 样式 */
   opacity: 0.3; /* 样式 */
+  cursor: not-allowed; /* 样式 */
+} /* 样式 */
+.plugin-select-box { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
+  width: 18px; /* 样式 */
+  height: 18px; /* 样式 */
+  border-radius: 5px; /* 样式 */
+  border: 1px solid rgba(148, 163, 184, 0.55); /* 样式 */
+  background: rgba(255, 255, 255, 0.7); /* 样式 */
+  flex-shrink: 0; /* 样式 */
+} /* 样式 */
+.plugin-select-box--disabled { /* 样式 */
+  opacity: 0.4; /* 样式 */
   cursor: not-allowed; /* 样式 */
 } /* 样式 */
 .settings-plugin-card--dragging { /* 样式 */

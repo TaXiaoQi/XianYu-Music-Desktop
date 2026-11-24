@@ -4,6 +4,7 @@ use crate::security::path_validator;
 pub fn refresh_folder_songs( // refresh_folder_songs
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<u64>,
     db_state: tauri::State<'_, crate::database::DbState>,
 ) -> Result<Vec<crate::music::types::Song>, String> {
     let validated = path_validator::validate_path(&folder_path, None)?;
@@ -14,7 +15,8 @@ pub fn refresh_folder_songs( // refresh_folder_songs
         None,
         1,
         1,
-        crate::music::scanner::ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds),
+        crate::music::scanner::ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+            .with_minimum_file_size_bytes(minimum_file_size_bytes),
     )
 }
 

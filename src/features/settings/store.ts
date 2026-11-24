@@ -158,6 +158,20 @@ export function normalizeLibraryMinDurationSeconds(value: number | null | undefi
   return numeric > 0 ? Math.round(numeric) : 0;
 }
 
+/** 最小文件大小（MB）：0 表示不过滤，保留一位小数，上限 500MB。 */
+export function normalizeLibraryMinFileSizeMb(value: number | null | undefined): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 0;
+  }
+  return Math.min(500, Math.round(numeric * 10) / 10);
+}
+
+/** 把 MB 设置换算成后端使用的字节门槛。 */
+export function libraryMinFileSizeBytes(minSizeMb: number): number {
+  return Math.round(normalizeLibraryMinFileSizeMb(minSizeMb) * 1024 * 1024);
+}
+
 /* ---------------------------------------------------------------------- */
 /* 各设置域默认值                                                           */
 /* ---------------------------------------------------------------------- */
@@ -260,7 +274,7 @@ export const defaultAppSettings: AppSettings = {
   launchOnStartupMinimized: false, preventSleepWhilePlaying: true,
   audioFileAssociations: [...AUDIO_FILE_ASSOCIATION_EXTENSIONS],
   showDesktopLyrics: false, showQualityBadges: true, showSongComments: true,
-  enableScrollToTopButton: true, libraryMinDurationSeconds: 0,
+  enableScrollToTopButton: true, libraryMinDurationSeconds: 0, libraryMinFileSizeMb: 0,
   linkFoldersToLibrary: false, lyricsSyncOffset: 0,
   organizeRoot: 'D:\\Music', enableAutoOrganize: true, organizeRule: '{Artist}/{Album}/{Title}',
   audio: defaultAudioSettings, customLyricsFonts: [],
@@ -767,6 +781,7 @@ export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettings
   const preventSleepPatch = patchRest.preventSleepWhilePlaying;
   const showWelcomeToastPatch = patchRest.showWelcomeToastOnStartup;
   const libraryMinPatch = patchRest.libraryMinDurationSeconds;
+  const libraryMinSizePatch = patchRest.libraryMinFileSizeMb;
   const lyricsPatch = patchRest.lyrics;
   const desktopLyricsPatch = patchRest.desktopLyrics;
   const fontsPatch = patchRest.customLyricsFonts;
@@ -778,6 +793,7 @@ export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettings
   delete patchRest.preventSleepWhilePlaying;
   delete patchRest.showWelcomeToastOnStartup;
   delete patchRest.libraryMinDurationSeconds;
+  delete patchRest.libraryMinFileSizeMb;
 
   return {
     ...base,
@@ -790,6 +806,9 @@ export const mergeAppSettings = (base: AppSettings, patch: DeprecatedAppSettings
     ),
     libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds(
       withFallback(libraryMinPatch, base.libraryMinDurationSeconds),
+    ),
+    libraryMinFileSizeMb: normalizeLibraryMinFileSizeMb(
+      withFallback(libraryMinSizePatch, base.libraryMinFileSizeMb),
     ),
     lyrics: lyricsPatch ? mergeLyricsSettings(base.lyrics, lyricsPatch) : base.lyrics,
     desktopLyrics: desktopLyricsPatch

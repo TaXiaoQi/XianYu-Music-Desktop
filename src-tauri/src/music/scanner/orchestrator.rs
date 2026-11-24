@@ -118,13 +118,13 @@ pub fn scan_single_directory_internal( // scan_single_directory_internal
 pub async fn scan_music_folder( // 实现
   folder_path: String,
   minimum_duration_seconds: Option<u32>,
+  minimum_file_size_bytes: Option<u64>,
   app: AppHandle,
   db_state: State<'_, DbState>,
 ) -> Result<Vec<Song>, String> { // 实现
   let handle = db_state.conn.clone();
-  let options = ScanOptions {
-    min_duration_secs: minimum_duration_seconds.unwrap_or(0),
-  };
+  let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+    .with_minimum_file_size_bytes(minimum_file_size_bytes);
 
   // 命令入口固定按“只有一个文件夹”的上下文上报进度（索引 1/1）。
   let pending = tauri::async_runtime::spawn_blocking(move || {
@@ -138,10 +138,10 @@ pub async fn scan_music_folder( // 实现
 pub async fn parse_audio_files( // 实现
   paths: Vec<String>,
   minimum_duration_seconds: Option<u32>,
+  minimum_file_size_bytes: Option<u64>,
 ) -> Result<Vec<Song>, String> { // 实现
-  let options = ScanOptions {
-    min_duration_secs: minimum_duration_seconds.unwrap_or(0),
-  };
+  let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+    .with_minimum_file_size_bytes(minimum_file_size_bytes);
 
   let decoded = tauri::async_runtime::spawn_blocking(move || parse_given_paths(paths, options))
     .await
@@ -154,10 +154,10 @@ pub async fn parse_audio_files( // 实现
 pub async fn parse_music_folder( // 实现
   folder_path: String,
   minimum_duration_seconds: Option<u32>,
+  minimum_file_size_bytes: Option<u64>,
 ) -> Result<Vec<Song>, String> { // 实现
-  let options = ScanOptions {
-    min_duration_secs: minimum_duration_seconds.unwrap_or(0),
-  };
+  let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+    .with_minimum_file_size_bytes(minimum_file_size_bytes);
 
   let pending = tauri::async_runtime::spawn_blocking(move || {
     let root = Path::new(&folder_path);
@@ -195,10 +195,18 @@ pub async fn parse_music_folder( // 实现
 pub async fn scan_folder_as_playlists( // 实现
   root_path: String,
   minimum_duration_seconds: Option<u32>,
+  minimum_file_size_bytes: Option<u64>,
   app: AppHandle,
   db_state: State<'_, DbState>,
 ) -> Result<Vec<GeneratedFolder>, String> { // 实现
-  let songs = scan_music_folder(root_path.clone(), minimum_duration_seconds, app, db_state).await?;
+  let songs = scan_music_folder(
+    root_path.clone(),
+    minimum_duration_seconds,
+    minimum_file_size_bytes,
+    app,
+    db_state,
+  )
+  .await?;
 
   // 依父目录分堆，每堆对应一个播放列表。
   let mut piles: HashMap<PathBuf, Vec<Song>> = HashMap::new();

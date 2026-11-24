@@ -12,11 +12,13 @@ use super::common::{db_err, read_song_cache};
 #[tauri::command] // 实现
 pub async fn scan_library( // 实现
   minimum_duration_seconds: Option<u32>,
+  minimum_file_size_bytes: Option<u64>,
   app: AppHandle,
   db_state: State<'_, DbState>,
 ) -> Result<Vec<LibrarySong>, String> { // 实现
   let pooled = db_state.conn.clone();
-  let scan_opts = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
+  let scan_opts = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+    .with_minimum_file_size_bytes(minimum_file_size_bytes);
 
   let outcome = tauri::async_runtime::spawn_blocking(move || {
     // 先取全部根目录，随后逐个触发扫描（扫描器自行处理增量与错误）。

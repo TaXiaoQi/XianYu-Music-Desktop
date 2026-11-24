@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { GripVertical, Info, KeyRound, Puzzle, RefreshCw, Trash2 } from 'lucide-vue-next';
+import { Check, GripVertical, Info, KeyRound, Puzzle, RefreshCw, Trash2 } from 'lucide-vue-next';
 import type { PluginSource } from '../../../types';
 import type { PluginUpdateCheckResult } from '../../../services/domain/pluginEngine';
 import { pluginColorClasses } from './pluginStyles';
@@ -15,6 +15,8 @@ const props = defineProps<{
   subBrandLabel?: { text: string; paid: boolean };
   updateCheck?: PluginUpdateCheckResult;
   updating: boolean;
+  selectable?: boolean;
+  selected?: boolean;
 }>();
 
 defineEmits<{
@@ -23,6 +25,7 @@ defineEmits<{
   (e: 'update', plugin: PluginSource): void;
   (e: 'uninstall', plugin: PluginSource): void;
   (e: 'toggle', plugin: PluginSource): void;
+  (e: 'select', plugin: PluginSource): void;
 }>();
 
 const colorClasses = computed(() => pluginColorClasses(props.plugin.format, props.isBaka));
@@ -34,9 +37,24 @@ const colorClasses = computed(() => pluginColorClasses(props.plugin.format, prop
     class="settings-plugin-card"
     :class="{
       'settings-plugin-card--dragging': dragging,
+      'settings-plugin-card--selected': selectable && selected,
+      'cursor-pointer': selectable,
     }"
+    @click="selectable && $emit('select', plugin)"
   >
+    <button
+      v-if="selectable"
+      type="button"
+      class="plugin-select-box"
+      :class="{ 'plugin-select-box--checked': selected }"
+      :aria-pressed="selected"
+      :title="selected ? '取消选择' : '选择此插件'"
+      @click.stop="$emit('select', plugin)"
+    >
+      <Check v-if="selected" class="h-3.5 w-3.5" />
+    </button>
     <div
+      v-else
       class="plugin-drag-handle touch-none select-none"
       :class="{
         'plugin-drag-handle--disabled': !!searchQuery.trim(),
@@ -97,42 +115,47 @@ const colorClasses = computed(() => pluginColorClasses(props.plugin.format, prop
     </div>
 
     <div class="flex items-center gap-1.5 shrink-0">
-      <button
-        type="button"
-        class="settings-plugin-icon-button"
-        title="详情信息"
-        @click="$emit('open-detail', plugin)"
-      >
-        <Info class="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        class="settings-plugin-icon-button"
-        :class="{
-          'settings-plugin-icon-button--updating': updating,
-          'settings-plugin-icon-button--update-available': !!updateCheck?.hasUpdate,
-        }"
-        :disabled="updating"
-        :title="updateCheck?.hasUpdate
-          ? `${plugin.name} 可更新到 v${updateCheck?.newVersion}，点击执行更新`
-          : (updating ? '正在更新...' : `检查 ${plugin.name} 的更新`)"
-        @click="$emit('update', plugin)"
-      >
-        <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': updating }" />
-      </button>
-      <button
-        type="button"
-        class="settings-plugin-icon-button settings-plugin-icon-button--danger"
-        title="卸载此插件"
-        @click="$emit('uninstall', plugin)"
-      >
-        <Trash2 class="h-4 w-4" />
-      </button>
+      <template v-if="!selectable">
+        <button
+          type="button"
+          class="settings-plugin-icon-button"
+          title="详情信息"
+          @click="$emit('open-detail', plugin)"
+        >
+          <Info class="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          class="settings-plugin-icon-button"
+          :class="{
+            'settings-plugin-icon-button--updating': updating,
+            'settings-plugin-icon-button--update-available': !!updateCheck?.hasUpdate,
+          }"
+          :disabled="updating"
+          :title="updateCheck?.hasUpdate
+            ? `${plugin.name} 可更新到 v${updateCheck?.newVersion}，点击执行更新`
+            : (updating ? '正在更新...' : `检查 ${plugin.name} 的更新`)"
+          @click="$emit('update', plugin)"
+        >
+          <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': updating }" />
+        </button>
+        <button
+          type="button"
+          class="settings-plugin-icon-button settings-plugin-icon-button--danger"
+          title="卸载此插件"
+          @click="$emit('uninstall', plugin)"
+        >
+          <Trash2 class="h-4 w-4" />
+        </button>
+      </template>
+      <!-- 批量模式下仅展示启用状态（不可操作），避免选中时误切换 -->
       <button
         type="button"
         class="glass-switch ml-1"
-        :class="{ 'is-checked': plugin.enabled }"
-        @click="$emit('toggle', plugin)"
+        :class="{ 'is-checked': plugin.enabled, 'glass-switch--readonly': selectable }"
+        :disabled="selectable"
+        :title="plugin.enabled ? '已启用' : '已关闭'"
+        @click.stop="selectable ? undefined : $emit('toggle', plugin)"
       ></button>
     </div>
   </div>
@@ -182,6 +205,30 @@ const colorClasses = computed(() => pluginColorClasses(props.plugin.format, prop
   opacity: 0.3; /* 样式 */
   cursor: not-allowed; /* 样式 */
 } /* 样式 */
+.plugin-select-box { /* 样式 */
+  display: flex; /* 样式 */
+  align-items: center; /* 样式 */
+  justify-content: center; /* 样式 */
+  width: 18px; /* 样式 */
+  height: 18px; /* 样式 */
+  border-radius: 5px; /* 样式 */
+  border: 1px solid rgba(148, 163, 184, 0.55); /* 样式 */
+  background: rgba(255, 255, 255, 0.7); /* 样式 */
+  color: transparent; /* 样式 */
+  flex-shrink: 0; /* 样式 */
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease; /* 样式 */
+} /* 样式 */
+.plugin-select-box:hover { /* 样式 */
+  border-color: rgba(236, 65, 65, 0.7); /* 样式 */
+} /* 样式 */
+.plugin-select-box--checked { /* 样式 */
+  border-color: #EC4141; /* 样式 */
+  background: #EC4141; /* 样式 */
+  color: #fff; /* 样式 */
+} /* 样式 */
+.settings-plugin-card--selected { /* 样式 */
+  background: rgba(236, 65, 65, 0.06); /* 样式 */
+}
 .settings-plugin-card--dragging { /* 样式 */
   background: rgba(236, 65, 65, 0.1); /* 样式 */
   box-shadow: inset 0 0 0 1px rgba(236, 65, 65, 0.3); /* 样式 */

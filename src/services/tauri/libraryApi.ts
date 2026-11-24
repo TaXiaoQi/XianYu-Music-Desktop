@@ -36,10 +36,15 @@ export const libraryApi = {
         tauriInvoke("remove_library_folder", { path }),
     createFolder: (parentPath: string, folderName: string) =>
         tauriInvoke("create_folder", { parentPath, folderName }),
-    refreshFolderSongs: (folderPath: string, minimumDurationSeconds = 0) =>
+    refreshFolderSongs: (
+        folderPath: string,
+        minimumDurationSeconds = 0,
+        minimumFileSizeBytes = 0,
+    ) =>
         tauriInvoke("refresh_folder_songs", {
             folderPath,
             minimumDurationSeconds,
+            minimumFileSizeBytes,
         }),
     getLibrarySongsCached: (): Promise<LibrarySong[]> =>
         tauriInvoke("get_library_songs_cached"),
@@ -49,8 +54,12 @@ export const libraryApi = {
         tauriInvoke("get_library_album_catalog"),
     scanLibrary: (
         minimumDurationSeconds?: number | null,
+        minimumFileSizeBytes?: number | null,
     ): Promise<LibrarySong[]> =>
-        tauriInvoke("scan_library", { minimumDurationSeconds }),
+        tauriInvoke("scan_library", {
+            minimumDurationSeconds,
+            minimumFileSizeBytes,
+        }),
     searchLibrarySongs: (
         query: string,
         limit?: number,
@@ -65,10 +74,12 @@ export const libraryApi = {
     scanFolderAsPlaylists: (
         rootPath: string,
         minimumDurationSeconds?: number | null,
+        minimumFileSizeBytes?: number | null,
     ): Promise<GeneratedFolder[]> =>
         tauriInvoke("scan_folder_as_playlists", {
             rootPath,
             minimumDurationSeconds,
+            minimumFileSizeBytes,
         }),
     getLibrarySongPathsByArtist: (artistName: string): Promise<string[]> =>
         tauriInvoke("get_library_song_paths_by_artist", { artistName }),
