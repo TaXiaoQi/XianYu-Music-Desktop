@@ -6,30 +6,14 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
+use xianyu_core::music::auth::{
+    build_signed_headers, is_stale_saved_secret, local_now_secs, parse_http_date,
+    DEFAULT_API_SECRET, DEFAULT_AUTH_BASE_URL,
+};
 
-const DEFAULT_API_SECRET: &str = "a27202b5acbd9b277a15ccbfb9d7b9232599842b7d08d66d";
-
-/// 历史版本内置过的默认密钥。旧版「保存/恢复默认后端连接」会把当时的默认值
-/// 写入 api_secret.txt（set_auth_api_secret('') 落盘的是旧默认），升级换代后
-/// 该残留会一直压住新内置默认值，签名 403 且只能卸载重装恢复。读取时命中
-/// 即视为过期残留：忽略并删除。每次轮换默认密钥时，把上一代默认值追加进来。
-/// 2026-10-28 轮换（渗透报告 V-01）：acca7562… 已随源码泄露。
-const LEGACY_DEFAULT_API_SECRETS: [&str; 2] = [
-    "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200",
-    "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3",
-];
-
-/// api_secret.txt 的残留值是否应被忽略（空白、当前默认或历史默认）。
-fn is_stale_saved_secret(saved: &str) -> bool {
-    let saved = saved.trim();
-    saved.is_empty()
-        || saved == DEFAULT_API_SECRET
-        || LEGACY_DEFAULT_API_SECRETS.contains(&saved)
-}
-
-const OFFICIAL_AUTH_BASE_URL: &str = "https://api.xianyumusic.cn/api";
-
-const DEFAULT_AUTH_BASE_URL: &str = OFFICIAL_AUTH_BASE_URL;
+// 签名密钥/后端地址常量、HMAC 签名头生成、HTTP Date 解析等纯逻辑已迁入
+// 共享仓库 XianYu-Music-Core（xianyu_core::music::auth），本文件保留桌面端
+// 的 HTTP 栈（netproxy 系统代理）、keyring 凭证存储与 Tauri 命令层。
 
 const KEYRING_SERVICE: &str = "xianyu-music";
 const KEYRING_ACCOUNT: &str = "auth-token";
@@ -48,76 +32,6 @@ fn http_client() -> &'static Result<reqwest::Client, String> {
             .build()
             .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))
     })
-}
-
-struct SignedHeaders {
-    timestamp: String,
-    nonce: String,
-    sign: String,
-}
-
-fn generate_nonce() -> String {
-    let bytes = uuid::Uuid::new_v4().as_simple().to_string();
-    bytes
-}
-
-fn build_signed_headers(body: &str, api_secret: &str, timestamp: i64) -> SignedHeaders {
-    use hmac::Mac;
-    let nonce = generate_nonce();
-    let mut mac =
-        hmac::Hmac::<sha2::Sha256>::new_from_slice(api_secret.as_bytes()).expect("HMAC key");
-    mac.update(format!("{}{}{}", timestamp, nonce, body).as_bytes());
-    let sign = hex::encode(mac.finalize().into_bytes());
-    SignedHeaders {
-        timestamp: timestamp.to_string(),
-        nonce,
-        sign,
-    }
-}
-
-fn local_now_secs() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64
-}
-
-fn parse_http_date(s: &str) -> Option<i64> {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    let b = s.as_bytes();
-    if b.len() < 29 {
-        return None;
-    }
-    let day: i64 = s.get(5..7)?.trim().parse().ok()?;
-    let month_part = s.get(8..11)?;
-    let mon = MONTHS
-        .iter()
-        .position(|m| month_part.eq_ignore_ascii_case(m))? as i64;
-    let year: i64 = s.get(12..16)?.parse().ok()?;
-    let mut t = s.get(17..25)?.split(':');
-    let hour: i64 = t.next()?.parse().ok()?;
-    let min: i64 = t.next()?.parse().ok()?;
-    let sec: i64 = t.next()?.parse().ok()?;
-    if !(1..=31).contains(&day)
-        || !(0..=23).contains(&hour)
-        || !(0..=59).contains(&min)
-        || !(0..=60).contains(&sec)
-    {
-        return None;
-    }
-    Some(days_from_civil(year, mon + 1, day) * 86400 + hour * 3600 + min * 60 + sec)
-}
-
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146097 + doe - 719468
 }
 
 fn auth_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -431,14 +345,15 @@ pub async fn get_auth_base_url(app_handle: AppHandle) -> Result<String, String> 
 #[tauri::command]
 pub async fn set_auth_api_secret(app_handle: AppHandle, api_secret: String) -> Result<(), String> {
     let trimmed = api_secret.trim();
-    let secret = if trimmed.is_empty() {
-        DEFAULT_API_SECRET.to_string()
-    } else {
-        trimmed.to_string()
-    };
-
     let path = api_secret_file_path(&app_handle)?;
-    fs::write(&path, &secret).map_err(|e| format!("api_secret 文件写入失败: {e}"))?;
+    // 空值 = 恢复内置默认密钥：删除文件而不是把默认密钥写盘（明文落盘）。
+    if trimmed.is_empty() {
+        if path.exists() {
+            fs::remove_file(&path).map_err(|e| format!("api_secret 删除失败: {e}"))?;
+        }
+        return Ok(());
+    }
+    fs::write(&path, trimmed).map_err(|e| format!("api_secret 文件写入失败: {e}"))?;
     Ok(())
 }
 
@@ -452,67 +367,4 @@ pub async fn get_auth_api_secret(app_handle: AppHandle) -> Result<String, String
     })
 }
 
-#[cfg(test)]
-mod api_secret_tests {
-    use super::{is_stale_saved_secret, DEFAULT_API_SECRET};
-
-    #[test]
-    fn empty_saved_secret_is_stale() {
-        assert!(is_stale_saved_secret(""));
-        assert!(is_stale_saved_secret("   "));
-    }
-
-    #[test]
-    fn legacy_default_secret_is_stale() {
-        // 2.0.1 及更早的内置默认密钥：升级用户盘上最常见的残留值
-        assert!(is_stale_saved_secret("bf027fedb4d1b4f969c10495f12f17042bf0de02de128200"));
-    }
-
-    #[test]
-    fn current_default_secret_is_stale() {
-        assert!(is_stale_saved_secret(DEFAULT_API_SECRET));
-    }
-
-    #[test]
-    fn custom_secret_is_kept() {
-        // 自建服务器用户手填的密钥必须原样保留
-        assert!(!is_stale_saved_secret("my-private-server-key"));
-        assert!(!is_stale_saved_secret("bf027fedb4d1b4f969c10495f12f17042bf0de02de1282x"));
-    }
-}
-
-#[cfg(test)]
-mod time_calibrate_tests {
-    use super::*;
-
-    #[test]
-    fn parse_http_date_standard() {
-        // 只断言解析出的精确时间戳。不要与「当前系统时间」比较：
-        // 硬编码日期一旦过去一天，那种断言就必然失败（时间炸弹）。
-        let secs = parse_http_date("Thu, 10 Sep 2026 06:34:48 GMT").expect("应解析成功");
-        assert_eq!(secs, 1789022088);
-    }
-
-    #[test]
-    fn parse_http_date_invalid() {
-        assert!(parse_http_date("").is_none());
-        assert!(parse_http_date("short").is_none());
-        assert!(parse_http_date("Thu, Foo Sep 2026 06:34:48 GMT").is_none());
-        assert!(parse_http_date("Thu, 10 Sep 2026 06:34:48").is_none());
-        assert!(parse_http_date("Thu, 32 Sep 2026 06:34:48 GMT").is_none());
-    }
-
-    #[test]
-    fn days_from_civil_epoch() {
-        assert_eq!(days_from_civil(1970, 1, 1), 0);
-        assert_eq!(days_from_civil(2000, 3, 1), 11017);
-        assert_eq!(days_from_civil(2026, 9, 10), 20706);
-    }
-
-    #[test]
-    fn offset_sign_semantics() {
-        let local = local_now_secs();
-        let server = local + 600;
-        assert_eq!(local + (server - local), server);
-    }
-}
+// api_secret / 时间校准相关的单元测试已随纯逻辑迁入 Core（music::auth::tests）。
