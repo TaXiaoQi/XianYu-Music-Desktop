@@ -200,8 +200,6 @@ pub(crate) struct HttpResponse {
     pub(crate) status: u16,
     pub(crate) body: String,
     pub(crate) body_bytes: Vec<u8>,
-    /// 全部响应头（键转小写），短链解析等场景需要读 location
-    pub(crate) headers: Vec<(String, String)>,
 }
 
 fn extract_charset(content_type: Option<&str>) -> Option<String> {
@@ -290,16 +288,6 @@ pub(crate) async fn http_fetch_text(
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
-    let headers: Vec<(String, String)> = resp
-        .headers()
-        .iter()
-        .map(|(k, v)| {
-            (
-                k.as_str().to_ascii_lowercase(),
-                v.to_str().unwrap_or_default().to_string(),
-            )
-        })
-        .collect();
     let content_type = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -312,7 +300,6 @@ pub(crate) async fn http_fetch_text(
         status,
         body,
         body_bytes,
-        headers,
     })
 }
 
