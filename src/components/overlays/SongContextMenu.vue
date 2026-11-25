@@ -27,7 +27,7 @@ import { useSongInfoDialog } from "../../composables/useSongInfoDialog";
 import { isDownloadableOnlineSong } from "../../services/domain/downloadService";
 import { useDownloadDialog } from "../../composables/useDownloadDialog";
 import { useCollectionsStore } from "../../features/collections/store";
-import { songToSyncPayload } from "../../services/domain/playlistSync";
+import { songToSyncPayload, computeSongHashes } from "../../services/domain/playlistSync";
 import {
     addCloudKeepSongs,
     addLocalOnlySongs,
@@ -209,7 +209,7 @@ const pendingWipe = ref<{
     payloadJson: string;
 } | null>(null);
 
-const removeFromCurrentList = () => {
+const removeFromCurrentList = async () => {
     if (!props.song) {
         return;
     }
@@ -222,11 +222,12 @@ const removeFromCurrentList = () => {
         );
         const cloudId = playlist?.cloudId || "";
         if (playlist && cloudId) {
+            const [hash] = await computeSongHashes([props.song]);
             pendingWipe.value = {
                 playlistId: filterCondition.value,
                 path: props.song.path,
                 cloudId,
-                payloadJson: JSON.stringify(songToSyncPayload(props.song)),
+                payloadJson: JSON.stringify(songToSyncPayload(props.song, hash)),
             };
             scopeDialogOpen.value = true;
             return;

@@ -8,7 +8,7 @@ export {
     getCiyuanxiId,
     songToSyncPayload,
     syncPayloadToSong,
-    computeSongHash,
+    computeSongHashes,
     firstRemoteSongCover,
 } from "./playlistSyncSong";
 

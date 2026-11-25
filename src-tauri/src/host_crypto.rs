@@ -58,3 +58,30 @@ pub fn host_weapi_encrypt(payload: String) -> WeapiResult {
 pub fn host_sha256_hex(text: String) -> String {
     xianyu_core::host_crypto::sha256_hex(&text)
 }
+
+// ===== 歌单同步 v2 协议 song_hash =====
+// 协议此前在桌面 TS 与移动 Dart 各写一份，现单点化到 Core
+// （xianyu_core::host_crypto::playlist_song_hash）。在线/本地的分类是前端
+// 业务逻辑（远端/插件/协议头判定），由调用方判好后传参：在线带 path。
+
+#[derive(serde::Deserialize)]
+pub struct PlaylistSongHashEntry {
+    pub path: Option<String>,
+    pub name: String,
+    pub artist: String,
+}
+
+/// 批量计算 song_hash（歌单/收藏同步一次上报多首，避免逐条 IPC）。
+#[tauri::command]
+pub fn host_playlist_song_hashes(entries: Vec<PlaylistSongHashEntry>) -> Vec<String> {
+    entries
+        .iter()
+        .map(|entry| {
+            xianyu_core::host_crypto::playlist_song_hash(
+                entry.path.as_deref(),
+                &entry.name,
+                &entry.artist,
+            )
+        })
+        .collect()
+}

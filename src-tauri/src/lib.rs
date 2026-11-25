@@ -112,6 +112,7 @@ use host_crypto::{
     host_sha256_hex,
     host_weapi_encrypt,
     host_zzc_sign,
+    host_playlist_song_hashes,
 };
 
 // ---- 命令导入：音乐库与歌曲元数据 ----
@@ -695,6 +696,7 @@ pub fn run() { // run
             host_linuxapi_encrypt,
             host_weapi_encrypt,
             host_sha256_hex,
+            host_playlist_song_hashes,
             verify_fallback_config_signature,
             verify_beta_access_signature,
             read_plugin_file,

@@ -720,6 +720,12 @@ export interface TauriCommandMap {
     payload: { text: string };
     response: string;
   };
+  host_playlist_song_hashes: {
+    payload: {
+      entries: Array<{ path: string | null; name: string; artist: string }>;
+    };
+    response: string[];
+  };
   save_plugin_script: {
     payload: { id: string; script: string };
     response: string;

@@ -9,7 +9,7 @@ import {
   getCiyuanxiId,
   songToSyncPayload,
   syncPayloadToSong,
-  computeSongHash,
+  computeSongHashes,
   type FileSyncPlaylistData,
   type SyncResult,
 } from '../playlistSync';
@@ -164,7 +164,8 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
         if (cloudCoverUrl && cloudCoverUrl !== pl.cloudCoverUrl) {
           collections.setPlaylistCloudCoverUrl(pl.id, cloudCoverUrl);
         }
-        let payloadSongs = songs.map(songToSyncPayload);
+        const hashes = await computeSongHashes(songs);
+        let payloadSongs = songs.map((song, index) => songToSyncPayload(song, hashes[index]));
         let deletedSongPaths: string[] | undefined;
         if (pl.cloudId && !overwrite) {
           const cloudId = pl.cloudId;
@@ -275,10 +276,11 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
   /** v2 路径：上报本地歌单概要（song_hash），由服务端算 diff 下发最小 ops。 */
   async function downloadViaOps(ciyuanxiId: string, result: SyncResult): Promise<void> {
     const matchIndex = buildLibraryMatchIndex(library.songList);
-    const localReports: LocalPlaylistReportPayload[] = collections.playlists.map(pl => {
+    const localReports: LocalPlaylistReportPayload[] = [];
+    for (const pl of collections.playlists) {
       const songs = collectPlaylistSongs(pl);
       const createdMs = pl.createdAt ? new Date(pl.createdAt).getTime() : NaN;
-      return {
+      localReports.push({
         localId: pl.id,
         ...(pl.cloudId ? { cloudId: pl.cloudId } : {}),
         name: pl.name,
@@ -287,9 +289,9 @@ export function createPlaylistSyncService(deps: PlaylistSyncDeps) {
         ...(Number.isFinite(createdMs) ? { createdAt: createdMs } : {}),
         ...(pl.sourcePluginId ? { sourcePluginId: pl.sourcePluginId } : {}),
         ...(pl.sourceUrl ? { sourceUrl: pl.sourceUrl } : {}),
-        song_hashes: songs.map(computeSongHash),
-      };
-    });
+        song_hashes: await computeSongHashes(songs),
+      });
+    }
 
     const data = await fileSyncV2DownloadOps(ciyuanxiId, localReports);
     // 云端删除广播：其他端「删除全部/删除云端」的歌单按 cloudId 真删本地

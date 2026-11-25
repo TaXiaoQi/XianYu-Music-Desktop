@@ -3,7 +3,7 @@ import type { Song } from '../../types';
 import { getStoredAuth } from '../auth/authService';
 import { isPluginSong } from '../../utils/pluginSong';
 import { isRemoteSong } from '../../utils/remoteSong';
-import { md5 } from '../auth/md5';
+import { tauriInvoke } from '../tauri/invoke';
 import type { SyncSongPayload, SyncSongType, PlaylistType } from './playlistSyncTypes';
 
 export function getCiyuanxiId(): string | null {
@@ -37,14 +37,23 @@ export function classifySyncPlaylist(songs: Song[]): PlaylistType {
   return 'mixed';
 }
 
-/** v2 协议 song_hash：online=md5(path)，local=md5(name|artist|local)（与 Server song_diff_key 回退式对齐）。 */
-export function computeSongHash(song: Song): string {
-  if (isOnlineSong(song) && song.path) {
-    return md5(song.path);
-  }
-  const name = song.title || song.name || '';
-  const artist = song.artist || '';
-  return md5(`${name}|${artist}|local`);
+/** v2 协议 song_hash：online=md5(path)，local=md5(name|artist|local)（与 Server song_diff_key 回退式对齐）。
+ * 协议实现单点化在 Rust Core（xianyu_core::host_crypto::playlist_song_hash），
+ * 在线/本地的分类是业务逻辑，保留在前端判好后传参。 */
+function buildSongHashEntry(song: Song): { path: string | null; name: string; artist: string } {
+  return {
+    path: isOnlineSong(song) && song.path ? song.path : null,
+    name: song.title || song.name || '',
+    artist: song.artist || '',
+  };
+}
+
+/** 批量计算 song_hash（一次 IPC，保持入参顺序；歌单/收藏同步上报多首时使用）。 */
+export async function computeSongHashes(songs: Song[]): Promise<string[]> {
+  if (songs.length === 0) return [];
+  return tauriInvoke('host_playlist_song_hashes', {
+    entries: songs.map(buildSongHashEntry),
+  });
 }
 
 function buildOnlineSyncExtra(song: Song): {
@@ -98,11 +107,11 @@ function buildOnlineSyncExtra(song: Song): {
   };
 }
 
-export function songToSyncPayload(song: Song): SyncSongPayload {
+export function songToSyncPayload(song: Song, songHash: string): SyncSongPayload {
   const payload: any = {
     ...JSON.parse(JSON.stringify(song)),
     syncType: classifySyncSong(song),
-    song_hash: computeSongHash(song),
+    song_hash: songHash,
   };
   if (classifySyncSong(song) === 'online') {
     const extra = buildOnlineSyncExtra(song);

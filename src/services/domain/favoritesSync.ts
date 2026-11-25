@@ -1,7 +1,7 @@
 
 import type { Song } from '../../types';
 import { signedRequest } from '../auth/authService';
-import { songToSyncPayload, syncPayloadToSong, type SyncSongPayload } from './playlistSync';
+import { songToSyncPayload, computeSongHashes, syncPayloadToSong, type SyncSongPayload } from './playlistSync';
 
 const LOG = '[FavoritesSync]';
 
@@ -28,7 +28,8 @@ export async function uploadFavorites(
   songs: Song[],
   options?: { deletePaths?: string[]; merge?: boolean },
 ): Promise<FavoritesUploadResult> {
-  const payload: SyncSongPayload[] = songs.map(songToSyncPayload);
+  const hashes = await computeSongHashes(songs);
+  const payload: SyncSongPayload[] = songs.map((song, index) => songToSyncPayload(song, hashes[index]));
   try {
     const body: Record<string, unknown> = {
       user_id: ciyuanxiId,
