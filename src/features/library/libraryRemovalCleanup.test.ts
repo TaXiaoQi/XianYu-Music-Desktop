@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
+// 路径归一化匹配已下沉后端，桩模拟 path_queries 命令语义
+vi.mock("@tauri-apps/api/core", async () => {
+    const { createPathBackendInvoke } = await import(
+        "../../test-support/pathBackendInvokeMock"
+    );
+    return { invoke: createPathBackendInvoke() };
+});
+
 import type { Song } from "../../types";
 import { useCollectionsStore } from "../collections/store";
 import { useLibraryStore } from "./store";
@@ -32,29 +40,31 @@ describe("library removal cleanup", () => {
         setActivePinia(createPinia());
     });
 
-    it("matches songs inside a removed folder with normalized separators and casing", () => {
-        expect(
+    it("matches songs inside a removed folder with normalized separators and casing", async () => {
+        await expect(
             isPathInFolderScope("C:\\Music\\Rock\\", "c:/music/rock/song.flac"),
-        ).toBe(true);
-        expect(isPathInFolderScope("C:\\Music\\Rock", "C:\\Music\\Rock")).toBe(
-            true,
-        );
-        expect(
+        ).resolves.toBe(true);
+        await expect(
+            isPathInFolderScope("C:\\Music\\Rock", "C:\\Music\\Rock"),
+        ).resolves.toBe(true);
+        await expect(
             isPathInFolderScope(
                 "C:\\Music\\Rock",
                 "C:\\Music\\Rocky\\song.flac",
             ),
-        ).toBe(false);
+        ).resolves.toBe(false);
     });
 
-    it("collects only song paths under the removed folder", () => {
+    it("collects only song paths under the removed folder", async () => {
         const songs = [
             makeSong("C:\\Music\\Rock\\a.flac"),
             makeSong("C:\\Music\\Rock\\Live\\b.flac"),
             makeSong("C:\\Music\\Jazz\\c.flac"),
         ];
 
-        expect(collectSongPathsInFolderScope(songs, "c:/music/rock")).toEqual([
+        await expect(
+            collectSongPathsInFolderScope(songs, "c:/music/rock"),
+        ).resolves.toEqual([
             "C:\\Music\\Rock\\a.flac",
             "C:\\Music\\Rock\\Live\\b.flac",
         ]);

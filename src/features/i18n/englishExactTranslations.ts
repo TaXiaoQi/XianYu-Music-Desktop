@@ -2889,4 +2889,7 @@ export const exactEnglishTranslations: Record<string, string> = {
   "自动同步将仅上传上方开启的同步内容；手动同步不受此限制。": "Auto sync uploads only the content enabled above; manual sync is not restricted.",
   "跳过静音": "Skip silence",
   "还没有安装任何音源": "No sources installed yet",
+  "关闭选中": "Clear selection",
+  "备注（可选）：说明这个链接是什么，如「小奇自建插件源」": "Note (optional): describe what this link is, e.g. a self-hosted plugin source",
+  "网盘音源暂不支持批量操作，请单独删除": "Cloud-drive sources do not support batch operations yet. Delete them one by one.",
 };

@@ -150,6 +150,11 @@ export interface TauriCommandMap {
     response: string[];
   };
   get_folder_children: { payload: { folderPath: string }; response: FolderNode[] };
+  // ============ 路径归属查询（归一化匹配下沉 Rust）============
+  filter_paths_within_folder: { payload: { folderPath: string; paths: string[] }; response: string[] };
+  find_deepest_owning_root: { payload: { rootPaths: string[]; targetPath: string }; response: string | null };
+  path_within_root_scope: { payload: { candidate: string; root: string }; response: boolean };
+  path_under_root_prefix: { payload: { candidate: string; root: string }; response: boolean };
   get_library_folders: { payload: undefined; response: LibraryFolder[] };
   search_library_songs: { payload: { query: string; limit?: number }; response: LibrarySong[] };
   get_remote_sources: { payload: undefined; response: RemoteSource[] };

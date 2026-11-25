@@ -84,11 +84,11 @@ export function useHomeFolderManagement({
     /** 程序性改写 activeRootPath 时，跳过一次 watch 的联动 */
     const suppressRootWatch = ref(false);
 
-    const resolveOwningRoot = (candidatePath: string): string | null =>
-        findDeepestOwningRoot(
+    const resolveOwningRoot = async (candidatePath: string): Promise<string | null> =>
+        (await findDeepestOwningRoot(
             toRootPaths(libraryHierarchy.value),
             candidatePath,
-        ) ||
+        )) ||
         activeRootPath.value ||
         null;
 
@@ -102,7 +102,7 @@ export function useHomeFolderManagement({
         syncRootSelection(nextRoot);
     };
 
-    watch(activeRootPath, (nextRoot, previousRoot) => {
+    watch(activeRootPath, async (nextRoot, previousRoot) => {
         if (suppressRootWatch.value) {
             suppressRootWatch.value = false;
             return;
@@ -113,20 +113,20 @@ export function useHomeFolderManagement({
         }
 
         // 当前子目录仍归属新根时，不打断用户的浏览位置
-        if (pathWithinRootScope(currentFolderFilter.value, nextRoot)) {
+        if (await pathWithinRootScope(currentFolderFilter.value, nextRoot)) {
             return;
         }
 
         syncRootSelection(nextRoot);
     });
 
-    const requestCreateFolder = (parentPath: string) => {
+    const requestCreateFolder = async (parentPath: string) => {
         if (!isManagementMode.value) {
             return;
         }
 
         creationDialog.parentPath.value = parentPath;
-        creationDialog.rootAnchor.value = resolveOwningRoot(parentPath);
+        creationDialog.rootAnchor.value = await resolveOwningRoot(parentPath);
         creationDialog.visible.value = true;
     };
 
@@ -174,8 +174,8 @@ export function useHomeFolderManagement({
     };
 
     /** 预先计算删除后的归属根与回退目录 */
-    const planAfterRemoval = (removedPath: string): PostRemovalPlan => {
-        const owningRoot = resolveOwningRoot(removedPath);
+    const planAfterRemoval = async (removedPath: string): Promise<PostRemovalPlan> => {
+        const owningRoot = await resolveOwningRoot(removedPath);
         const removedWholeRoot =
             !!owningRoot &&
             normalizePath(owningRoot) === normalizePath(removedPath);
@@ -186,7 +186,7 @@ export function useHomeFolderManagement({
 
         const parentPath = getParentFolderPath(removedPath);
         const landingPath = owningRoot
-            ? pathUnderRootPrefix(parentPath, owningRoot)
+            ? (await pathUnderRootPrefix(parentPath, owningRoot))
                 ? parentPath
                 : owningRoot
             : parentPath;
@@ -215,7 +215,7 @@ export function useHomeFolderManagement({
             return;
         }
 
-        const plan = planAfterRemoval(removedPath);
+        const plan = await planAfterRemoval(removedPath);
 
         try {
             await deleteFolder(removedPath);

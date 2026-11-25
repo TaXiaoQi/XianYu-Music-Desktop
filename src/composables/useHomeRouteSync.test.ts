@@ -17,6 +17,20 @@ import type { FolderNode } from "../types";
 import { useHomeRouteSync } from "./useHomeRouteSync";
 import { useHomeViewState } from "./useHomeViewState";
 
+// 入站同步经后端命令查询归属根，桩模拟 path_queries 语义
+vi.mock("@tauri-apps/api/core", async () => {
+    const { createPathBackendInvoke } = await import(
+        "../test-support/pathBackendInvokeMock"
+    );
+    return { invoke: createPathBackendInvoke() };
+});
+
+/** 等待 watcher 异步回调（经 IPC 桩）完全落地 */
+const flushAsyncWatchers = async () => {
+    await nextTick();
+    await Promise.resolve();
+};
+
 /** 构造目录树节点，文件名截取自路径末段 */
 const makeFolderNode = (
     path: string,
@@ -132,7 +146,7 @@ describe("useHomeRouteSync 首页路由同步", () => {
             folder: "/music/library/live",
         });
 
-        await nextTick();
+        await flushAsyncWatchers();
 
         expect(harness.state.currentViewMode.value).toBe("folder");
         expect(harness.state.filterCondition.value).toBe("");
@@ -168,7 +182,7 @@ describe("useHomeRouteSync 首页路由同步", () => {
             query: "persistent query",
         });
 
-        await nextTick();
+        await flushAsyncWatchers();
 
         expect(harness.state.currentViewMode.value).toBe("folder");
         expect(harness.state.currentFolderFilter.value).toBe("/music/root-a");

@@ -2,6 +2,8 @@ import { storeToRefs } from 'pinia';
 import type { FolderNode, Song } from '../../types';
 
 import { fileApi } from '../../services/tauri/fileApi';
+import { tauriInvoke } from '../../services/tauri/invoke';
+import { getParentFolderPath } from '../../utils/path';
 import { useCollectionsStore } from '../collections/store';
 import { useLibraryStore } from '../library/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
@@ -91,13 +93,6 @@ const updateFolderCover = (
   return false;
 };
 
-const getParentFolder = (filePath: string): string => {
-  const separator = filePath.includes('\\') ? '\\' : '/';
-  const parts = filePath.split(separator);
-  parts.pop();
-  return parts.join(separator);
-};
-
 const findNode = (
   nodes: FolderNode[],
   targetPath: string
@@ -115,15 +110,6 @@ const findNode = (
 };
 
 const sanitizePathSegment = (value: string) => value.replace(/[<>:"/\\|?*]/g, '_').trim();
-
-const normalizePathForMatch = (path: string) =>
-  path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-
-const isSongInFolderScope = (folderPath: string, songPath: string) => {
-  const normalizedFolder = normalizePathForMatch(folderPath);
-  const normalizedSong = normalizePathForMatch(songPath);
-  return normalizedSong === normalizedFolder || normalizedSong.startsWith(`${normalizedFolder}/`);
-};
 
 const metadataComparableKeys: Array<keyof Song> = [
   'name',
@@ -214,7 +200,7 @@ export const createPlayerFileManager = ({
   };
 
   const moveFilePhysical = async (sourcePath: string, targetFolderPath: string) => {
-    const sourceFolderPath = getParentFolder(sourcePath);
+    const sourceFolderPath = getParentFolderPath(sourcePath);
     const sourceNode = findNode(libraryHierarchy.value, sourceFolderPath);
     const wasSourceCover = sourceNode?.cover_song_path === sourcePath;
 
@@ -249,7 +235,7 @@ export const createPlayerFileManager = ({
     const sourceFolderMap = new Map<string, { count: number; coverPaths: string[] }>();
 
     moveResult.moved_paths.forEach(({ old_path: oldPath }) => {
-      const sourceFolder = getParentFolder(oldPath);
+      const sourceFolder = getParentFolderPath(oldPath);
       if (!sourceFolderMap.has(sourceFolder)) {
         const node = findNode(libraryHierarchy.value, sourceFolder);
         sourceFolderMap.set(sourceFolder, {
@@ -305,8 +291,20 @@ export const createPlayerFileManager = ({
       settingsStore.settings.libraryMinDurationSeconds,
       libraryMinFileSizeBytes(settingsStore.settings.libraryMinFileSizeMb),
     );
+
+    // 一次批量 IPC 拿到 folder 范围内的路径（归一化匹配在后端完成），
+    // 旧歌挑选与 keepSong 过滤共用同一份结果。
+    const candidatePaths = [
+      ...new Set([...sourceSongs.value, ...canonicalSongs.value].map(song => song.path)),
+    ];
+    const inScopePaths = await tauriInvoke('filter_paths_within_folder', {
+      folderPath,
+      paths: candidatePaths,
+    });
+    const inScopeSet = new Set(inScopePaths);
+
     const oldSongsInScope = canonicalSongs.value.filter(song =>
-      isSongInFolderScope(folderPath, song.path),
+      inScopeSet.has(song.path),
     );
     const removedPaths = oldSongsInScope
       .map(song => song.path)
@@ -333,7 +331,7 @@ export const createPlayerFileManager = ({
       };
     }
 
-    const keepSong = (song: Song) => !isSongInFolderScope(folderPath, song.path);
+    const keepSong = (song: Song) => !inScopeSet.has(song.path);
 
     sourceSongs.value = [...sourceSongs.value.filter(keepSong), ...newSongs];
     canonicalSongs.value = [...canonicalSongs.value.filter(keepSong), ...newSongs];

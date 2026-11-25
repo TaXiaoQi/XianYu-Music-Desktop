@@ -56,7 +56,7 @@ interface DtoPair {
 const DTO_PAIRS: DtoPair[] = [
   { name: 'MovedMusicFilePath', rust: { file: 'src-tauri/src/music/files/transfer.rs', type: 'MovedMusicFilePath' }, ts: { file: 'src/services/tauri/contractsLibrary.ts', type: 'MovedMusicFilePath' } },
   { name: 'BatchMoveMusicFilesResult', rust: { file: 'src-tauri/src/music/files/transfer.rs', type: 'BatchMoveMusicFilesResult' }, ts: { file: 'src/services/tauri/contractsLibrary.ts', type: 'BatchMoveMusicFilesResult' } },
-  { name: 'SaveSongInfoResponse', rust: { file: 'src-tauri/src/music/types/editing.rs', type: 'SaveSongInfoResponse' }, ts: { file: 'src/services/tauri/contractsLibrary.ts', type: 'SaveSongInfoResponse' } },
+  { name: 'SaveSongInfoResponse', rust: { file: 'src-tauri/core/src/music/types.rs', type: 'SaveSongInfoResponse' }, ts: { file: 'src/services/tauri/contractsLibrary.ts', type: 'SaveSongInfoResponse' } },
 ];
 
 describe('高频 DTO 字段级一致性', () => {

@@ -31,10 +31,10 @@ export const createLibraryFolderRemoval = ({
     path: string,
     options: { showToast?: boolean } = {},
   ): Promise<void> => {
-    const removedPaths = collectRemovedLibraryFolderSongPaths(path);
+    const removedPaths = await collectRemovedLibraryFolderSongPaths(path);
     const activeSongPath = getActiveSongPath();
 
-    if (activeSongPath && isPathInFolderScope(path, activeSongPath)) {
+    if (activeSongPath && (await isPathInFolderScope(path, activeSongPath))) {
       if (!removedPaths.some(songPath => songPath === activeSongPath)) {
         removedPaths.push(activeSongPath);
       }

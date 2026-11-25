@@ -11,8 +11,9 @@ const read = (relative: string) =>
 function extractRegisteredCommands(source: string): Set<string> {
   const block = source.match(/generate_handler!\s*\[\s*([\s\S]*?)\s*\]/);
   if (!block) return new Set();
-  const commands = block[1].match(/\b[a-z_][a-z0-9_]*\b/g) ?? [];
-  return new Set(commands);
+  // 注册项支持「模块路径::命令名」与裸命令名两种写法，统一取叶子段
+  const entries = block[1].match(/\b[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)*\b/g) ?? [];
+  return new Set(entries.map((entry) => entry.split("::").pop() ?? entry));
 }
 
 function extractAllowedCommands(source: string): Set<string> {

@@ -2,6 +2,8 @@ import { useCollectionsStore } from "../collections/store";
 import { useLibraryStore } from "./store";
 import { usePlaybackStore } from "../playback/store";
 import type { Song } from "../../types";
+import { tauriInvoke } from "../../services/tauri/invoke";
+import { normalizePath } from "../../utils/path";
 
 interface CleanupRemovedLibrarySongPathsOptions {
     removedPaths: string[];
@@ -12,34 +14,56 @@ interface CleanupRemovedLibrarySongPathsOptions {
     clearCaches?: (songPaths: string[]) => Promise<void> | void;
 }
 
-const normalizePathForScope = (path: string | null | undefined) =>
-    (path ?? "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+/** 归一化匹配交给后端完成；空路径沿用旧行为直接判否 */
+export const isPathInFolderScope = (
+    folderPath: string,
+    path: string,
+): Promise<boolean> => {
+    if (!folderPath || !path) {
+        return Promise.resolve(false);
+    }
 
-export const isPathInFolderScope = (folderPath: string, path: string) => {
-    const normalizedFolder = normalizePathForScope(folderPath);
-    const normalizedPath = normalizePathForScope(path);
-
-    return (
-        !!normalizedFolder &&
-        !!normalizedPath &&
-        (normalizedPath === normalizedFolder ||
-            normalizedPath.startsWith(`${normalizedFolder}/`))
-    );
+    return tauriInvoke("path_within_root_scope", {
+        candidate: path,
+        root: folderPath,
+    });
 };
 
-export const collectSongPathsInFolderScope = (
+/** 批量收集位于 folder 范围内的歌曲路径（单次 IPC，保持歌曲原顺序并去重） */
+export const collectSongPathsInFolderScope = async (
     songs: Song[],
     folderPath: string,
-) => {
+): Promise<string[]> => {
+    if (!folderPath) {
+        return [];
+    }
+
+    const candidatePaths = [
+        ...new Set(
+            songs
+                .map((song) => song?.path)
+                .filter((path): path is string => !!path),
+        ),
+    ];
+    if (candidatePaths.length === 0) {
+        return [];
+    }
+
+    const inScopePaths = await tauriInvoke("filter_paths_within_folder", {
+        folderPath,
+        paths: candidatePaths,
+    });
+    const inScopeSet = new Set(inScopePaths);
+
     const seen = new Set<string>();
     const paths: string[] = [];
 
     songs.forEach((song) => {
-        if (!song?.path || !isPathInFolderScope(folderPath, song.path)) {
+        if (!song?.path || !inScopeSet.has(song.path)) {
             return;
         }
 
-        const normalizedPath = normalizePathForScope(song.path);
+        const normalizedPath = normalizePath(song.path);
         if (seen.has(normalizedPath)) {
             return;
         }
@@ -56,7 +80,7 @@ const dedupePaths = (paths: string[]) => {
     const deduped: string[] = [];
 
     paths.forEach((path) => {
-        const normalizedPath = normalizePathForScope(path);
+        const normalizedPath = normalizePath(path);
         if (!normalizedPath || seen.has(normalizedPath)) {
             return;
         }
@@ -77,10 +101,10 @@ export const syncRemovedLibrarySongPreferences = (removedPaths: string[]) => {
     const libraryStore = useLibraryStore();
     const collectionsStore = useCollectionsStore();
     const removedPathSet = new Set(
-        uniqueRemovedPaths.map(normalizePathForScope),
+        uniqueRemovedPaths.map(normalizePath),
     );
     const isRemovedPath = (path: string | null | undefined) =>
-        !!path && removedPathSet.has(normalizePathForScope(path));
+        !!path && removedPathSet.has(normalizePath(path));
 
     collectionsStore.favoritePaths = collectionsStore.favoritePaths.filter(
         (path) => !isRemovedPath(path),
@@ -119,10 +143,10 @@ export const cleanupRemovedLibrarySongPaths = async ({
 
     const playbackStore = usePlaybackStore();
     const removedPathSet = new Set(
-        uniqueRemovedPaths.map(normalizePathForScope),
+        uniqueRemovedPaths.map(normalizePath),
     );
     const isRemovedPath = (path: string | null | undefined) =>
-        !!path && removedPathSet.has(normalizePathForScope(path));
+        !!path && removedPathSet.has(normalizePath(path));
     const isRemovedFolderPath = (path: string | null | undefined) =>
         !!path &&
         !!removedFolderPath &&
@@ -139,7 +163,10 @@ export const cleanupRemovedLibrarySongPaths = async ({
         playbackStore.currentSongPath ??
         playbackStore.currentSong?.path ??
         null;
-    if (isRemovedPath(activeSongPath) || isRemovedFolderPath(activeSongPath)) {
+    if (
+        isRemovedPath(activeSongPath) ||
+        (await isRemovedFolderPath(activeSongPath))
+    ) {
         await stopPlayback?.();
         playbackStore.isPlaying = false;
         playbackStore.isSongLoaded = false;

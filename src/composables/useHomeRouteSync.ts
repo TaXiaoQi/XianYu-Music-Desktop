@@ -44,7 +44,7 @@ export function useHomeRouteSync(options: HomeRouteSyncOptions) {
   };
 
   /** folder 视图入站时：补全缺省目录并定位其归属根 */
-  const adoptFolderRouteState = (routedFolder: string) => {
+  const adoptFolderRouteState = async (routedFolder: string) => {
     const targetFolder =
       routedFolder || currentFolderFilter.value || folderTree.value[0]?.path || '';
 
@@ -52,14 +52,14 @@ export function useHomeRouteSync(options: HomeRouteSyncOptions) {
       currentFolderFilter.value = targetFolder;
     }
 
-    const owningRoot = findDeepestOwningRoot(toRootPaths(folderTree.value), targetFolder);
+    const owningRoot = await findDeepestOwningRoot(toRootPaths(folderTree.value), targetFolder);
     if (owningRoot) {
       activeRootPath.value = owningRoot;
     }
   };
 
   // 入站同步：路由变化 → 首页内部状态
-  const applyInboundState = () => {
+  const applyInboundState = async () => {
     const collectionMode = COLLECTION_ROUTE_MODES[route.path];
     if (collectionMode) {
       currentViewMode.value = collectionMode;
@@ -82,7 +82,7 @@ export function useHomeRouteSync(options: HomeRouteSyncOptions) {
     filterCondition.value = inbound.filter;
 
     if (inbound.viewMode === 'folder') {
-      adoptFolderRouteState(inbound.folder);
+      await adoptFolderRouteState(inbound.folder);
     }
   };
 

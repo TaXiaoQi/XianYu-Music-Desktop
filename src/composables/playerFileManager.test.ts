@@ -8,6 +8,14 @@ import { usePlaybackStore } from "../features/playback/store";
 import { useSettingsStore } from "../features/settings/store";
 import { createPlayerFileManager } from "../features/playback/playerFileManager";
 
+// refreshFolder 经 tauriInvoke 批量查询 folder 范围内路径，桩模拟后端语义
+vi.mock("@tauri-apps/api/core", async () => {
+    const { createPathBackendInvoke } = await import(
+        "../test-support/pathBackendInvokeMock"
+    );
+    return { invoke: createPathBackendInvoke() };
+});
+
 // —— fileApi 打桩：四个关注点透传给本地 spy，其余方法用空实现占位 ——
 
 const scanFolderSpy = vi.fn();
@@ -201,7 +209,11 @@ describe("refreshFolder：刷新文件夹后的状态同步", () => {
 
         await fileManager.refreshFolder("c:/music/a");
 
-        expect(scanFolderSpy).toHaveBeenCalledWith("c:/music/a", 60);
+        expect(scanFolderSpy).toHaveBeenCalledWith(
+            "c:/music/a",
+            60,
+            expect.any(Number),
+        );
     });
 });
 

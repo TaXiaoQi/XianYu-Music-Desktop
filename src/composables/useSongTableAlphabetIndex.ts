@@ -15,7 +15,8 @@ import {
     getAlphabetIndexKey,
     type AlphabetIndexKey,
 } from "../utils/alphabetIndex";
-import { normalizePath, getParentFolderPath } from "../utils/path";
+import { getParentFolderPath } from "../utils/path";
+import { findDeepestOwningRoot, toRootPaths } from "./libraryRootOwnership";
 
 // 行高与索引条交互的固定参数
 const ROW_HEIGHT_PX = 72;
@@ -158,30 +159,42 @@ export function useSongTableAlphabetIndex(
         return songs.value.findIndex((song) => song.path === playingPath);
     });
 
-    /** 找到包含目标路径的根目录（按路径前缀匹配，取最长者） */
-    const findOwningRootPath = (targetPath: string) => {
-        const wanted = normalizePath(targetPath);
-        const owningRoots = folderTree.value
-            .map((node: FolderNode) => node.path)
-            .filter((candidate) => {
-                const rootNorm = normalizePath(candidate);
-                return wanted === rootNorm || wanted.startsWith(`${rootNorm}/`);
-            })
-            .sort((a, b) => normalizePath(b).length - normalizePath(a).length);
-
-        return owningRoots[0] || null;
-    };
+    /** 找到包含目标路径的根目录（按路径前缀匹配，取最长者；后端归一化匹配） */
+    const findOwningRootPath = (targetPath: string): Promise<string | null> =>
+        findDeepestOwningRoot(toRootPaths(folderTree.value), targetPath);
 
     /** 当前播放曲目是否可在本视图定位（已在列表中，或可切到其所在文件夹） */
-    const canLocateCurrentSong = computed<boolean>(() => {
-        const playingPath = currentSong.value?.path;
-        if (!playingPath) return false;
-        if (currentSongIndex.value >= 0) return true;
-        if (currentViewMode.value !== "folder") return false;
+    const canLocateCurrentSong = ref(false);
 
-        const owningRoot = findOwningRootPath(getParentFolderPath(playingPath));
-        return owningRoot !== null;
-    });
+    // 归属根查询经 IPC 异步返回；token 防止过期结果覆盖新状态
+    let locateScopeToken = 0;
+
+    watch(
+        [currentSongIndex, () => currentSong.value?.path, currentViewMode, folderTree],
+        async ([songIndex, playingPath]) => {
+            const token = ++locateScopeToken;
+
+            if (!playingPath) {
+                canLocateCurrentSong.value = false;
+                return;
+            }
+            if (songIndex >= 0) {
+                canLocateCurrentSong.value = true;
+                return;
+            }
+            if (currentViewMode.value !== "folder") {
+                canLocateCurrentSong.value = false;
+                return;
+            }
+
+            const owningRoot = await findOwningRootPath(
+                getParentFolderPath(playingPath),
+            );
+            if (token !== locateScopeToken) return;
+            canLocateCurrentSong.value = owningRoot !== null;
+        },
+        { immediate: true },
+    );
 
     const isCurrentSongVisibleInViewport = computed(() => {
         if (currentSongIndex.value < 0) return false;
@@ -317,16 +330,16 @@ export function useSongTableAlphabetIndex(
         }
 
         // 不在当前列表：仅 folder 视图且目标文件夹归属某个根目录时才跨目录定位
-        const canSwitchToFolder =
-            currentViewMode.value === "folder" &&
-            findOwningRootPath(getParentFolderPath(playingPath)) !== null;
-        if (!canSwitchToFolder) {
+        const owningRootForSwitch = currentViewMode.value === "folder"
+            ? await findOwningRootPath(getParentFolderPath(playingPath))
+            : null;
+        if (!owningRootForSwitch) {
             armAutoHide();
             return;
         }
 
         const targetFolderPath = getParentFolderPath(playingPath);
-        const targetRootPath = findOwningRootPath(targetFolderPath) as string;
+        const targetRootPath = owningRootForSwitch;
 
         activeRootPath.value = targetRootPath;
         currentFolderFilter.value = targetFolderPath;

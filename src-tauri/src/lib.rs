@@ -7,6 +7,7 @@ pub use xianyu_core::error; pub use xianyu_core::filename_meta; mod fallback_ver
 mod host_crypto; mod install_language; mod music; mod netproxy;
 mod player; mod plugin_host; mod plugins; mod power; mod process_priority;
 mod recognize; mod remote; mod security; mod skin_image;
+mod path_queries;
 mod sleep_timer; mod statistics; mod system_audio; mod system_fonts;
 mod system_info; mod taskbar; mod toolbox; mod tray_capture; mod tray_daemon; mod webview_settings;
 mod window_boundary; mod window_foreground; mod window_fullscreen; mod window_material; mod window_theme;
@@ -501,6 +502,10 @@ pub fn run() { // run
             get_song_cover, // 实现
             read_cover_data_url, // 实现
             extract_palette,
+            path_queries::filter_paths_within_folder,
+            path_queries::find_deepest_owning_root,
+            path_queries::path_within_root_scope,
+            path_queries::path_under_root_prefix,
             authed_request,
             save_auth_credentials,
             get_auth_credentials,
