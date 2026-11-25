@@ -30,7 +30,7 @@ import type {
   PluginAlbumResult,
   PluginArtistResult,
 } from './pluginCatalogShared';
-import { hostPlaylistDetailOrNull, type PlaylistImportResult } from './playlistImportBase';
+import { hostPlaylistDetailOrNull, parseLink, type PlaylistImportResult } from './playlistImportBase';
 import { isQishuiKeyword, isQishuiSource } from './playlistImportQishui';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -333,20 +333,34 @@ export async function pluginPlaylistSearch(
       }
     }
     if (linkLike && typeof inst.instance.importMusicSheet === 'function') {
+      // 先用应用侧 parseLink 规范化成纯歌单 ID 再传给插件：部分插件（如
+      // BakaMusic QQ[T]）的 URL 正则有缺陷（playlist.html?id=... 解析不出，
+      // 只有 &id= 才命中），直接传 URL 会导致把链接当搜索词、导入到无关歌单。
+      // 插件普遍支持纯数字 ID（musicfree 标准协议）。
+      const importKeyword = parseLink(keyword)?.playlistId ?? keyword;
       try {
-        const direct = await inst.instance.importMusicSheet(keyword);
-        if (Array.isArray(direct) && direct.length > 0) {
-          const title = `${source.name}收藏夹`;
+        const direct = await inst.instance.importMusicSheet(importKeyword);
+        // 两种返回形态兼容：数组（musicfree 标准，无歌单元数据）或
+        // 对象（带 title/musicList，如 BakaMusic QQ[T]），对象可拿到真实歌单名
+        const tracks: PluginSearchResult[] | undefined = Array.isArray(direct)
+          ? direct
+          : (direct?.musicList as PluginSearchResult[] | undefined);
+        if (tracks && tracks.length > 0) {
+          const metaTitle = (!Array.isArray(direct) && typeof direct?.title === 'string' && direct.title.trim())
+            || '';
+          const title = metaTitle || `${source.name}歌单`;
           return [{
-            id: keyword,
+            id: importKeyword,
             title,
-            coverUrl: await extractCoverUrl(direct[0]),
-            trackCount: direct.length,
-            artist: '',
+            coverUrl: (!Array.isArray(direct) && typeof direct?.artwork === 'string' && direct.artwork)
+              ? direct.artwork
+              : await extractCoverUrl(tracks[0]),
+            trackCount: (!Array.isArray(direct) && Number(direct?.worksNum)) || tracks.length,
+            artist: (!Array.isArray(direct) && typeof direct?.artist === 'string' && direct.artist) || '',
             platform: source.name,
-            platformId: keyword,
+            platformId: importKeyword,
             pluginId: source.id,
-            rawData: { id: keyword, title, _importedTracks: direct },
+            rawData: { id: importKeyword, title, _importedTracks: tracks },
           }];
         }
       } catch (e: any) {
