@@ -196,7 +196,7 @@ const songTableRef = ref<any>(null);
 
 // lx 音源插件（format='lx'）与 musicfree 插件均可参与日推
 const hasPlugin = () =>
-  getStoredPlugins().some(p => p.enabled && (p.format === 'musicfree' || p.format === 'lx'));
+  getStoredPlugins().some(p => p.enabled && (p.format === 'musicfree' || p.format === 'baka' || p.format === 'lx'));
 
 // ==================== 展示文案 ====================
 const dateLabel = computed(() => {
@@ -294,7 +294,7 @@ async function backfillMissingCovers() {
   const token = loadToken;
   const neteasePlugins = new Map<string, PluginSource>();
   for (const p of getStoredPlugins()) {
-    if (p.enabled && p.format === 'musicfree' && isNeteaseSource(p)) {
+    if (p.enabled && (p.format === 'musicfree' || p.format === 'baka') && isNeteaseSource(p)) {
       neteasePlugins.set(p.name, p);
     }
   }

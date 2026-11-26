@@ -59,7 +59,7 @@ function pluginMatchScore(
   platform: PlatformDescriptor,
   format?: SupportedPluginBackupFormat,
 ): number {
-  if (plugin.format !== 'musicfree' && plugin.format !== 'anime' && plugin.format !== 'lx') return 0;
+  if (plugin.format !== 'musicfree' && plugin.format !== 'baka' && plugin.format !== 'anime' && plugin.format !== 'lx') return 0;
 
   if (plugin.format === 'lx' && platform.lxSource && plugin.sources.includes(platform.lxSource)) {
     return format === 'lxmusic' ? 150 : 120;
@@ -95,7 +95,7 @@ export function findMatchingPlugin(
       if (a.score !== b.score) return b.score - a.score;
       if (a.plugin.format !== b.plugin.format) {
         if (format === 'lxmusic') return a.plugin.format === 'lx' ? -1 : 1;
-        return a.plugin.format === 'musicfree' ? -1 : 1;
+        return (a.plugin.format === 'musicfree' || a.plugin.format === 'baka') ? -1 : 1;
       }
       return (a.plugin.sortOrder ?? 0) - (b.plugin.sortOrder ?? 0);
     })[0]?.plugin ?? null;

@@ -40,7 +40,7 @@ export function useSearchSources() {
       .map(({ p }) => p);
     const items: SourceItem[] = [];
     for (const p of plugins) {
-      if (p.format === 'musicfree') {
+      if (p.format === 'musicfree' || p.format === 'baka') {
         items.push({ id: p.id, name: p.name, type: 'musicfree', source: p });
       } else if (p.format === 'anime') {
         items.push({ id: p.id, name: p.name, type: 'anime', source: p });

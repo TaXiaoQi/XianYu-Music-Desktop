@@ -43,6 +43,12 @@ export class BakaPluginCore {
       return false;
     }
 
+    // 一等 baka 格式优先（安装时按 author 写入，不依赖运行时 author 字符串）
+    if (source.format === 'baka') {
+      this._bakaPluginCache.set(source.id, true);
+      return true;
+    }
+
     const author = (source.author || '').toLowerCase();
 
     if (author.includes('toskysun')) {

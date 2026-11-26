@@ -126,7 +126,7 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
       log(`[checkPluginUpdate] ${source.name} 订阅声明新版本但下载新脚本失败`);
     }
 
-    if (source.format === 'musicfree') {
+    if (source.format === 'musicfree' || source.format === 'baka') {
       const inst = await ensurePluginInstance(source);
       const instanceSrcUrl = (inst?.instance as any)?.srcUrl as string | undefined;
 
@@ -198,7 +198,7 @@ export function createPluginUpdateChecker(deps: PluginUpdateServiceDeps) {
     }
 
     let newVersion = '';
-    if (source.format === 'musicfree' || source.format === 'anime') {
+    if (source.format === 'musicfree' || source.format === 'baka' || source.format === 'anime') {
       // anime 的 meta.version 同样命中 `version: "x.y.z"` 提取规则
       newVersion = extractMusicFreeVersion(newScript) || '';
     } else if (source.format === 'lx') {

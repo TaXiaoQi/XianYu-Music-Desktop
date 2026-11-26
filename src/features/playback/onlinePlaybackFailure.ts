@@ -192,7 +192,7 @@ export function createOnlinePlaybackFailureController(
     console.info(`[Audio] 重搜换源: ${song.name}`);
     try {
       const plugins = getStoredPlugins()
-        .filter(p => p.enabled && p.format === 'musicfree' && p.id !== failedPluginId);
+        .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'baka') && p.id !== failedPluginId);
       const playable: PluginSource[] = [];
       for (const p of plugins) {
         try {

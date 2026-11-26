@@ -882,7 +882,11 @@ export interface SaveArtistAvatarResponse {
 }
 
 // ==================== 插件系统类型 ==================== 
-type PluginFormat = 'lx' | 'musicfree' | 'anime' | 'unknown';
+type PluginFormat = 'lx' | 'musicfree' | 'baka' | 'anime' | 'unknown';
+/** MF 兼容格式：走 MusicFree 沙箱加载/搜索/导入等通用能力的格式集合 */
+export const MF_COMPATIBLE_FORMATS: PluginFormat[] = ['musicfree', 'baka', 'anime'];
+export const isMfCompatibleFormat = (format: PluginFormat | string | undefined): boolean =>
+  format === 'musicfree' || format === 'baka' || format === 'anime';
 export interface PluginSource {
   id: string;
   name: string;

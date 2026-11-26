@@ -350,8 +350,8 @@ export function usePluginInstall(options: UsePluginInstallOptions) {
 
     addPluginSource(source);
     refreshPluginList();
-    let isBaka = false;
-    if (source.format === 'musicfree') {
+    let isBaka = source.format === 'baka';
+    if (!isBaka && source.format === 'musicfree') {
       try {
         isBaka = await isBakaPlugin(source);
       } catch { /* 识别失败时按 MusicFree 展示，不影响安装成功 */ }

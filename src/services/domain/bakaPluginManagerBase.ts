@@ -648,6 +648,11 @@ export const hasCommentApi = (meta: any): boolean => {
 
 export const NON_BAKA_PLUGIN_AUTHORS = ['时迁酱'];
 
+/** BakaMusic 系插件 author 特征：安装时据此写入 pluginKind='baka' 显式标记 */
+export const BAKA_PLUGIN_AUTHOR = 'toskysun';
+export const isBakaPluginAuthor = (author?: string): boolean =>
+  (author ?? '').toLowerCase().includes(BAKA_PLUGIN_AUTHOR);
+
 // ==================== 歌词格式检测 ====================
 
 export function detectLyricFormat(content: string): BakaLyricFormat {

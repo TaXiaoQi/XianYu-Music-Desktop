@@ -338,7 +338,7 @@ export async function executeDailyRecommend(
   localSongs: LibrarySong[] = [],
 ): Promise<DailyRecommendItem[]> {
   const enabled = getStoredPlugins()
-    .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'lx'))
+    .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'baka' || p.format === 'lx'))
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const probeKeyword = algorithm.strategies.find(s => s.queries.length > 0)?.queries[0] ?? '热门音乐';
   const alive = await Promise.all(enabled.map(p => probePluginAlive(p, probeKeyword)));

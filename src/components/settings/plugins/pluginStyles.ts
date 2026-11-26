@@ -20,6 +20,15 @@ export function pluginColorClasses(format: PluginSource['format'], isBaka = fals
       label: 'anime',
     };
   }
+  if (format === 'baka') {
+    return {
+      iconBg: 'bg-gradient-to-br from-blue-500/12 to-indigo-400/12',
+      iconText: 'text-blue-600 dark:text-blue-400',
+      toggle: 'bg-blue-500',
+      tagClass: 'settings-plugin-tag--baka',
+      label: 'BakaMusic',
+    };
+  }
   if (format === 'musicfree') {
     if (isBaka) {
       return {

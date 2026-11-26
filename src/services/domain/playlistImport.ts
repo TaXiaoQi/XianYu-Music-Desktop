@@ -88,7 +88,7 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
           });
         }
       }
-    } else if (p.format === 'musicfree' || p.format === 'anime') {
+    } else if (p.format === 'musicfree' || p.format === 'baka' || p.format === 'anime') {
       // am 插件歌单导入走 importPlaylist 动作，与 musicfree 同一导入通道
       const key = `mf_${p.id}`;
       if (seenKeys.has(key)) continue;
@@ -238,7 +238,7 @@ async function importPlaylistExactFromPlugins(
   keyword: string,
 ): Promise<PlaylistImportResult> {
   const plugins = getStoredPlugins().filter(
-    p => p.enabled && (p.format === 'musicfree' || p.format === 'anime'),
+    p => p.enabled && (p.format === 'musicfree' || p.format === 'baka' || p.format === 'anime'),
   );
   // 纯数字 ID 存在跨平台歧义（酷我/网易可能恰好存在同 ID 的同名歌单，
   // 如「幻空喜欢的音乐」酷狗/酷我各有一份），按宿主兜底顺序
@@ -274,7 +274,7 @@ async function importPlaylistFromMatchingPlugins(
   const plugins = getStoredPlugins().filter(
     p =>
       p.enabled &&
-      (p.format === 'musicfree' || p.format === 'anime') &&
+      (p.format === 'musicfree' || p.format === 'baka' || p.format === 'anime') &&
       sourceMatchesHostPlatform(p, source as Parameters<typeof sourceMatchesHostPlatform>[1]),
   );
   for (const p of plugins) {

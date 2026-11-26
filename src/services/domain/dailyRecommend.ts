@@ -16,11 +16,11 @@ import { DailyRecommendError } from './dailyRecommendTypes';
 import type { DailyRecommendResult } from './dailyRecommendTypes';
 import type { LibrarySong } from '../../types';
 
-// 候选池插件指纹：enabled 且 format 为 musicfree/lx 的插件 id 集合（排序后拼接）。
+// 候选池插件指纹：enabled 且 format 为 musicfree/baka/lx 的插件 id 集合（排序后拼接）。
 // 插件装/卸/启停都会改变指纹 → 缓存失效重新生成，对齐移动端行为
 function pluginFingerprint(): string {
   return getStoredPlugins()
-    .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'lx'))
+    .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'baka' || p.format === 'lx'))
     .map(p => p.id)
     .sort()
     .join(',');

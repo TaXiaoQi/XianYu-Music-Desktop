@@ -30,9 +30,14 @@ export function usePluginBadges() {
       const bakaSet = new Set<string>();
       await Promise.all(
         allPlugins
-          .filter((p) => p.format === 'musicfree')
+          .filter((p) => p.format === 'musicfree' || p.format === 'baka')
           .map(async (p) => {
             try {
+              // baka 格式直接认；musicfree 格式走 author/启发式识别（存量插件）
+              if (p.format === 'baka') {
+                bakaSet.add(p.id);
+                return;
+              }
               if (await isBakaPlugin(p)) bakaSet.add(p.id);
             } catch { /* ignore */ }
           }),

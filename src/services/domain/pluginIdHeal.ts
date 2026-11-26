@@ -45,7 +45,7 @@ const findHealedPluginForSong = (
     if (hit) return hit;
   }
 
-  const candidates = plugins.filter(p => (p.format === 'musicfree' || p.format === 'anime') && p.enabled);
+  const candidates = plugins.filter(p => (p.format === 'musicfree' || p.format === 'baka' || p.format === 'anime') && p.enabled);
   if (candidates.length === 0) return null;
 
   const platformLabel = searchResult?.platform

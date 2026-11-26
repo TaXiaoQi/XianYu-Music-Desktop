@@ -26,6 +26,7 @@ import { pluginApi } from '../tauri/pluginApi';
 import { fetchWithTimeout } from './pluginFetch';
 import { readCachedHttpScript, writeCachedHttpScript } from './pluginScriptCache';
 import { BakaPluginManager } from './bakaPluginManager';
+import { isBakaPluginAuthor } from './bakaPluginManagerBase';
 
 // ==================== 插件加载（与 MusicFree Plugin.mountPlugin() 完全一致）====================
 
@@ -93,7 +94,8 @@ export async function loadPluginFromScript(
         const source: import('../../types').PluginSource = {
           id: hash,
           name: metadata.platform,
-          format: 'musicfree',
+          // BakaMusic 系插件（Toskysun）：一等 baka 格式，走 BakaPluginManager 专用处理
+          format: isBakaPluginAuthor(metadata.author) ? 'baka' : 'musicfree',
           version: metadata.version || '',
           author: metadata.author || '',
           description: metadata.description || '',

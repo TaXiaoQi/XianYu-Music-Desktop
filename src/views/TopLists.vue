@@ -166,7 +166,7 @@ async function refreshSourceList(silent = false) {
     // getTopLists，不支持的平台返回空列表走「暂无榜单」空态）；
     // lx 插件由 lx_toplist 兜底模块判定（sources 与 wy/kg/kw/tx 有交集）
     const plugins = getStoredPlugins()
-      .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'anime' || p.format === 'lx'))
+      .filter(p => p.enabled && (p.format === 'musicfree' || p.format === 'baka' || p.format === 'anime' || p.format === 'lx'))
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
     const results = await Promise.all(plugins.map(async (p) => {
