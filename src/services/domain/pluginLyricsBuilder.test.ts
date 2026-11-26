@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildBakaMfLyricsRaw } from './bakaMfLyricsBuilder';
+import { buildPluginLyricsRaw } from './pluginLyricsBuilder';
 
-describe('buildBakaMfLyricsRaw', () => {
+describe('buildPluginLyricsRaw', () => {
   it('将酷狗 KRC 逐字歌词转换为 Enhanced LRC', () => {
-    const result = buildBakaMfLyricsRaw({
+    const result = buildPluginLyricsRaw({
       lyric: '[0,420]周(0,52)杰(52,52)伦 (104,52)- (156,52)红(208,52)尘(260,52)客(312,52)栈(364,52)',
     });
 
@@ -12,7 +12,7 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('JOOX KRC 词偏移为绝对时间，词时间不再翻倍', () => {
-    const result = buildBakaMfLyricsRaw({
+    const result = buildPluginLyricsRaw({
       lyric: [
         '[0,1000](0,677)你(677,677)還',
         '[8130,8370](8130,1626)詞(9756,1626)：(11382,1626)薛(13008,1626)之(14634,1626)謙',
@@ -28,7 +28,7 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('JOOX KRC 多行时仍能识别绝对偏移，不因全局正则 lastIndex 残留而漏判', () => {
-    const result = buildBakaMfLyricsRaw({
+    const result = buildPluginLyricsRaw({
       lyric: [
         '[0,1000](0,640)有(640,640)何',
         '[5760,1000](5760,1440)詞(7200,1440)：(8640,1440)許(10080,1440)嵩',
@@ -50,7 +50,7 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('标准酷狗 KRC（非零行时间的相对偏移）保持相对计算', () => {
-    const result = buildBakaMfLyricsRaw({
+    const result = buildPluginLyricsRaw({
       lyric: [
         '[10000,5000](0,500)你(500,500)好',
         '[16000,5000](0,500)我(500,500)好',
@@ -66,7 +66,7 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('同一份文件里绝对偏移(JOOX)与相对偏移(酷狗)逐行各自正确，不再被全局布尔一锤定音', () => {
-    const result = buildBakaMfLyricsRaw({
+    const result = buildPluginLyricsRaw({
       lyric: [
         '[0,1000](0,640)有(640,640)何',
         '[5760,1000](5760,1440)詞(7200,1440)：(8640,1440)許(10080,1440)嵩',
@@ -84,7 +84,7 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('标准 lxlyric（首词偏移≈0）行时间戳保持不变', () => {
-    const result = buildBakaMfLyricsRaw({
+    const result = buildPluginLyricsRaw({
       lxlyric: '[00:10.000]<0,500>你<500,500>好',
     });
 
@@ -92,7 +92,7 @@ describe('buildBakaMfLyricsRaw', () => {
   });
 
   it('保留普通 LRC 歌词', () => {
-    const result = buildBakaMfLyricsRaw({
+    const result = buildPluginLyricsRaw({
       lyric: '[00:20.80]琴键上透着光',
     });
 

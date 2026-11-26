@@ -366,7 +366,7 @@ function isKugouKrcLike(content: string): boolean {
   return /^\[\d+,\d+].*\(-?\d+,-?\d+(?:,-?\d+)?\)/m.test(content);
 }
 
-export interface BakaMfLyricsPayload {
+export interface PluginLyricsPayload {
   ttml?: string | null;
   lyric?: string | null;
   tlyric?: string | null;
@@ -401,7 +401,7 @@ export async function decryptPluginLyricText(text: string): Promise<string | nul
   }
 }
 
-export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
+export function buildPluginLyricsRaw(payload: PluginLyricsPayload): string {
   const parts: string[] = [];
 
   const ttml = payload.ttml?.trim();

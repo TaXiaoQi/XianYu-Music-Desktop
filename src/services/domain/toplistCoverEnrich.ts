@@ -1,5 +1,5 @@
 import type { PluginPlaylistSearchResult, PluginSource } from '../../types';
-import { pluginGetPlaylistDetail } from './pluginCatalogDetails';
+import { pluginGetPlaylistDetail } from './pluginDispatch';
 
 // 榜单封面回填：部分 MF 插件的榜单 API 不返回封面（如 bilibili 每周必看/排行榜
 // 只有标题），插件只能给所有条目塞同一张静态图标；App 侧按「榜单第一页首个

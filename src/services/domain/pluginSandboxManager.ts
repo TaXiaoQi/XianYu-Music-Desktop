@@ -209,9 +209,11 @@ function authBanWaitLabel(until: number): string {
   return `${Math.ceil(secs / 60)} 分钟`;
 }
 
-// 三端统一鉴权失效关键词（同 downloadQualityProbe.AUTH_FAIL_RE / 移动端 isAuthFailureMessage）
+// 三端统一鉴权失效关键词（同移动端 isAuthFailureMessage）
+export const SANDBOX_AUTH_FAIL_RE = /API密钥|API\s*key|api[_\s-]?secret|\b40[13]\b|卡密|鉴权失效已临时熔断/i;
+
 function isAuthError(msg: string): boolean {
-  return /API密钥|API\s*key|api[_\s-]?secret|卡密|\b40[13]\b|鉴权失效已临时熔断/i.test(msg);
+  return SANDBOX_AUTH_FAIL_RE.test(msg);
 }
 
 function isPluginAuthBanned(pluginId: string): boolean {

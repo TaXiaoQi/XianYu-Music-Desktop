@@ -21,13 +21,11 @@ import {
   qqFillSongDurations,
   qqHostAlbumSongsFallback,
 } from './qqHostSearchFallback';
-import { BakaPluginManager } from './bakaPluginManager';
-import { isBilibiliSource, log } from './pluginEngineBase';
+import { log } from './pluginEngineBase';
 import { ensurePluginInstance } from './pluginEngineInstance';
 import {
   retryOnEmpty,
-  extractArtistDescription,
-  catalogLog,
+  pickDefaultRecommendTag,
 } from './pluginCatalogShared';
 import { hostPlaylistDetailOrNull } from './playlistImportBase';
 import type { PlaylistImportResult } from './playlistImportBase';
@@ -50,7 +48,7 @@ const LX_TOPLIST_SOURCES = ['wy', 'kg', 'kw', 'tx'];
 export const lxToplistSourcesOf = (source: PluginSource, lxKey?: string): string[] =>
   (source.sources ?? []).filter((s) => LX_TOPLIST_SOURCES.includes(s) && (!lxKey || s === lxKey));
 
-export async function pluginGetTopLists(source: PluginSource, lxKey?: string): Promise<PluginPlaylistSearchResult[]> {
+export async function mfGetTopLists(source: PluginSource, lxKey?: string): Promise<PluginPlaylistSearchResult[]> {
   if (source.format === 'lx') {
     const sources = lxToplistSourcesOf(source, lxKey);
     if (sources.length === 0) return [];
@@ -68,9 +66,6 @@ export async function pluginGetTopLists(source: PluginSource, lxKey?: string): P
   if (!inst) return [];
 
   try {
-    if (await BakaPluginManager.isBakaPlugin(source)) {
-      return BakaPluginManager.getTopLists(source);
-    }
     if (typeof inst.instance.getTopLists !== 'function') return [];
     const topLists = await inst.instance.getTopLists();
     return await flattenTopListCategories(topLists, source);
@@ -96,34 +91,11 @@ export async function pluginSupportsRecommendSheets(source: PluginSource): Promi
   return !!inst && typeof inst.instance.getRecommendSheetTags === 'function';
 }
 
-// MF 插件 tags 出参取默认标签：defaultTag → tags[0]（旧约定）→
-// pinned 首个（MusicFree 标准形态 {pinned, data}，酷我[T]/JOOX/网易云/bilibili
-// 等社区插件）→ 首分组首标签兜底；标签须原样回传（如酷我 pinned.digest 决定
-// 取数端点），无可选标签传 null 交插件自身默认。社区插件普遍未对 null 判空
-// （tag.id 直接抛错），绝不能在标签可得时把 null 传下去
-function pickDefaultRecommendTag(tags: any): any {
-  if (!tags || typeof tags !== 'object') return null;
-  if (tags.defaultTag) return tags.defaultTag;
-  if (Array.isArray(tags.tags) && tags.tags.length > 0) return tags.tags[0];
-  const candidates: any[] = [
-    ...(Array.isArray(tags.pinned) ? tags.pinned : []),
-    ...(Array.isArray(tags.data) && tags.data.length > 0 && tags.data[0] && typeof tags.data[0] === 'object'
-      ? tags.data[0].data || []
-      : []),
-  ];
-  for (const candidate of candidates) {
-    if (candidate && typeof candidate === 'object' && candidate.id != null) return candidate;
-  }
-  return null;
-}
+// MF 插件 tags 出参取默认标签：已上移 pluginCatalogShared（mf/baka 两侧共用）
 
-export async function pluginGetRecommendSheets(source: PluginSource, lxKey?: string): Promise<PluginPlaylistSearchResult[]> {
+export async function mfGetRecommendSheets(source: PluginSource, lxKey?: string): Promise<PluginPlaylistSearchResult[]> {
   if (source.format === 'lx') return pluginLxRecommendSheets(source, lxKey);
   try {
-    if (await BakaPluginManager.isBakaPlugin(source)) {
-      const tag = pickDefaultRecommendTag(await BakaPluginManager.getRecommendSheetTags(source));
-      return await BakaPluginManager.getRecommendSheetsByTag(source, tag, 1);
-    }
     const inst = await ensurePluginInstance(source);
     if (!inst) return [];
     let tag: any = null;
@@ -216,15 +188,14 @@ async function pluginLxRecommendSheets(source: PluginSource, lxKey?: string): Pr
 
 // ==================== 插件歌单详情 ====================
 
-async function pluginGetPlaylistDetailInner(
+export async function mfPlaylistDetailInner(
   source: PluginSource,
   sheetItem: any,
   page: number = 1,
   // list 常规为 PluginSearchResult[]；LX 榜单分支返回 lx_search 同构条目（由调用方按引擎区分消费）
 ): Promise<{ list: any[]; isEnd?: boolean }> {
-  // 精确导入的合成歌单（_importedTracks）直接返回导入曲目，必须放在
-  // Baka 分支之前：Baka 插件对合成 raw 会落到自己的详情分页查询，
-  // 把全量数据截断成单页
+  // 精确导入的合成歌单（_importedTracks）直接返回导入曲目（pluginDispatch 分发层
+  // 已先于 baka 分支拦截，此处兜底二次防御）
   if (Array.isArray(sheetItem?._importedTracks) && sheetItem._importedTracks.length > 0) {
     if (page === 1) {
       const list = sheetItem._importedTracks;
@@ -245,13 +216,6 @@ async function pluginGetPlaylistDetailInner(
       }
     }
     return { list: [], isEnd: true };
-  }
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    await ensurePluginInstance(source);
-    if (isBilibiliSource(source)) {
-      return BakaPluginManager.getBilibiliDetail(source, sheetItem, page);
-    }
-    return BakaPluginManager.getPlaylistDetail(source, sheetItem, page);
   }
   const inst = await ensurePluginInstance(source);
   if (!inst) return { list: [] };
@@ -451,7 +415,7 @@ async function hostFullSheetIfTruncated(
   return null;
 }
 
-async function withQqDurations(
+export async function withQqDurations(
   source: PluginSource,
   results: PluginSearchResult[],
 ): Promise<PluginSearchResult[]> {
@@ -460,21 +424,22 @@ async function withQqDurations(
   return qqFillSongDurations(source, (inst?.instance as any)?.platform, results);
 }
 
-export async function pluginGetPlaylistDetail(
+// mf 引擎歌单详情（公共入口经 pluginDispatch 按 format 分发）
+export async function mfGetPlaylistDetail(
   source: PluginSource,
   sheetItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
-  const { list } = await pluginGetPlaylistDetailInner(source, sheetItem, page);
+  const { list } = await mfPlaylistDetailInner(source, sheetItem, page);
   return withQqDurations(source, list);
 }
 
-export async function pluginGetPlaylistDetailWithEnd(
+export async function mfGetPlaylistDetailWithEnd(
   source: PluginSource,
   sheetItem: any,
   page: number = 1,
 ): Promise<{ songs: PluginSearchResult[]; isEnd?: boolean }> {
-  const { list, isEnd } = await pluginGetPlaylistDetailInner(source, sheetItem, page);
+  const { list, isEnd } = await mfPlaylistDetailInner(source, sheetItem, page);
   return { songs: await withQqDurations(source, list), isEnd };
 }
 
@@ -501,18 +466,11 @@ export async function pluginImportMusicSheet(
 
 // ==================== 歌手作品（歌曲） ====================
 
-async function pluginGetArtistWorksInner(
+export async function mfArtistWorksInner(
   source: PluginSource,
   artistItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    await ensurePluginInstance(source);
-    if (isBilibiliSource(source)) {
-      return BakaPluginManager.getBilibiliArtistWorks(source, artistItem, page, 'music');
-    }
-    return BakaPluginManager.getArtistWorks(source, artistItem, page, 'music');
-  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -555,27 +513,11 @@ async function pluginGetArtistWorksInner(
 
 // ==================== 歌手作品（专辑） ====================
 
-export async function pluginGetArtistAlbums(
+export async function mfGetArtistAlbums(
   source: PluginSource,
   artistItem: any,
   page: number = 1,
 ): Promise<PluginAlbumResult[]> {
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    await ensurePluginInstance(source);
-    const results = isBilibiliSource(source)
-      ? await BakaPluginManager.getBilibiliArtistWorks(source, artistItem, page, 'album')
-      : await BakaPluginManager.getArtistWorks(source, artistItem, page, 'album');
-    return results.map((item: any) => ({
-      id: item.id || '',
-      name: item.title || '',
-      artist: item.artist || '',
-      coverUrl: item.coverUrl || '',
-      platform: item.platform || source.name,
-      platformId: item.id || '',
-      pluginId: source.id,
-      rawData: item.rawData,
-    }));
-  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -614,48 +556,33 @@ export async function pluginGetArtistAlbums(
   }
 }
 
-export async function pluginGetArtistInfo(
+// mf 引擎歌手简介原始信息（简介提取与日志由 pluginDispatch 统一处理）
+export async function mfGetArtistInfoRaw(
   source: PluginSource,
   artistItem: any,
-): Promise<string> {
+): Promise<any | null> {
   if (!source || !artistItem) return '';
-  let info: any = null;
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    await ensurePluginInstance(source);
-    info = await BakaPluginManager.getArtistInfo(source, artistItem);
-  } else {
-    const inst = await ensurePluginInstance(source);
-    if (!inst) return '';
-    try {
-      const fn = inst.instance.getArtistInfo;
-      if (typeof fn === 'function') {
-        const p = fn(artistItem);
-        info = p && typeof p.catch === 'function' ? (await p.catch(() => null)) : p;
-      }
-    } catch {
-      info = null;
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return '';
+  try {
+    const fn = inst.instance.getArtistInfo;
+    if (typeof fn === 'function') {
+      const p = fn(artistItem);
+      return p && typeof p.catch === 'function' ? (await p.catch(() => null)) : p;
     }
+  } catch {
+    return null;
   }
-  const desc = extractArtistDescription(info);
-  catalogLog(`[${source.name}] getArtistInfo → ${desc ? `简介 ${desc.length} 字符` : '无简介'}`);
-  return desc;
+  return null;
 }
 
 // ==================== 专辑详情 ====================
 
-async function pluginGetAlbumSongsInner(
+export async function mfGetAlbumSongsInner(
   source: PluginSource,
   albumItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    await ensurePluginInstance(source);
-    if (isBilibiliSource(source)) {
-      const { list } = await BakaPluginManager.getBilibiliDetail(source, albumItem, page);
-      return list;
-    }
-    return BakaPluginManager.getAlbumSongs(source, albumItem, page);
-  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -716,31 +643,28 @@ async function pluginGetAlbumSongsInner(
   }
 }
 
-// ==================== 对外一次性取数入口（含 QQ 时长补齐） ====================
+// ==================== 对外一次性取数入口（含 QQ 时长补齐；公共入口经 pluginDispatch 分发） ====================
 
-export async function pluginGetArtistWorks(
+export async function mfGetArtistWorks(
   source: PluginSource,
   artistItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
-  return withQqDurations(source, await pluginGetArtistWorksInner(source, artistItem, page));
+  return withQqDurations(source, await mfArtistWorksInner(source, artistItem, page));
 }
 
-export async function pluginGetAlbumSongs(
+export async function mfGetAlbumSongs(
   source: PluginSource,
   albumItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
-  return withQqDurations(source, await pluginGetAlbumSongsInner(source, albumItem, page));
+  return withQqDurations(source, await mfGetAlbumSongsInner(source, albumItem, page));
 }
 
 // ==================== 音质 ====================
 
-export async function pluginGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
+export async function mfGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
   const inst = await ensurePluginInstance(source);
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    return BakaPluginManager.getSupportedQualities(source);
-  }
 
   const declared = inst?.instance.supportedQualities;
   if (Array.isArray(declared)) {

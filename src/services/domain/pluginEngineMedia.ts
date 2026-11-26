@@ -19,11 +19,9 @@ import {
   resetMediaItem,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
-import { buildBakaMfLyricsRaw, decryptPluginLyricText, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
+import { buildPluginLyricsRaw, decryptPluginLyricText, pluginLyricLooksEncrypted } from './pluginLyricsBuilder';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/mediaUrl';
-import { BakaPluginManager } from './bakaPluginManager';
 import { isQqMusicPluginSource, qqHostResolveMediaUrl } from './qqHostSearchFallback';
-import { fetchPlatformMusicComments } from './platformComments';
 import { pluginApi } from '../tauri/pluginApi';
 
 // ==================== 获取播放 URL（与 MusicFree PluginMethodsWrapper.getMediaSource 完全一致）====================
@@ -53,7 +51,9 @@ function buildGetMediaSourceDedupKey(
   return `${source.id}\u0001${songId}\u0001${quality}\u0001${fallbackBehavior}`;
 }
 
-export async function pluginGetMusicInfo(
+// ==================== mf 引擎播放 URL（仅 MusicFree 协议插件；baka 由 pluginDispatch 分发）====================
+
+export async function mfGetMusicInfo(
   source: PluginSource,
   item: PluginSearchResult,
   quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
@@ -94,10 +94,6 @@ async function runPluginGetMusicInfo(
   (globalThis as any).__lastPluginError = '';
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
-
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    return BakaPluginManager.getMediaSource(source, item, quality, fallbackBehavior, availableQualities);
-  }
 
   if (typeof inst.instance.getMediaSource !== 'function') {
     log(`[${source.name}] 无 getMediaSource 函数`);
@@ -304,7 +300,7 @@ async function runPluginGetMusicInfo(
   const actualQuality = inferActualQualityFromPluginResult(result, url, requestedSuccessQuality);
 
   const lyricsRaw = (ttml || lyric || tlyric || lxlyric || yrc || qrc || eslrc)
-    ? buildBakaMfLyricsRaw({ ttml, lyric, tlyric, lxlyric, yrc, qrc, eslrc })
+    ? buildPluginLyricsRaw({ ttml, lyric, tlyric, lxlyric, yrc, qrc, eslrc })
     : '';
 
   const headerKeys = Object.keys(headers);
@@ -325,22 +321,7 @@ async function runPluginGetMusicInfo(
   };
 }
 
-// ==================== Baka 插件播放 URL（独立方法，不与 MusicFree 共用）====================
-
-export async function isBakaPlugin(source: PluginSource): Promise<boolean> {
-  return BakaPluginManager.isBakaPlugin(source);
-}
-
-export async function pluginGetBakaMusicInfo(
-  source: PluginSource,
-  item: PluginSearchResult,
-  quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
-  fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
-  availableQualities: QualityKey[] | null = null,
-): Promise<PluginMusicInfo | null> {
-  await ensurePluginInstance(source);
-  return BakaPluginManager.getMediaSource(source, item, quality, fallbackBehavior, availableQualities);
-}
+// ==================== Baka 插件相关入口已迁移至 bakaPluginApi（经 pluginDispatch 分发）====================
 
 // ==================== 获取视频源（Baka 扩展 getMvSource，用于背景视频）====================
 
@@ -471,16 +452,12 @@ export async function pluginGetVideoSource(
 // ==================== 获取歌词（与 MusicFree PluginMethodsWrapper.getLyric 完全一致）====================
 
 
-export async function pluginGetLyric(
+export async function mfGetLyric(
   source: PluginSource,
   item: PluginSearchResult,
 ): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; ttml?: string; lyricsRaw?: string } | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
-
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    return BakaPluginManager.getLyric(source, item);
-  }
 
   try {
     if (typeof inst.instance.getLyric !== 'function') {
@@ -539,7 +516,7 @@ export async function pluginGetLyric(
       log(`[getLyric] ${source.name} rawLrc 为空, lrcSource keys: ${Object.keys(lrcSource).join(',')}`);
       return null;
     }
-    const lyricsRaw = buildBakaMfLyricsRaw({
+    const lyricsRaw = buildPluginLyricsRaw({
       ttml,
       lyric: rawLrc,
       tlyric: translation,
@@ -560,15 +537,10 @@ export async function pluginGetLyric(
 
 // ==================== 获取封面 ====================
 
-export async function pluginGetCover(
+export async function mfGetCover(
   source: PluginSource,
   item: PluginSearchResult,
 ): Promise<string | null> {
-  if (await BakaPluginManager.isBakaPlugin(source)) {
-    await ensurePluginInstance(source);
-    return BakaPluginManager.getCover(source, item);
-  }
-
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 
@@ -626,15 +598,4 @@ export async function pluginGetCover(
   }
 }
 
-// ==================== Baka 扩展：歌曲评论 ====================
-
-export async function pluginGetMusicComments(
-  source: PluginSource,
-  item: PluginSearchResult,
-  page: number = 1,
-): Promise<{ isEnd?: boolean; data?: any[] } | null> {
-  await ensurePluginInstance(source);
-  const result = await BakaPluginManager.getMusicComments(source, item, page);
-  if (result) return result;
-  return fetchPlatformMusicComments(source, item, page);
-}
+// ==================== Baka 扩展：歌曲评论（迁移至 bakaPluginApi + pluginDispatch 分发）====================

@@ -17,6 +17,10 @@ vi.mock('./qqHostSearchFallback', () => ({
   isQqMusicPluginSource: vi.fn(async () => false),
   qqFillSongDurations: vi.fn(async (_s: unknown, _p: unknown, r: unknown) => r),
   qqHostAlbumSongsFallback: vi.fn(async () => []),
+  qqHostSearchFallback: vi.fn(async () => []),
+  qqHostAlbumSearchFallback: vi.fn(async () => []),
+  qqHostResolveMediaUrl: vi.fn(async () => null),
+  isQqTrialMediaUrl: vi.fn(async () => false),
 }));
 vi.mock('./lxToplist', () => ({
   lxToplistFetchTopLists: vi.fn(async () => []),
@@ -43,7 +47,7 @@ vi.mock('./pluginEngine', () => ({
 
 import { ensurePluginInstance } from './pluginEngineInstance';
 import { playlistImportApi } from '../tauri/playlistImportApi';
-import { pluginGetPlaylistDetailWithEnd } from './pluginCatalogDetails';
+import { mfGetPlaylistDetailWithEnd } from './pluginCatalogDetails';
 
 const makeSource = (): PluginSource => ({
   id: 'src-1',
@@ -95,7 +99,7 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
     );
 
     const sheetItem = { id: '123456', title: '测试歌单' };
-    const { songs, isEnd } = await pluginGetPlaylistDetailWithEnd(makeSource(), sheetItem, 1);
+    const { songs, isEnd } = await mfGetPlaylistDetailWithEnd(makeSource(), sheetItem, 1);
 
     expect(isEnd).toBe(true);
     expect(songs).toHaveLength(100);
@@ -111,7 +115,7 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
       Promise.resolve({ isEnd: false, list: Array.from({ length: 30 }, (_, i) => makePluginSong(`P${page}-${i}`)) }));
     (ensurePluginInstance as ReturnType<typeof vi.fn>).mockResolvedValue({ instance: { getMusicSheetInfo } });
 
-    const { songs, isEnd } = await pluginGetPlaylistDetailWithEnd(makeSource(), { id: '123' }, 1);
+    const { songs, isEnd } = await mfGetPlaylistDetailWithEnd(makeSource(), { id: '123' }, 1);
     expect(songs).toHaveLength(30);
     expect(isEnd).toBe(false);
     expect(playlistImportApi.fetchPlaylistFromSource).not.toHaveBeenCalled();
@@ -130,7 +134,7 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
       async (source: string) => (source === 'kg' ? { source: 'kg', songs: full, total: full.length, info: {} } : Promise.reject(new Error('nope'))),
     );
 
-    const { songs, isEnd } = await pluginGetPlaylistDetailWithEnd(makeSource(), { id: '666', trackCount: 80 }, 1);
+    const { songs, isEnd } = await mfGetPlaylistDetailWithEnd(makeSource(), { id: '666', trackCount: 80 }, 1);
     expect(isEnd).toBe(true);
     expect(songs).toHaveLength(80);
     expect((songs[0] as any).rawData.songmid).toBe('OLD000000');
@@ -157,7 +161,7 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
     (ensurePluginInstance as ReturnType<typeof vi.fn>).mockResolvedValue({ instance: { getMusicSheetInfo } });
 
     const sheetItem: any = { id: '999', title: '合并协议' };
-    const first = await pluginGetPlaylistDetailWithEnd(makeSource(), sheetItem, 1);
+    const first = await mfGetPlaylistDetailWithEnd(makeSource(), sheetItem, 1);
     expect(first.songs).toHaveLength(40);
     expect(first.isEnd).toBe(false);
     expect(Array.isArray(sheetItem._trackIds)).toBe(true);
@@ -169,7 +173,7 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
       Promise.resolve({ isEnd: true, list: Array.from({ length: 20 }, (_, i) => makePluginSong(`DONE${i}`)) }));
     (ensurePluginInstance as ReturnType<typeof vi.fn>).mockResolvedValue({ instance: { getMusicSheetInfo } });
 
-    await pluginGetPlaylistDetailWithEnd(makeSource(), { id: '123', trackCount: 20 }, 1);
+    await mfGetPlaylistDetailWithEnd(makeSource(), { id: '123', trackCount: 20 }, 1);
     expect(getMusicSheetInfo).toHaveBeenCalledTimes(1); // 只取首页
     expect(playlistImportApi.fetchPlaylistFromSource).not.toHaveBeenCalled();
   });
@@ -185,7 +189,7 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
       async () => ({ source: 'kg', songs: Array.from({ length: 200 }, (_, i) => makeHostSong(1000 + i)), total: 200, info: {} }),
     );
 
-    const { songs } = await pluginGetPlaylistDetailWithEnd(makeSource(), { id: '777' }, 1);
+    const { songs } = await mfGetPlaylistDetailWithEnd(makeSource(), { id: '777' }, 1);
     expect(songs).toHaveLength(31);
     expect((songs[0] as any).title).toContain('ONLY0');
   });
@@ -201,7 +205,7 @@ describe('pluginGetPlaylistDetailWithEnd 宿主歌单全量兜底', () => {
       async () => ({ source: 'kg', songs: Array.from({ length: 10 }, (_, i) => makeHostSong(i, i < page1Hashes.length ? page1Hashes[i] : undefined)), total: 10, info: {} }),
     );
 
-    const { songs } = await pluginGetPlaylistDetailWithEnd(makeSource(), { id: '888' }, 1);
+    const { songs } = await mfGetPlaylistDetailWithEnd(makeSource(), { id: '888' }, 1);
     expect(songs).toHaveLength(31);
   });
 });

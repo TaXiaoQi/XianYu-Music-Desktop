@@ -1,7 +1,7 @@
 import type { QualityKey, Song } from '../../types';
 import { ALL_QUALITY_KEYS } from '../../types';
-import { isBakaPlugin } from './pluginEngine';
-import { getLastSandboxError } from './pluginSandboxManager';
+import { pluginProbeAuthFailure } from './pluginEngine';
+import { getLastSandboxError, SANDBOX_AUTH_FAIL_RE } from './pluginSandboxManager';
 import {
   isDownloadableOnlineSong,
   isPluginSong,
@@ -20,8 +20,8 @@ export interface ProbeQualityResult {
   resolvedUrls: Partial<Record<QualityKey, string>>;
 }
 
-// 沙箱日志中的鉴权失效特征（API密钥/卡密/401/403/熔断）
-const AUTH_FAIL_RE = /API密钥|API\s*key|api[_\s-]?secret|\b40[13]\b|卡密|鉴权失效已临时熔断/i;
+// 沙箱日志中的鉴权失效特征（API密钥/卡密/401/403/熔断），三端统一关键词
+const AUTH_FAIL_RE = SANDBOX_AUTH_FAIL_RE;
 
 export interface ProbeQualityOptions {
   signal?: AbortSignal;
@@ -70,41 +70,10 @@ export async function probeDownloadableQualities(
 
   const resolvedUrls: Partial<Record<QualityKey, string>> = {};
 
-  if (isPlugin) {
-    const pluginCtx = ctx as PluginResolveContext;
-    if (await isBakaPlugin(pluginCtx.pluginSource)) {
-      const bakaTopKey = targets.reduce<QualityKey | null>(
-        (acc, k) => (acc === null || ALL_QUALITY_KEYS.indexOf(k) > ALL_QUALITY_KEYS.indexOf(acc) ? k : acc),
-        null,
-      );
-      if (bakaTopKey) {
-        const topResolved = await resolveUrl(bakaTopKey).catch(() => null);
-        if (topResolved?.url) {
-          if (topResolved.quality === bakaTopKey) {
-            resolvedUrls[topResolved.quality] = topResolved.url;
-            options?.onProgress?.(topResolved.url, topResolved.quality);
-            options?.onTrust?.(targets);
-            return { available: targets, resolvedUrls };
-          }
-          console.warn(`[Probe] Baka 插件最高档 ${bakaTopKey} 实际返回 ${topResolved.quality}，回退逐档实测`);
-        } else {
-          console.warn(`[Probe] Baka 插件最高档 ${bakaTopKey} 未解析到直链，回退逐档实测`);
-          // 最高档失败且沙箱日志显示鉴权失效时，逐档实测无意义，直接终止
-          const topSandboxErr = getLastSandboxError();
-          if (topSandboxErr && AUTH_FAIL_RE.test(topSandboxErr)) {
-            console.warn(`[Probe] 沙箱日志检测到鉴权失效，跳过逐档实测: ${topSandboxErr}`);
-            throw new Error(topSandboxErr);
-          }
-        }
-      } else {
-        return { available: targets, resolvedUrls };
-      }
-    }
-  }
-
-  // 通用顶层验证捷径（Baka 已在上面返回）：最高档实测 1 次，成功即信任全部声明档。
-  // 逐档实测是付费源请求量暴增主因，菜单改为信任声明、播放/下载链路逐档验证兜底；
-  // 实际返回档低于请求档（源端降级）时只信任不高于实际档的声明档，更高档仍逐档实测。
+  // 通用顶层验证捷径（所有插件格式一致，分发层按 format 路由）：最高档实测 1 次，
+  // 成功即信任全部声明档。逐档实测是付费源请求量暴增主因，菜单改为信任声明、
+  // 播放/下载链路逐档验证兜底；实际返回档低于请求档（源端降级）时只信任不高于
+  // 实际档的声明档，更高档仍逐档实测。
   const topKey = targets.reduce<QualityKey | null>(
     (acc, k) => (acc === null || ALL_QUALITY_KEYS.indexOf(k) > ALL_QUALITY_KEYS.indexOf(acc) ? k : acc),
     null,
@@ -122,6 +91,13 @@ export async function probeDownloadableQualities(
       const actualIdx = ALL_QUALITY_KEYS.indexOf(topResolved.quality);
       options?.onTrust?.(targets.filter(k => ALL_QUALITY_KEYS.indexOf(k) <= actualIdx));
       queueOverride = targets.filter(k => ALL_QUALITY_KEYS.indexOf(k) > actualIdx);
+    } else if (isPlugin) {
+      // 最高档失败且沙箱日志显示鉴权失效时，逐档实测无意义，直接终止
+      const authErr = await pluginProbeAuthFailure((ctx as PluginResolveContext).pluginSource);
+      if (authErr) {
+        console.warn(`[Probe] 沙箱日志检测到鉴权失效，跳过逐档实测: ${authErr}`);
+        throw new Error(authErr);
+      }
     }
     // 最高档未解析到直链：回退逐档实测（鉴权失效/风控由 worker 内熔断识别）
   }

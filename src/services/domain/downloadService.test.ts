@@ -13,8 +13,8 @@ vi.mock('./pluginEngine', () => ({
   pluginGetCover: vi.fn(),
   pluginGetLyric: vi.fn(),
   pluginGetMusicInfo: vi.fn(),
-  pluginGetBakaMusicInfo: vi.fn(),
-  isBakaPlugin: vi.fn(),
+  pluginRequiresFreshResolve: vi.fn(),
+  pluginProbeAuthFailure: vi.fn(),
 }));
 
 vi.mock('./lxPluginEngine', () => ({
@@ -64,7 +64,7 @@ vi.mock('../../features/playback/store', () => ({
 }));
 
 import { tauriInvoke } from '../tauri/invoke';
-import { getStoredPlugins, isBakaPlugin, pluginGetBakaMusicInfo } from './pluginEngine';
+import { getStoredPlugins, pluginGetMusicInfo, pluginRequiresFreshResolve } from './pluginEngine';
 import { lxPluginGetMusicUrl } from './lxPluginEngine';
 import { cacheLxSong } from './lxSongCache';
 import { downloadSong, probeDownloadableQualities, resolveOnlineQualityUrl } from './downloadService';
@@ -155,8 +155,8 @@ describe('downloadService: QQ 插件原生适配（无 LX 兜底）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (getStoredPlugins as any).mockReturnValue([qqPlugin]);
-    (isBakaPlugin as any).mockResolvedValue(true);
-    (pluginGetBakaMusicInfo as any).mockResolvedValue(null);
+    (pluginRequiresFreshResolve as any).mockResolvedValue(true);
+    (pluginGetMusicInfo as any).mockResolvedValue(null);
   });
 
   it('插件全档失败后如实返回 null，不再借 LX tx 音源兜底', async () => {
@@ -222,8 +222,8 @@ describe('downloadService: 歌单导入历史数据 rawData 缺 pluginId（顶�
   beforeEach(() => {
     vi.clearAllMocks();
     (getStoredPlugins as any).mockReturnValue([qqPlugin]);
-    (isBakaPlugin as any).mockResolvedValue(true);
-    (pluginGetBakaMusicInfo as any).mockResolvedValue({
+    (pluginRequiresFreshResolve as any).mockResolvedValue(true);
+    (pluginGetMusicInfo as any).mockResolvedValue({
       url: 'https://cdn.example.com/RS02abcd1234.mflac',
       ekey: 'ekey1',
       headers: null,
@@ -234,7 +234,7 @@ describe('downloadService: 歌单导入历史数据 rawData 缺 pluginId（顶�
   it('rawData 缺 pluginId 时用顶层 plugin_id 定位插件并完成解析', async () => {
     const resolved = await resolveOnlineQualityUrl(makeImportedSong(), '320k', 'lower', ['128k', '320k']);
 
-    expect(pluginGetBakaMusicInfo).toHaveBeenCalled();
+    expect(pluginGetMusicInfo).toHaveBeenCalled();
     expect(resolved?.url).toBe('https://cdn.example.com/RS02abcd1234.mflac');
     expect(resolved?.ekey).toBe('ekey1');
   });
@@ -243,7 +243,7 @@ describe('downloadService: 歌单导入历史数据 rawData 缺 pluginId（顶�
     const song = { ...makeImportedSong(), plugin_id: undefined, rawData: { songmid: 'x1' } } as unknown as Song;
     const resolved = await resolveOnlineQualityUrl(song, '320k', 'lower', ['128k', '320k']);
 
-    expect(pluginGetBakaMusicInfo).not.toHaveBeenCalled();
+    expect(pluginGetMusicInfo).not.toHaveBeenCalled();
     expect(resolved).toBeNull();
   });
 });
@@ -273,8 +273,8 @@ describe('downloadService: 网易云插件原生适配（无 LX 兜底）', () =
   beforeEach(() => {
     vi.clearAllMocks();
     (getStoredPlugins as any).mockReturnValue([wyPlugin]);
-    (isBakaPlugin as any).mockResolvedValue(true);
-    (pluginGetBakaMusicInfo as any).mockResolvedValue(null);
+    (pluginRequiresFreshResolve as any).mockResolvedValue(true);
+    (pluginGetMusicInfo as any).mockResolvedValue(null);
   });
 
   it('插件全档失败后如实返回 null，不再借 LX wy 音源兜底', async () => {
@@ -566,8 +566,8 @@ describe('downloadService: probe collapse to actual quality (咪咕降级场景)
   beforeEach(() => {
     vi.clearAllMocks();
     (getStoredPlugins as any).mockReturnValue([mgPlugin]);
-    (isBakaPlugin as any).mockResolvedValue(true);
-    (pluginGetBakaMusicInfo as any).mockImplementation(
+    (pluginRequiresFreshResolve as any).mockResolvedValue(true);
+    (pluginGetMusicInfo as any).mockImplementation(
       async () => ({
         url: 'https://cdn.migu.cn/audio.flac',
         actualQuality: 'flac24bit',

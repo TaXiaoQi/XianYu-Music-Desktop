@@ -19,10 +19,9 @@ import {
 } from './audioQualityVerify';
 import {
   getStoredPlugins,
-  pluginGetBakaMusicInfo,
   pluginGetCover,
   pluginGetMusicInfo,
-  isBakaPlugin,
+  pluginRequiresFreshResolve,
 } from './pluginEngine';
 import { ensureLxPluginInstance } from './lxPluginEngine';
 import {
@@ -176,8 +175,10 @@ export async function resolvePluginAudioForQuality(
   const bakaLegacyQuality = qualityKeyToBakaLegacyQuality(q);
   const mfLegacyQuality = qualityKeyToMfQuality(q);
 
-  const isBaka = await isBakaPlugin(ctx.pluginSource);
-  if (!isBaka) {
+  // baka 系插件要求每次解析新鲜直链：预解析音质缓存不可信，跳过预解析捷径
+  // （分发层按 format 判定，本模块不感知具体插件格式）
+  const requiresFreshResolve = await pluginRequiresFreshResolve(ctx.pluginSource);
+  if (!requiresFreshResolve) {
     const preKeys = Array.from(new Set([
       nativeQuality,
       bakaPluginQuality,
@@ -200,9 +201,7 @@ export async function resolvePluginAudioForQuality(
     }
   }
 
-  const musicInfo = isBaka
-    ? await pluginGetBakaMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q)
-    : await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
+  const musicInfo = await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
   const url = sanitizeMediaUrl(musicInfo?.url);
   if (!url || !/^https?:/.test(url)) return null;
 

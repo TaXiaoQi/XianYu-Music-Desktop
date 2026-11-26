@@ -44,6 +44,8 @@ vi.mock('../services/domain/pluginEngine', () => ({
   pluginGetMusicInfo: pluginGetMusicInfoMock,
   pluginGetBakaMusicInfo: vi.fn().mockResolvedValue(null),
   pluginGetSupportedQualities: pluginGetSupportedQualitiesMock,
+  pluginRequiresFreshResolve: vi.fn().mockResolvedValue(false),
+  pluginProbeAuthFailure: vi.fn().mockResolvedValue(null),
   isBakaPlugin: isBakaPluginMock,
   getLastPluginError: vi.fn(() => ''),
 }));

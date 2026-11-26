@@ -38,7 +38,7 @@ import {
   type BakaCommentResult,
   type BakaLyricFormat,
 } from './bakaPluginManagerBase';
-import { buildBakaMfLyricsRaw, decryptPluginLyricText, pluginLyricLooksEncrypted } from './bakaMfLyricsBuilder';
+import { buildPluginLyricsRaw, decryptPluginLyricText, pluginLyricLooksEncrypted } from './pluginLyricsBuilder';
 import { clearLastSandboxError, getLastSandboxError } from './pluginSandboxManager';
 import {
   resetMediaItem,
@@ -413,7 +413,7 @@ export class BakaPluginMedia extends BakaPluginCore {
     const resultQuality = normalizeQualityKey(result.quality);
     const actualQuality = resultQuality ?? inferActualQualityFromMediaUrl(url, requestedSuccessQuality);
     const lyricsRaw = (ttml || lyric || tlyric || lxlyric || yrc || qrc || eslrc)
-      ? buildBakaMfLyricsRaw({ ttml, lyric, tlyric, lxlyric, yrc, qrc, eslrc })
+      ? buildPluginLyricsRaw({ ttml, lyric, tlyric, lxlyric, yrc, qrc, eslrc })
       : '';
 
     const headerKeys = Object.keys(headers);
@@ -526,7 +526,7 @@ export class BakaPluginMedia extends BakaPluginCore {
         return null;
       }
 
-      const lyricsRaw = buildBakaMfLyricsRaw({
+      const lyricsRaw = buildPluginLyricsRaw({
         ttml,
         lyric: rawLrc,
         tlyric: translation,
