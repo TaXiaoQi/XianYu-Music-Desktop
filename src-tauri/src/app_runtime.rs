@@ -701,10 +701,15 @@ pub(crate) fn handle_single_instance<R: tauri::Runtime>( // 实现
     let current_exe = std::env::current_exe().ok(); // 实现
     let deep_links = collect_deep_links(argv.iter().cloned());
     let open_paths = collect_existing_open_paths(argv, current_exe.as_deref()); // 实现
+    let has_open_paths = !open_paths.is_empty(); // 实现
     queue_deep_links(app, deep_links);
     queue_open_paths(app, open_paths); // 实现
     let _ = app.emit("app:open-paths", ()); // 实现
-    reveal_main_window(app); // 实现
+    // 有本地文件时不抢先亮主窗：前端按「打开本地音频默认 mini 小窗」
+    // 设置自行决定显示 mini 还是主窗（否则会先闪一下主窗再被 mini 接管）。
+    if !has_open_paths {
+        reveal_main_window(app); // 实现
+    }
 }
 
 #[cfg_attr(
@@ -727,7 +732,7 @@ pub(crate) fn handle_opened_urls<R: tauri::Runtime>(
     }
     queue_open_paths(app, paths);
     let _ = app.emit("app:open-paths", ()); // 实现
-    reveal_main_window(app); // 实现
+    // 同单实例：本地文件已入队，主窗揭示交给前端（可能切 mini 小窗）
 }
 
 pub(crate) fn setup_app( // setup_app

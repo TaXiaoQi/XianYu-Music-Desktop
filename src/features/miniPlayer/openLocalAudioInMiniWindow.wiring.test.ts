@@ -9,6 +9,13 @@ import settingsStoreSource from '../settings/store.ts?raw';
 import settingsTypesSource from '../../types/index.ts?raw';
 import appShellSource from '../../composables/useAppShell.ts?raw';
 import externalPathSource from '../../composables/useExternalPathBridge.ts?raw';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const appRuntimeSource = readFileSync(
+  resolve(process.cwd(), 'src-tauri/src/app_runtime.rs'),
+  'utf8',
+);
 
 describe('打开本地音频默认 mini 小窗：设置项', () => {
   it('AppSettings 类型新增 openLocalAudioInMiniWindow（boolean）', () => {
@@ -54,11 +61,26 @@ describe('打开本地音频默认 mini 小窗：打开链路接线', () => {
     const drainIdx = externalPathSource.indexOf(
       'await drainPendingOpenPaths({ startup: true });',
     );
-    const miniIdx = externalPathSource.indexOf('if (uiStore.isMiniMode)');
+    const miniIdx = externalPathSource.indexOf(
+      '// mini 小窗接管（打开本地音频文件 → 小窗形态）：主窗保持隐藏，跳过启动揭示',
+    );
     const revealIdx = externalPathSource.indexOf('showMainWindowAfterStartup(getCurrentWindow()');
 
     expect(drainIdx).toBeGreaterThan(-1);
     expect(miniIdx).toBeGreaterThan(drainIdx);
     expect(revealIdx).toBeGreaterThan(miniIdx);
+  });
+
+  it('Rust 侧有打开路径时不抢先亮主窗（避免先闪主窗再被 mini 接管）', () => {
+    expectSourceContains(appRuntimeSource, 'let has_open_paths = !open_paths.is_empty();');
+    expectSourceContains(appRuntimeSource, 'if !has_open_paths {');
+  });
+
+  it('运行期 app:open-paths 事件：未进入 mini 时由前端补揭示主窗', () => {
+    const listenerIdx = externalPathSource.indexOf("listen('app:open-paths'");
+    const revealIdx = externalPathSource.indexOf('revealMainWindowAfterExternalPaths();');
+    expect(listenerIdx).toBeGreaterThan(-1);
+    expect(revealIdx).toBeGreaterThan(listenerIdx);
+    expectSourceContains(externalPathSource, 'async function revealMainWindowAfterExternalPaths()');
   });
 });

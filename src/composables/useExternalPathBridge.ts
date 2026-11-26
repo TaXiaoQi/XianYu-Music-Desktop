@@ -66,6 +66,22 @@ export async function showMainWindowAfterStartup(
   await hooks.afterShow?.();
 }
 
+/**
+ * 单实例/文件关联运行期转发后的主窗揭示：
+ * Rust 侧不再抢先亮窗（否则「打开本地音频默认 mini 小窗」会先闪一下主窗），
+ * 由前端在未进入 mini 小窗时补上显示与聚焦；窗口已可见时 show/focus 无副作用。
+ */
+async function revealMainWindowAfterExternalPaths() {
+  try {
+    const appWindow = getCurrentWindow();
+    await appWindow.unminimize();
+    await appWindow.show();
+    await appWindow.setFocus();
+  } catch (error) {
+    console.error('Failed to reveal main window after external paths:', error);
+  }
+}
+
 export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract) {
   const { handleExternalPaths, beforeWindowShow, afterWindowShow } = bridgeOptions;
 
@@ -143,6 +159,10 @@ export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract)
     detachFns.push(
       await listen('app:open-paths', async () => {
         await drainPendingOpenPaths();
+        if (uiStore.isMiniMode) {
+          return;
+        }
+        await revealMainWindowAfterExternalPaths();
       }),
     );
   };
