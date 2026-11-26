@@ -175,8 +175,8 @@ interface TxPlayFileCandidate {
 
 function txPlayFileCandidates(quality?: string): TxPlayFileCandidate[] {
   const q = String(quality || '').toLowerCase();
-  const lossless = q === 'master' || q === 'atmos_plus' || q === 'atmos' || q === 'dolby'
-    || q === 'spatial' || q === 'vinyl' || q === 'hires' || q === 'flac24bit'
+  const lossless = q === 'master' || q === 'atmos_pro' || q === 'atmos_plus' || q === 'atmos' || q === 'dolby'
+    || q === 'dts' || q === 'spatial' || q === 'vinyl' || q === 'hires' || q === 'flac24bit'
     || q === 'flac' || q === 'super' || q === 'lossless';
   if (lossless) {
     return [

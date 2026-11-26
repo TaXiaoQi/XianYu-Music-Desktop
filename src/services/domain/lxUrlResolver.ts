@@ -188,8 +188,10 @@ function selectKgQualityHash(songInfo: Record<string, unknown>, quality: Quality
     case 'master':
     case 'vinyl':
     case 'dolby':
+    case 'dts':
     case 'atmos':
     case 'atmos_plus':
+    case 'atmos_pro':
       return (
         readKgHashField(songInfo, 'ResFileHash') ||
         readKgHashField(songInfo, 'origin_hash') ||

@@ -21,9 +21,11 @@ const QUALITY_ABBR: Record<QualityKey, string> = {
   hires: 'HRA',
   vinyl: 'VL',
   dolby: 'DA',
+  dts: 'DT',
   atmos: 'AT',
   spatial: 'SA',
   atmos_plus: 'AT+',
+  atmos_pro: 'AT9',
   master: 'MS',
 };
 

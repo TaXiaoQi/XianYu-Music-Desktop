@@ -560,8 +560,10 @@ function readQualityHash(mediaItem: any, qualityKey: QualityKey): string {
     case 'master':
     case 'vinyl':
     case 'dolby':
+    case 'dts':
     case 'atmos':
     case 'atmos_plus':
+    case 'atmos_pro':
       return String(
         mediaItem?.ResFileHash ||
         mediaItem?.origin_hash ||

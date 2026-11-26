@@ -486,9 +486,11 @@ export type QualityKey =
   | 'hires'
   | 'vinyl'
   | 'dolby'
+  | 'dts'
   | 'atmos'
   | 'spatial'
   | 'atmos_plus'
+  | 'atmos_pro'
   | 'master';
 export interface QualityMeta {
   key: QualityKey;
@@ -507,11 +509,13 @@ export const QUALITY_META: Record<QualityKey, QualityMeta> = {
   hires:        { key: 'hires',        label: '高解析度', description: 'hires',      isLossless: true,  rank: 7  },
   vinyl:        { key: 'vinyl',        label: '黑胶',   description: 'vinyl',       isLossless: true,  rank: 8  },
   dolby:        { key: 'dolby',        label: '杜比全景声', description: 'dolby',     isLossless: false, rank: 9  },
-  atmos:        { key: 'atmos',        label: '臻品音质', description: 'atmos',       isLossless: false, rank: 10 },
+  dts:          { key: 'dts',          label: 'DTS音质', description: 'dts',         isLossless: false, rank: 10 },
+  atmos:        { key: 'atmos',        label: '臻品音质', description: 'atmos',       isLossless: false, rank: 11 },
   // 空间音频（汽水 spatial）：与 atmos 同级展示
-  spatial:      { key: 'spatial',      label: '空间音频', description: 'spatial',     isLossless: false, rank: 10 },
-  atmos_plus: { key: 'atmos_plus', label: '臻品全景声', description: 'atmos_plus',  isLossless: false, rank: 11 },
-  master:       { key: 'master',       label: '臻品母带', description: 'master',      isLossless: true,  rank: 12 },
+  spatial:      { key: 'spatial',      label: '空间音频', description: 'spatial',     isLossless: false, rank: 11 },
+  atmos_plus: { key: 'atmos_plus', label: '臻品全景声', description: 'atmos_plus',  isLossless: false, rank: 12 },
+  atmos_pro: { key: 'atmos_pro', label: '臻品全景声 916', description: 'atmos_pro', isLossless: false, rank: 13 },
+  master:       { key: 'master',       label: '臻品母带', description: 'master',      isLossless: true,  rank: 14 },
 };
 export const ALL_QUALITY_KEYS: QualityKey[] =
   (Object.keys(QUALITY_META) as QualityKey[])
@@ -529,9 +533,11 @@ export const BAKA_TO_LEGACY_QUALITY_MAP: Record<QualityKey, 'low' | 'standard' |
   hires: 'super',
   vinyl: 'super',
   dolby: 'super',
+  dts: 'super',
   atmos: 'super',
   spatial: 'super',
   atmos_plus: 'super',
+  atmos_pro: 'super',
   master: 'super',
 };
 
@@ -563,12 +569,16 @@ const QUALITY_KEY_ALIASES: Record<string, QualityKey> = {
   hr: 'hires',
   vinyl: 'vinyl',
   dolby: 'dolby',
+  dts: 'dts',
   atmos: 'atmos',
   galaxy: 'atmos',
   atmosplus: 'atmos_plus',
   atmos_plus: 'atmos_plus',
   'atmos+': 'atmos_plus',
   galaxy51: 'atmos_plus',
+  atmospro: 'atmos_pro',
+  atmos_pro: 'atmos_pro',
+  galaxy916: 'atmos_pro',
   master: 'master',
 };
 

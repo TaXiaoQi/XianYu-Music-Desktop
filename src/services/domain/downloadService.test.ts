@@ -117,10 +117,10 @@ function mockResolveDownloadFullPath(args: any): string {
 }
 
 describe('downloadService: quality candidates', () => {
-  it('maps UI quality to ordered lx candidates with fallback (13档从高到低)', () => {
+  it('maps UI quality to ordered lx candidates with fallback (15档从高到低)', () => {
     expect(qualityToLxCandidates('master')).toEqual([
-      'master', 'atmos_plus', 'spatial', 'atmos', 'dolby', 'vinyl', 'hires',
-      'flac24bit', 'flac', '320k', '192k', '128k', 'mgg',
+      'master', 'atmos_pro', 'atmos_plus', 'spatial', 'atmos', 'dts', 'dolby',
+      'vinyl', 'hires', 'flac24bit', 'flac', '320k', '192k', '128k', 'mgg',
     ]);
     expect(qualityToLxCandidates('320k')).toEqual(['320k', '192k', '128k', 'mgg']);
     expect(qualityToLxCandidates('flac')).toEqual([
