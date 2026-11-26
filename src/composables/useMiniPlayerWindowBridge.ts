@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { useCoverCache } from "./useCoverCache";
+import { logApplicationEvent } from "../services/applicationLogger";
 import { showDesktopLyrics, useLyrics } from "./lyrics";
 import { useThemeSettings } from "./useThemeSettings";
 import { persistAnchor } from "./miniPlayerBoundsMemory";
@@ -134,6 +135,13 @@ export function useMiniPlayerWindowBridge() {
     };
 
     const openMiniSurface = async () => {
+        const mainVisibleBefore = await hostWindow.isVisible().catch(() => null);
+        logApplicationEvent(
+            "info",
+            "迷你窗",
+            "open",
+            `开始 主窗可见=${mainVisibleBefore === null ? "unknown" : mainVisibleBefore ? 1 : 0}`,
+        );
         ui.mainWindowUiSleepRequested = true;
         await nextTick();
         await hostWindow.hide();
@@ -145,6 +153,7 @@ export function useMiniPlayerWindowBridge() {
         miniSurfaceVisible.value = true;
         await pushVisibilityFlag(true);
         await surface.show();
+        logApplicationEvent("info", "迷你窗", "open", "迷你窗已显示");
     };
 
     const closeMiniSurface = async () => {

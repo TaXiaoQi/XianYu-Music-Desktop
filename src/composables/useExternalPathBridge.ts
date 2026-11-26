@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onMounted, onUnmounted, ref } from 'vue';
 
 import { appApi } from '../services/tauri/appApi';
+import { logApplicationEvent } from '../services/applicationLogger';
 import { importPluginScriptsFromPaths } from '../services/domain/pluginImport';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
@@ -118,7 +119,19 @@ export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract)
           if (run.startup) {
             playbackStore.markExternalStartupFile();
           }
+          logApplicationEvent(
+            'info',
+            '外部路径',
+            'mini',
+            `处理外部文件 来源=open 数量=${audioPaths.length} 设置=${settingsStore.settings.openLocalAudioInMiniWindow ? 1 : 0} 启动=${run.startup ? 1 : 0}`,
+          );
           await queueExternalPaths(audioPaths, 'open');
+          logApplicationEvent(
+            'info',
+            '外部路径',
+            'mini',
+            `入队完成 isMiniMode=${uiStore.isMiniMode ? 1 : 0}`,
+          );
         }
       }
     } catch (error) {
