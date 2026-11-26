@@ -1437,6 +1437,17 @@ onScopeDispose(() => {
         </div>
         <div class="desktop-setting-row">
           <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">打开本地音频文件时默认使用 mini 小窗</div>
+          </div>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.openLocalAudioInMiniWindow }"
+            @click="patchSettings({ openLocalAudioInMiniWindow: !settings.openLocalAudioInMiniWindow })"
+          ></button>
+        </div>
+        <div class="desktop-setting-row">
+          <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放设备</div>
           </div>
           <button

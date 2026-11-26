@@ -272,6 +272,7 @@ const defaultLogSettings: LogSettings = {
 export const defaultAppSettings: AppSettings = {
   language: 'system', closeToTray: true, launchOnStartup: false,
   launchOnStartupMinimized: false, preventSleepWhilePlaying: true,
+  openLocalAudioInMiniWindow: false,
   audioFileAssociations: [...AUDIO_FILE_ASSOCIATION_EXTENSIONS],
   showDesktopLyrics: false, showQualityBadges: true, showSongComments: true,
   enableScrollToTopButton: true, libraryMinDurationSeconds: 0, libraryMinFileSizeMb: 0,

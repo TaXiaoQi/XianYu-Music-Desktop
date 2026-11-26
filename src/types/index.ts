@@ -781,6 +781,8 @@ export interface AppSettings {
   /** 已勾选「用弦予音乐打开」的音频扩展名（仅 Windows 生效）。 */
   audioFileAssociations: string[];
   preventSleepWhilePlaying: boolean;
+  /** 打开本地音频文件（文件关联/单实例转发）时默认进入 mini 小窗播放 */
+  openLocalAudioInMiniWindow: boolean;
   showDesktopLyrics: boolean;
   showQualityBadges: boolean;
   showSongComments: boolean;

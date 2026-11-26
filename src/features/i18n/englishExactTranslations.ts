@@ -480,6 +480,7 @@ export const exactEnglishTranslations: Record<string, string> = {
   '显示音质标识': 'Show quality badges',
   '显示歌曲注释': 'Show song comments',
   '播放时阻止电脑睡眠': 'Prevent sleep while playing',
+  '打开本地音频文件时默认使用 mini 小窗': 'Open local audio files in the mini player by default',
   '播放缓存上限': 'Playback cache limit',
   '清理在线播放缓存': 'Clear playback cache',
   '重置数据': 'Reset data',

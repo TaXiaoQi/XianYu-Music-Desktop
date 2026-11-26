@@ -163,6 +163,11 @@ export function useExternalPathBridge(bridgeOptions: ExternalPathBridgeContract)
 
     await drainPendingOpenPaths({ startup: true });
 
+    // mini 小窗接管（打开本地音频文件 → 小窗形态）：主窗保持隐藏，跳过启动揭示
+    if (uiStore.isMiniMode) {
+      return;
+    }
+
     if (await maybeEnterTraySleepOnStartup()) {
       return;
     }

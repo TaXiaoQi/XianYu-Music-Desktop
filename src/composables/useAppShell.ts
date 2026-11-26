@@ -5,6 +5,11 @@ import { useRoute, useRouter } from "vue-router";
 import { usePlayer } from "../features/playback";
 import { useAddToPlaylistDialog } from "../features/collections/addToPlaylistDialog";
 import { usePlayerLibraryView } from "../features/library/usePlayerLibraryView";
+import {
+    shouldUseMiniForOpen,
+    type MiniOpenPathSource,
+} from "../features/miniPlayer/openLocalAudioInMini";
+import { useSettings } from "../features/settings/useSettings";
 import { useUiStore } from "../shared/stores/ui";
 
 import { shouldShowPlayerFooter } from "./appShellFooterState";
@@ -102,9 +107,34 @@ export function useAppShell() {
         onboardingActive: () => onboardingFlowVisible.value,
     });
 
+    const uiStore = useUiStore();
+    const { settings: shellSettings } = useSettings();
+
+    /**
+     * 外部路径入队后按设置决定是否切 mini 小窗：
+     * 判定通过只置 isMiniMode，既有 watch(isMiniMode) 会跑完
+     * 「隐藏主窗 → 建窗/复用 → 推状态快照 → 显示」全序列。
+     */
+    const handleExternalPathsWithMini = async (
+        paths: string[],
+        options?: { source?: MiniOpenPathSource },
+    ) => {
+        await processExternalPaths(paths, options);
+        if (
+            !uiStore.isMiniMode
+            && shouldUseMiniForOpen({
+                source: options?.source,
+                pathCount: paths.length,
+                enabled: shellSettings.value.openLocalAudioInMiniWindow,
+            })
+        ) {
+            uiStore.isMiniMode = true;
+        }
+    };
+
     const { isExternalDragActive: externalDropPending } = useExternalPathBridge(
         {
-            handleExternalPaths: processExternalPaths,
+            handleExternalPaths: handleExternalPathsWithMini,
             beforeWindowShow: revealSequence.beforeWindowShow,
             afterWindowShow: revealSequence.afterWindowShow,
         },
