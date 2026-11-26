@@ -198,6 +198,56 @@ describe('downloadService: QQ 插件原生适配（无 LX 兜底）', () => {
   });
 });
 
+describe('downloadService: 歌单导入历史数据 rawData 缺 pluginId（顶层 plugin_id 兜底）', () => {
+  const qqPlugin = { id: 'qq1', enabled: true, format: 'musicfree', sources: ['QQ音乐'], name: 'QQ音乐', filePath: 'x.js' };
+
+  // 旧版 importResultToSongs 只在顶层写 plugin_id，rawData 是插件原始 musicItem（无 pluginId）
+  const makeImportedSong = (): Song => ({
+    path: 'plugin://qq1/003fabDO0sBVgG',
+    name: '夏日狂欢',
+    title: '夏日狂欢',
+    artist: '测试歌手',
+    album: '测试专辑',
+    duration: 117,
+    source_type: 'remote',
+    plugin_id: 'qq1',
+    rawData: {
+      songmid: '003fabDO0sBVgG',
+      id: 499850390,
+      title: '夏日狂欢',
+      qualities: { '128k': {}, '320k': {}, '96k': {} },
+    },
+  } as unknown as Song);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getStoredPlugins as any).mockReturnValue([qqPlugin]);
+    (isBakaPlugin as any).mockResolvedValue(true);
+    (pluginGetBakaMusicInfo as any).mockResolvedValue({
+      url: 'https://cdn.example.com/RS02abcd1234.mflac',
+      ekey: 'ekey1',
+      headers: null,
+      actualQuality: '320k',
+    });
+  });
+
+  it('rawData 缺 pluginId 时用顶层 plugin_id 定位插件并完成解析', async () => {
+    const resolved = await resolveOnlineQualityUrl(makeImportedSong(), '320k', 'lower', ['128k', '320k']);
+
+    expect(pluginGetBakaMusicInfo).toHaveBeenCalled();
+    expect(resolved?.url).toBe('https://cdn.example.com/RS02abcd1234.mflac');
+    expect(resolved?.ekey).toBe('ekey1');
+  });
+
+  it('顶层 plugin_id 与 rawData.pluginId 均缺失时返回 null', async () => {
+    const song = { ...makeImportedSong(), plugin_id: undefined, rawData: { songmid: 'x1' } } as unknown as Song;
+    const resolved = await resolveOnlineQualityUrl(song, '320k', 'lower', ['128k', '320k']);
+
+    expect(pluginGetBakaMusicInfo).not.toHaveBeenCalled();
+    expect(resolved).toBeNull();
+  });
+});
+
 describe('downloadService: 网易云插件原生适配（无 LX 兜底）', () => {
   const wyPlugin = { id: 'wy1', enabled: true, format: 'musicfree', sources: ['网易云音乐'], name: '网易云音乐', filePath: 'x.js' };
 

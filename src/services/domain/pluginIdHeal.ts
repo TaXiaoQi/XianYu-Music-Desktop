@@ -13,20 +13,30 @@ const platformLabelFromPath = (path: string): string => {
   }
 };
 
+/**
+ * 歌曲归属插件 id：优先 rawData.pluginId（搜索链路整对象存储），
+ * 兜底顶层 plugin_id（歌单导入链路 importResultToSongs 历史数据只在顶层有值）。
+ */
+export const songPluginId = (song: Song | null | undefined): string =>
+  (song?.rawData as { pluginId?: string } | undefined)?.pluginId
+  || song?.plugin_id
+  || '';
+
 const findHealedPluginForSong = (
   song: Song,
   installedPlugins?: PluginSource[],
 ): PluginSource | null => {
   const searchResult = song?.rawData as { pluginId?: string; platform?: string } | undefined;
-  if (!searchResult?.pluginId) return null;
+  const pluginId = searchResult?.pluginId ?? song?.plugin_id;
+  if (!pluginId) return null;
 
   const plugins = installedPlugins ?? getStoredPlugins();
-  if (plugins.some(p => p.id === searchResult.pluginId && p.enabled)) return null;
+  if (plugins.some(p => p.id === pluginId && p.enabled)) return null;
 
   // 插件更新换 id（脚本哈希）后行内仍是旧 pluginId：先沿别名表换算精确
   // 还原，免走平台标签启发式（后者是猜测式匹配，可能绑错插件）
   const aliases = readPluginIdAliases();
-  let cur = searchResult.pluginId;
+  let cur = pluginId;
   for (let i = 0; i < 8; i++) {
     const next = aliases[cur];
     if (!next || next === cur) break;
@@ -38,7 +48,7 @@ const findHealedPluginForSong = (
   const candidates = plugins.filter(p => (p.format === 'musicfree' || p.format === 'anime') && p.enabled);
   if (candidates.length === 0) return null;
 
-  const platformLabel = searchResult.platform
+  const platformLabel = searchResult?.platform
     || platformLabelFromPath(song.cue_source_path || song.path || '');
   if (!platformLabel.trim()) return null;
 

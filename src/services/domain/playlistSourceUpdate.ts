@@ -43,7 +43,11 @@ export function importResultToSongs(songs: PluginSearchResult[]): Song[] {
       cover_thumb_path: item.coverUrl || '',
       source_type: 'remote' as const,
       remote_source_id: path,
-      rawData: item.rawData ?? item,
+      // 播放链（preparePluginResolveContext/healDanglingPluginId）依赖 rawData.pluginId
+      // 定位插件——与搜索链路（整对象存为 rawData 含 pluginId）对齐，否则导入歌全量解析失败
+      rawData: item.rawData
+        ? { ...item.rawData, pluginId: item.pluginId }
+        : item,
       // 补齐 lx 播放链路的 _ 前缀回退字段（resolveLxCachedInfo / buildLxSongInfo 依赖）
       _hash: raw?.hash,
       _types: raw?._types ?? raw?.types,

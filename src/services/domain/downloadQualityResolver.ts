@@ -134,11 +134,16 @@ export async function preparePluginResolveContext(
   const path = song.cue_source_path || song.path;
   if (!path || !path.startsWith('plugin://')) return null;
 
-  const pluginSearchResult = song.rawData;
-  if (!pluginSearchResult?.pluginId) return null;
+  const rawSearchResult = song.rawData as (Record<string, any> & { pluginId?: string }) | undefined;
+  const pluginId = rawSearchResult?.pluginId ?? song.plugin_id;
+  if (!pluginId) return null;
+  // 旧版导入数据只在顶层 plugin_id 带插件 id，rawData 缺失时补挂对齐搜索链路结构
+  const pluginSearchResult = rawSearchResult?.pluginId
+    ? rawSearchResult
+    : { ...(rawSearchResult ?? {}), pluginId };
 
   const plugins = getStoredPlugins();
-  let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled) ?? null;
+  let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginId && p.enabled) ?? null;
   if (!pluginSource) {
     pluginSource = healDanglingPluginId(song, plugins);
     if (!pluginSource) {

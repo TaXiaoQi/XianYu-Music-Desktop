@@ -96,13 +96,15 @@ export const getOnlineAvailableQualities = async (
   }
 
   if (songPath.startsWith('plugin://')) {
-    const pluginSearchResult = song.rawData;
-    if (!pluginSearchResult?.pluginId) {
+    const pluginId = (song.rawData as { pluginId?: string } | undefined)?.pluginId
+      ?? song.plugin_id
+      ?? '';
+    if (!pluginId) {
       return null;
     }
 
     const plugins = getStoredPlugins();
-    let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled) ?? null;
+    let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginId && p.enabled) ?? null;
     if (!pluginSource) {
       pluginSource = healDanglingPluginId(song, plugins);
     }

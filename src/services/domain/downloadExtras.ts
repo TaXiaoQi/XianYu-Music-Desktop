@@ -145,10 +145,11 @@ export async function resolveCoverUrl(song: Song): Promise<string | null> {
   if (!path.startsWith('plugin://')) return null;
 
   const rawData = song.rawData;
-  if (!rawData?.pluginId) return null;
+  const pluginId = rawData?.pluginId ?? song.plugin_id;
+  if (!pluginId) return null;
   try {
     const plugins = getStoredPlugins();
-    const pluginSource = plugins.find(p => p.id === rawData.pluginId && p.enabled);
+    const pluginSource = plugins.find(p => p.id === pluginId && p.enabled);
     if (!pluginSource) return null;
     const cover = await pluginGetCover(pluginSource, rawData);
     return cover && /^https?:\/\//.test(cover) ? cover : null;
