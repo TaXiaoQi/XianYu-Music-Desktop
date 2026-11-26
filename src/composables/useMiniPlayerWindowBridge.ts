@@ -37,6 +37,25 @@ import { useUiStore } from "../shared/stores/ui";
 
 export { restoreMainWindowFromMiniMode };
 
+// 「迷你窗已显示」信号：外部路径流程先等窗口可见再开始播放，避免先出声后出窗。
+// 超时兜底（窗口异常时不阻塞播放）。
+let miniSurfaceShownResolve: (() => void) | null = null;
+let miniSurfaceShownPromise: Promise<void> | null = null;
+
+export function waitForMiniSurfaceShown(timeoutMs = 2500): Promise<void> {
+    if (!miniSurfaceShownPromise) {
+        miniSurfaceShownPromise = new Promise<void>((resolve) => {
+            miniSurfaceShownResolve = () => {
+                miniSurfaceShownResolve = null;
+                miniSurfaceShownPromise = null;
+                resolve();
+            };
+            window.setTimeout(() => miniSurfaceShownResolve?.(), timeoutMs);
+        });
+    }
+    return miniSurfaceShownPromise;
+}
+
 // 迷你窗进度条推流的节流间隔（毫秒）。
 const PROGRESS_SYNC_GAP_MS = 250;
 
@@ -149,11 +168,14 @@ export function useMiniPlayerWindowBridge() {
         const surface = await acquireMiniWindow();
         await awaitMiniWindowReady();
         await surface.setAlwaysOnTop(true);
-        await pushStateSnapshot();
         miniSurfaceVisible.value = true;
         await pushVisibilityFlag(true);
         await surface.show();
+        // 先出窗：唤醒等待方（外部路径流程据此在窗口可见后才开始播放）
+        miniSurfaceShownResolve?.();
         logApplicationEvent("info", "迷你窗", "open", "迷你窗已显示");
+        // 状态异步推送：迷你窗自身会 request state，不再阻塞 show（原实现最多等 500ms）
+        void pushStateSnapshot();
     };
 
     const closeMiniSurface = async () => {
@@ -302,6 +324,21 @@ export function useMiniPlayerWindowBridge() {
     onMounted(() => {
         void bindEventListeners();
     });
+
+    // 开启「本地文件默认 mini 小窗」时预热隐藏窗口：
+    // 迷你窗是独立 WebView2 实例，按需创建要等 SPA 加载；预热后弹出几乎即时。
+    const prewarmMiniWindow = () => {
+        void acquireMiniWindow().catch((error) => {
+            console.warn("Failed to prewarm mini player window:", error);
+        });
+    };
+    watch(
+        () => appSettings.value.openLocalAudioInMiniWindow,
+        (enabled) => {
+            if (enabled) prewarmMiniWindow();
+        },
+        { immediate: true },
+    );
 
     onUnmounted(() => {
         while (disposers.length > 0) {

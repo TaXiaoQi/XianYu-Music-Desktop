@@ -76,6 +76,28 @@ describe('打开本地音频默认 mini 小窗：打开链路接线', () => {
     expectSourceContains(appRuntimeSource, 'if !has_open_paths {');
   });
 
+  it('先出窗再播放：wrapper 先等 mini 窗显示，再入队播放', () => {
+    expectSourceContains(appShellSource, 'await waitForMiniSurfaceShown();');
+    const showIdx = appShellSource.indexOf('await waitForMiniSurfaceShown();');
+    const playIdx = appShellSource.indexOf('await processExternalPaths(paths, options);');
+    expect(showIdx).toBeGreaterThan(-1);
+    expect(playIdx).toBeGreaterThan(showIdx);
+  });
+
+  it('迷你桥：show 先于状态推送；开关开启时预热隐藏窗口', () => {
+    const bridgeSource = readFileSync(
+      resolve(process.cwd(), 'src/composables/useMiniPlayerWindowBridge.ts'),
+      'utf8',
+    );
+    expectSourceContains(bridgeSource, 'export function waitForMiniSurfaceShown');
+    const showIdx = bridgeSource.indexOf('await surface.show();');
+    const pushIdx = bridgeSource.indexOf('void pushStateSnapshot();');
+    expect(showIdx).toBeGreaterThan(-1);
+    expect(pushIdx).toBeGreaterThan(showIdx);
+    expectSourceContains(bridgeSource, '() => appSettings.value.openLocalAudioInMiniWindow,');
+    expectSourceContains(bridgeSource, 'prewarmMiniWindow();');
+  });
+
   it('运行期 app:open-paths 事件：未进入 mini 时由前端补揭示主窗', () => {
     const listenerIdx = externalPathSource.indexOf("listen('app:open-paths'");
     const revealIdx = externalPathSource.indexOf('revealMainWindowAfterExternalPaths();');

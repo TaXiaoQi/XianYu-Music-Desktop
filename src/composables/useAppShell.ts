@@ -22,7 +22,7 @@ import { useExternalPathBridge } from "./useExternalPathBridge";
 import { useHomeRouteSync } from "./useHomeRouteSync";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useMainWindowRenderingPower } from "./renderingPower";
-import { useMiniPlayerWindowBridge } from "./useMiniPlayerWindowBridge";
+import { useMiniPlayerWindowBridge, waitForMiniSurfaceShown } from "./useMiniPlayerWindowBridge";
 import { useOnboarding } from "./useOnboarding";
 import { usePerformanceMode } from "./usePerformanceMode";
 import { usePlayerViewState } from "./usePlayerViewState";
@@ -119,17 +119,19 @@ export function useAppShell() {
         paths: string[],
         options?: { source?: MiniOpenPathSource },
     ) => {
-        await processExternalPaths(paths, options);
-        if (
+        const openInMini =
             !uiStore.isMiniMode
             && shouldUseMiniForOpen({
                 source: options?.source,
                 pathCount: paths.length,
                 enabled: shellSettings.value.openLocalAudioInMiniWindow,
-            })
-        ) {
+            });
+        if (openInMini) {
+            // 先出窗、再播放：避免「先出声后出窗」；超时兜底不阻塞播放
             uiStore.isMiniMode = true;
+            await waitForMiniSurfaceShown();
         }
+        await processExternalPaths(paths, options);
     };
 
     const { isExternalDragActive: externalDropPending } = useExternalPathBridge(
