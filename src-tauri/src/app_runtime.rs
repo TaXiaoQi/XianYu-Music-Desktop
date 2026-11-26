@@ -40,7 +40,13 @@ const TRAY_MENU_QUIT_ID: &str = "quit";
 /// 当前平台配置（mac 的 Overlay 红绿灯 / Windows 的自绘无边框）。打包版曾把
 /// 旧版保存的 decorated:false 回写，升级后把 mac 红绿灯标题栏盖回无边框，
 /// 连带丢失原生圆角与系统缩放动画。
-pub(crate) const WINDOW_STATE_FLAGS: StateFlags = StateFlags::all().difference(StateFlags::DECORATIONS);
+// 显式排除 VISIBLE：窗口可见性一律由启动揭示流程（前端 decide）控制。
+// 若随状态恢复 VISIBLE，上次退出时窗口可见会导致本次进程一启动就先显示
+// 主窗、随后才被 mini 小窗接管——表现为「先弹主窗再消失」。
+pub(crate) const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED)
+    .union(StateFlags::FULLSCREEN);
 
 #[derive(serde::Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")] // 实现
